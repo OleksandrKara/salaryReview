@@ -16,6 +16,42 @@ services:
       timeout: 5s
       retries: 10
 
+  backend:
+    build:
+      context: ./backend
+    container_name: salonreview-backend
+    environment:
+      # Override the dev defaults in application.yml — talk to the postgres service via Docker DNS.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/salonreview
+      SPRING_DATASOURCE_USERNAME: salon
+      SPRING_DATASOURCE_PASSWORD: salon
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: salonreview-frontend
+    environment:
+      # Server-side fetches (Node in the container) → talk to backend over Docker DNS
+      BACKEND_URL: http://backend:8080
+      # Browser-side fetches → user's machine hits host port 8080
+      NEXT_PUBLIC_API_BASE: http://localhost:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
   adminer:
     image: adminer:latest
     container_name: salonreview-adminer

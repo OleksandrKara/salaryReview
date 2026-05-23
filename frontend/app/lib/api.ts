@@ -38,64 +38,57 @@ function base(): string {
   return typeof window === 'undefined' ? serverBase : clientBase;
 }
 
-async function jsonOrThrow<T>(res: Response): Promise<T> {
+// Generic typed fetch. T is bound at the call site so TS keeps the response type narrow.
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${base()}${path}`, { cache: 'no-store', ...init });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`${res.status} ${res.statusText}: ${text}`);
   }
-  return res.json() as Promise<T>;
+  return (await res.json()) as T;
+}
+
+async function apiVoid(path: string, init?: RequestInit): Promise<void> {
+  const res = await fetch(`${base()}${path}`, init);
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+}
+
+function jsonInit(method: string, body: unknown): RequestInit {
+  return {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  };
 }
 
 export const api = {
-  listProviders: (opts?: { includeInactive?: boolean }): Promise<Provider[]> =>
-    fetch(`${base()}/api/providers${opts?.includeInactive ? '?all=true' : ''}`, { cache: 'no-store' }).then(jsonOrThrow),
+  listProviders: (opts?: { includeInactive?: boolean }) =>
+    apiFetch<Provider[]>(`/api/providers${opts?.includeInactive ? '?all=true' : ''}`),
 
-  createProvider: (body: ProviderCreateRequest): Promise<Provider> =>
-    fetch(`${base()}/api/providers`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then(jsonOrThrow),
+  createProvider: (body: ProviderCreateRequest) =>
+    apiFetch<Provider>(`/api/providers`, jsonInit('POST', body)),
 
-  patchProvider: (id: number, body: ProviderPatchRequest): Promise<Provider> =>
-    fetch(`${base()}/api/providers/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then(jsonOrThrow),
+  patchProvider: (id: number, body: ProviderPatchRequest) =>
+    apiFetch<Provider>(`/api/providers/${id}`, jsonInit('PATCH', body)),
 
-  deleteProvider: (id: number): Promise<void> =>
-    fetch(`${base()}/api/providers/${id}`, { method: 'DELETE' })
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-      }),
+  deleteProvider: (id: number) =>
+    apiVoid(`/api/providers/${id}`, { method: 'DELETE' }),
 
-  listPeriods: (): Promise<PayPeriod[]> =>
-    fetch(`${base()}/api/pay-periods`, { cache: 'no-store' }).then(jsonOrThrow),
+  listPeriods: () =>
+    apiFetch<PayPeriod[]>(`/api/pay-periods`),
 
-  getPeriod: (id: number): Promise<PayPeriodDetail> =>
-    fetch(`${base()}/api/pay-periods/${id}`, { cache: 'no-store' }).then(jsonOrThrow),
+  getPeriod: (id: number) =>
+    apiFetch<PayPeriodDetail>(`/api/pay-periods/${id}`),
 
-  createPeriod: (body: PayPeriodCreateRequest): Promise<PayPeriod> =>
-    fetch(`${base()}/api/pay-periods`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then(jsonOrThrow),
+  createPeriod: (body: PayPeriodCreateRequest) =>
+    apiFetch<PayPeriod>(`/api/pay-periods`, jsonInit('POST', body)),
 
-  upsertEntry: (periodId: number, providerId: number, body: PeriodEntryUpsertRequest): Promise<PeriodEntry> =>
-    fetch(`${base()}/api/pay-periods/${periodId}/entries/${providerId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).then(jsonOrThrow),
+  upsertEntry: (periodId: number, providerId: number, body: PeriodEntryUpsertRequest) =>
+    apiFetch<PeriodEntry>(`/api/pay-periods/${periodId}/entries/${providerId}`, jsonInit('PUT', body)),
 
-  getSettlements: (periodId: number): Promise<Settlement[]> =>
-    fetch(`${base()}/api/pay-periods/${periodId}/settlements`, { cache: 'no-store' }).then(jsonOrThrow),
+  getSettlements: (periodId: number) =>
+    apiFetch<Settlement[]>(`/api/pay-periods/${periodId}/settlements`),
 
-  deletePeriod: (periodId: number): Promise<void> =>
-    fetch(`${base()}/api/pay-periods/${periodId}`, { method: 'DELETE' })
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-      }),
+  deletePeriod: (periodId: number) =>
+    apiVoid(`/api/pay-periods/${periodId}`, { method: 'DELETE' }),
 };
