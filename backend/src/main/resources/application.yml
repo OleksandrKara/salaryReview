@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: salonreview
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/salonreview
+    username: salon
+    password: salon
+    hikari:
+      initialization-fail-timeout: -1   # don't crash if DB not yet ready
+
+  jpa:
+    hibernate:
+      ddl-auto: validate                # entities must match Flyway schema
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false                 # avoid lazy-loading footguns
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+
+logging:
+  level:
+    org.flywaydb: INFO
+    org.hibernate.SQL: INFO
