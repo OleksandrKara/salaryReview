@@ -41,4 +41,8 @@ public class PeriodEntry {
 
     @Column(name = "adjustments_note")
     private String adjustmentsNote;
+
+    /** Optional per-entry override; falls back to {@link Provider#getCommissionRate()} when null. */
+    @Column(name = "commission_rate", precision = 5, scale = 4)
+    private BigDecimal commissionRate;
 }
