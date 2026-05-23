@@ -15,7 +15,9 @@ public class CommissionCalculator {
     private static final BigDecimal ONE = BigDecimal.ONE;
 
     public SettlementLine calculate(Provider provider, PeriodEntry entry) {
-        BigDecimal rate    = provider.getCommissionRate();
+        BigDecimal rate    = entry.getCommissionRate() != null
+                ? entry.getCommissionRate()
+                : provider.getCommissionRate();
         BigDecimal feeRate = provider.getCardTipFeeRate();
 
         BigDecimal tipsAfterFee = entry.getCardTips()

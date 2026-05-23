@@ -57,6 +57,21 @@ class CommissionCalculatorTest {
     }
 
     @Test
+    @DisplayName("Per-entry commissionRate overrides provider default")
+    void perEntryRateOverridesProviderDefault() {
+        // Anna default = 0.45. Override to 0.50 for this entry.
+        PeriodEntry e = entry("473.00", "291.00", "74.30", "0.00");
+        e.setCommissionRate(new BigDecimal("0.5000"));
+
+        SettlementLine line = calc.calculate(anna(), e);
+
+        // zelle = 473 * 0.50 + 71.70 + 0 = 236.50 + 71.70 = 308.20
+        assertThat(line.zelleToProvider()).isEqualByComparingTo("308.20");
+        // cash  = 291 * (1 - 0.50) = 145.50
+        assertThat(line.cashToSalon()).isEqualByComparingTo("145.50");
+    }
+
+    @Test
     @DisplayName("Negative adjustment reduces zelle (provider owes salon something)")
     void negativeAdjustmentReducesZelle() {
         // -50 adjustment on top of the happy-path: 284.55 - 50.00 = 234.55

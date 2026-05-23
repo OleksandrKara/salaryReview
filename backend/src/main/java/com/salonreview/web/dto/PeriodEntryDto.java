@@ -14,7 +14,8 @@ public record PeriodEntryDto(
         BigDecimal cashTotal,
         BigDecimal cardTips,
         BigDecimal adjustmentsAmount,
-        String adjustmentsNote
+        String adjustmentsNote,
+        BigDecimal commissionRate
 ) {
     public static PeriodEntryDto from(PeriodEntry e) {
         return new PeriodEntryDto(
@@ -27,7 +28,8 @@ public record PeriodEntryDto(
                 e.getCashTotal(),
                 e.getCardTips(),
                 e.getAdjustmentsAmount(),
-                e.getAdjustmentsNote()
+                e.getAdjustmentsNote(),
+                e.getCommissionRate()
         );
     }
 }

@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -63,9 +64,20 @@ public class ProviderController {
     public ProviderDto patch(@PathVariable Long id, @Valid @RequestBody ProviderPatchRequest req) {
         Provider p = providers.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Provider " + id + " not found"));
+        if (req.name() != null)           p.setName(req.name());
+        if (req.displayName() != null)    p.setDisplayName(req.displayName());
         if (req.commissionRate() != null) p.setCommissionRate(req.commissionRate());
         if (req.cardTipFeeRate() != null) p.setCardTipFeeRate(req.cardTipFeeRate());
         if (req.active() != null)         p.setActive(req.active());
         return ProviderDto.from(p);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        if (!providers.existsById(id)) {
+            throw new NoSuchElementException("Provider " + id + " not found");
+        }
+        providers.deleteById(id);     // FK ON DELETE CASCADE removes period_entries rows
+        return ResponseEntity.noContent().build();
     }
 }
