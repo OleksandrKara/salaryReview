@@ -1,0 +1,71 @@
+package com.salonreview.web;
+
+import com.salonreview.domain.Provider;
+import com.salonreview.repo.ProviderRepository;
+import com.salonreview.web.dto.ProviderCreateRequest;
+import com.salonreview.web.dto.ProviderDto;
+import com.salonreview.web.dto.ProviderPatchRequest;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.math.BigDecimal;
+import java.util.Comparator;
+import java.util.List;
+import java.util.NoSuchElementException;
+
+@RestController
+@RequestMapping("/api/providers")
+public class ProviderController {
+
+    private static final BigDecimal DEFAULT_RATE     = new BigDecimal("0.4500");
+    private static final BigDecimal DEFAULT_FEE_RATE = new BigDecimal("0.0350");
+
+    private final ProviderRepository providers;
+
+    public ProviderController(ProviderRepository providers) {
+        this.providers = providers;
+    }
+
+    @GetMapping
+    public List<ProviderDto> list(@RequestParam(name = "all", defaultValue = "false") boolean all) {
+        var stream = all ? providers.findAll().stream()
+                         : providers.findAllByActiveTrue().stream();
+        return stream
+                .sorted(Comparator.comparing(p -> p.getDisplayName().toLowerCase()))
+                .map(ProviderDto::from)
+                .toList();
+    }
+
+    @PostMapping
+    public ResponseEntity<ProviderDto> create(@Valid @RequestBody ProviderCreateRequest req) {
+        Provider saved = providers.save(Provider.builder()
+                .name(req.name())
+                .displayName(req.displayName())
+                .commissionRate(req.commissionRate() != null ? req.commissionRate() : DEFAULT_RATE)
+                .cardTipFeeRate(req.cardTipFeeRate() != null ? req.cardTipFeeRate() : DEFAULT_FEE_RATE)
+                .active(true)
+                .build());
+        return ResponseEntity.status(HttpStatus.CREATED).body(ProviderDto.from(saved));
+    }
+
+    @PatchMapping("/{id}")
+    @Transactional
+    public ProviderDto patch(@PathVariable Long id, @Valid @RequestBody ProviderPatchRequest req) {
+        Provider p = providers.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Provider " + id + " not found"));
+        if (req.commissionRate() != null) p.setCommissionRate(req.commissionRate());
+        if (req.cardTipFeeRate() != null) p.setCardTipFeeRate(req.cardTipFeeRate());
+        if (req.active() != null)         p.setActive(req.active());
+        return ProviderDto.from(p);
+    }
+}
