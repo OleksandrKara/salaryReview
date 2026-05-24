@@ -47,7 +47,9 @@ public class SettlementService {
         PayPeriod period = periods.findById(payPeriodId)
                 .orElseThrow(() -> new NoSuchElementException("Pay period " + payPeriodId + " not found"));
 
-        String owner = salonConfig.findById(1).orElseThrow().getOwnerShortName();
+        String owner = salonConfig.findById(1)
+        .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"))
+        .getOwnerShortName();
 
         Map<Long, PeriodEntry> entryByProvider = entries.findAllByPayPeriodId(payPeriodId).stream()
                 .collect(java.util.stream.Collectors.toMap(e -> e.getProvider().getId(), Function.identity()));
