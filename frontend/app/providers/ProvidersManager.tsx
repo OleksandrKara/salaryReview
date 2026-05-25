@@ -90,7 +90,7 @@ export default function ProvidersManager({
       {/* Add new */}
       <section>
         <h2 className="mb-3 text-lg font-medium">Add a provider</h2>
-        <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
+        <form onSubmit={handleCreate} data-testid="add-provider-form" className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col text-sm">
             <span className="text-zinc-600">Full name</span>
             <input
@@ -98,6 +98,7 @@ export default function ProvidersManager({
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="Anna Lastname"
+              data-testid="add-provider-name"
               className="rounded border border-zinc-300 px-2 py-1"
             />
           </label>
@@ -108,6 +109,7 @@ export default function ProvidersManager({
               value={newDisplay}
               onChange={(e) => setNewDisplay(e.target.value)}
               placeholder="Anna"
+              data-testid="add-provider-display"
               className="w-32 rounded border border-zinc-300 px-2 py-1"
             />
           </label>
@@ -120,6 +122,7 @@ export default function ProvidersManager({
               max={100}
               value={newRatePct}
               onChange={(e) => setNewRatePct(e.target.value)}
+              data-testid="add-provider-rate"
               className="w-24 rounded border border-zinc-300 px-2 py-1 text-right"
             />
           </label>
@@ -132,12 +135,14 @@ export default function ProvidersManager({
               max={100}
               value={newFeePct}
               onChange={(e) => setNewFeePct(e.target.value)}
+              data-testid="add-provider-fee"
               className="w-20 rounded border border-zinc-300 px-2 py-1 text-right"
             />
           </label>
           <button
             type="submit"
             disabled={creating}
+            data-testid="add-provider-submit"
             className="rounded bg-zinc-900 px-4 py-2 text-white hover:bg-zinc-700 disabled:opacity-50"
           >
             {creating ? 'Adding…' : 'Add'}

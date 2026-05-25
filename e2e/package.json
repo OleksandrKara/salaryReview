@@ -1,0 +1,15 @@
+{
+  "name": "salaryreview-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright end-to-end tests against the dockerized stack",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  }
+}
