@@ -34,6 +34,7 @@ export default function DeletePeriodButton({
     <button
       onClick={handleDelete}
       disabled={deleting}
+      data-testid="delete-period-button"
       className="ml-auto rounded border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
     >
       {deleting ? 'Deleting…' : 'Delete period'}

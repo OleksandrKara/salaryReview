@@ -29,13 +29,14 @@ export default function CreatePeriodForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3">
+    <form onSubmit={handleSubmit} data-testid="create-period-form" className="flex flex-wrap items-end gap-3">
       <label className="flex flex-col text-sm">
         <span className="text-zinc-600">Year</span>
         <input
           type="number"
           value={year}
           onChange={(e) => setYear(Number(e.target.value))}
+          data-testid="create-period-year"
           className="rounded border border-zinc-300 px-2 py-1"
         />
       </label>
@@ -47,6 +48,7 @@ export default function CreatePeriodForm() {
           max={12}
           value={month}
           onChange={(e) => setMonth(Number(e.target.value))}
+          data-testid="create-period-month"
           className="w-20 rounded border border-zinc-300 px-2 py-1"
         />
       </label>
@@ -55,6 +57,7 @@ export default function CreatePeriodForm() {
         <select
           value={half}
           onChange={(e) => setHalf(e.target.value as Half)}
+          data-testid="create-period-half"
           className="rounded border border-zinc-300 px-2 py-1"
         >
           <option value="FIRST">FIRST (1-15)</option>
@@ -64,6 +67,7 @@ export default function CreatePeriodForm() {
       <button
         type="submit"
         disabled={busy}
+        data-testid="create-period-submit"
         className="rounded bg-zinc-900 px-4 py-2 text-white hover:bg-zinc-700 disabled:opacity-50"
       >
         {busy ? 'Creating…' : 'Create'}
