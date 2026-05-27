@@ -14,7 +14,6 @@ import type {
   PeriodEntryUpsertRequest,
   Provider,
   Settlement,
-  SettlementPreview,
 } from './types';
 
 export interface ProviderCreateRequest {
@@ -93,13 +92,16 @@ export const api = {
   deletePeriod: (periodId: number) =>
     apiVoid(`/api/pay-periods/${periodId}`, { method: 'DELETE' }),
 
-  // --- Square-sourced month settlement ---
-  getSettlementPreview: (year: number, month: number) =>
-    apiFetch<SettlementPreview>(`/api/settlements/preview?year=${year}&month=${month}`),
-
+  // --- Square-sourced month settlement (read via lib/serverApi on the server) ---
+  // Grant/revoke run in the browser → go through the same-origin proxy (which holds the credential).
   grantTier: (providerId: number, year: number, month: number) =>
-    apiVoid(`/api/settlements/grants?providerId=${providerId}&year=${year}&month=${month}`, { method: 'POST' }),
+    proxyVoid(`/api/grants?providerId=${providerId}&year=${year}&month=${month}`, 'POST'),
 
   revokeTier: (providerId: number, year: number, month: number) =>
-    apiVoid(`/api/settlements/grants?providerId=${providerId}&year=${year}&month=${month}`, { method: 'DELETE' }),
+    proxyVoid(`/api/grants?providerId=${providerId}&year=${year}&month=${month}`, 'DELETE'),
 };
+
+async function proxyVoid(path: string, method: string): Promise<void> {
+  const res = await fetch(path, { method });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+}
