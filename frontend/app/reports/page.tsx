@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { api } from '../lib/api';
+import { serverApi } from '../lib/serverApi';
 import type { ProviderPayout } from '../lib/types';
 import GrantTierButton from './GrantTierButton';
 
@@ -35,7 +35,7 @@ export default async function ReportsPage({
   const year = Number(sp.year) || now.getUTCFullYear();
   const month = Number(sp.month) || now.getUTCMonth() + 1;
 
-  const report = await api.getSettlementPreview(year, month);
+  const report = await serverApi.getSettlementPreview(year, month);
   const prev = shift(year, month, -1);
   const next = shift(year, month, 1);
   const cfg = report.config;
@@ -46,7 +46,10 @@ export default async function ReportsPage({
   return (
     <main className="mx-auto max-w-6xl p-8">
       <div className="mb-1 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Salary report</h1>
+        <div className="flex items-baseline gap-3">
+          <h1 className="text-2xl font-semibold">Salary report</h1>
+          <a href="/api/logout" className="text-xs text-zinc-400 hover:text-zinc-600">Log out</a>
+        </div>
         <div className="flex items-center gap-3 text-sm">
           <Link href={`/reports?year=${prev.year}&month=${prev.month}`} className="text-zinc-500 hover:text-zinc-800">← {MONTHS[prev.month - 1].slice(0, 3)}</Link>
           <span className="font-medium">{MONTHS[month - 1]} {year}</span>

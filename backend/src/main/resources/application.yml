@@ -28,6 +28,12 @@ square:
   access-token: ${SQUARE_ACCESS_TOKEN:}
   location-id: ${SQUARE_LOCATION_ID:}
 
+# Single shared owner login (Phase 1). The frontend holds these server-side and proxies calls.
+app:
+  auth:
+    username: ${APP_OWNER_USERNAME:owner}
+    password: ${APP_OWNER_PASSWORD:}
+
 server:
   port: 8080
 
