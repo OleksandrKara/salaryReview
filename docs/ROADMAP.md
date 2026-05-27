@@ -37,8 +37,9 @@ Replace the single shared owner login with real accounts and **roles: owner / ma
 - Marketplace listing (privacy policy, OAuth review, 5 active sellers), Stripe subscription billing.
 
 ### Smaller follow-ups
-- **Provider-merge UI** — point a second Square team-member ID at one provider (the "Brenda" case);
-  backend already supports it via `ProviderDirectory.linkTeamMember`.
+- **Provider-merge UI** — _not planned._ Pointing a second Square team-member ID at one provider
+  (the "Brenda" case) was a one-off, handled manually; duplicates aren't expected going forward. The
+  backend still supports it via `ProviderDirectory.linkTeamMember` if ever needed.
 - **Retire the legacy manual path** — old `period_entries` / `PayPeriod` / `SettlementService` /
   `/api/pay-periods/**` and the old frontend pages (`/`, `/providers`, `/periods`) once `/reports`
   fully replaces them.
