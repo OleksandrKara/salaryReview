@@ -25,6 +25,13 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/salonreview
       SPRING_DATASOURCE_USERNAME: salon
       SPRING_DATASOURCE_PASSWORD: salon
+      # Square credentials — read from your shell or the .env file next to this compose file.
+      SQUARE_ENVIRONMENT: ${SQUARE_ENVIRONMENT:-sandbox}
+      SQUARE_ACCESS_TOKEN: ${SQUARE_ACCESS_TOKEN:-}
+      SQUARE_LOCATION_ID: ${SQUARE_LOCATION_ID:-}
+      # Single shared owner login (Phase 1).
+      APP_OWNER_USERNAME: ${APP_OWNER_USERNAME:-owner}
+      APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:-changeme}
     ports:
       - "8080:8080"
     depends_on:

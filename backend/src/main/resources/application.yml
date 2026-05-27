@@ -21,6 +21,19 @@ spring:
     enabled: true
     baseline-on-migrate: true
 
+# Square API — credentials come from the environment so secrets never land in git.
+# SANDBOX by default; set SQUARE_ENVIRONMENT=production to hit real salon data.
+square:
+  environment: ${SQUARE_ENVIRONMENT:sandbox}
+  access-token: ${SQUARE_ACCESS_TOKEN:}
+  location-id: ${SQUARE_LOCATION_ID:}
+
+# Single shared owner login (Phase 1). The frontend holds these server-side and proxies calls.
+app:
+  auth:
+    username: ${APP_OWNER_USERNAME:owner}
+    password: ${APP_OWNER_PASSWORD:}
+
 server:
   port: 8080
 

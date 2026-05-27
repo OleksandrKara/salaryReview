@@ -136,22 +136,23 @@ export default function PeriodEditor({
                 const row = rows[p.id] ?? EMPTY;
                 const saving = savingProviderId === p.id;
                 return (
-                  <tr key={p.id} className="border-t border-zinc-200">
-                    <td className="px-3 py-2 font-medium">
+                  <tr key={p.id} data-testid={`entry-row-${p.id}`} className="border-t border-zinc-200">
+                    <td className="px-3 py-2 font-medium" data-testid={`entry-provider-${p.id}`}>
                       {p.displayName}
                       {saving && <span className="ml-2 text-xs text-zinc-400">saving…</span>}
                     </td>
-                    <NumCell value={row.procedures} onChange={(v) => updateField(p.id, 'procedures', v)} onBlur={() => saveRow(p.id)} step="1" />
-                    <NumCell value={row.cardTotal} onChange={(v) => updateField(p.id, 'cardTotal', v)} onBlur={() => saveRow(p.id)} />
-                    <NumCell value={row.cashTotal} onChange={(v) => updateField(p.id, 'cashTotal', v)} onBlur={() => saveRow(p.id)} />
-                    <NumCell value={row.cardTips} onChange={(v) => updateField(p.id, 'cardTips', v)} onBlur={() => saveRow(p.id)} />
-                    <NumCell value={row.adjustmentsAmount} onChange={(v) => updateField(p.id, 'adjustmentsAmount', v)} onBlur={() => saveRow(p.id)} allowNegative />
+                    <NumCell testId={`entry-procedures-${p.id}`} value={row.procedures} onChange={(v) => updateField(p.id, 'procedures', v)} onBlur={() => saveRow(p.id)} step="1" />
+                    <NumCell testId={`entry-card-${p.id}`} value={row.cardTotal} onChange={(v) => updateField(p.id, 'cardTotal', v)} onBlur={() => saveRow(p.id)} />
+                    <NumCell testId={`entry-cash-${p.id}`} value={row.cashTotal} onChange={(v) => updateField(p.id, 'cashTotal', v)} onBlur={() => saveRow(p.id)} />
+                    <NumCell testId={`entry-tips-${p.id}`} value={row.cardTips} onChange={(v) => updateField(p.id, 'cardTips', v)} onBlur={() => saveRow(p.id)} />
+                    <NumCell testId={`entry-adj-${p.id}`} value={row.adjustmentsAmount} onChange={(v) => updateField(p.id, 'adjustmentsAmount', v)} onBlur={() => saveRow(p.id)} allowNegative />
                     <td className="px-3 py-2">
                       <input
                         type="text"
                         value={row.adjustmentsNote}
                         onChange={(e) => updateField(p.id, 'adjustmentsNote', e.target.value)}
                         onBlur={() => saveRow(p.id)}
+                        data-testid={`entry-note-${p.id}`}
                         className="w-full rounded border border-zinc-300 px-2 py-1"
                       />
                     </td>
@@ -166,6 +167,7 @@ export default function PeriodEditor({
                         value={row.ratePct}
                         onChange={(e) => updateField(p.id, 'ratePct', e.target.value)}
                         onBlur={() => saveRow(p.id)}
+                        data-testid={`entry-rate-${p.id}`}
                         className="w-20 rounded border border-zinc-300 px-2 py-1 text-right"
                       />
                     </td>
@@ -178,6 +180,7 @@ export default function PeriodEditor({
         <button
           onClick={calculate}
           disabled={calculating}
+          data-testid="calculate-button"
           className="mt-4 rounded bg-zinc-900 px-5 py-2 text-white hover:bg-zinc-700 disabled:opacity-50"
         >
           {calculating ? 'Calculating…' : 'Calculate'}
@@ -190,19 +193,20 @@ export default function PeriodEditor({
         <h2 className="mb-3 text-lg font-medium">Settlements</h2>
         {!settlements && <p className="text-sm text-zinc-500">Hit Calculate to render messages.</p>}
         {settlements && (
-          <div className="space-y-4">
+          <div className="space-y-4" data-testid="settlement-list">
             {settlements.map((s) => (
-              <div key={s.providerId} className="rounded border border-zinc-200 bg-white p-3">
+              <div key={s.providerId} data-testid={`settlement-card-${s.providerId}`} className="rounded border border-zinc-200 bg-white p-3">
                 <div className="mb-2 flex items-baseline justify-between">
                   <span className="font-medium">{s.providerName}</span>
                   <button
                     onClick={() => copyToClipboard(s.messageText)}
+                    data-testid={`settlement-copy-${s.providerId}`}
                     className="text-xs text-zinc-500 hover:text-zinc-900"
                   >
                     Copy
                   </button>
                 </div>
-                <pre className="whitespace-pre-wrap font-mono text-xs text-zinc-700">{s.messageText}</pre>
+                <pre data-testid={`settlement-message-${s.providerId}`} className="whitespace-pre-wrap font-mono text-xs text-zinc-700">{s.messageText}</pre>
               </div>
             ))}
           </div>
@@ -218,12 +222,14 @@ function NumCell({
   onBlur,
   step = '0.01',
   allowNegative = false,
+  testId,
 }: {
   value: string;
   onChange: (v: string) => void;
   onBlur: () => void;
   step?: string;
   allowNegative?: boolean;
+  testId?: string;
 }) {
   return (
     <td className="px-3 py-2">
@@ -235,6 +241,7 @@ function NumCell({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onBlur={onBlur}
+        data-testid={testId}
         className="w-24 rounded border border-zinc-300 px-2 py-1 text-right"
       />
     </td>

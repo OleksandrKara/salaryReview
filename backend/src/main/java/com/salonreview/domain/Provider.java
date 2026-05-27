@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "providers")
@@ -29,4 +31,11 @@ public class Provider {
 
     @Column(nullable = false)
     private boolean active;
+
+    /** Square team-member IDs that map to this person; many when a stylist has had several accounts. */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "provider_square_member", joinColumns = @JoinColumn(name = "provider_id"))
+    @Column(name = "square_team_member_id")
+    @Builder.Default
+    private Set<String> squareTeamMemberIds = new HashSet<>();
 }

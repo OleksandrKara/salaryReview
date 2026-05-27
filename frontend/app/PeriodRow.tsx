@@ -28,9 +28,10 @@ export default function PeriodRow({ period }: { period: PayPeriod }) {
   }
 
   return (
-    <li className="flex items-center">
+    <li data-testid={`period-row-${period.id}`} className="flex items-center">
       <Link
         href={`/periods/${period.id}`}
+        data-testid={`period-link-${period.id}`}
         className="flex-1 px-4 py-3 hover:bg-zinc-50"
       >
         <span className="font-medium">{period.label}</span>
@@ -40,6 +41,7 @@ export default function PeriodRow({ period }: { period: PayPeriod }) {
         onClick={handleDelete}
         disabled={deleting}
         title="Delete this period"
+        data-testid={`period-delete-${period.id}`}
         className="px-3 py-3 text-zinc-400 hover:text-red-600 disabled:opacity-50"
       >
         {deleting ? '…' : '✕'}
