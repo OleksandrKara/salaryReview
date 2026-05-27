@@ -16,7 +16,9 @@ export async function POST(req: Request): Promise<Response> {
   (await cookies()).set('auth', token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    // The app currently runs over plain HTTP (localhost / Docker), so the cookie must NOT be
+    // Secure or the browser drops it. Revisit when deployed behind HTTPS (Phase 2/3).
+    secure: false,
     path: '/',
     maxAge: 60 * 60 * 12, // 12h
   });
