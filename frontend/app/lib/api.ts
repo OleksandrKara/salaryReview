@@ -14,6 +14,7 @@ import type {
   PeriodEntryUpsertRequest,
   Provider,
   Settlement,
+  SettlementPreview,
 } from './types';
 
 export interface ProviderCreateRequest {
@@ -91,4 +92,14 @@ export const api = {
 
   deletePeriod: (periodId: number) =>
     apiVoid(`/api/pay-periods/${periodId}`, { method: 'DELETE' }),
+
+  // --- Square-sourced month settlement ---
+  getSettlementPreview: (year: number, month: number) =>
+    apiFetch<SettlementPreview>(`/api/settlements/preview?year=${year}&month=${month}`),
+
+  grantTier: (providerId: number, year: number, month: number) =>
+    apiVoid(`/api/settlements/grants?providerId=${providerId}&year=${year}&month=${month}`, { method: 'POST' }),
+
+  revokeTier: (providerId: number, year: number, month: number) =>
+    apiVoid(`/api/settlements/grants?providerId=${providerId}&year=${year}&month=${month}`, { method: 'DELETE' }),
 };
