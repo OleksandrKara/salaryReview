@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api } from '../../lib/api';
+import { Spinner } from '../../components/Spinner';
 import type { AppUser, Provider, Role, SquareRosterEntry } from '../../lib/types';
 
 const ROLES: Role[] = ['OWNER', 'MANAGER', 'PROVIDER'];
@@ -154,7 +155,8 @@ export default function UsersManager({
           </label>
         )}
         <button type="submit" disabled={busy}
-          className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+          className="inline-flex items-center gap-2 rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+          {busy && <Spinner className="h-4 w-4" />}
           {busy ? 'Adding…' : 'Add user'}
         </button>
       </form>

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { serverApi } from '../lib/serverApi';
-import type { Me, ProviderPayout } from '../lib/types';
+import type { ProviderPayout } from '../lib/types';
 import GrantTierButton from './GrantTierButton';
 
 const MONTHS = [
@@ -45,7 +45,7 @@ export default async function ReportsPage({
 
   const [report, me] = await Promise.all([
     serverApi.getSettlementPreview(year, month),
-    serverApi.getMe().catch(() => null as Me | null),
+    serverApi.getMe(),
   ]);
   const prev = shift(year, month, -1);
   const next = shift(year, month, 1);
@@ -91,7 +91,12 @@ export default async function ReportsPage({
             {report.providers.map((p) => (
               <tr key={p.providerId} className="hover:bg-zinc-50">
                 <td className="px-3 py-2 font-medium">
-                  <span className="flex items-center gap-2">{p.name}<FeedbackBadge p={p} /></span>
+                  <span className="flex items-center gap-2">
+                    {p.name}
+                    <FeedbackBadge p={p} />
+                    <Link href={`/reports/${p.providerId}?year=${year}&month=${month}`}
+                      className="text-xs font-normal text-zinc-400 hover:text-zinc-700">Details →</Link>
+                  </span>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   {p.monthCountedServices}

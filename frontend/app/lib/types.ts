@@ -158,6 +158,41 @@ export interface UserUpdateRequest {
   providerId?: number | null;
 }
 
+// --- Per-provider line-level trace (owner/manager drill-down) ---
+
+export interface AttributedService {
+  providerId: string; // Square team-member id
+  providerName: string;
+  date: string;
+  half: Half;
+  service: string;
+  gross: number;
+  discount: number;
+  net: number;
+  counted: boolean;
+  prepaid: boolean;
+  channel: 'CARD' | 'CASH' | 'CASH-NOTE';
+}
+
+export interface UnmatchedLine {
+  date: string;
+  service: string;
+  gross: number;
+  channel: 'CARD' | 'CASH';
+  customerId: string | null;
+  customerName: string | null;
+}
+
+export interface ProviderDetail {
+  year: number;
+  month: number;
+  providerId: number;
+  name: string | null;
+  payout: ProviderPayout | null;
+  services: AttributedService[];
+  unmatched: UnmatchedLine[];
+}
+
 export interface SettlementDiagnostics {
   orders: number;
   matchedLineItems: number;

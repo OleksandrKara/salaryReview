@@ -65,34 +65,11 @@ public class SettlementPreviewService {
                 .collect(Collectors.toMap(SettlementFeedback::getProviderId, f -> f, (a, b) -> a));
 
         MonthAggregation agg = aggregator.aggregate(year, month, cutoff);
+        Map<Long, Merged> byPerson = collapseToPersons(agg);
 
-        // Collapse Square team members into provider persons (merging any duplicate accounts).
-        Map<Long, Merged> byPerson = new LinkedHashMap<>();
-        for (var pm : agg.providers()) {
-            Provider person = directory.resolveOrCreate(pm.providerId(), pm.name());
-            Merged m = byPerson.computeIfAbsent(person.getId(),
-                    k -> new Merged(person.getId(), person.getDisplayName()));
-            m.first = sum(m.first, pm.firstHalf());
-            m.second = sum(m.second, pm.secondHalf());
-        }
-
-        List<ProviderPayout> payouts = byPerson.values().stream().map(m -> {
-            int monthCounted = m.first.countedServices() + m.second.countedServices();
-            boolean autoQualified = monthCounted >= config.tierServiceThreshold();
-            boolean granted = tierGrantedProviderIds.contains(m.providerId);
-            Boolean tierGrant = granted ? Boolean.TRUE : null;
-
-            HalfSettlement first = engine.firstHalf(m.first, config);
-            HalfSettlement second = engine.secondHalfFinal(m.first, m.second, config, tierGrant);
-            BigDecimal monthZelle = first.zelleToProvider().add(second.zelleToProvider());
-            BigDecimal monthCashToSalon = first.cashToSalon().add(second.cashToSalon());
-            SettlementFeedback fb = feedbackByProvider.get(m.providerId);
-            return new ProviderPayout(m.providerId, m.name, monthCounted, autoQualified,
-                    granted && !autoQualified, autoQualified || granted,
-                    first, second, monthZelle, monthCashToSalon,
-                    fb != null ? fb.getStatus().name() : null,
-                    fb != null ? fb.getComment() : null);
-        }).sorted(Comparator.comparing(p -> p.name().toLowerCase())).toList();
+        List<ProviderPayout> payouts = byPerson.values().stream()
+                .map(m -> toPayout(m, config, tierGrantedProviderIds, feedbackByProvider))
+                .sorted(Comparator.comparing(p -> p.name().toLowerCase())).toList();
 
         return new SettlementPreview(year, month, agg.timezone(), config, cutoff, payouts, agg.diagnostics());
     }
@@ -109,6 +86,69 @@ public class SettlementPreviewService {
                 .orElse(null);
     }
 
+    /**
+     * Line-level trace for one provider/month (owner/manager drill-down): the provider's payout plus
+     * every attributed service line (with discount, net, prepaid flag, channel), and the salon-wide
+     * unattributed order lines — the suspects when a payment looks missing.
+     */
+    @Transactional
+    public ProviderDetail providerDetail(int year, int month, Long providerId) {
+        SalonConfig sc = salonConfig.findById(1)
+                .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"));
+        CommissionConfig config = sc.toCommissionConfig();
+
+        Set<Long> granted = tierGrants.findByYearAndMonth(year, month).stream()
+                .map(TierGrant::getProviderId).collect(Collectors.toSet());
+        Map<Long, SettlementFeedback> fb = feedback.findByYearAndMonth(year, month).stream()
+                .collect(Collectors.toMap(SettlementFeedback::getProviderId, f -> f, (a, b) -> a));
+
+        MonthAggregation agg = aggregator.aggregate(year, month, sc.getServicePriceCutoff());
+        Merged m = collapseToPersons(agg).get(providerId);
+        if (m == null) {
+            return new ProviderDetail(year, month, providerId, null, null, List.of(), agg.unmatched());
+        }
+        ProviderPayout payout = toPayout(m, config, granted, fb);
+        List<SquareMonthAggregator.AttributedService> lines = agg.services().stream()
+                .filter(s -> m.memberIds.contains(s.providerId()))
+                .sorted(Comparator.comparing(SquareMonthAggregator.AttributedService::date)
+                        .thenComparing(SquareMonthAggregator.AttributedService::service))
+                .toList();
+        return new ProviderDetail(year, month, providerId, m.name, payout, lines, agg.unmatched());
+    }
+
+    /** Collapse Square team members into provider persons (merging any duplicate accounts). */
+    private Map<Long, Merged> collapseToPersons(MonthAggregation agg) {
+        Map<Long, Merged> byPerson = new LinkedHashMap<>();
+        for (var pm : agg.providers()) {
+            Provider person = directory.resolveOrCreate(pm.providerId(), pm.name());
+            Merged m = byPerson.computeIfAbsent(person.getId(),
+                    k -> new Merged(person.getId(), person.getDisplayName()));
+            m.first = sum(m.first, pm.firstHalf());
+            m.second = sum(m.second, pm.secondHalf());
+            m.memberIds.add(pm.providerId());
+        }
+        return byPerson;
+    }
+
+    private ProviderPayout toPayout(Merged m, CommissionConfig config, Set<Long> granted,
+                                    Map<Long, SettlementFeedback> feedbackByProvider) {
+        int monthCounted = m.first.countedServices() + m.second.countedServices();
+        boolean autoQualified = monthCounted >= config.tierServiceThreshold();
+        boolean isGranted = granted.contains(m.providerId);
+        Boolean tierGrant = isGranted ? Boolean.TRUE : null;
+
+        HalfSettlement first = engine.firstHalf(m.first, config);
+        HalfSettlement second = engine.secondHalfFinal(m.first, m.second, config, tierGrant);
+        BigDecimal monthZelle = first.zelleToProvider().add(second.zelleToProvider());
+        BigDecimal monthCashToSalon = first.cashToSalon().add(second.cashToSalon());
+        SettlementFeedback fb = feedbackByProvider.get(m.providerId);
+        return new ProviderPayout(m.providerId, m.name, monthCounted, autoQualified,
+                isGranted && !autoQualified, autoQualified || isGranted,
+                first, second, monthZelle, monthCashToSalon,
+                fb != null ? fb.getStatus().name() : null,
+                fb != null ? fb.getComment() : null);
+    }
+
     private static HalfInput sum(HalfInput a, HalfInput b) {
         return new HalfInput(
                 a.countedServices() + b.countedServices(),
@@ -121,6 +161,7 @@ public class SettlementPreviewService {
     private static final class Merged {
         final Long providerId;
         final String name;
+        final Set<String> memberIds = new java.util.HashSet<>();
         HalfInput first = HalfInput.empty();
         HalfInput second = HalfInput.empty();
 
@@ -139,4 +180,10 @@ public class SettlementPreviewService {
                                  HalfSettlement firstHalf, HalfSettlement secondHalf,
                                  BigDecimal monthZelleToProvider, BigDecimal monthCashToSalon,
                                  String feedbackStatus, String feedbackComment) {}
+
+    /** Line-level trace for one provider/month, plus the salon-wide unattributed lines. */
+    public record ProviderDetail(int year, int month, Long providerId, String name,
+                                 ProviderPayout payout,
+                                 List<SquareMonthAggregator.AttributedService> services,
+                                 List<SquareMonthAggregator.UnmatchedLine> unmatched) {}
 }

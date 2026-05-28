@@ -1,8 +1,9 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 import { api } from '../lib/api';
+import { Spinner } from '../components/Spinner';
 import type { FeedbackStatus } from '../lib/types';
 
 // Provider approves their month or requests a correction with a comment. The backend scopes the
@@ -20,19 +21,21 @@ export default function SettlementFeedbackForm({
 }) {
   const router = useRouter();
   const [comment, setComment] = useState(currentComment ?? '');
-  const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const busy = saving || pending;
   const [error, setError] = useState('');
 
   async function submit(status: FeedbackStatus) {
     setError('');
-    setBusy(true);
+    setSaving(true);
     try {
       await api.submitFeedback(year, month, status, comment);
-      router.refresh();
+      startTransition(() => router.refresh());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit');
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
   }
 
@@ -57,11 +60,11 @@ export default function SettlementFeedbackForm({
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       <div className="mt-3 flex gap-3">
         <button onClick={() => submit('APPROVED')} disabled={busy}
-          className="rounded bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
-          Approve
+          className="inline-flex items-center gap-2 rounded bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+          {busy && <Spinner className="h-4 w-4" />}Approve
         </button>
         <button onClick={() => submit('CHANGES_REQUESTED')} disabled={busy}
-          className="rounded bg-white px-4 py-2 text-sm font-medium text-red-600 ring-1 ring-red-300 disabled:opacity-50">
+          className="inline-flex items-center gap-2 rounded bg-white px-4 py-2 text-sm font-medium text-red-600 ring-1 ring-red-300 disabled:opacity-50">
           Request correction
         </button>
       </div>
