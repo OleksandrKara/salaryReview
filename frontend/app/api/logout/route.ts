@@ -1,8 +1,19 @@
 import { cookies } from 'next/headers';
 
-// Clear the auth cookie and bounce to the login page. Uses a relative Location so the browser stays
-// on its own origin (in Docker, req.url's host is the container's 0.0.0.0 bind address, not localhost).
+// End the backend session, clear our cookies, and bounce to /login. Uses a relative Location so the
+// browser stays on its own origin (in Docker, req.url's host is the container's 0.0.0.0 bind address).
+const BACKEND = process.env.BACKEND_URL ?? 'http://localhost:8080';
+
 export async function GET(): Promise<Response> {
-  (await cookies()).delete('auth');
+  const jar = await cookies();
+  const sid = jar.get('sid')?.value;
+  if (sid) {
+    await fetch(`${BACKEND}/api/logout`, {
+      method: 'POST',
+      headers: { Cookie: `JSESSIONID=${sid}` },
+    }).catch(() => {});
+  }
+  jar.delete('sid');
+  jar.delete('role');
   return new Response(null, { status: 303, headers: { Location: '/login' } });
 }

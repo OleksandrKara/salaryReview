@@ -7,6 +7,8 @@
 // In dev both default to http://localhost:8080.
 
 import type {
+  AppUser,
+  FeedbackStatus,
   PayPeriod,
   PayPeriodCreateRequest,
   PayPeriodDetail,
@@ -14,6 +16,8 @@ import type {
   PeriodEntryUpsertRequest,
   Provider,
   Settlement,
+  UserCreateRequest,
+  UserUpdateRequest,
 } from './types';
 
 export interface ProviderCreateRequest {
@@ -99,9 +103,34 @@ export const api = {
 
   revokeTier: (providerId: number, year: number, month: number) =>
     proxyVoid(`/api/grants?providerId=${providerId}&year=${year}&month=${month}`, 'DELETE'),
+
+  // --- Accounts (owner) & provider feedback, all via same-origin proxies that hold the session ---
+  createUser: (body: UserCreateRequest) => proxyJson<AppUser>(`/api/users`, 'POST', body),
+
+  updateUser: (id: number, body: UserUpdateRequest) =>
+    proxyJson<AppUser>(`/api/users/${id}`, 'PATCH', body),
+
+  deleteUser: (id: number) => proxyVoid(`/api/users/${id}`, 'DELETE'),
+
+  submitFeedback: (year: number, month: number, status: FeedbackStatus, comment: string) =>
+    proxyVoid(`/api/feedback?year=${year}&month=${month}`, 'POST', { status, comment }),
 };
 
-async function proxyVoid(path: string, method: string): Promise<void> {
-  const res = await fetch(path, { method });
+async function proxyVoid(path: string, method: string, body?: unknown): Promise<void> {
+  const res = await fetch(path, {
+    method,
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+}
+
+async function proxyJson<T>(path: string, method: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  return (await res.json()) as T;
 }

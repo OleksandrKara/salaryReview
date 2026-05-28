@@ -177,6 +177,40 @@ public class SquareClient {
         return prices;
     }
 
+    // Square's bulk-retrieve-customers endpoint 404s on this account, so names are fetched one GET
+    // each — but cached process-wide (names rarely change) and the misses fetched in parallel, so a
+    // month's worth of customers only ever costs one round of lookups.
+    private final Map<String, String> customerNameCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Display names for the given customer ids. Best-effort, cached; blanks for any we can't resolve. */
+    public Map<String, String> customerNames(Collection<String> customerIds) {
+        List<String> ids = customerIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
+        List<String> missing = ids.stream().filter(id -> !customerNameCache.containsKey(id)).toList();
+        if (!missing.isEmpty()) {
+            // Empty string is cached for "looked up, no name" so we don't refetch it.
+            missing.parallelStream().forEach(id -> customerNameCache.put(id, fetchCustomerName(id)));
+        }
+        Map<String, String> names = new HashMap<>();
+        for (String id : ids) {
+            String n = customerNameCache.get(id);
+            if (n != null && !n.isEmpty()) names.put(id, n);
+        }
+        return names;
+    }
+
+    private String fetchCustomerName(String id) {
+        try {
+            CustomerResponse resp = http.get().uri("/v2/customers/{id}", id).retrieve().body(CustomerResponse.class);
+            if (resp != null && resp.customer() != null) {
+                return ((resp.customer().givenName() == null ? "" : resp.customer().givenName()) + " "
+                        + (resp.customer().familyName() == null ? "" : resp.customer().familyName())).trim();
+            }
+        } catch (RuntimeException ignored) {
+            // unresolvable — fall through to empty
+        }
+        return "";
+    }
+
     /** Convert Square minor units (cents) to dollars; null money is treated as zero. */
     public static BigDecimal toDollars(Money money) {
         if (money == null || money.amount() == null) return BigDecimal.ZERO;
@@ -191,11 +225,41 @@ public class SquareClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record TeamMember(String id, String givenName, String familyName, String status) {
+    public record TeamMember(String id, String givenName, String familyName, String status,
+                             Boolean isOwner, String emailAddress, WageSetting wageSetting) {
         public String fullName() {
             return ((givenName == null ? "" : givenName) + " " + (familyName == null ? "" : familyName)).trim();
         }
+
+        public boolean owner() {
+            return Boolean.TRUE.equals(isOwner);
+        }
+
+        /** The team member's Square job title (from their first job assignment), or null. */
+        public String jobTitle() {
+            if (wageSetting == null || wageSetting.jobAssignments() == null
+                    || wageSetting.jobAssignments().isEmpty()) {
+                return null;
+            }
+            return wageSetting.jobAssignments().get(0).jobTitle();
+        }
     }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record CustomerResponse(Customer customer) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record Customer(String id, String givenName, String familyName) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record WageSetting(List<JobAssignment> jobAssignments) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record JobAssignment(String jobTitle, String jobId) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
@@ -217,7 +281,8 @@ public class SquareClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record OrderLineItem(String uid, String name, String quantity, String catalogObjectId,
-                                Money basePriceMoney, Money grossSalesMoney, Money totalMoney) {}
+                                Money basePriceMoney, Money grossSalesMoney, Money totalMoney,
+                                Money totalDiscountMoney) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
