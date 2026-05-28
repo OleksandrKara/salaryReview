@@ -83,6 +83,7 @@ export interface HalfSettlement {
   countedServices: number;
   appliedRate: number;
   cardRevenue: number;
+  cashCollected: number;
   tipsAfterFee: number;
   adjustments: number;
   tierBonus: number;
