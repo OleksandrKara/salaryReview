@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { serverApi } from '../lib/serverApi';
-import type { ProviderPayout } from '../lib/types';
+import type { Me, ProviderPayout } from '../lib/types';
 import GrantTierButton from './GrantTierButton';
 
 const MONTHS = [
@@ -24,6 +24,14 @@ function TierBadge({ p }: { p: ProviderPayout }) {
   return <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 ring-1 ring-zinc-300">45/55</span>;
 }
 
+function FeedbackBadge({ p }: { p: ProviderPayout }) {
+  if (p.feedbackStatus === 'APPROVED')
+    return <span title="Provider approved" className="rounded bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700 ring-1 ring-green-300">✓ approved</span>;
+  if (p.feedbackStatus === 'CHANGES_REQUESTED')
+    return <span title={p.feedbackComment ?? 'Changes requested'} className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700 ring-1 ring-red-300">⚠ changes</span>;
+  return null;
+}
+
 // Next 16: searchParams is a Promise — must be awaited.
 export default async function ReportsPage({
   searchParams,
@@ -35,7 +43,10 @@ export default async function ReportsPage({
   const year = Number(sp.year) || now.getUTCFullYear();
   const month = Number(sp.month) || now.getUTCMonth() + 1;
 
-  const report = await serverApi.getSettlementPreview(year, month);
+  const [report, me] = await Promise.all([
+    serverApi.getSettlementPreview(year, month),
+    serverApi.getMe().catch(() => null as Me | null),
+  ]);
   const prev = shift(year, month, -1);
   const next = shift(year, month, 1);
   const cfg = report.config;
@@ -48,6 +59,9 @@ export default async function ReportsPage({
       <div className="mb-1 flex items-center justify-between">
         <div className="flex items-baseline gap-3">
           <h1 className="text-2xl font-semibold">Salary report</h1>
+          {me?.role === 'OWNER' && (
+            <Link href="/admin/users" className="text-xs text-zinc-400 hover:text-zinc-600">Users</Link>
+          )}
           <a href="/api/logout" className="text-xs text-zinc-400 hover:text-zinc-600">Log out</a>
         </div>
         <div className="flex items-center gap-3 text-sm">
@@ -76,7 +90,9 @@ export default async function ReportsPage({
           <tbody className="divide-y divide-zinc-100">
             {report.providers.map((p) => (
               <tr key={p.providerId} className="hover:bg-zinc-50">
-                <td className="px-3 py-2 font-medium">{p.name}</td>
+                <td className="px-3 py-2 font-medium">
+                  <span className="flex items-center gap-2">{p.name}<FeedbackBadge p={p} /></span>
+                </td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   {p.monthCountedServices}
                   <span className="text-zinc-400"> / {cfg.tierServiceThreshold}</span>

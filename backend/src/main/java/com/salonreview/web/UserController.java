@@ -1,0 +1,117 @@
+package com.salonreview.web;
+
+import com.salonreview.domain.AppUser;
+import com.salonreview.domain.Role;
+import com.salonreview.repo.AppUserRepository;
+import com.salonreview.repo.ProviderRepository;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.List;
+
+/**
+ * Owner-only user management. Accounts are created/invited here (no open self-signup). A PROVIDER
+ * account must be linked to a provider person; OWNER/MANAGER accounts must not. The response never
+ * includes the password hash.
+ */
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+
+    private final AppUserRepository users;
+    private final ProviderRepository providers;
+    private final PasswordEncoder encoder;
+
+    public UserController(AppUserRepository users, ProviderRepository providers, PasswordEncoder encoder) {
+        this.users = users;
+        this.providers = providers;
+        this.encoder = encoder;
+    }
+
+    @GetMapping
+    public List<UserView> list() {
+        return users.findAllByOrderByUsernameAsc().stream().map(UserView::of).toList();
+    }
+
+    @PostMapping
+    @Transactional
+    public UserView create(@RequestBody CreateRequest req) {
+        if (req.username() == null || req.username().isBlank()
+                || req.password() == null || req.password().isBlank() || req.role() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "username, password and role are required");
+        }
+        if (users.existsByUsername(req.username())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Username already taken");
+        }
+        Long providerId = validateProviderLink(req.role(), req.providerId(), null);
+        AppUser saved = users.save(AppUser.builder()
+                .username(req.username().trim())
+                .passwordHash(encoder.encode(req.password()))
+                .role(req.role())
+                .providerId(providerId)
+                .active(true)
+                .build());
+        return UserView.of(saved);
+    }
+
+    @PatchMapping("/{id}")
+    @Transactional
+    public UserView update(@PathVariable Long id, @RequestBody UpdateRequest req) {
+        AppUser u = users.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such user"));
+        if (req.role() != null) u.setRole(req.role());
+        if (req.active() != null) u.setActive(req.active());
+        if (req.password() != null && !req.password().isBlank()) u.setPasswordHash(encoder.encode(req.password()));
+        // Re-evaluate the provider link against the effective role (after any role change above).
+        u.setProviderId(validateProviderLink(u.getRole(),
+                req.providerId() != null ? req.providerId() : u.getProviderId(), u.getId()));
+        return UserView.of(users.save(u));
+    }
+
+    @DeleteMapping("/{id}")
+    @Transactional
+    public void delete(@PathVariable Long id) {
+        AppUser u = users.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such user"));
+        // Never lock the salon out: refuse to remove the last active owner.
+        if (u.getRole() == Role.OWNER && u.isActive() && activeOwners() <= 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot remove the last active owner");
+        }
+        users.delete(u);
+    }
+
+    /** A provider account needs a real, unlinked provider; owner/manager accounts must have none. */
+    private Long validateProviderLink(Role role, Long providerId, Long currentUserId) {
+        if (role != Role.PROVIDER) return null;
+        if (providerId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A provider account must be linked to a provider");
+        }
+        if (!providers.existsById(providerId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No such provider");
+        }
+        boolean takenByOther = users.findAllByOrderByUsernameAsc().stream()
+                .anyMatch(other -> providerId.equals(other.getProviderId())
+                        && !other.getId().equals(currentUserId));
+        if (takenByOther) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "That provider already has an account");
+        }
+        return providerId;
+    }
+
+    private long activeOwners() {
+        return users.findAllByOrderByUsernameAsc().stream()
+                .filter(u -> u.getRole() == Role.OWNER && u.isActive()).count();
+    }
+
+    public record CreateRequest(String username, String password, Role role, Long providerId) {}
+    public record UpdateRequest(Role role, Boolean active, String password, Long providerId) {}
+
+    public record UserView(Long id, String username, Role role, Long providerId, boolean active) {
+        static UserView of(AppUser u) {
+            return new UserView(u.getId(), u.getUsername(), u.getRole(), u.getProviderId(), u.isActive());
+        }
+    }
+}

@@ -6,8 +6,10 @@ import com.salonreview.commission.HalfSettlement;
 import com.salonreview.commission.TierCommissionEngine;
 import com.salonreview.domain.Provider;
 import com.salonreview.domain.SalonConfig;
+import com.salonreview.domain.SettlementFeedback;
 import com.salonreview.domain.TierGrant;
 import com.salonreview.repo.SalonConfigRepository;
+import com.salonreview.repo.SettlementFeedbackRepository;
 import com.salonreview.repo.TierGrantRepository;
 import com.salonreview.service.ProviderDirectory;
 import com.salonreview.square.SquareMonthAggregator.MonthAggregation;
@@ -36,15 +38,17 @@ public class SettlementPreviewService {
     private final SalonConfigRepository salonConfig;
     private final ProviderDirectory directory;
     private final TierGrantRepository tierGrants;
+    private final SettlementFeedbackRepository feedback;
 
     public SettlementPreviewService(SquareMonthAggregator aggregator, TierCommissionEngine engine,
                                     SalonConfigRepository salonConfig, ProviderDirectory directory,
-                                    TierGrantRepository tierGrants) {
+                                    TierGrantRepository tierGrants, SettlementFeedbackRepository feedback) {
         this.aggregator = aggregator;
         this.engine = engine;
         this.salonConfig = salonConfig;
         this.directory = directory;
         this.tierGrants = tierGrants;
+        this.feedback = feedback;
     }
 
     @Transactional
@@ -56,6 +60,9 @@ public class SettlementPreviewService {
 
         Set<Long> tierGrantedProviderIds = tierGrants.findByYearAndMonth(year, month).stream()
                 .map(TierGrant::getProviderId).collect(Collectors.toSet());
+
+        Map<Long, SettlementFeedback> feedbackByProvider = feedback.findByYearAndMonth(year, month).stream()
+                .collect(Collectors.toMap(SettlementFeedback::getProviderId, f -> f, (a, b) -> a));
 
         MonthAggregation agg = aggregator.aggregate(year, month, cutoff);
 
@@ -79,12 +86,27 @@ public class SettlementPreviewService {
             HalfSettlement second = engine.secondHalfFinal(m.first, m.second, config, tierGrant);
             BigDecimal monthZelle = first.zelleToProvider().add(second.zelleToProvider());
             BigDecimal monthCashToSalon = first.cashToSalon().add(second.cashToSalon());
+            SettlementFeedback fb = feedbackByProvider.get(m.providerId);
             return new ProviderPayout(m.providerId, m.name, monthCounted, autoQualified,
                     granted && !autoQualified, autoQualified || granted,
-                    first, second, monthZelle, monthCashToSalon);
+                    first, second, monthZelle, monthCashToSalon,
+                    fb != null ? fb.getStatus().name() : null,
+                    fb != null ? fb.getComment() : null);
         }).sorted(Comparator.comparing(p -> p.name().toLowerCase())).toList();
 
         return new SettlementPreview(year, month, agg.timezone(), config, cutoff, payouts, agg.diagnostics());
+    }
+
+    /**
+     * The settlement for a single provider — used by the provider self-view. Returns their payout
+     * (with any feedback) or {@code null} if they had no activity that month.
+     */
+    @Transactional
+    public ProviderPayout previewForProvider(int year, int month, Long providerId) {
+        return preview(year, month).providers().stream()
+                .filter(p -> p.providerId().equals(providerId))
+                .findFirst()
+                .orElse(null);
     }
 
     private static HalfInput sum(HalfInput a, HalfInput b) {
@@ -115,5 +137,6 @@ public class SettlementPreviewService {
     public record ProviderPayout(Long providerId, String name, int monthCountedServices,
                                  boolean autoQualified, boolean tierManuallyGranted, boolean tierApplied,
                                  HalfSettlement firstHalf, HalfSettlement secondHalf,
-                                 BigDecimal monthZelleToProvider, BigDecimal monthCashToSalon) {}
+                                 BigDecimal monthZelleToProvider, BigDecimal monthCashToSalon,
+                                 String feedbackStatus, String feedbackComment) {}
 }

@@ -1,57 +1,77 @@
 package com.salonreview.config;
 
-import org.springframework.beans.factory.annotation.Value;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+import org.springframework.http.HttpStatus;
 
 /**
- * Phase-1 auth: a single shared owner login over HTTP Basic, stateless. Everything under
- * {@code /api/**} requires the credential; the actuator health probe stays open for Docker.
- *
- * <p>Credentials come from {@code APP_OWNER_USERNAME}/{@code APP_OWNER_PASSWORD} (env). The browser
- * never sends this directly — the Next.js frontend holds it server-side and proxies calls. Per-user
- * accounts and roles (owner/manager/provider) are deferred to Phase 2 (see docs/ROADMAP.md).
+ * Phase-2 auth: real per-user accounts ({@code app_user}) with roles, over a server-side session.
+ * Login is {@code POST /api/login} (form-encoded username/password); on success the session cookie
+ * (JSESSIONID) identifies the caller. The browser never holds this cookie — the Next.js server proxy
+ * does, and forwards it. Authorities are {@code ROLE_OWNER/MANAGER/PROVIDER}; fine-grained checks use
+ * {@code @PreAuthorize} on the self/feedback controllers.
  */
 @Configuration
+@EnableMethodSecurity
 public class SecurityConfig {
+
+    private final ObjectMapper json = new ObjectMapper();
 
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
-                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/info", "/api/login").permitAll()
+                        .requestMatchers("/api/users/**").hasRole("OWNER")
+                        .requestMatchers("/api/settlements/me/**").hasRole("PROVIDER")
+                        .requestMatchers("/api/settlements/**", "/api/providers/**", "/api/square/**",
+                                "/api/pay-periods/**").hasAnyRole("OWNER", "MANAGER")
                         .anyRequest().authenticated())
-                .httpBasic(Customizer.withDefaults());
+                .formLogin(form -> form
+                        .loginProcessingUrl("/api/login")
+                        .successHandler((req, res, authn) -> writeMe(res, authn.getPrincipal()))
+                        .failureHandler((req, res, ex) -> res.sendError(HttpServletResponse.SC_UNAUTHORIZED)))
+                .logout(out -> out
+                        .logoutUrl("/api/logout")
+                        .deleteCookies("JSESSIONID")
+                        .logoutSuccessHandler((req, res, authn) -> res.setStatus(HttpServletResponse.SC_OK)))
+                // API clients want a 401, not a redirect to a login form, when unauthenticated.
+                .exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)));
         return http.build();
+    }
+
+    /** Serialize the authenticated principal as {@code {username, role, providerId}} (also used by /api/me). */
+    private void writeMe(HttpServletResponse res, Object principal) throws java.io.IOException {
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (principal instanceof AppUserPrincipal p) {
+            body.put("username", p.getUsername());
+            body.put("role", p.getRole().name());
+            body.put("providerId", p.getProviderId());
+        }
+        res.setStatus(HttpServletResponse.SC_OK);
+        res.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        json.writeValue(res.getWriter(), body);
     }
 
     @Bean
     PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
-    }
-
-    @Bean
-    UserDetailsService userDetailsService(
-            @Value("${app.auth.username:owner}") String username,
-            @Value("${app.auth.password:}") String password,
-            PasswordEncoder encoder) {
-        UserDetails owner = User.withUsername(username)
-                .password(encoder.encode(password))
-                .roles("OWNER")
-                .build();
-        return new InMemoryUserDetailsManager(owner);
     }
 }

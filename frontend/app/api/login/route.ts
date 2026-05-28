@@ -1,26 +1,59 @@
 import { cookies } from 'next/headers';
 
-// Validate the owner credential against the backend, then store it in an httpOnly cookie so server
-// components and the proxy can authenticate. The cookie holds the Basic token (it is the credential),
-// so it's httpOnly to keep it out of JS. Phase-1 single-user; per-user accounts come in Phase 2.
+// Validate credentials against the backend and adopt its server session. The backend authenticates
+// (Spring Security form login) and returns a JSESSIONID; we hold that session id in our own httpOnly
+// `sid` cookie (the browser never talks to the backend directly) and forward it on every proxied
+// call. `role` is stored too so the proxy can route by role without a round-trip.
 const BACKEND = process.env.BACKEND_URL ?? 'http://localhost:8080';
 
+// Pull the JSESSIONID value out of the backend's Set-Cookie header(s).
+function sessionIdFrom(res: Response): string | null {
+  const setCookies =
+    typeof res.headers.getSetCookie === 'function'
+      ? res.headers.getSetCookie()
+      : [res.headers.get('set-cookie') ?? ''];
+  for (const c of setCookies) {
+    const m = /JSESSIONID=([^;]+)/.exec(c);
+    if (m) return m[1];
+  }
+  return null;
+}
+
 export async function POST(req: Request): Promise<Response> {
-  const { username, password } = await req.json().catch(() => ({} as Record<string, string>));
+  const { username, password } = await req
+    .json()
+    .catch(() => ({} as Record<string, string>));
   if (!username || !password) return new Response('Missing credentials', { status: 400 });
 
-  const token = Buffer.from(`${username}:${password}`).toString('base64');
-  const check = await fetch(`${BACKEND}/api/me`, { headers: { Authorization: `Basic ${token}` } });
-  if (!check.ok) return new Response('Invalid credentials', { status: 401 });
+  // Spring form login consumes application/x-www-form-urlencoded.
+  const form = new URLSearchParams({ username, password });
+  const res = await fetch(`${BACKEND}/api/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: form.toString(),
+    redirect: 'manual',
+  });
+  if (!res.ok) return new Response('Invalid credentials', { status: 401 });
 
-  (await cookies()).set('auth', token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    // The app currently runs over plain HTTP (localhost / Docker), so the cookie must NOT be
-    // Secure or the browser drops it. Revisit when deployed behind HTTPS (Phase 2/3).
+  const sid = sessionIdFrom(res);
+  if (!sid) return new Response('No session from backend', { status: 502 });
+
+  const me = (await res.json().catch(() => ({}))) as {
+    role?: string;
+    providerId?: number | null;
+  };
+
+  const jar = await cookies();
+  const opts = {
+    // Plain HTTP on localhost/Docker for now → must not be Secure or the browser drops it.
     secure: false,
     path: '/',
+    sameSite: 'lax' as const,
     maxAge: 60 * 60 * 12, // 12h
-  });
-  return new Response(null, { status: 204 });
+  };
+  jar.set('sid', sid, { ...opts, httpOnly: true });
+  // Readable by the proxy (and harmless to expose) so it can route by role.
+  jar.set('role', me.role ?? '', { ...opts, httpOnly: false });
+
+  return Response.json({ role: me.role ?? null, providerId: me.providerId ?? null });
 }
