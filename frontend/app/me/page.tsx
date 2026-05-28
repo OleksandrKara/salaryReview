@@ -1,8 +1,10 @@
 import Link from 'next/link';
 import { serverApi } from '../lib/serverApi';
+import type { HalfSettlement } from '../lib/types';
 import DiscountBreakdown from './DiscountBreakdown';
 import ServiceBreakdown from './ServiceBreakdown';
 import SettlementFeedbackForm from './SettlementFeedbackForm';
+import SalaryPopupButton from '../components/SalaryPopupButton';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -17,9 +19,9 @@ function shift(year: number, month: number, by: number) {
   return { year: year + Math.floor(idx / 12), month: ((idx % 12) + 12) % 12 + 1 };
 }
 
-// Provider's read-only view of their own month: summary, a line-by-line breakdown (appointments,
-// discounts, cash notes) for tracing their numbers, the copy-pasteable #salary per half, and
-// approve / request-correction.
+// Provider's read-only view of their own month: a month headline, a card per period (1–15 / 16–end)
+// with services / card / cash / tips / payout and a #salary popup, then the discount + service
+// breakdowns and approve / request-correction.
 export default async function MyReportPage({
   searchParams,
 }: {
@@ -35,9 +37,12 @@ export default async function MyReportPage({
   const prev = shift(year, month, -1);
   const next = shift(year, month, 1);
 
+  const firstCount = detail.services.filter((s) => s.half === 'FIRST').length;
+  const secondCount = detail.services.filter((s) => s.half === 'SECOND').length;
+
   return (
     <main className="mx-auto max-w-3xl p-8">
-      <div className="mb-1 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between">
         <div className="flex items-baseline gap-3">
           <h1 className="text-2xl font-semibold">My pay</h1>
           <a href="/api/logout" className="text-xs text-zinc-400 hover:text-zinc-600">Log out</a>
@@ -53,21 +58,19 @@ export default async function MyReportPage({
         <p className="mt-8 text-center text-zinc-400">No activity for this month.</p>
       ) : (
         <>
-          <div className="mt-6 grid grid-cols-2 gap-4">
-            <Stat label="Counted services" value={String(me.monthCountedServices)} />
-            <Stat label="Tier" value={me.tierApplied ? '50 / 50' : '45 / 55'} />
-            <Stat label="1–15 → you (Zelle)" value={usd(me.firstHalf.zelleToProvider)} />
-            <Stat label="1–15 cash → salon" value={usd(me.firstHalf.cashToSalon)} />
-            <Stat label="16–end → you (Zelle)" value={usd(me.secondHalf.zelleToProvider)} />
-            <Stat label="16–end cash → salon" value={usd(me.secondHalf.cashToSalon)} />
-            <Stat label="Month → you" value={usd(me.monthZelleToProvider)} highlight />
-            <Stat label="Month cash → salon" value={usd(me.monthCashToSalon)} />
+          {/* Month headline */}
+          <div className="grid grid-cols-2 gap-4 rounded-lg bg-zinc-900 p-5 text-white sm:grid-cols-4">
+            <Headline label="Month → you" value={usd(me.monthZelleToProvider)} big />
+            <Headline label="Cash → salon" value={usd(me.monthCashToSalon)} />
+            <Headline label="Services" value={String(firstCount + secondCount)} />
+            <Headline label="Tier" value={me.tierApplied ? '50 / 50' : '45 / 55'} />
           </div>
-          {me.secondHalf.tierBonus > 0 && (
-            <p className="mt-3 text-sm text-amber-600">
-              Includes a {usd(me.secondHalf.tierBonus)} tier bonus at month close (50/50 true-up).
-            </p>
-          )}
+
+          {/* Per-period cards */}
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <PeriodCard title="1–15" half={me.firstHalf} count={firstCount} message={detail.firstHalfMessage} />
+            <PeriodCard title="16–end" half={me.secondHalf} count={secondCount} message={detail.secondHalfMessage} />
+          </div>
 
           <DiscountBreakdown services={detail.services} />
 
@@ -85,11 +88,53 @@ export default async function MyReportPage({
   );
 }
 
-function Stat({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+function Headline({ label, value, big }: { label: string; value: string; big?: boolean }) {
   return (
-    <div className={`rounded-lg p-4 ring-1 ring-zinc-200 ${highlight ? 'bg-zinc-900 text-white' : ''}`}>
-      <div className={`text-xs ${highlight ? 'text-zinc-300' : 'text-zinc-500'}`}>{label}</div>
-      <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
+    <div>
+      <div className="text-xs text-zinc-300">{label}</div>
+      <div className={`mt-1 font-semibold tabular-nums ${big ? 'text-2xl' : 'text-xl'}`}>{value}</div>
+    </div>
+  );
+}
+
+function PeriodCard({
+  title,
+  half,
+  count,
+  message,
+}: {
+  title: string;
+  half: HalfSettlement;
+  count: number;
+  message: string | null;
+}) {
+  return (
+    <div className="rounded-lg p-4 ring-1 ring-zinc-200">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        {message && <SalaryPopupButton title={`#salary · ${title}`} message={message} />}
+      </div>
+      <dl className="space-y-1.5 text-sm">
+        <Row label="Services" value={String(count)} />
+        <Row label="Card" value={usd(half.cardRevenue)} />
+        <Row label="Cash" value={usd(half.cashCollected)} />
+        <Row label="Tips (after fee)" value={usd(half.tipsAfterFee)} />
+      </dl>
+      <div className="mt-3 space-y-1.5 border-t border-zinc-200 pt-3 text-sm">
+        <Row label="→ You (Zelle)" value={usd(half.zelleToProvider)} strong />
+        {half.tierBonus > 0 && <Row label="incl. tier bonus" value={usd(half.tierBonus)} hint />}
+        <Row label="Cash → salon" value={usd(half.cashToSalon)} />
+      </div>
+    </div>
+  );
+}
+
+function Row({ label, value, strong, hint }: { label: string; value: string; strong?: boolean; hint?: boolean }) {
+  const tone = hint ? 'text-amber-600' : 'text-zinc-500';
+  return (
+    <div className={`flex items-baseline justify-between ${hint ? 'text-xs' : ''}`}>
+      <dt className={tone}>{label}</dt>
+      <dd className={`tabular-nums ${strong ? 'font-semibold text-zinc-900' : hint ? 'text-amber-600' : ''}`}>{value}</dd>
     </div>
   );
 }
