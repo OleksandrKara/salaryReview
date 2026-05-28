@@ -19,6 +19,14 @@ function sessionIdFrom(res: Response): string | null {
   return null;
 }
 
+// Cookies must be Secure over HTTPS (or the browser sends them on HTTP downgrades) and must NOT be
+// Secure over plain HTTP (or the browser drops them). Auto-detect HTTPS from the reverse proxy's
+// X-Forwarded-Proto; COOKIE_SECURE=true forces it on regardless.
+function secureCookie(req: Request): boolean {
+  if (process.env.COOKIE_SECURE === 'true') return true;
+  return req.headers.get('x-forwarded-proto') === 'https';
+}
+
 export async function POST(req: Request): Promise<Response> {
   const { username, password } = await req
     .json()
@@ -45,8 +53,8 @@ export async function POST(req: Request): Promise<Response> {
 
   const jar = await cookies();
   const opts = {
-    // Plain HTTP on localhost/Docker for now → must not be Secure or the browser drops it.
-    secure: false,
+    // Secure over HTTPS (auto-detected behind a reverse proxy), off on plain HTTP/localhost.
+    secure: secureCookie(req),
     path: '/',
     sameSite: 'lax' as const,
     maxAge: 60 * 60 * 12, // 12h
