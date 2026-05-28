@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { serverApi } from '../lib/serverApi';
 import type { ProviderPayout } from '../lib/types';
 import GrantTierButton from './GrantTierButton';
+import SalaryButtons from './SalaryButtons';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -85,6 +86,7 @@ export default async function ReportsPage({
               <th className="px-3 py-2 text-right">16–end (Zelle)</th>
               <th className="px-3 py-2 text-right">Month → provider</th>
               <th className="px-3 py-2 text-right">Cash → salon</th>
+              <th className="px-3 py-2">#salary</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
@@ -119,10 +121,13 @@ export default async function ReportsPage({
                 </td>
                 <td className="px-3 py-2 text-right font-semibold tabular-nums">{usd(p.monthZelleToProvider)}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usd(p.monthCashToSalon)}</td>
+                <td className="px-3 py-2">
+                  <SalaryButtons name={p.name} firstHalfMessage={p.firstHalfMessage} secondHalfMessage={p.secondHalfMessage} />
+                </td>
               </tr>
             ))}
             {report.providers.length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-6 text-center text-zinc-400">No activity for this month.</td></tr>
+              <tr><td colSpan={8} className="px-3 py-6 text-center text-zinc-400">No activity for this month.</td></tr>
             )}
           </tbody>
           {report.providers.length > 0 && (
@@ -131,6 +136,7 @@ export default async function ReportsPage({
                 <td className="px-3 py-2" colSpan={5}>Totals</td>
                 <td className="px-3 py-2 text-right tabular-nums">{usd(totalToProviders)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{usd(totalCashToSalon)}</td>
+                <td className="px-3 py-2"></td>
               </tr>
             </tfoot>
           )}

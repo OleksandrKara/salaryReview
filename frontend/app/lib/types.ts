@@ -105,6 +105,9 @@ export interface ProviderPayout {
   // Provider's response to this month (null until they act). Owner/manager see it on the report.
   feedbackStatus: FeedbackStatus | null;
   feedbackComment: string | null;
+  // Copy-pasteable #salary block per half (null if no activity that half).
+  firstHalfMessage: string | null;
+  secondHalfMessage: string | null;
 }
 
 // --- Accounts & roles (Phase 2) ---
