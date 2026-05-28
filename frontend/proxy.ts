@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 // /login, /api/* (the route handlers self-check), and static assets are excluded via the matcher.
 const PROVIDER_HOME = '/me';
 const STAFF_HOME = '/reports';
-const STAFF_ONLY = ['/reports', '/providers', '/periods', '/admin'];
+const STAFF_ONLY = ['/reports', '/admin'];
 const OWNER_ONLY = ['/admin'];
 
 function matches(pathname: string, prefixes: string[]) {
@@ -40,5 +40,5 @@ function redirect(req: NextRequest, pathname: string) {
 }
 
 export const config = {
-  matcher: ['/', '/reports/:path*', '/providers/:path*', '/periods/:path*', '/admin/:path*', '/me'],
+  matcher: ['/', '/reports/:path*', '/admin/:path*', '/me'],
 };
