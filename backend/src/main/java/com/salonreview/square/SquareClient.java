@@ -177,29 +177,38 @@ public class SquareClient {
         return prices;
     }
 
-    /**
-     * Display names for the given customer ids (one GET each — meant for the small set of
-     * unattributed lines in the trace view, not a bulk directory fetch). Best-effort per id.
-     */
+    // Square's bulk-retrieve-customers endpoint 404s on this account, so names are fetched one GET
+    // each — but cached process-wide (names rarely change) and the misses fetched in parallel, so a
+    // month's worth of customers only ever costs one round of lookups.
+    private final Map<String, String> customerNameCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Display names for the given customer ids. Best-effort, cached; blanks for any we can't resolve. */
     public Map<String, String> customerNames(Collection<String> customerIds) {
-        Map<String, String> names = new HashMap<>();
         List<String> ids = customerIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
+        List<String> missing = ids.stream().filter(id -> !customerNameCache.containsKey(id)).toList();
+        if (!missing.isEmpty()) {
+            // Empty string is cached for "looked up, no name" so we don't refetch it.
+            missing.parallelStream().forEach(id -> customerNameCache.put(id, fetchCustomerName(id)));
+        }
+        Map<String, String> names = new HashMap<>();
         for (String id : ids) {
-            try {
-                CustomerResponse resp = http.get()
-                        .uri("/v2/customers/{id}", id)
-                        .retrieve()
-                        .body(CustomerResponse.class);
-                if (resp != null && resp.customer() != null) {
-                    String name = ((resp.customer().givenName() == null ? "" : resp.customer().givenName()) + " "
-                            + (resp.customer().familyName() == null ? "" : resp.customer().familyName())).trim();
-                    if (!name.isBlank()) names.put(id, name);
-                }
-            } catch (RuntimeException ignored) {
-                // skip a customer we can't resolve; the id still shows in the UI
-            }
+            String n = customerNameCache.get(id);
+            if (n != null && !n.isEmpty()) names.put(id, n);
         }
         return names;
+    }
+
+    private String fetchCustomerName(String id) {
+        try {
+            CustomerResponse resp = http.get().uri("/v2/customers/{id}", id).retrieve().body(CustomerResponse.class);
+            if (resp != null && resp.customer() != null) {
+                return ((resp.customer().givenName() == null ? "" : resp.customer().givenName()) + " "
+                        + (resp.customer().familyName() == null ? "" : resp.customer().familyName())).trim();
+            }
+        } catch (RuntimeException ignored) {
+            // unresolvable — fall through to empty
+        }
+        return "";
     }
 
     /** Convert Square minor units (cents) to dollars; null money is treated as zero. */

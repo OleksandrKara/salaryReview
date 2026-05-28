@@ -175,6 +175,9 @@ export interface AttributedService {
   counted: boolean;
   prepaid: boolean;
   channel: 'CARD' | 'CASH' | 'CASH-NOTE';
+  time: string | null; // appointment start, salon-local, e.g. "2:30 PM"
+  bookingId: string | null; // Square booking/reservation id (for the appointment link)
+  customer: string | null; // short client name, e.g. "Donnah P."
 }
 
 export interface UnmatchedLine {

@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import type { AttributedService } from '../lib/types';
+import { AppointmentCell } from '../components/AppointmentCell';
+import { groupByAppointment } from '../lib/grouping';
 
 const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -54,7 +56,6 @@ function HalfDiscounts({ title, lines }: { title: string; lines: AttributedServi
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
               <tr>
-                <th className="px-3 py-2">Date</th>
                 <th className="px-3 py-2">Service</th>
                 <th className="px-3 py-2 text-right">Menu price</th>
                 <th className="px-3 py-2 text-right">Discount</th>
@@ -62,19 +63,28 @@ function HalfDiscounts({ title, lines }: { title: string; lines: AttributedServi
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {lines.map((l, i) => (
-                <tr key={i} className="hover:bg-zinc-50">
-                  <td className="px-3 py-2 tabular-nums text-zinc-600">{l.date}</td>
-                  <td className="px-3 py-2">{l.service}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{usd(l.gross)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-emerald-700">−{usd(l.discount)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{usd(l.net)}</td>
-                </tr>
+              {groupByAppointment(lines).map((g) => (
+                <Fragment key={g.key}>
+                  <tr className="border-t border-zinc-200 bg-zinc-50/70">
+                    <td colSpan={4} className="px-3 py-1.5 text-xs">
+                      <span className="font-medium"><AppointmentCell date={g.date} time={g.time} bookingId={g.bookingId} /></span>
+                      {g.customer && <span className="text-zinc-500"> · {g.customer}</span>}
+                    </td>
+                  </tr>
+                  {g.lines.map((l, i) => (
+                    <tr key={i} className="hover:bg-zinc-50">
+                      <td className="px-3 py-2 pl-6">{l.service}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{usd(l.gross)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-emerald-700">−{usd(l.discount)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{usd(l.net)}</td>
+                    </tr>
+                  ))}
+                </Fragment>
               ))}
             </tbody>
             <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs font-medium">
               <tr>
-                <td className="px-3 py-2" colSpan={3}>Total covered by salon</td>
+                <td className="px-3 py-2" colSpan={2}>Total covered by salon</td>
                 <td className="px-3 py-2 text-right tabular-nums text-emerald-700">−{usd(total)}</td>
                 <td className="px-3 py-2"></td>
               </tr>
