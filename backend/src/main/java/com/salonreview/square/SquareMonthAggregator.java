@@ -108,28 +108,33 @@ public class SquareMonthAggregator {
             if (o.lineItems() != null) {
                 for (OrderLineItem li : o.lineItems()) {
                     if (li.catalogObjectId() == null) continue;
-                    Seg seg = match(segIndex, o.customerId(), li.catalogObjectId(), orderDay, diag);
-                    if (seg == null) {
+                    Match m = match(segIndex, o.customerId(), li.catalogObjectId(), orderDay, diag);
+                    if (m == null) {
                         diag.unmatchedLineItems++;
                         BigDecimal gross = lineRevenue(li);
                         diag.unmatchedRevenue = diag.unmatchedRevenue.add(gross);
                         unmatched.add(new UnmatchedLine(str(orderDay), li.name(), gross,
-                                cashOrder ? "CASH" : "CARD", o.customerId()));
+                                cashOrder ? "CASH" : "CARD", o.customerId(), null));
                         continue;
                     }
+                    Seg seg = m.seg;
                     diag.matchedLineItems++;
                     Half half = halfOf(seg.day);
                     Acc a = accs.computeIfAbsent(new Key(seg.providerId, half), k -> new Acc());
                     // Full menu price (gross): the salon absorbs Square discounts, the provider is
-                    // paid on the listed price. Matches the salon's manual "Card" figure.
+                    // paid on the listed price. Matches the salon's manual "Card" figure. The discount
+                    // and net are kept for the trace view, not the payout.
                     BigDecimal revenue = lineRevenue(li);
+                    BigDecimal discount = SquareClient.toDollars(li.totalDiscountMoney());
+                    BigDecimal net = SquareClient.toDollars(li.totalMoney());
                     boolean counted = servicePrice(li, catalogPrice).compareTo(priceCutoff) >= 0;
                     if (cashOrder) a.cash = a.cash.add(revenue);
                     else a.card = a.card.add(revenue);
                     if (counted) a.counted++;
                     providersOnOrder.put(seg.providerId, half);
                     services.add(new AttributedService(seg.providerId, nameById.getOrDefault(seg.providerId, "?"),
-                            str(seg.day), half.name(), li.name(), revenue, counted, cashOrder ? "CASH" : "CARD"));
+                            str(seg.day), half.name(), li.name(), revenue, discount, net, counted, m.prepaid,
+                            cashOrder ? "CASH" : "CARD"));
                 }
             }
 
@@ -166,7 +171,7 @@ public class SquareMonthAggregator {
             a.counted += countedSegs;
             services.add(new AttributedService(cb.providerId, nameById.getOrDefault(cb.providerId, "?"),
                     str(cb.day), half.name(), "cash note (" + countedSegs + " counted)", amount,
-                    countedSegs > 0, "CASH-NOTE"));
+                    BigDecimal.ZERO, amount, countedSegs > 0, false, "CASH-NOTE"));
         }
 
         // --- Assemble per-provider month (both halves) ---
@@ -184,7 +189,27 @@ public class SquareMonthAggregator {
                 .sorted(Comparator.comparing(p -> p.name().toLowerCase()))
                 .toList();
 
-        return new MonthAggregation(year, month, zone.getId(), providers, diag, services, unmatched);
+        // Label the (small) set of unattributed lines with their customer name for the trace view.
+        List<UnmatchedLine> namedUnmatched = withCustomerNames(unmatched);
+
+        return new MonthAggregation(year, month, zone.getId(), providers, diag, services, namedUnmatched);
+    }
+
+    /** Resolve customer names for the unattributed lines (one bulk Square call); best-effort. */
+    private List<UnmatchedLine> withCustomerNames(List<UnmatchedLine> lines) {
+        if (lines.isEmpty()) return lines;
+        Map<String, String> names;
+        try {
+            names = square.customerNames(lines.stream().map(UnmatchedLine::customerId).toList());
+        } catch (RuntimeException e) {
+            return lines; // names are a nicety; don't fail the whole report if the lookup hiccups
+        }
+        List<UnmatchedLine> out = new ArrayList<>(lines.size());
+        for (UnmatchedLine u : lines) {
+            out.add(new UnmatchedLine(u.date(), u.service(), u.gross(), u.channel(), u.customerId(),
+                    names.get(u.customerId())));
+        }
+        return out;
     }
 
     // --- helpers ---
@@ -221,8 +246,8 @@ public class SquareMonthAggregator {
      * appointment) falls back to the nearest same-customer+service booking anywhere in the month, so
      * prepaid revenue is still attributed — to the service date, not the prepay date.
      */
-    private static Seg match(Map<String, List<Seg>> index, String customerId, String catalogObjectId,
-                             LocalDate orderDay, Diag diag) {
+    private static Match match(Map<String, List<Seg>> index, String customerId, String catalogObjectId,
+                               LocalDate orderDay, Diag diag) {
         if (customerId == null || orderDay == null) return null;
         List<Seg> candidates = index.get(key(customerId, catalogObjectId));
         if (candidates == null) return null;
@@ -230,16 +255,19 @@ public class SquareMonthAggregator {
         Seg near = nearestUnused(candidates, orderDay, 2);
         if (near != null) {
             near.used = true;
-            return near;
+            return new Match(near, false);
         }
         Seg far = nearestUnused(candidates, orderDay, Long.MAX_VALUE); // prepaid: any date this month
         if (far != null) {
             far.used = true;
             diag.prepaidMatches++;
-            return far;
+            return new Match(far, true);
         }
         return null;
     }
+
+    /** A matched booking segment plus whether it was a prepaid-invoice (off-day) match. */
+    private record Match(Seg seg, boolean prepaid) {}
 
     /** Nearest unused segment whose day is within {@code maxDays} of the order, or null. */
     private static Seg nearestUnused(List<Seg> candidates, LocalDate orderDay, long maxDays) {
@@ -316,9 +344,11 @@ public class SquareMonthAggregator {
                                    List<AttributedService> services, List<UnmatchedLine> unmatched) {}
 
     public record AttributedService(String providerId, String providerName, String date, String half,
-                                    String service, BigDecimal gross, boolean counted, String channel) {}
+                                    String service, BigDecimal gross, BigDecimal discount, BigDecimal net,
+                                    boolean counted, boolean prepaid, String channel) {}
 
-    public record UnmatchedLine(String date, String service, BigDecimal gross, String channel, String customerId) {}
+    public record UnmatchedLine(String date, String service, BigDecimal gross, String channel,
+                                String customerId, String customerName) {}
 
     public record ProviderMonth(String providerId, String name, HalfInput firstHalf, HalfInput secondHalf) {
         ProviderMonth withFirst(HalfInput h) { return new ProviderMonth(providerId, name, h, secondHalf); }

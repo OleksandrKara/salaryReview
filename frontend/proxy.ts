@@ -8,6 +8,11 @@ import { NextRequest, NextResponse } from 'next/server';
 const PROVIDER_HOME = '/me';
 const STAFF_HOME = '/reports';
 const STAFF_ONLY = ['/reports', '/providers', '/periods', '/admin'];
+const OWNER_ONLY = ['/admin'];
+
+function matches(pathname: string, prefixes: string[]) {
+  return prefixes.some((p) => pathname === p || pathname.startsWith(p + '/'));
+}
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -16,13 +21,14 @@ export function proxy(req: NextRequest) {
 
   const role = req.cookies.get('role')?.value;
   const isProvider = role === 'PROVIDER';
+  const isOwner = role === 'OWNER';
+  const home = isProvider ? PROVIDER_HOME : STAFF_HOME;
 
-  if (isProvider && STAFF_ONLY.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
-    return redirect(req, PROVIDER_HOME);
-  }
-  if (!isProvider && pathname === PROVIDER_HOME) {
-    return redirect(req, STAFF_HOME);
-  }
+  // Providers see only their own view; owner-only areas (user management) are off-limits to others.
+  if (isProvider && matches(pathname, STAFF_ONLY)) return redirect(req, PROVIDER_HOME);
+  if (!isOwner && matches(pathname, OWNER_ONLY)) return redirect(req, home);
+  if (!isProvider && pathname === PROVIDER_HOME) return redirect(req, STAFF_HOME);
+
   return NextResponse.next();
 }
 

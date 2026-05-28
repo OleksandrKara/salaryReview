@@ -1,10 +1,12 @@
 import 'server-only';
 
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import type {
   AppUser,
   Me,
   Provider,
+  ProviderDetail,
   ProviderPayout,
   SettlementPreview,
   SquareRosterEntry,
@@ -22,6 +24,10 @@ async function serverFetch<T>(path: string): Promise<T> {
     cache: 'no-store',
     headers: sid ? { Cookie: `JSESSIONID=${sid}` } : {},
   });
+  // No/expired session: the cookie may still be present but the backend session is gone (e.g. after
+  // a restart). Bounce to /login rather than rendering a data page with an error. redirect() throws
+  // NEXT_REDIRECT, so it must not be wrapped in a try/catch at the call site.
+  if (res.status === 401) redirect('/login');
   if (res.status === 204) return null as T;
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${await res.text()}`);
   return (await res.json()) as T;
@@ -41,4 +47,7 @@ export const serverApi = {
   listProviders: () => serverFetch<Provider[]>(`/api/providers?all=true`),
 
   getSquareRoster: () => serverFetch<SquareRosterEntry[]>(`/api/users/square-roster`),
+
+  getProviderDetail: (year: number, month: number, providerId: number) =>
+    serverFetch<ProviderDetail>(`/api/settlements/detail?year=${year}&month=${month}&providerId=${providerId}`),
 };
