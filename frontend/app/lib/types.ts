@@ -83,6 +83,7 @@ export interface HalfSettlement {
   countedServices: number;
   appliedRate: number;
   cardRevenue: number;
+  cashCollected: number;
   tipsAfterFee: number;
   adjustments: number;
   tierBonus: number;
@@ -102,6 +103,106 @@ export interface ProviderPayout {
   secondHalf: HalfSettlement;
   monthZelleToProvider: number;
   monthCashToSalon: number;
+  // Provider's response to this month (null until they act). Owner/manager see it on the report.
+  feedbackStatus: FeedbackStatus | null;
+  feedbackComment: string | null;
+  // Copy-pasteable #salary block per half (null if no activity that half).
+  firstHalfMessage: string | null;
+  secondHalfMessage: string | null;
+}
+
+// --- Accounts & roles (Phase 2) ---
+
+export type Role = 'OWNER' | 'MANAGER' | 'PROVIDER';
+
+export type FeedbackStatus = 'APPROVED' | 'CHANGES_REQUESTED';
+
+export interface Me {
+  username: string;
+  role: Role;
+  providerId: number | null;
+}
+
+export interface AppUser {
+  id: number;
+  username: string;
+  role: Role;
+  providerId: number | null;
+  active: boolean;
+  squareTeamMemberId: string | null;
+  email: string | null;
+}
+
+export interface UserCreateRequest {
+  username: string;
+  password: string;
+  role: Role;
+  providerId?: number | null;
+  squareTeamMemberId?: string | null;
+  email?: string | null;
+  name?: string | null;
+}
+
+// A Square team member offered as a candidate account in the add-user flow.
+export interface SquareRosterEntry {
+  teamMemberId: string;
+  name: string;
+  email: string | null;
+  jobTitle: string | null;
+  isOwner: boolean;
+  suggestedRole: Role;
+  providerId: number | null;
+  hasAccount: boolean;
+}
+
+export interface UserUpdateRequest {
+  role?: Role | null;
+  active?: boolean | null;
+  password?: string | null;
+  providerId?: number | null;
+}
+
+// --- Per-provider line-level trace (owner/manager drill-down) ---
+
+export interface AttributedService {
+  providerId: string; // Square team-member id
+  providerName: string;
+  date: string;
+  half: Half;
+  service: string;
+  gross: number;
+  discount: number;
+  net: number;
+  counted: boolean;
+  countedUnits: number; // main services this line counts toward the tier (gross >= cutoff)
+  units: number; // total services this line represents (incl. add-ons below the cutoff)
+  prepaid: boolean;
+  channel: 'CARD' | 'CASH' | 'CASH-NOTE';
+  time: string | null; // appointment start, salon-local, e.g. "2:30 PM"
+  bookingId: string | null; // Square booking/reservation id (for the appointment link)
+  customer: string | null; // short client name, e.g. "Donnah P."
+}
+
+export interface UnmatchedLine {
+  date: string;
+  service: string;
+  gross: number;
+  channel: 'CARD' | 'CASH';
+  customerId: string | null;
+  customerName: string | null;
+}
+
+export interface ProviderDetail {
+  year: number;
+  month: number;
+  providerId: number;
+  name: string | null;
+  payout: ProviderPayout | null;
+  services: AttributedService[];
+  unmatched: UnmatchedLine[];
+  firstHalfMessage: string | null;
+  secondHalfMessage: string | null;
+  priceCutoff: number; // a "main service" is gross >= this (e.g. $60)
 }
 
 export interface SettlementDiagnostics {

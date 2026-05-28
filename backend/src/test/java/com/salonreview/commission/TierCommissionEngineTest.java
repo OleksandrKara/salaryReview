@@ -22,8 +22,10 @@ class TierCommissionEngineTest {
     }
 
     private static HalfInput half(int counted, String card, String cash, String tips, String adj) {
+        // No discount in these cases: cash gross == cash collected.
+        BigDecimal cashAmt = new BigDecimal(cash);
         return new HalfInput(counted,
-                new BigDecimal(card), new BigDecimal(tips), new BigDecimal(cash), new BigDecimal(adj));
+                new BigDecimal(card), new BigDecimal(tips), cashAmt, cashAmt, new BigDecimal(adj));
     }
 
     @Test

@@ -2,10 +2,11 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { Spinner } from '../components/Spinner';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState('owner');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -22,11 +23,16 @@ export default function LoginPage() {
       });
       if (!res.ok) {
         setError(res.status === 401 ? 'Incorrect username or password.' : 'Login failed.');
+        setBusy(false);
         return;
       }
-      router.replace('/reports');
+      const { role } = (await res.json().catch(() => ({}))) as { role?: string };
+      // Leave the spinner up: navigation shows the destination's loading screen while its data
+      // loads, and this page then unmounts — resetting busy here would just flicker the button.
+      router.replace(role === 'PROVIDER' ? '/me' : '/reports');
       router.refresh();
-    } finally {
+    } catch {
+      setError('Login failed.');
       setBusy(false);
     }
   }
@@ -60,8 +66,9 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={busy}
-          className="mt-2 rounded bg-zinc-900 px-4 py-2 font-medium text-white disabled:opacity-50"
+          className="mt-2 flex items-center justify-center gap-2 rounded bg-zinc-900 px-4 py-2 font-medium text-white disabled:opacity-70"
         >
+          {busy && <Spinner className="h-4 w-4" />}
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
