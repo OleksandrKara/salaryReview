@@ -68,10 +68,12 @@ public class SettlementPreviewService {
         MonthAggregation agg = aggregator.aggregate(year, month, cutoff);
         Map<Long, Merged> byPerson = collapseToPersons(agg);
         Map<Long, int[]> procedures = procedureCounts(agg, byPerson);
+        Map<Long, BigDecimal[]> discounts = discountTotals(agg, byPerson);
 
         List<ProviderPayout> payouts = byPerson.values().stream()
                 .map(m -> toPayout(m, config, tierGrantedProviderIds, feedbackByProvider, sc, year, month,
-                        procedures.getOrDefault(m.providerId, new int[2])))
+                        procedures.getOrDefault(m.providerId, new int[2]),
+                        discounts.getOrDefault(m.providerId, ZERO_HALVES)))
                 .sorted(Comparator.comparing(p -> p.name().toLowerCase())).toList();
 
         return new SettlementPreview(year, month, agg.timezone(), config, cutoff, payouts, agg.diagnostics());
@@ -79,8 +81,7 @@ public class SettlementPreviewService {
 
     /** Per-person service-line counts per half ({@code [first, second]}), for the #salary "procedures". */
     private static Map<Long, int[]> procedureCounts(MonthAggregation agg, Map<Long, Merged> byPerson) {
-        Map<String, Long> personByMember = new java.util.HashMap<>();
-        byPerson.forEach((pid, m) -> m.memberIds.forEach(mid -> personByMember.put(mid, pid)));
+        Map<String, Long> personByMember = personByMember(byPerson);
         Map<Long, int[]> counts = new java.util.HashMap<>();
         for (var s : agg.services()) {
             Long pid = personByMember.get(s.providerId());
@@ -90,6 +91,27 @@ public class SettlementPreviewService {
         }
         return counts;
     }
+
+    /** Per-person discount totals per half ({@code [first, second]}) — the discounts the salon absorbed. */
+    private static Map<Long, BigDecimal[]> discountTotals(MonthAggregation agg, Map<Long, Merged> byPerson) {
+        Map<String, Long> personByMember = personByMember(byPerson);
+        Map<Long, BigDecimal[]> sums = new java.util.HashMap<>();
+        for (var s : agg.services()) {
+            Long pid = personByMember.get(s.providerId());
+            if (pid == null) continue;
+            BigDecimal[] c = sums.computeIfAbsent(pid, k -> new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO});
+            if ("FIRST".equals(s.half())) c[0] = c[0].add(s.discount()); else c[1] = c[1].add(s.discount());
+        }
+        return sums;
+    }
+
+    private static Map<String, Long> personByMember(Map<Long, Merged> byPerson) {
+        Map<String, Long> m = new java.util.HashMap<>();
+        byPerson.forEach((pid, person) -> person.memberIds.forEach(mid -> m.put(mid, pid)));
+        return m;
+    }
+
+    private static final BigDecimal[] ZERO_HALVES = {BigDecimal.ZERO, BigDecimal.ZERO};
 
     /**
      * The settlement for a single provider — used by the provider self-view. Returns their payout
@@ -131,8 +153,12 @@ public class SettlementPreviewService {
                 .toList();
         int firstCount = (int) lines.stream().filter(s -> "FIRST".equals(s.half())).count();
         int secondCount = (int) lines.stream().filter(s -> "SECOND".equals(s.half())).count();
+        BigDecimal firstDisc = lines.stream().filter(s -> "FIRST".equals(s.half()))
+                .map(SquareMonthAggregator.AttributedService::discount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal secondDisc = lines.stream().filter(s -> "SECOND".equals(s.half()))
+                .map(SquareMonthAggregator.AttributedService::discount).reduce(BigDecimal.ZERO, BigDecimal::add);
         ProviderPayout payout = toPayout(m, config, granted, fb, sc, year, month,
-                new int[]{firstCount, secondCount});
+                new int[]{firstCount, secondCount}, new BigDecimal[]{firstDisc, secondDisc});
         return new ProviderDetail(year, month, providerId, m.name, payout, lines, agg.unmatched(),
                 payout.firstHalfMessage(), payout.secondHalfMessage());
     }
@@ -140,18 +166,24 @@ public class SettlementPreviewService {
     /** The copy-pasteable {@code #salary} block for one half, matching the salon's manual format. */
     private static String salaryMessage(int year, int month, Half half, String providerName,
                                         SalonConfig sc, HalfInput input, HalfSettlement settlement,
-                                        int procedures) {
+                                        int procedures, BigDecimal discountsCovered) {
         String label = (half == Half.FIRST ? "1-15 " : "16-END ")
                 + java.time.Month.of(month).getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.US)
                 + " " + year;
         String feePct = sc.getCardTipFeeRate().multiply(BigDecimal.valueOf(100))
                 .setScale(2, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
         String owner = sc.getOwnerShortName();
+        // Discounts are absorbed by the salon and already included in Card (we pay on gross), so they
+        // are shown here for transparency, not added again. The manual adjustments line (redos/hours)
+        // only appears when non-zero.
+        String adjustments = input.adjustments().signum() != 0
+                ? "Adjustments (cancellations, hours, redos): $" + money(input.adjustments()) + "\n" : "";
         return "#salary " + label + "\n"
                 + procedures + " procedures\n"
                 + "Card: $" + money(input.cardRevenue()) + "\n"
                 + "Cash: $" + money(input.cashTotal()) + "\n\n"
-                + "Cancellations, hours or discounts to compensate or redos: $" + money(input.adjustments()) + "\n"
+                + "Discounts covered by salon: $" + money(discountsCovered) + "\n"
+                + adjustments
                 + "Tips: $" + money(input.cardTips()) + "\n"
                 + "Tips(-" + feePct + "%): $" + money(settlement.tipsAfterFee()) + "\n\n"
                 + "Zelle " + owner + " to " + providerName + ": $" + money(settlement.zelleToProvider()) + "\n"
@@ -178,7 +210,8 @@ public class SettlementPreviewService {
 
     private ProviderPayout toPayout(Merged m, CommissionConfig config, Set<Long> granted,
                                     Map<Long, SettlementFeedback> feedbackByProvider,
-                                    SalonConfig sc, int year, int month, int[] procedures) {
+                                    SalonConfig sc, int year, int month, int[] procedures,
+                                    BigDecimal[] discounts) {
         int monthCounted = m.first.countedServices() + m.second.countedServices();
         boolean autoQualified = monthCounted >= config.tierServiceThreshold();
         boolean isGranted = granted.contains(m.providerId);
@@ -189,8 +222,8 @@ public class SettlementPreviewService {
         BigDecimal monthZelle = first.zelleToProvider().add(second.zelleToProvider());
         BigDecimal monthCashToSalon = first.cashToSalon().add(second.cashToSalon());
         SettlementFeedback fb = feedbackByProvider.get(m.providerId);
-        String firstMsg = salaryMessage(year, month, Half.FIRST, m.name, sc, m.first, first, procedures[0]);
-        String secondMsg = salaryMessage(year, month, Half.SECOND, m.name, sc, m.second, second, procedures[1]);
+        String firstMsg = salaryMessage(year, month, Half.FIRST, m.name, sc, m.first, first, procedures[0], discounts[0]);
+        String secondMsg = salaryMessage(year, month, Half.SECOND, m.name, sc, m.second, second, procedures[1], discounts[1]);
         return new ProviderPayout(m.providerId, m.name, monthCounted, autoQualified,
                 isGranted && !autoQualified, autoQualified || isGranted,
                 first, second, monthZelle, monthCashToSalon,
