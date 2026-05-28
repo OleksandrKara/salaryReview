@@ -1,7 +1,14 @@
 import 'server-only';
 
 import { cookies } from 'next/headers';
-import type { AppUser, Me, Provider, ProviderPayout, SettlementPreview } from './types';
+import type {
+  AppUser,
+  Me,
+  Provider,
+  ProviderPayout,
+  SettlementPreview,
+  SquareRosterEntry,
+} from './types';
 
 // Server-only backend calls. Auth is the backend session: we hold its JSESSIONID in our httpOnly
 // `sid` cookie and forward it as the Cookie header. Kept separate from lib/api.ts (bundled into
@@ -32,4 +39,6 @@ export const serverApi = {
   listUsers: () => serverFetch<AppUser[]>(`/api/users`),
 
   listProviders: () => serverFetch<Provider[]>(`/api/providers?all=true`),
+
+  getSquareRoster: () => serverFetch<SquareRosterEntry[]>(`/api/users/square-roster`),
 };

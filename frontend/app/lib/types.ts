@@ -125,6 +125,8 @@ export interface AppUser {
   role: Role;
   providerId: number | null;
   active: boolean;
+  squareTeamMemberId: string | null;
+  email: string | null;
 }
 
 export interface UserCreateRequest {
@@ -132,6 +134,21 @@ export interface UserCreateRequest {
   password: string;
   role: Role;
   providerId?: number | null;
+  squareTeamMemberId?: string | null;
+  email?: string | null;
+  name?: string | null;
+}
+
+// A Square team member offered as a candidate account in the add-user flow.
+export interface SquareRosterEntry {
+  teamMemberId: string;
+  name: string;
+  email: string | null;
+  jobTitle: string | null;
+  isOwner: boolean;
+  suggestedRole: Role;
+  providerId: number | null;
+  hasAccount: boolean;
 }
 
 export interface UserUpdateRequest {

@@ -1,9 +1,13 @@
 package com.salonreview.web;
 
 import com.salonreview.domain.AppUser;
+import com.salonreview.domain.Provider;
 import com.salonreview.domain.Role;
 import com.salonreview.repo.AppUserRepository;
 import com.salonreview.repo.ProviderRepository;
+import com.salonreview.service.ProviderDirectory;
+import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClient.TeamMember;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,6 +15,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Owner-only user management. Accounts are created/invited here (no open self-signup). A PROVIDER
@@ -23,17 +29,58 @@ public class UserController {
 
     private final AppUserRepository users;
     private final ProviderRepository providers;
+    private final ProviderDirectory directory;
+    private final SquareClient square;
     private final PasswordEncoder encoder;
 
-    public UserController(AppUserRepository users, ProviderRepository providers, PasswordEncoder encoder) {
+    public UserController(AppUserRepository users, ProviderRepository providers,
+                          ProviderDirectory directory, SquareClient square, PasswordEncoder encoder) {
         this.users = users;
         this.providers = providers;
+        this.directory = directory;
+        this.square = square;
         this.encoder = encoder;
     }
 
     @GetMapping
     public List<UserView> list() {
         return users.findAllByOrderByUsernameAsc().stream().map(UserView::of).toList();
+    }
+
+    /**
+     * The salon's Square team roster, with a suggested app role (from {@code is_owner} / job title)
+     * and whether an account already exists — feeds the "import from Square" add-user flow. The owner
+     * still confirms; we never auto-grant access from Square.
+     */
+    @GetMapping("/square-roster")
+    public List<RosterEntry> squareRoster() {
+        List<AppUser> existing = users.findAllByOrderByUsernameAsc();
+        Set<String> linkedMemberIds = existing.stream()
+                .map(AppUser::getSquareTeamMemberId).filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        Set<Long> linkedProviderIds = existing.stream()
+                .map(AppUser::getProviderId).filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        return square.activeTeamMembers().stream().map(tm -> {
+            Role suggested = suggestRole(tm);
+            Provider provider = suggested == Role.PROVIDER
+                    ? providers.findBySquareTeamMemberId(tm.id()).orElse(null) : null;
+            Long providerId = provider != null ? provider.getId() : null;
+            boolean hasAccount = linkedMemberIds.contains(tm.id())
+                    || (providerId != null && linkedProviderIds.contains(providerId));
+            return new RosterEntry(tm.id(), tm.fullName(), tm.emailAddress(), tm.jobTitle(),
+                    tm.owner(), suggested, providerId, hasAccount);
+        }).toList();
+    }
+
+    /** is_owner → OWNER; a "manager" job title → MANAGER; everyone else (nail techs) → PROVIDER. */
+    private static Role suggestRole(TeamMember tm) {
+        if (tm.owner()) return Role.OWNER;
+        String title = tm.jobTitle() == null ? "" : tm.jobTitle().toLowerCase();
+        if (title.contains("owner")) return Role.OWNER;
+        if (title.contains("manager")) return Role.MANAGER;
+        return Role.PROVIDER;
     }
 
     @PostMapping
@@ -46,12 +93,20 @@ public class UserController {
         if (users.existsByUsername(req.username())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Username already taken");
         }
-        Long providerId = validateProviderLink(req.role(), req.providerId(), null);
+        // A provider imported from Square may not have a Provider row yet (no bookings) — provision it.
+        Long providerId = req.providerId();
+        if (req.role() == Role.PROVIDER && providerId == null && req.squareTeamMemberId() != null) {
+            String name = req.name() != null && !req.name().isBlank() ? req.name() : req.username();
+            providerId = directory.resolveOrCreate(req.squareTeamMemberId(), name).getId();
+        }
+        providerId = validateProviderLink(req.role(), providerId, null);
         AppUser saved = users.save(AppUser.builder()
                 .username(req.username().trim())
                 .passwordHash(encoder.encode(req.password()))
                 .role(req.role())
                 .providerId(providerId)
+                .squareTeamMemberId(req.squareTeamMemberId())
+                .email(req.email())
                 .active(true)
                 .build());
         return UserView.of(saved);
@@ -106,12 +161,19 @@ public class UserController {
                 .filter(u -> u.getRole() == Role.OWNER && u.isActive()).count();
     }
 
-    public record CreateRequest(String username, String password, Role role, Long providerId) {}
+    public record CreateRequest(String username, String password, Role role, Long providerId,
+                                String squareTeamMemberId, String email, String name) {}
     public record UpdateRequest(Role role, Boolean active, String password, Long providerId) {}
 
-    public record UserView(Long id, String username, Role role, Long providerId, boolean active) {
+    public record UserView(Long id, String username, Role role, Long providerId, boolean active,
+                           String squareTeamMemberId, String email) {
         static UserView of(AppUser u) {
-            return new UserView(u.getId(), u.getUsername(), u.getRole(), u.getProviderId(), u.isActive());
+            return new UserView(u.getId(), u.getUsername(), u.getRole(), u.getProviderId(), u.isActive(),
+                    u.getSquareTeamMemberId(), u.getEmail());
         }
     }
+
+    /** A Square team member as a candidate account, with a suggested role and account status. */
+    public record RosterEntry(String teamMemberId, String name, String email, String jobTitle,
+                              boolean isOwner, Role suggestedRole, Long providerId, boolean hasAccount) {}
 }

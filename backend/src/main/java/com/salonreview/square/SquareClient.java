@@ -191,11 +191,33 @@ public class SquareClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record TeamMember(String id, String givenName, String familyName, String status) {
+    public record TeamMember(String id, String givenName, String familyName, String status,
+                             Boolean isOwner, String emailAddress, WageSetting wageSetting) {
         public String fullName() {
             return ((givenName == null ? "" : givenName) + " " + (familyName == null ? "" : familyName)).trim();
         }
+
+        public boolean owner() {
+            return Boolean.TRUE.equals(isOwner);
+        }
+
+        /** The team member's Square job title (from their first job assignment), or null. */
+        public String jobTitle() {
+            if (wageSetting == null || wageSetting.jobAssignments() == null
+                    || wageSetting.jobAssignments().isEmpty()) {
+                return null;
+            }
+            return wageSetting.jobAssignments().get(0).jobTitle();
+        }
     }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record WageSetting(List<JobAssignment> jobAssignments) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record JobAssignment(String jobTitle, String jobId) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
