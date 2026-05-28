@@ -31,8 +31,8 @@ export default function ProviderTrace({
     <div className="flex flex-col gap-8">
       {detail.payout && (
         <>
-          <HalfSection title="1–15" lines={firstHalf} settlement={detail.payout.firstHalf} message={detail.firstHalfMessage} />
-          <HalfSection title="16–end" lines={secondHalf} settlement={detail.payout.secondHalf} message={detail.secondHalfMessage} />
+          <HalfSection title="1–15" lines={firstHalf} settlement={detail.payout.firstHalf} message={detail.firstHalfMessage} tierApplied={detail.payout.tierApplied} baseRate={detail.payout.firstHalf.appliedRate} />
+          <HalfSection title="16–end" lines={secondHalf} settlement={detail.payout.secondHalf} message={detail.secondHalfMessage} tierApplied={detail.payout.tierApplied} baseRate={detail.payout.firstHalf.appliedRate} />
         </>
       )}
 
@@ -95,11 +95,15 @@ function HalfSection({
   lines,
   settlement,
   message,
+  tierApplied,
+  baseRate,
 }: {
   title: string;
   lines: AttributedService[];
   settlement: HalfSettlement;
   message: string | null;
+  tierApplied: boolean;
+  baseRate: number;
 }) {
   const gross = lines.reduce((s, l) => s + l.gross, 0);
   const discount = lines.reduce((s, l) => s + l.discount, 0);
@@ -118,7 +122,7 @@ function HalfSection({
         </div>
       )}
 
-      <ServiceLinesTable lines={lines} settlement={settlement} />
+      <ServiceLinesTable lines={lines} settlement={settlement} tierApplied={tierApplied} baseRate={baseRate} />
     </section>
   );
 }
