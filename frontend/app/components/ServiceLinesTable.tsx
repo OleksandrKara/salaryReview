@@ -20,9 +20,13 @@ function ChannelTag({ channel }: { channel: string }) {
 export default function ServiceLinesTable({
   lines,
   settlement,
+  tierApplied,
+  baseRate,
 }: {
   lines: AttributedService[];
   settlement: HalfSettlement;
+  tierApplied: boolean; // whether the month qualifies for 50/50 (earned or granted)
+  baseRate: number; // the base rate every half's card is actually paid at (e.g. 0.45)
 }) {
   const days = groupByDay(lines);
   return (
@@ -81,7 +85,10 @@ export default function ServiceLinesTable({
         <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs">
           <tr>
             <td className="px-3 py-2 font-medium" colSpan={2}>
-              Counted: {settlement.countedServices} · rate {Math.round(settlement.appliedRate * 100)}%
+              Counted: {settlement.countedServices} · paid at base {Math.round(baseRate * 100)}%
+              {tierApplied && (settlement.half === 'FIRST'
+                ? ' · 50/50 month (5% added at month close)'
+                : ' · 50/50 month (incl. bonus)')}
             </td>
             <td className="px-3 py-2 text-right text-zinc-500">card {usd(settlement.cardRevenue)}</td>
             <td className="px-3 py-2 text-right text-zinc-500" colSpan={2}>

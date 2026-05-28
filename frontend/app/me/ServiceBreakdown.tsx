@@ -23,8 +23,8 @@ export default function ServiceBreakdown({ detail }: { detail: ProviderDetail })
         the copy-pasteable #salary block.
       </p>
       <div className="flex flex-col gap-3">
-        <HalfServices title="1–15" lines={first} settlement={detail.payout.firstHalf} message={detail.firstHalfMessage} />
-        <HalfServices title="16–end" lines={second} settlement={detail.payout.secondHalf} message={detail.secondHalfMessage} />
+        <HalfServices title="1–15" lines={first} settlement={detail.payout.firstHalf} message={detail.firstHalfMessage} tierApplied={detail.payout.tierApplied} baseRate={detail.payout.firstHalf.appliedRate} />
+        <HalfServices title="16–end" lines={second} settlement={detail.payout.secondHalf} message={detail.secondHalfMessage} tierApplied={detail.payout.tierApplied} baseRate={detail.payout.firstHalf.appliedRate} />
       </div>
     </section>
   );
@@ -35,11 +35,15 @@ function HalfServices({
   lines,
   settlement,
   message,
+  tierApplied,
+  baseRate,
 }: {
   title: string;
   lines: AttributedService[];
   settlement: HalfSettlement;
   message: string | null;
+  tierApplied: boolean;
+  baseRate: number;
 }) {
   const [open, setOpen] = useState(false);
   const gross = lines.reduce((s, l) => s + l.gross, 0);
@@ -65,7 +69,7 @@ function HalfServices({
       {open && lines.length > 0 && (
         <div className="flex flex-col gap-3 border-t border-zinc-200 p-4">
           {message && <SalaryCopyButton message={message} />}
-          <ServiceLinesTable lines={lines} settlement={settlement} />
+          <ServiceLinesTable lines={lines} settlement={settlement} tierApplied={tierApplied} baseRate={baseRate} />
         </div>
       )}
     </div>
