@@ -52,8 +52,15 @@ export default async function ReportsPage({
   const next = shift(year, month, 1);
   const cfg = report.config;
 
-  const totalToProviders = report.providers.reduce((s, p) => s + p.monthZelleToProvider, 0);
-  const totalCashToSalon = report.providers.reduce((s, p) => s + p.monthCashToSalon, 0);
+  const sum = (f: (p: ProviderPayout) => number) => report.providers.reduce((s, p) => s + f(p), 0);
+  const totals = {
+    z1: sum((p) => p.firstHalf.zelleToProvider),
+    c1: sum((p) => p.firstHalf.cashToSalon),
+    z2: sum((p) => p.secondHalf.zelleToProvider),
+    c2: sum((p) => p.secondHalf.cashToSalon),
+    zM: sum((p) => p.monthZelleToProvider),
+    cM: sum((p) => p.monthCashToSalon),
+  };
 
   return (
     <main className="mx-auto max-w-6xl p-8">
@@ -82,10 +89,12 @@ export default async function ReportsPage({
               <th className="px-3 py-2">Provider</th>
               <th className="px-3 py-2 text-right">Services</th>
               <th className="px-3 py-2">Tier</th>
-              <th className="px-3 py-2 text-right">1–15 (Zelle)</th>
-              <th className="px-3 py-2 text-right">16–end (Zelle)</th>
+              <th className="px-3 py-2 text-right">1–15 → provider</th>
+              <th className="px-3 py-2 text-right">1–15 cash → salon</th>
+              <th className="px-3 py-2 text-right">16–end → provider</th>
+              <th className="px-3 py-2 text-right">16–end cash → salon</th>
               <th className="px-3 py-2 text-right">Month → provider</th>
-              <th className="px-3 py-2 text-right">Cash → salon</th>
+              <th className="px-3 py-2 text-right">Month cash → salon</th>
               <th className="px-3 py-2">#salary</th>
             </tr>
           </thead>
@@ -113,12 +122,14 @@ export default async function ReportsPage({
                   </div>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usd(p.firstHalf.zelleToProvider)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usd(p.firstHalf.cashToSalon)}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-zinc-600">
                   {usd(p.secondHalf.zelleToProvider)}
                   {p.secondHalf.tierBonus > 0 && (
                     <span className="ml-1 text-xs text-amber-600">+{usd(p.secondHalf.tierBonus)} bonus</span>
                   )}
                 </td>
+                <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usd(p.secondHalf.cashToSalon)}</td>
                 <td className="px-3 py-2 text-right font-semibold tabular-nums">{usd(p.monthZelleToProvider)}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usd(p.monthCashToSalon)}</td>
                 <td className="px-3 py-2">
@@ -127,15 +138,19 @@ export default async function ReportsPage({
               </tr>
             ))}
             {report.providers.length === 0 && (
-              <tr><td colSpan={8} className="px-3 py-6 text-center text-zinc-400">No activity for this month.</td></tr>
+              <tr><td colSpan={10} className="px-3 py-6 text-center text-zinc-400">No activity for this month.</td></tr>
             )}
           </tbody>
           {report.providers.length > 0 && (
             <tfoot className="border-t border-zinc-200 bg-zinc-50 font-medium">
               <tr>
-                <td className="px-3 py-2" colSpan={5}>Totals</td>
-                <td className="px-3 py-2 text-right tabular-nums">{usd(totalToProviders)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{usd(totalCashToSalon)}</td>
+                <td className="px-3 py-2" colSpan={3}>Totals</td>
+                <td className="px-3 py-2 text-right tabular-nums">{usd(totals.z1)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{usd(totals.c1)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{usd(totals.z2)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{usd(totals.c2)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{usd(totals.zM)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{usd(totals.cM)}</td>
                 <td className="px-3 py-2"></td>
               </tr>
             </tfoot>
