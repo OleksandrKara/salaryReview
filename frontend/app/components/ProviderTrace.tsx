@@ -1,5 +1,6 @@
 import type { AttributedService, HalfSettlement, ProviderDetail } from '../lib/types';
 import SalaryCopyButton from './SalaryCopyButton';
+import ServiceLinesTable from './ServiceLinesTable';
 
 const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -117,54 +118,7 @@ function HalfSection({
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg ring-1 ring-zinc-200">
-        <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
-            <tr>
-              <th className="px-3 py-2">Date</th>
-              <th className="px-3 py-2">Service</th>
-              <th className="px-3 py-2">Channel</th>
-              <th className="px-3 py-2 text-right">Gross</th>
-              <th className="px-3 py-2 text-right">Discount</th>
-              <th className="px-3 py-2 text-right">Net</th>
-              <th className="px-3 py-2 text-center">Counts</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100">
-            {lines.map((l, i) => (
-              <tr key={i} className="hover:bg-zinc-50">
-                <td className="px-3 py-2 tabular-nums text-zinc-600">{l.date}</td>
-                <td className="px-3 py-2">
-                  <span className="flex items-center gap-2">
-                    {l.service}
-                    {l.prepaid && <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 ring-1 ring-violet-200">prepaid</span>}
-                  </span>
-                </td>
-                <td className="px-3 py-2"><ChannelTag channel={l.channel} /></td>
-                <td className="px-3 py-2 text-right tabular-nums">{usd(l.gross)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{l.discount > 0 ? `−${usd(l.discount)}` : '—'}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{usd(l.net)}</td>
-                <td className="px-3 py-2 text-center">{l.counted ? '✓' : <span className="text-zinc-300">—</span>}</td>
-              </tr>
-            ))}
-            {lines.length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-4 text-center text-zinc-400">No services this period.</td></tr>
-            )}
-          </tbody>
-          <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs">
-            <tr>
-              <td className="px-3 py-2 font-medium" colSpan={2}>
-                Counted: {settlement.countedServices} · rate {Math.round(settlement.appliedRate * 100)}%
-              </td>
-              <td className="px-3 py-2 text-right text-zinc-500">card {usd(settlement.cardRevenue)}</td>
-              <td className="px-3 py-2 text-right text-zinc-500" colSpan={2}>
-                tips {usd(settlement.tipsAfterFee)}{settlement.tierBonus > 0 && ` · bonus ${usd(settlement.tierBonus)}`}
-              </td>
-              <td className="px-3 py-2 text-right font-semibold" colSpan={2}>→ {usd(settlement.zelleToProvider)}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+      <ServiceLinesTable lines={lines} settlement={settlement} />
     </section>
   );
 }

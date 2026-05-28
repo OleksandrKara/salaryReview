@@ -40,16 +40,19 @@ public class SettlementPreviewService {
     private final ProviderDirectory directory;
     private final TierGrantRepository tierGrants;
     private final SettlementFeedbackRepository feedback;
+    private final SquareClient square;
 
     public SettlementPreviewService(SquareMonthAggregator aggregator, TierCommissionEngine engine,
                                     SalonConfigRepository salonConfig, ProviderDirectory directory,
-                                    TierGrantRepository tierGrants, SettlementFeedbackRepository feedback) {
+                                    TierGrantRepository tierGrants, SettlementFeedbackRepository feedback,
+                                    SquareClient square) {
         this.aggregator = aggregator;
         this.engine = engine;
         this.salonConfig = salonConfig;
         this.directory = directory;
         this.tierGrants = tierGrants;
         this.feedback = feedback;
+        this.square = square;
     }
 
     @Transactional
@@ -146,10 +149,18 @@ public class SettlementPreviewService {
         if (m == null) {
             return new ProviderDetail(year, month, providerId, null, null, List.of(), agg.unmatched(), null, null);
         }
-        List<SquareMonthAggregator.AttributedService> lines = agg.services().stream()
+        List<SquareMonthAggregator.AttributedService> matched = agg.services().stream()
                 .filter(s -> m.memberIds.contains(s.providerId()))
+                // Chronological: oldest first, by appointment date then start time.
                 .sorted(Comparator.comparing(SquareMonthAggregator.AttributedService::date)
+                        .thenComparing(s -> parseTime(s.time()))
                         .thenComparing(SquareMonthAggregator.AttributedService::service))
+                .toList();
+        // Attach the short client name (e.g. "Donnah P.") — only this provider's customers, cached.
+        Map<String, String> names = square.customerNames(matched.stream()
+                .map(SquareMonthAggregator.AttributedService::customerId).toList());
+        List<SquareMonthAggregator.AttributedService> lines = matched.stream()
+                .map(s -> s.withCustomer(shortName(names.get(s.customerId()))))
                 .toList();
         int firstCount = (int) lines.stream().filter(s -> "FIRST".equals(s.half())).count();
         int secondCount = (int) lines.stream().filter(s -> "SECOND".equals(s.half())).count();
@@ -192,6 +203,28 @@ public class SettlementPreviewService {
 
     private static String money(BigDecimal amount) {
         return amount.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+    }
+
+    private static final java.time.format.DateTimeFormatter TIME_PARSE =
+            java.time.format.DateTimeFormatter.ofPattern("h:mm a", java.util.Locale.US);
+
+    /** Parse the display time ("2:30 PM") for chronological sorting; unknown sorts first. */
+    private static java.time.LocalTime parseTime(String t) {
+        if (t == null || t.isBlank()) return java.time.LocalTime.MIN;
+        try {
+            return java.time.LocalTime.parse(t, TIME_PARSE);
+        } catch (RuntimeException e) {
+            return java.time.LocalTime.MIN;
+        }
+    }
+
+    /** "Donnah Phipps" → "Donnah P." (first name + last initial); null/blank → null. */
+    private static String shortName(String full) {
+        if (full == null || full.isBlank()) return null;
+        String[] parts = full.trim().split("\\s+");
+        if (parts.length == 1) return parts[0];
+        String last = parts[parts.length - 1];
+        return parts[0] + " " + Character.toUpperCase(last.charAt(0)) + ".";
     }
 
     /** Collapse Square team members into provider persons (merging any duplicate accounts). */

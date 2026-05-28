@@ -81,13 +81,14 @@ public class SquareMonthAggregator {
                 if (firstProvider == null) firstProvider = s.teamMemberId();
                 bookingServiceIds.add(s.serviceVariationId());
                 segIndex.computeIfAbsent(key(b.customerId(), s.serviceVariationId()), k -> new ArrayList<>())
-                        .add(new Seg(s.teamMemberId(), day));
+                        .add(new Seg(s.teamMemberId(), day, b.id(), b.startAt()));
             }
             // Cash note ("cashew $nn" or Russian "наличные") → a cash service for the booking's provider.
             // The amount is what's written, or the appointment's catalog service total when omitted.
             var cash = cashNotes.parse(b.sellerNote()).or(() -> cashNotes.parse(b.customerNote()));
             if (cash.isPresent() && firstProvider != null) {
-                cashEntries.add(new CashBooking(firstProvider, day, cash.get().amount(), bookingServiceIds));
+                cashEntries.add(new CashBooking(firstProvider, day, cash.get().amount(), bookingServiceIds,
+                        b.id(), b.startAt(), b.customerId()));
             }
         }
 
@@ -134,7 +135,8 @@ public class SquareMonthAggregator {
                     providersOnOrder.put(seg.providerId, half);
                     services.add(new AttributedService(seg.providerId, nameById.getOrDefault(seg.providerId, "?"),
                             str(seg.day), half.name(), li.name(), revenue, discount, net, counted, m.prepaid,
-                            cashOrder ? "CASH" : "CARD"));
+                            cashOrder ? "CASH" : "CARD", localTime(seg.startAt, zone), seg.bookingId,
+                            o.customerId(), null));
                 }
             }
 
@@ -171,7 +173,8 @@ public class SquareMonthAggregator {
             a.counted += countedSegs;
             services.add(new AttributedService(cb.providerId, nameById.getOrDefault(cb.providerId, "?"),
                     str(cb.day), half.name(), "cash note (" + countedSegs + " counted)", amount,
-                    BigDecimal.ZERO, amount, countedSegs > 0, false, "CASH-NOTE"));
+                    BigDecimal.ZERO, amount, countedSegs > 0, false, "CASH-NOTE",
+                    localTime(cb.startAt, zone), cb.bookingId, cb.customerId(), null));
         }
 
         // --- Assemble per-provider month (both halves) ---
@@ -230,6 +233,15 @@ public class SquareMonthAggregator {
     private static LocalDate localDate(String iso, ZoneId zone) {
         if (iso == null || iso.isBlank()) return null;
         return Instant.parse(iso).atZone(zone).toLocalDate();
+    }
+
+    private static final java.time.format.DateTimeFormatter TIME_FMT =
+            java.time.format.DateTimeFormatter.ofPattern("h:mm a", java.util.Locale.US);
+
+    /** The appointment start time in the salon's local zone, e.g. "2:30 PM" (null if unknown). */
+    private static String localTime(String iso, ZoneId zone) {
+        if (iso == null || iso.isBlank()) return null;
+        return Instant.parse(iso).atZone(zone).format(TIME_FMT);
     }
 
     private static String key(String customerId, String serviceVariationId) {
@@ -326,16 +338,21 @@ public class SquareMonthAggregator {
     private static final class Seg {
         final String providerId;
         final LocalDate day;
+        final String bookingId;
+        final String startAt;
         boolean used = false;
 
-        Seg(String providerId, LocalDate day) {
+        Seg(String providerId, LocalDate day, String bookingId, String startAt) {
             this.providerId = providerId;
             this.day = day;
+            this.bookingId = bookingId;
+            this.startAt = startAt;
         }
     }
 
     private record CashBooking(String providerId, LocalDate day, Optional<BigDecimal> explicitAmount,
-                               List<String> serviceVariationIds) {}
+                               List<String> serviceVariationIds, String bookingId, String startAt,
+                               String customerId) {}
 
     // --- result types ---
 
@@ -345,7 +362,14 @@ public class SquareMonthAggregator {
 
     public record AttributedService(String providerId, String providerName, String date, String half,
                                     String service, BigDecimal gross, BigDecimal discount, BigDecimal net,
-                                    boolean counted, boolean prepaid, String channel) {}
+                                    boolean counted, boolean prepaid, String channel,
+                                    String time, String bookingId, String customerId, String customer) {
+        /** A copy with the (short) customer name filled in — set by the detail service after lookup. */
+        public AttributedService withCustomer(String c) {
+            return new AttributedService(providerId, providerName, date, half, service, gross, discount, net,
+                    counted, prepaid, channel, time, bookingId, customerId, c);
+        }
+    }
 
     public record UnmatchedLine(String date, String service, BigDecimal gross, String channel,
                                 String customerId, String customerName) {}
