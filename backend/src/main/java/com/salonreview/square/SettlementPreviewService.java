@@ -4,6 +4,7 @@ import com.salonreview.commission.CommissionConfig;
 import com.salonreview.commission.HalfInput;
 import com.salonreview.commission.HalfSettlement;
 import com.salonreview.commission.TierCommissionEngine;
+import com.salonreview.domain.Half;
 import com.salonreview.domain.Provider;
 import com.salonreview.domain.SalonConfig;
 import com.salonreview.domain.SettlementFeedback;
@@ -105,7 +106,7 @@ public class SettlementPreviewService {
         MonthAggregation agg = aggregator.aggregate(year, month, sc.getServicePriceCutoff());
         Merged m = collapseToPersons(agg).get(providerId);
         if (m == null) {
-            return new ProviderDetail(year, month, providerId, null, null, List.of(), agg.unmatched());
+            return new ProviderDetail(year, month, providerId, null, null, List.of(), agg.unmatched(), null, null);
         }
         ProviderPayout payout = toPayout(m, config, granted, fb);
         List<SquareMonthAggregator.AttributedService> lines = agg.services().stream()
@@ -113,7 +114,37 @@ public class SettlementPreviewService {
                 .sorted(Comparator.comparing(SquareMonthAggregator.AttributedService::date)
                         .thenComparing(SquareMonthAggregator.AttributedService::service))
                 .toList();
-        return new ProviderDetail(year, month, providerId, m.name, payout, lines, agg.unmatched());
+        int firstCount = (int) lines.stream().filter(s -> "FIRST".equals(s.half())).count();
+        int secondCount = (int) lines.stream().filter(s -> "SECOND".equals(s.half())).count();
+        String firstMsg = salaryMessage(year, month, Half.FIRST, m.name, sc, m.first, payout.firstHalf(), firstCount);
+        String secondMsg = salaryMessage(year, month, Half.SECOND, m.name, sc, m.second, payout.secondHalf(), secondCount);
+        return new ProviderDetail(year, month, providerId, m.name, payout, lines, agg.unmatched(),
+                firstMsg, secondMsg);
+    }
+
+    /** The copy-pasteable {@code #salary} block for one half, matching the salon's manual format. */
+    private static String salaryMessage(int year, int month, Half half, String providerName,
+                                        SalonConfig sc, HalfInput input, HalfSettlement settlement,
+                                        int procedures) {
+        String label = (half == Half.FIRST ? "1-15 " : "16-END ")
+                + java.time.Month.of(month).getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.US)
+                + " " + year;
+        String feePct = sc.getCardTipFeeRate().multiply(BigDecimal.valueOf(100))
+                .setScale(2, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+        String owner = sc.getOwnerShortName();
+        return "#salary " + label + "\n"
+                + procedures + " procedures\n"
+                + "Card: $" + money(input.cardRevenue()) + "\n"
+                + "Cash: $" + money(input.cashTotal()) + "\n\n"
+                + "Cancellations, hours or discounts to compensate or redos: $" + money(input.adjustments()) + "\n"
+                + "Tips: $" + money(input.cardTips()) + "\n"
+                + "Tips(-" + feePct + "%): $" + money(settlement.tipsAfterFee()) + "\n\n"
+                + "Zelle " + owner + " to " + providerName + ": $" + money(settlement.zelleToProvider()) + "\n"
+                + "Cash from " + providerName + " to " + owner + ": $" + money(settlement.cashToSalon());
+    }
+
+    private static String money(BigDecimal amount) {
+        return amount.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
     }
 
     /** Collapse Square team members into provider persons (merging any duplicate accounts). */
@@ -181,9 +212,13 @@ public class SettlementPreviewService {
                                  BigDecimal monthZelleToProvider, BigDecimal monthCashToSalon,
                                  String feedbackStatus, String feedbackComment) {}
 
-    /** Line-level trace for one provider/month, plus the salon-wide unattributed lines. */
+    /**
+     * Line-level trace for one provider/month, plus the salon-wide unattributed lines and the
+     * copy-pasteable {@code #salary} block for each half.
+     */
     public record ProviderDetail(int year, int month, Long providerId, String name,
                                  ProviderPayout payout,
                                  List<SquareMonthAggregator.AttributedService> services,
-                                 List<SquareMonthAggregator.UnmatchedLine> unmatched) {}
+                                 List<SquareMonthAggregator.UnmatchedLine> unmatched,
+                                 String firstHalfMessage, String secondHalfMessage) {}
 }

@@ -5,7 +5,9 @@ import com.salonreview.domain.FeedbackStatus;
 import com.salonreview.domain.SettlementFeedback;
 import com.salonreview.repo.SettlementFeedbackRepository;
 import com.salonreview.square.SettlementPreviewService;
+import com.salonreview.square.SettlementPreviewService.ProviderDetail;
 import com.salonreview.square.SettlementPreviewService.ProviderPayout;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -44,6 +46,27 @@ public class SettlementSelfController {
         int m = month != null ? month : today.getMonthValue();
         ProviderPayout payout = previews.previewForProvider(y, m, providerId);
         return payout != null ? ResponseEntity.ok(payout) : ResponseEntity.noContent().build();
+    }
+
+    /**
+     * The provider's own line-level breakdown (appointments, discounts, prepaid, cash notes) plus the
+     * {@code #salary} blocks — so they can trace their own numbers. The salon-wide unattributed lines
+     * are withheld here (they reference other customers); that view stays owner/manager-only.
+     */
+    @GetMapping("/detail")
+    public ResponseEntity<ProviderDetail> myDetail(
+            @AuthenticationPrincipal AppUserPrincipal me,
+            @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) Integer month) {
+        Long providerId = requireProvider(me);
+        LocalDate today = LocalDate.now();
+        int y = year != null ? year : today.getYear();
+        int m = month != null ? month : today.getMonthValue();
+        ProviderDetail d = previews.providerDetail(y, m, providerId);
+        // Strip the salon-wide unattributed lines for the provider's own view.
+        ProviderDetail scoped = new ProviderDetail(d.year(), d.month(), d.providerId(), d.name(),
+                d.payout(), d.services(), List.of(), d.firstHalfMessage(), d.secondHalfMessage());
+        return ResponseEntity.ok(scoped);
     }
 
     @PostMapping("/feedback")
