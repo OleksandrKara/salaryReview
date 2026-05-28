@@ -191,6 +191,8 @@ export interface ProviderDetail {
   payout: ProviderPayout | null;
   services: AttributedService[];
   unmatched: UnmatchedLine[];
+  firstHalfMessage: string | null;
+  secondHalfMessage: string | null;
 }
 
 export interface SettlementDiagnostics {

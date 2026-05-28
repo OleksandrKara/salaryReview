@@ -42,6 +42,9 @@ export const serverApi = {
   getMySettlement: (year: number, month: number) =>
     serverFetch<ProviderPayout | null>(`/api/settlements/me?year=${year}&month=${month}`),
 
+  getMyDetail: (year: number, month: number) =>
+    serverFetch<ProviderDetail>(`/api/settlements/me/detail?year=${year}&month=${month}`),
+
   listUsers: () => serverFetch<AppUser[]>(`/api/users`),
 
   listProviders: () => serverFetch<Provider[]>(`/api/providers?all=true`),

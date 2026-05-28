@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { serverApi } from '../lib/serverApi';
+import ProviderTrace from '../components/ProviderTrace';
 import SettlementFeedbackForm from './SettlementFeedbackForm';
 
 const MONTHS = [
@@ -15,7 +16,9 @@ function shift(year: number, month: number, by: number) {
   return { year: year + Math.floor(idx / 12), month: ((idx % 12) + 12) % 12 + 1 };
 }
 
-// Provider's read-only view of their own month, with approve / request-correction.
+// Provider's read-only view of their own month: summary, a line-by-line breakdown (appointments,
+// discounts, cash notes) for tracing their numbers, the copy-pasteable #salary per half, and
+// approve / request-correction.
 export default async function MyReportPage({
   searchParams,
 }: {
@@ -26,12 +29,13 @@ export default async function MyReportPage({
   const year = Number(sp.year) || now.getUTCFullYear();
   const month = Number(sp.month) || now.getUTCMonth() + 1;
 
-  const me = await serverApi.getMySettlement(year, month);
+  const detail = await serverApi.getMyDetail(year, month);
+  const me = detail.payout;
   const prev = shift(year, month, -1);
   const next = shift(year, month, 1);
 
   return (
-    <main className="mx-auto max-w-2xl p-8">
+    <main className="mx-auto max-w-3xl p-8">
       <div className="mb-1 flex items-center justify-between">
         <div className="flex items-baseline gap-3">
           <h1 className="text-2xl font-semibold">My pay</h1>
@@ -61,6 +65,13 @@ export default async function MyReportPage({
               Includes a {usd(me.secondHalf.tierBonus)} tier bonus at month close (50/50 true-up).
             </p>
           )}
+
+          <h2 className="mt-8 mb-3 text-sm font-semibold">Breakdown</h2>
+          <p className="mb-4 text-xs text-zinc-500">
+            Every service, with discounts and cash notes, so you can check your numbers. Copy the
+            #salary block per half.
+          </p>
+          <ProviderTrace detail={detail} showUnmatched={false} />
 
           <SettlementFeedbackForm
             year={year}
