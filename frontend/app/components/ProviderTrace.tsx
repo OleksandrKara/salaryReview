@@ -1,6 +1,5 @@
-import type { AttributedService, HalfSettlement, ProviderDetail } from '../lib/types';
-import SalaryCopyButton from './SalaryCopyButton';
-import ServiceLinesTable from './ServiceLinesTable';
+import type { ProviderDetail } from '../lib/types';
+import CollapsibleHalf from './CollapsibleHalf';
 
 const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -15,8 +14,8 @@ function ChannelTag({ channel }: { channel: string }) {
 }
 
 // Per-provider line-level trace shared by the owner/manager drill-down and the provider self-view.
-// `showUnmatched` controls the salon-wide unattributed section (owner/manager only — it references
-// other customers).
+// Each half is a collapsible card (show/hide). `showUnmatched` controls the salon-wide unattributed
+// section (owner/manager only — it references other customers).
 export default function ProviderTrace({
   detail,
   showUnmatched,
@@ -28,16 +27,16 @@ export default function ProviderTrace({
   const secondHalf = detail.services.filter((s) => s.half === 'SECOND');
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-3">
       {detail.payout && (
         <>
-          <HalfSection title="1–15" lines={firstHalf} settlement={detail.payout.firstHalf} message={detail.firstHalfMessage} tierApplied={detail.payout.tierApplied} baseRate={detail.payout.firstHalf.appliedRate} />
-          <HalfSection title="16–end" lines={secondHalf} settlement={detail.payout.secondHalf} message={detail.secondHalfMessage} tierApplied={detail.payout.tierApplied} baseRate={detail.payout.firstHalf.appliedRate} />
+          <CollapsibleHalf title="1–15" lines={firstHalf} settlement={detail.payout.firstHalf} message={detail.firstHalfMessage} tierApplied={detail.payout.tierApplied} baseRate={detail.payout.firstHalf.appliedRate} />
+          <CollapsibleHalf title="16–end" lines={secondHalf} settlement={detail.payout.secondHalf} message={detail.secondHalfMessage} tierApplied={detail.payout.tierApplied} baseRate={detail.payout.firstHalf.appliedRate} />
         </>
       )}
 
       {showUnmatched && (
-        <section>
+        <section className="mt-5">
           <h2 className="mb-1 text-sm font-semibold">Unattributed sales ({detail.unmatched.length})</h2>
           <p className="mb-2 text-xs text-zinc-500">
             Paid order lines Square couldn&apos;t tie to any provider&apos;s booking. Salon-wide — could
@@ -87,42 +86,5 @@ export default function ProviderTrace({
         </section>
       )}
     </div>
-  );
-}
-
-function HalfSection({
-  title,
-  lines,
-  settlement,
-  message,
-  tierApplied,
-  baseRate,
-}: {
-  title: string;
-  lines: AttributedService[];
-  settlement: HalfSettlement;
-  message: string | null;
-  tierApplied: boolean;
-  baseRate: number;
-}) {
-  const gross = lines.reduce((s, l) => s + l.gross, 0);
-  const discount = lines.reduce((s, l) => s + l.discount, 0);
-  return (
-    <section>
-      <div className="mb-2 flex items-baseline justify-between">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        <span className="text-xs text-zinc-500">
-          {lines.length} lines · gross {usd(gross)}{discount > 0 && ` · discounts ${usd(discount)}`}
-        </span>
-      </div>
-
-      {message && (
-        <div className="mb-3">
-          <SalaryCopyButton message={message} />
-        </div>
-      )}
-
-      <ServiceLinesTable lines={lines} settlement={settlement} tierApplied={tierApplied} baseRate={baseRate} />
-    </section>
   );
 }
