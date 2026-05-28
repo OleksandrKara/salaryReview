@@ -147,7 +147,8 @@ public class SettlementPreviewService {
         MonthAggregation agg = aggregator.aggregate(year, month, sc.getServicePriceCutoff());
         Merged m = collapseToPersons(agg).get(providerId);
         if (m == null) {
-            return new ProviderDetail(year, month, providerId, null, null, List.of(), agg.unmatched(), null, null);
+            return new ProviderDetail(year, month, providerId, null, null, List.of(), agg.unmatched(), null, null,
+                    sc.getServicePriceCutoff());
         }
         List<SquareMonthAggregator.AttributedService> matched = agg.services().stream()
                 .filter(s -> m.memberIds.contains(s.providerId()))
@@ -171,7 +172,7 @@ public class SettlementPreviewService {
         ProviderPayout payout = toPayout(m, config, granted, fb, sc, year, month,
                 new int[]{firstCount, secondCount}, new BigDecimal[]{firstDisc, secondDisc});
         return new ProviderDetail(year, month, providerId, m.name, payout, lines, agg.unmatched(),
-                payout.firstHalfMessage(), payout.secondHalfMessage());
+                payout.firstHalfMessage(), payout.secondHalfMessage(), sc.getServicePriceCutoff());
     }
 
     /** The copy-pasteable {@code #salary} block for one half, matching the salon's manual format. */
@@ -307,5 +308,6 @@ public class SettlementPreviewService {
                                  ProviderPayout payout,
                                  List<SquareMonthAggregator.AttributedService> services,
                                  List<SquareMonthAggregator.UnmatchedLine> unmatched,
-                                 String firstHalfMessage, String secondHalfMessage) {}
+                                 String firstHalfMessage, String secondHalfMessage,
+                                 BigDecimal priceCutoff) {}
 }

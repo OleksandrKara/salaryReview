@@ -37,10 +37,11 @@ export default async function MyReportPage({
   const prev = shift(year, month, -1);
   const next = shift(year, month, 1);
 
-  // "Services" = services counted toward the tier (matches the ✓ tally in the breakdown). A cash note
-  // can cover several, so this is the settlement's counted count, not the raw line count.
-  const firstCount = me ? me.firstHalf.countedServices : 0;
-  const secondCount = me ? me.secondHalf.countedServices : 0;
+  // Main services = counted toward the tier (gross >= cutoff); total includes sub-cutoff add-ons.
+  // A cash note can cover several services, so these sum per-line units, not the raw line count.
+  const totalFirst = detail.services.filter((s) => s.half === 'FIRST').reduce((n, s) => n + s.units, 0);
+  const totalSecond = detail.services.filter((s) => s.half === 'SECOND').reduce((n, s) => n + s.units, 0);
+  const cutoffTip = `A "main service" is one with a gross of ${usd(detail.priceCutoff)} or higher (counts toward the 50/50 tier). Add-ons below that aren't counted.`;
 
   return (
     <main className="mx-auto max-w-3xl p-8">
@@ -64,14 +65,14 @@ export default async function MyReportPage({
           <div className="grid grid-cols-2 gap-4 rounded-lg bg-zinc-900 p-5 text-white sm:grid-cols-4">
             <Headline label="Month → you" value={usd(me.monthZelleToProvider)} big />
             <Headline label="Cash → salon" value={usd(me.monthCashToSalon)} />
-            <Headline label="Services" value={String(firstCount + secondCount)} />
+            <Headline label="Main services" value={String(me.monthCountedServices)} tip={cutoffTip} />
             <Headline label="Tier" value={me.tierApplied ? '50 / 50' : '45 / 55'} />
           </div>
 
           {/* Per-period cards */}
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <PeriodCard title="1–15" half={me.firstHalf} count={firstCount} message={detail.firstHalfMessage} />
-            <PeriodCard title="16–end" half={me.secondHalf} count={secondCount} message={detail.secondHalfMessage} />
+            <PeriodCard title="1–15" half={me.firstHalf} total={totalFirst} cutoffTip={cutoffTip} message={detail.firstHalfMessage} />
+            <PeriodCard title="16–end" half={me.secondHalf} total={totalSecond} cutoffTip={cutoffTip} message={detail.secondHalfMessage} />
           </div>
 
           <DiscountBreakdown services={detail.services} />
@@ -90,10 +91,10 @@ export default async function MyReportPage({
   );
 }
 
-function Headline({ label, value, big }: { label: string; value: string; big?: boolean }) {
+function Headline({ label, value, big, tip }: { label: string; value: string; big?: boolean; tip?: string }) {
   return (
     <div>
-      <div className="text-xs text-zinc-300">{label}</div>
+      <div className="text-xs text-zinc-300" title={tip}>{label}{tip && <span className="ml-0.5 cursor-help text-zinc-400">ⓘ</span>}</div>
       <div className={`mt-1 font-semibold tabular-nums ${big ? 'text-2xl' : 'text-xl'}`}>{value}</div>
     </div>
   );
@@ -102,12 +103,14 @@ function Headline({ label, value, big }: { label: string; value: string; big?: b
 function PeriodCard({
   title,
   half,
-  count,
+  total,
+  cutoffTip,
   message,
 }: {
   title: string;
   half: HalfSettlement;
-  count: number;
+  total: number;
+  cutoffTip: string;
   message: string | null;
 }) {
   return (
@@ -117,7 +120,8 @@ function PeriodCard({
         {message && <SalaryPopupButton title={`#salary · ${title}`} message={message} />}
       </div>
       <dl className="space-y-1.5 text-sm">
-        <Row label="Services" value={String(count)} />
+        <Row label="Main services" value={String(half.countedServices)} tip={cutoffTip} />
+        <Row label="Total services" value={String(total)} />
         <Row label="Card" value={usd(half.cardRevenue)} />
         <Row label="Cash" value={usd(half.cashCollected)} />
         <Row label="Tips (after fee)" value={usd(half.tipsAfterFee)} />
@@ -131,11 +135,11 @@ function PeriodCard({
   );
 }
 
-function Row({ label, value, strong, hint }: { label: string; value: string; strong?: boolean; hint?: boolean }) {
+function Row({ label, value, strong, hint, tip }: { label: string; value: string; strong?: boolean; hint?: boolean; tip?: string }) {
   const tone = hint ? 'text-amber-600' : 'text-zinc-500';
   return (
     <div className={`flex items-baseline justify-between ${hint ? 'text-xs' : ''}`}>
-      <dt className={tone}>{label}</dt>
+      <dt className={tone} title={tip}>{label}{tip && <span className="ml-0.5 cursor-help text-zinc-400">ⓘ</span>}</dt>
       <dd className={`tabular-nums ${strong ? 'font-semibold text-zinc-900' : hint ? 'text-amber-600' : ''}`}>{value}</dd>
     </div>
   );
