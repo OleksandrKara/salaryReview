@@ -102,6 +102,43 @@ export interface ProviderPayout {
   secondHalf: HalfSettlement;
   monthZelleToProvider: number;
   monthCashToSalon: number;
+  // Provider's response to this month (null until they act). Owner/manager see it on the report.
+  feedbackStatus: FeedbackStatus | null;
+  feedbackComment: string | null;
+}
+
+// --- Accounts & roles (Phase 2) ---
+
+export type Role = 'OWNER' | 'MANAGER' | 'PROVIDER';
+
+export type FeedbackStatus = 'APPROVED' | 'CHANGES_REQUESTED';
+
+export interface Me {
+  username: string;
+  role: Role;
+  providerId: number | null;
+}
+
+export interface AppUser {
+  id: number;
+  username: string;
+  role: Role;
+  providerId: number | null;
+  active: boolean;
+}
+
+export interface UserCreateRequest {
+  username: string;
+  password: string;
+  role: Role;
+  providerId?: number | null;
+}
+
+export interface UserUpdateRequest {
+  role?: Role | null;
+  active?: boolean | null;
+  password?: string | null;
+  providerId?: number | null;
 }
 
 export interface SettlementDiagnostics {

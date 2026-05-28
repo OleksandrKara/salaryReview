@@ -5,7 +5,7 @@ import { useState } from 'react';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState('owner');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -24,7 +24,8 @@ export default function LoginPage() {
         setError(res.status === 401 ? 'Incorrect username or password.' : 'Login failed.');
         return;
       }
-      router.replace('/reports');
+      const { role } = (await res.json().catch(() => ({}))) as { role?: string };
+      router.replace(role === 'PROVIDER' ? '/me' : '/reports');
       router.refresh();
     } finally {
       setBusy(false);

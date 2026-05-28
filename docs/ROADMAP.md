@@ -15,19 +15,31 @@ Living roadmap for the Square-sourced automated salary tool. Keep this updated a
 - **Persistence** — per-salon commission config, provider↔Square-member mapping with
   auto-provisioning, persisted tier grants (Flyway V4–V7).
 - **Report UI** — `/reports` month view with tier badges, payouts, inline grant/revoke.
-- **Auth (A)** — single shared owner login (see below).
+- **Per-user accounts & roles** — owner / manager / provider over a server-side session (see below).
 
 ## Next / deferred
 
-### Phase 2 — Per-user accounts & roles  ← (B), explicitly deferred from Phase 1
-Replace the single shared owner login with real accounts and **roles: owner / manager / provider**.
-- **Owner** — super admin: config, all reports, grants, user management.
-- **Manager** — CRUD on redos/adjustments, tag uncovered discounts, apply 50/50 grants.
-- **Provider** — self sign-up; **read-only view of their own numbers**; approve or leave a correction
-  comment on their settlement.
-- Implies: user table, password hashing, role-gated endpoints (`@PreAuthorize`), provider↔account
-  linking, an approval/comment workflow, and provider-scoped data access.
-- The Phase-1 single login is intentionally a stopgap; this is the planned replacement.
+### Done (Phase 2 — per-user accounts & roles)  ← (B), the deferred Phase-1 item
+Replaced the single shared owner login with real accounts and **roles: owner / manager / provider**.
+- **Owner** — super admin: all reports, tier grants, and **user management** (`/admin/users`).
+- **Manager** — all reports + tier grants; no user management.
+- **Provider** — **read-only view of their own month** (`/me`) + **approve / request-correction**
+  (feedback shows as a badge on the owner/manager report).
+- **Built:** `app_user` (V8) + `settlement_feedback` (V9); `AppUser`/`Role`/`SettlementFeedback`
+  domain; `JpaUserDetailsService` + `AppUserPrincipal`; `SecurityConfig` rewritten to Spring Security
+  **server sessions** (form login at `/api/login`, `@EnableMethodSecurity`, role-gated paths);
+  `OwnerBootstrap` seeds the first owner from `APP_OWNER_*`; `UserController`,
+  `SettlementSelfController` (`/api/settlements/me` + `/feedback`), feedback folded into the preview.
+- **Frontend:** `middleware.ts` → **`proxy.ts`** (Next 16 rename) with role routing; login adopts the
+  backend JSESSIONID into an httpOnly `sid` cookie + readable `role` cookie; proxies forward the
+  session; new `/admin/users` and `/me` pages.
+- **Accounts are owner-created** (no open self-signup — deferred, see below).
+
+### Deferred from Phase 2
+- **Open provider self-signup** — owner-invite only for now (avoids someone claiming another's payout).
+- **Spring Session JDBC** — sessions are in-memory; a backend restart logs everyone out. Persist to
+  Postgres when that becomes a problem.
+- **Role-gated salon-config writes** — config is still seeded/managed directly; gate when a config UI lands.
 
 ### Phase 2 — Multi-tenant + Square OAuth
 - Per-merchant Square OAuth (authorization-code flow, refresh tokens, encrypted at rest) replacing
