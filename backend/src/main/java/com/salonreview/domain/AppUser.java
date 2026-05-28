@@ -32,6 +32,13 @@ public class AppUser {
     @Column(name = "provider_id")
     private Long providerId;
 
+    /** Optional link to the Square team member this account came from (any role). */
+    @Column(name = "square_team_member_id")
+    private String squareTeamMemberId;
+
+    @Column
+    private String email;
+
     @Column(nullable = false)
     @Builder.Default
     private boolean active = true;

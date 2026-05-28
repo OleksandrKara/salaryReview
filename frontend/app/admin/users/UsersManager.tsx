@@ -3,16 +3,18 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api } from '../../lib/api';
-import type { AppUser, Provider, Role } from '../../lib/types';
+import type { AppUser, Provider, Role, SquareRosterEntry } from '../../lib/types';
 
 const ROLES: Role[] = ['OWNER', 'MANAGER', 'PROVIDER'];
 
 export default function UsersManager({
   initialUsers,
   providers,
+  roster,
 }: {
   initialUsers: AppUser[];
   providers: Provider[];
+  roster: SquareRosterEntry[];
 }) {
   const router = useRouter();
   const [users, setUsers] = useState(initialUsers);
@@ -20,8 +22,26 @@ export default function UsersManager({
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<Role>('MANAGER');
   const [providerId, setProviderId] = useState<number | ''>('');
+  const [email, setEmail] = useState('');
+  const [squareId, setSquareId] = useState<string | null>(null);
+  const [pickedName, setPickedName] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // Prefill the form from a Square team member: username from the email local-part (or name),
+  // plus suggested role, email, provider link, and the team-member id to store/provision.
+  function importFromSquare(teamMemberId: string) {
+    const entry = roster.find((r) => r.teamMemberId === teamMemberId);
+    if (!entry) return;
+    const suggestedUsername = (entry.email?.split('@')[0] ?? entry.name)
+      .toLowerCase().replace(/[^a-z0-9._-]+/g, '');
+    setUsername(suggestedUsername);
+    setEmail(entry.email ?? '');
+    setRole(entry.suggestedRole);
+    setProviderId(entry.providerId ?? '');
+    setSquareId(entry.teamMemberId);
+    setPickedName(entry.name);
+  }
 
   // A provider can only be linked once; hide those already taken (except keep all for clarity).
   const linkedProviderIds = new Set(users.map((u) => u.providerId).filter(Boolean));
@@ -41,13 +61,20 @@ export default function UsersManager({
         username,
         password,
         role,
-        providerId: role === 'PROVIDER' ? Number(providerId) : null,
+        providerId: role === 'PROVIDER' && providerId !== '' ? Number(providerId) : null,
+        squareTeamMemberId: squareId,
+        email: email || null,
+        name: pickedName,
       });
       setUsers((prev) => [...prev, created].sort((a, b) => a.username.localeCompare(b.username)));
       setUsername('');
       setPassword('');
       setProviderId('');
       setRole('MANAGER');
+      setEmail('');
+      setSquareId(null);
+      setPickedName(null);
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create user');
     } finally {
@@ -75,10 +102,29 @@ export default function UsersManager({
   return (
     <div className="flex flex-col gap-8">
       <form onSubmit={create} className="flex flex-wrap items-end gap-3 rounded-lg ring-1 ring-zinc-200 p-4">
+        {roster.length > 0 && (
+          <label className="text-sm">
+            <span className="mb-1 block text-zinc-600">Import from Square</span>
+            <select value={squareId ?? ''} onChange={(e) => e.target.value ? importFromSquare(e.target.value) : setSquareId(null)}
+              className="w-56 rounded border border-zinc-300 px-2 py-1.5">
+              <option value="">— manual entry —</option>
+              {roster.map((r) => (
+                <option key={r.teamMemberId} value={r.teamMemberId} disabled={r.hasAccount}>
+                  {r.name} · {r.jobTitle ?? r.suggestedRole}{r.hasAccount ? ' (has account)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="text-sm">
           <span className="mb-1 block text-zinc-600">Username</span>
           <input value={username} onChange={(e) => setUsername(e.target.value)} required
             className="w-40 rounded border border-zinc-300 px-2 py-1.5" autoComplete="off" />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-zinc-600">Email</span>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+            className="w-48 rounded border border-zinc-300 px-2 py-1.5" autoComplete="off" />
         </label>
         <label className="text-sm">
           <span className="mb-1 block text-zinc-600">Temp password</span>
@@ -95,9 +141,10 @@ export default function UsersManager({
         {needsProvider && (
           <label className="text-sm">
             <span className="mb-1 block text-zinc-600">Provider</span>
-            <select value={providerId} onChange={(e) => setProviderId(Number(e.target.value) || '')} required
+            <select value={providerId} onChange={(e) => setProviderId(Number(e.target.value) || '')}
+              required={!squareId}
               className="rounded border border-zinc-300 px-2 py-1.5">
-              <option value="">Select…</option>
+              <option value="">{squareId ? 'Auto (from Square)' : 'Select…'}</option>
               {providers.map((p) => (
                 <option key={p.id} value={p.id} disabled={linkedProviderIds.has(p.id)}>
                   {p.displayName}{linkedProviderIds.has(p.id) ? ' (linked)' : ''}
