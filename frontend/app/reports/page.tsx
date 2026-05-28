@@ -25,6 +25,19 @@ function TierBadge({ p }: { p: ProviderPayout }) {
   return <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 ring-1 ring-zinc-300">45/55</span>;
 }
 
+// A period/month cell: Zelle paid to the provider (top) over cash returned to the salon (below).
+function MoneyCell({ zelle, cash, bonus = 0, strong = false }: { zelle: number; cash: number; bonus?: number; strong?: boolean }) {
+  return (
+    <div className="text-right tabular-nums">
+      <div className={strong ? 'font-semibold' : 'text-zinc-700'}>
+        {usd(zelle)}
+        {bonus > 0 && <span className="ml-1 text-xs font-normal text-amber-600">+{usd(bonus)}</span>}
+      </div>
+      <div className="text-xs text-zinc-400">cash {usd(cash)}</div>
+    </div>
+  );
+}
+
 function FeedbackBadge({ p }: { p: ProviderPayout }) {
   if (p.feedbackStatus === 'APPROVED')
     return <span title="Provider approved" className="rounded bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700 ring-1 ring-green-300">✓ approved</span>;
@@ -80,6 +93,7 @@ export default async function ReportsPage({
       </div>
       <p className="mb-6 text-xs text-zinc-500">
         Tier at {cfg.tierServiceThreshold}+ services ≥ {usd(report.priceCutoff)} · {Math.round(cfg.tierRate * 100)}/{Math.round((1 - cfg.tierRate) * 100)} vs {Math.round(cfg.baseRate * 100)}/{Math.round((1 - cfg.baseRate) * 100)} · tips −{(cfg.cardTipFeeRate * 100).toFixed(1)}% · {report.timezone}
+        <br />Each period shows <span className="font-medium text-zinc-600">Zelle paid to provider</span> over <span className="text-zinc-400">cash returned to salon</span>.
       </p>
 
       <div className="overflow-x-auto rounded-lg ring-1 ring-zinc-200">
@@ -89,12 +103,9 @@ export default async function ReportsPage({
               <th className="px-3 py-2">Provider</th>
               <th className="px-3 py-2 text-right">Services</th>
               <th className="px-3 py-2">Tier</th>
-              <th className="px-3 py-2 text-right">1–15 → provider</th>
-              <th className="px-3 py-2 text-right">1–15 cash → salon</th>
-              <th className="px-3 py-2 text-right">16–end → provider</th>
-              <th className="px-3 py-2 text-right">16–end cash → salon</th>
-              <th className="px-3 py-2 text-right">Month → provider</th>
-              <th className="px-3 py-2 text-right">Month cash → salon</th>
+              <th className="px-3 py-2 text-right">1–15</th>
+              <th className="px-3 py-2 text-right">16–end</th>
+              <th className="px-3 py-2 text-right">Month</th>
               <th className="px-3 py-2">#salary</th>
             </tr>
           </thead>
@@ -121,36 +132,25 @@ export default async function ReportsPage({
                     )}
                   </div>
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usd(p.firstHalf.zelleToProvider)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usd(p.firstHalf.cashToSalon)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-zinc-600">
-                  {usd(p.secondHalf.zelleToProvider)}
-                  {p.secondHalf.tierBonus > 0 && (
-                    <span className="ml-1 text-xs text-amber-600">+{usd(p.secondHalf.tierBonus)} bonus</span>
-                  )}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usd(p.secondHalf.cashToSalon)}</td>
-                <td className="px-3 py-2 text-right font-semibold tabular-nums">{usd(p.monthZelleToProvider)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usd(p.monthCashToSalon)}</td>
+                <td className="px-3 py-2"><MoneyCell zelle={p.firstHalf.zelleToProvider} cash={p.firstHalf.cashToSalon} bonus={p.firstHalf.tierBonus} /></td>
+                <td className="px-3 py-2"><MoneyCell zelle={p.secondHalf.zelleToProvider} cash={p.secondHalf.cashToSalon} bonus={p.secondHalf.tierBonus} /></td>
+                <td className="px-3 py-2"><MoneyCell zelle={p.monthZelleToProvider} cash={p.monthCashToSalon} strong /></td>
                 <td className="px-3 py-2">
                   <SalaryButtons name={p.name} firstHalfMessage={p.firstHalfMessage} secondHalfMessage={p.secondHalfMessage} />
                 </td>
               </tr>
             ))}
             {report.providers.length === 0 && (
-              <tr><td colSpan={10} className="px-3 py-6 text-center text-zinc-400">No activity for this month.</td></tr>
+              <tr><td colSpan={7} className="px-3 py-6 text-center text-zinc-400">No activity for this month.</td></tr>
             )}
           </tbody>
           {report.providers.length > 0 && (
             <tfoot className="border-t border-zinc-200 bg-zinc-50 font-medium">
               <tr>
                 <td className="px-3 py-2" colSpan={3}>Totals</td>
-                <td className="px-3 py-2 text-right tabular-nums">{usd(totals.z1)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{usd(totals.c1)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{usd(totals.z2)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{usd(totals.c2)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{usd(totals.zM)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{usd(totals.cM)}</td>
+                <td className="px-3 py-2"><MoneyCell zelle={totals.z1} cash={totals.c1} /></td>
+                <td className="px-3 py-2"><MoneyCell zelle={totals.z2} cash={totals.c2} /></td>
+                <td className="px-3 py-2"><MoneyCell zelle={totals.zM} cash={totals.cM} strong /></td>
                 <td className="px-3 py-2"></td>
               </tr>
             </tfoot>
