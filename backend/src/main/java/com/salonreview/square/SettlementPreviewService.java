@@ -192,7 +192,7 @@ public class SettlementPreviewService {
         return "#salary " + label + "\n"
                 + procedures + " procedures\n"
                 + "Card: $" + money(input.cardRevenue()) + "\n"
-                + "Cash: $" + money(input.cashTotal()) + "\n\n"
+                + "Cash: $" + money(input.cashCollected()) + "\n\n"
                 + "Discounts covered by salon: $" + money(discountsCovered) + "\n"
                 + adjustments
                 + "Tips: $" + money(input.cardTips()) + "\n"
@@ -270,7 +270,8 @@ public class SettlementPreviewService {
                 a.countedServices() + b.countedServices(),
                 a.cardRevenue().add(b.cardRevenue()),
                 a.cardTips().add(b.cardTips()),
-                a.cashTotal().add(b.cashTotal()),
+                a.cashGross().add(b.cashGross()),
+                a.cashCollected().add(b.cashCollected()),
                 a.adjustments().add(b.adjustments()));
     }
 

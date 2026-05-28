@@ -44,7 +44,9 @@ public class TierCommissionEngine {
                 .add(h1.adjustments())
                 .setScale(SCALE, RM);
 
-        BigDecimal cashToSalon = h1.cashTotal().multiply(ONE.subtract(base)).setScale(SCALE, RM);
+        // Provider keeps their commission on the full menu price (base × cashGross); they hand back
+        // whatever cash is left from what they actually collected. The salon absorbs any cash discount.
+        BigDecimal cashToSalon = h1.cashCollected().subtract(h1.cashGross().multiply(base)).setScale(SCALE, RM);
 
         return new HalfSettlement(
                 Half.FIRST,
@@ -93,7 +95,7 @@ public class TierCommissionEngine {
                 : BigDecimal.ZERO.setScale(SCALE, RM);
 
         BigDecimal cashTierRebate = qualified
-                ? h1.cashTotal().add(h2.cashTotal()).multiply(cfg.tierUplift()).setScale(SCALE, RM)
+                ? h1.cashGross().add(h2.cashGross()).multiply(cfg.tierUplift()).setScale(SCALE, RM)
                 : BigDecimal.ZERO.setScale(SCALE, RM);
 
         BigDecimal zelle = h2.cardRevenue().multiply(base)
@@ -102,10 +104,10 @@ public class TierCommissionEngine {
                 .add(tierBonus)
                 .setScale(SCALE, RM);
 
-        // Cash the provider hands back this half, less the whole-month rebate when qualified. May go
-        // negative, meaning the salon returns cash to the provider — the true-up never makes the
-        // provider owe more than they actually should.
-        BigDecimal cashToSalon = h2.cashTotal().multiply(ONE.subtract(base))
+        // Cash the provider hands back this half (collected, less their base commission on the menu
+        // price), then less the whole-month tier rebate when qualified. May go negative, meaning the
+        // salon returns cash — the true-up never makes the provider owe more than they should.
+        BigDecimal cashToSalon = h2.cashCollected().subtract(h2.cashGross().multiply(base))
                 .subtract(cashTierRebate)
                 .setScale(SCALE, RM);
 

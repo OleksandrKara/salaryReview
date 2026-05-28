@@ -9,16 +9,21 @@ import java.math.BigDecimal;
  * below the cutoff, e.g. a $20 design, are excluded before they reach the engine). Card and cash
  * revenue and tips come from Square sync; {@code adjustments} carries manual exceptions (redos,
  * comps) and may be negative.
+ *
+ * <p>Cash is split so discounts are absorbed by the salon (same as card): {@code cashGross} is the
+ * full menu price the commission is computed on, {@code cashCollected} is what the provider actually
+ * took in (after any discount). With no discount the two are equal.
  */
 public record HalfInput(
         int countedServices,
         BigDecimal cardRevenue,
         BigDecimal cardTips,
-        BigDecimal cashTotal,
+        BigDecimal cashGross,
+        BigDecimal cashCollected,
         BigDecimal adjustments
 ) {
     /** An all-zero half, used when a provider has no activity in a half-period. */
     public static HalfInput empty() {
-        return new HalfInput(0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        return new HalfInput(0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
     }
 }
