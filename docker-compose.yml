@@ -53,8 +53,11 @@ services:
     environment:
       # Server-side fetches (Node in the container) reach the backend over Docker DNS. The browser
       # only ever talks to this frontend (same-origin /api/* proxies), so no backend URL is exposed
-      # to the client — nothing hardcoded to localhost.
+      # to the client — nothing hardcoded to localhost, and no public API base to configure.
       BACKEND_URL: http://backend:8080
+      # Auth cookies are marked Secure automatically when a reverse proxy sends
+      # X-Forwarded-Proto: https. Uncomment to force it on (e.g. TLS terminated elsewhere):
+      # COOKIE_SECURE: "true"
     ports:
       # The only publicly published port. Put a reverse proxy with HTTPS in front of this for prod
       # (and then set the auth cookie to Secure — see app/api/login/route.ts).
