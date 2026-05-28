@@ -67,12 +67,28 @@ public class SettlementPreviewService {
 
         MonthAggregation agg = aggregator.aggregate(year, month, cutoff);
         Map<Long, Merged> byPerson = collapseToPersons(agg);
+        Map<Long, int[]> procedures = procedureCounts(agg, byPerson);
 
         List<ProviderPayout> payouts = byPerson.values().stream()
-                .map(m -> toPayout(m, config, tierGrantedProviderIds, feedbackByProvider))
+                .map(m -> toPayout(m, config, tierGrantedProviderIds, feedbackByProvider, sc, year, month,
+                        procedures.getOrDefault(m.providerId, new int[2])))
                 .sorted(Comparator.comparing(p -> p.name().toLowerCase())).toList();
 
         return new SettlementPreview(year, month, agg.timezone(), config, cutoff, payouts, agg.diagnostics());
+    }
+
+    /** Per-person service-line counts per half ({@code [first, second]}), for the #salary "procedures". */
+    private static Map<Long, int[]> procedureCounts(MonthAggregation agg, Map<Long, Merged> byPerson) {
+        Map<String, Long> personByMember = new java.util.HashMap<>();
+        byPerson.forEach((pid, m) -> m.memberIds.forEach(mid -> personByMember.put(mid, pid)));
+        Map<Long, int[]> counts = new java.util.HashMap<>();
+        for (var s : agg.services()) {
+            Long pid = personByMember.get(s.providerId());
+            if (pid == null) continue;
+            int[] c = counts.computeIfAbsent(pid, k -> new int[2]);
+            if ("FIRST".equals(s.half())) c[0]++; else c[1]++;
+        }
+        return counts;
     }
 
     /**
@@ -108,7 +124,6 @@ public class SettlementPreviewService {
         if (m == null) {
             return new ProviderDetail(year, month, providerId, null, null, List.of(), agg.unmatched(), null, null);
         }
-        ProviderPayout payout = toPayout(m, config, granted, fb);
         List<SquareMonthAggregator.AttributedService> lines = agg.services().stream()
                 .filter(s -> m.memberIds.contains(s.providerId()))
                 .sorted(Comparator.comparing(SquareMonthAggregator.AttributedService::date)
@@ -116,10 +131,10 @@ public class SettlementPreviewService {
                 .toList();
         int firstCount = (int) lines.stream().filter(s -> "FIRST".equals(s.half())).count();
         int secondCount = (int) lines.stream().filter(s -> "SECOND".equals(s.half())).count();
-        String firstMsg = salaryMessage(year, month, Half.FIRST, m.name, sc, m.first, payout.firstHalf(), firstCount);
-        String secondMsg = salaryMessage(year, month, Half.SECOND, m.name, sc, m.second, payout.secondHalf(), secondCount);
+        ProviderPayout payout = toPayout(m, config, granted, fb, sc, year, month,
+                new int[]{firstCount, secondCount});
         return new ProviderDetail(year, month, providerId, m.name, payout, lines, agg.unmatched(),
-                firstMsg, secondMsg);
+                payout.firstHalfMessage(), payout.secondHalfMessage());
     }
 
     /** The copy-pasteable {@code #salary} block for one half, matching the salon's manual format. */
@@ -162,7 +177,8 @@ public class SettlementPreviewService {
     }
 
     private ProviderPayout toPayout(Merged m, CommissionConfig config, Set<Long> granted,
-                                    Map<Long, SettlementFeedback> feedbackByProvider) {
+                                    Map<Long, SettlementFeedback> feedbackByProvider,
+                                    SalonConfig sc, int year, int month, int[] procedures) {
         int monthCounted = m.first.countedServices() + m.second.countedServices();
         boolean autoQualified = monthCounted >= config.tierServiceThreshold();
         boolean isGranted = granted.contains(m.providerId);
@@ -173,11 +189,14 @@ public class SettlementPreviewService {
         BigDecimal monthZelle = first.zelleToProvider().add(second.zelleToProvider());
         BigDecimal monthCashToSalon = first.cashToSalon().add(second.cashToSalon());
         SettlementFeedback fb = feedbackByProvider.get(m.providerId);
+        String firstMsg = salaryMessage(year, month, Half.FIRST, m.name, sc, m.first, first, procedures[0]);
+        String secondMsg = salaryMessage(year, month, Half.SECOND, m.name, sc, m.second, second, procedures[1]);
         return new ProviderPayout(m.providerId, m.name, monthCounted, autoQualified,
                 isGranted && !autoQualified, autoQualified || isGranted,
                 first, second, monthZelle, monthCashToSalon,
                 fb != null ? fb.getStatus().name() : null,
-                fb != null ? fb.getComment() : null);
+                fb != null ? fb.getComment() : null,
+                firstMsg, secondMsg);
     }
 
     private static HalfInput sum(HalfInput a, HalfInput b) {
@@ -210,7 +229,8 @@ public class SettlementPreviewService {
                                  boolean autoQualified, boolean tierManuallyGranted, boolean tierApplied,
                                  HalfSettlement firstHalf, HalfSettlement secondHalf,
                                  BigDecimal monthZelleToProvider, BigDecimal monthCashToSalon,
-                                 String feedbackStatus, String feedbackComment) {}
+                                 String feedbackStatus, String feedbackComment,
+                                 String firstHalfMessage, String secondHalfMessage) {}
 
     /**
      * Line-level trace for one provider/month, plus the salon-wide unattributed lines and the
