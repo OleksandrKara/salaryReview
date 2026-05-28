@@ -129,8 +129,12 @@ public class SquareMonthAggregator {
                     BigDecimal discount = SquareClient.toDollars(li.totalDiscountMoney());
                     BigDecimal net = SquareClient.toDollars(li.totalMoney());
                     boolean counted = servicePrice(li, catalogPrice).compareTo(priceCutoff) >= 0;
-                    if (cashOrder) a.cash = a.cash.add(revenue);
-                    else a.card = a.card.add(revenue);
+                    if (cashOrder) {
+                        a.cashGross = a.cashGross.add(revenue);   // menu price (commission basis)
+                        a.cashCollected = a.cashCollected.add(net); // after discount (what was paid)
+                    } else {
+                        a.card = a.card.add(revenue);
+                    }
                     if (counted) a.counted++;
                     providersOnOrder.put(seg.providerId, half);
                     services.add(new AttributedService(seg.providerId, nameById.getOrDefault(seg.providerId, "?"),
@@ -165,15 +169,22 @@ public class SquareMonthAggregator {
                 serviceTotal = serviceTotal.add(price);
                 if (price.compareTo(priceCutoff) >= 0) countedSegs++;
             }
-            BigDecimal amount = cb.explicitAmount.orElse(serviceTotal);
+            // Collected = what the provider wrote in the note (or the catalog total if no amount).
+            // Gross (commission basis) = the menu price; the difference is a salon-absorbed discount.
+            // If the note amount exceeds the catalog (or catalog didn't resolve), treat it as gross
+            // with no discount, so we never undercount the provider.
+            BigDecimal collected = cb.explicitAmount.orElse(serviceTotal);
+            BigDecimal gross = serviceTotal.max(collected);
+            BigDecimal discount = gross.subtract(collected);
             // If catalog prices didn't resolve but a cash amount is known, count it as one service.
-            if (countedSegs == 0 && amount.compareTo(priceCutoff) >= 0) countedSegs = 1;
+            if (countedSegs == 0 && gross.compareTo(priceCutoff) >= 0) countedSegs = 1;
 
-            a.cash = a.cash.add(amount);
+            a.cashGross = a.cashGross.add(gross);
+            a.cashCollected = a.cashCollected.add(collected);
             a.counted += countedSegs;
             services.add(new AttributedService(cb.providerId, nameById.getOrDefault(cb.providerId, "?"),
-                    str(cb.day), half.name(), "cash note (" + countedSegs + " counted)", amount,
-                    BigDecimal.ZERO, amount, countedSegs > 0, false, "CASH-NOTE",
+                    str(cb.day), half.name(), "cash note (" + countedSegs + " counted)", gross,
+                    discount, collected, countedSegs > 0, false, "CASH-NOTE",
                     localTime(cb.startAt, zone), cb.bookingId, cb.customerId(), null));
         }
 
@@ -327,11 +338,12 @@ public class SquareMonthAggregator {
     private static final class Acc {
         BigDecimal card = BigDecimal.ZERO;
         BigDecimal tips = BigDecimal.ZERO;
-        BigDecimal cash = BigDecimal.ZERO;
+        BigDecimal cashGross = BigDecimal.ZERO;      // commission basis (menu price)
+        BigDecimal cashCollected = BigDecimal.ZERO;  // what the provider actually took in
         int counted = 0;
 
         HalfInput toInput() {
-            return new HalfInput(counted, card, tips, cash, BigDecimal.ZERO);
+            return new HalfInput(counted, card, tips, cashGross, cashCollected, BigDecimal.ZERO);
         }
     }
 
