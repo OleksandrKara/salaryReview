@@ -3,7 +3,7 @@
 import { Fragment, useState } from 'react';
 import type { AttributedService } from '../lib/types';
 import { AppointmentCell } from '../components/AppointmentCell';
-import { groupByAppointment } from '../lib/grouping';
+import { groupByDay, formatDay } from '../lib/grouping';
 
 const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -62,22 +62,31 @@ function HalfDiscounts({ title, lines }: { title: string; lines: AttributedServi
                 <th className="px-3 py-2 text-right">Client paid</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {groupByAppointment(lines).map((g) => (
-                <Fragment key={g.key}>
-                  <tr className="border-t border-zinc-200 bg-zinc-50/70">
-                    <td colSpan={4} className="px-3 py-1.5 text-xs">
-                      <span className="font-medium"><AppointmentCell date={g.date} time={g.time} bookingId={g.bookingId} /></span>
-                      {g.customer && <span className="text-zinc-500"> · {g.customer}</span>}
-                    </td>
+            <tbody>
+              {groupByDay(lines).map((day) => (
+                <Fragment key={day.date}>
+                  <tr className="border-t-2 border-zinc-300 bg-zinc-100">
+                    <td colSpan={4} className="px-3 py-1.5 text-xs font-semibold text-zinc-700">{formatDay(day.date)}</td>
                   </tr>
-                  {g.lines.map((l, i) => (
-                    <tr key={i} className="hover:bg-zinc-50">
-                      <td className="px-3 py-2 pl-6">{l.service}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{usd(l.gross)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-emerald-700">−{usd(l.discount)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{usd(l.net)}</td>
-                    </tr>
+                  {day.appointments.map((g) => (
+                    <Fragment key={g.key}>
+                      <tr className="border-t border-zinc-200 bg-zinc-50">
+                        <td colSpan={4} className="px-3 py-1.5 pl-4 text-xs">
+                          <span className="font-medium">
+                            <AppointmentCell date={g.date} time={g.time} bookingId={g.bookingId} label={g.time ?? 'Appointment'} />
+                          </span>
+                          {g.customer && <span className="text-zinc-500"> · {g.customer}</span>}
+                        </td>
+                      </tr>
+                      {g.lines.map((l, i) => (
+                        <tr key={i} className="hover:bg-zinc-50">
+                          <td className="px-3 py-2 pl-8">{l.service}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{usd(l.gross)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-emerald-700">−{usd(l.discount)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{usd(l.net)}</td>
+                        </tr>
+                      ))}
+                    </Fragment>
                   ))}
                 </Fragment>
               ))}

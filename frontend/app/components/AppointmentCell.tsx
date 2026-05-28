@@ -6,13 +6,15 @@ export function AppointmentCell({
   date,
   time,
   bookingId,
+  label,
 }: {
   date: string;
   time: string | null;
   bookingId: string | null;
+  label?: string; // overrides the default "date · time" text (e.g. show just the time)
 }) {
-  const label = time ? `${date} · ${time}` : date;
-  if (!bookingId) return <span className="tabular-nums text-zinc-600">{label}</span>;
+  const text = label ?? (time ? `${date} · ${time}` : date);
+  if (!bookingId) return <span className="tabular-nums text-zinc-600">{text}</span>;
   return (
     <a
       href={`${SQUARE_RESERVATION}${bookingId}`}
@@ -21,7 +23,7 @@ export function AppointmentCell({
       className="tabular-nums text-blue-600 hover:underline"
       title="Open appointment in Square"
     >
-      {label}
+      {text}
     </a>
   );
 }
