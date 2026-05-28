@@ -2,12 +2,12 @@ services:
   postgres:
     image: postgres:16
     container_name: salonreview-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_DB: salonreview
       POSTGRES_USER: salon
-      POSTGRES_PASSWORD: salon
-    ports:
-      - "5432:5432"
+      # Set a strong POSTGRES_PASSWORD in the .env next to this file (dev default: salon).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-salon}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -15,25 +15,25 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    # No host port published — only reachable by other services on the internal Docker network.
 
   backend:
     build:
       context: ./backend
     container_name: salonreview-backend
+    restart: unless-stopped
     environment:
       # Override the dev defaults in application.yml — talk to the postgres service via Docker DNS.
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/salonreview
       SPRING_DATASOURCE_USERNAME: salon
-      SPRING_DATASOURCE_PASSWORD: salon
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-salon}
       # Square credentials — read from your shell or the .env file next to this compose file.
       SQUARE_ENVIRONMENT: ${SQUARE_ENVIRONMENT:-sandbox}
       SQUARE_ACCESS_TOKEN: ${SQUARE_ACCESS_TOKEN:-}
       SQUARE_LOCATION_ID: ${SQUARE_LOCATION_ID:-}
-      # Single shared owner login (Phase 1).
+      # First owner account, seeded when the user table is empty. Use a strong password on a server.
       APP_OWNER_USERNAME: ${APP_OWNER_USERNAME:-owner}
       APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:-changeme}
-    ports:
-      - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -43,31 +43,37 @@ services:
       timeout: 3s
       retries: 20
       start_period: 30s
+    # No host port published — the frontend reaches it at http://backend:8080 on the internal network.
 
   frontend:
     build:
       context: ./frontend
     container_name: salonreview-frontend
+    restart: unless-stopped
     environment:
-      # Server-side fetches (Node in the container) → talk to backend over Docker DNS
+      # Server-side fetches (Node in the container) reach the backend over Docker DNS. The browser
+      # only ever talks to this frontend (same-origin /api/* proxies), so no backend URL is exposed
+      # to the client — nothing hardcoded to localhost.
       BACKEND_URL: http://backend:8080
-      # Browser-side fetches → user's machine hits host port 8080
-      NEXT_PUBLIC_API_BASE: http://localhost:8080
     ports:
+      # The only publicly published port. Put a reverse proxy with HTTPS in front of this for prod
+      # (and then set the auth cookie to Secure — see app/api/login/route.ts).
       - "3000:3000"
     depends_on:
       backend:
         condition: service_healthy
 
+  # Database admin UI. Bound to loopback only — reach it via an SSH tunnel
+  # (ssh -L 8081:localhost:8081 user@server), never the public internet.
   adminer:
     image: adminer:latest
     container_name: salonreview-adminer
     restart: unless-stopped
-    ports:
-      - "8081:8080"
     environment:
       ADMINER_DEFAULT_SERVER: postgres
       ADMINER_DESIGN: pepa-linha
+    ports:
+      - "127.0.0.1:8081:8080"
     depends_on:
       postgres:
         condition: service_healthy
