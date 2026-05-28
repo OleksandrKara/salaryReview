@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { serverApi } from '../lib/serverApi';
-import ProviderTrace from '../components/ProviderTrace';
+import DiscountBreakdown from './DiscountBreakdown';
+import ServiceBreakdown from './ServiceBreakdown';
 import SettlementFeedbackForm from './SettlementFeedbackForm';
 
 const MONTHS = [
@@ -68,12 +69,9 @@ export default async function MyReportPage({
             </p>
           )}
 
-          <h2 className="mt-8 mb-3 text-sm font-semibold">Breakdown</h2>
-          <p className="mb-4 text-xs text-zinc-500">
-            Every service, with discounts and cash notes, so you can check your numbers. Copy the
-            #salary block per half.
-          </p>
-          <ProviderTrace detail={detail} showUnmatched={false} />
+          <DiscountBreakdown services={detail.services} />
+
+          <ServiceBreakdown detail={detail} />
 
           <SettlementFeedbackForm
             year={year}
