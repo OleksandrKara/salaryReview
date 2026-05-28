@@ -174,7 +174,8 @@ export interface AttributedService {
   discount: number;
   net: number;
   counted: boolean;
-  countedUnits: number; // services this line counts toward the tier (1 per order line; N for a cash note)
+  countedUnits: number; // main services this line counts toward the tier (gross >= cutoff)
+  units: number; // total services this line represents (incl. add-ons below the cutoff)
   prepaid: boolean;
   channel: 'CARD' | 'CASH' | 'CASH-NOTE';
   time: string | null; // appointment start, salon-local, e.g. "2:30 PM"
@@ -201,6 +202,7 @@ export interface ProviderDetail {
   unmatched: UnmatchedLine[];
   firstHalfMessage: string | null;
   secondHalfMessage: string | null;
+  priceCutoff: number; // a "main service" is gross >= this (e.g. $60)
 }
 
 export interface SettlementDiagnostics {
