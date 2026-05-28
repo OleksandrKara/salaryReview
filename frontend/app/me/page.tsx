@@ -37,8 +37,10 @@ export default async function MyReportPage({
   const prev = shift(year, month, -1);
   const next = shift(year, month, 1);
 
-  const firstCount = detail.services.filter((s) => s.half === 'FIRST').length;
-  const secondCount = detail.services.filter((s) => s.half === 'SECOND').length;
+  // "Services" = services counted toward the tier (matches the ✓ tally in the breakdown). A cash note
+  // can cover several, so this is the settlement's counted count, not the raw line count.
+  const firstCount = me ? me.firstHalf.countedServices : 0;
+  const secondCount = me ? me.secondHalf.countedServices : 0;
 
   return (
     <main className="mx-auto max-w-3xl p-8">
