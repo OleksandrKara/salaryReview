@@ -56,9 +56,11 @@ export default async function MyReportPage({
             <Stat label="Counted services" value={String(me.monthCountedServices)} />
             <Stat label="Tier" value={me.tierApplied ? '50 / 50' : '45 / 55'} />
             <Stat label="1–15 → you (Zelle)" value={usd(me.firstHalf.zelleToProvider)} />
+            <Stat label="1–15 cash → salon" value={usd(me.firstHalf.cashToSalon)} />
             <Stat label="16–end → you (Zelle)" value={usd(me.secondHalf.zelleToProvider)} />
+            <Stat label="16–end cash → salon" value={usd(me.secondHalf.cashToSalon)} />
             <Stat label="Month → you" value={usd(me.monthZelleToProvider)} highlight />
-            <Stat label="Cash you owe salon" value={usd(me.monthCashToSalon)} />
+            <Stat label="Month cash → salon" value={usd(me.monthCashToSalon)} />
           </div>
           {me.secondHalf.tierBonus > 0 && (
             <p className="mt-3 text-sm text-amber-600">
