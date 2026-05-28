@@ -46,8 +46,16 @@ export default function UsersManager({
 
   // A provider can only be linked once; hide those already taken (except keep all for clarity).
   const linkedProviderIds = new Set(users.map((u) => u.providerId).filter(Boolean));
-  const providerName = (id: number | null) =>
-    id == null ? '—' : providers.find((p) => p.id === id)?.displayName ?? `#${id}`;
+  // Full name for any account: a provider's display name, else the Square team-member name
+  // (owner/manager imported from Square), else their email.
+  const personName = (u: AppUser): string => {
+    if (u.providerId != null) return providers.find((p) => p.id === u.providerId)?.displayName ?? `#${u.providerId}`;
+    if (u.squareTeamMemberId) {
+      const r = roster.find((x) => x.teamMemberId === u.squareTeamMemberId);
+      if (r?.name) return r.name;
+    }
+    return u.email ?? '—';
+  };
 
   async function refresh() {
     router.refresh();
@@ -169,7 +177,7 @@ export default function UsersManager({
             <tr>
               <th className="px-3 py-2">Username</th>
               <th className="px-3 py-2">Role</th>
-              <th className="px-3 py-2">Provider</th>
+              <th className="px-3 py-2">Name</th>
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2 text-right">Actions</th>
             </tr>
@@ -179,7 +187,7 @@ export default function UsersManager({
               <tr key={u.id} className="hover:bg-zinc-50">
                 <td className="px-3 py-2 font-medium">{u.username}</td>
                 <td className="px-3 py-2">{u.role}</td>
-                <td className="px-3 py-2 text-zinc-600">{providerName(u.providerId)}</td>
+                <td className="px-3 py-2 text-zinc-600">{personName(u)}</td>
                 <td className="px-3 py-2">
                   {u.active
                     ? <span className="text-green-700">active</span>
