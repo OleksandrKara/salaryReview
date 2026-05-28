@@ -138,7 +138,8 @@ public class SquareMonthAggregator {
                     if (counted) a.counted++;
                     providersOnOrder.put(seg.providerId, half);
                     services.add(new AttributedService(seg.providerId, nameById.getOrDefault(seg.providerId, "?"),
-                            str(seg.day), half.name(), li.name(), revenue, discount, net, counted, m.prepaid,
+                            str(seg.day), half.name(), li.name(), revenue, discount, net, counted,
+                            counted ? 1 : 0, m.prepaid,
                             cashOrder ? "CASH" : "CARD", localTime(seg.startAt, zone), seg.bookingId,
                             o.customerId(), null));
                 }
@@ -184,7 +185,7 @@ public class SquareMonthAggregator {
             a.counted += countedSegs;
             services.add(new AttributedService(cb.providerId, nameById.getOrDefault(cb.providerId, "?"),
                     str(cb.day), half.name(), "cash note (" + countedSegs + " counted)", gross,
-                    discount, collected, countedSegs > 0, false, "CASH-NOTE",
+                    discount, collected, countedSegs > 0, countedSegs, false, "CASH-NOTE",
                     localTime(cb.startAt, zone), cb.bookingId, cb.customerId(), null));
         }
 
@@ -374,12 +375,12 @@ public class SquareMonthAggregator {
 
     public record AttributedService(String providerId, String providerName, String date, String half,
                                     String service, BigDecimal gross, BigDecimal discount, BigDecimal net,
-                                    boolean counted, boolean prepaid, String channel,
+                                    boolean counted, int countedUnits, boolean prepaid, String channel,
                                     String time, String bookingId, String customerId, String customer) {
         /** A copy with the (short) customer name filled in — set by the detail service after lookup. */
         public AttributedService withCustomer(String c) {
             return new AttributedService(providerId, providerName, date, half, service, gross, discount, net,
-                    counted, prepaid, channel, time, bookingId, customerId, c);
+                    counted, countedUnits, prepaid, channel, time, bookingId, customerId, c);
         }
     }
 

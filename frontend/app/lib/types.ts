@@ -174,6 +174,7 @@ export interface AttributedService {
   discount: number;
   net: number;
   counted: boolean;
+  countedUnits: number; // services this line counts toward the tier (1 per order line; N for a cash note)
   prepaid: boolean;
   channel: 'CARD' | 'CASH' | 'CASH-NOTE';
   time: string | null; // appointment start, salon-local, e.g. "2:30 PM"

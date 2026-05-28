@@ -71,7 +71,10 @@ export default function ServiceLinesTable({
                       <td className="px-3 py-2 text-right tabular-nums">{usd(l.gross)}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{l.discount > 0 ? `−${usd(l.discount)}` : '—'}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{usd(l.net)}</td>
-                      <td className="px-3 py-2 text-center">{l.counted ? '✓' : <span className="text-zinc-300">—</span>}</td>
+                      <td className="px-3 py-2 text-center">
+                        {l.countedUnits === 0 ? <span className="text-zinc-300">—</span>
+                          : l.countedUnits === 1 ? '✓' : `✓ ×${l.countedUnits}`}
+                      </td>
                     </tr>
                   ))}
                 </Fragment>
