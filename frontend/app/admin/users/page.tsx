@@ -14,7 +14,7 @@ export default async function UsersPage() {
   ]);
 
   return (
-    <main className="mx-auto max-w-4xl p-8">
+    <main className="mx-auto max-w-4xl p-4 sm:p-8">
       <div className="mb-6 flex items-baseline gap-3">
         <h1 className="text-2xl font-semibold">Users</h1>
         <Link href="/reports" className="text-xs text-zinc-400 hover:text-zinc-600">← Reports</Link>

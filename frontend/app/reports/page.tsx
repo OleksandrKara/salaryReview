@@ -38,6 +38,20 @@ function MoneyCell({ zelle, cash, bonus = 0, strong = false }: { zelle: number; 
   );
 }
 
+// One period line on the mobile card: label … Zelle → provider · cash → salon.
+function MobileMoney({ label, zelle, cash, bonus = 0, strong = false }: { label: string; zelle: number; cash: number; bonus?: number; strong?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="text-zinc-500">{label}</dt>
+      <dd className="text-right tabular-nums">
+        <span className={strong ? 'font-semibold' : ''}>{usd(zelle)}</span>
+        {bonus > 0 && <span className="text-xs text-amber-600"> +{usd(bonus)}</span>}
+        <span className="text-zinc-400"> · cash {usd(cash)}</span>
+      </dd>
+    </div>
+  );
+}
+
 function FeedbackBadge({ p }: { p: ProviderPayout }) {
   if (p.feedbackStatus === 'APPROVED')
     return <span title="Provider approved" className="rounded bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700 ring-1 ring-green-300">✓ approved</span>;
@@ -76,7 +90,7 @@ export default async function ReportsPage({
   };
 
   return (
-    <main className="mx-auto max-w-6xl p-8">
+    <main className="mx-auto max-w-6xl p-4 sm:p-8">
       <div className="mb-1 flex items-center justify-between">
         <div className="flex items-baseline gap-3">
           <h1 className="text-2xl font-semibold">Salary report</h1>
@@ -96,7 +110,37 @@ export default async function ReportsPage({
         <br />Each period shows <span className="font-medium text-zinc-600">Zelle paid to provider</span> over <span className="text-zinc-400">cash returned to salon</span>.
       </p>
 
-      <div className="overflow-x-auto rounded-lg ring-1 ring-zinc-200">
+      {/* Mobile: a card per provider (the table is too wide for a phone). */}
+      <div className="flex flex-col gap-3 sm:hidden">
+        {report.providers.map((p) => (
+          <div key={p.providerId} className="rounded-lg p-4 ring-1 ring-zinc-200">
+            <div className="flex items-start justify-between gap-2">
+              <span className="flex flex-wrap items-center gap-2 font-medium">{p.name}<FeedbackBadge p={p} /></span>
+              <Link href={`/reports/${p.providerId}?year=${year}&month=${month}`}
+                className="shrink-0 text-xs text-zinc-400 hover:text-zinc-700">Details →</Link>
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+              <TierBadge p={p} />
+              {!p.autoQualified && (
+                <GrantTierButton providerId={p.providerId} year={year} month={month} granted={p.tierManuallyGranted} />
+              )}
+              <span>{p.monthCountedServices}/{cfg.tierServiceThreshold} services</span>
+            </div>
+            <dl className="mt-3 space-y-1 text-sm">
+              <MobileMoney label="Month → you" zelle={p.monthZelleToProvider} cash={p.monthCashToSalon} strong />
+              <MobileMoney label="1–15" zelle={p.firstHalf.zelleToProvider} cash={p.firstHalf.cashToSalon} bonus={p.firstHalf.tierBonus} />
+              <MobileMoney label="16–end" zelle={p.secondHalf.zelleToProvider} cash={p.secondHalf.cashToSalon} bonus={p.secondHalf.tierBonus} />
+            </dl>
+            <div className="mt-3"><SalaryButtons name={p.name} firstHalfMessage={p.firstHalfMessage} secondHalfMessage={p.secondHalfMessage} /></div>
+          </div>
+        ))}
+        {report.providers.length === 0 && (
+          <p className="rounded-lg p-4 text-center text-zinc-400 ring-1 ring-zinc-200">No activity for this month.</p>
+        )}
+      </div>
+
+      {/* Desktop: the full table. */}
+      <div className="hidden overflow-x-auto rounded-lg ring-1 ring-zinc-200 sm:block">
         <table className="w-full text-sm">
           <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
             <tr>
