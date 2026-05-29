@@ -26,7 +26,7 @@ export default async function ProviderDetailPage({
   const backHref = `/reports?year=${year}&month=${month}`;
 
   return (
-    <main className="mx-auto max-w-5xl p-8">
+    <main className="mx-auto max-w-5xl p-4 sm:p-8">
       <div className="mb-1 flex items-baseline gap-3">
         <Link href={backHref} className="text-sm text-zinc-500 hover:text-zinc-800">← Report</Link>
         <h1 className="text-2xl font-semibold">{detail.name ?? 'Provider'}</h1>
