@@ -35,8 +35,10 @@ import java.util.Optional;
  *   <li>{@code cashew $nn} notes on bookings become cash services for that provider.</li>
  * </ul>
  *
- * <p>Days are bucketed in the salon's local timezone (FIRST = 1-15, SECOND = 16-end). No-shows and
- * cancellations never produce an order or a cash note, so they naturally don't count.
+ * <p>Days are bucketed in the salon's local timezone (FIRST = 1-15, SECOND = 16-end). Walk-in
+ * cancellations and no-shows produce no order, so they drop out on their own; but a <em>prepaid</em>
+ * appointment leaves a completed order even after it's cancelled, so cancelled/declined/no-show
+ * bookings are filtered out before matching (see {@link #didNotHappen}) and never paid on.
  */
 @Service
 public class SquareMonthAggregator {
@@ -70,6 +72,10 @@ public class SquareMonthAggregator {
         List<CashBooking> cashEntries = new ArrayList<>();
         for (Booking b : bookings) {
             if (b.appointmentSegments() == null) continue;
+            // Cancelled / declined / no-show appointments must never be paid on — not even when a
+            // prepaid order for them still exists. Skipping them here keeps their prepaid order from
+            // matching a booking, so it falls through to "unmatched" instead of crediting a provider.
+            if (didNotHappen(b.status())) continue;
             LocalDate day = localDate(b.startAt(), zone);
             if (day == null || day.getYear() != year || day.getMonthValue() != month) continue;
 
@@ -241,6 +247,19 @@ public class SquareMonthAggregator {
 
     private static Half halfOf(LocalDate d) {
         return d.getDayOfMonth() <= 15 ? Half.FIRST : Half.SECOND;
+    }
+
+    /**
+     * Square booking statuses for appointments that did not take place. A prepaid invoice can leave a
+     * completed order behind even after the booking is cancelled, so these must be filtered out before
+     * matching, or the provider gets credited for a service that never happened. ACCEPTED/PENDING pass.
+     */
+    private static boolean didNotHappen(String status) {
+        if (status == null) return false;
+        return switch (status) {
+            case "CANCELLED_BY_CUSTOMER", "CANCELLED_BY_SELLER", "DECLINED", "NO_SHOW" -> true;
+            default -> false;
+        };
     }
 
     private static LocalDate localDate(String iso, ZoneId zone) {
