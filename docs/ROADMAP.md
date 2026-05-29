@@ -48,6 +48,27 @@ Replaced the single shared owner login with real accounts and **roles: owner / m
 ### Phase 3 — Square App Marketplace + billing
 - Marketplace listing (privacy policy, OAuth review, 5 active sellers), Stripe subscription billing.
 
+### Prepaid invoices (reviewed packages) — planned
+Rare but real: a customer pays one Square **invoice** in advance for **3+ services**, then draws them
+down over later visits (sometimes across months). The old auto-heuristic (match an order line to the
+nearest same-customer+service booking anywhere in the month) was **removed** — it mislabelled late
+checkouts as prepaid and could pay on a fabricated appointment. Off-day/unmatched lines now go to the
+owner/manager **Unattributed sales** review list instead of auto-attributing.
+
+Going forward (decided): **Option C — checkout policy + reviewed prepaid packages.**
+- **Policy:** providers/managers should **check out every prepaid visit in Square** on the service
+  date (even against the invoice), so attribution stays exact and automatic via the ±2-day match.
+- **Prepaid-package feature** for the genuine exceptions:
+  - Owner/manager records a package from the Square invoice: customer, provider, date paid, amount,
+    number of services (pull from the **Square Invoices API** where possible).
+  - Each later **appointment with no checkout + a "prepaid" note** becomes a *candidate* draw-down.
+  - A **review screen** (owner/manager) lists candidates to **confirm or reject** before they're paid
+    on; the package balance decrements; when it hits 0, further "prepaid" claims show
+    **"no credit left → needs payment."**
+  - Guards both fraud vectors: a fake appointment is never confirmed; an exhausted customer shows a
+    zero balance. The `prepaid` flag on `AttributedService` (currently always false) is reserved for
+    this.
+
 ### Smaller follow-ups
 - **Provider-merge UI** — _not planned._ Pointing a second Square team-member ID at one provider
   (the "Brenda" case) was a one-off, handled manually; duplicates aren't expected going forward. The
