@@ -36,6 +36,9 @@ Then open:
 
 To stop: `docker compose down`. To wipe the data volume too: `docker compose down -v`.
 
+For the production VPS setup (nginx + TLS, firewall, security hardening), see
+[`docs/DEPLOY.md`](docs/DEPLOY.md).
+
 ---
 
 ## What you'll see
