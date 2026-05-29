@@ -44,7 +44,7 @@ export default async function MyReportPage({
   const cutoffTip = `A "main service" is one with a gross of ${usd(detail.priceCutoff)} or higher (counts toward the 50/50 tier). Add-ons below that aren't counted.`;
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="mx-auto max-w-3xl p-4 sm:p-8">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-baseline gap-3">
           <h1 className="text-2xl font-semibold">My pay</h1>
