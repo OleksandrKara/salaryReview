@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import type {
   AppUser,
   Me,
+  PrepaidPackage,
   Provider,
   ProviderDetail,
   ProviderPayout,
@@ -53,4 +54,6 @@ export const serverApi = {
 
   getProviderDetail: (year: number, month: number, providerId: number) =>
     serverFetch<ProviderDetail>(`/api/settlements/detail?year=${year}&month=${month}&providerId=${providerId}`),
+
+  listPrepaid: () => serverFetch<PrepaidPackage[]>(`/api/prepaid`),
 };

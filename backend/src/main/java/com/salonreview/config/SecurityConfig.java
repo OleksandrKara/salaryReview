@@ -42,7 +42,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/users/**").hasRole("OWNER")
                         .requestMatchers("/api/settlements/me/**").hasRole("PROVIDER")
                         .requestMatchers("/api/settlements/**", "/api/providers/**", "/api/square/**",
-                                "/api/pay-periods/**").hasAnyRole("OWNER", "MANAGER")
+                                "/api/pay-periods/**", "/api/prepaid/**").hasAnyRole("OWNER", "MANAGER")
                         .anyRequest().authenticated())
                 .formLogin(form -> form
                         .loginProcessingUrl("/api/login")

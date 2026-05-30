@@ -48,26 +48,25 @@ Replaced the single shared owner login with real accounts and **roles: owner / m
 ### Phase 3 — Square App Marketplace + billing
 - Marketplace listing (privacy policy, OAuth review, 5 active sellers), Stripe subscription billing.
 
-### Prepaid invoices (reviewed packages) — planned
-Rare but real: a customer pays one Square **invoice** in advance for **3+ services**, then draws them
-down over later visits (sometimes across months). The old auto-heuristic (match an order line to the
-nearest same-customer+service booking anywhere in the month) was **removed** — it mislabelled late
-checkouts as prepaid and could pay on a fabricated appointment. Off-day/unmatched lines now go to the
-owner/manager **Unattributed sales** review list instead of auto-attributing.
-
-Going forward (decided): **Option C — checkout policy + reviewed prepaid packages.**
-- **Policy:** providers/managers should **check out every prepaid visit in Square** on the service
-  date (even against the invoice), so attribution stays exact and automatic via the ±2-day match.
-- **Prepaid-package feature** for the genuine exceptions:
-  - Owner/manager records a package from the Square invoice: customer, provider, date paid, amount,
-    number of services (pull from the **Square Invoices API** where possible).
-  - Each later **appointment with no checkout + a "prepaid" note** becomes a *candidate* draw-down.
-  - A **review screen** (owner/manager) lists candidates to **confirm or reject** before they're paid
-    on; the package balance decrements; when it hits 0, further "prepaid" claims show
-    **"no credit left → needs payment."**
-  - Guards both fraud vectors: a fake appointment is never confirmed; an exhausted customer shows a
-    zero balance. The `prepaid` flag on `AttributedService` (currently always false) is reserved for
-    this.
+### Prepaid invoices (reviewed packages) — DONE
+A customer pays one Square **invoice** in advance for several services, then draws them down over
+later visits. The old auto-heuristic was removed (it mislabelled late checkouts and could pay on
+fabricated appointments); off-day order lines go to the owner/manager **Unattributed sales** review
+list. Built (**Option C**): checkout policy + reviewed prepaid packages.
+- **Policy:** check out prepaid visits in Square when possible, so they attribute automatically via
+  the ±2-day match.
+- **Prepaid packages** (`prepaid_package` V11, `prepaid_redemption` V12; `PrepaidService` +
+  `PrepaidController` at `/api/prepaid`, owner+manager): owner/manager records a package (customer +
+  Square customer id, provider, paid date, amount, # services — manual entry). The review screen
+  (`/admin/prepaid`) lists **real Square bookings** for that customer+provider since the paid date
+  (not cancelled, not already redeemed, not already checked out within ±2 days) as candidates to
+  **confirm**; each confirmed draw-down decrements the balance; at 0 it shows **"No credit left —
+  needs payment."** Confirmed redemptions pay the provider on the **service date** at the catalog
+  menu price (channel `PREPAID`), folded into `SettlementPreviewService` so they flow into the
+  payout, `#salary` Card/procedures, and the breakdowns. Anti-fraud: draw-downs only ever confirm
+  against real bookings; balance caps over-redemption; unique (booking, service) stops double-redeem.
+- **Deferred:** Square Invoices API auto-import (manual entry now); cross-provider packages; editing a
+  package's totals (delete + recreate).
 
 ### Smaller follow-ups
 - **Provider-merge UI** — _not planned._ Pointing a second Square team-member ID at one provider

@@ -94,6 +94,7 @@ export default async function ReportsPage({
       <div className="mb-1 flex items-center justify-between">
         <div className="flex items-baseline gap-3">
           <h1 className="text-2xl font-semibold">Salary report</h1>
+          <Link href="/admin/prepaid" className="text-xs text-zinc-400 hover:text-zinc-600">Prepaid</Link>
           {me?.role === 'OWNER' && (
             <Link href="/admin/users" className="text-xs text-zinc-400 hover:text-zinc-600">Users</Link>
           )}
