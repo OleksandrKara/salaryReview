@@ -7,8 +7,8 @@ import { NextRequest, NextResponse } from 'next/server';
 // /login, /api/* (the route handlers self-check), and static assets are excluded via the matcher.
 const PROVIDER_HOME = '/me';
 const STAFF_HOME = '/reports';
-const STAFF_ONLY = ['/reports', '/admin'];
-const OWNER_ONLY = ['/admin'];
+const STAFF_ONLY = ['/reports', '/admin']; // owner+manager (providers blocked)
+const OWNER_ONLY = ['/admin/users']; // user management is owner-only; /admin/prepaid is owner+manager
 
 function matches(pathname: string, prefixes: string[]) {
   return prefixes.some((p) => pathname === p || pathname.startsWith(p + '/'));
