@@ -38,18 +38,22 @@ and Adminer are not publicly reachable. Deploys are automatic on merge to `maste
    ```
    (DNS for `salon.spincareer.com` must already point at the VPS for certbot to succeed.)
 
-## Auto-deploy (GitHub Actions → SSH)
+## CI / Auto-deploy (GitHub Actions)
 
-`.github/workflows/deploy.yml` runs on every push to `master` (and via the Actions tab → "Run
-workflow"). It SSHes in, `git reset --hard origin/master`, rebuilds, and waits for the backend to be
-healthy. It never touches `.env` or the postgres volume, so data persists across deploys.
+`.github/workflows/deploy.yml` is one pipeline:
+- **`test`** — runs on every push **and PR**: backend `mvn test` against a throwaway Postgres service
+  (so Flyway migrations are exercised too) + frontend `tsc --noEmit` and `next build`.
+- **`deploy`** — runs only after `test` passes **on a push to `master`**: SSHes in,
+  `git reset --hard origin/master`, `sudo docker compose up -d --build`, and waits for the backend
+  health check. It never touches `.env` or the postgres volume, so data persists across deploys.
+  (The VPS user `ubuntu` isn't in the docker group, so docker is run via passwordless `sudo`.)
 
 **Add these repo secrets** (Settings → Secrets and variables → Actions):
 
 | Secret | Value |
 |---|---|
 | `VPS_HOST` | server IP or hostname |
-| `VPS_USER` | SSH user (must be in the `docker` group) |
+| `VPS_USER` | SSH user with **passwordless sudo** (e.g. `ubuntu`) |
 | `VPS_SSH_KEY` | a **private** key whose public key is in that user's `~/.ssh/authorized_keys` |
 | `VPS_PORT` | _(optional)_ SSH port, default 22 |
 | `VPS_APP_DIR` | _(optional)_ repo path, default `~/salaryReview` |
