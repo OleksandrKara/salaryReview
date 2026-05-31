@@ -207,6 +207,7 @@ export default async function ReportsPage({
         Synced from Square · {report.diagnostics.orders} orders, {report.diagnostics.matchedLineItems} matched
         {report.diagnostics.prepaidMatches > 0 && `, ${report.diagnostics.prepaidMatches} prepaid`}
         , {report.diagnostics.cashNotes} cash notes
+        {report.diagnostics.cashNotesSkipped > 0 && ` (${report.diagnostics.cashNotesSkipped} skipped — already checked out as cash)`}
         {report.diagnostics.unmatchedLineItems > 0 && ` · ${report.diagnostics.unmatchedLineItems} unmatched (${usd(report.diagnostics.unmatchedRevenue)})`}
       </p>
     </main>

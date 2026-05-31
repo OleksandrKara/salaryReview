@@ -1,5 +1,6 @@
 // Auto-generated from the Claude Design 'Landing Page.html' bundle. Marketing markup only —
-// the sign-in modal is rendered as real React (see Landing.tsx); design-tool artifacts stripped.
+// the sign-in modal is rendered as real React (see Landing.tsx); design-tool artifacts stripped,
+// Origin asset paths point at /landing/ (frontend/public/landing).
 export const LANDING_MARKUP = `<!-- ============================ HEADER ============================ -->
 <header class="site-header" id="header">
   <div class="wrap">
@@ -318,16 +319,15 @@ export const LANDING_MARKUP = `<!-- ============================ HEADER ========
 <section class="section-pad origin" aria-label="AK.LUX.NAILS story" data-screen-label="Origin story">
   <div class="wrap">
     <div class="o-copy reveal">
-      <div class="o-logo" style="font-family:var(--serif);font-size:2rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--paper);margin-bottom:1.8rem;">AK.LUX.NAILS</div>
+      <img class="o-logo" src="/landing/logo-horizontal.png" alt="AK.LUX.NAILS — Mastered Nail Artistry">
       <p class="eyebrow">Born on a real salon floor</p>
       <p class="quote">"We built AK.LUX.STUDIO because our own team deserved to see exactly what they earned — to the cent, in real time."</p>
       <p class="q-by">Anna Kara · Founder, AK.LUX.NAILS</p>
       <p style="margin-top:1.6rem;max-width:46ch;">AK.LUX.STUDIO started inside AK.LUX.NAILS, a Russian-manicure studio obsessed with precision. The same care that goes into every set of nails now goes into every number — and it's ready for your studio.</p>
     </div>
     <div class="o-media reveal d1">
-      <div class="o-video-wrap">
-        
-        <div class="ph tall" id="salonPlaceholder" data-label="AK.LUX.NAILS"></div>
+      <div class="o-photo-wrap">
+        <img class="o-photo" src="/landing/salon-interior.webp" alt="Inside AK.LUX.NAILS — a manicure in progress" loading="lazy" decoding="async" width="1306" height="2238">
       </div>
     </div>
   </div>

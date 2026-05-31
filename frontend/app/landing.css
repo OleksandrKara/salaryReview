@@ -401,11 +401,17 @@ section { position: relative; }
 .origin p { color: rgba(250,247,241,.7); }
 .origin .o-logo { filter: invert(1) brightness(1.7); width: 280px; max-width: 70%; margin-bottom: 1.8rem; }
 .origin .o-media { border-radius: 12px; overflow: hidden; }
-.o-video-wrap { position: relative; border-radius: 12px; overflow: hidden; aspect-ratio: 3/4; background: var(--paper-2); }
-.o-video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.o-video-wrap.has-video #salonPlaceholder { display: none; }
-.o-video-wrap:not(.has-video) .o-video { display: none; }
-.o-video-wrap #salonPlaceholder { position: absolute; inset: 0; aspect-ratio: auto; }
+.o-photo-wrap {
+  position: relative; border-radius: 14px; overflow: hidden;
+  aspect-ratio: 4/5; background: var(--paper-2);
+  box-shadow: 0 30px 70px -30px rgba(0,0,0,.6);
+}
+.o-photo-wrap::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  border: 1px solid rgba(250,247,241,.14); border-radius: 14px;
+  box-shadow: inset 0 0 80px rgba(23,19,12,.25);
+}
+.o-photo { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; display: block; }
 .origin .quote { font-family: var(--serif); font-size: clamp(1.4rem,2.4vw,2rem); line-height: 1.3; font-weight: 500; color: var(--paper); margin: 0 0 1.4rem; }
 .origin .q-by { font-size: 0.8rem; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(250,247,241,.6); }
 
