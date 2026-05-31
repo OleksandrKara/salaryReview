@@ -7,17 +7,25 @@ import com.salonreview.commission.TierCommissionEngine;
 import com.salonreview.domain.Half;
 import com.salonreview.domain.Provider;
 import com.salonreview.domain.SalonConfig;
+import com.salonreview.domain.PrepaidPackage;
+import com.salonreview.domain.PrepaidRedemption;
 import com.salonreview.domain.SettlementFeedback;
 import com.salonreview.domain.TierGrant;
+import com.salonreview.repo.PrepaidPackageRepository;
+import com.salonreview.repo.PrepaidRedemptionRepository;
 import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.repo.SettlementFeedbackRepository;
 import com.salonreview.repo.TierGrantRepository;
 import com.salonreview.service.ProviderDirectory;
+import com.salonreview.square.SquareMonthAggregator.AttributedService;
 import com.salonreview.square.SquareMonthAggregator.MonthAggregation;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,11 +49,14 @@ public class SettlementPreviewService {
     private final TierGrantRepository tierGrants;
     private final SettlementFeedbackRepository feedback;
     private final SquareClient square;
+    private final PrepaidRedemptionRepository prepaidRedemptions;
+    private final PrepaidPackageRepository prepaidPackages;
 
     public SettlementPreviewService(SquareMonthAggregator aggregator, TierCommissionEngine engine,
                                     SalonConfigRepository salonConfig, ProviderDirectory directory,
                                     TierGrantRepository tierGrants, SettlementFeedbackRepository feedback,
-                                    SquareClient square) {
+                                    SquareClient square, PrepaidRedemptionRepository prepaidRedemptions,
+                                    PrepaidPackageRepository prepaidPackages) {
         this.aggregator = aggregator;
         this.engine = engine;
         this.salonConfig = salonConfig;
@@ -53,6 +64,63 @@ public class SettlementPreviewService {
         this.tierGrants = tierGrants;
         this.feedback = feedback;
         this.square = square;
+        this.prepaidRedemptions = prepaidRedemptions;
+        this.prepaidPackages = prepaidPackages;
+    }
+
+    /**
+     * Confirmed prepaid draw-downs whose service date falls in the month, as synthetic attributed
+     * service lines keyed by provider id. These pay the provider on the service date exactly like a
+     * card service (channel {@code PREPAID}); folded into the half inputs, procedures and the trace.
+     */
+    private Map<Long, List<AttributedService>> prepaidLinesByProvider(int year, int month) {
+        YearMonth ym = YearMonth.of(year, month);
+        List<PrepaidRedemption> rs = prepaidRedemptions.findByServiceDateBetween(ym.atDay(1), ym.atEndOfMonth());
+        if (rs.isEmpty()) return Map.of();
+        Map<Long, PrepaidPackage> pkgById = prepaidPackages.findAllById(
+                rs.stream().map(PrepaidRedemption::getPackageId).collect(Collectors.toSet()))
+                .stream().collect(Collectors.toMap(PrepaidPackage::getId, p -> p));
+        Map<Long, List<AttributedService>> byProvider = new LinkedHashMap<>();
+        for (PrepaidRedemption r : rs) {
+            PrepaidPackage pkg = pkgById.get(r.getPackageId());
+            if (pkg == null) continue;
+            String half = r.getServiceDate().getDayOfMonth() <= 15 ? "FIRST" : "SECOND";
+            BigDecimal price = r.getMenuPrice();
+            byProvider.computeIfAbsent(pkg.getProviderId(), k -> new ArrayList<>())
+                    .add(new AttributedService("", "", r.getServiceDate().toString(),
+                            half, r.getServiceName() == null ? "Prepaid service" : r.getServiceName(),
+                            price, BigDecimal.ZERO, price, r.isCounts(), r.isCounts() ? 1 : 0, 1, false,
+                            "PREPAID", null, r.getSquareBookingId(), pkg.getCustomerId(), pkg.getCustomerName()));
+        }
+        return byProvider;
+    }
+
+    /** Fold each provider's prepaid lines into their half inputs and bump the #salary procedure counts. */
+    private static void applyPrepaid(Map<Long, Merged> byPerson, Map<Long, int[]> procedures,
+                                     Map<Long, List<AttributedService>> prepaid) {
+        prepaid.forEach((providerId, lines) -> {
+            Merged m = byPerson.get(providerId);
+            if (m == null) return; // a provider with only prepaid activity (no Square orders) this month
+            applyPrepaidToMerged(m, lines);
+            int[] proc = procedures.computeIfAbsent(providerId, k -> new int[2]);
+            for (AttributedService l : lines) {
+                if ("FIRST".equals(l.half())) proc[0]++; else proc[1]++;
+            }
+        });
+    }
+
+    /** Add prepaid revenue (gross, like card) and counted services to a person's half inputs. */
+    private static void applyPrepaidToMerged(Merged m, List<AttributedService> lines) {
+        if (lines == null) return;
+        for (AttributedService l : lines) {
+            if ("FIRST".equals(l.half())) m.first = addCardAndCount(m.first, l.gross(), l.countedUnits());
+            else m.second = addCardAndCount(m.second, l.gross(), l.countedUnits());
+        }
+    }
+
+    private static HalfInput addCardAndCount(HalfInput h, BigDecimal card, int counted) {
+        return new HalfInput(h.countedServices() + counted, h.cardRevenue().add(card), h.cardTips(),
+                h.cashGross(), h.cashCollected(), h.adjustments());
     }
 
     @Transactional
@@ -72,6 +140,11 @@ public class SettlementPreviewService {
         Map<Long, Merged> byPerson = collapseToPersons(agg);
         Map<Long, int[]> procedures = procedureCounts(agg, byPerson);
         Map<Long, BigDecimal[]> discounts = discountTotals(agg, byPerson);
+
+        // Fold confirmed prepaid draw-downs into the same provider/half buckets (revenue + counts +
+        // procedures), so they pay out and show in #salary exactly like a card service.
+        Map<Long, List<AttributedService>> prepaid = prepaidLinesByProvider(year, month);
+        applyPrepaid(byPerson, procedures, prepaid);
 
         List<ProviderPayout> payouts = byPerson.values().stream()
                 .map(m -> toPayout(m, config, tierGrantedProviderIds, feedbackByProvider, sc, year, month,
@@ -160,15 +233,26 @@ public class SettlementPreviewService {
         // Attach the short client name (e.g. "Donnah P.") — only this provider's customers, cached.
         Map<String, String> names = square.customerNames(matched.stream()
                 .map(SquareMonthAggregator.AttributedService::customerId).toList());
-        List<SquareMonthAggregator.AttributedService> lines = matched.stream()
+        // Prepaid draw-downs for this provider this month: fold into the half input (pays out) and
+        // into the trace lines, then re-sort chronologically.
+        Map<Long, List<AttributedService>> prepaid = prepaidLinesByProvider(year, month);
+        applyPrepaidToMerged(m, prepaid.get(providerId));
+
+        List<AttributedService> lines = new ArrayList<>(matched.stream()
                 .map(s -> s.withCustomer(shortName(names.get(s.customerId()))))
+                .toList());
+        if (prepaid.containsKey(providerId)) lines.addAll(prepaid.get(providerId));
+        lines = lines.stream()
+                .sorted(Comparator.comparing(AttributedService::date)
+                        .thenComparing(s -> parseTime(s.time()))
+                        .thenComparing(AttributedService::service))
                 .toList();
         int firstCount = (int) lines.stream().filter(s -> "FIRST".equals(s.half())).count();
         int secondCount = (int) lines.stream().filter(s -> "SECOND".equals(s.half())).count();
         BigDecimal firstDisc = lines.stream().filter(s -> "FIRST".equals(s.half()))
-                .map(SquareMonthAggregator.AttributedService::discount).reduce(BigDecimal.ZERO, BigDecimal::add);
+                .map(AttributedService::discount).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal secondDisc = lines.stream().filter(s -> "SECOND".equals(s.half()))
-                .map(SquareMonthAggregator.AttributedService::discount).reduce(BigDecimal.ZERO, BigDecimal::add);
+                .map(AttributedService::discount).reduce(BigDecimal.ZERO, BigDecimal::add);
         ProviderPayout payout = toPayout(m, config, granted, fb, sc, year, month,
                 new int[]{firstCount, secondCount}, new BigDecimal[]{firstDisc, secondDisc});
         return new ProviderDetail(year, month, providerId, m.name, payout, lines, agg.unmatched(),

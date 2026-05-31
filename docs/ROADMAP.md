@@ -48,6 +48,26 @@ Replaced the single shared owner login with real accounts and **roles: owner / m
 ### Phase 3 — Square App Marketplace + billing
 - Marketplace listing (privacy policy, OAuth review, 5 active sellers), Stripe subscription billing.
 
+### Prepaid invoices (reviewed packages) — DONE
+A customer pays one Square **invoice** in advance for several services, then draws them down over
+later visits. The old auto-heuristic was removed (it mislabelled late checkouts and could pay on
+fabricated appointments); off-day order lines go to the owner/manager **Unattributed sales** review
+list. Built (**Option C**): checkout policy + reviewed prepaid packages.
+- **Policy:** check out prepaid visits in Square when possible, so they attribute automatically via
+  the ±2-day match.
+- **Prepaid packages** (`prepaid_package` V11, `prepaid_redemption` V12; `PrepaidService` +
+  `PrepaidController` at `/api/prepaid`, owner+manager): owner/manager records a package (customer +
+  Square customer id, provider, paid date, amount, # services — manual entry). The review screen
+  (`/admin/prepaid`) lists **real Square bookings** for that customer+provider since the paid date
+  (not cancelled, not already redeemed, not already checked out within ±2 days) as candidates to
+  **confirm**; each confirmed draw-down decrements the balance; at 0 it shows **"No credit left —
+  needs payment."** Confirmed redemptions pay the provider on the **service date** at the catalog
+  menu price (channel `PREPAID`), folded into `SettlementPreviewService` so they flow into the
+  payout, `#salary` Card/procedures, and the breakdowns. Anti-fraud: draw-downs only ever confirm
+  against real bookings; balance caps over-redemption; unique (booking, service) stops double-redeem.
+- **Deferred:** Square Invoices API auto-import (manual entry now); cross-provider packages; editing a
+  package's totals (delete + recreate).
+
 ### Smaller follow-ups
 - **Provider-merge UI** — _not planned._ Pointing a second Square team-member ID at one provider
   (the "Brenda" case) was a one-off, handled manually; duplicates aren't expected going forward. The

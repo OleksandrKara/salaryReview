@@ -106,6 +106,10 @@ public class SquareMonthAggregator {
         Diag diag = new Diag();
         diag.orders = orders.size();
 
+        // Bookings that were actually checked out as Cash in Square (a matched completed cash order).
+        // Their cash note (if any) is a duplicate of that checkout, so we skip it when folding notes.
+        java.util.Set<String> cashCheckedOutBookings = new java.util.HashSet<>();
+
         // --- Attribute order money to providers ---
         for (Order o : orders) {
             LocalDate orderDay = localDate(o.closedAt() != null ? o.closedAt() : o.createdAt(), zone);
@@ -138,6 +142,7 @@ public class SquareMonthAggregator {
                     if (cashOrder) {
                         a.cashGross = a.cashGross.add(revenue);   // menu price (commission basis)
                         a.cashCollected = a.cashCollected.add(net); // after discount (what was paid)
+                        if (seg.bookingId != null) cashCheckedOutBookings.add(seg.bookingId);
                     } else {
                         a.card = a.card.add(revenue);
                     }
@@ -163,6 +168,12 @@ public class SquareMonthAggregator {
 
         // --- Fold in cash-note services ---
         for (CashBooking cb : cashEntries) {
+            // Skip the note if this appointment was already checked out as Cash in Square — the
+            // completed cash order above already counted it, so the note would duplicate it.
+            if (cb.bookingId() != null && cashCheckedOutBookings.contains(cb.bookingId())) {
+                diag.cashNotesSkipped++;
+                continue;
+            }
             diag.cashNotes++;
             Half half = halfOf(cb.day);
             Acc a = accs.computeIfAbsent(new Key(cb.providerId, half), k -> new Acc());
@@ -285,10 +296,14 @@ public class SquareMonthAggregator {
     }
 
     /**
-     * Match an order line to the booking that produced it, keyed on customer + service. Prefers a
-     * booking within 2 days of the payment; if none (e.g. a prepaid invoice paid well before the
-     * appointment) falls back to the nearest same-customer+service booking anywhere in the month, so
-     * prepaid revenue is still attributed — to the service date, not the prepay date.
+     * Match an order line to the booking that produced it, keyed on customer + service, when the
+     * booking is within 2 days of the payment (a normal same-visit checkout; the small window absorbs
+     * timezone/day-boundary jitter). Off-day payments are NOT auto-matched: a payment far from any
+     * booking is either a genuine prepaid invoice or a late/no-show checkout, and auto-attributing it
+     * (the old "nearest booking anywhere this month" fallback) both mislabelled late checkouts as
+     * prepaid and let a fabricated appointment get paid on. Such lines fall through to the unmatched
+     * list for owner/manager review instead. True prepaid is handled by the reviewed prepaid-package
+     * feature (see docs/ROADMAP.md), not by guessing here.
      */
     private static Match match(Map<String, List<Seg>> index, String customerId, String catalogObjectId,
                                LocalDate orderDay, Diag diag) {
@@ -301,16 +316,10 @@ public class SquareMonthAggregator {
             near.used = true;
             return new Match(near, false);
         }
-        Seg far = nearestUnused(candidates, orderDay, Long.MAX_VALUE); // prepaid: any date this month
-        if (far != null) {
-            far.used = true;
-            diag.prepaidMatches++;
-            return new Match(far, true);
-        }
         return null;
     }
 
-    /** A matched booking segment plus whether it was a prepaid-invoice (off-day) match. */
+    /** A matched booking segment plus whether it was a prepaid-invoice match (reserved; always false now). */
     private record Match(Seg seg, boolean prepaid) {}
 
     /** Nearest unused segment whose day is within {@code maxDays} of the order, or null. */
@@ -419,6 +428,7 @@ public class SquareMonthAggregator {
         public int unmatchedLineItems = 0;
         public BigDecimal unmatchedRevenue = BigDecimal.ZERO;
         public int cashNotes = 0;
+        public int cashNotesSkipped = 0; // notes ignored because the appointment was checked out as cash
 
         public int getOrders() { return orders; }
         public int getMatchedLineItems() { return matchedLineItems; }
@@ -426,5 +436,6 @@ public class SquareMonthAggregator {
         public int getUnmatchedLineItems() { return unmatchedLineItems; }
         public BigDecimal getUnmatchedRevenue() { return unmatchedRevenue; }
         public int getCashNotes() { return cashNotes; }
+        public int getCashNotesSkipped() { return cashNotesSkipped; }
     }
 }

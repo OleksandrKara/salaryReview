@@ -94,6 +94,7 @@ export default async function ReportsPage({
       <div className="mb-1 flex items-center justify-between">
         <div className="flex items-baseline gap-3">
           <h1 className="text-2xl font-semibold">Salary report</h1>
+          <Link href="/admin/prepaid" className="text-xs text-zinc-400 hover:text-zinc-600">Prepaid</Link>
           {me?.role === 'OWNER' && (
             <Link href="/admin/users" className="text-xs text-zinc-400 hover:text-zinc-600">Users</Link>
           )}
@@ -206,6 +207,7 @@ export default async function ReportsPage({
         Synced from Square · {report.diagnostics.orders} orders, {report.diagnostics.matchedLineItems} matched
         {report.diagnostics.prepaidMatches > 0 && `, ${report.diagnostics.prepaidMatches} prepaid`}
         , {report.diagnostics.cashNotes} cash notes
+        {report.diagnostics.cashNotesSkipped > 0 && ` (${report.diagnostics.cashNotesSkipped} skipped — already checked out as cash)`}
         {report.diagnostics.unmatchedLineItems > 0 && ` · ${report.diagnostics.unmatchedLineItems} unmatched (${usd(report.diagnostics.unmatchedRevenue)})`}
       </p>
     </main>
