@@ -1,0 +1,46 @@
+name: Deploy to VPS
+
+# Auto-deploy on every merge to master (and on-demand via the Actions tab).
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Avoid overlapping deploys stepping on each other.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          HOST: ${{ secrets.VPS_HOST }}
+          USER: ${{ secrets.VPS_USER }}
+          PORT: ${{ secrets.VPS_PORT }}        # optional, defaults to 22
+          APP_DIR: ${{ secrets.VPS_APP_DIR }}  # optional, defaults to ~/salaryReview
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${PORT:-22}" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i ~/.ssh/deploy_key -p "${PORT:-22}" "$USER@$HOST" bash -se <<EOF
+            set -euo pipefail
+            cd "${APP_DIR:-\$HOME/salaryReview}"
+            git fetch origin master
+            # Match master exactly; the gitignored .env (secrets) and the postgres volume are untouched.
+            git reset --hard origin/master
+            docker compose up -d --build
+            docker image prune -f
+            # Wait for the backend health check to report healthy (up to ~90s).
+            for i in \$(seq 1 30); do
+              if [ "\$(docker inspect -f '{{.State.Health.Status}}' salonreview-backend 2>/dev/null)" = "healthy" ]; then
+                echo "backend healthy"; break
+              fi
+              sleep 3
+            done
+            docker compose ps
+          EOF
