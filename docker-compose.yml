@@ -22,6 +22,11 @@ services:
       context: ./backend
     container_name: salonreview-backend
     restart: unless-stopped
+    ports:
+      # Loopback only: never reachable from the public internet (the frontend talks to it over the
+      # internal Docker network at http://backend:8080). Published to localhost so host-side debugging
+      # works — `curl localhost:8080/api/...` on your laptop, or via an SSH tunnel on the server.
+      - "127.0.0.1:8080:8080"
     environment:
       # Override the dev defaults in application.yml — talk to the postgres service via Docker DNS.
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/salonreview
@@ -43,7 +48,6 @@ services:
       timeout: 3s
       retries: 20
       start_period: 30s
-    # No host port published — the frontend reaches it at http://backend:8080 on the internal network.
 
   frontend:
     build:
@@ -59,10 +63,9 @@ services:
       # X-Forwarded-Proto: https. Uncomment to force it on (e.g. TLS terminated elsewhere):
       # COOKIE_SECURE: "true"
     ports:
-      # Bound to loopback: the host's reverse proxy (nginx/Apache) terminates TLS for
-      # salon.spincareer.com and proxies to 127.0.0.1:3000 — the public can't reach the app directly.
-      # (If your reverse proxy runs in a container instead of on the host, change this to "3000:3000"
-      # and put it on this compose network, or drop the host port and proxy via the service name.)
+      # Bound to loopback only: nginx (same host) reverse-proxies HTTPS to it, but the raw IP isn't
+      # reachable from the public internet — forcing all traffic through TLS. See app/api/login/route.ts
+      # for the X-Forwarded-Proto → Secure-cookie handling that nginx enables.
       - "127.0.0.1:3000:3000"
     depends_on:
       backend:
