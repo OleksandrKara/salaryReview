@@ -106,6 +106,10 @@ public class SquareMonthAggregator {
         Diag diag = new Diag();
         diag.orders = orders.size();
 
+        // Bookings that were actually checked out as Cash in Square (a matched completed cash order).
+        // Their cash note (if any) is a duplicate of that checkout, so we skip it when folding notes.
+        java.util.Set<String> cashCheckedOutBookings = new java.util.HashSet<>();
+
         // --- Attribute order money to providers ---
         for (Order o : orders) {
             LocalDate orderDay = localDate(o.closedAt() != null ? o.closedAt() : o.createdAt(), zone);
@@ -138,6 +142,7 @@ public class SquareMonthAggregator {
                     if (cashOrder) {
                         a.cashGross = a.cashGross.add(revenue);   // menu price (commission basis)
                         a.cashCollected = a.cashCollected.add(net); // after discount (what was paid)
+                        if (seg.bookingId != null) cashCheckedOutBookings.add(seg.bookingId);
                     } else {
                         a.card = a.card.add(revenue);
                     }
@@ -163,6 +168,12 @@ public class SquareMonthAggregator {
 
         // --- Fold in cash-note services ---
         for (CashBooking cb : cashEntries) {
+            // Skip the note if this appointment was already checked out as Cash in Square — the
+            // completed cash order above already counted it, so the note would duplicate it.
+            if (cb.bookingId() != null && cashCheckedOutBookings.contains(cb.bookingId())) {
+                diag.cashNotesSkipped++;
+                continue;
+            }
             diag.cashNotes++;
             Half half = halfOf(cb.day);
             Acc a = accs.computeIfAbsent(new Key(cb.providerId, half), k -> new Acc());
@@ -417,6 +428,7 @@ public class SquareMonthAggregator {
         public int unmatchedLineItems = 0;
         public BigDecimal unmatchedRevenue = BigDecimal.ZERO;
         public int cashNotes = 0;
+        public int cashNotesSkipped = 0; // notes ignored because the appointment was checked out as cash
 
         public int getOrders() { return orders; }
         public int getMatchedLineItems() { return matchedLineItems; }
@@ -424,5 +436,6 @@ public class SquareMonthAggregator {
         public int getUnmatchedLineItems() { return unmatchedLineItems; }
         public BigDecimal getUnmatchedRevenue() { return unmatchedRevenue; }
         public int getCashNotes() { return cashNotes; }
+        public int getCashNotesSkipped() { return cashNotesSkipped; }
     }
 }

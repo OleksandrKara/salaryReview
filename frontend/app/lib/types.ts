@@ -212,6 +212,7 @@ export interface SettlementDiagnostics {
   unmatchedLineItems: number;
   unmatchedRevenue: number;
   cashNotes: number;
+  cashNotesSkipped: number; // notes ignored because the appointment was checked out as cash
 }
 
 export interface SettlementPreview {
