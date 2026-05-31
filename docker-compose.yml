@@ -59,9 +59,11 @@ services:
       # X-Forwarded-Proto: https. Uncomment to force it on (e.g. TLS terminated elsewhere):
       # COOKIE_SECURE: "true"
     ports:
-      # The only publicly published port. Put a reverse proxy with HTTPS in front of this for prod
-      # (and then set the auth cookie to Secure — see app/api/login/route.ts).
-      - "3000:3000"
+      # Bound to loopback: the host's reverse proxy (nginx/Apache) terminates TLS for
+      # salon.spincareer.com and proxies to 127.0.0.1:3000 — the public can't reach the app directly.
+      # (If your reverse proxy runs in a container instead of on the host, change this to "3000:3000"
+      # and put it on this compose network, or drop the host port and proxy via the service name.)
+      - "127.0.0.1:3000:3000"
     depends_on:
       backend:
         condition: service_healthy
