@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // Next 16 renamed `middleware` → `proxy`. Gates the app pages behind login and routes by role:
-//  - no session (`sid`) → /login
+//  - no session (`sid`) → `/` (the landing page, with its sign-in modal)
 //  - PROVIDER → only their own view (/me); kept out of owner/manager pages
 //  - OWNER/MANAGER → reports etc.; /me is meaningless for them → /reports
-// /login, /api/* (the route handlers self-check), and static assets are excluded via the matcher.
+// `/` (handled by app/page.tsx), /api/* and static assets are excluded via the matcher.
 const PROVIDER_HOME = '/me';
 const STAFF_HOME = '/reports';
 const STAFF_ONLY = ['/reports', '/admin']; // owner+manager (providers blocked)
@@ -17,7 +17,7 @@ function matches(pathname: string, prefixes: string[]) {
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  if (!req.cookies.get('sid')) return redirect(req, '/login');
+  if (!req.cookies.get('sid')) return redirect(req, '/');
 
   const role = req.cookies.get('role')?.value;
   const isProvider = role === 'PROVIDER';
@@ -40,5 +40,5 @@ function redirect(req: NextRequest, pathname: string) {
 }
 
 export const config = {
-  matcher: ['/', '/reports/:path*', '/admin/:path*', '/me'],
+  matcher: ['/reports/:path*', '/admin/:path*', '/me'],
 };

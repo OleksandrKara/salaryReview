@@ -1,5 +1,5 @@
-// Auto-generated from the Claude Design 'Landing Page.html' handoff bundle. The marketing
-// markup is rendered as-is; interactivity and the real login are wired in page.tsx.
+// Auto-generated from the Claude Design 'Landing Page.html' bundle. Marketing markup only —
+// the sign-in modal is rendered as real React (see Landing.tsx); design-tool artifacts stripped.
 export const LANDING_MARKUP = `<!-- ============================ HEADER ============================ -->
 <header class="site-header" id="header">
   <div class="wrap">
@@ -318,14 +318,17 @@ export const LANDING_MARKUP = `<!-- ============================ HEADER ========
 <section class="section-pad origin" aria-label="AK.LUX.NAILS story" data-screen-label="Origin story">
   <div class="wrap">
     <div class="o-copy reveal">
-      <div class="o-logo" style="font-family:var(--serif);font-size:2rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--paper);width:auto;margin-bottom:1.8rem;filter:none">AK.LUX.NAILS</div>
+      <div class="o-logo" style="font-family:var(--serif);font-size:2rem;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--paper);margin-bottom:1.8rem;">AK.LUX.NAILS</div>
       <p class="eyebrow">Born on a real salon floor</p>
       <p class="quote">"We built AK.LUX.STUDIO because our own team deserved to see exactly what they earned — to the cent, in real time."</p>
       <p class="q-by">Anna Kara · Founder, AK.LUX.NAILS</p>
       <p style="margin-top:1.6rem;max-width:46ch;">AK.LUX.STUDIO started inside AK.LUX.NAILS, a Russian-manicure studio obsessed with precision. The same care that goes into every set of nails now goes into every number — and it's ready for your studio.</p>
     </div>
     <div class="o-media reveal d1">
-      <div class="o-video-wrap"><div class="ph tall" data-label="AK.LUX.NAILS"></div></div></div>
+      <div class="o-video-wrap">
+        
+        <div class="ph tall" id="salonPlaceholder" data-label="AK.LUX.NAILS"></div>
+      </div>
     </div>
   </div>
 </section>
@@ -389,48 +392,4 @@ export const LANDING_MARKUP = `<!-- ============================ HEADER ========
       <span>Integrated with Square · Made with care</span>
     </div>
   </div>
-</footer>
-
-<!-- ============================ SIGN-IN MODAL ============================ -->
-<div class="modal-scrim" id="signinScrim" role="dialog" aria-modal="true" aria-label="Sign in">
-  <div class="modal">
-    <button class="m-close" id="modalClose" aria-label="Close">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 6l12 12M18 6L6 18"/></svg>
-    </button>
-    <div id="modalForm">
-      <div class="m-mark">AK.LUX.STUDIO</div>
-      <h3>Welcome back</h3>
-      <p class="m-sub">Sign in to your studio dashboard.</p>
-      <form id="signinForm" novalidate>
-        <div class="field">
-          <label for="email">Email or username</label>
-          <input type="text" id="email" placeholder="your username" autocomplete="username">
-          <div class="msg" id="emailMsg"></div>
-        </div>
-        <div class="field">
-          <label for="password">Password</label>
-          <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
-          <div class="msg" id="passMsg"></div>
-        </div>
-        <div class="m-row">
-          <label class="checkbox"><input type="checkbox" checked> Remember me</label>
-          <a href="#">Forgot password?</a>
-        </div>
-        <button type="submit" class="btn full">Sign in</button>
-      </form>
-      <div class="m-divider">or</div>
-      <button class="m-square" id="squareBtn">
-        <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="4" fill="currentColor"/><rect x="9" y="9" width="6" height="6" rx="1.4" fill="var(--paper)"/></svg>
-        Continue with Square
-      </button>
-      <p class="m-foot">New to AK.LUX.STUDIO? <a href="#">Book a demo</a></p>
-    </div>
-    <div id="modalSuccess" style="display:none">
-      <div class="m-success">
-        <div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12l4 4L19 7"/></svg></div>
-        <h3 style="margin-top:0">You're in</h3>
-        <p class="m-sub">Taking you to your dashboard…</p>
-      </div>
-    </div>
-  </div>
-</div>`;
+</footer>`;
