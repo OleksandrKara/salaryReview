@@ -177,6 +177,26 @@ public class SquareClient {
         return prices;
     }
 
+    /** Display name per service-variation id (for labelling bookings, which carry no service name). */
+    public Map<String, String> catalogNames(Collection<String> variationIds) {
+        Map<String, String> names = new HashMap<>();
+        List<String> ids = variationIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
+        if (ids.isEmpty()) return names;
+
+        CatalogBatchRetrieveResponse resp = http.post()
+                .uri("/v2/catalog/batch-retrieve")
+                .body(Map.of("object_ids", ids))
+                .retrieve()
+                .body(CatalogBatchRetrieveResponse.class);
+        if (resp == null || resp.objects() == null) return names;
+        for (CatalogObject obj : resp.objects()) {
+            if (obj.itemVariationData() != null && obj.itemVariationData().name() != null) {
+                names.put(obj.id(), obj.itemVariationData().name());
+            }
+        }
+        return names;
+    }
+
     // Square's bulk-retrieve-customers endpoint 404s on this account, so names are fetched one GET
     // each — but cached process-wide (names rarely change) and the misses fetched in parallel, so a
     // month's worth of customers only ever costs one round of lookups.

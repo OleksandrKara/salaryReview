@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 
-// End the backend session, clear our cookies, and bounce to /login. Uses a relative Location so the
-// browser stays on its own origin (in Docker, req.url's host is the container's 0.0.0.0 bind address).
+// End the backend session, clear our cookies, and bounce to the homepage. Uses a relative Location so
+// the browser stays on its own origin (in Docker, req.url's host is the container's 0.0.0.0 bind addr).
 const BACKEND = process.env.BACKEND_URL ?? 'http://localhost:8080';
 
 export async function GET(): Promise<Response> {
@@ -15,5 +15,5 @@ export async function GET(): Promise<Response> {
   }
   jar.delete('sid');
   jar.delete('role');
-  return new Response(null, { status: 303, headers: { Location: '/login' } });
+  return new Response(null, { status: 303, headers: { Location: '/' } });
 }

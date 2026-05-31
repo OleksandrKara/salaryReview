@@ -177,7 +177,7 @@ export interface AttributedService {
   countedUnits: number; // main services this line counts toward the tier (gross >= cutoff)
   units: number; // total services this line represents (incl. add-ons below the cutoff)
   prepaid: boolean;
-  channel: 'CARD' | 'CASH' | 'CASH-NOTE';
+  channel: 'CARD' | 'CASH' | 'CASH-NOTE' | 'PREPAID';
   time: string | null; // appointment start, salon-local, e.g. "2:30 PM"
   bookingId: string | null; // Square booking/reservation id (for the appointment link)
   customer: string | null; // short client name, e.g. "Donnah P."
@@ -212,6 +212,7 @@ export interface SettlementDiagnostics {
   unmatchedLineItems: number;
   unmatchedRevenue: number;
   cashNotes: number;
+  cashNotesSkipped: number; // notes ignored because the appointment was checked out as cash
 }
 
 export interface SettlementPreview {
@@ -222,4 +223,52 @@ export interface SettlementPreview {
   priceCutoff: number;
   providers: ProviderPayout[];
   diagnostics: SettlementDiagnostics;
+}
+
+// --- Prepaid packages (owner/manager) ---
+
+export interface PrepaidRedemption {
+  id: number;
+  squareBookingId: string;
+  serviceVariationId: string;
+  serviceName: string | null;
+  serviceDate: string;
+  menuPrice: number;
+  counts: boolean;
+}
+
+export interface PrepaidPackage {
+  id: number;
+  customerId: string | null;
+  customerName: string;
+  providerId: number;
+  providerName: string;
+  paidDate: string;
+  amount: number;
+  totalServices: number;
+  redeemed: number;
+  balance: number;
+  status: 'ACTIVE' | 'CLOSED';
+  invoiceRef: string | null;
+  redemptions: PrepaidRedemption[];
+}
+
+export interface PrepaidCandidate {
+  bookingId: string;
+  serviceVariationId: string;
+  serviceName: string;
+  date: string;
+  time: string | null;
+  menuPrice: number;
+  counts: boolean;
+}
+
+export interface PrepaidCreateRequest {
+  customerId?: string | null;
+  customerName: string;
+  providerId: number;
+  paidDate: string;
+  amount: number;
+  totalServices: number;
+  invoiceRef?: string | null;
 }
