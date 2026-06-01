@@ -1,5 +1,6 @@
 package com.salonreview.repo;
 
+import com.salonreview.domain.Half;
 import com.salonreview.domain.SettlementFeedback;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -10,5 +11,5 @@ public interface SettlementFeedbackRepository extends JpaRepository<SettlementFe
 
     List<SettlementFeedback> findByYearAndMonth(int year, int month);
 
-    Optional<SettlementFeedback> findByProviderIdAndYearAndMonth(Long providerId, int year, int month);
+    Optional<SettlementFeedback> findByProviderIdAndYearAndMonthAndHalf(Long providerId, int year, int month, Half half);
 }
