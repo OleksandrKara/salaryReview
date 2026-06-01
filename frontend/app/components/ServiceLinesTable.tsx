@@ -43,6 +43,7 @@ export default function ServiceLinesTable({
     ? (settlement.half === 'FIRST' ? ' · 50/50 month (5% added at month close)' : ' · 50/50 month (incl. bonus)')
     : '';
   const summary = `Counted: ${settlement.countedServices} · paid at base ${Math.round(baseRate * 100)}%${tierNote}`;
+  const tipTotal = sumTip(lines); // gross tip total — the sum of the Tip column
 
   return (
     <>
@@ -158,11 +159,25 @@ export default function ServiceLinesTable({
           <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs">
             <tr>
               <td className="px-3 py-2 font-medium" colSpan={2}>{summary}</td>
-              <td className="px-3 py-2 text-right text-zinc-500">card {usd(settlement.cardRevenue)}</td>
-              <td className="px-3 py-2 text-right text-zinc-500" colSpan={3}>
-                tips {usd(settlement.tipsAfterFee)}{settlement.tierBonus > 0 && ` · bonus ${usd(settlement.tierBonus)}`}
+              {/* card total under Gross */}
+              <td className="px-3 py-2 text-right tabular-nums text-zinc-500">
+                {usd(settlement.cardRevenue)}<div className="text-[10px] text-zinc-400">card</div>
               </td>
-              <td className="px-3 py-2 text-right font-semibold">→ {usd(settlement.zelleToProvider)}</td>
+              <td className="px-3 py-2" colSpan={2} />
+              {/* tip total aligned under the Tip column */}
+              <td className="px-3 py-2 text-right tabular-nums">
+                <div className="font-medium">{usd(tipTotal)}</div>
+                <div className="text-[10px] text-zinc-400">
+                  tips{tipTotal !== settlement.tipsAfterFee && ` · −fee ${usd(settlement.tipsAfterFee)}`}
+                </div>
+              </td>
+              {/* payout under Counts */}
+              <td className="px-3 py-2 text-right font-semibold">
+                → {usd(settlement.zelleToProvider)}
+                {settlement.tierBonus > 0 && (
+                  <div className="text-[10px] font-normal text-amber-600">incl. bonus {usd(settlement.tierBonus)}</div>
+                )}
+              </td>
             </tr>
           </tfoot>
         </table>
