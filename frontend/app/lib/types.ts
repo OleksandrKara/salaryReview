@@ -254,14 +254,13 @@ export interface PrepaidRedemption {
   serviceDate: string;
   menuPrice: number;
   counts: boolean;
+  providerName: string; // the provider who performed this draw-down
 }
 
 export interface PrepaidPackage {
   id: number;
   customerId: string | null;
   customerName: string;
-  providerId: number;
-  providerName: string;
   paidDate: string;
   amount: number;
   totalServices: number;
@@ -280,12 +279,13 @@ export interface PrepaidCandidate {
   time: string | null;
   menuPrice: number;
   counts: boolean;
+  teamMemberId: string; // Square team member who performed it — credited on confirm
+  providerName: string;
 }
 
 export interface PrepaidCreateRequest {
   customerId?: string | null;
   customerName: string;
-  providerId: number;
   paidDate: string;
   amount: number;
   totalServices: number;

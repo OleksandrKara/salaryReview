@@ -7,10 +7,10 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /**
- * A prepaid package: one Square invoice paid in advance for {@link #totalServices} services with a
- * single {@link #providerId}, drawn down over later visits (see {@code PrepaidRedemption}). The
- * provider is paid per draw-down on the service's catalog price; this row is the balance + proof.
- * ({@code created_at} is DB-managed.)
+ * A prepaid package: one Square invoice paid in advance for {@link #totalServices} services, drawn
+ * down over later visits with any provider (see {@code PrepaidRedemption}, which records the provider
+ * who performed each draw-down). The provider is paid per draw-down on the service's catalog price;
+ * this row is the balance + proof. ({@code created_at} is DB-managed.)
  */
 @Entity
 @Table(name = "prepaid_package")
@@ -28,9 +28,6 @@ public class PrepaidPackage {
 
     @Column(name = "customer_name", nullable = false)
     private String customerName;
-
-    @Column(name = "provider_id", nullable = false)
-    private Long providerId;
 
     @Column(name = "paid_date", nullable = false)
     private LocalDate paidDate;
