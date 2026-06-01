@@ -183,7 +183,7 @@ export interface AttributedService {
   countedUnits: number; // main services this line counts toward the tier (gross >= cutoff)
   units: number; // total services this line represents (incl. add-ons below the cutoff)
   prepaid: boolean;
-  channel: 'CARD' | 'CASH' | 'CASH-NOTE' | 'PREPAID' | 'COMP';
+  channel: 'CARD' | 'CASH' | 'CASH-NOTE' | 'PREPAID' | 'COMP' | 'REDO';
   time: string | null; // appointment start, salon-local, e.g. "2:30 PM"
   bookingId: string | null; // Square booking/reservation id (for the appointment link)
   customer: string | null; // short client name, e.g. "Donnah P."
@@ -295,6 +295,29 @@ export interface PrepaidInvoice {
   status: string;
   date: string | null;
   amount: number;
+}
+
+// --- Redos (owner/manager) ---
+
+export interface Redo {
+  id: number;
+  originalProviderId: number;
+  originalProviderName: string;
+  redoProviderId: number;
+  redoProviderName: string;
+  originalDate: string;
+  redoDate: string;
+  amount: number;
+  serviceName: string | null;
+}
+
+export interface RedoCreateRequest {
+  originalProviderId: number;
+  redoProviderId: number;
+  originalDate: string;
+  redoDate: string;
+  amount: number;
+  serviceName?: string | null;
 }
 
 export interface PrepaidCreateRequest {
