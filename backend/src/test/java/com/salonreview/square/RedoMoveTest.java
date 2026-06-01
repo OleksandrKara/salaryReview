@@ -87,5 +87,9 @@ class RedoMoveTest {
         assertThat(s.secondHalf().countedServices()).isEqualTo(1);               // 2 − 1
         assertThat(b.secondHalf().cardRevenue()).isEqualByComparingTo("250.00");  // 150 + 100 moved in
         assertThat(b.secondHalf().countedServices()).isEqualTo(2);               // 1 + 1
+
+        // Short #salary note on each provider's redo-period block.
+        assertThat(b.secondHalfMessage()).contains("Redo (from Susan): +$100.00");
+        assertThat(s.secondHalfMessage()).contains("Redo (redone by Bayan): −$100.00");
     }
 }
