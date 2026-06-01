@@ -300,6 +300,14 @@ public class SettlementPreviewService {
         // only appears when non-zero.
         String adjustments = input.adjustments().signum() != 0
                 ? "Adjustments (cancellations, hours, redos): $" + money(input.adjustments()) + "\n" : "";
+        // 16-END only: at month close a qualified provider (50/50) earns a tier bonus on the month's
+        // card (and a cash rebate). It's already inside the Zelle/Cash totals below — shown here so the
+        // 50/50 uplift is explicit. Only appears when there's a bonus (i.e. the 50/50 tier applied).
+        String bonus = (half == Half.SECOND && settlement.tierBonus().signum() > 0)
+                ? "50/50 bonus (in Zelle): $" + money(settlement.tierBonus()) + "\n"
+                + (settlement.cashTierRebate().signum() > 0
+                        ? "50/50 cash rebate (off cash to " + owner + "): $" + money(settlement.cashTierRebate()) + "\n" : "")
+                : "";
         return "#salary " + label + "\n"
                 + procedures + " procedures\n"
                 + "Card: $" + money(input.cardRevenue()) + "\n"
@@ -308,6 +316,7 @@ public class SettlementPreviewService {
                 + adjustments
                 + "Tips: $" + money(input.cardTips()) + "\n"
                 + "Tips(-" + feePct + "%): $" + money(settlement.tipsAfterFee()) + "\n\n"
+                + bonus
                 + "Zelle " + owner + " to " + providerName + ": $" + money(settlement.zelleToProvider()) + "\n"
                 + "Cash from " + providerName + " to " + owner + ": $" + money(settlement.cashToSalon());
     }
