@@ -87,7 +87,7 @@ public class SquareMonthAggregator {
                 if (firstProvider == null) firstProvider = s.teamMemberId();
                 bookingServiceIds.add(s.serviceVariationId());
                 segIndex.computeIfAbsent(key(b.customerId(), s.serviceVariationId()), k -> new ArrayList<>())
-                        .add(new Seg(s.teamMemberId(), day, b.id(), b.startAt()));
+                        .add(new Seg(s.teamMemberId(), day, b.id(), b.startAt(), instant(b.updatedAt())));
             }
             // Cash note ("cashew $nn" or Russian "наличные") → a cash service for the booking's provider.
             // The amount is what's written, or the appointment's catalog service total when omitted.
@@ -112,14 +112,16 @@ public class SquareMonthAggregator {
 
         // --- Attribute order money to providers ---
         for (Order o : orders) {
-            LocalDate orderDay = localDate(o.closedAt() != null ? o.closedAt() : o.createdAt(), zone);
+            String orderTs = o.closedAt() != null ? o.closedAt() : o.createdAt();
+            LocalDate orderDay = localDate(orderTs, zone);
+            Instant checkoutAt = instant(orderTs);
             boolean cashOrder = isCashOrder(o);
             Map<String, Half> providersOnOrder = new LinkedHashMap<>();
 
             if (o.lineItems() != null) {
                 for (OrderLineItem li : o.lineItems()) {
                     if (li.catalogObjectId() == null) continue;
-                    Match m = match(segIndex, o.customerId(), li.catalogObjectId(), orderDay, diag);
+                    Match m = match(segIndex, o.customerId(), li.catalogObjectId(), orderDay, checkoutAt, diag);
                     if (m == null) {
                         diag.unmatchedLineItems++;
                         BigDecimal gross = lineRevenue(li);
@@ -278,6 +280,16 @@ public class SquareMonthAggregator {
         return Instant.parse(iso).atZone(zone).toLocalDate();
     }
 
+    /** Parse a Square ISO-8601 timestamp to an Instant, or null if absent/unparseable. */
+    private static Instant instant(String iso) {
+        if (iso == null || iso.isBlank()) return null;
+        try {
+            return Instant.parse(iso);
+        } catch (java.time.format.DateTimeParseException e) {
+            return null;
+        }
+    }
+
     private static final java.time.format.DateTimeFormatter TIME_FMT =
             java.time.format.DateTimeFormatter.ofPattern("h:mm a", java.util.Locale.US);
 
@@ -306,12 +318,12 @@ public class SquareMonthAggregator {
      * feature (see docs/ROADMAP.md), not by guessing here.
      */
     private static Match match(Map<String, List<Seg>> index, String customerId, String catalogObjectId,
-                               LocalDate orderDay, Diag diag) {
+                               LocalDate orderDay, Instant checkoutAt, Diag diag) {
         if (customerId == null || orderDay == null) return null;
         List<Seg> candidates = index.get(key(customerId, catalogObjectId));
         if (candidates == null) return null;
 
-        Seg near = nearestUnused(candidates, orderDay, 2);
+        Seg near = nearestUnused(candidates, orderDay, checkoutAt, 2);
         if (near != null) {
             near.used = true;
             return new Match(near, false);
@@ -322,16 +334,32 @@ public class SquareMonthAggregator {
     /** A matched booking segment plus whether it was a prepaid-invoice match (reserved; always false now). */
     private record Match(Seg seg, boolean prepaid) {}
 
-    /** Nearest unused segment whose day is within {@code maxDays} of the order, or null. */
-    private static Seg nearestUnused(List<Seg> candidates, LocalDate orderDay, long maxDays) {
+    /**
+     * The booking this checkout paid for, or null if none is within {@code maxDays}.
+     *
+     * <p>Day proximity is the primary signal (a checkout matches the visit's day; the small window
+     * absorbs timezone jitter). When several equally-near bookings share a customer + service — a
+     * 4-hands visit where two providers each have a booking for the same SKU — the tie is broken by
+     * <em>checkout skew</em>: Square stamps the booking that was actually checked out with an
+     * {@code updated_at} at the checkout moment, so the booking whose {@code updatedAt} is closest to
+     * the order's close time is the one that took payment. This mirrors what Square's own dashboard
+     * shows (it credits the checked-out provider) without parsing any free-text note.
+     */
+    static Seg nearestUnused(List<Seg> candidates, LocalDate orderDay, Instant checkoutAt, long maxDays) {
         Seg best = null;
         long bestDist = Long.MAX_VALUE;
+        long bestSkew = Long.MAX_VALUE;
         for (Seg s : candidates) {
             if (s.used) continue;
             long dist = Math.abs(s.day.toEpochDay() - orderDay.toEpochDay());
-            if (dist <= maxDays && dist < bestDist) {
+            if (dist > maxDays) continue;
+            long skew = (checkoutAt != null && s.updatedAt != null)
+                    ? Math.abs(s.updatedAt.toEpochMilli() - checkoutAt.toEpochMilli())
+                    : Long.MAX_VALUE;
+            if (dist < bestDist || (dist == bestDist && skew < bestSkew)) {
                 best = s;
                 bestDist = dist;
+                bestSkew = skew;
             }
         }
         return best;
@@ -377,18 +405,22 @@ public class SquareMonthAggregator {
         }
     }
 
-    private static final class Seg {
+    static final class Seg {
         final String providerId;
         final LocalDate day;
         final String bookingId;
         final String startAt;
+        /** When Square last touched this booking. The checked-out booking is updated at checkout time,
+         *  so this lets us tell which sibling (in a multi-provider 4-hands visit) actually took payment. */
+        final Instant updatedAt;
         boolean used = false;
 
-        Seg(String providerId, LocalDate day, String bookingId, String startAt) {
+        Seg(String providerId, LocalDate day, String bookingId, String startAt, Instant updatedAt) {
             this.providerId = providerId;
             this.day = day;
             this.bookingId = bookingId;
             this.startAt = startAt;
+            this.updatedAt = updatedAt;
         }
     }
 
