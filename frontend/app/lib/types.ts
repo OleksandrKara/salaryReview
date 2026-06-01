@@ -177,7 +177,7 @@ export interface AttributedService {
   countedUnits: number; // main services this line counts toward the tier (gross >= cutoff)
   units: number; // total services this line represents (incl. add-ons below the cutoff)
   prepaid: boolean;
-  channel: 'CARD' | 'CASH' | 'CASH-NOTE' | 'PREPAID';
+  channel: 'CARD' | 'CASH' | 'CASH-NOTE' | 'PREPAID' | 'COMP';
   time: string | null; // appointment start, salon-local, e.g. "2:30 PM"
   bookingId: string | null; // Square booking/reservation id (for the appointment link)
   customer: string | null; // short client name, e.g. "Donnah P."
@@ -215,6 +215,21 @@ export interface SettlementDiagnostics {
   unmatchedRevenue: number;
   cashNotes: number;
   cashNotesSkipped: number; // notes ignored because the appointment was checked out as cash
+  ownerComps: number; // services to an owner/family customer credited at menu price (no order)
+  ownerCompsSkipped: number; // owner bookings we couldn't value (no catalog price)
+}
+
+// --- Owner/family customers (owner/manager) ---
+
+export interface OwnerCustomer {
+  id: number;
+  squareCustomerId: string;
+  name: string | null;
+}
+
+export interface CustomerMatch {
+  id: string;
+  name: string;
 }
 
 export interface SettlementPreview {

@@ -218,6 +218,40 @@ public class SquareClient {
         return names;
     }
 
+    /**
+     * Customers whose name contains {@code query} (case-insensitive). The Customers API has no name
+     * search, so we page the list and filter client-side — capped at a few pages, which is plenty for
+     * the rare admin task of marking an owner customer (paste the customer id if a match is missed).
+     */
+    public List<Customer> searchCustomers(String query) {
+        String q = query == null ? "" : query.trim().toLowerCase();
+        if (q.isEmpty()) return List.of();
+        List<Customer> matches = new ArrayList<>();
+        String cursor = null;
+        int pages = 0;
+        do {
+            final String c = cursor;
+            CustomersListResponse resp = http.get()
+                    .uri(b -> {
+                        b.path("/v2/customers").queryParam("limit", 100);
+                        if (c != null) b.queryParam("cursor", c);
+                        return b.build();
+                    })
+                    .retrieve()
+                    .body(CustomersListResponse.class);
+            if (resp != null && resp.customers() != null) {
+                for (Customer cust : resp.customers()) {
+                    String name = ((cust.givenName() == null ? "" : cust.givenName()) + " "
+                            + (cust.familyName() == null ? "" : cust.familyName())).trim();
+                    if (name.toLowerCase().contains(q)) matches.add(cust);
+                    if (matches.size() >= 25) return matches;
+                }
+            }
+            cursor = resp == null ? null : resp.cursor();
+        } while (cursor != null && !cursor.isBlank() && ++pages < 10);
+        return matches;
+    }
+
     private String fetchCustomerName(String id) {
         try {
             CustomerResponse resp = http.get().uri("/v2/customers/{id}", id).retrieve().body(CustomerResponse.class);
@@ -271,7 +305,15 @@ public class SquareClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record Customer(String id, String givenName, String familyName) {}
+    public record Customer(String id, String givenName, String familyName) {
+        public String fullName() {
+            return ((givenName == null ? "" : givenName) + " " + (familyName == null ? "" : familyName)).trim();
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record CustomersListResponse(List<Customer> customers, String cursor) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
