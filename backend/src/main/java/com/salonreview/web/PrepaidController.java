@@ -60,6 +60,33 @@ public class PrepaidController {
         }
     }
 
+    /** Square customers matching a name — to pick the package's customer (calls Square; 502 on fail). */
+    @GetMapping("/customers/search")
+    public ResponseEntity<?> searchCustomers(@RequestParam String q) {
+        try {
+            return ResponseEntity.ok(prepaid.searchCustomers(q));
+        } catch (RestClientResponseException e) {
+            return squareError(e);
+        }
+    }
+
+    /** A customer's Square invoices — to pick the prepaid invoice (calls Square; 502 on fail). */
+    @GetMapping("/invoices")
+    public ResponseEntity<?> invoices(@RequestParam String customerId) {
+        try {
+            return ResponseEntity.ok(prepaid.invoices(customerId));
+        } catch (RestClientResponseException e) {
+            return squareError(e);
+        }
+    }
+
+    private static ResponseEntity<?> squareError(RestClientResponseException e) {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
+                "error", "Square API call failed",
+                "squareStatus", e.getStatusCode().value(),
+                "squareBody", e.getResponseBodyAsString()));
+    }
+
     @PostMapping("/{id}/redemptions")
     public PrepaidRedemption redeem(@PathVariable Long id, @RequestBody RedeemRequest req,
                                     @AuthenticationPrincipal AppUserPrincipal me) {
