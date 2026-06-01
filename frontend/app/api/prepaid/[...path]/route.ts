@@ -2,6 +2,8 @@ import { forwardToBackend } from '../../../lib/proxyBackend';
 
 // Catch-all proxy for the per-package prepaid routes:
 //   GET    /api/prepaid/{id}/candidates
+//   GET    /api/prepaid/customers/search?q=...
+//   GET    /api/prepaid/invoices?customerId=...
 //   POST   /api/prepaid/{id}/redemptions
 //   DELETE /api/prepaid/{id}
 //   DELETE /api/prepaid/redemptions/{redemptionId}
@@ -10,9 +12,10 @@ function backendPath(parts: string[]): string {
   return `/api/prepaid/${parts.map(encodeURIComponent).join('/')}`;
 }
 
-export async function GET(_req: Request, ctx: { params: Promise<{ path: string[] }> }): Promise<Response> {
+export async function GET(req: Request, ctx: { params: Promise<{ path: string[] }> }): Promise<Response> {
   const { path } = await ctx.params;
-  return forwardToBackend(backendPath(path), 'GET');
+  const search = new URL(req.url).search; // preserve ?q= / ?customerId= for the search endpoints
+  return forwardToBackend(backendPath(path) + search, 'GET');
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ path: string[] }> }): Promise<Response> {
