@@ -114,29 +114,30 @@ public class SettlementPreviewService {
     }
 
     /**
-     * Redo moves: the service's commission shifts from the original provider (a negative line on the
-     * original date) to the redo provider (a positive line on the redo date). Returned as signed
-     * synthetic lines keyed by provider id — folded exactly like prepaid (see {@link #applyExtraLines}).
+     * Redo moves: the service's commission shifts from the original provider to the redo provider.
+     * BOTH sides land in the <em>redo</em> period (the redo provider gains it, the original provider has
+     * it deducted) — the original period is already settled/paid, so we never claw back from it. If the
+     * original provider has little activity in the redo period the deduction can make that period
+     * negative (a real clawback they owe). The original date is shown on the lines for context only.
+     * Returned as signed synthetic lines keyed by provider id — folded like prepaid ({@link #applyExtraLines}).
      */
     private Map<Long, List<AttributedService>> redoLinesByProvider(int year, int month, BigDecimal cutoff) {
         List<com.salonreview.domain.Redo> all = redoRepo.findAllByOrderByRedoDateDesc();
         if (all.isEmpty()) return Map.of();
         Map<Long, List<AttributedService>> byProvider = new LinkedHashMap<>();
         for (com.salonreview.domain.Redo rd : all) {
+            if (!inMonth(rd.getRedoDate(), year, month)) continue; // everything happens in the redo period
             boolean counts = rd.getAmount().compareTo(cutoff) >= 0;
             String svc = rd.getServiceName() == null || rd.getServiceName().isBlank() ? "Redo" : rd.getServiceName();
-            if (inMonth(rd.getRedoDate(), year, month)) { // redo provider gains it, on the redo date
-                String from = providerName(rd.getOriginalProviderId());
-                byProvider.computeIfAbsent(rd.getRedoProviderId(), k -> new ArrayList<>())
-                        .add(redoLine(providerName(rd.getRedoProviderId()), rd.getRedoDate(),
-                                svc + " (redo from " + from + ")", rd.getAmount(), counts));
-            }
-            if (inMonth(rd.getOriginalDate(), year, month)) { // original provider loses it, on the original date
-                String to = providerName(rd.getRedoProviderId());
-                byProvider.computeIfAbsent(rd.getOriginalProviderId(), k -> new ArrayList<>())
-                        .add(redoLine(providerName(rd.getOriginalProviderId()), rd.getOriginalDate(),
-                                svc + " (redone by " + to + ")", rd.getAmount().negate(), counts));
-            }
+            String from = providerName(rd.getOriginalProviderId());
+            String to = providerName(rd.getRedoProviderId());
+            String orig = " (orig " + rd.getOriginalDate() + ")";
+            // redo provider gains the commission
+            byProvider.computeIfAbsent(rd.getRedoProviderId(), k -> new ArrayList<>())
+                    .add(redoLine(to, rd.getRedoDate(), svc + " — redo from " + from + orig, rd.getAmount(), counts));
+            // original provider's commission is deducted HERE, in the redo period (not the paid one)
+            byProvider.computeIfAbsent(rd.getOriginalProviderId(), k -> new ArrayList<>())
+                    .add(redoLine(from, rd.getRedoDate(), svc + " — redone by " + to + orig, rd.getAmount().negate(), counts));
         }
         return byProvider;
     }

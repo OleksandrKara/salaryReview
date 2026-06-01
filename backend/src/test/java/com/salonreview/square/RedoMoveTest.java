@@ -29,7 +29,7 @@ import static org.mockito.Mockito.*;
 class RedoMoveTest {
 
     @Test
-    @DisplayName("Redo: $100 moves from Susan (orig period) to Bayan (redo period), incl. the counted service")
+    @DisplayName("Redo: deduction + credit BOTH land in the redo period; the original (paid) period is untouched")
     void redoMovesCommission() {
         SquareMonthAggregator aggregator = mock(SquareMonthAggregator.class);
         SalonConfigRepository salonConfigRepo = mock(SalonConfigRepository.class);
@@ -57,10 +57,11 @@ class RedoMoveTest {
         when(feedback.findByYearAndMonth(2026, 5)).thenReturn(List.of());
         when(prepaidRedemptions.findByServiceDateBetween(any(), any())).thenReturn(List.of());
 
-        // Susan: first-half card 200 (2 counted). Bayan: second-half card 150 (1 counted).
+        // Susan: first-half card 200 (2 counted, the original/paid period) + second-half card 300 (2).
+        // Bayan: second-half card 150 (1 counted).
         ProviderMonth susan = new ProviderMonth("TM_S", "Susan",
                 new HalfInput(2, new BigDecimal("200.00"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO),
-                HalfInput.empty());
+                new HalfInput(2, new BigDecimal("300.00"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
         ProviderMonth bayan = new ProviderMonth("TM_B", "Bayan", HalfInput.empty(),
                 new HalfInput(1, new BigDecimal("150.00"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
         when(aggregator.aggregate(eq(2026), eq(5), any())).thenReturn(
@@ -80,8 +81,10 @@ class RedoMoveTest {
         ProviderPayout s = preview.providers().stream().filter(p -> p.name().equals("Susan")).findFirst().orElseThrow();
         ProviderPayout b = preview.providers().stream().filter(p -> p.name().equals("Bayan")).findFirst().orElseThrow();
 
-        assertThat(s.firstHalf().cardRevenue()).isEqualByComparingTo("100.00");   // 200 − 100 moved out
-        assertThat(s.firstHalf().countedServices()).isEqualTo(1);                 // 2 − 1
+        assertThat(s.firstHalf().cardRevenue()).isEqualByComparingTo("200.00");   // original period UNTOUCHED
+        assertThat(s.firstHalf().countedServices()).isEqualTo(2);
+        assertThat(s.secondHalf().cardRevenue()).isEqualByComparingTo("200.00");  // 300 − 100 deducted in redo period
+        assertThat(s.secondHalf().countedServices()).isEqualTo(1);               // 2 − 1
         assertThat(b.secondHalf().cardRevenue()).isEqualByComparingTo("250.00");  // 150 + 100 moved in
         assertThat(b.secondHalf().countedServices()).isEqualTo(2);               // 1 + 1
     }
