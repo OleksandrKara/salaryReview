@@ -85,13 +85,15 @@ class PrepaidServiceTest {
                 mock(SalonConfigRepository.class), mock(PrepaidPackageRepository.class),
                 mock(PrepaidRedemptionRepository.class));
 
-        Invoice inv = new Invoice("inv1", "000089", "Prepaid", "PAID", "2026-05-29T10:00:00Z",
+        Invoice paid = new Invoice("inv1", "000089", "Prepaid", "PAID", "2026-05-29T10:00:00Z",
                 List.of(new PaymentRequest(new Money(2500L, "USD")), new PaymentRequest(new Money(1500L, "USD"))));
-        when(square.invoicesForCustomer("C1")).thenReturn(List.of(inv));
+        Invoice unpaid = new Invoice("inv2", "000090", "Pending", "UNPAID", "2026-05-30T10:00:00Z",
+                List.of(new PaymentRequest(new Money(9900L, "USD"))));
+        when(square.invoicesForCustomer("C1")).thenReturn(List.of(paid, unpaid));
 
         List<PrepaidService.InvoiceMatch> out = svc.invoices("C1");
 
-        assertThat(out).hasSize(1);
+        assertThat(out).hasSize(1);                                     // UNPAID is filtered out
         assertThat(out.get(0).number()).isEqualTo("000089");
         assertThat(out.get(0).date()).isEqualTo("2026-05-29");          // created_at date only
         assertThat(out.get(0).amount()).isEqualByComparingTo("40.00");  // 25.00 + 15.00
