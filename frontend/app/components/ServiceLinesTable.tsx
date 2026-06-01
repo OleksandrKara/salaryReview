@@ -44,6 +44,7 @@ export default function ServiceLinesTable({
     : '';
   const summary = `Counted: ${settlement.countedServices} · paid at base ${Math.round(baseRate * 100)}%${tierNote}`;
   const tipTotal = sumTip(lines); // gross tip total — the sum of the Tip column
+  const discountTotal = lines.reduce((s, l) => s + l.discount, 0);
 
   return (
     <>
@@ -158,26 +159,12 @@ export default function ServiceLinesTable({
           </tbody>
           <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs">
             <tr>
-              <td className="px-3 py-2 font-medium" colSpan={2}>{summary}</td>
-              {/* card total under Gross */}
-              <td className="px-3 py-2 text-right tabular-nums text-zinc-500">
-                {usd(settlement.cardRevenue)}<div className="text-[10px] text-zinc-400">card</div>
-              </td>
-              <td className="px-3 py-2" colSpan={2} />
-              {/* tip total aligned under the Tip column */}
-              <td className="px-3 py-2 text-right tabular-nums">
-                <div className="font-medium">{usd(tipTotal)}</div>
-                <div className="text-[10px] text-zinc-400">
-                  tips{tipTotal !== settlement.tipsAfterFee && ` · −fee ${usd(settlement.tipsAfterFee)}`}
-                </div>
-              </td>
-              {/* payout under Counts */}
-              <td className="px-3 py-2 text-right font-semibold">
-                → {usd(settlement.zelleToProvider)}
-                {settlement.tierBonus > 0 && (
-                  <div className="text-[10px] font-normal text-amber-600">incl. bonus {usd(settlement.tierBonus)}</div>
-                )}
-              </td>
+              <td className="px-3 py-2 font-medium" colSpan={2}>Totals</td>
+              <td className="px-3 py-2 text-right tabular-nums font-medium">{usd(settlement.cardRevenue)}</td>
+              <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{discountTotal > 0 ? `−${usd(discountTotal)}` : '—'}</td>
+              <td className="px-3 py-2" />
+              <td className="px-3 py-2 text-right tabular-nums font-medium">{usd(tipTotal)}</td>
+              <td className="px-3 py-2 text-center font-medium">{settlement.countedServices}</td>
             </tr>
           </tfoot>
         </table>
