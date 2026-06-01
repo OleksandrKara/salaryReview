@@ -25,6 +25,10 @@ public class PrepaidRedemption {
     @Column(name = "package_id", nullable = false)
     private Long packageId;
 
+    /** The provider (person) who performed this service — credited the draw-down in the settlement. */
+    @Column(name = "provider_id", nullable = false)
+    private Long providerId;
+
     @Column(name = "square_booking_id", nullable = false)
     private String squareBookingId;
 
