@@ -141,8 +141,9 @@ public class SettlementPreviewService {
         Set<Long> tierGrantedProviderIds = tierGrants.findByYearAndMonth(year, month).stream()
                 .map(TierGrant::getProviderId).collect(Collectors.toSet());
 
-        Map<Long, SettlementFeedback> feedbackByProvider = feedback.findByYearAndMonth(year, month).stream()
-                .collect(Collectors.toMap(SettlementFeedback::getProviderId, f -> f, (a, b) -> a));
+        Map<Long, Map<Half, SettlementFeedback>> feedbackByProvider = feedback.findByYearAndMonth(year, month).stream()
+                .collect(Collectors.groupingBy(SettlementFeedback::getProviderId,
+                        Collectors.toMap(SettlementFeedback::getHalf, f -> f, (a, b) -> a)));
 
         MonthAggregation agg = aggregator.aggregate(year, month, cutoff);
         Map<Long, Merged> byPerson = collapseToPersons(agg);
@@ -228,8 +229,9 @@ public class SettlementPreviewService {
 
         Set<Long> granted = tierGrants.findByYearAndMonth(year, month).stream()
                 .map(TierGrant::getProviderId).collect(Collectors.toSet());
-        Map<Long, SettlementFeedback> fb = feedback.findByYearAndMonth(year, month).stream()
-                .collect(Collectors.toMap(SettlementFeedback::getProviderId, f -> f, (a, b) -> a));
+        Map<Long, Map<Half, SettlementFeedback>> fb = feedback.findByYearAndMonth(year, month).stream()
+                .collect(Collectors.groupingBy(SettlementFeedback::getProviderId,
+                        Collectors.toMap(SettlementFeedback::getHalf, f -> f, (a, b) -> a)));
 
         MonthAggregation agg = aggregator.aggregate(year, month, sc.getServicePriceCutoff());
         Map<Long, List<AttributedService>> prepaid = prepaidLinesByProvider(year, month);
@@ -351,7 +353,7 @@ public class SettlementPreviewService {
     }
 
     private ProviderPayout toPayout(Merged m, CommissionConfig config, Set<Long> granted,
-                                    Map<Long, SettlementFeedback> feedbackByProvider,
+                                    Map<Long, Map<Half, SettlementFeedback>> feedbackByProvider,
                                     SalonConfig sc, int year, int month, int[] procedures,
                                     BigDecimal[] discounts) {
         int monthCounted = m.first.countedServices() + m.second.countedServices();
@@ -363,15 +365,18 @@ public class SettlementPreviewService {
         HalfSettlement second = engine.secondHalfFinal(m.first, m.second, config, tierGrant);
         BigDecimal monthZelle = first.zelleToProvider().add(second.zelleToProvider());
         BigDecimal monthCashToSalon = first.cashToSalon().add(second.cashToSalon());
-        SettlementFeedback fb = feedbackByProvider.get(m.providerId);
+        Map<Half, SettlementFeedback> fbm = feedbackByProvider.getOrDefault(m.providerId, Map.of());
         String firstMsg = salaryMessage(year, month, Half.FIRST, m.name, sc, m.first, first, procedures[0], discounts[0]);
         String secondMsg = salaryMessage(year, month, Half.SECOND, m.name, sc, m.second, second, procedures[1], discounts[1]);
         return new ProviderPayout(m.providerId, m.name, monthCounted, autoQualified,
                 isGranted && !autoQualified, autoQualified || isGranted,
                 first, second, monthZelle, monthCashToSalon,
-                fb != null ? fb.getStatus().name() : null,
-                fb != null ? fb.getComment() : null,
+                toFeedback(fbm.get(Half.FIRST)), toFeedback(fbm.get(Half.SECOND)),
                 firstMsg, secondMsg);
+    }
+
+    private static Feedback toFeedback(SettlementFeedback f) {
+        return f == null ? null : new Feedback(f.getStatus().name(), f.getComment());
     }
 
     private static HalfInput sum(HalfInput a, HalfInput b) {
@@ -405,8 +410,11 @@ public class SettlementPreviewService {
                                  boolean autoQualified, boolean tierManuallyGranted, boolean tierApplied,
                                  HalfSettlement firstHalf, HalfSettlement secondHalf,
                                  BigDecimal monthZelleToProvider, BigDecimal monthCashToSalon,
-                                 String feedbackStatus, String feedbackComment,
+                                 Feedback firstFeedback, Feedback secondFeedback,
                                  String firstHalfMessage, String secondHalfMessage) {}
+
+    /** A provider's response to one period: {@code status} = APPROVED / CHANGES_REQUESTED, + comment. */
+    public record Feedback(String status, String comment) {}
 
     /**
      * Line-level trace for one provider/month, plus the salon-wide unattributed lines and the

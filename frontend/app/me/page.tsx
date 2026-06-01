@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { serverApi } from '../lib/serverApi';
-import type { HalfSettlement } from '../lib/types';
+import type { Feedback, HalfSettlement } from '../lib/types';
 import DiscountBreakdown from './DiscountBreakdown';
 import ServiceBreakdown from './ServiceBreakdown';
 import SettlementFeedbackForm from './SettlementFeedbackForm';
@@ -71,22 +71,17 @@ export default async function MyReportPage({
             <Headline label="Tier" value={me.tierApplied ? '50 / 50' : '45 / 55'} />
           </div>
 
-          {/* Per-period cards */}
+          {/* Per-period cards — each with its own approve / request-correction */}
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <PeriodCard title="1–15" half={me.firstHalf} total={totalFirst} cutoffTip={cutoffTip} message={detail.firstHalfMessage} />
-            <PeriodCard title="16–end" half={me.secondHalf} total={totalSecond} cutoffTip={cutoffTip} message={detail.secondHalfMessage} />
+            <PeriodCard title="1–15" halfKey="FIRST" half={me.firstHalf} total={totalFirst} cutoffTip={cutoffTip}
+              message={detail.firstHalfMessage} year={year} month={month} feedback={me.firstFeedback} />
+            <PeriodCard title="16–end" halfKey="SECOND" half={me.secondHalf} total={totalSecond} cutoffTip={cutoffTip}
+              message={detail.secondHalfMessage} year={year} month={month} feedback={me.secondFeedback} />
           </div>
 
           <DiscountBreakdown services={detail.services} />
 
           <ServiceBreakdown detail={detail} />
-
-          <SettlementFeedbackForm
-            year={year}
-            month={month}
-            currentStatus={me.feedbackStatus}
-            currentComment={me.feedbackComment}
-          />
         </>
       )}
     </main>
@@ -104,16 +99,24 @@ function Headline({ label, value, big, tip }: { label: string; value: string; bi
 
 function PeriodCard({
   title,
+  halfKey,
   half,
   total,
   cutoffTip,
   message,
+  year,
+  month,
+  feedback,
 }: {
   title: string;
+  halfKey: 'FIRST' | 'SECOND';
   half: HalfSettlement;
   total: number;
   cutoffTip: string;
   message: string | null;
+  year: number;
+  month: number;
+  feedback: Feedback | null;
 }) {
   return (
     <div className="rounded-lg p-4 ring-1 ring-zinc-200">
@@ -133,6 +136,7 @@ function PeriodCard({
         {half.tierBonus > 0 && <Row label="incl. tier bonus" value={usd(half.tierBonus)} hint />}
         <Row label="Cash → salon" value={usd(half.cashToSalon)} />
       </div>
+      <SettlementFeedbackForm year={year} month={month} half={halfKey} current={feedback} />
     </div>
   );
 }
