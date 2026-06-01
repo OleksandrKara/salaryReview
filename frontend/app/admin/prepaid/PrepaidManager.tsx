@@ -218,6 +218,8 @@ function CustomerCard({ packages, onChanged }: { packages: PrepaidPackage[]; onC
   const [candidates, setCandidates] = useState<PrepaidCandidate[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [picked, setPicked] = useState<Set<string>>(new Set()); // selected candidate visits
+  const [confirming, setConfirming] = useState(false);
 
   const byDate = [...packages].sort((a, b) => a.paidDate.localeCompare(b.paidDate));
   const customerName = packages[0].customerName;
@@ -236,11 +238,21 @@ function CustomerCard({ packages, onChanged }: { packages: PrepaidPackage[]; onC
     setLoading(true);
     try {
       setCandidates(await api.getCandidates(lookupPkg.id));
+      setPicked(new Set());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load candidates');
     } finally {
       setLoading(false);
     }
+  }
+
+  const candKey = (c: PrepaidCandidate) => `${c.bookingId}-${c.serviceVariationId}`;
+
+  function togglePick(c: PrepaidCandidate) {
+    const k = candKey(c);
+    const next = new Set(picked);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    setPicked(next);
   }
 
   async function toggle() {
@@ -249,16 +261,31 @@ function CustomerCard({ packages, onChanged }: { packages: PrepaidPackage[]; onC
     if (next && candidates === null) await loadCandidates();
   }
 
-  async function confirmDrawDown(c: PrepaidCandidate) {
-    const target = byDate.find((p) => p.balance > 0); // draw from the earliest package that still has credit
-    if (!target) { setError('No credit left on any of this customer’s packages.'); return; }
+  // Confirm all selected visits at once. Each draws from the earliest package that still has credit
+  // (tracked locally so multiple in one batch spread correctly across packages); capped by balance.
+  async function confirmSelected() {
+    const chosen = (candidates ?? []).filter((c) => picked.has(candKey(c)));
+    if (chosen.length === 0) return;
+    if (chosen.length > balance) {
+      setError(`Only ${balance} credit${balance === 1 ? '' : 's'} left — deselect ${chosen.length - balance}.`);
+      return;
+    }
     setError('');
+    setConfirming(true);
     try {
-      await api.redeem(target.id, c);
+      const remaining = new Map(byDate.map((p) => [p.id, p.balance]));
+      for (const c of chosen) {
+        const target = byDate.find((p) => (remaining.get(p.id) ?? 0) > 0);
+        if (!target) { setError('No credit left.'); break; }
+        await api.redeem(target.id, c);
+        remaining.set(target.id, (remaining.get(target.id) ?? 0) - 1);
+      }
       await onChanged();
       await loadCandidates();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to confirm');
+    } finally {
+      setConfirming(false);
     }
   }
 
@@ -323,7 +350,15 @@ function CustomerCard({ packages, onChanged }: { packages: PrepaidPackage[]; onC
             </div>
           )}
 
-          <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Candidate visits</h3>
+          <div className="mb-1 flex items-center justify-between gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Candidate visits</h3>
+            {customerId && !loading && !exhausted && candidates && candidates.length > 0 && (
+              <button onClick={confirmSelected} disabled={picked.size === 0 || confirming}
+                className="rounded bg-green-600 px-3 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50">
+                {confirming ? 'Confirming…' : `Confirm selected${picked.size ? ` (${picked.size})` : ''}`}
+              </button>
+            )}
+          </div>
           {!customerId && <p className="text-sm text-amber-600">Link a Square customer to look up their bookings.</p>}
           {customerId && loading && <p className="text-sm text-zinc-400">Loading bookings…</p>}
           {customerId && !loading && candidates && candidates.length === 0 && (
@@ -333,11 +368,13 @@ function CustomerCard({ packages, onChanged }: { packages: PrepaidPackage[]; onC
             exhausted ? (
               <p className="text-sm text-zinc-500">No credit left — further visits need payment.</p>
             ) : (
-              <ul className="flex flex-col gap-1 text-sm">
+              <ul className="flex flex-col gap-0.5 text-sm">
                 {candidates.map((c) => (
-                  <li key={`${c.bookingId}-${c.serviceVariationId}`} className="flex items-center justify-between gap-3">
-                    <span>{c.date}{c.time ? ` · ${c.time}` : ''} · {c.serviceName} · {c.providerName} · {usd(c.menuPrice)}{c.counts ? '' : ' (add-on)'}</span>
-                    <button onClick={() => confirmDrawDown(c)} className="rounded bg-green-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-green-700">Confirm draw-down</button>
+                  <li key={`${c.bookingId}-${c.serviceVariationId}`} className={`rounded px-1 ${picked.has(candKey(c)) ? 'bg-green-50' : ''}`}>
+                    <label className="flex cursor-pointer items-center gap-2.5 py-1">
+                      <input type="checkbox" checked={picked.has(candKey(c))} onChange={() => togglePick(c)} className="h-4 w-4" />
+                      <span>{c.date}{c.time ? ` · ${c.time}` : ''} · {c.serviceName} · {c.providerName} · {usd(c.menuPrice)}{c.counts ? '' : ' (add-on)'}</span>
+                    </label>
                   </li>
                 ))}
               </ul>
