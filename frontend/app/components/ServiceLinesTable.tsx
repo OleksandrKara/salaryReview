@@ -13,11 +13,13 @@ function ChannelTag({ channel }: { channel: string }) {
     'CASH-NOTE': 'bg-amber-50 text-amber-700 ring-amber-200',
     PREPAID: 'bg-violet-50 text-violet-700 ring-violet-200',
     COMP: 'bg-rose-50 text-rose-700 ring-rose-200',
+    REDO: 'bg-orange-50 text-orange-700 ring-orange-200',
   };
   return <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ring-1 ${map[channel] ?? 'bg-zinc-100 text-zinc-600 ring-zinc-300'}`}>{channel}</span>;
 }
 
 function countsLabel(units: number): string {
+  if (units < 0) return 'removed'; // a redo line that takes a counted service away from the original provider
   if (units === 0) return 'add-on';
   return units === 1 ? '✓ counts' : `✓ counts ×${units}`;
 }
@@ -150,7 +152,8 @@ export default function ServiceLinesTable({
                         <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{usd(l.net)}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{l.tip > 0 ? usd(l.tip) : '—'}</td>
                         <td className="px-3 py-2 text-center">
-                          {l.countedUnits === 0 ? <span className="text-zinc-300">—</span>
+                          {l.countedUnits < 0 ? <span className="text-orange-600">removed</span>
+                            : l.countedUnits === 0 ? <span className="text-zinc-300">—</span>
                             : l.countedUnits === 1 ? '✓' : `✓ ×${l.countedUnits}`}
                         </td>
                       </tr>

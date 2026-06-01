@@ -57,7 +57,7 @@ class SalaryProcedureCountTest {
 
         SettlementPreviewService service = new SettlementPreviewService(aggregator,
                 new TierCommissionEngine(), salonConfigRepo, directory, tierGrants, feedback, square,
-                prepaidRedemptions, prepaidPackages, providerRepo);
+                prepaidRedemptions, prepaidPackages, providerRepo, mock(com.salonreview.repo.RedoRepository.class));
 
         SalonConfig sc = mock(SalonConfig.class);
         when(sc.toCommissionConfig()).thenReturn(new CommissionConfig(60,
