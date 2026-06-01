@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import type {
   AppUser,
   Me,
+  OwnerCustomer,
   PrepaidPackage,
   Provider,
   ProviderDetail,
@@ -56,4 +57,6 @@ export const serverApi = {
     serverFetch<ProviderDetail>(`/api/settlements/detail?year=${year}&month=${month}&providerId=${providerId}`),
 
   listPrepaid: () => serverFetch<PrepaidPackage[]>(`/api/prepaid`),
+
+  listOwnerCustomers: () => serverFetch<OwnerCustomer[]>(`/api/owner-customers`),
 };

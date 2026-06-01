@@ -47,10 +47,13 @@ public class SquareMonthAggregator {
 
     private final SquareClient square;
     private final CashNoteParser cashNotes;
+    private final com.salonreview.repo.OwnerCustomerRepository ownerCustomers;
 
-    public SquareMonthAggregator(SquareClient square, CashNoteParser cashNotes) {
+    public SquareMonthAggregator(SquareClient square, CashNoteParser cashNotes,
+                                 com.salonreview.repo.OwnerCustomerRepository ownerCustomers) {
         this.square = square;
         this.cashNotes = cashNotes;
+        this.ownerCustomers = ownerCustomers;
     }
 
     public MonthAggregation aggregate(int year, int month, BigDecimal priceCutoff) {
@@ -66,10 +69,18 @@ public class SquareMonthAggregator {
         List<Booking> bookings = square.bookings(from, to);
         List<Order> orders = square.completedOrders(from, to);
 
+        // Square customers who are owner(s)/family: services to them aren't charged (no order), but the
+        // provider is still owed their commission — see the owner-comp pass below.
+        java.util.Set<String> ownerCustomerIds = ownerCustomers.findAll().stream()
+                .map(com.salonreview.domain.OwnerCustomer::getSquareCustomerId)
+                .filter(id -> id != null && !id.isBlank())
+                .collect(java.util.stream.Collectors.toSet());
+
         // --- Index booking segments by (customer|service) for fast order matching, this month only ---
         Map<String, List<Seg>> segIndex = new HashMap<>();
         List<String> variationIds = new ArrayList<>();
         List<CashBooking> cashEntries = new ArrayList<>();
+        List<CompCandidate> compCandidates = new ArrayList<>();
         for (Booking b : bookings) {
             if (b.appointmentSegments() == null) continue;
             // Cancelled / declined / no-show appointments must never be paid on — not even when a
@@ -79,6 +90,7 @@ public class SquareMonthAggregator {
             LocalDate day = localDate(b.startAt(), zone);
             if (day == null || day.getYear() != year || day.getMonthValue() != month) continue;
 
+            boolean ownerCustomer = b.customerId() != null && ownerCustomerIds.contains(b.customerId());
             String firstProvider = null;
             List<String> bookingServiceIds = new ArrayList<>();
             for (var s : b.appointmentSegments()) {
@@ -88,6 +100,10 @@ public class SquareMonthAggregator {
                 bookingServiceIds.add(s.serviceVariationId());
                 segIndex.computeIfAbsent(key(b.customerId(), s.serviceVariationId()), k -> new ArrayList<>())
                         .add(new Seg(s.teamMemberId(), day, b.id(), b.startAt(), instant(b.updatedAt())));
+                if (ownerCustomer) {
+                    compCandidates.add(new CompCandidate(s.teamMemberId(), day, s.serviceVariationId(),
+                            b.id(), b.customerId(), b.startAt()));
+                }
             }
             // Cash note ("cashew $nn" or Russian "наличные") → a cash service for the booking's provider.
             // The amount is what's written, or the appointment's catalog service total when omitted.
@@ -109,6 +125,9 @@ public class SquareMonthAggregator {
         // Bookings that were actually checked out as Cash in Square (a matched completed cash order).
         // Their cash note (if any) is a duplicate of that checkout, so we skip it when folding notes.
         java.util.Set<String> cashCheckedOutBookings = new java.util.HashSet<>();
+        // Bookings that had any order line matched to them — so the owner-comp pass doesn't also pay
+        // on a booking the owner actually did get charged for.
+        java.util.Set<String> paidBookings = new java.util.HashSet<>();
 
         // --- Attribute order money to providers ---
         for (Order o : orders) {
@@ -131,6 +150,7 @@ public class SquareMonthAggregator {
                         continue;
                     }
                     Seg seg = m.seg;
+                    if (seg.bookingId != null) paidBookings.add(seg.bookingId);
                     diag.matchedLineItems++;
                     Half half = halfOf(seg.day);
                     Acc a = accs.computeIfAbsent(new Key(seg.providerId, half), k -> new Acc());
@@ -207,6 +227,33 @@ public class SquareMonthAggregator {
                     str(cb.day), half.name(), "cash note (" + countedSegs + " counted)", gross,
                     discount, collected, countedSegs > 0, countedSegs, totalSegs, false, "CASH-NOTE",
                     localTime(cb.startAt, zone), cb.bookingId, cb.customerId(), null));
+        }
+
+        // --- Owner comps: a service rendered to an owner/family customer is never charged, so Square
+        // has no order for it. The provider who did the work is still paid their commission on the
+        // catalog menu price. We credit only owner bookings with NO matching order (so a booking the
+        // owner did pay for isn't double-counted) and only once the appointment has started (so a
+        // future owner booking isn't paid early). ---
+        Instant nowInstant = Instant.now();
+        List<CompCandidate> dueComps = compCandidates.stream()
+                .filter(c -> c.bookingId() == null || !paidBookings.contains(c.bookingId()))
+                .filter(c -> { Instant st = instant(c.startAt()); return st == null || !st.isAfter(nowInstant); })
+                .toList();
+        Map<String, String> compNames = dueComps.isEmpty() ? Map.of()
+                : square.catalogNames(dueComps.stream().map(CompCandidate::serviceVariationId).toList());
+        for (CompCandidate c : dueComps) {
+            BigDecimal menu = catalogPrice.getOrDefault(c.serviceVariationId(), BigDecimal.ZERO);
+            if (menu.signum() <= 0) { diag.ownerCompsSkipped++; continue; } // no catalog price → can't value it
+            Half half = halfOf(c.day());
+            Acc a = accs.computeIfAbsent(new Key(c.providerId(), half), k -> new Acc());
+            boolean counted = menu.compareTo(priceCutoff) >= 0;
+            a.card = a.card.add(menu);   // paid like card: provider keeps their rate; salon absorbs the cost
+            if (counted) a.counted++;
+            diag.ownerComps++;
+            services.add(new AttributedService(c.providerId(), nameById.getOrDefault(c.providerId(), "?"),
+                    str(c.day()), half.name(), compNames.getOrDefault(c.serviceVariationId(), "owner comp"),
+                    menu, BigDecimal.ZERO, menu, counted, counted ? 1 : 0, 1, false, "COMP",
+                    localTime(c.startAt(), zone), c.bookingId(), c.customerId(), null));
         }
 
         // --- Assemble per-provider month (both halves) ---
@@ -428,6 +475,10 @@ public class SquareMonthAggregator {
                                List<String> serviceVariationIds, String bookingId, String startAt,
                                String customerId) {}
 
+    /** A booking segment for an owner/family customer — a candidate owner comp (credited if unpaid). */
+    private record CompCandidate(String providerId, LocalDate day, String serviceVariationId,
+                                 String bookingId, String customerId, String startAt) {}
+
     // --- result types ---
 
     public record MonthAggregation(int year, int month, String timezone,
@@ -461,6 +512,8 @@ public class SquareMonthAggregator {
         public BigDecimal unmatchedRevenue = BigDecimal.ZERO;
         public int cashNotes = 0;
         public int cashNotesSkipped = 0; // notes ignored because the appointment was checked out as cash
+        public int ownerComps = 0;        // services to owner/family credited at menu price (no order)
+        public int ownerCompsSkipped = 0; // owner bookings we couldn't value (no catalog price)
 
         public int getOrders() { return orders; }
         public int getMatchedLineItems() { return matchedLineItems; }
@@ -469,5 +522,7 @@ public class SquareMonthAggregator {
         public BigDecimal getUnmatchedRevenue() { return unmatchedRevenue; }
         public int getCashNotes() { return cashNotes; }
         public int getCashNotesSkipped() { return cashNotesSkipped; }
+        public int getOwnerComps() { return ownerComps; }
+        public int getOwnerCompsSkipped() { return ownerCompsSkipped; }
     }
 }
