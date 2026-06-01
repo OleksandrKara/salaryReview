@@ -152,7 +152,8 @@ public class SettlementPreviewService {
                         discounts.getOrDefault(m.providerId, ZERO_HALVES)))
                 .sorted(Comparator.comparing(p -> p.name().toLowerCase())).toList();
 
-        return new SettlementPreview(year, month, agg.timezone(), config, cutoff, payouts, agg.diagnostics());
+        return new SettlementPreview(year, month, agg.timezone(), config, cutoff, payouts, agg.diagnostics(),
+                java.time.Instant.now().toString());
     }
 
     /** Per-person service-line counts per half ({@code [first, second]}), for the #salary "procedures". */
@@ -221,7 +222,7 @@ public class SettlementPreviewService {
         Merged m = collapseToPersons(agg).get(providerId);
         if (m == null) {
             return new ProviderDetail(year, month, providerId, null, null, List.of(), agg.unmatched(), null, null,
-                    sc.getServicePriceCutoff());
+                    sc.getServicePriceCutoff(), agg.timezone(), java.time.Instant.now().toString());
         }
         List<SquareMonthAggregator.AttributedService> matched = agg.services().stream()
                 .filter(s -> m.memberIds.contains(s.providerId()))
@@ -256,7 +257,8 @@ public class SettlementPreviewService {
         ProviderPayout payout = toPayout(m, config, granted, fb, sc, year, month,
                 new int[]{firstCount, secondCount}, new BigDecimal[]{firstDisc, secondDisc});
         return new ProviderDetail(year, month, providerId, m.name, payout, lines, agg.unmatched(),
-                payout.firstHalfMessage(), payout.secondHalfMessage(), sc.getServicePriceCutoff());
+                payout.firstHalfMessage(), payout.secondHalfMessage(), sc.getServicePriceCutoff(),
+                agg.timezone(), java.time.Instant.now().toString());
     }
 
     /** The copy-pasteable {@code #salary} block for one half, matching the salon's manual format. */
@@ -375,7 +377,7 @@ public class SettlementPreviewService {
 
     public record SettlementPreview(int year, int month, String timezone, CommissionConfig config,
                                     BigDecimal priceCutoff, List<ProviderPayout> providers,
-                                    SquareMonthAggregator.Diag diagnostics) {}
+                                    SquareMonthAggregator.Diag diagnostics, String syncedAt) {}
 
     public record ProviderPayout(Long providerId, String name, int monthCountedServices,
                                  boolean autoQualified, boolean tierManuallyGranted, boolean tierApplied,
@@ -393,5 +395,5 @@ public class SettlementPreviewService {
                                  List<SquareMonthAggregator.AttributedService> services,
                                  List<SquareMonthAggregator.UnmatchedLine> unmatched,
                                  String firstHalfMessage, String secondHalfMessage,
-                                 BigDecimal priceCutoff) {}
+                                 BigDecimal priceCutoff, String timezone, String syncedAt) {}
 }

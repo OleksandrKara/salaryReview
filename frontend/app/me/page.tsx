@@ -5,6 +5,7 @@ import DiscountBreakdown from './DiscountBreakdown';
 import ServiceBreakdown from './ServiceBreakdown';
 import SettlementFeedbackForm from './SettlementFeedbackForm';
 import SalaryPopupButton from '../components/SalaryPopupButton';
+import { SyncBadge } from '../components/SyncBadge';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -56,6 +57,7 @@ export default async function MyReportPage({
           <Link href={`/me?year=${next.year}&month=${next.month}`} className="text-zinc-500 hover:text-zinc-800">{MONTHS[next.month - 1].slice(0, 3)} →</Link>
         </div>
       </div>
+      <div className="mb-4"><SyncBadge syncedAt={detail.syncedAt} timezone={detail.timezone} /></div>
 
       {!me ? (
         <p className="mt-8 text-center text-zinc-400">No activity for this month.</p>

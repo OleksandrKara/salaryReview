@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { serverApi } from '../../lib/serverApi';
 import type { ProviderDetail } from '../../lib/types';
 import ProviderTrace from '../../components/ProviderTrace';
+import { SyncBadge } from '../../components/SyncBadge';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -37,6 +38,7 @@ export default async function ProviderDetailPage({
         actually charged. Copy the #salary block per half, or use the unattributed section below to
         chase a payment that looks missing.
       </p>
+      <div className="mb-6"><SyncBadge syncedAt={detail.syncedAt} timezone={detail.timezone} /></div>
 
       {!detail.payout ? (
         <p className="mt-8 text-center text-zinc-400">No activity for this provider this month.</p>
