@@ -220,8 +220,8 @@ public class SquareClient {
 
     /**
      * Customers whose name contains {@code query} (case-insensitive). The Customers API has no name
-     * search, so we page the list and filter client-side — capped at a few pages, which is plenty for
-     * the rare admin task of marking an owner customer (paste the customer id if a match is missed).
+     * search, so we page the whole directory and filter client-side, returning up to 25 matches.
+     * (The page bound is only a safety net for a pathological directory; see the loop.)
      */
     public List<Customer> searchCustomers(String query) {
         String q = query == null ? "" : query.trim().toLowerCase();
@@ -248,7 +248,10 @@ public class SquareClient {
                 }
             }
             cursor = resp == null ? null : resp.cursor();
-        } while (cursor != null && !cursor.isBlank() && ++pages < 10);
+            // Scan the whole customer directory (the Customers API has no name filter, so we list +
+            // match client-side). Stops early once 25 matches are found; the page bound is just a
+            // safety net against a pathological directory (100 pages = 10,000 customers).
+        } while (cursor != null && !cursor.isBlank() && ++pages < 100);
         return matches;
     }
 
