@@ -24,6 +24,8 @@ function countsLabel(units: number): string {
 
 // Tip for a transaction (an appointment group's lines) — the order tip, attributed to this provider.
 const sumTip = (ls: AttributedService[]) => ls.reduce((s, l) => s + l.tip, 0);
+const sumGross = (ls: AttributedService[]) => ls.reduce((s, l) => s + l.gross, 0);
+const sumDiscount = (ls: AttributedService[]) => ls.reduce((s, l) => s + l.discount, 0);
 
 // Service lines for one half, grouped by day → appointment. A wide table on tablet/desktop; on a
 // phone, stacked appointment cards (no horizontal scrolling). Shared by the owner drill-down and /me.
@@ -62,6 +64,8 @@ export default function ServiceLinesTable({
                     </span>
                     {g.customer && <span className="text-zinc-500">· {g.customer}</span>}
                     <span className="text-zinc-400">· {g.lines.length} {g.lines.length === 1 ? 'service' : 'services'}</span>
+                    <span className="text-zinc-500">· {usd(sumGross(g.lines))}</span>
+                    {sumDiscount(g.lines) > 0 && <span className="text-emerald-700">· −{usd(sumDiscount(g.lines))} disc</span>}
                     {sumTip(g.lines) > 0 && <span className="text-zinc-500">· tip {usd(sumTip(g.lines))}</span>}
                   </div>
                   <div className="divide-y divide-zinc-100">
@@ -127,6 +131,8 @@ export default function ServiceLinesTable({
                         </span>
                         {g.customer && <span className="text-zinc-500"> · {g.customer}</span>}
                         <span className="text-zinc-400"> · {g.lines.length} {g.lines.length === 1 ? 'service' : 'services'}</span>
+                        <span className="text-zinc-500"> · {usd(sumGross(g.lines))}</span>
+                        {sumDiscount(g.lines) > 0 && <span className="text-emerald-700"> · −{usd(sumDiscount(g.lines))} disc</span>}
                         {sumTip(g.lines) > 0 && <span className="text-zinc-500"> · tip {usd(sumTip(g.lines))}</span>}
                       </td>
                     </tr>
