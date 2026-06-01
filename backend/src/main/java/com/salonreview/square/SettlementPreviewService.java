@@ -89,7 +89,7 @@ public class SettlementPreviewService {
             byProvider.computeIfAbsent(pkg.getProviderId(), k -> new ArrayList<>())
                     .add(new AttributedService("", "", r.getServiceDate().toString(),
                             half, r.getServiceName() == null ? "Prepaid service" : r.getServiceName(),
-                            price, BigDecimal.ZERO, price, r.isCounts(), r.isCounts() ? 1 : 0, 1, false,
+                            price, BigDecimal.ZERO, price, BigDecimal.ZERO, r.isCounts(), r.isCounts() ? 1 : 0, 1, false,
                             "PREPAID", null, r.getSquareBookingId(), pkg.getCustomerId(), pkg.getCustomerName()));
         }
         return byProvider;

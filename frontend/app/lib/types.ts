@@ -173,6 +173,7 @@ export interface AttributedService {
   gross: number;
   discount: number;
   net: number;
+  tip: number; // this line's share of the transaction (order) tip
   counted: boolean;
   countedUnits: number; // main services this line counts toward the tier (gross >= cutoff)
   units: number; // total services this line represents (incl. add-ons below the cutoff)
