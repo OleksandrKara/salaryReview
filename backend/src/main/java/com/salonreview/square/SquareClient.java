@@ -291,8 +291,9 @@ public class SquareClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record Booking(String id, String status, String startAt, String locationId, String customerId,
-                          String sellerNote, String customerNote, List<AppointmentSegment> appointmentSegments) {}
+    public record Booking(String id, String status, String startAt, String updatedAt, String locationId,
+                          String customerId, String sellerNote, String customerNote,
+                          List<AppointmentSegment> appointmentSegments) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
