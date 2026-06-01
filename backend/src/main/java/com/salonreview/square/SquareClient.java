@@ -252,6 +252,23 @@ public class SquareClient {
         return matches;
     }
 
+    /** Invoices issued to a customer (most recent first), for picking the prepaid invoice. */
+    public List<Invoice> invoicesForCustomer(String customerId) {
+        if (customerId == null || customerId.isBlank()) return List.of();
+        Map<String, Object> body = Map.of(
+                "query", Map.of(
+                        "filter", Map.of("location_ids", List.of(locationId),
+                                "customer_ids", List.of(customerId)),
+                        "sort", Map.of("field", "INVOICE_SORT_DATE", "order", "DESC")),
+                "limit", 100);
+        InvoiceSearchResponse resp = http.post()
+                .uri("/v2/invoices/search")
+                .body(body)
+                .retrieve()
+                .body(InvoiceSearchResponse.class);
+        return resp == null || resp.invoices() == null ? List.of() : resp.invoices();
+    }
+
     private String fetchCustomerName(String id) {
         try {
             CustomerResponse resp = http.get().uri("/v2/customers/{id}", id).retrieve().body(CustomerResponse.class);
@@ -314,6 +331,27 @@ public class SquareClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record CustomersListResponse(List<Customer> customers, String cursor) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record Invoice(String id, String invoiceNumber, String title, String status, String createdAt,
+                          List<PaymentRequest> paymentRequests) {
+        /** The invoice total (sum of its payment requests' computed amounts), in dollars. */
+        public BigDecimal total() {
+            if (paymentRequests == null) return BigDecimal.ZERO;
+            BigDecimal t = BigDecimal.ZERO;
+            for (PaymentRequest pr : paymentRequests) t = t.add(toDollars(pr.computedAmountMoney()));
+            return t;
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record PaymentRequest(Money computedAmountMoney) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record InvoiceSearchResponse(List<Invoice> invoices, String cursor) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
