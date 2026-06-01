@@ -43,14 +43,17 @@ public class PrepaidService {
 
     private final SquareClient square;
     private final ProviderRepository providers;
+    private final com.salonreview.service.ProviderDirectory directory;
     private final SalonConfigRepository salonConfig;
     private final PrepaidPackageRepository packages;
     private final PrepaidRedemptionRepository redemptions;
 
-    public PrepaidService(SquareClient square, ProviderRepository providers, SalonConfigRepository salonConfig,
+    public PrepaidService(SquareClient square, ProviderRepository providers,
+                          com.salonreview.service.ProviderDirectory directory, SalonConfigRepository salonConfig,
                           PrepaidPackageRepository packages, PrepaidRedemptionRepository redemptions) {
         this.square = square;
         this.providers = providers;
+        this.directory = directory;
         this.salonConfig = salonConfig;
         this.packages = packages;
         this.redemptions = redemptions;
@@ -64,19 +67,15 @@ public class PrepaidService {
 
     @Transactional
     public PackageView create(CreateRequest req, String by) {
-        if (req.customerName() == null || req.customerName().isBlank() || req.providerId() == null
+        if (req.customerName() == null || req.customerName().isBlank()
                 || req.paidDate() == null || req.amount() == null || req.totalServices() == null
                 || req.totalServices() < 1) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "customerName, providerId, paidDate, amount and totalServices (>=1) are required");
-        }
-        if (!providers.existsById(req.providerId())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No such provider");
+                    "customerName, paidDate, amount and totalServices (>=1) are required");
         }
         PrepaidPackage saved = packages.save(PrepaidPackage.builder()
                 .customerId(blankToNull(req.customerId()))
                 .customerName(req.customerName().trim())
-                .providerId(req.providerId())
                 .paidDate(req.paidDate())
                 .amount(req.amount())
                 .totalServices(req.totalServices())
@@ -99,8 +98,9 @@ public class PrepaidService {
         PrepaidPackage pkg = packages.findById(packageId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such package"));
         if (req.squareBookingId() == null || req.serviceVariationId() == null || req.serviceDate() == null
-                || req.menuPrice() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "booking, service, date and price are required");
+                || req.menuPrice() == null || req.teamMemberId() == null || req.teamMemberId().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "booking, service, date, price and provider are required");
         }
         if (redemptions.countByPackageId(packageId) >= pkg.getTotalServices()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "No credit left on this package");
@@ -108,9 +108,12 @@ public class PrepaidService {
         if (redemptions.existsBySquareBookingIdAndServiceVariationId(req.squareBookingId(), req.serviceVariationId())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "That service is already redeemed");
         }
+        // Resolve the team member who performed the service to a provider (person) — credited the payout.
+        Provider provider = directory.resolveOrCreate(req.teamMemberId(), req.providerName());
         BigDecimal cutoff = salonConfig().getServicePriceCutoff();
         return redemptions.save(PrepaidRedemption.builder()
                 .packageId(packageId)
+                .providerId(provider.getId())
                 .squareBookingId(req.squareBookingId())
                 .serviceVariationId(req.serviceVariationId())
                 .serviceName(req.serviceName())
@@ -129,18 +132,15 @@ public class PrepaidService {
     }
 
     /**
-     * Real Square bookings for this package's customer + provider since the paid date that can be drawn
-     * down: not cancelled/no-show, not already redeemed, and not already checked out as a normal paid
-     * order (±2 days) — so confirming one never double-counts a visit that was paid through the till.
+     * Real Square bookings for this package's customer (with ANY provider) since the paid date that can
+     * be drawn down: not cancelled/no-show, not already redeemed, and not already checked out as a
+     * normal paid order (±2 days) — so confirming one never double-counts a visit paid through the till.
+     * Each candidate names the provider who performed it; confirming credits that provider.
      */
     public List<Candidate> candidates(Long packageId) {
         PrepaidPackage pkg = packages.findById(packageId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such package"));
         if (pkg.getCustomerId() == null) return List.of(); // need a Square customer id to find their bookings
-
-        Provider provider = providers.findById(pkg.getProviderId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such provider"));
-        Set<String> memberIds = provider.getSquareTeamMemberIds();
 
         ZoneId zone = resolveZone();
         Instant from = pkg.getPaidDate().atStartOfDay(zone).toInstant();
@@ -148,6 +148,10 @@ public class PrepaidService {
 
         List<Booking> bookings = square.bookings(from, to);
         List<Order> orders = square.completedOrders(from, to);
+
+        // Team-member names so each candidate shows who performed it (any provider, not just one).
+        java.util.Map<String, String> memberNames = new java.util.HashMap<>();
+        for (var tm : square.allTeamMembers()) memberNames.put(tm.id(), tm.fullName());
 
         // Variation ids for catalog price lookup.
         List<String> variationIds = new ArrayList<>();
@@ -169,12 +173,13 @@ public class PrepaidService {
             if (day == null || day.isBefore(pkg.getPaidDate())) continue;
             for (var s : b.appointmentSegments()) {
                 String sv = s.serviceVariationId();
-                if (sv == null || s.teamMemberId() == null || !memberIds.contains(s.teamMemberId())) continue;
+                if (sv == null || s.teamMemberId() == null) continue;
                 if (redemptions.existsBySquareBookingIdAndServiceVariationId(b.id(), sv)) continue;
                 if (alreadyPaidByOrder(orders, b.customerId(), sv, day, zone)) continue;
                 BigDecimal price = catalogPrice.getOrDefault(sv, BigDecimal.ZERO);
                 out.add(new Candidate(b.id(), sv, catalogName.getOrDefault(sv, sv),
-                        day.toString(), localTime(b.startAt(), zone), price, price.compareTo(cutoff) >= 0));
+                        day.toString(), localTime(b.startAt(), zone), price, price.compareTo(cutoff) >= 0,
+                        s.teamMemberId(), memberNames.getOrDefault(s.teamMemberId(), s.teamMemberId())));
             }
         }
         out.sort((a, c) -> a.date().compareTo(c.date()));
@@ -225,28 +230,36 @@ public class PrepaidService {
     }
 
     private PackageView toView(PrepaidPackage p) {
-        int redeemed = (int) redemptions.countByPackageId(p.getId());
-        int balance = p.getTotalServices() - redeemed;
-        String providerName = providers.findById(p.getProviderId())
-                .map(Provider::getDisplayName).orElse("#" + p.getProviderId());
         List<PrepaidRedemption> rs = redemptions.findByPackageId(p.getId());
-        return new PackageView(p.getId(), p.getCustomerId(), p.getCustomerName(), p.getProviderId(), providerName,
+        int redeemed = rs.size();
+        int balance = p.getTotalServices() - redeemed;
+        List<RedemptionView> rvs = rs.stream().map(r -> new RedemptionView(
+                r.getId(), r.getSquareBookingId(), r.getServiceVariationId(), r.getServiceName(),
+                r.getServiceDate().toString(), r.getMenuPrice(), r.isCounts(),
+                providers.findById(r.getProviderId()).map(Provider::getDisplayName)
+                        .orElse("#" + r.getProviderId()))).toList();
+        return new PackageView(p.getId(), p.getCustomerId(), p.getCustomerName(),
                 p.getPaidDate().toString(), p.getAmount(), p.getTotalServices(), redeemed, balance,
-                balance <= 0 ? "CLOSED" : "ACTIVE", p.getInvoiceRef(), rs);
+                balance <= 0 ? "CLOSED" : "ACTIVE", p.getInvoiceRef(), rvs);
     }
 
     // --- DTOs ---
 
-    public record CreateRequest(String customerId, String customerName, Long providerId, LocalDate paidDate,
+    public record CreateRequest(String customerId, String customerName, LocalDate paidDate,
                                 BigDecimal amount, Integer totalServices, String invoiceRef) {}
 
     public record RedeemRequest(String squareBookingId, String serviceVariationId, String serviceName,
-                                LocalDate serviceDate, BigDecimal menuPrice) {}
+                                LocalDate serviceDate, BigDecimal menuPrice, String teamMemberId,
+                                String providerName) {}
 
     public record Candidate(String bookingId, String serviceVariationId, String serviceName, String date,
-                            String time, BigDecimal menuPrice, boolean counts) {}
+                            String time, BigDecimal menuPrice, boolean counts, String teamMemberId,
+                            String providerName) {}
 
-    public record PackageView(Long id, String customerId, String customerName, Long providerId, String providerName,
+    public record RedemptionView(Long id, String squareBookingId, String serviceVariationId, String serviceName,
+                                 String serviceDate, BigDecimal menuPrice, boolean counts, String providerName) {}
+
+    public record PackageView(Long id, String customerId, String customerName,
                               String paidDate, BigDecimal amount, int totalServices, int redeemed, int balance,
-                              String status, String invoiceRef, List<PrepaidRedemption> redemptions) {}
+                              String status, String invoiceRef, List<RedemptionView> redemptions) {}
 }

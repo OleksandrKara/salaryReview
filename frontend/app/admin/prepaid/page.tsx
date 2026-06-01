@@ -3,12 +3,9 @@ import { serverApi } from '../../lib/serverApi';
 import PrepaidManager from './PrepaidManager';
 
 // Owner/manager prepaid packages. The backend gates /api/prepaid by role; the proxy keeps providers
-// out of /admin. Lists packages (with balances) and the providers to attach them to.
+// out of /admin. A package belongs to a customer; any provider's visit can draw it down.
 export default async function PrepaidPage() {
-  const [packages, providers] = await Promise.all([
-    serverApi.listPrepaid(),
-    serverApi.listProviders(),
-  ]);
+  const packages = await serverApi.listPrepaid();
 
   return (
     <main className="mx-auto max-w-4xl p-4 sm:p-8">
@@ -18,11 +15,11 @@ export default async function PrepaidPage() {
         <a href="/api/logout" className="text-xs text-zinc-400 hover:text-zinc-600">Log out</a>
       </div>
       <p className="mb-6 text-xs text-zinc-500">
-        A customer who paid one Square invoice in advance for several services. Draw-downs are confirmed
-        against real bookings and pay the provider on the service date; the balance prevents
-        over-redemption.
+        A customer who paid one Square invoice in advance for several services — drawn down across any
+        provider they visit. Draw-downs are confirmed against real bookings and pay the provider who
+        performed each one on the service date; the balance prevents over-redemption.
       </p>
-      <PrepaidManager initialPackages={packages} providers={providers.filter((p) => p.active)} />
+      <PrepaidManager initialPackages={packages} />
     </main>
   );
 }

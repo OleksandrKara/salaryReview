@@ -51,12 +51,14 @@ public class SettlementPreviewService {
     private final SquareClient square;
     private final PrepaidRedemptionRepository prepaidRedemptions;
     private final PrepaidPackageRepository prepaidPackages;
+    private final com.salonreview.repo.ProviderRepository providerRepo;
 
     public SettlementPreviewService(SquareMonthAggregator aggregator, TierCommissionEngine engine,
                                     SalonConfigRepository salonConfig, ProviderDirectory directory,
                                     TierGrantRepository tierGrants, SettlementFeedbackRepository feedback,
                                     SquareClient square, PrepaidRedemptionRepository prepaidRedemptions,
-                                    PrepaidPackageRepository prepaidPackages) {
+                                    PrepaidPackageRepository prepaidPackages,
+                                    com.salonreview.repo.ProviderRepository providerRepo) {
         this.aggregator = aggregator;
         this.engine = engine;
         this.salonConfig = salonConfig;
@@ -66,6 +68,7 @@ public class SettlementPreviewService {
         this.square = square;
         this.prepaidRedemptions = prepaidRedemptions;
         this.prepaidPackages = prepaidPackages;
+        this.providerRepo = providerRepo;
     }
 
     /**
@@ -86,8 +89,11 @@ public class SettlementPreviewService {
             if (pkg == null) continue;
             String half = r.getServiceDate().getDayOfMonth() <= 15 ? "FIRST" : "SECOND";
             BigDecimal price = r.getMenuPrice();
-            byProvider.computeIfAbsent(pkg.getProviderId(), k -> new ArrayList<>())
-                    .add(new AttributedService("", "", r.getServiceDate().toString(),
+            // Credit the provider who performed THIS draw-down (a package can span several providers).
+            String providerName = providerRepo.findById(r.getProviderId())
+                    .map(com.salonreview.domain.Provider::getDisplayName).orElse("");
+            byProvider.computeIfAbsent(r.getProviderId(), k -> new ArrayList<>())
+                    .add(new AttributedService("", providerName, r.getServiceDate().toString(),
                             half, r.getServiceName() == null ? "Prepaid service" : r.getServiceName(),
                             price, BigDecimal.ZERO, price, BigDecimal.ZERO, r.isCounts(), r.isCounts() ? 1 : 0, 1, false,
                             "PREPAID", null, r.getSquareBookingId(), pkg.getCustomerId(), pkg.getCustomerName()));
@@ -99,8 +105,10 @@ public class SettlementPreviewService {
     private static void applyPrepaid(Map<Long, Merged> byPerson, Map<Long, int[]> procedures,
                                      Map<Long, List<AttributedService>> prepaid) {
         prepaid.forEach((providerId, lines) -> {
-            Merged m = byPerson.get(providerId);
-            if (m == null) return; // a provider with only prepaid activity (no Square orders) this month
+            // A provider may have only prepaid activity this month (no Square orders) — still pay them,
+            // so create their bucket if missing (name taken from the resolved prepaid line).
+            Merged m = byPerson.computeIfAbsent(providerId,
+                    k -> new Merged(k, lines.isEmpty() ? "" : lines.get(0).providerName()));
             applyPrepaidToMerged(m, lines);
             int[] proc = procedures.computeIfAbsent(providerId, k -> new int[2]);
             for (AttributedService l : lines) {
@@ -224,13 +232,20 @@ public class SettlementPreviewService {
                 .collect(Collectors.toMap(SettlementFeedback::getProviderId, f -> f, (a, b) -> a));
 
         MonthAggregation agg = aggregator.aggregate(year, month, sc.getServicePriceCutoff());
+        Map<Long, List<AttributedService>> prepaid = prepaidLinesByProvider(year, month);
         Merged m = collapseToPersons(agg).get(providerId);
         if (m == null) {
-            return new ProviderDetail(year, month, providerId, null, null, List.of(), agg.unmatched(), null, null,
-                    sc.getServicePriceCutoff(), agg.timezone(), java.time.Instant.now().toString());
+            // No Square activity this month — but the provider may still have prepaid draw-downs to show.
+            List<AttributedService> pl = prepaid.get(providerId);
+            if (pl == null || pl.isEmpty()) {
+                return new ProviderDetail(year, month, providerId, null, null, List.of(), agg.unmatched(), null, null,
+                        sc.getServicePriceCutoff(), agg.timezone(), java.time.Instant.now().toString());
+            }
+            m = new Merged(providerId, pl.get(0).providerName());
         }
+        final Merged person = m; // effectively-final alias for the lambda below
         List<SquareMonthAggregator.AttributedService> matched = agg.services().stream()
-                .filter(s -> m.memberIds.contains(s.providerId()))
+                .filter(s -> person.memberIds.contains(s.providerId()))
                 // Chronological: oldest first, by appointment date then start time.
                 .sorted(Comparator.comparing(SquareMonthAggregator.AttributedService::date)
                         .thenComparing(s -> parseTime(s.time()))
@@ -241,7 +256,6 @@ public class SettlementPreviewService {
                 .map(SquareMonthAggregator.AttributedService::customerId).toList());
         // Prepaid draw-downs for this provider this month: fold into the half input (pays out) and
         // into the trace lines, then re-sort chronologically.
-        Map<Long, List<AttributedService>> prepaid = prepaidLinesByProvider(year, month);
         applyPrepaidToMerged(m, prepaid.get(providerId));
 
         List<AttributedService> lines = new ArrayList<>(matched.stream()

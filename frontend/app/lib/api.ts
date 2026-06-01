@@ -50,6 +50,8 @@ export const api = {
       serviceName: body.serviceName,
       serviceDate: body.date,
       menuPrice: body.menuPrice,
+      teamMemberId: body.teamMemberId,
+      providerName: body.providerName,
     }),
 
   undoRedemption: (redemptionId: number) =>
