@@ -132,12 +132,12 @@ public class SettlementPreviewService {
             String from = providerName(rd.getOriginalProviderId());
             String to = providerName(rd.getRedoProviderId());
             String orig = " (orig " + rd.getOriginalDate() + ")";
-            // redo provider gains the commission
+            // redo provider gains the commission (counterpart = the original provider)
             byProvider.computeIfAbsent(rd.getRedoProviderId(), k -> new ArrayList<>())
-                    .add(redoLine(to, rd.getRedoDate(), svc + " — redo from " + from + orig, rd.getAmount(), counts));
+                    .add(redoLine(to, rd.getRedoDate(), svc + " — redo from " + from + orig, rd.getAmount(), counts, from));
             // original provider's commission is deducted HERE, in the redo period (not the paid one)
             byProvider.computeIfAbsent(rd.getOriginalProviderId(), k -> new ArrayList<>())
-                    .add(redoLine(from, rd.getRedoDate(), svc + " — redone by " + to + orig, rd.getAmount().negate(), counts));
+                    .add(redoLine(from, rd.getRedoDate(), svc + " — redone by " + to + orig, rd.getAmount().negate(), counts, to));
         }
         return byProvider;
     }
@@ -150,14 +150,19 @@ public class SettlementPreviewService {
         return providerRepo.findById(providerId).map(com.salonreview.domain.Provider::getDisplayName).orElse("#" + providerId);
     }
 
-    /** A signed REDO trace line (positive = gained by the redo provider, negative = removed from original). */
-    private static AttributedService redoLine(String providerName, LocalDate date, String svc, BigDecimal amount, boolean counts) {
+    /**
+     * A signed REDO trace line (positive = gained by the redo provider, negative = removed from
+     * original). {@code counterpart} (the other provider's name) is stashed in the customer field so
+     * the #salary block can phrase a short note.
+     */
+    private static AttributedService redoLine(String providerName, LocalDate date, String svc, BigDecimal amount,
+                                              boolean counts, String counterpart) {
         String half = date.getDayOfMonth() <= 15 ? "FIRST" : "SECOND";
         int sign = amount.signum();                 // +1 gain, −1 loss
         int countedUnits = counts ? sign : 0;
         return new AttributedService("", providerName, date.toString(), half, svc,
                 amount, BigDecimal.ZERO, amount, BigDecimal.ZERO,
-                countedUnits > 0, countedUnits, sign, false, "REDO", null, null, null, null);
+                countedUnits > 0, countedUnits, sign, false, "REDO", null, null, null, counterpart);
     }
 
     /**
@@ -221,12 +226,14 @@ public class SettlementPreviewService {
         Map<Long, List<AttributedService>> prepaid = prepaidLinesByProvider(year, month);
         applyExtraLines(byPerson, procedures, discounts, prepaid);
         // Redos move a service's commission from the original provider to the redo provider.
-        applyExtraLines(byPerson, procedures, discounts, redoLinesByProvider(year, month, cutoff));
+        Map<Long, List<AttributedService>> redo = redoLinesByProvider(year, month, cutoff);
+        applyExtraLines(byPerson, procedures, discounts, redo);
 
         List<ProviderPayout> payouts = byPerson.values().stream()
                 .map(m -> toPayout(m, config, tierGrantedProviderIds, feedbackByProvider, sc, year, month,
                         procedures.getOrDefault(m.providerId, new int[2]),
-                        discounts.getOrDefault(m.providerId, ZERO_HALVES)))
+                        discounts.getOrDefault(m.providerId, ZERO_HALVES),
+                        redo.getOrDefault(m.providerId, List.of())))
                 .sorted(Comparator.comparing(p -> p.name().toLowerCase())).toList();
 
         return new SettlementPreview(year, month, agg.timezone(), config, cutoff, payouts, agg.diagnostics(),
@@ -352,7 +359,8 @@ public class SettlementPreviewService {
         BigDecimal secondDisc = lines.stream().filter(s -> "SECOND".equals(s.half()))
                 .map(AttributedService::discount).reduce(BigDecimal.ZERO, BigDecimal::add);
         ProviderPayout payout = toPayout(m, config, granted, fb, sc, year, month,
-                new int[]{firstCount, secondCount}, new BigDecimal[]{firstDisc, secondDisc});
+                new int[]{firstCount, secondCount}, new BigDecimal[]{firstDisc, secondDisc},
+                redo.getOrDefault(providerId, List.of()));
         return new ProviderDetail(year, month, providerId, m.name, payout, lines, agg.unmatched(),
                 payout.firstHalfMessage(), payout.secondHalfMessage(), sc.getServicePriceCutoff(),
                 agg.timezone(), java.time.Instant.now().toString());
@@ -361,7 +369,7 @@ public class SettlementPreviewService {
     /** The copy-pasteable {@code #salary} block for one half, matching the salon's manual format. */
     private static String salaryMessage(int year, int month, Half half, String providerName,
                                         SalonConfig sc, HalfInput input, HalfSettlement settlement,
-                                        int procedures, BigDecimal discountsCovered) {
+                                        int procedures, BigDecimal discountsCovered, List<AttributedService> redoLines) {
         String label = (half == Half.FIRST ? "1-15 " : "16-END ")
                 + java.time.Month.of(month).getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.US)
                 + " " + year;
@@ -381,6 +389,17 @@ public class SettlementPreviewService {
                 + (settlement.cashTierRebate().signum() > 0
                         ? "50/50 cash rebate (off cash to " + owner + "): $" + money(settlement.cashTierRebate()) + "\n" : "")
                 : "";
+        // Short redo note(s) for this half — already inside Card above; here for clarity. A gain reads
+        // "redo from X", a deduction "redone by X" (the counterpart's name is on the line's customer field).
+        StringBuilder redo = new StringBuilder();
+        if (redoLines != null) {
+            for (AttributedService l : redoLines) {
+                if (!half.name().equals(l.half())) continue;
+                boolean gain = l.gross().signum() > 0;
+                redo.append("Redo (").append(gain ? "from " : "redone by ").append(l.customer()).append("): ")
+                        .append(gain ? "+" : "−").append("$").append(money(l.gross().abs())).append("\n");
+            }
+        }
         return "#salary " + label + "\n"
                 + procedures + " procedures\n"
                 + "Card: $" + money(input.cardRevenue()) + "\n"
@@ -390,6 +409,7 @@ public class SettlementPreviewService {
                 + "Tips: $" + money(input.cardTips()) + "\n"
                 + "Tips(-" + feePct + "%): $" + money(settlement.tipsAfterFee()) + "\n\n"
                 + bonus
+                + redo
                 + "Zelle " + owner + " to " + providerName + ": $" + money(settlement.zelleToProvider()) + "\n"
                 + "Cash from " + providerName + " to " + owner + ": $" + money(settlement.cashToSalon());
     }
@@ -437,7 +457,7 @@ public class SettlementPreviewService {
     private ProviderPayout toPayout(Merged m, CommissionConfig config, Set<Long> granted,
                                     Map<Long, Map<Half, SettlementFeedback>> feedbackByProvider,
                                     SalonConfig sc, int year, int month, int[] procedures,
-                                    BigDecimal[] discounts) {
+                                    BigDecimal[] discounts, List<AttributedService> redoLines) {
         int monthCounted = m.first.countedServices() + m.second.countedServices();
         boolean autoQualified = monthCounted >= config.tierServiceThreshold();
         boolean isGranted = granted.contains(m.providerId);
@@ -448,8 +468,8 @@ public class SettlementPreviewService {
         BigDecimal monthZelle = first.zelleToProvider().add(second.zelleToProvider());
         BigDecimal monthCashToSalon = first.cashToSalon().add(second.cashToSalon());
         Map<Half, SettlementFeedback> fbm = feedbackByProvider.getOrDefault(m.providerId, Map.of());
-        String firstMsg = salaryMessage(year, month, Half.FIRST, m.name, sc, m.first, first, procedures[0], discounts[0]);
-        String secondMsg = salaryMessage(year, month, Half.SECOND, m.name, sc, m.second, second, procedures[1], discounts[1]);
+        String firstMsg = salaryMessage(year, month, Half.FIRST, m.name, sc, m.first, first, procedures[0], discounts[0], redoLines);
+        String secondMsg = salaryMessage(year, month, Half.SECOND, m.name, sc, m.second, second, procedures[1], discounts[1], redoLines);
         return new ProviderPayout(m.providerId, m.name, monthCounted, autoQualified,
                 isGranted && !autoQualified, autoQualified || isGranted,
                 first, second, monthZelle, monthCashToSalon,
