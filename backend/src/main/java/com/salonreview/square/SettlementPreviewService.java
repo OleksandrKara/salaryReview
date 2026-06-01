@@ -88,22 +88,31 @@ public class SettlementPreviewService {
             PrepaidPackage pkg = pkgById.get(r.getPackageId());
             if (pkg == null) continue;
             String half = r.getServiceDate().getDayOfMonth() <= 15 ? "FIRST" : "SECOND";
-            BigDecimal price = r.getMenuPrice();
+            BigDecimal price = r.getMenuPrice(); // gross — the menu price the provider is paid on
+            // The prepaid invoice was often discounted (e.g. "Prepay for 3 sessions" −10%). Surface that
+            // per service: discount = menu − what was actually paid per session (package amount / count),
+            // so the breakdown + #salary show it (salon absorbs it; the payout is still on the menu price,
+            // exactly like card/cash discounts).
+            BigDecimal perSession = pkg.getTotalServices() > 0
+                    ? pkg.getAmount().divide(BigDecimal.valueOf(pkg.getTotalServices()), 2, java.math.RoundingMode.HALF_UP)
+                    : price;
+            BigDecimal discount = price.subtract(perSession).max(BigDecimal.ZERO);
+            BigDecimal net = price.subtract(discount);
             // Credit the provider who performed THIS draw-down (a package can span several providers).
             String providerName = providerRepo.findById(r.getProviderId())
                     .map(com.salonreview.domain.Provider::getDisplayName).orElse("");
             byProvider.computeIfAbsent(r.getProviderId(), k -> new ArrayList<>())
                     .add(new AttributedService("", providerName, r.getServiceDate().toString(),
                             half, r.getServiceName() == null ? "Prepaid service" : r.getServiceName(),
-                            price, BigDecimal.ZERO, price, BigDecimal.ZERO, r.isCounts(), r.isCounts() ? 1 : 0, 1, false,
+                            price, discount, net, BigDecimal.ZERO, r.isCounts(), r.isCounts() ? 1 : 0, 1, false,
                             "PREPAID", null, r.getSquareBookingId(), pkg.getCustomerId(), pkg.getCustomerName()));
         }
         return byProvider;
     }
 
-    /** Fold each provider's prepaid lines into their half inputs and bump the #salary procedure counts. */
+    /** Fold each provider's prepaid lines into their half inputs + the #salary procedure & discount totals. */
     private static void applyPrepaid(Map<Long, Merged> byPerson, Map<Long, int[]> procedures,
-                                     Map<Long, List<AttributedService>> prepaid) {
+                                     Map<Long, BigDecimal[]> discounts, Map<Long, List<AttributedService>> prepaid) {
         prepaid.forEach((providerId, lines) -> {
             // A provider may have only prepaid activity this month (no Square orders) — still pay them,
             // so create their bucket if missing (name taken from the resolved prepaid line).
@@ -111,8 +120,11 @@ public class SettlementPreviewService {
                     k -> new Merged(k, lines.isEmpty() ? "" : lines.get(0).providerName()));
             applyPrepaidToMerged(m, lines);
             int[] proc = procedures.computeIfAbsent(providerId, k -> new int[2]);
+            BigDecimal[] disc = discounts.computeIfAbsent(providerId, k -> new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO});
             for (AttributedService l : lines) {
-                if ("FIRST".equals(l.half())) proc[0] += l.countedUnits(); else proc[1] += l.countedUnits();
+                int h = "FIRST".equals(l.half()) ? 0 : 1;
+                proc[h] += l.countedUnits();
+                disc[h] = disc[h].add(l.discount()); // prepaid discount → "Discounts covered by salon"
             }
         });
     }
@@ -153,7 +165,7 @@ public class SettlementPreviewService {
         // Fold confirmed prepaid draw-downs into the same provider/half buckets (revenue + counts +
         // procedures), so they pay out and show in #salary exactly like a card service.
         Map<Long, List<AttributedService>> prepaid = prepaidLinesByProvider(year, month);
-        applyPrepaid(byPerson, procedures, prepaid);
+        applyPrepaid(byPerson, procedures, discounts, prepaid);
 
         List<ProviderPayout> payouts = byPerson.values().stream()
                 .map(m -> toPayout(m, config, tierGrantedProviderIds, feedbackByProvider, sc, year, month,
