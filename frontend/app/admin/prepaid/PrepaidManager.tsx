@@ -30,7 +30,7 @@ export default function PrepaidManager({
   const [searching, setSearching] = useState(false);
   const [invoices, setInvoices] = useState<PrepaidInvoice[] | null>(null);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
-  const [pickedInvoiceId, setPickedInvoiceId] = useState('');
+  const [picked, setPicked] = useState<Set<string>>(new Set());
 
   async function refresh() {
     setPackages(await fetch('/api/prepaid', { cache: 'no-store' }).then((r) => r.json()));
@@ -55,7 +55,7 @@ export default function PrepaidManager({
     setCustomerId(c.id);
     setMatches(null);
     setInvoices(null);
-    setPickedInvoiceId('');
+    setPicked(new Set());
     setLoadingInvoices(true);
     try {
       setInvoices(await api.getCustomerInvoices(c.id));
@@ -66,18 +66,24 @@ export default function PrepaidManager({
     }
   }
 
-  function pickInvoice(inv: PrepaidInvoice) {
-    setPickedInvoiceId(inv.id);
-    setAmount(String(inv.amount));
-    if (inv.date) setPaidDate(inv.date);
-    if (inv.number) setInvoiceRef(inv.number);
+  // Toggle an invoice in/out of the selection and re-derive the package fields from ALL selected:
+  // amount = sum, invoice # = the numbers joined, paid date = the earliest selected.
+  function toggleInvoice(inv: PrepaidInvoice) {
+    const next = new Set(picked);
+    if (next.has(inv.id)) next.delete(inv.id); else next.add(inv.id);
+    setPicked(next);
+    const sel = (invoices ?? []).filter((i) => next.has(i.id));
+    setAmount(sel.length ? sel.reduce((s, i) => s + i.amount, 0).toFixed(2) : '');
+    setInvoiceRef(sel.map((i) => i.number).filter(Boolean).join(', '));
+    const dates = sel.map((i) => i.date).filter((d): d is string => !!d).sort();
+    if (dates.length) setPaidDate(dates[0]);
   }
 
   function clearCustomer() {
     setCustomerId('');
     setMatches(null);
     setInvoices(null);
-    setPickedInvoiceId('');
+    setPicked(new Set());
   }
 
   async function create(e: React.FormEvent) {
@@ -95,7 +101,7 @@ export default function PrepaidManager({
       });
       setCustomerName(''); setCustomerId(''); setPaidDate('');
       setAmount(''); setTotalServices(''); setInvoiceRef('');
-      setMatches(null); setInvoices(null); setPickedInvoiceId('');
+      setMatches(null); setInvoices(null); setPicked(new Set());
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create package');
@@ -104,15 +110,15 @@ export default function PrepaidManager({
     }
   }
 
-  async function remove(p: PrepaidPackage) {
-    if (!confirm(`Delete the prepaid package for ${p.customerName}? Its draw-downs are removed too.`)) return;
-    try {
-      await api.deletePackage(p.id);
-      await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete');
-    }
-  }
+  // One customer can have several prepaid packages (e.g. paid by multiple invoices, or topped up) —
+  // show them aggregated as a single entry, not separate cards.
+  const customerGroups = Object.values(
+    packages.reduce<Record<string, PrepaidPackage[]>>((acc, p) => {
+      const key = p.customerId || `name:${p.customerName}`;
+      (acc[key] ||= []).push(p);
+      return acc;
+    }, {}),
+  );
 
   return (
     <div className="flex flex-col gap-8">
@@ -158,27 +164,28 @@ export default function PrepaidManager({
           )
         )}
 
-        {/* 2 · pick the prepaid invoice for that customer */}
+        {/* 2 · pick the prepaid (PAID) invoice(s) for that customer — select one or several */}
         {customerId && (
           <div>
             <span className="mb-1 block text-sm text-zinc-600">
-              Invoice {loadingInvoices && <span className="text-xs text-zinc-400">loading…</span>}
+              Paid invoices {loadingInvoices && <span className="text-xs text-zinc-400">loading…</span>}
+              {picked.size > 0 && <span className="text-xs text-zinc-500"> · {picked.size} selected</span>}
             </span>
             {invoices && invoices.length > 0 ? (
               <ul className="divide-y divide-zinc-100 rounded-lg text-sm ring-1 ring-zinc-200">
                 {invoices.map((inv) => (
-                  <li key={inv.id} className={`flex items-center justify-between gap-3 px-3 py-1.5 ${pickedInvoiceId === inv.id ? 'bg-green-50' : ''}`}>
-                    <span>
-                      {inv.date ?? '—'} · {inv.number ? `#${inv.number}` : '(no #)'}{inv.title ? ` · ${inv.title}` : ''} · {usd(inv.amount)}
-                      <span className="ml-2 text-xs text-zinc-400">{inv.status}</span>
-                    </span>
-                    <button type="button" onClick={() => pickInvoice(inv)}
-                      className="rounded bg-zinc-100 px-2.5 py-1 text-xs font-medium ring-1 ring-zinc-300 hover:bg-zinc-200">Use</button>
+                  <li key={inv.id} className={`px-3 py-1.5 ${picked.has(inv.id) ? 'bg-green-50' : ''}`}>
+                    <label className="flex cursor-pointer items-center gap-2.5">
+                      <input type="checkbox" checked={picked.has(inv.id)} onChange={() => toggleInvoice(inv)} className="h-4 w-4" />
+                      <span>
+                        {inv.date ?? '—'} · {inv.number ? `#${inv.number}` : '(no #)'}{inv.title ? ` · ${inv.title}` : ''} · {usd(inv.amount)}
+                      </span>
+                    </label>
                   </li>
                 ))}
               </ul>
             ) : invoices && !loadingInvoices ? (
-              <p className="text-sm text-zinc-500">No invoices for this customer — enter the amount manually below.</p>
+              <p className="text-sm text-zinc-500">No paid invoices for this customer — enter the amount manually below.</p>
             ) : null}
           </div>
         )}
@@ -198,29 +205,54 @@ export default function PrepaidManager({
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="flex flex-col gap-3">
-        {packages.map((p) => <PackageCard key={p.id} pkg={p} onChanged={refresh} onDelete={() => remove(p)} />)}
+        {customerGroups.map((pkgs) => <CustomerCard key={pkgs[0].id} packages={pkgs} onChanged={refresh} />)}
         {packages.length === 0 && <p className="text-sm text-zinc-400">No prepaid packages yet.</p>}
       </div>
     </div>
   );
 }
 
-function PackageCard({ pkg, onChanged, onDelete }: { pkg: PrepaidPackage; onChanged: () => Promise<void>; onDelete: () => void }) {
+// All of one customer's prepaid packages, shown as a single aggregated entry.
+function CustomerCard({ packages, onChanged }: { packages: PrepaidPackage[]; onChanged: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [candidates, setCandidates] = useState<PrepaidCandidate[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [picked, setPicked] = useState<Set<string>>(new Set()); // selected candidate visits
+  const [confirming, setConfirming] = useState(false);
+
+  const byDate = [...packages].sort((a, b) => a.paidDate.localeCompare(b.paidDate));
+  const customerName = packages[0].customerName;
+  const customerId = packages.find((p) => p.customerId)?.customerId ?? null;
+  const totalServices = packages.reduce((s, p) => s + p.totalServices, 0);
+  const balance = packages.reduce((s, p) => s + p.balance, 0);
+  const amount = packages.reduce((s, p) => s + p.amount, 0);
+  const redemptions = packages.flatMap((p) => p.redemptions);
+  const invoiceRefs = [...new Set(packages.map((p) => p.invoiceRef).filter(Boolean))].join(', ');
+  const exhausted = balance <= 0;
+  const lookupPkg = byDate.find((p) => p.customerId) ?? byDate[0]; // earliest payment → widest candidate window
 
   async function loadCandidates() {
+    if (!customerId) return;
     setError('');
     setLoading(true);
     try {
-      setCandidates(await api.getCandidates(pkg.id));
+      setCandidates(await api.getCandidates(lookupPkg.id));
+      setPicked(new Set());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load candidates');
     } finally {
       setLoading(false);
     }
+  }
+
+  const candKey = (c: PrepaidCandidate) => `${c.bookingId}-${c.serviceVariationId}`;
+
+  function togglePick(c: PrepaidCandidate) {
+    const k = candKey(c);
+    const next = new Set(picked);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    setPicked(next);
   }
 
   async function toggle() {
@@ -229,14 +261,31 @@ function PackageCard({ pkg, onChanged, onDelete }: { pkg: PrepaidPackage; onChan
     if (next && candidates === null) await loadCandidates();
   }
 
-  async function confirm(c: PrepaidCandidate) {
+  // Confirm all selected visits at once. Each draws from the earliest package that still has credit
+  // (tracked locally so multiple in one batch spread correctly across packages); capped by balance.
+  async function confirmSelected() {
+    const chosen = (candidates ?? []).filter((c) => picked.has(candKey(c)));
+    if (chosen.length === 0) return;
+    if (chosen.length > balance) {
+      setError(`Only ${balance} credit${balance === 1 ? '' : 's'} left — deselect ${chosen.length - balance}.`);
+      return;
+    }
     setError('');
+    setConfirming(true);
     try {
-      await api.redeem(pkg.id, c);
+      const remaining = new Map(byDate.map((p) => [p.id, p.balance]));
+      for (const c of chosen) {
+        const target = byDate.find((p) => (remaining.get(p.id) ?? 0) > 0);
+        if (!target) { setError('No credit left.'); break; }
+        await api.redeem(target.id, c);
+        remaining.set(target.id, (remaining.get(target.id) ?? 0) - 1);
+      }
       await onChanged();
       await loadCandidates();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to confirm');
+    } finally {
+      setConfirming(false);
     }
   }
 
@@ -251,22 +300,35 @@ function PackageCard({ pkg, onChanged, onDelete }: { pkg: PrepaidPackage; onChan
     }
   }
 
-  const exhausted = pkg.balance <= 0;
+  async function removeAll() {
+    if (!window.confirm(`Delete ALL prepaid for ${customerName}? Its draw-downs are removed too.`)) return;
+    setError('');
+    try {
+      for (const p of packages) await api.deletePackage(p.id);
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete');
+    }
+  }
+
+  const paidLabel = byDate.length === 1
+    ? `paid ${byDate[0].paidDate}`
+    : `${byDate.length} payments · ${byDate[0].paidDate}–${byDate[byDate.length - 1].paidDate}`;
 
   return (
     <div className="rounded-lg ring-1 ring-zinc-200">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div>
-          <span className="font-medium">{pkg.customerName}</span>
-          <span className="ml-2 text-sm text-zinc-500">paid {pkg.paidDate} · {usd(pkg.amount)}</span>
-          {pkg.invoiceRef && <span className="ml-2 text-xs text-zinc-400">inv {pkg.invoiceRef}</span>}
+          <span className="font-medium">{customerName}</span>
+          <span className="ml-2 text-sm text-zinc-500">{paidLabel} · {usd(amount)}</span>
+          {invoiceRefs && <span className="ml-2 text-xs text-zinc-400">inv {invoiceRefs}</span>}
         </div>
         <div className="flex items-center gap-3 text-sm">
           <span className={`rounded px-2 py-0.5 text-xs font-medium ring-1 ${exhausted ? 'bg-zinc-100 text-zinc-500 ring-zinc-300' : 'bg-green-50 text-green-700 ring-green-300'}`}>
-            {pkg.balance} of {pkg.totalServices} left
+            {balance} of {totalServices} left
           </span>
           <button onClick={toggle} className="text-xs text-blue-600 hover:underline">{open ? 'Hide' : 'Review draw-downs'}</button>
-          <button onClick={onDelete} className="text-xs text-red-500 hover:text-red-700">Delete</button>
+          <button onClick={removeAll} className="text-xs text-red-500 hover:text-red-700">Delete</button>
         </div>
       </div>
 
@@ -274,11 +336,11 @@ function PackageCard({ pkg, onChanged, onDelete }: { pkg: PrepaidPackage; onChan
         <div className="border-t border-zinc-200 p-4">
           {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
 
-          {pkg.redemptions.length > 0 && (
+          {redemptions.length > 0 && (
             <div className="mb-4">
               <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Confirmed</h3>
               <ul className="flex flex-col gap-1 text-sm">
-                {pkg.redemptions.map((r) => (
+                {redemptions.map((r) => (
                   <li key={r.id} className="flex items-center justify-between gap-3">
                     <span>{r.serviceDate} · {r.serviceName ?? r.serviceVariationId} · {r.providerName} · {usd(r.menuPrice)}{r.counts ? '' : ' (add-on)'}</span>
                     <button onClick={() => undo(r.id)} className="text-xs text-red-500 hover:text-red-700">Undo</button>
@@ -288,21 +350,31 @@ function PackageCard({ pkg, onChanged, onDelete }: { pkg: PrepaidPackage; onChan
             </div>
           )}
 
-          <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Candidate visits</h3>
-          {!pkg.customerId && <p className="text-sm text-amber-600">Add the Square customer ID to this package to look up their bookings.</p>}
-          {pkg.customerId && loading && <p className="text-sm text-zinc-400">Loading bookings…</p>}
-          {pkg.customerId && !loading && candidates && candidates.length === 0 && (
+          <div className="mb-1 flex items-center justify-between gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Candidate visits</h3>
+            {customerId && !loading && !exhausted && candidates && candidates.length > 0 && (
+              <button onClick={confirmSelected} disabled={picked.size === 0 || confirming}
+                className="rounded bg-green-600 px-3 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50">
+                {confirming ? 'Confirming…' : `Confirm selected${picked.size ? ` (${picked.size})` : ''}`}
+              </button>
+            )}
+          </div>
+          {!customerId && <p className="text-sm text-amber-600">Link a Square customer to look up their bookings.</p>}
+          {customerId && loading && <p className="text-sm text-zinc-400">Loading bookings…</p>}
+          {customerId && !loading && candidates && candidates.length === 0 && (
             <p className="text-sm text-zinc-400">No un-redeemed bookings for this customer since the paid date.</p>
           )}
-          {pkg.customerId && !loading && candidates && candidates.length > 0 && (
+          {customerId && !loading && candidates && candidates.length > 0 && (
             exhausted ? (
               <p className="text-sm text-zinc-500">No credit left — further visits need payment.</p>
             ) : (
-              <ul className="flex flex-col gap-1 text-sm">
+              <ul className="flex flex-col gap-0.5 text-sm">
                 {candidates.map((c) => (
-                  <li key={`${c.bookingId}-${c.serviceVariationId}`} className="flex items-center justify-between gap-3">
-                    <span>{c.date}{c.time ? ` · ${c.time}` : ''} · {c.serviceName} · {c.providerName} · {usd(c.menuPrice)}{c.counts ? '' : ' (add-on)'}</span>
-                    <button onClick={() => confirm(c)} className="rounded bg-green-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-green-700">Confirm draw-down</button>
+                  <li key={`${c.bookingId}-${c.serviceVariationId}`} className={`rounded px-1 ${picked.has(candKey(c)) ? 'bg-green-50' : ''}`}>
+                    <label className="flex cursor-pointer items-center gap-2.5 py-1">
+                      <input type="checkbox" checked={picked.has(candKey(c))} onChange={() => togglePick(c)} className="h-4 w-4" />
+                      <span>{c.date}{c.time ? ` · ${c.time}` : ''} · {c.serviceName} · {c.providerName} · {usd(c.menuPrice)}{c.counts ? '' : ' (add-on)'}</span>
+                    </label>
                   </li>
                 ))}
               </ul>
