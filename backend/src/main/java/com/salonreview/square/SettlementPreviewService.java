@@ -52,13 +52,15 @@ public class SettlementPreviewService {
     private final PrepaidRedemptionRepository prepaidRedemptions;
     private final PrepaidPackageRepository prepaidPackages;
     private final com.salonreview.repo.ProviderRepository providerRepo;
+    private final com.salonreview.repo.RedoRepository redoRepo;
 
     public SettlementPreviewService(SquareMonthAggregator aggregator, TierCommissionEngine engine,
                                     SalonConfigRepository salonConfig, ProviderDirectory directory,
                                     TierGrantRepository tierGrants, SettlementFeedbackRepository feedback,
                                     SquareClient square, PrepaidRedemptionRepository prepaidRedemptions,
                                     PrepaidPackageRepository prepaidPackages,
-                                    com.salonreview.repo.ProviderRepository providerRepo) {
+                                    com.salonreview.repo.ProviderRepository providerRepo,
+                                    com.salonreview.repo.RedoRepository redoRepo) {
         this.aggregator = aggregator;
         this.engine = engine;
         this.salonConfig = salonConfig;
@@ -68,6 +70,7 @@ public class SettlementPreviewService {
         this.square = square;
         this.prepaidRedemptions = prepaidRedemptions;
         this.prepaidPackages = prepaidPackages;
+        this.redoRepo = redoRepo;
         this.providerRepo = providerRepo;
     }
 
@@ -110,12 +113,62 @@ public class SettlementPreviewService {
         return byProvider;
     }
 
-    /** Fold each provider's prepaid lines into their half inputs + the #salary procedure & discount totals. */
-    private static void applyPrepaid(Map<Long, Merged> byPerson, Map<Long, int[]> procedures,
-                                     Map<Long, BigDecimal[]> discounts, Map<Long, List<AttributedService>> prepaid) {
-        prepaid.forEach((providerId, lines) -> {
-            // A provider may have only prepaid activity this month (no Square orders) — still pay them,
-            // so create their bucket if missing (name taken from the resolved prepaid line).
+    /**
+     * Redo moves: the service's commission shifts from the original provider (a negative line on the
+     * original date) to the redo provider (a positive line on the redo date). Returned as signed
+     * synthetic lines keyed by provider id — folded exactly like prepaid (see {@link #applyExtraLines}).
+     */
+    private Map<Long, List<AttributedService>> redoLinesByProvider(int year, int month, BigDecimal cutoff) {
+        List<com.salonreview.domain.Redo> all = redoRepo.findAllByOrderByRedoDateDesc();
+        if (all.isEmpty()) return Map.of();
+        Map<Long, List<AttributedService>> byProvider = new LinkedHashMap<>();
+        for (com.salonreview.domain.Redo rd : all) {
+            boolean counts = rd.getAmount().compareTo(cutoff) >= 0;
+            String svc = rd.getServiceName() == null || rd.getServiceName().isBlank() ? "Redo" : rd.getServiceName();
+            if (inMonth(rd.getRedoDate(), year, month)) { // redo provider gains it, on the redo date
+                String from = providerName(rd.getOriginalProviderId());
+                byProvider.computeIfAbsent(rd.getRedoProviderId(), k -> new ArrayList<>())
+                        .add(redoLine(providerName(rd.getRedoProviderId()), rd.getRedoDate(),
+                                svc + " (redo from " + from + ")", rd.getAmount(), counts));
+            }
+            if (inMonth(rd.getOriginalDate(), year, month)) { // original provider loses it, on the original date
+                String to = providerName(rd.getRedoProviderId());
+                byProvider.computeIfAbsent(rd.getOriginalProviderId(), k -> new ArrayList<>())
+                        .add(redoLine(providerName(rd.getOriginalProviderId()), rd.getOriginalDate(),
+                                svc + " (redone by " + to + ")", rd.getAmount().negate(), counts));
+            }
+        }
+        return byProvider;
+    }
+
+    private static boolean inMonth(LocalDate d, int year, int month) {
+        return d != null && d.getYear() == year && d.getMonthValue() == month;
+    }
+
+    private String providerName(Long providerId) {
+        return providerRepo.findById(providerId).map(com.salonreview.domain.Provider::getDisplayName).orElse("#" + providerId);
+    }
+
+    /** A signed REDO trace line (positive = gained by the redo provider, negative = removed from original). */
+    private static AttributedService redoLine(String providerName, LocalDate date, String svc, BigDecimal amount, boolean counts) {
+        String half = date.getDayOfMonth() <= 15 ? "FIRST" : "SECOND";
+        int sign = amount.signum();                 // +1 gain, −1 loss
+        int countedUnits = counts ? sign : 0;
+        return new AttributedService("", providerName, date.toString(), half, svc,
+                amount, BigDecimal.ZERO, amount, BigDecimal.ZERO,
+                countedUnits > 0, countedUnits, sign, false, "REDO", null, null, null, null);
+    }
+
+    /**
+     * Fold each provider's synthetic lines (prepaid draw-downs, redo moves) into their half inputs +
+     * the #salary procedure & discount totals. Lines carry signed gross/countedUnits, so a redo's
+     * negative line on the original provider subtracts and the positive line on the redo provider adds.
+     */
+    private static void applyExtraLines(Map<Long, Merged> byPerson, Map<Long, int[]> procedures,
+                                        Map<Long, BigDecimal[]> discounts, Map<Long, List<AttributedService>> extra) {
+        extra.forEach((providerId, lines) -> {
+            // A provider may have only synthetic activity this month (no Square orders) — still pay them,
+            // so create their bucket if missing (name taken from the resolved line).
             Merged m = byPerson.computeIfAbsent(providerId,
                     k -> new Merged(k, lines.isEmpty() ? "" : lines.get(0).providerName()));
             applyPrepaidToMerged(m, lines);
@@ -165,7 +218,9 @@ public class SettlementPreviewService {
         // Fold confirmed prepaid draw-downs into the same provider/half buckets (revenue + counts +
         // procedures), so they pay out and show in #salary exactly like a card service.
         Map<Long, List<AttributedService>> prepaid = prepaidLinesByProvider(year, month);
-        applyPrepaid(byPerson, procedures, discounts, prepaid);
+        applyExtraLines(byPerson, procedures, discounts, prepaid);
+        // Redos move a service's commission from the original provider to the redo provider.
+        applyExtraLines(byPerson, procedures, discounts, redoLinesByProvider(year, month, cutoff));
 
         List<ProviderPayout> payouts = byPerson.values().stream()
                 .map(m -> toPayout(m, config, tierGrantedProviderIds, feedbackByProvider, sc, year, month,
@@ -247,15 +302,18 @@ public class SettlementPreviewService {
 
         MonthAggregation agg = aggregator.aggregate(year, month, sc.getServicePriceCutoff());
         Map<Long, List<AttributedService>> prepaid = prepaidLinesByProvider(year, month);
+        Map<Long, List<AttributedService>> redo = redoLinesByProvider(year, month, sc.getServicePriceCutoff());
         Merged m = collapseToPersons(agg).get(providerId);
         if (m == null) {
-            // No Square activity this month — but the provider may still have prepaid draw-downs to show.
-            List<AttributedService> pl = prepaid.get(providerId);
-            if (pl == null || pl.isEmpty()) {
+            // No Square activity this month — but the provider may still have prepaid / redo lines.
+            List<AttributedService> extra = new ArrayList<>();
+            if (prepaid.get(providerId) != null) extra.addAll(prepaid.get(providerId));
+            if (redo.get(providerId) != null) extra.addAll(redo.get(providerId));
+            if (extra.isEmpty()) {
                 return new ProviderDetail(year, month, providerId, null, null, List.of(), agg.unmatched(), null, null,
                         sc.getServicePriceCutoff(), agg.timezone(), java.time.Instant.now().toString());
             }
-            m = new Merged(providerId, pl.get(0).providerName());
+            m = new Merged(providerId, extra.get(0).providerName());
         }
         final Merged person = m; // effectively-final alias for the lambda below
         List<SquareMonthAggregator.AttributedService> matched = agg.services().stream()
@@ -271,11 +329,13 @@ public class SettlementPreviewService {
         // Prepaid draw-downs for this provider this month: fold into the half input (pays out) and
         // into the trace lines, then re-sort chronologically.
         applyPrepaidToMerged(m, prepaid.get(providerId));
+        applyPrepaidToMerged(m, redo.get(providerId)); // signed redo lines add/subtract the moved commission
 
         List<AttributedService> lines = new ArrayList<>(matched.stream()
                 .map(s -> s.withCustomer(shortName(names.get(s.customerId()))))
                 .toList());
         if (prepaid.containsKey(providerId)) lines.addAll(prepaid.get(providerId));
+        if (redo.containsKey(providerId)) lines.addAll(redo.get(providerId));
         lines = lines.stream()
                 .sorted(Comparator.comparing(AttributedService::date)
                         .thenComparing(s -> parseTime(s.time()))

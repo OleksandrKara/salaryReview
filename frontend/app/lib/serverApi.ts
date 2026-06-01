@@ -10,6 +10,7 @@ import type {
   Provider,
   ProviderDetail,
   ProviderPayout,
+  Redo,
   SettlementPreview,
   SquareRosterEntry,
 } from './types';
@@ -59,4 +60,6 @@ export const serverApi = {
   listPrepaid: () => serverFetch<PrepaidPackage[]>(`/api/prepaid`),
 
   listOwnerCustomers: () => serverFetch<OwnerCustomer[]>(`/api/owner-customers`),
+
+  listRedos: () => serverFetch<Redo[]>(`/api/redos`),
 };
