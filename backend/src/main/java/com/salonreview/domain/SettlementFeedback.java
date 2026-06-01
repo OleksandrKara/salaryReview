@@ -6,9 +6,9 @@ import lombok.*;
 import java.time.Instant;
 
 /**
- * A provider's response to their own month settlement: APPROVED, or CHANGES_REQUESTED with a comment
- * the owner/manager sees on the report. One row per provider/month (re-submitting updates it).
- * ({@code created_at} is DB-managed; {@code updated_at} is set by the service on each write.)
+ * A provider's response to one period (half) of their settlement: APPROVED, or CHANGES_REQUESTED with
+ * a comment the owner/manager sees on the report. One row per provider/year/month/half (re-submitting
+ * updates it). ({@code created_at} is DB-managed; {@code updated_at} is set by the service per write.)
  */
 @Entity
 @Table(name = "settlement_feedback")
@@ -28,6 +28,11 @@ public class SettlementFeedback {
 
     @Column(nullable = false)
     private int month;
+
+    /** Which period this response is for (1-15 or 16-end). */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Half half;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
