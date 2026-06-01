@@ -193,9 +193,14 @@ public class PrepaidService {
                 .toList();
     }
 
-    /** A customer's Square invoices (most recent first) — to pick the prepaid invoice and prefill it. */
+    /**
+     * A customer's PAID Square invoices (most recent first) — to pick the prepaid invoice(s) and
+     * prefill the package. Only PAID invoices are returned: a prepaid package is money paid up front,
+     * so unpaid/draft/cancelled invoices aren't relevant.
+     */
     public List<InvoiceMatch> invoices(String customerId) {
         return square.invoicesForCustomer(customerId).stream()
+                .filter(i -> "PAID".equalsIgnoreCase(i.status()))
                 .map(i -> new InvoiceMatch(i.id(), blankToNull(i.invoiceNumber()), blankToNull(i.title()),
                         i.status(), i.createdAt() == null ? null : i.createdAt().substring(0, 10), i.total()))
                 .toList();
