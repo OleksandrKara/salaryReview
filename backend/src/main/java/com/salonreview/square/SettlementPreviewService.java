@@ -104,7 +104,7 @@ public class SettlementPreviewService {
             applyPrepaidToMerged(m, lines);
             int[] proc = procedures.computeIfAbsent(providerId, k -> new int[2]);
             for (AttributedService l : lines) {
-                if ("FIRST".equals(l.half())) proc[0]++; else proc[1]++;
+                if ("FIRST".equals(l.half())) proc[0] += l.countedUnits(); else proc[1] += l.countedUnits();
             }
         });
     }
@@ -156,7 +156,12 @@ public class SettlementPreviewService {
                 java.time.Instant.now().toString());
     }
 
-    /** Per-person service-line counts per half ({@code [first, second]}), for the #salary "procedures". */
+    /**
+     * Per-person <em>main</em>-service counts per half ({@code [first, second]}), for the #salary
+     * "procedures" line. Counts main services (gross &ge; the tier cutoff) via {@code countedUnits},
+     * not raw line count — add-ons below the cutoff and the non-counted part of a multi-service cash
+     * note don't inflate it, so the number matches the provider's tier count everywhere else.
+     */
     private static Map<Long, int[]> procedureCounts(MonthAggregation agg, Map<Long, Merged> byPerson) {
         Map<String, Long> personByMember = personByMember(byPerson);
         Map<Long, int[]> counts = new java.util.HashMap<>();
@@ -164,7 +169,7 @@ public class SettlementPreviewService {
             Long pid = personByMember.get(s.providerId());
             if (pid == null) continue;
             int[] c = counts.computeIfAbsent(pid, k -> new int[2]);
-            if ("FIRST".equals(s.half())) c[0]++; else c[1]++;
+            if ("FIRST".equals(s.half())) c[0] += s.countedUnits(); else c[1] += s.countedUnits();
         }
         return counts;
     }
@@ -248,8 +253,11 @@ public class SettlementPreviewService {
                         .thenComparing(s -> parseTime(s.time()))
                         .thenComparing(AttributedService::service))
                 .toList();
-        int firstCount = (int) lines.stream().filter(s -> "FIRST".equals(s.half())).count();
-        int secondCount = (int) lines.stream().filter(s -> "SECOND".equals(s.half())).count();
+        // #salary "procedures" = main services (gross >= cutoff), via countedUnits — not raw line count.
+        int firstCount = lines.stream().filter(s -> "FIRST".equals(s.half()))
+                .mapToInt(AttributedService::countedUnits).sum();
+        int secondCount = lines.stream().filter(s -> "SECOND".equals(s.half()))
+                .mapToInt(AttributedService::countedUnits).sum();
         BigDecimal firstDisc = lines.stream().filter(s -> "FIRST".equals(s.half()))
                 .map(AttributedService::discount).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal secondDisc = lines.stream().filter(s -> "SECOND".equals(s.half()))
