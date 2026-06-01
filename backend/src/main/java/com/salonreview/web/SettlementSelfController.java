@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.domain.FeedbackStatus;
+import com.salonreview.domain.Half;
 import com.salonreview.domain.SettlementFeedback;
 import com.salonreview.repo.SettlementFeedbackRepository;
 import com.salonreview.square.SettlementPreviewService;
@@ -74,15 +75,15 @@ public class SettlementSelfController {
     @Transactional
     public SettlementFeedback submitFeedback(
             @AuthenticationPrincipal AppUserPrincipal me,
-            @RequestParam int year, @RequestParam int month,
+            @RequestParam int year, @RequestParam int month, @RequestParam Half half,
             @RequestBody FeedbackRequest req) {
         Long providerId = requireProvider(me);
         if (req.status() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");
         }
-        SettlementFeedback fb = feedback.findByProviderIdAndYearAndMonth(providerId, year, month)
+        SettlementFeedback fb = feedback.findByProviderIdAndYearAndMonthAndHalf(providerId, year, month, half)
                 .orElseGet(() -> SettlementFeedback.builder()
-                        .providerId(providerId).year(year).month(month).build());
+                        .providerId(providerId).year(year).month(month).half(half).build());
         fb.setStatus(req.status());
         fb.setComment(req.comment());
         fb.setUpdatedAt(Instant.now());

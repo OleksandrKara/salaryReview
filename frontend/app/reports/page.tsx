@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { serverApi } from '../lib/serverApi';
-import type { ProviderPayout } from '../lib/types';
+import type { Feedback, ProviderPayout } from '../lib/types';
 import GrantTierButton from './GrantTierButton';
 import SalaryButtons from './SalaryButtons';
 import { SyncBadge } from '../components/SyncBadge';
@@ -53,12 +53,21 @@ function MobileMoney({ label, zelle, cash, bonus = 0, strong = false }: { label:
   );
 }
 
+// A provider responds per period now — show a small badge per half (1–15 / 16–end).
+function HalfBadge({ label, fb }: { label: string; fb: Feedback | null }) {
+  if (!fb) return null;
+  if (fb.status === 'APPROVED')
+    return <span title={`${label}: approved`} className="rounded bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700 ring-1 ring-green-300">{label} ✓</span>;
+  return <span title={fb.comment ? `${label}: ${fb.comment}` : `${label}: changes requested`} className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700 ring-1 ring-red-300">{label} ⚠</span>;
+}
+
 function FeedbackBadge({ p }: { p: ProviderPayout }) {
-  if (p.feedbackStatus === 'APPROVED')
-    return <span title="Provider approved" className="rounded bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700 ring-1 ring-green-300">✓ approved</span>;
-  if (p.feedbackStatus === 'CHANGES_REQUESTED')
-    return <span title={p.feedbackComment ?? 'Changes requested'} className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700 ring-1 ring-red-300">⚠ changes</span>;
-  return null;
+  return (
+    <>
+      <HalfBadge label="1–15" fb={p.firstFeedback} />
+      <HalfBadge label="16–end" fb={p.secondFeedback} />
+    </>
+  );
 }
 
 // Next 16: searchParams is a Promise — must be awaited.

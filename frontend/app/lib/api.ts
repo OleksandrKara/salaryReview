@@ -35,8 +35,8 @@ export const api = {
   deleteUser: (id: number) => proxyVoid(`/api/users/${id}`, 'DELETE'),
 
   // Provider approve / request-correction on their own month.
-  submitFeedback: (year: number, month: number, status: FeedbackStatus, comment: string) =>
-    proxyVoid(`/api/feedback?year=${year}&month=${month}`, 'POST', { status, comment }),
+  submitFeedback: (year: number, month: number, half: 'FIRST' | 'SECOND', status: FeedbackStatus, comment: string) =>
+    proxyVoid(`/api/feedback?year=${year}&month=${month}&half=${half}`, 'POST', { status, comment }),
 
   // Prepaid packages (owner/manager).
   createPackage: (body: PrepaidCreateRequest) => proxyJson<PrepaidPackage>(`/api/prepaid`, 'POST', body),
