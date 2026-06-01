@@ -22,6 +22,9 @@ function countsLabel(units: number): string {
   return units === 1 ? '✓ counts' : `✓ counts ×${units}`;
 }
 
+// Tip for a transaction (an appointment group's lines) — the order tip, attributed to this provider.
+const sumTip = (ls: AttributedService[]) => ls.reduce((s, l) => s + l.tip, 0);
+
 // Service lines for one half, grouped by day → appointment. A wide table on tablet/desktop; on a
 // phone, stacked appointment cards (no horizontal scrolling). Shared by the owner drill-down and /me.
 export default function ServiceLinesTable({
@@ -57,6 +60,7 @@ export default function ServiceLinesTable({
                     </span>
                     {g.customer && <span className="text-zinc-500">· {g.customer}</span>}
                     <span className="text-zinc-400">· {g.lines.length} {g.lines.length === 1 ? 'service' : 'services'}</span>
+                    {sumTip(g.lines) > 0 && <span className="text-zinc-500">· tip {usd(sumTip(g.lines))}</span>}
                   </div>
                   <div className="divide-y divide-zinc-100">
                     {g.lines.map((l, i) => (
@@ -72,6 +76,7 @@ export default function ServiceLinesTable({
                         <div className="shrink-0 text-right tabular-nums">
                           <div>{usd(l.gross)}</div>
                           {l.discount > 0 && <div className="text-[11px] text-emerald-700">−{usd(l.discount)} disc</div>}
+                          {l.tip > 0 && <div className="text-[11px] text-zinc-500">+{usd(l.tip)} tip</div>}
                         </div>
                       </div>
                     ))}
@@ -101,6 +106,7 @@ export default function ServiceLinesTable({
               <th className="px-3 py-2 text-right">Gross</th>
               <th className="px-3 py-2 text-right">Discount</th>
               <th className="px-3 py-2 text-right">Net</th>
+              <th className="px-3 py-2 text-right">Tip</th>
               <th className="px-3 py-2 text-center">Counts</th>
             </tr>
           </thead>
@@ -108,17 +114,18 @@ export default function ServiceLinesTable({
             {days.map((day) => (
               <Fragment key={day.date}>
                 <tr className="border-t-2 border-zinc-300 bg-zinc-100">
-                  <td colSpan={6} className="px-3 py-1.5 text-xs font-semibold text-zinc-700">{formatDay(day.date)}</td>
+                  <td colSpan={7} className="px-3 py-1.5 text-xs font-semibold text-zinc-700">{formatDay(day.date)}</td>
                 </tr>
                 {day.appointments.map((g) => (
                   <Fragment key={g.key}>
                     <tr className="border-t border-zinc-200 bg-zinc-50">
-                      <td colSpan={6} className="px-3 py-1.5 pl-4 text-xs">
+                      <td colSpan={7} className="px-3 py-1.5 pl-4 text-xs">
                         <span className="font-medium">
                           <AppointmentCell date={g.date} time={g.time} bookingId={g.bookingId} label={g.time ?? 'Appointment'} />
                         </span>
                         {g.customer && <span className="text-zinc-500"> · {g.customer}</span>}
                         <span className="text-zinc-400"> · {g.lines.length} {g.lines.length === 1 ? 'service' : 'services'}</span>
+                        {sumTip(g.lines) > 0 && <span className="text-zinc-500"> · tip {usd(sumTip(g.lines))}</span>}
                       </td>
                     </tr>
                     {g.lines.map((l, i) => (
@@ -133,6 +140,7 @@ export default function ServiceLinesTable({
                         <td className="px-3 py-2 text-right tabular-nums">{usd(l.gross)}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{l.discount > 0 ? `−${usd(l.discount)}` : '—'}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{usd(l.net)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{l.tip > 0 ? usd(l.tip) : '—'}</td>
                         <td className="px-3 py-2 text-center">
                           {l.countedUnits === 0 ? <span className="text-zinc-300">—</span>
                             : l.countedUnits === 1 ? '✓' : `✓ ×${l.countedUnits}`}
@@ -144,14 +152,14 @@ export default function ServiceLinesTable({
               </Fragment>
             ))}
             {lines.length === 0 && (
-              <tr><td colSpan={6} className="px-3 py-4 text-center text-zinc-400">No services this period.</td></tr>
+              <tr><td colSpan={7} className="px-3 py-4 text-center text-zinc-400">No services this period.</td></tr>
             )}
           </tbody>
           <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs">
             <tr>
               <td className="px-3 py-2 font-medium" colSpan={2}>{summary}</td>
               <td className="px-3 py-2 text-right text-zinc-500">card {usd(settlement.cardRevenue)}</td>
-              <td className="px-3 py-2 text-right text-zinc-500" colSpan={2}>
+              <td className="px-3 py-2 text-right text-zinc-500" colSpan={3}>
                 tips {usd(settlement.tipsAfterFee)}{settlement.tierBonus > 0 && ` · bonus ${usd(settlement.tierBonus)}`}
               </td>
               <td className="px-3 py-2 text-right font-semibold">→ {usd(settlement.zelleToProvider)}</td>
