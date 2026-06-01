@@ -203,6 +203,8 @@ export interface ProviderDetail {
   firstHalfMessage: string | null;
   secondHalfMessage: string | null;
   priceCutoff: number; // a "main service" is gross >= this (e.g. $60)
+  timezone: string;
+  syncedAt: string; // ISO instant — when this view was pulled live from Square
 }
 
 export interface SettlementDiagnostics {
@@ -223,6 +225,7 @@ export interface SettlementPreview {
   priceCutoff: number;
   providers: ProviderPayout[];
   diagnostics: SettlementDiagnostics;
+  syncedAt: string; // ISO instant — when this report was pulled live from Square
 }
 
 // --- Prepaid packages (owner/manager) ---

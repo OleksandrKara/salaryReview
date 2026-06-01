@@ -3,6 +3,7 @@ import { serverApi } from '../lib/serverApi';
 import type { ProviderPayout } from '../lib/types';
 import GrantTierButton from './GrantTierButton';
 import SalaryButtons from './SalaryButtons';
+import { SyncBadge } from '../components/SyncBadge';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -106,6 +107,7 @@ export default async function ReportsPage({
           <Link href={`/reports?year=${next.year}&month=${next.month}`} className="text-zinc-500 hover:text-zinc-800">{MONTHS[next.month - 1].slice(0, 3)} →</Link>
         </div>
       </div>
+      <div className="mb-3"><SyncBadge syncedAt={report.syncedAt} timezone={report.timezone} /></div>
       <p className="mb-6 text-xs text-zinc-500">
         Tier at {cfg.tierServiceThreshold}+ services ≥ {usd(report.priceCutoff)} · {Math.round(cfg.tierRate * 100)}/{Math.round((1 - cfg.tierRate) * 100)} vs {Math.round(cfg.baseRate * 100)}/{Math.round((1 - cfg.baseRate) * 100)} · tips −{(cfg.cardTipFeeRate * 100).toFixed(1)}% · {report.timezone}
         <br />Each period shows <span className="font-medium text-zinc-600">Zelle paid to provider</span> over <span className="text-zinc-400">cash returned to salon</span>.

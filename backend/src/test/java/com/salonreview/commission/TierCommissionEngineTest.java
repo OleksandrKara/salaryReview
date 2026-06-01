@@ -155,4 +155,41 @@ class TierCommissionEngineTest {
         assertThat(second.zelleToProvider()).isEqualByComparingTo("0.00");
         assertThat(second.cashToSalon()).isEqualByComparingTo("0.00");
     }
+
+    // --- Cash discount absorption (the #salary "Card"/"Cash" basis: provider paid on the menu
+    //     price; salon absorbs the cash discount; the cash-to-salon nets it out). ---
+
+    private static HalfInput halfCash(int counted, String card, String cashGross, String cashCollected,
+                                      String tips, String adj) {
+        return new HalfInput(counted, new BigDecimal(card), new BigDecimal(tips),
+                new BigDecimal(cashGross), new BigDecimal(cashCollected), new BigDecimal(adj));
+    }
+
+    @Test
+    @DisplayName("Cash discount: provider keeps base% of the menu price; salon absorbs the discount")
+    void cashDiscount_paysOnGross_firstHalf() {
+        // A $109 menu service collected as $65 cash (a $44 discount). Provider keeps 45% of $109.
+        HalfSettlement s = engine.firstHalf(halfCash(1, "0.00", "109.00", "65.00", "0.00", "0.00"), config());
+
+        assertThat(s.cashCollected()).isEqualByComparingTo("65.00");
+        // cashToSalon = collected - base*gross = 65 - 0.45*109 = 65 - 49.05 = 15.95
+        assertThat(s.cashToSalon()).isEqualByComparingTo("15.95");
+        // provider keeps 65 - 15.95 = 49.05 = 45% of the full 109 menu price
+        assertThat(new BigDecimal("65.00").subtract(s.cashToSalon())).isEqualByComparingTo("49.05");
+    }
+
+    @Test
+    @DisplayName("Cash tier rebate is computed on gross (menu price), not the discounted amount")
+    void cashDiscount_tierRebateOnGross() {
+        // Qualified month; H2 has a discounted cash service (gross 200, collected 170).
+        HalfInput h1 = halfCash(40, "0.00", "0.00", "0.00", "0.00", "0.00");
+        HalfInput h2 = halfCash(20, "0.00", "200.00", "170.00", "0.00", "0.00");
+
+        HalfSettlement s = engine.secondHalfFinal(h1, h2, config(), Boolean.TRUE);
+
+        // rebate = uplift * monthCashGross = 0.05 * 200 = 10.00 (on gross, not the 170 collected)
+        assertThat(s.cashTierRebate()).isEqualByComparingTo("10.00");
+        // cashToSalon = collected - base*gross - rebate = 170 - 0.45*200 - 10 = 170 - 90 - 10 = 70.00
+        assertThat(s.cashToSalon()).isEqualByComparingTo("70.00");
+    }
 }
