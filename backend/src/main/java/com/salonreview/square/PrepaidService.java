@@ -186,6 +186,21 @@ public class PrepaidService {
         return out;
     }
 
+    /** Square customers whose name matches {@code query} — to pick the package's customer by name. */
+    public List<CustomerMatch> searchCustomers(String query) {
+        return square.searchCustomers(query).stream()
+                .map(c -> new CustomerMatch(c.id(), c.fullName()))
+                .toList();
+    }
+
+    /** A customer's Square invoices (most recent first) — to pick the prepaid invoice and prefill it. */
+    public List<InvoiceMatch> invoices(String customerId) {
+        return square.invoicesForCustomer(customerId).stream()
+                .map(i -> new InvoiceMatch(i.id(), blankToNull(i.invoiceNumber()), blankToNull(i.title()),
+                        i.status(), i.createdAt() == null ? null : i.createdAt().substring(0, 10), i.total()))
+                .toList();
+    }
+
     // --- helpers ---
 
     private boolean alreadyPaidByOrder(List<Order> orders, String customerId, String variationId,
@@ -247,6 +262,11 @@ public class PrepaidService {
 
     public record CreateRequest(String customerId, String customerName, LocalDate paidDate,
                                 BigDecimal amount, Integer totalServices, String invoiceRef) {}
+
+    public record CustomerMatch(String id, String name) {}
+
+    public record InvoiceMatch(String id, String number, String title, String status, String date,
+                               BigDecimal amount) {}
 
     public record RedeemRequest(String squareBookingId, String serviceVariationId, String serviceName,
                                 LocalDate serviceDate, BigDecimal menuPrice, String teamMemberId,

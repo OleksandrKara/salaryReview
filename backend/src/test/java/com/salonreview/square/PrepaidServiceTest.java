@@ -76,4 +76,24 @@ class PrepaidServiceTest {
         assertThat(may.providerName()).isEqualTo("Bob B"); // the May visit with a DIFFERENT provider now shows
         assertThat(may.teamMemberId()).isEqualTo("TM2");
     }
+
+    @Test
+    @DisplayName("Invoice lookup maps the total (sum of payment requests) and the created date")
+    void invoiceLookupMapsTotalAndDate() {
+        SquareClient square = mock(SquareClient.class);
+        PrepaidService svc = new PrepaidService(square, mock(ProviderRepository.class), mock(ProviderDirectory.class),
+                mock(SalonConfigRepository.class), mock(PrepaidPackageRepository.class),
+                mock(PrepaidRedemptionRepository.class));
+
+        Invoice inv = new Invoice("inv1", "000089", "Prepaid", "PAID", "2026-05-29T10:00:00Z",
+                List.of(new PaymentRequest(new Money(2500L, "USD")), new PaymentRequest(new Money(1500L, "USD"))));
+        when(square.invoicesForCustomer("C1")).thenReturn(List.of(inv));
+
+        List<PrepaidService.InvoiceMatch> out = svc.invoices("C1");
+
+        assertThat(out).hasSize(1);
+        assertThat(out.get(0).number()).isEqualTo("000089");
+        assertThat(out.get(0).date()).isEqualTo("2026-05-29");          // created_at date only
+        assertThat(out.get(0).amount()).isEqualByComparingTo("40.00");  // 25.00 + 15.00
+    }
 }

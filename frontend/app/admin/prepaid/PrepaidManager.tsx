@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
-import type { PrepaidCandidate, PrepaidPackage } from '../../lib/types';
+import type { CustomerMatch, PrepaidCandidate, PrepaidInvoice, PrepaidPackage } from '../../lib/types';
 
 const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -17,7 +17,7 @@ export default function PrepaidManager({
   const [packages, setPackages] = useState(initialPackages);
   const [error, setError] = useState('');
 
-  // create form
+  // create form — search a customer by name, then their invoice prefills the amount/date/#.
   const [customerName, setCustomerName] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [paidDate, setPaidDate] = useState('');
@@ -25,10 +25,59 @@ export default function PrepaidManager({
   const [totalServices, setTotalServices] = useState('');
   const [invoiceRef, setInvoiceRef] = useState('');
   const [busy, setBusy] = useState(false);
+  // customer + invoice lookup
+  const [matches, setMatches] = useState<CustomerMatch[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [invoices, setInvoices] = useState<PrepaidInvoice[] | null>(null);
+  const [loadingInvoices, setLoadingInvoices] = useState(false);
+  const [pickedInvoiceId, setPickedInvoiceId] = useState('');
 
   async function refresh() {
     setPackages(await fetch('/api/prepaid', { cache: 'no-store' }).then((r) => r.json()));
     router.refresh();
+  }
+
+  async function searchCustomers() {
+    setError('');
+    if (!customerName.trim()) return;
+    setSearching(true);
+    try {
+      setMatches(await api.searchPrepaidCustomers(customerName.trim()));
+    } catch {
+      setError('Customer search failed.');
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function pickCustomer(c: CustomerMatch) {
+    setCustomerName(c.name);
+    setCustomerId(c.id);
+    setMatches(null);
+    setInvoices(null);
+    setPickedInvoiceId('');
+    setLoadingInvoices(true);
+    try {
+      setInvoices(await api.getCustomerInvoices(c.id));
+    } catch {
+      setError('Could not load invoices for this customer.');
+    } finally {
+      setLoadingInvoices(false);
+    }
+  }
+
+  function pickInvoice(inv: PrepaidInvoice) {
+    setPickedInvoiceId(inv.id);
+    setAmount(String(inv.amount));
+    if (inv.date) setPaidDate(inv.date);
+    if (inv.number) setInvoiceRef(inv.number);
+  }
+
+  function clearCustomer() {
+    setCustomerId('');
+    setMatches(null);
+    setInvoices(null);
+    setPickedInvoiceId('');
   }
 
   async function create(e: React.FormEvent) {
@@ -46,6 +95,7 @@ export default function PrepaidManager({
       });
       setCustomerName(''); setCustomerId(''); setPaidDate('');
       setAmount(''); setTotalServices(''); setInvoiceRef('');
+      setMatches(null); setInvoices(null); setPickedInvoiceId('');
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create package');
@@ -66,16 +116,83 @@ export default function PrepaidManager({
 
   return (
     <div className="flex flex-col gap-8">
-      <form onSubmit={create} className="flex flex-wrap items-end gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
-        <Field label="Customer name"><input value={customerName} onChange={(e) => setCustomerName(e.target.value)} required className="w-44 rounded border border-zinc-300 px-2 py-1.5" /></Field>
-        <Field label="Square customer ID" hint="optional, enables candidate lookup"><input value={customerId} onChange={(e) => setCustomerId(e.target.value)} className="w-48 rounded border border-zinc-300 px-2 py-1.5 font-mono text-xs" /></Field>
-        <Field label="Paid date"><input type="date" value={paidDate} onChange={(e) => setPaidDate(e.target.value)} required className="rounded border border-zinc-300 px-2 py-1.5" /></Field>
-        <Field label="Amount"><input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} required className="w-28 rounded border border-zinc-300 px-2 py-1.5" /></Field>
-        <Field label="# services"><input type="number" min="1" value={totalServices} onChange={(e) => setTotalServices(e.target.value)} required className="w-24 rounded border border-zinc-300 px-2 py-1.5" /></Field>
-        <Field label="Invoice #" hint="optional"><input value={invoiceRef} onChange={(e) => setInvoiceRef(e.target.value)} className="w-28 rounded border border-zinc-300 px-2 py-1.5" /></Field>
-        <button type="submit" disabled={busy} className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
-          {busy ? 'Adding…' : 'Add package'}
-        </button>
+      <form onSubmit={create} className="flex flex-col gap-4 rounded-lg p-4 ring-1 ring-zinc-200">
+        {/* 1 · find the customer by name */}
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label="Customer name" hint="search Square by name">
+            <div className="flex gap-2">
+              <input
+                value={customerName}
+                onChange={(e) => { setCustomerName(e.target.value); setCustomerId(''); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchCustomers(); } }}
+                required
+                className="w-56 rounded border border-zinc-300 px-2 py-1.5"
+              />
+              <button type="button" onClick={searchCustomers} disabled={searching || !customerName.trim()}
+                className="rounded bg-zinc-100 px-3 py-1.5 text-sm ring-1 ring-zinc-300 hover:bg-zinc-200 disabled:opacity-50">
+                {searching ? '…' : 'Search'}
+              </button>
+            </div>
+          </Field>
+          {customerId && (
+            <span className="mb-1.5 text-xs text-green-700">
+              ✓ linked to Square customer
+              <button type="button" onClick={clearCustomer} className="ml-1 text-zinc-400 underline hover:text-zinc-600">change</button>
+            </span>
+          )}
+        </div>
+
+        {matches && !customerId && (
+          matches.length === 0 ? (
+            <p className="text-sm text-zinc-500">No customer matches — refine the name, or just type it and fill the fields below (candidate lookup needs a matched customer).</p>
+          ) : (
+            <ul className="divide-y divide-zinc-100 rounded-lg text-sm ring-1 ring-zinc-200">
+              {matches.map((m) => (
+                <li key={m.id} className="flex items-center justify-between gap-3 px-3 py-1.5">
+                  <span>{m.name || '(no name)'}<span className="ml-2 text-xs text-zinc-400">{m.id}</span></span>
+                  <button type="button" onClick={() => pickCustomer(m)}
+                    className="rounded bg-zinc-100 px-2.5 py-1 text-xs font-medium ring-1 ring-zinc-300 hover:bg-zinc-200">Select</button>
+                </li>
+              ))}
+            </ul>
+          )
+        )}
+
+        {/* 2 · pick the prepaid invoice for that customer */}
+        {customerId && (
+          <div>
+            <span className="mb-1 block text-sm text-zinc-600">
+              Invoice {loadingInvoices && <span className="text-xs text-zinc-400">loading…</span>}
+            </span>
+            {invoices && invoices.length > 0 ? (
+              <ul className="divide-y divide-zinc-100 rounded-lg text-sm ring-1 ring-zinc-200">
+                {invoices.map((inv) => (
+                  <li key={inv.id} className={`flex items-center justify-between gap-3 px-3 py-1.5 ${pickedInvoiceId === inv.id ? 'bg-green-50' : ''}`}>
+                    <span>
+                      {inv.date ?? '—'} · {inv.number ? `#${inv.number}` : '(no #)'}{inv.title ? ` · ${inv.title}` : ''} · {usd(inv.amount)}
+                      <span className="ml-2 text-xs text-zinc-400">{inv.status}</span>
+                    </span>
+                    <button type="button" onClick={() => pickInvoice(inv)}
+                      className="rounded bg-zinc-100 px-2.5 py-1 text-xs font-medium ring-1 ring-zinc-300 hover:bg-zinc-200">Use</button>
+                  </li>
+                ))}
+              </ul>
+            ) : invoices && !loadingInvoices ? (
+              <p className="text-sm text-zinc-500">No invoices for this customer — enter the amount manually below.</p>
+            ) : null}
+          </div>
+        )}
+
+        {/* 3 · details (prefilled from the invoice, editable) */}
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label="Paid date"><input type="date" value={paidDate} onChange={(e) => setPaidDate(e.target.value)} required className="rounded border border-zinc-300 px-2 py-1.5" /></Field>
+          <Field label="Amount"><input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} required className="w-28 rounded border border-zinc-300 px-2 py-1.5" /></Field>
+          <Field label="# services"><input type="number" min="1" value={totalServices} onChange={(e) => setTotalServices(e.target.value)} required className="w-24 rounded border border-zinc-300 px-2 py-1.5" /></Field>
+          <Field label="Invoice #" hint="optional"><input value={invoiceRef} onChange={(e) => setInvoiceRef(e.target.value)} className="w-28 rounded border border-zinc-300 px-2 py-1.5" /></Field>
+          <button type="submit" disabled={busy} className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+            {busy ? 'Adding…' : 'Add package'}
+          </button>
+        </div>
       </form>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

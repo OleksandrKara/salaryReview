@@ -7,9 +7,11 @@
 
 import type {
   AppUser,
+  CustomerMatch,
   FeedbackStatus,
   PrepaidCandidate,
   PrepaidCreateRequest,
+  PrepaidInvoice,
   PrepaidPackage,
   PrepaidRedemption,
   UserCreateRequest,
@@ -42,6 +44,12 @@ export const api = {
   deletePackage: (id: number) => proxyVoid(`/api/prepaid/${id}`, 'DELETE'),
 
   getCandidates: (id: number) => proxyGet<PrepaidCandidate[]>(`/api/prepaid/${id}/candidates`),
+
+  searchPrepaidCustomers: (q: string) =>
+    proxyGet<CustomerMatch[]>(`/api/prepaid/customers/search?q=${encodeURIComponent(q)}`),
+
+  getCustomerInvoices: (customerId: string) =>
+    proxyGet<PrepaidInvoice[]>(`/api/prepaid/invoices?customerId=${encodeURIComponent(customerId)}`),
 
   redeem: (id: number, body: Omit<PrepaidCandidate, 'counts'>) =>
     proxyJson<PrepaidRedemption>(`/api/prepaid/${id}/redemptions`, 'POST', {

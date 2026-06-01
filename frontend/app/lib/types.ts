@@ -283,6 +283,15 @@ export interface PrepaidCandidate {
   providerName: string;
 }
 
+export interface PrepaidInvoice {
+  id: string;
+  number: string | null;
+  title: string | null;
+  status: string;
+  date: string | null;
+  amount: number;
+}
+
 export interface PrepaidCreateRequest {
   customerId?: string | null;
   customerName: string;
