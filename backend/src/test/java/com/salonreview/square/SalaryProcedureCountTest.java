@@ -38,7 +38,7 @@ class SalaryProcedureCountTest {
 
     private static AttributedService line(String service, String gross, boolean counted) {
         return new AttributedService("TM1", "Anna", "2026-05-04", "FIRST", service,
-                new BigDecimal(gross), ZERO, new BigDecimal(gross), counted, counted ? 1 : 0, 1,
+                new BigDecimal(gross), ZERO, new BigDecimal(gross), ZERO, counted, counted ? 1 : 0, 1,
                 false, "CARD", "10:00 AM", "bk-" + service, "cust", null);
     }
 
