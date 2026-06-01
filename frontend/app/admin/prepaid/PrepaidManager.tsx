@@ -3,17 +3,15 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
-import type { PrepaidCandidate, PrepaidPackage, Provider } from '../../lib/types';
+import type { PrepaidCandidate, PrepaidPackage } from '../../lib/types';
 
 const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
 export default function PrepaidManager({
   initialPackages,
-  providers,
 }: {
   initialPackages: PrepaidPackage[];
-  providers: Provider[];
 }) {
   const router = useRouter();
   const [packages, setPackages] = useState(initialPackages);
@@ -22,7 +20,6 @@ export default function PrepaidManager({
   // create form
   const [customerName, setCustomerName] = useState('');
   const [customerId, setCustomerId] = useState('');
-  const [providerId, setProviderId] = useState<number | ''>('');
   const [paidDate, setPaidDate] = useState('');
   const [amount, setAmount] = useState('');
   const [totalServices, setTotalServices] = useState('');
@@ -42,13 +39,12 @@ export default function PrepaidManager({
       await api.createPackage({
         customerName,
         customerId: customerId || null,
-        providerId: Number(providerId),
         paidDate,
         amount: Number(amount),
         totalServices: Number(totalServices),
         invoiceRef: invoiceRef || null,
       });
-      setCustomerName(''); setCustomerId(''); setProviderId(''); setPaidDate('');
+      setCustomerName(''); setCustomerId(''); setPaidDate('');
       setAmount(''); setTotalServices(''); setInvoiceRef('');
       await refresh();
     } catch (err) {
@@ -73,12 +69,6 @@ export default function PrepaidManager({
       <form onSubmit={create} className="flex flex-wrap items-end gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
         <Field label="Customer name"><input value={customerName} onChange={(e) => setCustomerName(e.target.value)} required className="w-44 rounded border border-zinc-300 px-2 py-1.5" /></Field>
         <Field label="Square customer ID" hint="optional, enables candidate lookup"><input value={customerId} onChange={(e) => setCustomerId(e.target.value)} className="w-48 rounded border border-zinc-300 px-2 py-1.5 font-mono text-xs" /></Field>
-        <Field label="Provider">
-          <select value={providerId} onChange={(e) => setProviderId(Number(e.target.value) || '')} required className="rounded border border-zinc-300 px-2 py-1.5">
-            <option value="">Select…</option>
-            {providers.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
-          </select>
-        </Field>
         <Field label="Paid date"><input type="date" value={paidDate} onChange={(e) => setPaidDate(e.target.value)} required className="rounded border border-zinc-300 px-2 py-1.5" /></Field>
         <Field label="Amount"><input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} required className="w-28 rounded border border-zinc-300 px-2 py-1.5" /></Field>
         <Field label="# services"><input type="number" min="1" value={totalServices} onChange={(e) => setTotalServices(e.target.value)} required className="w-24 rounded border border-zinc-300 px-2 py-1.5" /></Field>
@@ -151,7 +141,7 @@ function PackageCard({ pkg, onChanged, onDelete }: { pkg: PrepaidPackage; onChan
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div>
           <span className="font-medium">{pkg.customerName}</span>
-          <span className="ml-2 text-sm text-zinc-500">{pkg.providerName} · paid {pkg.paidDate} · {usd(pkg.amount)}</span>
+          <span className="ml-2 text-sm text-zinc-500">paid {pkg.paidDate} · {usd(pkg.amount)}</span>
           {pkg.invoiceRef && <span className="ml-2 text-xs text-zinc-400">inv {pkg.invoiceRef}</span>}
         </div>
         <div className="flex items-center gap-3 text-sm">
@@ -173,7 +163,7 @@ function PackageCard({ pkg, onChanged, onDelete }: { pkg: PrepaidPackage; onChan
               <ul className="flex flex-col gap-1 text-sm">
                 {pkg.redemptions.map((r) => (
                   <li key={r.id} className="flex items-center justify-between gap-3">
-                    <span>{r.serviceDate} · {r.serviceName ?? r.serviceVariationId} · {usd(r.menuPrice)}{r.counts ? '' : ' (add-on)'}</span>
+                    <span>{r.serviceDate} · {r.serviceName ?? r.serviceVariationId} · {r.providerName} · {usd(r.menuPrice)}{r.counts ? '' : ' (add-on)'}</span>
                     <button onClick={() => undo(r.id)} className="text-xs text-red-500 hover:text-red-700">Undo</button>
                   </li>
                 ))}
@@ -194,7 +184,7 @@ function PackageCard({ pkg, onChanged, onDelete }: { pkg: PrepaidPackage; onChan
               <ul className="flex flex-col gap-1 text-sm">
                 {candidates.map((c) => (
                   <li key={`${c.bookingId}-${c.serviceVariationId}`} className="flex items-center justify-between gap-3">
-                    <span>{c.date}{c.time ? ` · ${c.time}` : ''} · {c.serviceName} · {usd(c.menuPrice)}{c.counts ? '' : ' (add-on)'}</span>
+                    <span>{c.date}{c.time ? ` · ${c.time}` : ''} · {c.serviceName} · {c.providerName} · {usd(c.menuPrice)}{c.counts ? '' : ' (add-on)'}</span>
                     <button onClick={() => confirm(c)} className="rounded bg-green-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-green-700">Confirm draw-down</button>
                   </li>
                 ))}

@@ -53,10 +53,11 @@ class SalaryProcedureCountTest {
         SquareClient square = mock(SquareClient.class);
         PrepaidRedemptionRepository prepaidRedemptions = mock(PrepaidRedemptionRepository.class);
         PrepaidPackageRepository prepaidPackages = mock(PrepaidPackageRepository.class);
+        com.salonreview.repo.ProviderRepository providerRepo = mock(com.salonreview.repo.ProviderRepository.class);
 
         SettlementPreviewService service = new SettlementPreviewService(aggregator,
                 new TierCommissionEngine(), salonConfigRepo, directory, tierGrants, feedback, square,
-                prepaidRedemptions, prepaidPackages);
+                prepaidRedemptions, prepaidPackages, providerRepo);
 
         SalonConfig sc = mock(SalonConfig.class);
         when(sc.toCommissionConfig()).thenReturn(new CommissionConfig(60,
