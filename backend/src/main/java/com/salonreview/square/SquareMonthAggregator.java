@@ -136,6 +136,8 @@ public class SquareMonthAggregator {
             Instant checkoutAt = instant(orderTs);
             boolean cashOrder = isCashOrder(o);
             Map<String, Half> providersOnOrder = new LinkedHashMap<>();
+            // Lines created for this order, so the order tip can be spread across them after the loop.
+            List<LineRef> orderLineRefs = new ArrayList<>();
 
             if (o.lineItems() != null) {
                 for (OrderLineItem li : o.lineItems()) {
@@ -171,20 +173,24 @@ public class SquareMonthAggregator {
                     if (counted) a.counted++;
                     providersOnOrder.put(seg.providerId, half);
                     services.add(new AttributedService(seg.providerId, nameById.getOrDefault(seg.providerId, "?"),
-                            str(seg.day), half.name(), li.name(), revenue, discount, net, counted,
+                            str(seg.day), half.name(), li.name(), revenue, discount, net, BigDecimal.ZERO, counted,
                             counted ? 1 : 0, 1, m.prepaid,
                             cashOrder ? "CASH" : "CARD", localTime(seg.startAt, zone), seg.bookingId,
                             o.customerId(), null));
+                    orderLineRefs.add(new LineRef(services.size() - 1, seg.providerId, revenue));
                 }
             }
 
-            // Tip split: equal across the distinct providers on the ticket.
+            // Tip split: equal across the distinct providers on the ticket (the payout basis), then each
+            // provider's share is spread across their line(s) on the order for the per-transaction trace.
             BigDecimal tip = SquareClient.toDollars(o.totalTipMoney());
             if (tip.signum() > 0 && !providersOnOrder.isEmpty()) {
                 BigDecimal share = tip.divide(BigDecimal.valueOf(providersOnOrder.size()), 2, RoundingMode.HALF_UP);
-                providersOnOrder.forEach((prov, half) ->
-                        accs.computeIfAbsent(new Key(prov, half), k -> new Acc()).tips =
-                                accs.get(new Key(prov, half)).tips.add(share));
+                providersOnOrder.forEach((prov, half) -> {
+                    accs.computeIfAbsent(new Key(prov, half), k -> new Acc()).tips =
+                            accs.get(new Key(prov, half)).tips.add(share);
+                    allocateTip(services, orderLineRefs.stream().filter(r -> prov.equals(r.provider())).toList(), share);
+                });
             }
         }
 
@@ -225,7 +231,7 @@ public class SquareMonthAggregator {
             int totalSegs = Math.max(cb.serviceVariationIds.size(), countedSegs);
             services.add(new AttributedService(cb.providerId, nameById.getOrDefault(cb.providerId, "?"),
                     str(cb.day), half.name(), "cash note (" + countedSegs + " counted)", gross,
-                    discount, collected, countedSegs > 0, countedSegs, totalSegs, false, "CASH-NOTE",
+                    discount, collected, BigDecimal.ZERO, countedSegs > 0, countedSegs, totalSegs, false, "CASH-NOTE",
                     localTime(cb.startAt, zone), cb.bookingId, cb.customerId(), null));
         }
 
@@ -252,7 +258,7 @@ public class SquareMonthAggregator {
             diag.ownerComps++;
             services.add(new AttributedService(c.providerId(), nameById.getOrDefault(c.providerId(), "?"),
                     str(c.day()), half.name(), compNames.getOrDefault(c.serviceVariationId(), "owner comp"),
-                    menu, BigDecimal.ZERO, menu, counted, counted ? 1 : 0, 1, false, "COMP",
+                    menu, BigDecimal.ZERO, menu, BigDecimal.ZERO, counted, counted ? 1 : 0, 1, false, "COMP",
                     localTime(c.startAt(), zone), c.bookingId(), c.customerId(), null));
         }
 
@@ -430,6 +436,33 @@ public class SquareMonthAggregator {
         return lineRevenue(li);
     }
 
+    /** A trace line created for an order, with its position + provider + gross, for spreading the tip. */
+    private record LineRef(int index, String provider, BigDecimal gross) {}
+
+    /**
+     * Spread one provider's order-tip {@code share} across their line(s) on that order, proportional to
+     * gross (the remainder lands on the last line so the rows sum exactly to the share). With the common
+     * single-line ticket this just puts the whole share on that line.
+     */
+    private static void allocateTip(List<AttributedService> services, List<LineRef> lines, BigDecimal share) {
+        if (lines.isEmpty()) return;
+        BigDecimal totalGross = lines.stream().map(LineRef::gross).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal allocated = BigDecimal.ZERO;
+        for (int i = 0; i < lines.size(); i++) {
+            LineRef r = lines.get(i);
+            BigDecimal t;
+            if (i == lines.size() - 1) {
+                t = share.subtract(allocated);                 // remainder → exact sum
+            } else if (totalGross.signum() > 0) {
+                t = share.multiply(r.gross()).divide(totalGross, 2, RoundingMode.HALF_UP);
+            } else {
+                t = share.divide(BigDecimal.valueOf(lines.size()), 2, RoundingMode.HALF_UP);
+            }
+            allocated = allocated.add(t);
+            services.set(r.index(), services.get(r.index()).withTip(t));
+        }
+    }
+
     /** Full menu (gross) price of a line, before Square discounts; falls back to the net total. */
     private static BigDecimal lineRevenue(OrderLineItem li) {
         if (li.grossSalesMoney() != null) return SquareClient.toDollars(li.grossSalesMoney());
@@ -487,12 +520,19 @@ public class SquareMonthAggregator {
 
     public record AttributedService(String providerId, String providerName, String date, String half,
                                     String service, BigDecimal gross, BigDecimal discount, BigDecimal net,
+                                    BigDecimal tip,
                                     boolean counted, int countedUnits, int units, boolean prepaid, String channel,
                                     String time, String bookingId, String customerId, String customer) {
         /** A copy with the (short) customer name filled in — set by the detail service after lookup. */
         public AttributedService withCustomer(String c) {
             return new AttributedService(providerId, providerName, date, half, service, gross, discount, net,
-                    counted, countedUnits, units, prepaid, channel, time, bookingId, customerId, c);
+                    tip, counted, countedUnits, units, prepaid, channel, time, bookingId, customerId, c);
+        }
+
+        /** A copy with this line's share of the transaction tip filled in (set after the tip split). */
+        public AttributedService withTip(BigDecimal t) {
+            return new AttributedService(providerId, providerName, date, half, service, gross, discount, net,
+                    t, counted, countedUnits, units, prepaid, channel, time, bookingId, customerId, customer);
         }
     }
 
