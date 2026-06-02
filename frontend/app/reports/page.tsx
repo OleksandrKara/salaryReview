@@ -107,6 +107,7 @@ export default async function ReportsPage({
           <Link href="/admin/prepaid" className="text-xs text-zinc-400 hover:text-zinc-600">Prepaid</Link>
           <Link href="/admin/owner-customers" className="text-xs text-zinc-400 hover:text-zinc-600">Owner comps</Link>
           <Link href="/admin/redos" className="text-xs text-zinc-400 hover:text-zinc-600">Redos</Link>
+          <Link href="/admin/manual-credits" className="text-xs text-zinc-400 hover:text-zinc-600">Manual</Link>
           {me?.role === 'OWNER' && (
             <Link href="/admin/users" className="text-xs text-zinc-400 hover:text-zinc-600">Users</Link>
           )}

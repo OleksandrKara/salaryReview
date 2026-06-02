@@ -183,7 +183,7 @@ export interface AttributedService {
   countedUnits: number; // main services this line counts toward the tier (gross >= cutoff)
   units: number; // total services this line represents (incl. add-ons below the cutoff)
   prepaid: boolean;
-  channel: 'CARD' | 'CASH' | 'CASH-NOTE' | 'PREPAID' | 'COMP' | 'REDO';
+  channel: 'CARD' | 'CASH' | 'CASH-NOTE' | 'PREPAID' | 'COMP' | 'REDO' | 'MANUAL';
   time: string | null; // appointment start, salon-local, e.g. "2:30 PM"
   bookingId: string | null; // Square booking/reservation id (for the appointment link)
   customer: string | null; // short client name, e.g. "Donnah P."
@@ -317,6 +317,28 @@ export interface RedoCreateRequest {
   originalDate: string;
   redoDate: string;
   amount: number;
+  serviceName?: string | null;
+}
+
+// --- Manual service credits (owner/manager) ---
+
+export interface ManualCredit {
+  id: number;
+  providerId: number;
+  providerName: string;
+  serviceDate: string;
+  gross: number;
+  discount: number;
+  tip: number;
+  serviceName: string | null;
+}
+
+export interface ManualCreditCreateRequest {
+  providerId: number;
+  serviceDate: string;
+  gross: number;
+  discount: number;
+  tip: number;
   serviceName?: string | null;
 }
 
