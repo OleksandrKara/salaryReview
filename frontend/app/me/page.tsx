@@ -30,10 +30,26 @@ export default async function MyReportPage({
 }) {
   const sp = await searchParams;
   const now = new Date();
-  const year = Number(sp.year) || now.getUTCFullYear();
-  const month = Number(sp.month) || now.getUTCMonth() + 1;
+  const explicit = sp.year != null || sp.month != null; // did the provider pick a month, or just land here?
+  const curYear = Number(sp.year) || now.getUTCFullYear();
+  const curMonth = Number(sp.month) || now.getUTCMonth() + 1;
 
-  const detail = await serverApi.getMyDetail(year, month);
+  let year = curYear;
+  let month = curMonth;
+  let detail = await serverApi.getMyDetail(year, month);
+  // First days of a new month: if they didn't pick a month and the current one has no activity yet,
+  // fall back to the previous month (and say so) so they don't land on a blank page.
+  let fellBack = false;
+  if (!explicit && !detail.payout) {
+    const back = shift(curYear, curMonth, -1);
+    const prevDetail = await serverApi.getMyDetail(back.year, back.month);
+    if (prevDetail.payout) {
+      year = back.year;
+      month = back.month;
+      detail = prevDetail;
+      fellBack = true;
+    }
+  }
   const me = detail.payout;
   const prev = shift(year, month, -1);
   const next = shift(year, month, 1);
@@ -58,6 +74,13 @@ export default async function MyReportPage({
         </div>
       </div>
       <div className="mb-4"><SyncBadge syncedAt={detail.syncedAt} timezone={detail.timezone} /></div>
+
+      {fellBack && (
+        <p className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700 ring-1 ring-amber-200">
+          No activity yet for {MONTHS[curMonth - 1]} {curYear} — showing {MONTHS[month - 1]} {year}. Use{' '}
+          {MONTHS[curMonth - 1].slice(0, 3)} → above once your new month has sales.
+        </p>
+      )}
 
       {!me ? (
         <p className="mt-8 text-center text-zinc-400">No activity for this month.</p>
