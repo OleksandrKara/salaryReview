@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { serverApi } from '../lib/serverApi';
 import type { Feedback, HalfSettlement } from '../lib/types';
 import DiscountBreakdown from './DiscountBreakdown';
+import NoShowBreakdown from './NoShowBreakdown';
 import ServiceBreakdown from './ServiceBreakdown';
 import SettlementFeedbackForm from './SettlementFeedbackForm';
 import SalaryPopupButton from '../components/SalaryPopupButton';
@@ -107,6 +108,8 @@ export default async function MyReportPage({
           <ServiceBreakdown detail={detail} />
         </>
       )}
+
+      <NoShowBreakdown rows={detail.noShows} />
     </main>
   );
 }

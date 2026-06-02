@@ -44,7 +44,7 @@ class RedoMoveTest {
 
         SettlementPreviewService service = new SettlementPreviewService(aggregator, new TierCommissionEngine(),
                 salonConfigRepo, directory, tierGrants, feedback, square, prepaidRedemptions, prepaidPackages,
-                providerRepo, redoRepo, mock(com.salonreview.repo.ManualCreditRepository.class));
+                providerRepo, redoRepo, mock(com.salonreview.repo.ManualCreditRepository.class), mock(com.salonreview.square.NoShowFeeService.class));
 
         SalonConfig sc = mock(SalonConfig.class);
         when(sc.toCommissionConfig()).thenReturn(new CommissionConfig(60,
