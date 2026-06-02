@@ -15,6 +15,7 @@ function ChannelTag({ channel }: { channel: string }) {
     COMP: 'bg-rose-50 text-rose-700 ring-rose-200',
     REDO: 'bg-orange-50 text-orange-700 ring-orange-200',
     MANUAL: 'bg-sky-50 text-sky-700 ring-sky-200',
+    NOSHOW: 'bg-yellow-50 text-yellow-800 ring-yellow-300',
   };
   return <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ring-1 ${map[channel] ?? 'bg-zinc-100 text-zinc-600 ring-zinc-300'}`}>{channel}</span>;
 }

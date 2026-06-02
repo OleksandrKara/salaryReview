@@ -54,6 +54,7 @@ public class SettlementPreviewService {
     private final com.salonreview.repo.ProviderRepository providerRepo;
     private final com.salonreview.repo.RedoRepository redoRepo;
     private final com.salonreview.repo.ManualCreditRepository manualCredits;
+    private final NoShowFeeService noShowFees;
 
     public SettlementPreviewService(SquareMonthAggregator aggregator, TierCommissionEngine engine,
                                     SalonConfigRepository salonConfig, ProviderDirectory directory,
@@ -62,7 +63,8 @@ public class SettlementPreviewService {
                                     PrepaidPackageRepository prepaidPackages,
                                     com.salonreview.repo.ProviderRepository providerRepo,
                                     com.salonreview.repo.RedoRepository redoRepo,
-                                    com.salonreview.repo.ManualCreditRepository manualCredits) {
+                                    com.salonreview.repo.ManualCreditRepository manualCredits,
+                                    NoShowFeeService noShowFees) {
         this.aggregator = aggregator;
         this.engine = engine;
         this.salonConfig = salonConfig;
@@ -75,6 +77,7 @@ public class SettlementPreviewService {
         this.redoRepo = redoRepo;
         this.providerRepo = providerRepo;
         this.manualCredits = manualCredits;
+        this.noShowFees = noShowFees;
     }
 
     /**
@@ -228,6 +231,27 @@ public class SettlementPreviewService {
                 h.cashGross(), h.cashCollected(), h.adjustments());
     }
 
+    /**
+     * Fold no-show fee lines into each provider's <em>adjustments</em> (not card revenue), so the flat $25
+     * is paid to the provider in full — the engine adds adjustments straight to Zelle. A provider may have
+     * only a no-show this month (no Square orders); still pay them, so create the bucket if missing.
+     */
+    private static void applyNoShowAdjustments(Map<Long, Merged> byPerson, Map<Long, List<AttributedService>> noShow) {
+        noShow.forEach((providerId, lines) -> {
+            if (lines == null || lines.isEmpty()) return;
+            Merged m = byPerson.computeIfAbsent(providerId, k -> new Merged(k, lines.get(0).providerName()));
+            for (AttributedService l : lines) {
+                if ("FIRST".equals(l.half())) m.first = addAdjustment(m.first, l.gross());
+                else m.second = addAdjustment(m.second, l.gross());
+            }
+        });
+    }
+
+    private static HalfInput addAdjustment(HalfInput h, BigDecimal amount) {
+        return new HalfInput(h.countedServices(), h.cardRevenue(), h.cardTips(),
+                h.cashGross(), h.cashCollected(), h.adjustments().add(amount));
+    }
+
     @Transactional
     public SettlementPreview preview(int year, int month) {
         SalonConfig sc = salonConfig.findById(1)
@@ -256,12 +280,18 @@ public class SettlementPreviewService {
         applyExtraLines(byPerson, procedures, discounts, redo);
         // Manual credits: owner-entered exceptions, folded in like a card service.
         applyExtraLines(byPerson, procedures, discounts, manualCreditLinesByProvider(year, month, cutoff));
+        // No-show fees: a flat $25 (split across a multi-provider no-show) paid to the provider in full as
+        // an adjustment — not commissioned — in the month the fee was paid.
+        Map<Long, List<AttributedService>> noShowRaw = noShowFees.noShowFeeLinesByProvider(year, month);
+        Map<Long, List<AttributedService>> noShow = noShowRaw == null ? Map.of() : noShowRaw;
+        applyNoShowAdjustments(byPerson, noShow);
 
         List<ProviderPayout> payouts = byPerson.values().stream()
                 .map(m -> toPayout(m, config, tierGrantedProviderIds, feedbackByProvider, sc, year, month,
                         procedures.getOrDefault(m.providerId, new int[2]),
                         discounts.getOrDefault(m.providerId, ZERO_HALVES),
-                        redo.getOrDefault(m.providerId, List.of())))
+                        redo.getOrDefault(m.providerId, List.of()),
+                        noShow.getOrDefault(m.providerId, List.of())))
                 .sorted(Comparator.comparing(p -> p.name().toLowerCase())).toList();
 
         return new SettlementPreview(year, month, agg.timezone(), config, cutoff, payouts, agg.diagnostics(),
@@ -340,16 +370,23 @@ public class SettlementPreviewService {
         Map<Long, List<AttributedService>> prepaid = prepaidLinesByProvider(year, month);
         Map<Long, List<AttributedService>> redo = redoLinesByProvider(year, month, sc.getServicePriceCutoff());
         Map<Long, List<AttributedService>> manual = manualCreditLinesByProvider(year, month, sc.getServicePriceCutoff());
+        NoShowFeeService.NoShowMonth nsm = noShowFees.compute(year, month);
+        Map<Long, List<AttributedService>> noShow = (nsm == null || nsm.linesByProvider() == null)
+                ? Map.of() : nsm.linesByProvider();
+        List<NoShowFeeService.NoShowRow> myNoShows = (nsm == null || nsm.rows() == null) ? List.of()
+                : nsm.rows().stream().filter(r -> providerId.equals(r.providerId())).toList();
         Merged m = collapseToPersons(agg).get(providerId);
         if (m == null) {
-            // No Square activity this month — but the provider may still have prepaid / redo / manual lines.
+            // No Square activity this month — but the provider may still have prepaid / redo / manual /
+            // no-show lines (or no-show rows with no credit, which still show on /me for visibility).
             List<AttributedService> extra = new ArrayList<>();
             if (prepaid.get(providerId) != null) extra.addAll(prepaid.get(providerId));
             if (redo.get(providerId) != null) extra.addAll(redo.get(providerId));
             if (manual.get(providerId) != null) extra.addAll(manual.get(providerId));
+            if (noShow.get(providerId) != null) extra.addAll(noShow.get(providerId));
             if (extra.isEmpty()) {
                 return new ProviderDetail(year, month, providerId, null, null, List.of(), agg.unmatched(), null, null,
-                        sc.getServicePriceCutoff(), agg.timezone(), java.time.Instant.now().toString());
+                        sc.getServicePriceCutoff(), agg.timezone(), java.time.Instant.now().toString(), myNoShows);
             }
             m = new Merged(providerId, extra.get(0).providerName());
         }
@@ -369,6 +406,11 @@ public class SettlementPreviewService {
         applyPrepaidToMerged(m, prepaid.get(providerId));
         applyPrepaidToMerged(m, redo.get(providerId)); // signed redo lines add/subtract the moved commission
         applyPrepaidToMerged(m, manual.get(providerId)); // owner-entered manual credits
+        // No-show fees pay in full via adjustments (not commissioned like the lines above).
+        for (AttributedService l : noShow.getOrDefault(providerId, List.of())) {
+            if ("FIRST".equals(l.half())) m.first = addAdjustment(m.first, l.gross());
+            else m.second = addAdjustment(m.second, l.gross());
+        }
 
         List<AttributedService> lines = new ArrayList<>(matched.stream()
                 .map(s -> s.withCustomer(shortName(names.get(s.customerId()))))
@@ -376,6 +418,7 @@ public class SettlementPreviewService {
         if (prepaid.containsKey(providerId)) lines.addAll(prepaid.get(providerId));
         if (redo.containsKey(providerId)) lines.addAll(redo.get(providerId));
         if (manual.containsKey(providerId)) lines.addAll(manual.get(providerId));
+        if (noShow.containsKey(providerId)) lines.addAll(noShow.get(providerId));
         lines = lines.stream()
                 .sorted(Comparator.comparing(AttributedService::date)
                         .thenComparing(s -> parseTime(s.time()))
@@ -392,16 +435,17 @@ public class SettlementPreviewService {
                 .map(AttributedService::discount).reduce(BigDecimal.ZERO, BigDecimal::add);
         ProviderPayout payout = toPayout(m, config, granted, fb, sc, year, month,
                 new int[]{firstCount, secondCount}, new BigDecimal[]{firstDisc, secondDisc},
-                redo.getOrDefault(providerId, List.of()));
+                redo.getOrDefault(providerId, List.of()), noShow.getOrDefault(providerId, List.of()));
         return new ProviderDetail(year, month, providerId, m.name, payout, lines, agg.unmatched(),
                 payout.firstHalfMessage(), payout.secondHalfMessage(), sc.getServicePriceCutoff(),
-                agg.timezone(), java.time.Instant.now().toString());
+                agg.timezone(), java.time.Instant.now().toString(), myNoShows);
     }
 
     /** The copy-pasteable {@code #salary} block for one half, matching the salon's manual format. */
     private static String salaryMessage(int year, int month, Half half, String providerName,
                                         SalonConfig sc, HalfInput input, HalfSettlement settlement,
-                                        int procedures, BigDecimal discountsCovered, List<AttributedService> redoLines) {
+                                        int procedures, BigDecimal discountsCovered, List<AttributedService> redoLines,
+                                        List<AttributedService> noShowLines) {
         String label = (half == Half.FIRST ? "1-15 " : "16-END ")
                 + java.time.Month.of(month).getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.US)
                 + " " + year;
@@ -411,8 +455,21 @@ public class SettlementPreviewService {
         // Discounts are absorbed by the salon and already included in Card (we pay on gross), so they
         // are shown here for transparency, not added again. The manual adjustments line (redos/hours)
         // only appears when non-zero.
-        String adjustments = input.adjustments().signum() != 0
-                ? "Adjustments (cancellations, hours, redos): $" + money(input.adjustments()) + "\n" : "";
+        // No-show fees are part of adjustments (paid in full to the provider) but get their own short note,
+        // so subtract them from the generic adjustments line to avoid showing the $25 twice.
+        BigDecimal noShowSum = BigDecimal.ZERO;
+        StringBuilder noShow = new StringBuilder();
+        if (noShowLines != null) {
+            for (AttributedService l : noShowLines) {
+                if (!half.name().equals(l.half())) continue;
+                noShowSum = noShowSum.add(l.gross());
+                noShow.append("No-show fee").append(l.customer() == null ? "" : " (" + l.customer() + ")")
+                        .append(": +$").append(money(l.gross())).append("\n");
+            }
+        }
+        BigDecimal otherAdjustments = input.adjustments().subtract(noShowSum);
+        String adjustments = otherAdjustments.signum() != 0
+                ? "Adjustments (cancellations, hours, redos): $" + money(otherAdjustments) + "\n" : "";
         // 16-END only: at month close a qualified provider (50/50) earns a tier bonus on the month's
         // card (and a cash rebate). It's already inside the Zelle/Cash totals below — shown here so the
         // 50/50 uplift is explicit. Only appears when there's a bonus (i.e. the 50/50 tier applied).
@@ -442,6 +499,7 @@ public class SettlementPreviewService {
                 + "Tips(-" + feePct + "%): $" + money(settlement.tipsAfterFee()) + "\n\n"
                 + bonus
                 + redo
+                + noShow
                 + "Zelle " + owner + " to " + providerName + ": $" + money(settlement.zelleToProvider()) + "\n"
                 + "Cash from " + providerName + " to " + owner + ": $" + money(settlement.cashToSalon());
     }
@@ -489,7 +547,8 @@ public class SettlementPreviewService {
     private ProviderPayout toPayout(Merged m, CommissionConfig config, Set<Long> granted,
                                     Map<Long, Map<Half, SettlementFeedback>> feedbackByProvider,
                                     SalonConfig sc, int year, int month, int[] procedures,
-                                    BigDecimal[] discounts, List<AttributedService> redoLines) {
+                                    BigDecimal[] discounts, List<AttributedService> redoLines,
+                                    List<AttributedService> noShowLines) {
         int monthCounted = m.first.countedServices() + m.second.countedServices();
         boolean autoQualified = monthCounted >= config.tierServiceThreshold();
         boolean isGranted = granted.contains(m.providerId);
@@ -500,8 +559,8 @@ public class SettlementPreviewService {
         BigDecimal monthZelle = first.zelleToProvider().add(second.zelleToProvider());
         BigDecimal monthCashToSalon = first.cashToSalon().add(second.cashToSalon());
         Map<Half, SettlementFeedback> fbm = feedbackByProvider.getOrDefault(m.providerId, Map.of());
-        String firstMsg = salaryMessage(year, month, Half.FIRST, m.name, sc, m.first, first, procedures[0], discounts[0], redoLines);
-        String secondMsg = salaryMessage(year, month, Half.SECOND, m.name, sc, m.second, second, procedures[1], discounts[1], redoLines);
+        String firstMsg = salaryMessage(year, month, Half.FIRST, m.name, sc, m.first, first, procedures[0], discounts[0], redoLines, noShowLines);
+        String secondMsg = salaryMessage(year, month, Half.SECOND, m.name, sc, m.second, second, procedures[1], discounts[1], redoLines, noShowLines);
         return new ProviderPayout(m.providerId, m.name, monthCounted, autoQualified,
                 isGranted && !autoQualified, autoQualified || isGranted,
                 first, second, monthZelle, monthCashToSalon,
@@ -559,5 +618,6 @@ public class SettlementPreviewService {
                                  List<SquareMonthAggregator.AttributedService> services,
                                  List<SquareMonthAggregator.UnmatchedLine> unmatched,
                                  String firstHalfMessage, String secondHalfMessage,
-                                 BigDecimal priceCutoff, String timezone, String syncedAt) {}
+                                 BigDecimal priceCutoff, String timezone, String syncedAt,
+                                 List<NoShowFeeService.NoShowRow> noShows) {}
 }
