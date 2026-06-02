@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type {
   AppUser,
+  ManualCredit,
   Me,
   OwnerCustomer,
   PrepaidPackage,
@@ -62,4 +63,6 @@ export const serverApi = {
   listOwnerCustomers: () => serverFetch<OwnerCustomer[]>(`/api/owner-customers`),
 
   listRedos: () => serverFetch<Redo[]>(`/api/redos`),
+
+  listManualCredits: () => serverFetch<ManualCredit[]>(`/api/manual-credits`),
 };
