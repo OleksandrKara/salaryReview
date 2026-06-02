@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { Spinner } from '../components/Spinner';
 import type { NoShowRow } from '../lib/types';
 
 const usd = (n: number) =>
@@ -22,14 +23,25 @@ export default function NoShowFeesPanel({ year, month }: { year: number; month: 
   const load = useCallback(() => {
     api.listNoShowFees(year, month).then(setRows).catch(() => setRows([]));
   }, [year, month]);
-  useEffect(load, [load]);
+  // Clear on month change so the spinner shows while the (Square-backed) fetch runs, rather than
+  // briefly showing the previous month's rows. Override actions call load() directly and keep the table.
+  useEffect(() => { setRows(null); load(); }, [load]);
 
   async function act(key: string, fn: () => Promise<void>) {
     setBusy(key);
     try { await fn(); load(); } finally { setBusy(null); }
   }
 
-  if (rows === null) return null;
+  if (rows === null) {
+    return (
+      <section className="mt-10">
+        <h2 className="mb-1 text-sm font-semibold">No-shows</h2>
+        <div className="flex items-center gap-3 rounded-lg px-4 py-6 text-sm text-zinc-500 ring-1 ring-zinc-200">
+          <Spinner className="h-5 w-5 text-zinc-400" /> Loading no-shows…
+        </div>
+      </section>
+    );
+  }
   const credited = rows.filter((r) => r.state === 'CREDITED' || r.state === 'CONFIRMED');
   const total = credited.reduce((s, r) => s + (r.feeAmount ?? 0), 0);
 
