@@ -1,0 +1,54 @@
+schema: spec-driven
+
+# Project context — shown to AI when creating artifacts (proposals, designs, specs, tasks).
+context: |
+  salaryReview — a multi-tenant SaaS that computes salon provider payroll from Square sales data.
+
+  Architecture
+  - Backend: Spring Boot 4 / Java 21, Maven (./mvnw). Postgres via JPA/Hibernate; Flyway forward-only
+    migrations under backend/src/main/resources/db/migration (highest is V17 — next new file is V18).
+    Spring Security form login (/api/login); roles PROVIDER, MANAGER, OWNER. Route gating in
+    SecurityConfig: /api/settlements/me/** = PROVIDER; /api/settlements/**, /api/prepaid/**,
+    /api/redos/**, /api/manual-credits/** = OWNER+MANAGER; /api/users/** = OWNER.
+  - Frontend: Next.js 16 App Router (see frontend/AGENTS.md — APIs differ from older Next; read
+    node_modules/next/dist/docs before writing Next code). Server components fetch via app/lib/serverApi
+    (forwards the JSESSIONID cookie). Browser mutations go through app/lib/api.ts → same-origin proxy
+    route handlers under app/api/* (forwardToBackend / proxyVoid / proxyJson / proxyGet) which hold the
+    httpOnly session and forward to BACKEND_URL — the browser never knows the backend host.
+  - Square Connect v2 REST integration is strictly READ-ONLY (real money, irreversible): Bookings,
+    Orders, Catalog (variations carry price + service id), Customers (no name search — list+filter),
+    Invoices search. Never write to Square.
+
+  Domain
+  - Commission engine is no-clawback tiered: 45/55 base, 50/50 once a provider hits the service
+    threshold (services with gross >= price cutoff count). Providers are paid on GROSS (menu price);
+    the salon absorbs discounts ("option A"). Card tips carry a processing-fee deduction.
+  - A month splits into two periods/halves: FIRST (days 1–15) and SECOND (16–end); providers approve
+    or request-correction per half.
+  - Synthetic line sources (prepaid draw-downs, redos, manual credits, owner comps) all fold into the
+    settlement via SettlementPreviewService.applyExtraLines as signed AttributedService lines
+    (channels CARD, CASH, CASH-NOTE, PREPAID, COMP, REDO, MANUAL).
+
+  Run & verify
+  - docker compose up -d --build (frontend 127.0.0.1:3000, backend :8080, postgres, adminer :8081;
+    db salonreview / user salon). Real owner login: olexandr.kara2.
+  - CI (GitHub Actions) runs Postgres + the full backend test suite + frontend tsc/build on every PR;
+    a deploy job runs on push to master. The contextLoads test needs a DB (fails locally without one,
+    passes in CI). New behaviour should come with a backend unit/integration test.
+
+  Conventions
+  - Stacked, small PRs against master; commits co-authored by Claude.
+  - Match surrounding code style; keep changes minimal and focused.
+
+# Per-artifact rules.
+rules:
+  proposal:
+    - Keep it tight; always include a "Non-goals" / out-of-scope section.
+    - State how the change is verified (which test, and the localhost/Square read-only check).
+  design:
+    - Note any new Flyway migration (next is V18) and any SecurityConfig role gating.
+    - Respect Square read-only — never propose writing to Square; messy real-world data is handled
+      through in-app records (e.g. manual credit), not by mutating Square.
+  tasks:
+    - Order backend (migration → domain/repo → service/engine → controller → security) before frontend
+      (proxy route → api.ts → page/component), then tests and verification.
