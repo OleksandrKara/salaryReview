@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { serverApi } from '../lib/serverApi';
 import type { Feedback, ProviderPayout } from '../lib/types';
+import AdminMenu from './AdminMenu';
 import GrantTierButton from './GrantTierButton';
 import SalaryButtons from './SalaryButtons';
 import { SyncBadge } from '../components/SyncBadge';
@@ -101,17 +102,10 @@ export default async function ReportsPage({
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
-      <div className="mb-1 flex items-center justify-between">
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-2xl font-semibold">Salary report</h1>
-          <Link href="/admin/prepaid" className="text-xs text-zinc-400 hover:text-zinc-600">Prepaid</Link>
-          <Link href="/admin/owner-customers" className="text-xs text-zinc-400 hover:text-zinc-600">Owner comps</Link>
-          <Link href="/admin/redos" className="text-xs text-zinc-400 hover:text-zinc-600">Redos</Link>
-          <Link href="/admin/manual-credits" className="text-xs text-zinc-400 hover:text-zinc-600">Manual</Link>
-          {me?.role === 'OWNER' && (
-            <Link href="/admin/users" className="text-xs text-zinc-400 hover:text-zinc-600">Users</Link>
-          )}
-          <a href="/api/logout" className="text-xs text-zinc-400 hover:text-zinc-600">Log out</a>
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-semibold sm:text-2xl">Salary report</h1>
+          <AdminMenu isOwner={me?.role === 'OWNER'} />
         </div>
         <div className="flex items-center gap-3 text-sm">
           <Link href={`/reports?year=${prev.year}&month=${prev.month}`} className="text-zinc-500 hover:text-zinc-800">← {MONTHS[prev.month - 1].slice(0, 3)}</Link>
