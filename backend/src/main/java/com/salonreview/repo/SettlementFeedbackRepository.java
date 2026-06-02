@@ -12,4 +12,6 @@ public interface SettlementFeedbackRepository extends JpaRepository<SettlementFe
     List<SettlementFeedback> findByYearAndMonth(int year, int month);
 
     Optional<SettlementFeedback> findByProviderIdAndYearAndMonthAndHalf(Long providerId, int year, int month, Half half);
+
+    void deleteByProviderIdAndYearAndMonthAndHalf(Long providerId, int year, int month, Half half);
 }
