@@ -3,6 +3,7 @@ import { serverApi } from '../lib/serverApi';
 import type { Feedback, ProviderPayout } from '../lib/types';
 import AdminMenu from './AdminMenu';
 import GrantTierButton from './GrantTierButton';
+import NoShowFeesPanel from './NoShowFeesPanel';
 import ClearFeedbackButton from './ClearFeedbackButton';
 import SalaryButtons from './SalaryButtons';
 import { SyncBadge } from '../components/SyncBadge';
@@ -231,6 +232,8 @@ export default async function ReportsPage({
         {report.diagnostics.ownerComps > 0 && `, ${report.diagnostics.ownerComps} owner comp${report.diagnostics.ownerComps > 1 ? 's' : ''}`}
         {report.diagnostics.unmatchedLineItems > 0 && ` · ${report.diagnostics.unmatchedLineItems} unmatched (${usd(report.diagnostics.unmatchedRevenue)})`}
       </p>
+
+      <NoShowFeesPanel year={year} month={month} />
     </main>
   );
 }
