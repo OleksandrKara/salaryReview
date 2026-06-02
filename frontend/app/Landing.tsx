@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import './landing.css';
 import { LANDING_MARKUP } from './landingMarkup';
+import { Spinner } from './components/Spinner';
 
 // AK.LUX.STUDIO landing (Claude Design) — the homepage at `/`. Marketing markup is injected as-is;
 // the sign-in modal is real React so the buttons reliably open it. Posts to /api/login, routes by role.
@@ -131,7 +132,13 @@ export default function Landing() {
                   <label className="checkbox"><input type="checkbox" defaultChecked /> Remember me</label>
                   {soon('Forgot password?')}
                 </div>
-                <button type="submit" className="btn full" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
+                <button type="submit" className="btn full" disabled={busy}>
+                  {busy ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                      <Spinner className="h-4 w-4" /> Signing in…
+                    </span>
+                  ) : 'Sign in'}
+                </button>
               </form>
               <div className="m-divider">or</div>
               <button className="m-square" disabled title="Coming soon" style={{ cursor: 'default', opacity: 0.6 }}>
@@ -144,7 +151,9 @@ export default function Landing() {
             <div className="m-success">
               <div className="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12l4 4L19 7" /></svg></div>
               <h3 style={{ marginTop: 0 }}>You&apos;re in</h3>
-              <p className="m-sub">Taking you to your dashboard…</p>
+              <p className="m-sub" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                <Spinner className="h-4 w-4" /> Taking you to your dashboard…
+              </p>
             </div>
           )}
         </div>

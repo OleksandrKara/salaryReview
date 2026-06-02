@@ -2,16 +2,12 @@ import Link from 'next/link';
 import { serverApi } from '../lib/serverApi';
 import type { Feedback, ProviderPayout } from '../lib/types';
 import AdminMenu from './AdminMenu';
+import MonthNav from '../components/MonthNav';
 import GrantTierButton from './GrantTierButton';
 import NoShowFeesPanel from './NoShowFeesPanel';
 import ClearFeedbackButton from './ClearFeedbackButton';
 import SalaryButtons from './SalaryButtons';
 import { SyncBadge } from '../components/SyncBadge';
-
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
 
 const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -120,11 +116,7 @@ export default async function ReportsPage({
           <h1 className="text-xl font-semibold sm:text-2xl">Salary report</h1>
           <AdminMenu isOwner={me?.role === 'OWNER'} />
         </div>
-        <div className="flex items-center gap-3 text-sm">
-          <Link href={`/reports?year=${prev.year}&month=${prev.month}`} className="text-zinc-500 hover:text-zinc-800">← {MONTHS[prev.month - 1].slice(0, 3)}</Link>
-          <span className="font-medium">{MONTHS[month - 1]} {year}</span>
-          <Link href={`/reports?year=${next.year}&month=${next.month}`} className="text-zinc-500 hover:text-zinc-800">{MONTHS[next.month - 1].slice(0, 3)} →</Link>
-        </div>
+        <MonthNav base="/reports" year={year} month={month} prev={prev} next={next} />
       </div>
       <div className="mb-3"><SyncBadge syncedAt={report.syncedAt} timezone={report.timezone} /></div>
       <p className="mb-6 text-xs text-zinc-500">

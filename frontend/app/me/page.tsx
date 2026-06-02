@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import { serverApi } from '../lib/serverApi';
+import MonthNav from '../components/MonthNav';
 import type { Feedback, HalfSettlement } from '../lib/types';
 import DiscountBreakdown from './DiscountBreakdown';
 import NoShowBreakdown from './NoShowBreakdown';
@@ -68,11 +68,7 @@ export default async function MyReportPage({
           <h1 className="text-xl font-semibold sm:text-2xl">My pay</h1>
           <a href="/api/logout" className="text-xs text-zinc-400 hover:text-zinc-600">Log out</a>
         </div>
-        <div className="flex items-center gap-3 text-sm">
-          <Link href={`/me?year=${prev.year}&month=${prev.month}`} className="text-zinc-500 hover:text-zinc-800">← {MONTHS[prev.month - 1].slice(0, 3)}</Link>
-          <span className="font-medium">{MONTHS[month - 1]} {year}</span>
-          <Link href={`/me?year=${next.year}&month=${next.month}`} className="text-zinc-500 hover:text-zinc-800">{MONTHS[next.month - 1].slice(0, 3)} →</Link>
-        </div>
+        <MonthNav base="/me" year={year} month={month} prev={prev} next={next} />
       </div>
       <div className="mb-4"><SyncBadge syncedAt={detail.syncedAt} timezone={detail.timezone} /></div>
 
