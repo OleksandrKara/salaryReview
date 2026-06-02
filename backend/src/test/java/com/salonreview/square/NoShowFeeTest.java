@@ -1,0 +1,131 @@
+package com.salonreview.square;
+
+import com.salonreview.commission.CommissionConfig;
+import com.salonreview.commission.TierCommissionEngine;
+import com.salonreview.domain.Provider;
+import com.salonreview.domain.SalonConfig;
+import com.salonreview.repo.*;
+import com.salonreview.service.ProviderDirectory;
+import com.salonreview.square.NoShowFeeService.NoShowMonth;
+import com.salonreview.square.NoShowFeeService.NoShowRow;
+import com.salonreview.square.SettlementPreviewService.ProviderDetail;
+import com.salonreview.square.SquareClient.*;
+import com.salonreview.square.SquareMonthAggregator.AttributedService;
+import com.salonreview.square.SquareMonthAggregator.MonthAggregation;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+
+/** No-show fee tracking: detection/pairing (incl. split + month membership) and the full-$25 payout fold. */
+class NoShowFeeTest {
+
+    private static Money usd(long cents) { return new Money(cents, "USD"); }
+    private static TeamMember member(String id, String first) {
+        return new TeamMember(id, first, "X", "ACTIVE", false, null, null);
+    }
+
+    @Test
+    @DisplayName("Detection: a paid $25 'Cancelation Policy' is split across a 2-provider no-show, in the paid month")
+    void detectsSplitsAndScopesToPaidMonth() {
+        SquareClient square = mock(SquareClient.class);
+        ProviderDirectory directory = mock(ProviderDirectory.class);
+        ProviderRepository providers = mock(ProviderRepository.class);
+        NoShowFeeOverrideRepository overrides = mock(NoShowFeeOverrideRepository.class);
+
+        when(square.locationTimeZone()).thenReturn("UTC");
+        when(square.allTeamMembers()).thenReturn(List.of(member("M1", "Susan"), member("M2", "Bayan")));
+        when(square.customerNames(any())).thenReturn(Map.of("CUST1", "Test Customer 1"));
+        when(overrides.findAll()).thenReturn(List.of());
+
+        // One NO_SHOW booking on May 10 with two providers (two segments), customer CUST1.
+        Booking noShow = new Booking("BK1", "NO_SHOW", "2026-05-10T17:00:00Z", "2026-05-10T17:00:00Z", "LOC",
+                "CUST1", null, null,
+                List.of(new AppointmentSegment("M1", "V1", 60), new AppointmentSegment("M2", "V2", 60)));
+        when(square.bookings(any(), any())).thenReturn(List.of(noShow));
+
+        // A completed $25 "Cancelation Policy" order for CUST1, paid May 12.
+        Order fee = new Order("O1", "LOC", "CUST1", "COMPLETED", "2026-05-12T20:00:00Z", "2026-05-12T20:00:00Z",
+                List.of(new OrderLineItem("u1", "Cancelation Policy", "1", null, usd(2500), usd(2500), usd(2500), null)),
+                null, null, List.of());
+        when(square.completedOrders(any(), any())).thenReturn(List.of(fee));
+
+        when(directory.resolveOrCreate(eq("M1"), any())).thenReturn(Provider.builder().id(1L).displayName("Susan").build());
+        when(directory.resolveOrCreate(eq("M2"), any())).thenReturn(Provider.builder().id(2L).displayName("Bayan").build());
+        when(providers.findById(1L)).thenReturn(Optional.of(Provider.builder().id(1L).displayName("Susan").build()));
+        when(providers.findById(2L)).thenReturn(Optional.of(Provider.builder().id(2L).displayName("Bayan").build()));
+
+        NoShowFeeService svc = new NoShowFeeService(square, directory, providers, overrides);
+
+        // In the payment month (May): $25 split evenly → $12.50 each, both CREDITED.
+        NoShowMonth may = svc.compute(2026, 5);
+        assertThat(may.linesByProvider().keySet()).containsExactlyInAnyOrder(1L, 2L);
+        assertThat(may.linesByProvider().get(1L).get(0).gross()).isEqualByComparingTo("12.50");
+        assertThat(may.linesByProvider().get(2L).get(0).gross()).isEqualByComparingTo("12.50");
+        assertThat(may.linesByProvider().get(1L).get(0).channel()).isEqualTo("NOSHOW");
+        assertThat(may.rows()).hasSize(2).allMatch(r -> "CREDITED".equals(r.state()));
+
+        // The no-show is in May, the fee is paid in May → it does NOT belong to April.
+        assertThat(svc.compute(2026, 4).rows()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Payout: a $25 no-show fee is paid to the provider in full (Zelle), not commissioned, no tier effect")
+    void paysFullFeeViaAdjustment() {
+        SquareMonthAggregator aggregator = mock(SquareMonthAggregator.class);
+        SalonConfigRepository salonConfigRepo = mock(SalonConfigRepository.class);
+        ProviderDirectory directory = mock(ProviderDirectory.class);
+        TierGrantRepository tierGrants = mock(TierGrantRepository.class);
+        SettlementFeedbackRepository feedback = mock(SettlementFeedbackRepository.class);
+        SquareClient square = mock(SquareClient.class);
+        ProviderRepository providerRepo = mock(ProviderRepository.class);
+        NoShowFeeService noShowFees = mock(NoShowFeeService.class);
+
+        SettlementPreviewService service = new SettlementPreviewService(aggregator, new TierCommissionEngine(),
+                salonConfigRepo, directory, tierGrants, feedback, square, mock(PrepaidRedemptionRepository.class),
+                mock(PrepaidPackageRepository.class), providerRepo, mock(RedoRepository.class),
+                mock(ManualCreditRepository.class), noShowFees);
+
+        SalonConfig sc = mock(SalonConfig.class);
+        when(sc.toCommissionConfig()).thenReturn(new CommissionConfig(60,
+                new BigDecimal("0.4500"), new BigDecimal("0.5000"), new BigDecimal("0.0350")));
+        when(sc.getServicePriceCutoff()).thenReturn(new BigDecimal("50.00"));
+        when(sc.getCardTipFeeRate()).thenReturn(new BigDecimal("0.0350"));
+        when(sc.getOwnerShortName()).thenReturn("AK");
+        when(salonConfigRepo.findById(1)).thenReturn(Optional.of(sc));
+        when(tierGrants.findByYearAndMonth(2026, 5)).thenReturn(List.of());
+        when(feedback.findByYearAndMonth(2026, 5)).thenReturn(List.of());
+        when(square.customerNames(any())).thenReturn(Map.of());
+        when(aggregator.aggregate(eq(2026), eq(5), any())).thenReturn(
+                new MonthAggregation(2026, 5, "UTC", List.of(), new SquareMonthAggregator.Diag(), List.of(), List.of()));
+        when(providerRepo.findById(1L)).thenReturn(Optional.of(Provider.builder().id(1L).displayName("Susan").build()));
+
+        // One $25 no-show credit (paid May 20 → SECOND half), folded as an adjustment.
+        AttributedService line = new AttributedService("", "Susan", "2026-05-20", "SECOND",
+                "No-show fee — Julia B.", new BigDecimal("25.00"), BigDecimal.ZERO, new BigDecimal("25.00"),
+                BigDecimal.ZERO, false, 0, 1, false, "NOSHOW", null, "BK1", "CUST1", "Julia B.");
+        NoShowRow row = new NoShowRow("BK1", 1L, "Susan", "Julia B.", "2026-05-20T17:00:00Z",
+                "2026-05-20", new BigDecimal("25.00"), "2026-05-20", "CREDITED");
+        when(noShowFees.compute(2026, 5)).thenReturn(new NoShowMonth(List.of(row), Map.of(1L, List.of(line))));
+
+        ProviderDetail detail = service.providerDetail(2026, 5, 1L);
+
+        AttributedService traced = detail.services().stream()
+                .filter(s -> "NOSHOW".equals(s.channel())).findFirst().orElseThrow();
+        assertThat(traced.gross()).isEqualByComparingTo("25.00");
+        // The full $25 reaches Zelle (not a commission share); card revenue and counts are untouched.
+        assertThat(detail.payout().secondHalf().zelleToProvider()).isEqualByComparingTo("25.00");
+        assertThat(detail.payout().secondHalf().cardRevenue()).isEqualByComparingTo("0.00");
+        assertThat(detail.payout().secondHalf().countedServices()).isEqualTo(0);
+        assertThat(detail.payout().monthCountedServices()).isEqualTo(0);
+        assertThat(detail.noShows()).hasSize(1);
+    }
+}

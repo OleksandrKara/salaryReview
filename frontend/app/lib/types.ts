@@ -183,10 +183,25 @@ export interface AttributedService {
   countedUnits: number; // main services this line counts toward the tier (gross >= cutoff)
   units: number; // total services this line represents (incl. add-ons below the cutoff)
   prepaid: boolean;
-  channel: 'CARD' | 'CASH' | 'CASH-NOTE' | 'PREPAID' | 'COMP' | 'REDO' | 'MANUAL';
+  channel: 'CARD' | 'CASH' | 'CASH-NOTE' | 'PREPAID' | 'COMP' | 'REDO' | 'MANUAL' | 'NOSHOW';
   time: string | null; // appointment start, salon-local, e.g. "2:30 PM"
   bookingId: string | null; // Square booking/reservation id (for the appointment link)
   customer: string | null; // short client name, e.g. "Donnah P."
+}
+
+// A no-show row — one per provider on the booking (a multi-provider no-show splits the fee).
+// state: CREDITED (fee detected/paid), NO_FEE (no fee collected), SUPPRESSED (auto-match dismissed),
+// CONFIRMED (manager credited an off-signal fee).
+export interface NoShowRow {
+  bookingId: string;
+  providerId: number;
+  providerName: string;
+  customer: string | null;
+  noShowAt: string; // ISO instant of the appointment
+  noShowDate: string; // salon-local date (YYYY-MM-DD)
+  feeAmount: number | null; // the $25 fee when paid/credited, else null
+  feePaidDate: string | null;
+  state: 'CREDITED' | 'NO_FEE' | 'SUPPRESSED' | 'CONFIRMED';
 }
 
 export interface UnmatchedLine {
@@ -211,6 +226,7 @@ export interface ProviderDetail {
   priceCutoff: number; // a "main service" is gross >= this (e.g. $60)
   timezone: string;
   syncedAt: string; // ISO instant — when this view was pulled live from Square
+  noShows: NoShowRow[]; // this provider's no-shows for the month, with fee status
 }
 
 export interface SettlementDiagnostics {

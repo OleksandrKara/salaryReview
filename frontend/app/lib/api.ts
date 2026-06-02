@@ -9,6 +9,7 @@ import type {
   AppUser,
   CustomerMatch,
   FeedbackStatus,
+  NoShowRow,
   PrepaidCandidate,
   PrepaidCreateRequest,
   PrepaidInvoice,
@@ -68,6 +69,26 @@ export const api = {
 
   undoRedemption: (redemptionId: number) =>
     proxyVoid(`/api/prepaid/redemptions/${redemptionId}`, 'DELETE'),
+
+  // No-show fees (owner/manager). Detected fees auto-credit; these are the override actions.
+  listNoShowFees: (year: number, month: number) =>
+    proxyGet<NoShowRow[]>(`/api/no-show-fees?year=${year}&month=${month}`),
+
+  confirmNoShowFee: (body: {
+    bookingId: string;
+    providerId: number;
+    amount?: number;
+    feePaidDate?: string;
+    customerName?: string | null;
+    noShowDate?: string;
+    note?: string;
+  }) => proxyVoid(`/api/no-show-fees/confirm`, 'POST', body),
+
+  suppressNoShowFee: (bookingId: string) =>
+    proxyVoid(`/api/no-show-fees/suppress?bookingId=${encodeURIComponent(bookingId)}`, 'POST'),
+
+  clearNoShowFee: (bookingId: string) =>
+    proxyVoid(`/api/no-show-fees/${encodeURIComponent(bookingId)}`, 'DELETE'),
 };
 
 async function proxyVoid(path: string, method: string, body?: unknown): Promise<void> {
