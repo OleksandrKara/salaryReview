@@ -53,6 +53,7 @@ public class SettlementPreviewService {
     private final PrepaidPackageRepository prepaidPackages;
     private final com.salonreview.repo.ProviderRepository providerRepo;
     private final com.salonreview.repo.RedoRepository redoRepo;
+    private final com.salonreview.repo.ManualCreditRepository manualCredits;
 
     public SettlementPreviewService(SquareMonthAggregator aggregator, TierCommissionEngine engine,
                                     SalonConfigRepository salonConfig, ProviderDirectory directory,
@@ -60,7 +61,8 @@ public class SettlementPreviewService {
                                     SquareClient square, PrepaidRedemptionRepository prepaidRedemptions,
                                     PrepaidPackageRepository prepaidPackages,
                                     com.salonreview.repo.ProviderRepository providerRepo,
-                                    com.salonreview.repo.RedoRepository redoRepo) {
+                                    com.salonreview.repo.RedoRepository redoRepo,
+                                    com.salonreview.repo.ManualCreditRepository manualCredits) {
         this.aggregator = aggregator;
         this.engine = engine;
         this.salonConfig = salonConfig;
@@ -72,6 +74,7 @@ public class SettlementPreviewService {
         this.prepaidPackages = prepaidPackages;
         this.redoRepo = redoRepo;
         this.providerRepo = providerRepo;
+        this.manualCredits = manualCredits;
     }
 
     /**
@@ -142,6 +145,29 @@ public class SettlementPreviewService {
         return byProvider;
     }
 
+    /**
+     * Manual service credits in this month, as synthetic lines keyed by provider — folded like a card
+     * service ({@link #applyExtraLines}): gross is the commission basis, discount is salon-absorbed,
+     * tip pays out, and it counts toward the tier when gross ≥ cutoff.
+     */
+    private Map<Long, List<AttributedService>> manualCreditLinesByProvider(int year, int month, BigDecimal cutoff) {
+        List<com.salonreview.domain.ManualCredit> all = manualCredits.findAllByOrderByServiceDateDesc();
+        if (all.isEmpty()) return Map.of();
+        Map<Long, List<AttributedService>> byProvider = new LinkedHashMap<>();
+        for (com.salonreview.domain.ManualCredit c : all) {
+            if (!inMonth(c.getServiceDate(), year, month)) continue;
+            boolean counts = c.getGross().compareTo(cutoff) >= 0;
+            BigDecimal net = c.getGross().subtract(c.getDiscount());
+            String half = c.getServiceDate().getDayOfMonth() <= 15 ? "FIRST" : "SECOND";
+            String svc = c.getServiceName() == null || c.getServiceName().isBlank() ? "Manual credit" : c.getServiceName();
+            byProvider.computeIfAbsent(c.getProviderId(), k -> new ArrayList<>())
+                    .add(new AttributedService("", providerName(c.getProviderId()), c.getServiceDate().toString(),
+                            half, svc, c.getGross(), c.getDiscount(), net, c.getTip(),
+                            counts, counts ? 1 : 0, 1, false, "MANUAL", null, null, null, null));
+        }
+        return byProvider;
+    }
+
     private static boolean inMonth(LocalDate d, int year, int month) {
         return d != null && d.getYear() == year && d.getMonthValue() == month;
     }
@@ -188,17 +214,17 @@ public class SettlementPreviewService {
         });
     }
 
-    /** Add prepaid revenue (gross, like card) and counted services to a person's half inputs. */
+    /** Add a synthetic line's card revenue, counted services and tip (gross, like card) to a person's halves. */
     private static void applyPrepaidToMerged(Merged m, List<AttributedService> lines) {
         if (lines == null) return;
         for (AttributedService l : lines) {
-            if ("FIRST".equals(l.half())) m.first = addCardAndCount(m.first, l.gross(), l.countedUnits());
-            else m.second = addCardAndCount(m.second, l.gross(), l.countedUnits());
+            if ("FIRST".equals(l.half())) m.first = addLine(m.first, l.gross(), l.countedUnits(), l.tip());
+            else m.second = addLine(m.second, l.gross(), l.countedUnits(), l.tip());
         }
     }
 
-    private static HalfInput addCardAndCount(HalfInput h, BigDecimal card, int counted) {
-        return new HalfInput(h.countedServices() + counted, h.cardRevenue().add(card), h.cardTips(),
+    private static HalfInput addLine(HalfInput h, BigDecimal card, int counted, BigDecimal tip) {
+        return new HalfInput(h.countedServices() + counted, h.cardRevenue().add(card), h.cardTips().add(tip),
                 h.cashGross(), h.cashCollected(), h.adjustments());
     }
 
@@ -228,6 +254,8 @@ public class SettlementPreviewService {
         // Redos move a service's commission from the original provider to the redo provider.
         Map<Long, List<AttributedService>> redo = redoLinesByProvider(year, month, cutoff);
         applyExtraLines(byPerson, procedures, discounts, redo);
+        // Manual credits: owner-entered exceptions, folded in like a card service.
+        applyExtraLines(byPerson, procedures, discounts, manualCreditLinesByProvider(year, month, cutoff));
 
         List<ProviderPayout> payouts = byPerson.values().stream()
                 .map(m -> toPayout(m, config, tierGrantedProviderIds, feedbackByProvider, sc, year, month,
@@ -311,12 +339,14 @@ public class SettlementPreviewService {
         MonthAggregation agg = aggregator.aggregate(year, month, sc.getServicePriceCutoff());
         Map<Long, List<AttributedService>> prepaid = prepaidLinesByProvider(year, month);
         Map<Long, List<AttributedService>> redo = redoLinesByProvider(year, month, sc.getServicePriceCutoff());
+        Map<Long, List<AttributedService>> manual = manualCreditLinesByProvider(year, month, sc.getServicePriceCutoff());
         Merged m = collapseToPersons(agg).get(providerId);
         if (m == null) {
-            // No Square activity this month — but the provider may still have prepaid / redo lines.
+            // No Square activity this month — but the provider may still have prepaid / redo / manual lines.
             List<AttributedService> extra = new ArrayList<>();
             if (prepaid.get(providerId) != null) extra.addAll(prepaid.get(providerId));
             if (redo.get(providerId) != null) extra.addAll(redo.get(providerId));
+            if (manual.get(providerId) != null) extra.addAll(manual.get(providerId));
             if (extra.isEmpty()) {
                 return new ProviderDetail(year, month, providerId, null, null, List.of(), agg.unmatched(), null, null,
                         sc.getServicePriceCutoff(), agg.timezone(), java.time.Instant.now().toString());
@@ -338,12 +368,14 @@ public class SettlementPreviewService {
         // into the trace lines, then re-sort chronologically.
         applyPrepaidToMerged(m, prepaid.get(providerId));
         applyPrepaidToMerged(m, redo.get(providerId)); // signed redo lines add/subtract the moved commission
+        applyPrepaidToMerged(m, manual.get(providerId)); // owner-entered manual credits
 
         List<AttributedService> lines = new ArrayList<>(matched.stream()
                 .map(s -> s.withCustomer(shortName(names.get(s.customerId()))))
                 .toList());
         if (prepaid.containsKey(providerId)) lines.addAll(prepaid.get(providerId));
         if (redo.containsKey(providerId)) lines.addAll(redo.get(providerId));
+        if (manual.containsKey(providerId)) lines.addAll(manual.get(providerId));
         lines = lines.stream()
                 .sorted(Comparator.comparing(AttributedService::date)
                         .thenComparing(s -> parseTime(s.time()))
