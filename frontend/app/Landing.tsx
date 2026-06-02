@@ -10,6 +10,7 @@ import { LANDING_MARKUP } from './landingMarkup';
 export default function Landing() {
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
+  const wasOpen = useRef(false); // track open→close so we only re-reveal on an actual close
   const [modalOpen, setModalOpen] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
@@ -29,6 +30,13 @@ export default function Landing() {
   // Lock scroll while open; Esc to close.
   useEffect(() => {
     document.body.style.overflow = modalOpen ? 'hidden' : '';
+    // Closing the modal re-renders the landing; its scroll-reveal blocks (opacity:0 until `.in`) can be
+    // left invisible afterwards. On an actual close, re-assert `.in` on the live blocks so nothing is
+    // ever stranded as an empty block. (Only on close — the first load still plays the reveal animation.)
+    if (!modalOpen && wasOpen.current) {
+      rootRef.current?.querySelectorAll<HTMLElement>('.reveal').forEach((el) => el.classList.add('in'));
+    }
+    wasOpen.current = modalOpen;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setModalOpen(false); };
     window.addEventListener('keydown', onKey);
     return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
