@@ -67,7 +67,7 @@ public class SettlementSelfController {
         // Strip the salon-wide unattributed lines for the provider's own view.
         ProviderDetail scoped = new ProviderDetail(d.year(), d.month(), d.providerId(), d.name(),
                 d.payout(), d.services(), List.of(), d.firstHalfMessage(), d.secondHalfMessage(), d.priceCutoff(),
-                d.timezone(), d.syncedAt());
+                d.timezone(), d.syncedAt(), d.noShows());
         return ResponseEntity.ok(scoped);
     }
 
