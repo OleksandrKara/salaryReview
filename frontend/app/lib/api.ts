@@ -38,6 +38,10 @@ export const api = {
   submitFeedback: (year: number, month: number, half: 'FIRST' | 'SECOND', status: FeedbackStatus, comment: string) =>
     proxyVoid(`/api/feedback?year=${year}&month=${month}&half=${half}`, 'POST', { status, comment }),
 
+  // Owner/manager clears a provider's response for a period.
+  clearFeedback: (providerId: number, year: number, month: number, half: 'FIRST' | 'SECOND') =>
+    proxyVoid(`/api/feedback?providerId=${providerId}&year=${year}&month=${month}&half=${half}`, 'DELETE'),
+
   // Prepaid packages (owner/manager).
   createPackage: (body: PrepaidCreateRequest) => proxyJson<PrepaidPackage>(`/api/prepaid`, 'POST', body),
 
