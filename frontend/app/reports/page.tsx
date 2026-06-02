@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { serverApi } from '../lib/serverApi';
 import type { Feedback, ProviderPayout } from '../lib/types';
 import GrantTierButton from './GrantTierButton';
+import ClearFeedbackButton from './ClearFeedbackButton';
 import SalaryButtons from './SalaryButtons';
 import { SyncBadge } from '../components/SyncBadge';
 
@@ -53,19 +54,30 @@ function MobileMoney({ label, zelle, cash, bonus = 0, strong = false }: { label:
   );
 }
 
-// A provider responds per period now — show a small badge per half (1–15 / 16–end).
-function HalfBadge({ label, fb }: { label: string; fb: Feedback | null }) {
+// A provider responds per period now — show a small badge per half (1–15 / 16–end), with an owner/
+// manager "×" to clear (undo) that response.
+function HalfBadge({ providerId, year, month, half, label, fb }: {
+  providerId: number; year: number; month: number; half: 'FIRST' | 'SECOND'; label: string; fb: Feedback | null;
+}) {
   if (!fb) return null;
-  if (fb.status === 'APPROVED')
-    return <span title={`${label}: approved`} className="rounded bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700 ring-1 ring-green-300">{label} ✓</span>;
-  return <span title={fb.comment ? `${label}: ${fb.comment}` : `${label}: changes requested`} className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700 ring-1 ring-red-300">{label} ⚠</span>;
+  const approved = fb.status === 'APPROVED';
+  const cls = approved
+    ? 'bg-green-50 text-green-700 ring-green-300'
+    : 'bg-red-50 text-red-700 ring-red-300';
+  const title = approved ? `${label}: approved` : (fb.comment ? `${label}: ${fb.comment}` : `${label}: changes requested`);
+  return (
+    <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ring-1 ${cls}`}>
+      <span title={title}>{label} {approved ? '✓' : '⚠'}</span>
+      <ClearFeedbackButton providerId={providerId} year={year} month={month} half={half} />
+    </span>
+  );
 }
 
-function FeedbackBadge({ p }: { p: ProviderPayout }) {
+function FeedbackBadge({ p, year, month }: { p: ProviderPayout; year: number; month: number }) {
   return (
     <>
-      <HalfBadge label="1–15" fb={p.firstFeedback} />
-      <HalfBadge label="16–end" fb={p.secondFeedback} />
+      <HalfBadge providerId={p.providerId} year={year} month={month} half="FIRST" label="1–15" fb={p.firstFeedback} />
+      <HalfBadge providerId={p.providerId} year={year} month={month} half="SECOND" label="16–end" fb={p.secondFeedback} />
     </>
   );
 }
@@ -130,7 +142,7 @@ export default async function ReportsPage({
         {report.providers.map((p) => (
           <div key={p.providerId} className="rounded-lg p-4 ring-1 ring-zinc-200">
             <div className="flex items-start justify-between gap-2">
-              <span className="flex flex-wrap items-center gap-2 font-medium">{p.name}<FeedbackBadge p={p} /></span>
+              <span className="flex flex-wrap items-center gap-2 font-medium">{p.name}<FeedbackBadge p={p} year={year} month={month} /></span>
               <Link href={`/reports/${p.providerId}?year=${year}&month=${month}`}
                 className="shrink-0 text-xs text-zinc-400 hover:text-zinc-700">Details →</Link>
             </div>
@@ -174,7 +186,7 @@ export default async function ReportsPage({
                 <td className="px-3 py-2 font-medium">
                   <span className="flex items-center gap-2">
                     {p.name}
-                    <FeedbackBadge p={p} />
+                    <FeedbackBadge p={p} year={year} month={month} />
                     <Link href={`/reports/${p.providerId}?year=${year}&month=${month}`}
                       className="text-xs font-normal text-zinc-400 hover:text-zinc-700">Details →</Link>
                   </span>
