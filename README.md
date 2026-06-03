@@ -252,6 +252,11 @@ salaryReview/
   hides this; `next build` catches it. Generic bound at the call site.
 - **BigDecimal HALF_UP at scale 2.** No `double`. Money rounding is a known
   footgun for tools like this.
+- **Square reads are cached briefly, with an honest timestamp + manual Sync.**
+  Settlement views read Square live (read‑only) but cache it for speed; the
+  "synced" badge shows the real last‑fetch time and a Sync button forces a fresh
+  pull. Full details — TTLs, the Sync endpoint, and session lifetime — in
+  [`docs/CACHING.md`](docs/CACHING.md).
 
 ---
 

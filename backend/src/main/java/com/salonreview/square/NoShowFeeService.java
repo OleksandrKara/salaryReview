@@ -101,12 +101,15 @@ public class NoShowFeeService {
 
         // No-shows from 2 months before the month; fee charges from the month start to 2 months after
         // (so an in-month no-show paid later is excluded here and surfaces in its payment month instead).
-        List<Booking> bookings = square.bookings(
-                monthStart.minusMonths(LOOKBACK_MONTHS).atStartOfDay(zone).toInstant(),
-                monthEnd.plusDays(1).atStartOfDay(zone).toInstant());
-        List<Order> orders = square.completedOrders(
-                monthStart.atStartOfDay(zone).toInstant(),
-                monthEnd.plusMonths(LOOKBACK_MONTHS).plusDays(1).atStartOfDay(zone).toInstant());
+        Instant bookFrom = monthStart.minusMonths(LOOKBACK_MONTHS).atStartOfDay(zone).toInstant();
+        Instant bookTo = monthEnd.plusDays(1).atStartOfDay(zone).toInstant();
+        Instant orderFrom = monthStart.atStartOfDay(zone).toInstant();
+        Instant orderTo = monthEnd.plusMonths(LOOKBACK_MONTHS).plusDays(1).atStartOfDay(zone).toInstant();
+        // Independent Square reads — fetch concurrently to cut cold latency.
+        var bookingsF = java.util.concurrent.CompletableFuture.supplyAsync(() -> square.bookings(bookFrom, bookTo));
+        var ordersF = java.util.concurrent.CompletableFuture.supplyAsync(() -> square.completedOrders(orderFrom, orderTo));
+        List<Booking> bookings = bookingsF.join();
+        List<Order> orders = ordersF.join();
 
         Map<String, String> memberName = new HashMap<>();
         for (TeamMember tm : square.allTeamMembers()) memberName.put(tm.id(), tm.fullName());
