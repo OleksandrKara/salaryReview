@@ -65,7 +65,8 @@ public class SquareClient {
     // Short-TTL cache of read-only Square data. A single settlement render pulls the same windows several
     // times over (the month aggregator, the no-show detection, and the no-show panel all hit overlapping
     // bookings/orders/team-members), and switching months re-pulls everything; without this each is a
-    // fresh round of paginated HTTP. Brief staleness is fine — the UI already shows a "synced" timestamp.
+    // fresh round of paginated HTTP. Brief staleness is fine — the UI shows a "synced" timestamp and a
+    // Sync button. TTLs, the sync endpoint and the freshness model are documented in docs/CACHING.md.
     private record Cached<T>(T value, long expiresAtNanos) {}
     private final Map<String, Cached<?>> cache = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile Instant lastFetchAt = Instant.now();
