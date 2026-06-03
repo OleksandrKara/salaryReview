@@ -12,15 +12,7 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+/* The app is light-only — no dark-mode UI. (The create-next-app `prefers-color-scheme: dark` block was
+   removed; it flipped the body to near-black under OS dark mode while the light content stayed put.)
+   The body theme (paper background, fonts, colors) is owned by landing.css, which is imported app-wide
+   in the root layout — so there's a single, deterministic body style across every page. */
