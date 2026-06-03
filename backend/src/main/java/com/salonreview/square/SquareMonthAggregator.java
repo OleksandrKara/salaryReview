@@ -147,11 +147,17 @@ public class SquareMonthAggregator {
                     if (li.catalogObjectId() == null) continue;
                     Match m = match(segIndex, o.customerId(), li.catalogObjectId(), orderDay, checkoutAt, diag);
                     if (m == null) {
-                        diag.unmatchedLineItems++;
-                        BigDecimal gross = lineRevenue(li);
-                        diag.unmatchedRevenue = diag.unmatchedRevenue.add(gross);
-                        unmatched.add(new UnmatchedLine(str(orderDay), li.name(), gross,
-                                cashOrder ? "CASH" : "CARD", o.customerId(), null));
+                        // Only this month's unattributed sales. The order query is padded a couple of days
+                        // each side so late checkouts / timezone-boundary orders still match a booking; but
+                        // an unmatched line's only date is its order day, so off-month padding orders (last
+                        // day of the prev month, first days of the next) must not show in this month's list.
+                        if (orderDay != null && orderDay.getYear() == year && orderDay.getMonthValue() == month) {
+                            diag.unmatchedLineItems++;
+                            BigDecimal gross = lineRevenue(li);
+                            diag.unmatchedRevenue = diag.unmatchedRevenue.add(gross);
+                            unmatched.add(new UnmatchedLine(str(orderDay), li.name(), gross,
+                                    cashOrder ? "CASH" : "CARD", o.customerId(), null));
+                        }
                         continue;
                     }
                     Seg seg = m.seg;
