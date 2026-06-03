@@ -66,8 +66,11 @@ public class SquareMonthAggregator {
         Map<String, String> nameById = new HashMap<>();
         for (TeamMember tm : square.allTeamMembers()) nameById.put(tm.id(), tm.fullName());
 
-        List<Booking> bookings = square.bookings(from, to);
-        List<Order> orders = square.completedOrders(from, to);
+        // Bookings and orders are independent Square reads; fetch them concurrently to halve cold latency.
+        var bookingsF = java.util.concurrent.CompletableFuture.supplyAsync(() -> square.bookings(from, to));
+        var ordersF = java.util.concurrent.CompletableFuture.supplyAsync(() -> square.completedOrders(from, to));
+        List<Booking> bookings = bookingsF.join();
+        List<Order> orders = ordersF.join();
 
         // Square customers who are owner(s)/family: services to them aren't charged (no order), but the
         // provider is still owed their commission — see the owner-comp pass below.

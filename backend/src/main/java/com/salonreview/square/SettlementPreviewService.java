@@ -179,6 +179,12 @@ public class SettlementPreviewService {
         return providerRepo.findById(providerId).map(com.salonreview.domain.Provider::getDisplayName).orElse("#" + providerId);
     }
 
+    /** When the data was last actually pulled from Square (the honest "synced" badge); now() if unknown. */
+    private String syncedAt() {
+        java.time.Instant t = square.lastFetchAt();
+        return (t == null ? java.time.Instant.now() : t).toString();
+    }
+
     /**
      * A signed REDO trace line (positive = gained by the redo provider, negative = removed from
      * original). {@code counterpart} (the other provider's name) is stashed in the customer field so
@@ -295,7 +301,7 @@ public class SettlementPreviewService {
                 .sorted(Comparator.comparing(p -> p.name().toLowerCase())).toList();
 
         return new SettlementPreview(year, month, agg.timezone(), config, cutoff, payouts, agg.diagnostics(),
-                java.time.Instant.now().toString());
+                syncedAt());
     }
 
     /**
@@ -386,7 +392,7 @@ public class SettlementPreviewService {
             if (noShow.get(providerId) != null) extra.addAll(noShow.get(providerId));
             if (extra.isEmpty()) {
                 return new ProviderDetail(year, month, providerId, null, null, List.of(), agg.unmatched(), null, null,
-                        sc.getServicePriceCutoff(), agg.timezone(), java.time.Instant.now().toString(), myNoShows);
+                        sc.getServicePriceCutoff(), agg.timezone(), syncedAt(), myNoShows);
             }
             m = new Merged(providerId, extra.get(0).providerName());
         }
@@ -438,7 +444,7 @@ public class SettlementPreviewService {
                 redo.getOrDefault(providerId, List.of()), noShow.getOrDefault(providerId, List.of()));
         return new ProviderDetail(year, month, providerId, m.name, payout, lines, agg.unmatched(),
                 payout.firstHalfMessage(), payout.secondHalfMessage(), sc.getServicePriceCutoff(),
-                agg.timezone(), java.time.Instant.now().toString(), myNoShows);
+                agg.timezone(), syncedAt(), myNoShows);
     }
 
     /** The copy-pasteable {@code #salary} block for one half, matching the salon's manual format. */
