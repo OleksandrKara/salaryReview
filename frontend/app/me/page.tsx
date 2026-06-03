@@ -7,6 +7,7 @@ import ServiceBreakdown from './ServiceBreakdown';
 import SettlementFeedbackForm from './SettlementFeedbackForm';
 import SalaryPopupButton from '../components/SalaryPopupButton';
 import { SyncBadge } from '../components/SyncBadge';
+import { InfoTip } from '../components/InfoTip';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -113,7 +114,7 @@ export default async function MyReportPage({
 function Headline({ label, value, big, tip }: { label: string; value: string; big?: boolean; tip?: string }) {
   return (
     <div>
-      <div className="text-xs text-zinc-300" title={tip}>{label}{tip && <span className="ml-0.5 cursor-help text-zinc-400">ⓘ</span>}</div>
+      <div className="text-xs text-zinc-300">{label}{tip && <InfoTip text={tip} />}</div>
       <div className={`mt-1 font-semibold tabular-nums ${big ? 'text-2xl' : 'text-xl'}`}>{value}</div>
     </div>
   );
@@ -167,7 +168,7 @@ function Row({ label, value, strong, hint, tip }: { label: string; value: string
   const tone = hint ? 'text-amber-600' : 'text-zinc-500';
   return (
     <div className={`flex items-baseline justify-between ${hint ? 'text-xs' : ''}`}>
-      <dt className={tone} title={tip}>{label}{tip && <span className="ml-0.5 cursor-help text-zinc-400">ⓘ</span>}</dt>
+      <dt className={tone}>{label}{tip && <InfoTip text={tip} />}</dt>
       <dd className={`tabular-nums ${strong ? 'font-semibold text-zinc-900' : hint ? 'text-amber-600' : ''}`}>{value}</dd>
     </div>
   );
