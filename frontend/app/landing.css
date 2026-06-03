@@ -33,6 +33,9 @@
 
 html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
 
+/* These page-wide styles are the salon's "AK.LUX.STUDIO" theme — applied app-wide (landing.css is
+   imported in the root layout), so /reports and /me get the same paper background + serif headings as
+   the landing, consistently on every load. */
 body {
   margin: 0;
   font-family: var(--sans);

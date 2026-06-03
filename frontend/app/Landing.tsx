@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import './landing.css';
+// landing.css is imported app-wide in the root layout (the salon theme applies to every page).
 import { LANDING_MARKUP } from './landingMarkup';
 import { Spinner } from './components/Spinner';
 
