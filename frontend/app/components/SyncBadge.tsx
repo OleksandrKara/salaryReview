@@ -26,7 +26,7 @@ export function SyncBadge({ syncedAt, timezone }: { syncedAt: string; timezone?:
         </svg>
         Synced with Square{time && <span className="font-normal text-emerald-600">· {time}</span>}
       </span>
-      <SyncButton />
+      <SyncButton syncedAt={syncedAt} />
     </span>
   );
 }
