@@ -12,12 +12,10 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* The app is light-only — no dark-mode UI. The create-next-app `prefers-color-scheme: dark` block was
+   removed: under OS dark mode it flipped the body to near-black while the light-mode content stayed put,
+   so non-landing pages (/reports, /me) looked "unstyled" after a hard refresh. The landing page hid it
+   because landing.css sets an unconditional light body background. */
 
 body {
   background: var(--background);
