@@ -20,15 +20,22 @@ keep it from ever silently going stale.
 
 | Data | Method | TTL |
 |------|--------|-----|
-| Bookings (per window) | `bookings(start,end)` | **60s** |
-| Completed orders (per window) | `completedOrders(start,end)` | **60s** |
+| Bookings (per window) | `bookings(start,end)` | **10 min** |
+| Completed orders (per window) | `completedOrders(start,end)` | **10 min** |
 | Team members | `allTeamMembers` / `activeTeamMembers` | 5 min |
 | Catalog prices / names (per id set) | `catalogPrices` / `catalogNames` | 10 min |
 | Location timezone | `locationTimeZone` | 1 h |
 | Customer names | `customerNames` | own process‑wide map (names rarely change) |
 
-**Staleness guarantee:** the money‑moving tables (bookings, orders) are at most **~60s** behind Square.
-After a TTL lapses, the next page load pulls fresh automatically — no action needed.
+**Why 10 min for bookings/orders?** This is a periodic‑review tool, not a live dashboard — payroll is
+reviewed after shifts and at period close, not monitored second‑by‑second. 10 minutes keeps a whole
+review sitting instant (the 30‑min idle session bounds a sitting anyway), and the honest badge + Sync
+button mean anyone who needs fresher data sees the age and can force a pull. Past/closed months never
+change, so caching them is risk‑free; only the current month accrues new checkouts. 5 min is the
+conservative end, 15 min the upper end still comfortable given Sync. It's a one‑line tune in `SquareClient`.
+
+**Staleness guarantee:** automatically, the money‑moving tables (bookings, orders) are at most **~10 min**
+behind Square; the next load after the TTL lapses pulls fresh — and **Sync** makes it current instantly.
 
 Also: within the aggregator and the no‑show scan, the independent **bookings + orders** fetches run
 **concurrently** (`CompletableFuture`), which roughly halves cold latency.
