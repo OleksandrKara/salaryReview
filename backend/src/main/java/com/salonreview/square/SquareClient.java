@@ -124,7 +124,7 @@ public class SquareClient {
      * single query at 31 days, so the range is fetched in &le;30-day chunks and de-duplicated by id.
      */
     public List<Booking> bookings(Instant start, Instant end) {
-        return cached("bookings:" + start + ":" + end, Duration.ofSeconds(60), () -> {
+        return cached("bookings:" + start + ":" + end, Duration.ofMinutes(3), () -> {
             Map<String, Booking> byId = new LinkedHashMap<>();
             Instant windowStart = start;
             while (windowStart.isBefore(end)) {
@@ -162,7 +162,7 @@ public class SquareClient {
 
     /** Completed orders closed in [start, end) for the configured location, following pagination. */
     public List<Order> completedOrders(Instant start, Instant end) {
-        return cached("orders:" + start + ":" + end, Duration.ofSeconds(60), () -> completedOrdersUncached(start, end));
+        return cached("orders:" + start + ":" + end, Duration.ofMinutes(3), () -> completedOrdersUncached(start, end));
     }
 
     private List<Order> completedOrdersUncached(Instant start, Instant end) {
