@@ -62,15 +62,41 @@ public class SquareClient {
         this.locationId = props.getLocationId();
     }
 
+    // Short-TTL cache of read-only Square data. A single settlement render pulls the same windows several
+    // times over (the month aggregator, the no-show detection, and the no-show panel all hit overlapping
+    // bookings/orders/team-members), and switching months re-pulls everything; without this each is a
+    // fresh round of paginated HTTP. Brief staleness is fine — the UI shows a "synced" timestamp and a
+    // Sync button. TTLs, the sync endpoint and the freshness model are documented in docs/CACHING.md.
+    private record Cached<T>(T value, long expiresAtNanos) {}
+    private final Map<String, Cached<?>> cache = new java.util.concurrent.ConcurrentHashMap<>();
+    private volatile Instant lastFetchAt = Instant.now();
+
+    @SuppressWarnings("unchecked")
+    private <T> T cached(String key, Duration ttl, java.util.function.Supplier<T> loader) {
+        Cached<?> c = cache.get(key);
+        long now = System.nanoTime();
+        if (c != null && c.expiresAtNanos() > now) return (T) c.value();
+        T value = loader.get();
+        cache.put(key, new Cached<>(value, now + ttl.toNanos()));
+        lastFetchAt = Instant.now();
+        return value;
+    }
+
+    /** When the most recent live Square pull happened (cache miss) — for an honest "synced N ago" badge. */
+    public Instant lastFetchAt() { return lastFetchAt; }
+
+    /** Drop all cached Square reads so the next call pulls fresh — backs the on-demand "Sync now" action. */
+    public void invalidate() { cache.clear(); }
+
     /** Active team members (the providers, as Square knows them). */
     public List<TeamMember> activeTeamMembers() {
-        var body = Map.of("query", Map.of("filter", Map.of("status", "ACTIVE")));
-        return searchTeamMembers(body);
+        return cached("teamMembers:active", Duration.ofMinutes(5),
+                () -> searchTeamMembers(Map.of("query", Map.of("filter", Map.of("status", "ACTIVE")))));
     }
 
     /** All team members, including deactivated ones (so historical bookings still resolve a name). */
     public List<TeamMember> allTeamMembers() {
-        return searchTeamMembers(Map.of());
+        return cached("teamMembers:all", Duration.ofMinutes(5), () -> searchTeamMembers(Map.of()));
     }
 
     private List<TeamMember> searchTeamMembers(Object body) {
@@ -84,11 +110,13 @@ public class SquareClient {
 
     /** IANA timezone of the configured location (e.g. "America/Los_Angeles"), for local-day bucketing. */
     public String locationTimeZone() {
-        LocationResponse resp = http.get()
-                .uri("/v2/locations/{id}", locationId)
-                .retrieve()
-                .body(LocationResponse.class);
-        return resp == null || resp.location() == null ? null : resp.location().timezone();
+        return cached("locationTimeZone", Duration.ofHours(1), () -> {
+            LocationResponse resp = http.get()
+                    .uri("/v2/locations/{id}", locationId)
+                    .retrieve()
+                    .body(LocationResponse.class);
+            return resp == null || resp.location() == null ? null : resp.location().timezone();
+        });
     }
 
     /**
@@ -96,15 +124,17 @@ public class SquareClient {
      * single query at 31 days, so the range is fetched in &le;30-day chunks and de-duplicated by id.
      */
     public List<Booking> bookings(Instant start, Instant end) {
-        Map<String, Booking> byId = new LinkedHashMap<>();
-        Instant windowStart = start;
-        while (windowStart.isBefore(end)) {
-            Instant windowEnd = windowStart.plus(Duration.ofDays(30));
-            if (windowEnd.isAfter(end)) windowEnd = end;
-            for (Booking b : bookingsWindow(windowStart, windowEnd)) byId.putIfAbsent(b.id(), b);
-            windowStart = windowEnd;
-        }
-        return new ArrayList<>(byId.values());
+        return cached("bookings:" + start + ":" + end, Duration.ofSeconds(60), () -> {
+            Map<String, Booking> byId = new LinkedHashMap<>();
+            Instant windowStart = start;
+            while (windowStart.isBefore(end)) {
+                Instant windowEnd = windowStart.plus(Duration.ofDays(30));
+                if (windowEnd.isAfter(end)) windowEnd = end;
+                for (Booking b : bookingsWindow(windowStart, windowEnd)) byId.putIfAbsent(b.id(), b);
+                windowStart = windowEnd;
+            }
+            return new ArrayList<>(byId.values());
+        });
     }
 
     private List<Booking> bookingsWindow(Instant start, Instant end) {
@@ -132,6 +162,10 @@ public class SquareClient {
 
     /** Completed orders closed in [start, end) for the configured location, following pagination. */
     public List<Order> completedOrders(Instant start, Instant end) {
+        return cached("orders:" + start + ":" + end, Duration.ofSeconds(60), () -> completedOrdersUncached(start, end));
+    }
+
+    private List<Order> completedOrdersUncached(Instant start, Instant end) {
         List<Order> all = new ArrayList<>();
         String cursor = null;
         do {
@@ -159,42 +193,44 @@ public class SquareClient {
 
     /** Catalog list price per service-variation id, for the price-cutoff counting. */
     public Map<String, BigDecimal> catalogPrices(Collection<String> variationIds) {
-        Map<String, BigDecimal> prices = new HashMap<>();
-        List<String> ids = variationIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
-        if (ids.isEmpty()) return prices;
-
-        CatalogBatchRetrieveResponse resp = http.post()
-                .uri("/v2/catalog/batch-retrieve")
-                .body(Map.of("object_ids", ids))
-                .retrieve()
-                .body(CatalogBatchRetrieveResponse.class);
-        if (resp == null || resp.objects() == null) return prices;
-        for (CatalogObject obj : resp.objects()) {
-            if (obj.itemVariationData() != null && obj.itemVariationData().priceMoney() != null) {
-                prices.put(obj.id(), toDollars(obj.itemVariationData().priceMoney()));
+        List<String> ids = variationIds.stream().filter(id -> id != null && !id.isBlank()).distinct().sorted().toList();
+        if (ids.isEmpty()) return new HashMap<>();
+        return cached("catalogPrices:" + ids, Duration.ofMinutes(10), () -> {
+            Map<String, BigDecimal> prices = new HashMap<>();
+            CatalogBatchRetrieveResponse resp = http.post()
+                    .uri("/v2/catalog/batch-retrieve")
+                    .body(Map.of("object_ids", ids))
+                    .retrieve()
+                    .body(CatalogBatchRetrieveResponse.class);
+            if (resp == null || resp.objects() == null) return prices;
+            for (CatalogObject obj : resp.objects()) {
+                if (obj.itemVariationData() != null && obj.itemVariationData().priceMoney() != null) {
+                    prices.put(obj.id(), toDollars(obj.itemVariationData().priceMoney()));
+                }
             }
-        }
-        return prices;
+            return prices;
+        });
     }
 
     /** Display name per service-variation id (for labelling bookings, which carry no service name). */
     public Map<String, String> catalogNames(Collection<String> variationIds) {
-        Map<String, String> names = new HashMap<>();
-        List<String> ids = variationIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
-        if (ids.isEmpty()) return names;
-
-        CatalogBatchRetrieveResponse resp = http.post()
-                .uri("/v2/catalog/batch-retrieve")
-                .body(Map.of("object_ids", ids))
-                .retrieve()
-                .body(CatalogBatchRetrieveResponse.class);
-        if (resp == null || resp.objects() == null) return names;
-        for (CatalogObject obj : resp.objects()) {
-            if (obj.itemVariationData() != null && obj.itemVariationData().name() != null) {
-                names.put(obj.id(), obj.itemVariationData().name());
+        List<String> ids = variationIds.stream().filter(id -> id != null && !id.isBlank()).distinct().sorted().toList();
+        if (ids.isEmpty()) return new HashMap<>();
+        return cached("catalogNames:" + ids, Duration.ofMinutes(10), () -> {
+            Map<String, String> names = new HashMap<>();
+            CatalogBatchRetrieveResponse resp = http.post()
+                    .uri("/v2/catalog/batch-retrieve")
+                    .body(Map.of("object_ids", ids))
+                    .retrieve()
+                    .body(CatalogBatchRetrieveResponse.class);
+            if (resp == null || resp.objects() == null) return names;
+            for (CatalogObject obj : resp.objects()) {
+                if (obj.itemVariationData() != null && obj.itemVariationData().name() != null) {
+                    names.put(obj.id(), obj.itemVariationData().name());
+                }
             }
-        }
-        return names;
+            return names;
+        });
     }
 
     // Square's bulk-retrieve-customers endpoint 404s on this account, so names are fetched one GET

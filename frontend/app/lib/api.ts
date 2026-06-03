@@ -89,6 +89,9 @@ export const api = {
 
   clearNoShowFee: (bookingId: string) =>
     proxyVoid(`/api/no-show-fees/${encodeURIComponent(bookingId)}`, 'DELETE'),
+
+  // Force a fresh pull from Square (busts the read cache) — the "Sync now" button.
+  syncSquare: () => proxyVoid(`/api/sync`, 'POST'),
 };
 
 async function proxyVoid(path: string, method: string, body?: unknown): Promise<void> {
