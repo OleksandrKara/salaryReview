@@ -53,7 +53,6 @@ export default function ServiceLinesTable({
   const tipTotal = sumTip(lines); // gross tip total — the sum of the Tip column
   const discountTotal = lines.reduce((s, l) => s + l.discount, 0);
   const grossTotal = sumGross(lines); // the actual sum of the Gross column (all channels, not just card)
-  const netTotal = grossTotal - discountTotal;
   // Gross split by transaction type, for the totals-row tooltip (so the gross total is traceable).
   const grossByChannel = lines.reduce<Record<string, number>>((m, l) => { m[l.channel] = (m[l.channel] ?? 0) + l.gross; return m; }, {});
   const channelLabel: Record<string, string> = {
@@ -112,7 +111,9 @@ export default function ServiceLinesTable({
         <div className="space-y-1 rounded-lg bg-zinc-50 px-3 py-2 text-xs ring-1 ring-zinc-200">
           <div className="font-medium">{summary}</div>
           <div className="flex items-baseline justify-between gap-2 text-zinc-500">
-            <span>card {usd(settlement.cardRevenue)} · tips {usd(settlement.tipsAfterFee)}{settlement.tierBonus > 0 && ` · bonus ${usd(settlement.tierBonus)}`}</span>
+            <span>
+              gross {usd(grossTotal)}{Object.keys(grossByChannel).length > 1 && <InfoTip text={grossBreakdown} label="Gross by transaction type" />} · tips {usd(settlement.tipsAfterFee)}{settlement.tierBonus > 0 && ` · bonus ${usd(settlement.tierBonus)}`}
+            </span>
             <span className="font-semibold text-zinc-900">→ {usd(settlement.zelleToProvider)}</span>
           </div>
         </div>
@@ -190,7 +191,7 @@ export default function ServiceLinesTable({
                 </span>
               </td>
               <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{discountTotal > 0 ? `−${usd(discountTotal)}` : '—'}</td>
-              <td className="px-3 py-2 text-right tabular-nums font-medium">{usd(netTotal)}</td>
+              <td className="px-3 py-2" />
               <td className="px-3 py-2 text-right tabular-nums font-medium">{usd(tipTotal)}</td>
               <td className="px-3 py-2 text-center font-medium">{settlement.countedServices}</td>
             </tr>
