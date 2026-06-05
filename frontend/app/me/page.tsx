@@ -138,7 +138,7 @@ function MonthBonusNote({ bonus, rebate, monthCard }: { bonus: number; rebate: n
   return (
     <div className="mt-4 flex items-start gap-2 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200">
       <span aria-hidden>🎉</span>
-      <div>
+      <div className="min-w-0">
         <div className="font-medium">50/50 tier reached — month bonus {usd(total)}<InfoTip text={detail} /></div>
         <p className="mt-0.5 text-xs text-amber-700">
           {rebate > 0 && <>{usd(bonus)} on card + {usd(rebate)} cash rebate · </>}covers the whole month, paid inside your 16–end total below.
