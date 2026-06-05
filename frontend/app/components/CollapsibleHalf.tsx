@@ -18,6 +18,7 @@ export default function CollapsibleHalf({
   tierApplied,
   baseRate,
   defaultOpen = false,
+  showSalary = true,
 }: {
   title: string;
   lines: AttributedService[];
@@ -26,6 +27,7 @@ export default function CollapsibleHalf({
   tierApplied: boolean;
   baseRate: number;
   defaultOpen?: boolean;
+  showSalary?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const gross = lines.reduce((s, l) => s + l.gross, 0);
@@ -50,7 +52,7 @@ export default function CollapsibleHalf({
 
       {open && lines.length > 0 && (
         <div className="flex flex-col gap-3 border-t border-zinc-200 p-4">
-          {message && <SalaryCopyButton message={message} />}
+          {showSalary && message && <SalaryCopyButton message={message} />}
           <ServiceLinesTable lines={lines} settlement={settlement} tierApplied={tierApplied} baseRate={baseRate} />
         </div>
       )}
