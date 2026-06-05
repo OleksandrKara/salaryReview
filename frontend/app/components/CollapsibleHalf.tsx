@@ -36,8 +36,8 @@ export default function CollapsibleHalf({
 
   return (
     <div className="rounded-lg ring-1 ring-zinc-200">
-      <div className="flex items-center justify-between px-4 py-3">
-        <div>
+      <div className="flex items-center justify-between gap-4 px-4 py-3">
+        <div className="min-w-0">
           <span className="text-sm font-medium">{title}</span>
           <span className="ml-3 text-sm text-zinc-600">
             {lines.length} {lines.length === 1 ? 'service' : 'services'}
@@ -45,7 +45,7 @@ export default function CollapsibleHalf({
           </span>
         </div>
         {lines.length > 0 && (
-          <button onClick={() => setOpen((o) => !o)} className="text-xs text-blue-600 hover:underline">
+          <button onClick={() => setOpen((o) => !o)} className="shrink-0 whitespace-nowrap text-xs text-blue-600 hover:underline">
             {open ? 'Hide' : 'Show'} breakdown
           </button>
         )}
