@@ -507,10 +507,11 @@ public class SettlementPreviewService {
                 + "Discounts covered by salon: $" + money(discountsCovered) + "\n"
                 + adjustments
                 + "Tips: $" + money(input.cardTips()) + "\n"
-                + "Tips(-" + feePct + "%): $" + money(settlement.tipsAfterFee()) + "\n\n"
+                + "Tips(-" + feePct + "%): $" + money(settlement.tipsAfterFee()) + "\n"
+                + redo            // redo notes sit right below tips
                 + bonus
-                + redo
                 + noShow
+                + "\n"           // the final Zelle/Cash pair is always its own block
                 + "Zelle " + owner + " to " + providerName + ": $" + money(settlement.zelleToProvider()) + "\n"
                 + "Cash from " + providerName + " to " + owner + ": $" + money(settlement.cashToSalon());
     }
