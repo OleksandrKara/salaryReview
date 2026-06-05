@@ -67,7 +67,8 @@ class SalaryBonusLineTest {
         ProviderPayout p = preview.providers().get(0);
 
         assertThat(p.tierApplied()).isTrue();
-        assertThat(p.secondHalfMessage()).contains("50/50 bonus (in Zelle): $75.00");
+        assertThat(p.secondHalfMessage()).contains("Month 50/50 bonus"); // whole-month, both periods
+        assertThat(p.secondHalfMessage()).contains("$75.00");
         assertThat(p.firstHalfMessage()).doesNotContain("50/50 bonus"); // 1-15 is provisional, no bonus
     }
 }

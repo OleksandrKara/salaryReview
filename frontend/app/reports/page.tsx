@@ -31,7 +31,12 @@ function MoneyCell({ zelle, cash, bonus = 0, strong = false }: { zelle: number; 
     <div className="text-right tabular-nums">
       <div className={strong ? 'font-semibold' : 'text-zinc-700'}>
         {usd(zelle)}
-        {bonus > 0 && <span className="ml-1 text-xs font-normal text-amber-600">+{usd(bonus)}</span>}
+        {bonus > 0 && (
+          <span className="ml-1 cursor-help text-xs font-normal text-amber-600"
+            title="Whole-month 50/50 tier bonus (both periods), paid at month close — open the provider's #salary for the math.">
+            +{usd(bonus)}
+          </span>
+        )}
       </div>
       <div className="text-xs text-zinc-400">cash {usd(cash)}</div>
     </div>
@@ -45,7 +50,10 @@ function MobileMoney({ label, zelle, cash, bonus = 0, strong = false }: { label:
       <dt className="text-zinc-500">{label}</dt>
       <dd className="text-right tabular-nums">
         <span className={strong ? 'font-semibold' : ''}>{usd(zelle)}</span>
-        {bonus > 0 && <span className="text-xs text-amber-600"> +{usd(bonus)}</span>}
+        {bonus > 0 && (
+          <span className="text-xs text-amber-600"
+            title="Whole-month 50/50 tier bonus (both periods), paid at month close."> +{usd(bonus)}</span>
+        )}
         <span className="text-zinc-400"> · cash {usd(cash)}</span>
       </dd>
     </div>
