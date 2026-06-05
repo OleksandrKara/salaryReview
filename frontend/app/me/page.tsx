@@ -60,6 +60,12 @@ export default async function MyReportPage({
   const totalFirst = detail.services.filter((s) => s.half === 'FIRST').reduce((n, s) => n + s.units, 0);
   const totalSecond = detail.services.filter((s) => s.half === 'SECOND').reduce((n, s) => n + s.units, 0);
   const cutoffTip = `A "main service" is one with a gross of ${usd(detail.priceCutoff)} or higher (counts toward the 50/50 tier). Add-ons below that aren't counted.`;
+  // Discount the salon covered, split into cash vs the rest (card-side), per half — for the period cards.
+  const isCash = (ch: string) => ch === 'CASH' || ch === 'CASH-NOTE';
+  const disc = (half: 'FIRST' | 'SECOND', cash: boolean) =>
+    detail.services
+      .filter((s) => s.half === half && isCash(s.channel) === cash)
+      .reduce((sum, s) => sum + s.discount, 0);
 
   return (
     <main className="mx-auto max-w-3xl p-4 sm:p-8">
@@ -102,8 +108,10 @@ export default async function MyReportPage({
           {/* Per-period cards — each with its own approve / request-correction */}
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <PeriodCard title="1–15" halfKey="FIRST" half={me.firstHalf} total={totalFirst} cutoffTip={cutoffTip}
+              cardDisc={disc('FIRST', false)} cashDisc={disc('FIRST', true)}
               message={detail.firstHalfMessage} year={year} month={month} feedback={me.firstFeedback} />
             <PeriodCard title="16–end" halfKey="SECOND" half={me.secondHalf} total={totalSecond} cutoffTip={cutoffTip}
+              cardDisc={disc('SECOND', false)} cashDisc={disc('SECOND', true)}
               message={detail.secondHalfMessage} year={year} month={month} feedback={me.secondFeedback} />
           </div>
 
@@ -154,6 +162,8 @@ function PeriodCard({
   half,
   total,
   cutoffTip,
+  cardDisc,
+  cashDisc,
   message,
   year,
   month,
@@ -164,11 +174,14 @@ function PeriodCard({
   half: HalfSettlement;
   total: number;
   cutoffTip: string;
+  cardDisc: number;
+  cashDisc: number;
   message: string | null;
   year: number;
   month: number;
   feedback: Feedback | null;
 }) {
+  const discTip = 'The salon absorbs discounts — your pay is on the full menu price, so this discount didn’t reduce what you earned here.';
   return (
     <div className="rounded-lg p-4 ring-1 ring-zinc-200">
       <div className="mb-3 flex items-center justify-between">
@@ -179,7 +192,9 @@ function PeriodCard({
         <Row label="Main services" value={String(half.countedServices)} tip={cutoffTip} />
         <Row label="Total services" value={String(total)} />
         <Row label="Card" value={usd(half.cardRevenue)} />
+        {cardDisc > 0 && <Row label="discount covered" value={usd(cardDisc)} tip={discTip} sub />}
         <Row label="Cash" value={usd(half.cashCollected)} />
+        {cashDisc > 0 && <Row label="discount covered" value={usd(cashDisc)} tip={discTip} sub />}
         <Row label="Tips (after fee)" value={usd(half.tipsAfterFee)} />
       </dl>
       <div className="mt-3 space-y-1.5 border-t border-zinc-200 pt-3 text-sm">
@@ -199,12 +214,14 @@ function PeriodCard({
   );
 }
 
-function Row({ label, value, strong, hint, tip }: { label: string; value: string; strong?: boolean; hint?: boolean; tip?: string }) {
-  const tone = hint ? 'text-amber-600' : 'text-zinc-500';
+function Row({ label, value, strong, hint, tip, sub }:
+  { label: string; value: string; strong?: boolean; hint?: boolean; tip?: string; sub?: boolean }) {
+  // `sub` = an indented sub-line under the row above (e.g. "discount covered" under Card/Cash), emerald.
+  const tone = sub ? 'text-emerald-700' : hint ? 'text-amber-600' : 'text-zinc-500';
   return (
-    <div className={`flex items-baseline justify-between ${hint ? 'text-xs' : ''}`}>
-      <dt className={tone}>{label}{tip && <InfoTip text={tip} />}</dt>
-      <dd className={`tabular-nums ${strong ? 'font-semibold text-zinc-900' : hint ? 'text-amber-600' : ''}`}>{value}</dd>
+    <div className={`flex items-baseline justify-between ${hint || sub ? 'text-xs' : ''} ${sub ? 'pl-3' : ''}`}>
+      <dt className={tone}>{sub && <span aria-hidden className="mr-1 text-emerald-400">↳</span>}{label}{tip && <InfoTip text={tip} />}</dt>
+      <dd className={`tabular-nums ${strong ? 'font-semibold text-zinc-900' : sub ? 'text-emerald-700' : hint ? 'text-amber-600' : ''}`}>{value}</dd>
     </div>
   );
 }
