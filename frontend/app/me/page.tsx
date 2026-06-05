@@ -1,7 +1,6 @@
 import { serverApi } from '../lib/serverApi';
 import MonthNav from '../components/MonthNav';
 import type { Feedback, HalfSettlement } from '../lib/types';
-import DiscountBreakdown from './DiscountBreakdown';
 import NoShowBreakdown from './NoShowBreakdown';
 import ServiceBreakdown from './ServiceBreakdown';
 import SettlementFeedbackForm from './SettlementFeedbackForm';
@@ -107,8 +106,6 @@ export default async function MyReportPage({
             <PeriodCard title="16–end" halfKey="SECOND" half={me.secondHalf} total={totalSecond} cutoffTip={cutoffTip}
               message={detail.secondHalfMessage} year={year} month={month} feedback={me.secondFeedback} />
           </div>
-
-          <DiscountBreakdown services={detail.services} />
 
           <ServiceBreakdown detail={detail} />
         </>
