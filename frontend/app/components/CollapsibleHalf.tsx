@@ -32,6 +32,7 @@ export default function CollapsibleHalf({
   const [open, setOpen] = useState(defaultOpen);
   const gross = lines.reduce((s, l) => s + l.gross, 0);
   const discount = lines.reduce((s, l) => s + l.discount, 0);
+  const tip = lines.reduce((s, l) => s + l.tip, 0);
 
   return (
     <div className="rounded-lg ring-1 ring-zinc-200">
@@ -40,7 +41,7 @@ export default function CollapsibleHalf({
           <span className="text-sm font-medium">{title}</span>
           <span className="ml-3 text-sm text-zinc-600">
             {lines.length} {lines.length === 1 ? 'service' : 'services'}
-            <span className="text-zinc-400"> · gross {usd(gross)}{discount > 0 && ` · discounts ${usd(discount)}`}</span>
+            <span className="text-zinc-400"> · gross {usd(gross)}{discount > 0 && ` · discounts ${usd(discount)}`}{tip > 0 && ` · tips ${usd(tip)}`}</span>
           </span>
         </div>
         {lines.length > 0 && (
