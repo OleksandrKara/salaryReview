@@ -1,7 +1,6 @@
 import { serverApi } from '../lib/serverApi';
 import MonthNav from '../components/MonthNav';
 import type { Feedback, HalfSettlement } from '../lib/types';
-import DiscountBreakdown from './DiscountBreakdown';
 import NoShowBreakdown from './NoShowBreakdown';
 import ServiceBreakdown from './ServiceBreakdown';
 import SettlementFeedbackForm from './SettlementFeedbackForm';
@@ -92,6 +91,14 @@ export default async function MyReportPage({
             <Headline label="Tier" value={me.tierApplied ? '50 / 50' : '45 / 55'} />
           </div>
 
+          {me.tierApplied && me.secondHalf.tierBonus > 0 && (
+            <MonthBonusNote
+              bonus={me.secondHalf.tierBonus}
+              rebate={me.secondHalf.cashTierRebate}
+              monthCard={me.firstHalf.cardRevenue + me.secondHalf.cardRevenue}
+            />
+          )}
+
           {/* Per-period cards — each with its own approve / request-correction */}
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <PeriodCard title="1–15" halfKey="FIRST" half={me.firstHalf} total={totalFirst} cutoffTip={cutoffTip}
@@ -99,8 +106,6 @@ export default async function MyReportPage({
             <PeriodCard title="16–end" halfKey="SECOND" half={me.secondHalf} total={totalSecond} cutoffTip={cutoffTip}
               message={detail.secondHalfMessage} year={year} month={month} feedback={me.secondFeedback} />
           </div>
-
-          <DiscountBreakdown services={detail.services} />
 
           <ServiceBreakdown detail={detail} />
         </>
@@ -116,6 +121,29 @@ function Headline({ label, value, big, tip }: { label: string; value: string; bi
     <div>
       <div className="text-xs text-zinc-300">{label}{tip && <InfoTip text={tip} />}</div>
       <div className={`mt-1 font-semibold tabular-nums ${big ? 'text-2xl' : 'text-xl'}`}>{value}</div>
+    </div>
+  );
+}
+
+// The 50/50 tier bonus is a WHOLE-MONTH amount (the uplift on both periods' card), paid at month close —
+// so it lands inside the 16–end total. This month-level note makes that explicit, since providers were
+// reading the bonus as a 16–end-only thing.
+function MonthBonusNote({ bonus, rebate, monthCard }: { bonus: number; rebate: number; monthCard: number }) {
+  const total = bonus + rebate;
+  const detail =
+    `You hit the 50/50 tier this month, so you earn the higher rate on your whole month — both periods ` +
+    `(1–15 and 16–end), not just one: ${usd(bonus)} extra on your card (the uplift on ${usd(monthCard)})` +
+    (rebate > 0 ? ` and a ${usd(rebate)} rebate on the cash you hand back to the salon` : '') +
+    `, ${usd(total)} in total. It's settled at month close, so it lands inside your 16–end total below.`;
+  return (
+    <div className="mt-4 flex items-start gap-2 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200">
+      <span aria-hidden>🎉</span>
+      <div>
+        <div className="font-medium">50/50 tier reached — month bonus {usd(total)}<InfoTip text={detail} /></div>
+        <p className="mt-0.5 text-xs text-amber-700">
+          {rebate > 0 && <>{usd(bonus)} on card + {usd(rebate)} cash rebate · </>}covers the whole month, paid inside your 16–end total below.
+        </p>
+      </div>
     </div>
   );
 }
@@ -156,8 +184,15 @@ function PeriodCard({
       </dl>
       <div className="mt-3 space-y-1.5 border-t border-zinc-200 pt-3 text-sm">
         <Row label="→ You (Zelle)" value={usd(half.zelleToProvider)} strong />
-        {half.tierBonus > 0 && <Row label="incl. tier bonus" value={usd(half.tierBonus)} hint />}
+        {half.tierBonus > 0 && (
+          <Row label="incl. month 50/50 bonus" value={usd(half.tierBonus)} hint
+            tip="This is your whole-month 50/50 bonus (it covers both 1–15 and 16–end, not just this period). It's paid here at month close. See the note above the periods, or #salary, for the math." />
+        )}
         <Row label="Cash → salon" value={usd(half.cashToSalon)} />
+        {half.cashTierRebate > 0 && (
+          <Row label="incl. tier cash rebate" value={usd(half.cashTierRebate)} hint
+            tip="Part of your whole-month 50/50 bonus: it lowers the cash you hand back to the salon. See the note above the periods." />
+        )}
       </div>
       <SettlementFeedbackForm year={year} month={month} half={halfKey} current={feedback} />
     </div>

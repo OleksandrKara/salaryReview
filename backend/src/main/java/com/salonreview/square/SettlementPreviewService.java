@@ -451,7 +451,8 @@ public class SettlementPreviewService {
     private static String salaryMessage(int year, int month, Half half, String providerName,
                                         SalonConfig sc, HalfInput input, HalfSettlement settlement,
                                         int procedures, BigDecimal discountsCovered, List<AttributedService> redoLines,
-                                        List<AttributedService> noShowLines) {
+                                        List<AttributedService> noShowLines,
+                                        BigDecimal monthCardRevenue, BigDecimal tierUpliftRate) {
         String label = (half == Half.FIRST ? "1-15 " : "16-END ")
                 + java.time.Month.of(month).getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.US)
                 + " " + year;
@@ -476,13 +477,17 @@ public class SettlementPreviewService {
         BigDecimal otherAdjustments = input.adjustments().subtract(noShowSum);
         String adjustments = otherAdjustments.signum() != 0
                 ? "Adjustments (cancellations, hours, redos): $" + money(otherAdjustments) + "\n" : "";
-        // 16-END only: at month close a qualified provider (50/50) earns a tier bonus on the month's
-        // card (and a cash rebate). It's already inside the Zelle/Cash totals below — shown here so the
-        // 50/50 uplift is explicit. Only appears when there's a bonus (i.e. the 50/50 tier applied).
+        // 16-END only: at month close a qualified provider (50/50) earns a tier bonus computed on the
+        // WHOLE month's card (both periods) — the uplift from the base rate to the tier rate — plus a cash
+        // rebate. It's already inside the Zelle/Cash totals below; spelled out here (whole month + the math)
+        // so the provider/owner can see it's a month bonus, not a 16-END one. Only when the tier applied.
+        String upliftPct = tierUpliftRate.multiply(BigDecimal.valueOf(100))
+                .setScale(2, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
         String bonus = (half == Half.SECOND && settlement.tierBonus().signum() > 0)
-                ? "50/50 bonus (in Zelle): $" + money(settlement.tierBonus()) + "\n"
+                ? "Month 50/50 bonus (whole month, both periods = " + upliftPct + "% of $"
+                        + money(monthCardRevenue) + " card): $" + money(settlement.tierBonus()) + "\n"
                 + (settlement.cashTierRebate().signum() > 0
-                        ? "50/50 cash rebate (off cash to " + owner + "): $" + money(settlement.cashTierRebate()) + "\n" : "")
+                        ? "Month 50/50 cash rebate (off cash to " + owner + "): $" + money(settlement.cashTierRebate()) + "\n" : "")
                 : "";
         // Short redo note(s) for this half — already inside Card above; here for clarity. A gain reads
         // "redo from X", a deduction "redone by X" (the counterpart's name is on the line's customer field).
@@ -502,10 +507,11 @@ public class SettlementPreviewService {
                 + "Discounts covered by salon: $" + money(discountsCovered) + "\n"
                 + adjustments
                 + "Tips: $" + money(input.cardTips()) + "\n"
-                + "Tips(-" + feePct + "%): $" + money(settlement.tipsAfterFee()) + "\n\n"
+                + "Tips(-" + feePct + "%): $" + money(settlement.tipsAfterFee()) + "\n"
+                + redo            // redo notes sit right below tips
                 + bonus
-                + redo
                 + noShow
+                + "\n"           // the final Zelle/Cash pair is always its own block
                 + "Zelle " + owner + " to " + providerName + ": $" + money(settlement.zelleToProvider()) + "\n"
                 + "Cash from " + providerName + " to " + owner + ": $" + money(settlement.cashToSalon());
     }
@@ -565,8 +571,10 @@ public class SettlementPreviewService {
         BigDecimal monthZelle = first.zelleToProvider().add(second.zelleToProvider());
         BigDecimal monthCashToSalon = first.cashToSalon().add(second.cashToSalon());
         Map<Half, SettlementFeedback> fbm = feedbackByProvider.getOrDefault(m.providerId, Map.of());
-        String firstMsg = salaryMessage(year, month, Half.FIRST, m.name, sc, m.first, first, procedures[0], discounts[0], redoLines, noShowLines);
-        String secondMsg = salaryMessage(year, month, Half.SECOND, m.name, sc, m.second, second, procedures[1], discounts[1], redoLines, noShowLines);
+        BigDecimal monthCard = m.first.cardRevenue().add(m.second.cardRevenue());
+        BigDecimal uplift = config.tierUplift();
+        String firstMsg = salaryMessage(year, month, Half.FIRST, m.name, sc, m.first, first, procedures[0], discounts[0], redoLines, noShowLines, monthCard, uplift);
+        String secondMsg = salaryMessage(year, month, Half.SECOND, m.name, sc, m.second, second, procedures[1], discounts[1], redoLines, noShowLines, monthCard, uplift);
         return new ProviderPayout(m.providerId, m.name, monthCounted, autoQualified,
                 isGranted && !autoQualified, autoQualified || isGranted,
                 first, second, monthZelle, monthCashToSalon,
