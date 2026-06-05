@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
 import type { AttributedService, HalfSettlement } from '../lib/types';
 import { AppointmentCell } from './AppointmentCell';
+import { InfoTip } from './InfoTip';
 import { groupByDay, formatDay } from '../lib/grouping';
 
 const usd = (n: number) =>
@@ -51,6 +52,17 @@ export default function ServiceLinesTable({
   const summary = `Counted: ${settlement.countedServices} · paid at base ${Math.round(baseRate * 100)}%${tierNote}`;
   const tipTotal = sumTip(lines); // gross tip total — the sum of the Tip column
   const discountTotal = lines.reduce((s, l) => s + l.discount, 0);
+  const grossTotal = sumGross(lines); // the actual sum of the Gross column (all channels, not just card)
+  const netTotal = grossTotal - discountTotal;
+  // Gross split by transaction type, for the totals-row tooltip (so the gross total is traceable).
+  const grossByChannel = lines.reduce<Record<string, number>>((m, l) => { m[l.channel] = (m[l.channel] ?? 0) + l.gross; return m; }, {});
+  const channelLabel: Record<string, string> = {
+    CARD: 'Card', CASH: 'Cash', 'CASH-NOTE': 'Cash note', PREPAID: 'Prepaid',
+    COMP: 'Comp', REDO: 'Redo', MANUAL: 'Manual', NOSHOW: 'No-show fee',
+  };
+  const grossBreakdown = Object.entries(grossByChannel)
+    .filter(([, v]) => Math.abs(v) > 0.005)
+    .map(([k, v]) => `${channelLabel[k] ?? k} ${usd(v)}`).join(' · ');
 
   return (
     <>
@@ -171,9 +183,14 @@ export default function ServiceLinesTable({
           <tfoot className="border-t border-zinc-200 bg-zinc-50 text-xs">
             <tr>
               <td className="px-3 py-2 font-medium" colSpan={2}>Totals</td>
-              <td className="px-3 py-2 text-right tabular-nums font-medium">{usd(settlement.cardRevenue)}</td>
+              <td className="px-3 py-2 text-right tabular-nums font-medium">
+                <span className="inline-flex items-center justify-end">
+                  {usd(grossTotal)}
+                  {Object.keys(grossByChannel).length > 1 && <InfoTip text={grossBreakdown} label="Gross by transaction type" />}
+                </span>
+              </td>
               <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{discountTotal > 0 ? `−${usd(discountTotal)}` : '—'}</td>
-              <td className="px-3 py-2" />
+              <td className="px-3 py-2 text-right tabular-nums font-medium">{usd(netTotal)}</td>
               <td className="px-3 py-2 text-right tabular-nums font-medium">{usd(tipTotal)}</td>
               <td className="px-3 py-2 text-center font-medium">{settlement.countedServices}</td>
             </tr>
