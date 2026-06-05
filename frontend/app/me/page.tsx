@@ -129,19 +129,20 @@ function Headline({ label, value, big, tip }: { label: string; value: string; bi
 // so it lands inside the 16–end total. This month-level note makes that explicit, since providers were
 // reading the bonus as a 16–end-only thing.
 function MonthBonusNote({ bonus, rebate, monthCard }: { bonus: number; rebate: number; monthCard: number }) {
+  const total = bonus + rebate;
   const detail =
-    `You hit the 50/50 tier this month, so you earn the higher rate on your whole month's card ` +
-    `(${usd(monthCard)}) — across both periods (1–15 and 16–end), not just one. The extra is your ` +
-    `month bonus of ${usd(bonus)}` +
-    (rebate > 0 ? `, plus a ${usd(rebate)} cash rebate off your cash to the salon` : '') +
-    `. It's paid at month close, so it appears inside your 16–end total below. Open #salary for the exact math.`;
+    `You hit the 50/50 tier this month, so you earn the higher rate on your whole month — both periods ` +
+    `(1–15 and 16–end), not just one: ${usd(bonus)} extra on your card (the uplift on ${usd(monthCard)})` +
+    (rebate > 0 ? ` and a ${usd(rebate)} rebate on the cash you hand back to the salon` : '') +
+    `, ${usd(total)} in total. It's settled at month close, so it lands inside your 16–end total below.`;
   return (
     <div className="mt-4 flex items-start gap-2 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200">
       <span aria-hidden>🎉</span>
       <div>
-        <span className="font-medium">50/50 tier reached — month bonus {usd(bonus)}</span>
-        <InfoTip text={detail} />
-        <p className="mt-0.5 text-xs text-amber-700">Covers the whole month (both periods); paid inside your 16–end total below.</p>
+        <div className="font-medium">50/50 tier reached — month bonus {usd(total)}<InfoTip text={detail} /></div>
+        <p className="mt-0.5 text-xs text-amber-700">
+          {rebate > 0 && <>{usd(bonus)} on card + {usd(rebate)} cash rebate · </>}covers the whole month, paid inside your 16–end total below.
+        </p>
       </div>
     </div>
   );
@@ -188,6 +189,10 @@ function PeriodCard({
             tip="This is your whole-month 50/50 bonus (it covers both 1–15 and 16–end, not just this period). It's paid here at month close. See the note above the periods, or #salary, for the math." />
         )}
         <Row label="Cash → salon" value={usd(half.cashToSalon)} />
+        {half.cashTierRebate > 0 && (
+          <Row label="incl. tier cash rebate" value={usd(half.cashTierRebate)} hint
+            tip="Part of your whole-month 50/50 bonus: it lowers the cash you hand back to the salon. See the note above the periods." />
+        )}
       </div>
       <SettlementFeedbackForm year={year} month={month} half={halfKey} current={feedback} />
     </div>
