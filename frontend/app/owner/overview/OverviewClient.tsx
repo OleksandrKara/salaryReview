@@ -23,7 +23,7 @@ export default function OverviewClient({ data }: { data: OwnerOverviewData }) {
       </div>
 
       {/* Hero: period total + KPIs */}
-      <div className="mb-4">
+      <div className="mb-4" data-testid="overview-period-summary">
         <PeriodSummary data={data} />
       </div>
 
