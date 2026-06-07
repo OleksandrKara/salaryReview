@@ -60,17 +60,26 @@ export default function PeriodSummary({ data }: { data: OwnerOverviewData }) {
     <div className="rounded-lg p-4 ring-1 ring-zinc-200 sm:p-6">
       <p className="text-xs text-zinc-400">{periodLabel}</p>
 
-      <div className="mt-1 flex flex-wrap items-baseline gap-3">
+      <div className="mt-1">
         <span data-testid="period-summary-gross" className="text-3xl font-semibold tabular-nums text-zinc-900 sm:text-4xl">
           {usd(totalGross)}
         </span>
-        {delta && (
-          <span className={`text-sm font-medium ${delta.positive ? 'text-green-700' : 'text-red-600'}`}>
-            {delta.label}
-            <span className="ml-1 font-normal text-zinc-400">vs prior year</span>
-          </span>
-        )}
       </div>
+
+      {delta && (
+        <div data-testid="period-summary-growth" className="mt-2.5 flex flex-wrap items-center gap-3">
+          <span className={`inline-flex items-center rounded px-2 py-0.5 text-sm font-semibold ring-1 ${
+            delta.positive
+              ? 'bg-green-50 text-green-700 ring-green-200'
+              : 'bg-rose-50 text-rose-600 ring-rose-200'
+          }`}>
+            {delta.label}
+          </span>
+          <span className="text-xs text-zinc-400">
+            vs {usd(data.prevYear?.totalGross)} prior year
+          </span>
+        </div>
+      )}
 
       <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-zinc-100 pt-4 sm:grid-cols-4">
         <div data-testid="period-summary-payroll-pct"><Kpi label="Payroll %" value={payrollPct ?? '—'} sub="of gross revenue" /></div>
