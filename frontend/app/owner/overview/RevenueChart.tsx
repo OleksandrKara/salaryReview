@@ -133,6 +133,7 @@ export default function RevenueChart({
               return (
                 <div
                   key={`bar-${m.year}-${m.month}`}
+                  data-testid={`chart-bar-${m.year}-${m.month}`}
                   className="group relative flex flex-1 flex-col items-center"
                   style={{ height: '100%' }}
                   onMouseEnter={() => setHoveredIndex(i)}
