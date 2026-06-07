@@ -7,11 +7,13 @@ import type {
   ManualCredit,
   Me,
   OwnerCustomer,
+  OwnerOverviewData,
   PrepaidPackage,
   Provider,
   ProviderDetail,
   ProviderPayout,
   Redo,
+  RevenuePulse,
   SettlementPreview,
   SquareRosterEntry,
 } from './types';
@@ -65,4 +67,12 @@ export const serverApi = {
   listRedos: () => serverFetch<Redo[]>(`/api/redos`),
 
   listManualCredits: () => serverFetch<ManualCredit[]>(`/api/manual-credits`),
+
+  getRevenuePulse: (year: number, month: number) =>
+    serverFetch<RevenuePulse>(`/api/owner/pulse?year=${year}&month=${month}`),
+
+  getOwnerOverview: (fromYear: number, fromMonth: number, toYear: number, toMonth: number) =>
+    serverFetch<OwnerOverviewData>(
+      `/api/owner/overview?fromYear=${fromYear}&fromMonth=${fromMonth}&toYear=${toYear}&toMonth=${toMonth}`
+    ),
 };
