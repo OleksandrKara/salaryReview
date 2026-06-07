@@ -1,4 +1,4 @@
-import type { MonthSummary, OwnerOverviewData, YearTotals } from '../../lib/types';
+import type { MonthSummary, OwnerOverviewData } from '../../lib/types';
 
 const usd = (n: number | null | undefined) =>
   n == null
@@ -20,11 +20,19 @@ function weightedPayrollPct(months: MonthSummary[]): string | null {
   return gross > 0 ? ((payroll / gross) * 100).toFixed(1) + '%' : null;
 }
 
-function overallDelta(current: number, prevYear: YearTotals | null) {
-  const prior = prevYear?.totalGross ?? 0;
-  if (!prior) return null;
-  const d = ((current - prior) / prior) * 100;
-  return { d, positive: d >= 0, label: `${d >= 0 ? '↑ +' : '↓ '}${Math.abs(d).toFixed(1)}%` };
+function firstToLastDelta(active: MonthSummary[]) {
+  if (active.length < 2) return null;
+  const first = active[0].grossRevenue;
+  const last  = active[active.length - 1].grossRevenue;
+  if (!first || !last) return null;
+  const d = ((last - first) / first) * 100;
+  return {
+    d,
+    positive: d >= 0,
+    label: `${d >= 0 ? '↑ +' : '↓ '}${Math.abs(d).toFixed(1)}%`,
+    from: `${active[0].label} '${String(active[0].year).slice(2)}`,
+    to:   `${active[active.length - 1].label} '${String(active[active.length - 1].year).slice(2)}`,
+  };
 }
 
 function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -48,7 +56,7 @@ export default function PeriodSummary({ data }: { data: OwnerOverviewData }) {
   const totalSvc   = sum(active, 'procedures');
   const avgPerAppt = totalSvc > 0 ? totalGross / totalSvc : null;
   const payrollPct = weightedPayrollPct(active);
-  const delta      = overallDelta(totalGross, data.prevYear);
+  const delta      = firstToLastDelta(active);
 
   const n = active.length;
   const periodLabel =
@@ -60,31 +68,40 @@ export default function PeriodSummary({ data }: { data: OwnerOverviewData }) {
     <div className="rounded-lg p-4 ring-1 ring-zinc-200 sm:p-6">
       <p className="text-xs text-zinc-400">{periodLabel}</p>
 
-      <div className="mt-1 flex flex-wrap items-baseline gap-3">
+      <div className="mt-1">
         <span data-testid="period-summary-gross" className="text-3xl font-semibold tabular-nums text-zinc-900 sm:text-4xl">
           {usd(totalGross)}
         </span>
-        {delta && (
-          <span className={`text-sm font-medium ${delta.positive ? 'text-green-700' : 'text-red-600'}`}>
-            {delta.label}
-            <span className="ml-1 font-normal text-zinc-400">vs prior year</span>
-          </span>
-        )}
       </div>
 
+      {delta && (
+        <div data-testid="period-summary-growth" className="mt-2.5 flex flex-wrap items-center gap-3">
+          <span className={`inline-flex items-center rounded px-2 py-0.5 text-sm font-semibold ring-1 ${
+            delta.positive
+              ? 'bg-green-50 text-green-700 ring-green-200'
+              : 'bg-rose-50 text-rose-600 ring-rose-200'
+          }`}>
+            {delta.label}
+          </span>
+          <span className="text-xs text-zinc-400">
+            {delta.from} → {delta.to}
+          </span>
+        </div>
+      )}
+
       <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-zinc-100 pt-4 sm:grid-cols-4">
-        <Kpi label="Payroll %" value={payrollPct ?? '—'} sub="of gross revenue" />
-        <Kpi label="Avg / appt" value={usd(avgPerAppt)} sub={`${totalSvc} services`} />
-        <Kpi
+        <div data-testid="period-summary-payroll-pct"><Kpi label="Payroll %" value={payrollPct ?? '—'} sub="of gross revenue" /></div>
+        <div data-testid="period-summary-avg-appt"><Kpi label="Avg / appt" value={usd(avgPerAppt)} sub={`${totalSvc} services`} /></div>
+        <div data-testid="period-summary-card"><Kpi
           label="Card"
           value={usd(totalCard)}
           sub={totalGross > 0 ? `${((totalCard / totalGross) * 100).toFixed(0)}% of gross` : undefined}
-        />
-        <Kpi
+        /></div>
+        <div data-testid="period-summary-cash"><Kpi
           label="Cash"
           value={usd(totalCash)}
           sub={totalTips > 0 ? `+ ${usd(totalTips)} tips` : undefined}
-        />
+        /></div>
       </div>
     </div>
   );

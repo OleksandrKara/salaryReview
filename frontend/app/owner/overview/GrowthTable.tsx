@@ -105,16 +105,15 @@ export default function GrowthTable({ months }: { months: MonthSummary[] }) {
           {/* Totals footer */}
           <tfoot>
             <tr className="border-t-2 border-zinc-200 bg-zinc-50 font-semibold text-zinc-800">
-              <td className="px-4 py-3">
-                Total
+              <td className="px-4 py-3">Total</td>
+              <td className="px-4 py-3 text-right tabular-nums">{usd(totalGross)}</td>
+              <td className="px-4 py-3 text-right tabular-nums">
                 {overallMom != null && (
-                  <span className={`ml-2 text-xs font-normal ${overallMom >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                    {overallMom >= 0 ? '+' : ''}{overallMom.toFixed(1)}% first→last
+                  <span className={overallMom >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
+                    {overallMom >= 0 ? '↑ +' : '↓ '}{Math.abs(overallMom).toFixed(1)}%
                   </span>
                 )}
               </td>
-              <td className="px-4 py-3 text-right tabular-nums">{usd(totalGross)}</td>
-              <td className="px-4 py-3" />
               <td className="hidden px-4 py-3 text-right tabular-nums sm:table-cell">{usd(totalCard)}</td>
               <td className="hidden px-4 py-3 text-right tabular-nums sm:table-cell">{usd(totalCash)}</td>
               <td className="hidden px-4 py-3 text-right tabular-nums sm:table-cell">{avgPayrollPct}</td>
