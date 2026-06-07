@@ -110,7 +110,7 @@ export default function UsersManager({
 
   return (
     <div className="flex flex-col gap-8">
-      <form onSubmit={create} className="flex flex-wrap items-end gap-3 rounded-lg ring-1 ring-zinc-200 p-4">
+      <form onSubmit={create} data-testid="user-form" className="flex flex-wrap items-end gap-3 rounded-lg ring-1 ring-zinc-200 p-4">
         {roster.length > 0 && (
           <label className="text-sm">
             <span className="mb-1 block text-zinc-600">Import from Square</span>
@@ -162,7 +162,7 @@ export default function UsersManager({
             </select>
           </label>
         )}
-        <button type="submit" disabled={busy}
+        <button type="submit" disabled={busy} data-testid="user-submit"
           className="inline-flex items-center gap-2 rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
           {busy && <Spinner className="h-4 w-4" />}
           {busy ? 'Adding…' : 'Add user'}
@@ -171,7 +171,7 @@ export default function UsersManager({
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <div className="overflow-x-auto rounded-lg ring-1 ring-zinc-200">
+      <div data-testid="user-table" className="overflow-x-auto rounded-lg ring-1 ring-zinc-200">
         <table className="w-full text-sm">
           <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
             <tr>
@@ -184,7 +184,7 @@ export default function UsersManager({
           </thead>
           <tbody className="divide-y divide-zinc-100">
             {users.map((u) => (
-              <tr key={u.id} className="hover:bg-zinc-50">
+              <tr key={u.id} data-testid={`user-row-${u.id}`} className="hover:bg-zinc-50">
                 <td className="px-3 py-2 font-medium">{u.username}</td>
                 <td className="px-3 py-2">{u.role}</td>
                 <td className="px-3 py-2 text-zinc-600">{personName(u)}</td>
@@ -194,10 +194,10 @@ export default function UsersManager({
                     : <span className="text-zinc-400">disabled</span>}
                 </td>
                 <td className="px-3 py-2 text-right">
-                  <button onClick={() => toggleActive(u)} className="mr-3 text-xs text-zinc-500 hover:text-zinc-800">
+                  <button data-testid={`user-toggle-${u.id}`} onClick={() => toggleActive(u)} className="mr-3 text-xs text-zinc-500 hover:text-zinc-800">
                     {u.active ? 'Disable' : 'Enable'}
                   </button>
-                  <button onClick={() => remove(u)} className="text-xs text-red-500 hover:text-red-700">Delete</button>
+                  <button data-testid={`user-delete-${u.id}`} onClick={() => remove(u)} className="text-xs text-red-500 hover:text-red-700">Delete</button>
                 </td>
               </tr>
             ))}

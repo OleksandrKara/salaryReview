@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { serverApi } from '../lib/serverApi';
 import type { Feedback, ProviderPayout } from '../lib/types';
 import AdminMenu from './AdminMenu';
@@ -6,6 +7,7 @@ import MonthNav from '../components/MonthNav';
 import GrantTierButton from './GrantTierButton';
 import NoShowFeesPanel from './NoShowFeesPanel';
 import ClearFeedbackButton from './ClearFeedbackButton';
+import RevenuePulse from './RevenuePulse';
 import SalaryButtons from './SalaryButtons';
 import { SyncBadge } from '../components/SyncBadge';
 
@@ -132,10 +134,19 @@ export default async function ReportsPage({
         <br />Each period shows <span className="font-medium text-zinc-600">Zelle paid to provider</span> over <span className="text-zinc-400">cash returned to salon</span>.
       </p>
 
+      {/* Revenue pulse — owner-only, streams in via Suspense so it doesn't delay the table. */}
+      {me?.role === 'OWNER' && (
+        <Suspense fallback={
+          <div className="mb-4 h-28 animate-pulse rounded-xl bg-zinc-100" />
+        }>
+          <RevenuePulse year={year} month={month} />
+        </Suspense>
+      )}
+
       {/* Mobile: a card per provider (the table is too wide for a phone). */}
-      <div className="flex flex-col gap-3 sm:hidden">
+      <div data-testid="reports-provider-list" className="flex flex-col gap-3 sm:hidden">
         {report.providers.map((p) => (
-          <div key={p.providerId} className="rounded-lg p-4 ring-1 ring-zinc-200">
+          <div key={p.providerId} data-testid={`provider-card-${p.providerId}`} className="rounded-lg p-4 ring-1 ring-zinc-200">
             <div className="flex items-start justify-between gap-2">
               <span className="flex flex-wrap items-center gap-2 font-medium">{p.name}<FeedbackBadge p={p} year={year} month={month} /></span>
               <Link href={`/reports/${p.providerId}?year=${year}&month=${month}`}
@@ -162,7 +173,7 @@ export default async function ReportsPage({
       </div>
 
       {/* Desktop: the full table. */}
-      <div className="hidden overflow-x-auto rounded-lg ring-1 ring-zinc-200 sm:block">
+      <div data-testid="reports-provider-table" className="hidden overflow-x-auto rounded-lg ring-1 ring-zinc-200 sm:block">
         <table className="w-full text-sm">
           <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
             <tr>
@@ -177,7 +188,7 @@ export default async function ReportsPage({
           </thead>
           <tbody className="divide-y divide-zinc-100">
             {report.providers.map((p) => (
-              <tr key={p.providerId} className="hover:bg-zinc-50">
+              <tr key={p.providerId} data-testid={`provider-row-${p.providerId}`} className="hover:bg-zinc-50">
                 <td className="px-3 py-2 font-medium">
                   <span className="flex items-center gap-2">
                     {p.name}
