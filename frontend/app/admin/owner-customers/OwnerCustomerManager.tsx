@@ -90,8 +90,9 @@ export default function OwnerCustomerManager({
       {/* Add a customer */}
       <section>
         <h2 className="mb-2 text-sm font-semibold">Add an owner customer</h2>
-        <form onSubmit={search} className="flex gap-2">
+        <form onSubmit={search} data-testid="owner-customer-search-form" className="flex gap-2">
           <input
+            data-testid="owner-customer-search-input"
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -99,6 +100,7 @@ export default function OwnerCustomerManager({
             className="flex-1 rounded-md px-3 py-2 text-sm ring-1 ring-zinc-300 focus:outline-none focus:ring-2 focus:ring-zinc-500"
           />
           <button
+            data-testid="owner-customer-search-btn"
             type="submit"
             disabled={searching || !query.trim()}
             className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
@@ -125,6 +127,7 @@ export default function OwnerCustomerManager({
                   <span className="text-xs text-zinc-400">already added</span>
                 ) : (
                   <button
+                    data-testid={`owner-customer-add-${m.id}`}
                     onClick={() => add(m.id, m.name)}
                     disabled={busy}
                     className="rounded bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-200 disabled:opacity-50"
@@ -146,14 +149,15 @@ export default function OwnerCustomerManager({
             None yet. Search above to mark a customer as owner/family.
           </p>
         ) : (
-          <ul className="divide-y divide-zinc-100 rounded-lg ring-1 ring-zinc-200">
+          <ul data-testid="owner-customer-list" className="divide-y divide-zinc-100 rounded-lg ring-1 ring-zinc-200">
             {customers.map((c) => (
-              <li key={c.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+              <li key={c.id} data-testid={`owner-customer-row-${c.id}`} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
                 <span>
                   {c.name || '(name unavailable)'}
                   <span className="ml-2 text-xs text-zinc-400">{c.squareCustomerId}</span>
                 </span>
                 <button
+                  data-testid={`owner-customer-remove-${c.id}`}
                   onClick={() => remove(c.id)}
                   className="text-xs text-zinc-400 hover:text-red-600"
                 >

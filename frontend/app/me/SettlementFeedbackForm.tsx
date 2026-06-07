@@ -51,6 +51,7 @@ export default function SettlementFeedbackForm({
         )}
       </div>
       <textarea
+        data-testid="feedback-comment"
         value={comment}
         onChange={(e) => setComment(e.target.value)}
         placeholder="Optional note (helpful when requesting a correction)"
@@ -59,11 +60,11 @@ export default function SettlementFeedbackForm({
       />
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
       <div className="mt-2 flex gap-2">
-        <button onClick={() => submit('APPROVED')} disabled={busy}
+        <button data-testid="feedback-approve-btn" onClick={() => submit('APPROVED')} disabled={busy}
           className="inline-flex items-center gap-1.5 rounded bg-green-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
           {busy && <Spinner className="h-3.5 w-3.5" />}Approve
         </button>
-        <button onClick={() => submit('CHANGES_REQUESTED')} disabled={busy}
+        <button data-testid="feedback-request-correction-btn" onClick={() => submit('CHANGES_REQUESTED')} disabled={busy}
           className="rounded bg-white px-3 py-1.5 text-xs font-medium text-red-600 ring-1 ring-red-300 disabled:opacity-50">
           Request correction
         </button>
