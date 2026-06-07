@@ -14,7 +14,9 @@ const LINKS = [
 
 export default function AdminMenu({ isOwner }: { isOwner: boolean }) {
   const [open, setOpen] = useState(false);
-  const links = isOwner ? [...LINKS, { href: '/admin/users', label: 'Users' }] : LINKS;
+  const links = isOwner
+    ? [{ href: '/owner/overview', label: 'Overview' }, ...LINKS, { href: '/admin/users', label: 'Users' }]
+    : LINKS;
   const link = 'text-xs text-zinc-400 hover:text-zinc-600';
 
   return (

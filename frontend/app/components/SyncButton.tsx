@@ -40,6 +40,7 @@ export function SyncButton({ syncedAt }: { syncedAt: string }) {
       onClick={sync}
       disabled={busy}
       title="Pull fresh data from Square now"
+      data-testid="sync-btn"
       className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-700 disabled:opacity-50"
     >
       {busy ? <Spinner className="h-3 w-3" /> : (

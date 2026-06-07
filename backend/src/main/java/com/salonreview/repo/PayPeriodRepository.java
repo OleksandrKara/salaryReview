@@ -11,4 +11,6 @@ public interface PayPeriodRepository extends JpaRepository<PayPeriod, Long> {
     List<PayPeriod> findAllByOrderByYearDescMonthDescHalfDesc();
 
     Optional<PayPeriod> findByYearAndMonthAndHalf(int year, int month, Half half);
+
+    List<PayPeriod> findAllByYearOrderByMonthAscHalfAsc(int year);
 }

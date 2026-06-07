@@ -29,11 +29,11 @@ export default function MonthNav({ base, year, month, prev, next }:
   const link = 'inline-flex items-center gap-1 text-zinc-500 hover:text-zinc-800';
   return (
     <div className="flex items-center gap-3 text-sm">
-      <Link prefetch={false} href={`${base}?year=${prev.year}&month=${prev.month}`} className={link}>
+      <Link prefetch={false} href={`${base}?year=${prev.year}&month=${prev.month}`} className={link} data-testid="month-nav-prev">
         <NavSpinner /> ← {MONTHS[prev.month - 1].slice(0, 3)}
       </Link>
-      <span className="font-medium">{MONTHS[month - 1]} {year}</span>
-      <Link prefetch={false} href={`${base}?year=${next.year}&month=${next.month}`} className={link}>
+      <span className="font-medium" data-testid="month-nav-label">{MONTHS[month - 1]} {year}</span>
+      <Link prefetch={false} href={`${base}?year=${next.year}&month=${next.month}`} className={link} data-testid="month-nav-next">
         {MONTHS[next.month - 1].slice(0, 3)} → <NavSpinner />
       </Link>
     </div>

@@ -1,0 +1,263 @@
+package com.salonreview.square;
+
+import com.salonreview.domain.PayPeriod;
+import com.salonreview.domain.PeriodEntry;
+import com.salonreview.domain.SalonConfig;
+import com.salonreview.repo.PayPeriodRepository;
+import com.salonreview.repo.PeriodEntryRepository;
+import com.salonreview.repo.SalonConfigRepository;
+import com.salonreview.service.CommissionCalculator;
+import com.salonreview.service.SettlementLine;
+import com.salonreview.web.dto.OwnerOverviewDto;
+import com.salonreview.web.dto.OwnerOverviewDto.MonthSummary;
+import com.salonreview.web.dto.OwnerOverviewDto.ProviderYtd;
+import com.salonreview.web.dto.OwnerOverviewDto.YearTotals;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.Month;
+import java.time.YearMonth;
+import java.time.format.TextStyle;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
+@Service
+public class OwnerOverviewService {
+
+    /** Hard cap: refuse ranges longer than 24 months to bound Square API calls. */
+    private static final int MAX_MONTHS = 24;
+
+    private final PayPeriodRepository payPeriods;
+    private final PeriodEntryRepository entries;
+    private final CommissionCalculator calculator;
+    private final SalonConfigRepository salonConfig;
+    private final SquareMonthAggregator aggregator;
+
+    public OwnerOverviewService(PayPeriodRepository payPeriods, PeriodEntryRepository entries,
+                                CommissionCalculator calculator, SalonConfigRepository salonConfig,
+                                SquareMonthAggregator aggregator) {
+        this.payPeriods = payPeriods;
+        this.entries = entries;
+        this.calculator = calculator;
+        this.salonConfig = salonConfig;
+        this.aggregator = aggregator;
+    }
+
+    public OwnerOverviewDto overview(int fromYear, int fromMonth, int toYear, int toMonth) {
+        SalonConfig cfg = salonConfig.findById(1)
+                .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"));
+
+        LocalDate today = LocalDate.now();
+        int currentYear = today.getYear();
+        int currentMonth = today.getMonthValue();
+
+        // Build the ordered list of (year, month) tuples in the requested range, capped at 24.
+        List<int[]> range = buildRange(fromYear, fromMonth, toYear, toMonth);
+
+        // Collect settled PayPeriod entries for all years that appear in the range.
+        Set<Integer> yearsNeeded = range.stream().map(ym -> ym[0]).collect(Collectors.toSet());
+        // key = "YYYY-M"
+        Map<String, List<PeriodEntry>> entriesByYearMonth = new HashMap<>();
+        for (int yr : yearsNeeded) {
+            for (PayPeriod pp : payPeriods.findAllByYearOrderByMonthAscHalfAsc(yr)) {
+                List<PeriodEntry> monthEntries = entries.findAllByPayPeriodId(pp.getId());
+                if (!monthEntries.isEmpty()) {
+                    entriesByYearMonth
+                            .computeIfAbsent(ymKey(pp.getYear(), pp.getMonth()), k -> new ArrayList<>())
+                            .addAll(monthEntries);
+                }
+            }
+        }
+
+        // Determine which months need a live Square fetch (past/current, not yet settled).
+        List<int[]> liveNeeded = range.stream()
+                .filter(ym -> !entriesByYearMonth.containsKey(ymKey(ym[0], ym[1])))
+                .filter(ym -> !isFuture(ym[0], ym[1], currentYear, currentMonth))
+                .toList();
+
+        Map<String, MonthSummary> liveResults = new ConcurrentHashMap<>();
+        if (!liveNeeded.isEmpty()) {
+            CompletableFuture<?>[] futures = liveNeeded.stream()
+                    .map(ym -> CompletableFuture.runAsync(
+                            () -> liveResults.put(ymKey(ym[0], ym[1]), fromSquare(ym[1], ym[0], cfg))))
+                    .toArray(CompletableFuture[]::new);
+            CompletableFuture.allOf(futures).join();
+        }
+
+        // Assemble summaries and accumulate provider totals (settled months only).
+        Map<Long, ProviderAcc> providerAccs = new LinkedHashMap<>();
+        List<MonthSummary> months = new ArrayList<>(range.size());
+        for (int[] ym : range) {
+            String key = ymKey(ym[0], ym[1]);
+            if (entriesByYearMonth.containsKey(key)) {
+                months.add(fromEntries(ym[0], ym[1], entriesByYearMonth.get(key), cfg, providerAccs));
+            } else if (liveResults.containsKey(key)) {
+                months.add(liveResults.get(key));
+            } else {
+                months.add(emptyMonth(ym[0], ym[1]));
+            }
+        }
+
+        List<ProviderYtd> providers = providerAccs.values().stream()
+                .map(a -> new ProviderYtd(a.providerId, a.name, a.gross,
+                        a.payroll, pct(a.payroll, a.gross)))
+                .sorted(Comparator.comparing(ProviderYtd::ytdGross).reversed())
+                .toList();
+
+        // Prior-period totals: same range shifted back one year (DB only, best-effort).
+        YearTotals prevYear = prevPeriodTotals(fromYear - 1, fromMonth, toYear - 1, toMonth);
+
+        return new OwnerOverviewDto(fromYear, fromMonth, toYear, toMonth, months, providers, prevYear);
+    }
+
+    // --- settled month from DB ---
+
+    private MonthSummary fromEntries(int year, int month, List<PeriodEntry> monthEntries,
+                                     SalonConfig cfg, Map<Long, ProviderAcc> providerAccs) {
+        BigDecimal card = BigDecimal.ZERO, cash = BigDecimal.ZERO,
+                   tips = BigDecimal.ZERO, payroll = BigDecimal.ZERO;
+        int procedures = 0;
+
+        for (PeriodEntry e : monthEntries) {
+            card       = card.add(e.getCardTotal());
+            cash       = cash.add(e.getCashTotal());
+            tips       = tips.add(e.getCardTips());
+            procedures += e.getProcedures();
+
+            SettlementLine line = calculator.calculate(e.getProvider(), e);
+            BigDecimal providerPayroll = line.zelleToProvider()
+                    .add(e.getCashTotal().subtract(line.cashToSalon()));
+            payroll = payroll.add(providerPayroll);
+
+            Long pid = e.getProvider().getId();
+            ProviderAcc acc = providerAccs.computeIfAbsent(pid,
+                    k -> new ProviderAcc(pid, e.getProvider().getDisplayName()));
+            acc.gross   = acc.gross.add(e.getCardTotal()).add(e.getCashTotal());
+            acc.payroll = acc.payroll.add(providerPayroll);
+        }
+
+        BigDecimal gross = card.add(cash);
+        return new MonthSummary(year, month, label(month), card, cash, gross, tips, procedures,
+                avg(gross, procedures), payroll, pct(payroll, gross), true);
+    }
+
+    // --- live month from Square ---
+
+    private MonthSummary fromSquare(int month, int year, SalonConfig cfg) {
+        try {
+            SquareMonthAggregator.MonthAggregation agg =
+                    aggregator.aggregate(year, month, cfg.getServicePriceCutoff());
+
+            BigDecimal card = BigDecimal.ZERO, cash = BigDecimal.ZERO, tips = BigDecimal.ZERO;
+            int procedures = 0;
+            for (SquareMonthAggregator.ProviderMonth pm : agg.providers()) {
+                card       = card.add(pm.firstHalf().cardRevenue()).add(pm.secondHalf().cardRevenue());
+                cash       = cash.add(pm.firstHalf().cashGross()).add(pm.secondHalf().cashGross());
+                tips       = tips.add(pm.firstHalf().cardTips()).add(pm.secondHalf().cardTips());
+                procedures += pm.firstHalf().countedServices() + pm.secondHalf().countedServices();
+            }
+
+            BigDecimal gross   = card.add(cash);
+            BigDecimal rate    = cfg.getBaseCommissionRate();
+            BigDecimal feeRate = cfg.getCardTipFeeRate();
+            BigDecimal payroll = gross.multiply(rate)
+                    .add(tips.multiply(BigDecimal.ONE.subtract(feeRate)))
+                    .setScale(2, RoundingMode.HALF_UP);
+
+            return new MonthSummary(year, month, label(month), card, cash, gross, tips, procedures,
+                    avg(gross, procedures), payroll, pct(payroll, gross), false);
+        } catch (RuntimeException e) {
+            return emptyMonth(year, month);
+        }
+    }
+
+    // --- prior period totals (same range, prior year) ---
+
+    private YearTotals prevPeriodTotals(int fromYear, int fromMonth, int toYear, int toMonth) {
+        List<int[]> range = buildRange(fromYear, fromMonth, toYear, toMonth);
+        Set<Integer> yearsNeeded = range.stream().map(ym -> ym[0]).collect(Collectors.toSet());
+        BigDecimal card = BigDecimal.ZERO, cash = BigDecimal.ZERO;
+        for (int yr : yearsNeeded) {
+            for (PayPeriod pp : payPeriods.findAllByYearOrderByMonthAscHalfAsc(yr)) {
+                if (!inRange(range, pp.getYear(), pp.getMonth())) continue;
+                for (PeriodEntry e : entries.findAllByPayPeriodId(pp.getId())) {
+                    card = card.add(e.getCardTotal());
+                    cash = cash.add(e.getCashTotal());
+                }
+            }
+        }
+        return new YearTotals(card.add(cash), card, cash);
+    }
+
+    // --- helpers ---
+
+    private static List<int[]> buildRange(int fromYear, int fromMonth, int toYear, int toMonth) {
+        List<int[]> out = new ArrayList<>();
+        YearMonth cur = YearMonth.of(fromYear, fromMonth);
+        YearMonth end = YearMonth.of(toYear, toMonth);
+        while (!cur.isAfter(end) && out.size() < MAX_MONTHS) {
+            out.add(new int[]{cur.getYear(), cur.getMonthValue()});
+            cur = cur.plusMonths(1);
+        }
+        return out;
+    }
+
+    private static boolean inRange(List<int[]> range, int year, int month) {
+        for (int[] ym : range) {
+            if (ym[0] == year && ym[1] == month) return true;
+        }
+        return false;
+    }
+
+    private static String ymKey(int year, int month) {
+        return year + "-" + month;
+    }
+
+    private static boolean isFuture(int year, int month, int currentYear, int currentMonth) {
+        return year > currentYear || (year == currentYear && month > currentMonth);
+    }
+
+    private static MonthSummary emptyMonth(int year, int month) {
+        return new MonthSummary(year, month, label(month), null, null, null, null, 0,
+                null, null, null, false);
+    }
+
+    private static String label(int month) {
+        return Month.of(month).getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
+    }
+
+    private static BigDecimal avg(BigDecimal gross, int procedures) {
+        if (procedures == 0 || gross == null) return null;
+        return gross.divide(BigDecimal.valueOf(procedures), 2, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal pct(BigDecimal part, BigDecimal whole) {
+        if (part == null || whole == null || whole.signum() == 0) return null;
+        return part.multiply(BigDecimal.valueOf(100))
+                   .divide(whole, 1, RoundingMode.HALF_UP);
+    }
+
+    private static final class ProviderAcc {
+        final Long providerId;
+        final String name;
+        BigDecimal gross   = BigDecimal.ZERO;
+        BigDecimal payroll = BigDecimal.ZERO;
+
+        ProviderAcc(Long providerId, String name) {
+            this.providerId = providerId;
+            this.name = name;
+        }
+    }
+}

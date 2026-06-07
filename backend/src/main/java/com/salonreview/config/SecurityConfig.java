@@ -39,7 +39,7 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/info", "/api/login").permitAll()
-                        .requestMatchers("/api/users/**").hasRole("OWNER")
+                        .requestMatchers("/api/users/**", "/api/owner/**").hasRole("OWNER")
                         .requestMatchers("/api/settlements/me/**").hasRole("PROVIDER")
                         .requestMatchers("/api/settlements/**", "/api/providers/**", "/api/square/**",
                                 "/api/pay-periods/**", "/api/prepaid/**", "/api/owner-customers/**", "/api/redos/**",

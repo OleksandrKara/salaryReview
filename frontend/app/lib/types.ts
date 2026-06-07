@@ -366,3 +366,60 @@ export interface PrepaidCreateRequest {
   totalServices: number;
   invoiceRef?: string | null;
 }
+
+// --- Revenue pulse: same-period comparison + upcoming projection (owner-only) ---
+
+export interface RevenuePulse {
+  year: number;
+  month: number;
+  currentDays: number;
+  currentEndDay: number;
+  priorEndDay: number;
+  currentGross: number;
+  priorGross: number;
+  deltaPct: number | null;
+  upcomingBookings: number;
+  upcomingGross: number;
+  projectedMonthGross: number;
+}
+
+// --- Owner overview dashboard (owner-only) ---
+
+export interface MonthSummary {
+  year: number;
+  month: number;
+  label: string;
+  cardRevenue: number | null;
+  cashRevenue: number | null;
+  grossRevenue: number | null;
+  tips: number | null;
+  procedures: number;
+  avgPerAppt: number | null;
+  payrollCost: number | null;
+  payrollPct: number | null;
+  finalized: boolean;
+}
+
+export interface ProviderYtd {
+  providerId: number;
+  name: string;
+  ytdGross: number;
+  ytdPayroll: number;
+  ytdPayrollPct: number | null;
+}
+
+export interface YearTotals {
+  totalGross: number;
+  totalCard: number;
+  totalCash: number;
+}
+
+export interface OwnerOverviewData {
+  fromYear: number;
+  fromMonth: number;
+  toYear: number;
+  toMonth: number;
+  months: MonthSummary[];
+  providers: ProviderYtd[];
+  prevYear: YearTotals | null;
+}
