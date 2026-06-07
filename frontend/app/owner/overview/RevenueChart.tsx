@@ -86,7 +86,7 @@ export default function RevenueChart({
       </div>
 
       {/* Chart */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 pb-1.5">
         {/* Y-axis — hidden on mobile */}
         <div className="relative hidden w-8 shrink-0 sm:block" style={{ height: '200px' }}>
           {guides.filter(g => g.label).map((g) => (
