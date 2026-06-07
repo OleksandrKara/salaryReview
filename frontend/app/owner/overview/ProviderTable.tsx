@@ -7,7 +7,7 @@ export default function ProviderTable({ providers }: { providers: ProviderYtd[] 
   if (providers.length === 0) return null;
 
   return (
-    <div className="overflow-x-auto rounded-lg ring-1 ring-zinc-200">
+    <div data-testid="provider-ytd-table" className="overflow-x-auto rounded-lg ring-1 ring-zinc-200">
       <table className="w-full text-sm">
         <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
           <tr>
@@ -19,7 +19,7 @@ export default function ProviderTable({ providers }: { providers: ProviderYtd[] 
         </thead>
         <tbody className="divide-y divide-zinc-100">
           {providers.map((p) => (
-            <tr key={p.providerId} className="hover:bg-zinc-50">
+            <tr key={p.providerId} data-testid={`provider-ytd-row-${p.providerId}`} className="hover:bg-zinc-50">
               <td className="px-3 py-2 font-medium">{p.name}</td>
               <td className="px-3 py-2 text-right tabular-nums">{usd(p.ytdGross)}</td>
               <td className="px-3 py-2 text-right tabular-nums">{usd(p.ytdPayroll)}</td>

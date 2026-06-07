@@ -73,18 +73,18 @@ export default function PeriodSummary({ data }: { data: OwnerOverviewData }) {
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-zinc-100 pt-4 sm:grid-cols-4">
-        <Kpi label="Payroll %" value={payrollPct ?? '—'} sub="of gross revenue" />
-        <Kpi label="Avg / appt" value={usd(avgPerAppt)} sub={`${totalSvc} services`} />
-        <Kpi
+        <div data-testid="period-summary-payroll-pct"><Kpi label="Payroll %" value={payrollPct ?? '—'} sub="of gross revenue" /></div>
+        <div data-testid="period-summary-avg-appt"><Kpi label="Avg / appt" value={usd(avgPerAppt)} sub={`${totalSvc} services`} /></div>
+        <div data-testid="period-summary-card"><Kpi
           label="Card"
           value={usd(totalCard)}
           sub={totalGross > 0 ? `${((totalCard / totalGross) * 100).toFixed(0)}% of gross` : undefined}
-        />
-        <Kpi
+        /></div>
+        <div data-testid="period-summary-cash"><Kpi
           label="Cash"
           value={usd(totalCash)}
           sub={totalTips > 0 ? `+ ${usd(totalTips)} tips` : undefined}
-        />
+        /></div>
       </div>
     </div>
   );
