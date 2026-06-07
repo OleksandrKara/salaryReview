@@ -1,4 +1,4 @@
-import type { MonthSummary, OwnerOverviewData, YearTotals } from '../../lib/types';
+import type { MonthSummary, OwnerOverviewData } from '../../lib/types';
 
 const usd = (n: number | null | undefined) =>
   n == null
@@ -20,11 +20,19 @@ function weightedPayrollPct(months: MonthSummary[]): string | null {
   return gross > 0 ? ((payroll / gross) * 100).toFixed(1) + '%' : null;
 }
 
-function overallDelta(current: number, prevYear: YearTotals | null) {
-  const prior = prevYear?.totalGross ?? 0;
-  if (!prior) return null;
-  const d = ((current - prior) / prior) * 100;
-  return { d, positive: d >= 0, label: `${d >= 0 ? '↑ +' : '↓ '}${Math.abs(d).toFixed(1)}%` };
+function firstToLastDelta(active: MonthSummary[]) {
+  if (active.length < 2) return null;
+  const first = active[0].grossRevenue;
+  const last  = active[active.length - 1].grossRevenue;
+  if (!first || !last) return null;
+  const d = ((last - first) / first) * 100;
+  return {
+    d,
+    positive: d >= 0,
+    label: `${d >= 0 ? '↑ +' : '↓ '}${Math.abs(d).toFixed(1)}%`,
+    from: `${active[0].label} '${String(active[0].year).slice(2)}`,
+    to:   `${active[active.length - 1].label} '${String(active[active.length - 1].year).slice(2)}`,
+  };
 }
 
 function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -48,7 +56,7 @@ export default function PeriodSummary({ data }: { data: OwnerOverviewData }) {
   const totalSvc   = sum(active, 'procedures');
   const avgPerAppt = totalSvc > 0 ? totalGross / totalSvc : null;
   const payrollPct = weightedPayrollPct(active);
-  const delta      = overallDelta(totalGross, data.prevYear);
+  const delta      = firstToLastDelta(active);
 
   const n = active.length;
   const periodLabel =
@@ -76,7 +84,7 @@ export default function PeriodSummary({ data }: { data: OwnerOverviewData }) {
             {delta.label}
           </span>
           <span className="text-xs text-zinc-400">
-            vs {usd(data.prevYear?.totalGross)} prior year
+            {delta.from} → {delta.to}
           </span>
         </div>
       )}
