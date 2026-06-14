@@ -384,8 +384,14 @@ export interface RevenuePulse {
   // Non-cancelled upcoming bookings remaining this month.
   upcomingBookings: number;
   upcomingGross: number;
-  // currentGross + upcomingGross.
+  // currentGross + upcomingGross — naive ceiling, kept as a cross-check.
   projectedMonthGross: number;
+  // Forecaster output: blends pattern-match (PeriodEntry) and booking-ceiling calibration (snapshots).
+  projectedMid: number;
+  projectedLow: number | null;        // null in cold-start mode
+  projectedHigh: number | null;       // null in cold-start mode
+  forecastCalibrationDataPoints: number;
+  forecastHistoryMonths: number;
 }
 
 // --- Owner overview dashboard (owner-only) ---
