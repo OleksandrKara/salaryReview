@@ -20,11 +20,19 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
   const {
     currentEndDay, priorEndDay, asOfTime,
     currentGross, priorGross, deltaPct,
-    upcomingBookings, upcomingGross, projectedMonthGross,
+    upcomingBookings, upcomingGross,
+    projectedMid, projectedLow, projectedHigh,
+    forecastCalibrationDataPoints, forecastHistoryMonths,
   } = pulse;
+  // projectedMonthGross (the transparent naive ceiling) is kept on the DTO for debugging but not
+  // shown — the calibrated/pattern projection above replaces it.
 
   const positive = deltaPct != null && deltaPct >= 0;
   const hasUpcoming = upcomingBookings > 0;
+  const hasRange = projectedLow != null && projectedHigh != null;
+  // Calibration state: gray dot = pattern-only or cold-start; green dot = calibration active.
+  const calibrationActive = forecastCalibrationDataPoints >= 3;
+  const calibratingBadge = !hasRange && forecastHistoryMonths < 3;
 
   const curLabel  = DayRange(month, currentEndDay, asOfTime);
   const prevMonth = month === 1 ? 12 : month - 1;
@@ -62,30 +70,60 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
           </p>
         </div>
 
-        {/* Right: upcoming projection */}
+        {/* Right: smart forecast */}
         <div className="bg-white px-5 py-4">
-          <p className="text-xs font-medium text-zinc-400">Upcoming this month</p>
-          {hasUpcoming ? (
-            <>
-              <div className="mt-1 flex items-baseline gap-3">
-                <span className="text-3xl font-semibold tabular-nums text-zinc-900">
-                  {usd(upcomingGross)}
-                </span>
-                <span className="text-sm text-zinc-500">
-                  est. · {upcomingBookings} booking{upcomingBookings !== 1 ? 's' : ''}
-                </span>
-              </div>
-              <p className="mt-1 text-xs text-zinc-400">
-                Projected month total{' '}
-                <span className="font-medium text-zinc-600">~{usd(projectedMonthGross)}</span>
-              </p>
-            </>
-          ) : (
-            <div className="mt-1">
-              <span className="text-xl font-semibold text-zinc-400">No upcoming bookings</span>
-              <p className="mt-1 text-xs text-zinc-300">for the rest of this month</p>
-            </div>
-          )}
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-medium text-zinc-400">Projected month total</p>
+            <span
+              className="inline-flex items-center gap-1 text-[10px] text-zinc-400"
+              title={
+                calibrationActive
+                  ? `Calibrated with ${forecastCalibrationDataPoints} months of past projections`
+                  : forecastHistoryMonths >= 3
+                  ? `Pattern-matching from ${forecastHistoryMonths} months of history (calibration warming up)`
+                  : 'More history needed for a range forecast'
+              }
+            >
+              <span
+                className={`inline-block h-1.5 w-1.5 rounded-full ${
+                  calibrationActive
+                    ? 'bg-green-500'
+                    : forecastHistoryMonths >= 3
+                    ? 'bg-amber-400'
+                    : 'bg-zinc-300'
+                }`}
+              />
+              {calibrationActive
+                ? 'calibrated'
+                : forecastHistoryMonths >= 3
+                ? 'warming up'
+                : 'calibrating'}
+            </span>
+          </div>
+
+          <div className="mt-1 flex items-baseline gap-3">
+            <span className="text-3xl font-semibold tabular-nums text-zinc-900">
+              ~{usd(projectedMid)}
+            </span>
+            {hasUpcoming && (
+              <span className="text-sm text-zinc-500">
+                · {upcomingBookings} upcoming · {usd(upcomingGross)}
+              </span>
+            )}
+          </div>
+
+          {hasRange ? (
+            <p className="mt-1 text-xs text-zinc-400">
+              Range{' '}
+              <span className="font-medium text-zinc-600">
+                {usd(projectedLow!)} – {usd(projectedHigh!)}
+              </span>
+            </p>
+          ) : calibratingBadge ? (
+            <p className="mt-1 text-xs text-zinc-400">
+              <span className="font-medium text-zinc-500">Naive estimate</span> · more history needed for a range
+            </p>
+          ) : null}
         </div>
       </div>
     </div>

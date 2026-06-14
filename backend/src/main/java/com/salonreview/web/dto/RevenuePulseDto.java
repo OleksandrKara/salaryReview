@@ -27,6 +27,16 @@ public record RevenuePulseDto(
         int upcomingBookings,
         /** Sum of catalog prices for those appointments. */
         BigDecimal upcomingGross,
-        /** currentGross + upcomingGross — rough month projection. */
-        BigDecimal projectedMonthGross
+        /** currentGross + upcomingGross — the transparent "naive" ceiling. Kept as a cross-check. */
+        BigDecimal projectedMonthGross,
+        /** Forecaster's best estimate, blending pattern match + booking-ceiling calibration. */
+        BigDecimal projectedMid,
+        /** Confidence range floor — null in cold-start mode (insufficient history). */
+        BigDecimal projectedLow,
+        /** Confidence range ceiling — null in cold-start mode. */
+        BigDecimal projectedHigh,
+        /** Distinct months of usable calibration data behind the forecast (0 = pattern-only). */
+        int forecastCalibrationDataPoints,
+        /** Settled months of PeriodEntry history behind the forecast (3+ enables pattern match). */
+        int forecastHistoryMonths
 ) {}
