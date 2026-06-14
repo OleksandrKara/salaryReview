@@ -23,9 +23,11 @@ import java.util.concurrent.CompletableFuture;
 public class RevenuePulseService {
 
     private final SquareClient square;
+    private final RevenueForecastService forecaster;
 
-    public RevenuePulseService(SquareClient square) {
+    public RevenuePulseService(SquareClient square, RevenueForecastService forecaster) {
         this.square = square;
+        this.forecaster = forecaster;
     }
 
     public RevenuePulseDto pulse(int year, int month) {
@@ -84,12 +86,18 @@ public class RevenuePulseService {
         BigDecimal deltaPct     = delta(currentGross, priorGross);
 
         UpcomingResult upcoming = processUpcoming(upcomingF.join(), year, month, zone);
-        BigDecimal projected = currentGross.add(upcoming.gross()).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal naiveProjected = currentGross.add(upcoming.gross()).setScale(2, RoundingMode.HALF_UP);
+
+        // Smart forecast: blends pattern-match (from PeriodEntry history) and booking-ceiling
+        // calibration (from revenue_snapshot rows). Falls back to naive when neither has enough data.
+        ForecastResult forecast = forecaster.forecast(year, month, currentGross, upcoming.gross());
 
         return new RevenuePulseDto(
                 year, month, currentEndDay, currentEndDay, priorEndDay, asOfTime,
                 currentGross, priorGross, deltaPct,
-                upcoming.count(), upcoming.gross(), projected);
+                upcoming.count(), upcoming.gross(), naiveProjected,
+                forecast.projectedMid(), forecast.projectedLow(), forecast.projectedHigh(),
+                forecast.calibrationDataPoints(), forecast.historyMonths());
     }
 
     private static final DateTimeFormatter TIME_FMT =
