@@ -7,10 +7,14 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -26,26 +30,42 @@ public class RevenuePulseService {
 
     public RevenuePulseDto pulse(int year, int month) {
         ZoneId zone = resolveZone();
-        LocalDate today = LocalDate.now(zone);
+        ZonedDateTime nowZoned = ZonedDateTime.now(zone);
+        LocalDate today = nowZoned.toLocalDate();
         YearMonth ym = YearMonth.of(year, month);
         YearMonth priorYm = ym.minusMonths(1);
 
-        // Current period end: today if we're in this month, last day otherwise.
         boolean isCurrentMonth = today.getYear() == year && today.getMonthValue() == month;
-        int currentEndDay = isCurrentMonth ? today.getDayOfMonth() : ym.lengthOfMonth();
-        // Prior period end: same day number, clamped to prior month length.
-        int priorEndDay = Math.min(currentEndDay, priorYm.lengthOfMonth());
 
         LocalDate curStart   = ym.atDay(1);
-        LocalDate curEnd     = ym.atDay(currentEndDay);
         LocalDate priorStart = priorYm.atDay(1);
-        LocalDate priorEnd   = priorYm.atDay(priorEndDay);
-
-        // Exclusive upper bounds for the Square order query.
         Instant curFrom   = curStart.atStartOfDay(zone).toInstant();
-        Instant curTo     = curEnd.plusDays(1).atStartOfDay(zone).toInstant();
         Instant priorFrom = priorStart.atStartOfDay(zone).toInstant();
-        Instant priorTo   = priorEnd.plusDays(1).atStartOfDay(zone).toInstant();
+
+        // Window upper bounds + labelling fields:
+        //  - Current month: truncate both sides at the same wall-clock time-of-day. Comparing
+        //    "Jun 1 → Jun 14 11:22 PM" against "May 1 → May 14 11:22 PM" is the apples-to-apples
+        //    read; using full days on both sides falsely inflates the prior period in the morning.
+        //  - Past month: compare full calendar days (the historical comparison is fixed).
+        Instant curTo, priorTo;
+        int currentEndDay, priorEndDay;
+        String asOfTime;
+        if (isCurrentMonth) {
+            LocalDateTime nowLocal = nowZoned.toLocalDateTime();
+            // minusMonths clamps the day-of-month when the prior month is shorter (e.g. May 31 → Apr 30).
+            LocalDateTime priorCutoff = nowLocal.minusMonths(1);
+            curTo         = nowZoned.toInstant();
+            priorTo       = priorCutoff.atZone(zone).toInstant();
+            currentEndDay = today.getDayOfMonth();
+            priorEndDay   = priorCutoff.toLocalDate().getDayOfMonth();
+            asOfTime      = nowLocal.format(TIME_FMT);
+        } else {
+            currentEndDay = ym.lengthOfMonth();
+            priorEndDay   = Math.min(currentEndDay, priorYm.lengthOfMonth());
+            curTo         = ym.atDay(currentEndDay).plusDays(1).atStartOfDay(zone).toInstant();
+            priorTo       = priorYm.atDay(priorEndDay).plusDays(1).atStartOfDay(zone).toInstant();
+            asOfTime      = null;
+        }
 
         // Fetch current orders, prior orders, and upcoming bookings in parallel.
         var currentF = CompletableFuture.supplyAsync(() -> square.completedOrders(curFrom, curTo));
@@ -67,10 +87,13 @@ public class RevenuePulseService {
         BigDecimal projected = currentGross.add(upcoming.gross()).setScale(2, RoundingMode.HALF_UP);
 
         return new RevenuePulseDto(
-                year, month, currentEndDay, currentEndDay, priorEndDay,
+                year, month, currentEndDay, currentEndDay, priorEndDay, asOfTime,
                 currentGross, priorGross, deltaPct,
                 upcoming.count(), upcoming.gross(), projected);
     }
+
+    private static final DateTimeFormatter TIME_FMT =
+            DateTimeFormatter.ofPattern("h:mm a", Locale.US);
 
     // --- upcoming bookings ---
 

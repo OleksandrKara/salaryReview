@@ -375,11 +375,16 @@ export interface RevenuePulse {
   currentDays: number;
   currentEndDay: number;
   priorEndDay: number;
+  // Wall-clock time cutoff (e.g. "11:22 PM") applied to both current and prior windows when
+  // looking at the current month. Null for past months (no time cutoff — full days compared).
+  asOfTime: string | null;
   currentGross: number;
   priorGross: number;
   deltaPct: number | null;
+  // Non-cancelled upcoming bookings remaining this month.
   upcomingBookings: number;
   upcomingGross: number;
+  // currentGross + upcomingGross.
   projectedMonthGross: number;
 }
 
