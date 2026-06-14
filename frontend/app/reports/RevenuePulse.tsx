@@ -4,8 +4,9 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
-function DayRange(month: number, endDay: number) {
-  return `${MONTHS[month - 1]} 1–${endDay}`;
+function DayRange(month: number, endDay: number, asOfTime: string | null) {
+  const base = `${MONTHS[month - 1]} 1–${endDay}`;
+  return asOfTime ? `${base} (${asOfTime})` : base;
 }
 
 export default async function RevenuePulse({ year, month }: { year: number; month: number }) {
@@ -17,7 +18,7 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
   }
 
   const {
-    currentEndDay, priorEndDay,
+    currentEndDay, priorEndDay, asOfTime,
     currentGross, priorGross, deltaPct,
     upcomingBookings, upcomingGross, projectedMonthGross,
   } = pulse;
@@ -25,9 +26,9 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
   const positive = deltaPct != null && deltaPct >= 0;
   const hasUpcoming = upcomingBookings > 0;
 
-  const curLabel  = DayRange(month, currentEndDay);
+  const curLabel  = DayRange(month, currentEndDay, asOfTime);
   const prevMonth = month === 1 ? 12 : month - 1;
-  const priorLabel = DayRange(prevMonth, priorEndDay);
+  const priorLabel = DayRange(prevMonth, priorEndDay, asOfTime);
 
   return (
     <div className="mb-4 overflow-hidden rounded-xl border border-zinc-200 bg-white">
@@ -77,7 +78,6 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
               <p className="mt-1 text-xs text-zinc-400">
                 Projected month total{' '}
                 <span className="font-medium text-zinc-600">~{usd(projectedMonthGross)}</span>
-                <span className="ml-1 text-zinc-300">(confirmed only)</span>
               </p>
             </>
           ) : (
