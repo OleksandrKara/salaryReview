@@ -72,6 +72,68 @@ ssh you@vps 'cd ~/salaryReview && git reset --hard origin/master && docker compo
 # rollback: git reset --hard <previous-good-sha> then the same compose command
 ```
 
+## Backups
+
+`deploy/backup-postgres.sh` runs nightly on the VPS: `pg_dump -Fc` against the running Postgres
+container → rotates the local copy → uploads to Google Drive via `rclone`. Defaults keep **7
+days** locally and **30 days** in Drive; override with `KEEP_LOCAL_DAYS` / `KEEP_REMOTE_DAYS`.
+
+### One-time setup on the VPS
+
+1. **Install rclone:**
+   ```bash
+   sudo -v && curl https://rclone.org/install.sh | sudo bash
+   ```
+
+2. **Configure a Google Drive remote named `gdrive`:**
+   ```bash
+   rclone config
+   # n (new remote) → name: gdrive → storage: drive → leave client_id/secret blank
+   # → scope: 1 (full access) → root_folder_id / service_account_file: blank
+   # → Edit advanced config: n → Use auto config: n  (headless OAuth)
+   ```
+   It prints a URL — open it on your laptop, sign in, paste the verification code back into the
+   prompt. Then `y` to confirm, `q` to quit. Verify with `rclone lsd gdrive:` (should list your Drive).
+
+3. **Smoke-test the script** (writes to `~/salaryReview-backups/` and `gdrive:salaryReview-backups/`,
+   creating both):
+   ```bash
+   cd ~/salaryReview && ./deploy/backup-postgres.sh
+   rclone lsl gdrive:salaryReview-backups/
+   ```
+
+4. **Schedule it** — `crontab -e` and add:
+   ```cron
+   30 3 * * * /home/ubuntu/salaryReview/deploy/backup-postgres.sh >> /home/ubuntu/salaryReview-backups/backup.log 2>&1
+   ```
+   (03:30 UTC daily. Cron output is appended to the same backup dir; rotate the log with
+   `logrotate` if you care.)
+
+### Restore
+
+```bash
+# Stop the app so nothing is writing to the DB during restore.
+cd ~/salaryReview && sudo docker compose stop backend
+
+# Copy the dump into the postgres container and restore in place.
+sudo docker compose cp ~/salaryReview-backups/salonreview-YYYYMMDDTHHMMSSZ.dump postgres:/tmp/restore.dump
+sudo docker compose exec -T postgres \
+  pg_restore -U salon -d salonreview --clean --if-exists /tmp/restore.dump
+
+sudo docker compose start backend
+```
+
+For a full DR drill (VPS lost), restore into a throwaway Postgres container first to confirm
+the dump is good:
+```bash
+rclone copy gdrive:salaryReview-backups/salonreview-YYYYMMDDTHHMMSSZ.dump ./
+docker run --rm -d --name pgtest -e POSTGRES_PASSWORD=x -p 55432:5432 postgres:16
+docker cp salonreview-*.dump pgtest:/tmp/restore.dump
+docker exec -it pgtest createdb -U postgres salonreview
+docker exec -it pgtest pg_restore -U postgres -d salonreview /tmp/restore.dump
+docker stop pgtest
+```
+
 ## Notes
 - Builds happen on the VPS (Maven + Next). On a small box this is the slow part of a deploy and
   causes a brief recreate downtime — fine for a single salon. To avoid building on the server later,
