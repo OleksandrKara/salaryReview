@@ -43,7 +43,7 @@ class ManualCreditTest {
 
         SettlementPreviewService service = new SettlementPreviewService(aggregator, new TierCommissionEngine(),
                 salonConfigRepo, directory, tierGrants, feedback, square, prepaidRedemptions, prepaidPackages,
-                providerRepo, redoRepo, manualCredits, mock(com.salonreview.square.NoShowFeeService.class));
+                providerRepo, redoRepo, manualCredits, mock(com.salonreview.square.NoShowFeeService.class), mock(com.salonreview.square.SuspiciousBookingService.class));
 
         SalonConfig sc = mock(SalonConfig.class);
         when(sc.toCommissionConfig()).thenReturn(new CommissionConfig(60,
@@ -56,7 +56,7 @@ class ManualCreditTest {
         when(feedback.findByYearAndMonth(2026, 5)).thenReturn(List.of());
         when(square.customerNames(any())).thenReturn(java.util.Map.of());
         when(aggregator.aggregate(eq(2026), eq(5), any())).thenReturn(
-                new MonthAggregation(2026, 5, "UTC", List.of(), new SquareMonthAggregator.Diag(), List.of(), List.of()));
+                new MonthAggregation(2026, 5, "UTC", List.of(), new SquareMonthAggregator.Diag(), List.of(), List.of(), List.of()));
         when(providerRepo.findById(1L)).thenReturn(Optional.of(Provider.builder().id(1L).displayName("Tatiana Nazirova").build()));
 
         // Julia's May 26 visit, recorded as a manual credit: $129 services, −$50, $15.80 tip.

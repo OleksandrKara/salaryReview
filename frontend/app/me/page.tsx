@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { serverApi } from '../lib/serverApi';
 import MonthNav from '../components/MonthNav';
 import type { Feedback, HalfSettlement } from '../lib/types';
@@ -109,10 +110,12 @@ export default async function MyReportPage({
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <PeriodCard title="1–15" halfKey="FIRST" half={me.firstHalf} total={totalFirst} cutoffTip={cutoffTip}
               cardDisc={disc('FIRST', false)} cashDisc={disc('FIRST', true)}
-              message={detail.firstHalfMessage} year={year} month={month} feedback={me.firstFeedback} />
+              message={detail.firstHalfMessage} year={year} month={month} feedback={me.firstFeedback}
+              needsNoteCount={me.firstHalfSuspiciousNoNotes} />
             <PeriodCard title="16–end" halfKey="SECOND" half={me.secondHalf} total={totalSecond} cutoffTip={cutoffTip}
               cardDisc={disc('SECOND', false)} cashDisc={disc('SECOND', true)}
-              message={detail.secondHalfMessage} year={year} month={month} feedback={me.secondFeedback} />
+              message={detail.secondHalfMessage} year={year} month={month} feedback={me.secondFeedback}
+              needsNoteCount={me.secondHalfSuspiciousNoNotes} />
           </div>
 
           <ServiceBreakdown detail={detail} />
@@ -156,6 +159,26 @@ function MonthBonusNote({ bonus, rebate, monthCard }: { bonus: number; rebate: n
   );
 }
 
+function NeedsNoteBadge({ count, year, month, half }: {
+  count: number; year: number; month: number; half: 'FIRST' | 'SECOND';
+}) {
+  if (count <= 0) return null;
+  const display = count > 99 ? '99+' : String(count);
+  return (
+    <Link
+      href={`/me/suspicious?year=${year}&month=${month}&half=${half}`}
+      title={`${count} appointment${count === 1 ? '' : 's'} need${count === 1 ? 's' : ''} a note added in Square`}
+      data-testid={`me-needs-note-badge-${half}`}
+      // Same amber palette as the owner-side suspicious badge — visual consistency: "attention
+      // needed, click to resolve" reads the same regardless of who's looking.
+      className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-amber-300 hover:bg-amber-100"
+    >
+      <span aria-hidden>⚠</span>
+      {display} need{count === 1 ? 's' : ''} note
+    </Link>
+  );
+}
+
 function PeriodCard({
   title,
   halfKey,
@@ -168,6 +191,7 @@ function PeriodCard({
   year,
   month,
   feedback,
+  needsNoteCount,
 }: {
   title: string;
   halfKey: 'FIRST' | 'SECOND';
@@ -180,12 +204,16 @@ function PeriodCard({
   year: number;
   month: number;
   feedback: Feedback | null;
+  needsNoteCount: number;
 }) {
   const discTip = 'The salon absorbs discounts — your pay is on the full menu price, so this discount didn’t reduce what you earned here.';
   return (
     <div className="rounded-lg p-4 ring-1 ring-zinc-200">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold">{title}</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-sm font-semibold">{title}</h2>
+          <NeedsNoteBadge count={needsNoteCount} year={year} month={month} half={halfKey} />
+        </div>
         {message && <SalaryPopupButton title={`#salary · ${title}`} message={message} />}
       </div>
       <dl className="space-y-1.5 text-sm">
@@ -209,7 +237,10 @@ function PeriodCard({
             tip="Part of your whole-month 50/50 bonus: it lowers the cash you hand back to the salon. See the note above the periods." />
         )}
       </div>
-      <SettlementFeedbackForm year={year} month={month} half={halfKey} current={feedback} />
+      <SettlementFeedbackForm year={year} month={month} half={halfKey} current={feedback}
+        approveBlockedReason={needsNoteCount > 0
+          ? `${needsNoteCount} appointment${needsNoteCount === 1 ? '' : 's'} need${needsNoteCount === 1 ? 's' : ''} a note before you can approve. Review the list above, or contact management.`
+          : null} />
     </div>
   );
 }

@@ -43,7 +43,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/settlements/me/**").hasRole("PROVIDER")
                         .requestMatchers("/api/settlements/**", "/api/providers/**", "/api/square/**",
                                 "/api/pay-periods/**", "/api/prepaid/**", "/api/owner-customers/**", "/api/redos/**",
-                                "/api/manual-credits/**", "/api/no-show-fees/**")
+                                "/api/manual-credits/**", "/api/no-show-fees/**", "/api/suspicious/**")
                                 .hasAnyRole("OWNER", "MANAGER")
                         .anyRequest().authenticated())
                 .formLogin(form -> form

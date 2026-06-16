@@ -55,6 +55,7 @@ public class SettlementPreviewService {
     private final com.salonreview.repo.RedoRepository redoRepo;
     private final com.salonreview.repo.ManualCreditRepository manualCredits;
     private final NoShowFeeService noShowFees;
+    private final SuspiciousBookingService suspiciousBookings;
 
     public SettlementPreviewService(SquareMonthAggregator aggregator, TierCommissionEngine engine,
                                     SalonConfigRepository salonConfig, ProviderDirectory directory,
@@ -64,7 +65,8 @@ public class SettlementPreviewService {
                                     com.salonreview.repo.ProviderRepository providerRepo,
                                     com.salonreview.repo.RedoRepository redoRepo,
                                     com.salonreview.repo.ManualCreditRepository manualCredits,
-                                    NoShowFeeService noShowFees) {
+                                    NoShowFeeService noShowFees,
+                                    SuspiciousBookingService suspiciousBookings) {
         this.aggregator = aggregator;
         this.engine = engine;
         this.salonConfig = salonConfig;
@@ -78,6 +80,7 @@ public class SettlementPreviewService {
         this.providerRepo = providerRepo;
         this.manualCredits = manualCredits;
         this.noShowFees = noShowFees;
+        this.suspiciousBookings = suspiciousBookings;
     }
 
     /**
@@ -292,12 +295,20 @@ public class SettlementPreviewService {
         Map<Long, List<AttributedService>> noShow = noShowRaw == null ? Map.of() : noShowRaw;
         applyNoShowAdjustments(byPerson, noShow);
 
+        // Per-provider per-half UNcleared suspicious-booking counts — surfaced as the badge on /reports
+        // for owner+manager (all suspicious) and on /me for the provider (no-notes subset only).
+        // Both summaries reuse the already-computed agg to avoid re-aggregating.
+        Map<Long, int[]> suspiciousCounts        = suspiciousBookings.summaryFor(agg);
+        Map<Long, int[]> suspiciousNoNotesCounts = suspiciousBookings.summaryForSelf(agg);
+
         List<ProviderPayout> payouts = byPerson.values().stream()
                 .map(m -> toPayout(m, config, tierGrantedProviderIds, feedbackByProvider, sc, year, month,
                         procedures.getOrDefault(m.providerId, new int[2]),
                         discounts.getOrDefault(m.providerId, ZERO_HALVES),
                         redo.getOrDefault(m.providerId, List.of()),
-                        noShow.getOrDefault(m.providerId, List.of())))
+                        noShow.getOrDefault(m.providerId, List.of()),
+                        suspiciousCounts.getOrDefault(m.providerId, new int[]{0, 0}),
+                        suspiciousNoNotesCounts.getOrDefault(m.providerId, new int[]{0, 0})))
                 .sorted(Comparator.comparing(p -> p.name().toLowerCase())).toList();
 
         return new SettlementPreview(year, month, agg.timezone(), config, cutoff, payouts, agg.diagnostics(),
@@ -439,9 +450,16 @@ public class SettlementPreviewService {
                 .map(AttributedService::discount).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal secondDisc = lines.stream().filter(s -> "SECOND".equals(s.half()))
                 .map(AttributedService::discount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        // Suspicious-booking counts: the /me page reads its payout from this detail endpoint, so
+        // it needs the per-half counts populated. Full counts (every uncleared) for owner/manager
+        // staff who hit this endpoint via /reports/{providerId}; no-notes counts for the provider
+        // self-view on /me. Both summaries reuse the already-computed agg — no double aggregation.
+        int[] suspiciousAll      = suspiciousBookings.summaryFor(agg).getOrDefault(providerId, new int[]{0, 0});
+        int[] suspiciousNoNotes  = suspiciousBookings.summaryForSelf(agg).getOrDefault(providerId, new int[]{0, 0});
         ProviderPayout payout = toPayout(m, config, granted, fb, sc, year, month,
                 new int[]{firstCount, secondCount}, new BigDecimal[]{firstDisc, secondDisc},
-                redo.getOrDefault(providerId, List.of()), noShow.getOrDefault(providerId, List.of()));
+                redo.getOrDefault(providerId, List.of()), noShow.getOrDefault(providerId, List.of()),
+                suspiciousAll, suspiciousNoNotes);
         return new ProviderDetail(year, month, providerId, m.name, payout, lines, agg.unmatched(),
                 payout.firstHalfMessage(), payout.secondHalfMessage(), sc.getServicePriceCutoff(),
                 agg.timezone(), syncedAt(), myNoShows);
@@ -560,7 +578,8 @@ public class SettlementPreviewService {
                                     Map<Long, Map<Half, SettlementFeedback>> feedbackByProvider,
                                     SalonConfig sc, int year, int month, int[] procedures,
                                     BigDecimal[] discounts, List<AttributedService> redoLines,
-                                    List<AttributedService> noShowLines) {
+                                    List<AttributedService> noShowLines,
+                                    int[] suspiciousCounts, int[] suspiciousNoNotesCounts) {
         int monthCounted = m.first.countedServices() + m.second.countedServices();
         boolean autoQualified = monthCounted >= config.tierServiceThreshold();
         boolean isGranted = granted.contains(m.providerId);
@@ -579,7 +598,9 @@ public class SettlementPreviewService {
                 isGranted && !autoQualified, autoQualified || isGranted,
                 first, second, monthZelle, monthCashToSalon,
                 toFeedback(fbm.get(Half.FIRST)), toFeedback(fbm.get(Half.SECOND)),
-                firstMsg, secondMsg);
+                firstMsg, secondMsg,
+                suspiciousCounts[0], suspiciousCounts[1],
+                suspiciousNoNotesCounts[0], suspiciousNoNotesCounts[1]);
     }
 
     private static Feedback toFeedback(SettlementFeedback f) {
@@ -618,7 +639,12 @@ public class SettlementPreviewService {
                                  HalfSettlement firstHalf, HalfSettlement secondHalf,
                                  BigDecimal monthZelleToProvider, BigDecimal monthCashToSalon,
                                  Feedback firstFeedback, Feedback secondFeedback,
-                                 String firstHalfMessage, String secondHalfMessage) {}
+                                 String firstHalfMessage, String secondHalfMessage,
+                                 // Owner/manager badge counts — every uncleared suspicious booking.
+                                 int firstHalfSuspicious, int secondHalfSuspicious,
+                                 // Provider self-view badge counts — only suspicious bookings with no
+                                 // notes at all (the actionable subset the provider can fix).
+                                 int firstHalfSuspiciousNoNotes, int secondHalfSuspiciousNoNotes) {}
 
     /** A provider's response to one period: {@code status} = APPROVED / CHANGES_REQUESTED, + comment. */
     public record Feedback(String status, String comment) {}

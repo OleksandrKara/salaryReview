@@ -13,11 +13,15 @@ export default function SettlementFeedbackForm({
   month,
   half,
   current,
+  approveBlockedReason,
 }: {
   year: number;
   month: number;
   half: 'FIRST' | 'SECOND';
   current: Feedback | null;
+  // When non-null, Approve is disabled and the reason is shown as a tooltip (e.g. unresolved
+  // suspicious appointments). "Request correction" stays enabled — providers can still flag issues.
+  approveBlockedReason?: string | null;
 }) {
   const router = useRouter();
   const [comment, setComment] = useState(current?.comment ?? '');
@@ -59,9 +63,17 @@ export default function SettlementFeedbackForm({
         className="w-full rounded border border-zinc-300 px-2 py-1.5 text-sm"
       />
       {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {approveBlockedReason && (
+        <p data-testid="feedback-approve-blocked"
+           className="mt-1.5 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 ring-1 ring-amber-200">
+          {approveBlockedReason}
+        </p>
+      )}
       <div className="mt-2 flex gap-2">
-        <button data-testid="feedback-approve-btn" onClick={() => submit('APPROVED')} disabled={busy}
-          className="inline-flex items-center gap-1.5 rounded bg-green-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
+        <button data-testid="feedback-approve-btn" onClick={() => submit('APPROVED')}
+          disabled={busy || !!approveBlockedReason}
+          title={approveBlockedReason ?? undefined}
+          className="inline-flex items-center gap-1.5 rounded bg-green-600 px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
           {busy && <Spinner className="h-3.5 w-3.5" />}Approve
         </button>
         <button data-testid="feedback-request-correction-btn" onClick={() => submit('CHANGES_REQUESTED')} disabled={busy}
