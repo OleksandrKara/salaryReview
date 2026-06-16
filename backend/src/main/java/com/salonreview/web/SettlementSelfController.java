@@ -8,6 +8,8 @@ import com.salonreview.repo.SettlementFeedbackRepository;
 import com.salonreview.square.SettlementPreviewService;
 import com.salonreview.square.SettlementPreviewService.ProviderDetail;
 import com.salonreview.square.SettlementPreviewService.ProviderPayout;
+import com.salonreview.square.SuspiciousBookingService;
+import com.salonreview.web.dto.SuspiciousBookingDto;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,10 +32,14 @@ public class SettlementSelfController {
 
     private final SettlementPreviewService previews;
     private final SettlementFeedbackRepository feedback;
+    private final SuspiciousBookingService suspiciousBookings;
 
-    public SettlementSelfController(SettlementPreviewService previews, SettlementFeedbackRepository feedback) {
+    public SettlementSelfController(SettlementPreviewService previews,
+                                    SettlementFeedbackRepository feedback,
+                                    SuspiciousBookingService suspiciousBookings) {
         this.previews = previews;
         this.feedback = feedback;
+        this.suspiciousBookings = suspiciousBookings;
     }
 
     @GetMapping
@@ -69,6 +75,19 @@ public class SettlementSelfController {
                 d.payout(), d.services(), List.of(), d.firstHalfMessage(), d.secondHalfMessage(), d.priceCutoff(),
                 d.timezone(), d.syncedAt(), d.noShows());
         return ResponseEntity.ok(scoped);
+    }
+
+    /**
+     * The provider's own actionable suspicious-bookings list — read-only, no-notes-only. Provider
+     * cannot clear (only owner/manager can); they can only fix the source by adding a {@code cashew $nn}
+     * note in Square. Always scoped to the authenticated provider.
+     */
+    @GetMapping("/suspicious")
+    public List<SuspiciousBookingDto> mySuspicious(
+            @AuthenticationPrincipal AppUserPrincipal me,
+            @RequestParam int year, @RequestParam int month, @RequestParam Half half) {
+        Long providerId = requireProvider(me);
+        return suspiciousBookings.listForSelf(year, month, half, providerId);
     }
 
     @PostMapping("/feedback")

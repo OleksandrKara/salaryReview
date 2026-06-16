@@ -16,6 +16,7 @@ import type {
   RevenuePulse,
   SettlementPreview,
   SquareRosterEntry,
+  SuspiciousBooking,
 } from './types';
 
 // Server-only backend calls. Auth is the backend session: we hold its JSESSIONID in our httpOnly
@@ -70,6 +71,18 @@ export const serverApi = {
 
   getRevenuePulse: (year: number, month: number) =>
     serverFetch<RevenuePulse>(`/api/owner/pulse?year=${year}&month=${month}`),
+
+  listSuspicious: (year: number, month: number, half: 'FIRST' | 'SECOND', providerId: number) =>
+    serverFetch<SuspiciousBooking[]>(
+      `/api/suspicious?year=${year}&month=${month}&half=${half}&providerId=${providerId}`
+    ),
+
+  // Provider self-view: their own no-notes suspicious bookings (read-only). Server scopes to the
+  // authenticated provider — no providerId param here.
+  getMySuspicious: (year: number, month: number, half: 'FIRST' | 'SECOND') =>
+    serverFetch<SuspiciousBooking[]>(
+      `/api/settlements/me/suspicious?year=${year}&month=${month}&half=${half}`
+    ),
 
   getOwnerOverview: (fromYear: number, fromMonth: number, toYear: number, toMonth: number) =>
     serverFetch<OwnerOverviewData>(

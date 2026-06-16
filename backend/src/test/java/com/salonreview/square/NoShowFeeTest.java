@@ -92,7 +92,7 @@ class NoShowFeeTest {
         SettlementPreviewService service = new SettlementPreviewService(aggregator, new TierCommissionEngine(),
                 salonConfigRepo, directory, tierGrants, feedback, square, mock(PrepaidRedemptionRepository.class),
                 mock(PrepaidPackageRepository.class), providerRepo, mock(RedoRepository.class),
-                mock(ManualCreditRepository.class), noShowFees);
+                mock(ManualCreditRepository.class), noShowFees, mock(SuspiciousBookingService.class));
 
         SalonConfig sc = mock(SalonConfig.class);
         when(sc.toCommissionConfig()).thenReturn(new CommissionConfig(60,
@@ -105,7 +105,7 @@ class NoShowFeeTest {
         when(feedback.findByYearAndMonth(2026, 5)).thenReturn(List.of());
         when(square.customerNames(any())).thenReturn(Map.of());
         when(aggregator.aggregate(eq(2026), eq(5), any())).thenReturn(
-                new MonthAggregation(2026, 5, "UTC", List.of(), new SquareMonthAggregator.Diag(), List.of(), List.of()));
+                new MonthAggregation(2026, 5, "UTC", List.of(), new SquareMonthAggregator.Diag(), List.of(), List.of(), List.of()));
         when(providerRepo.findById(1L)).thenReturn(Optional.of(Provider.builder().id(1L).displayName("Susan").build()));
 
         // One $25 no-show credit (paid May 20 → SECOND half), folded as an adjustment.

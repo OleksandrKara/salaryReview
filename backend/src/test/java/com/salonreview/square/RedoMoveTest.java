@@ -44,7 +44,7 @@ class RedoMoveTest {
 
         SettlementPreviewService service = new SettlementPreviewService(aggregator, new TierCommissionEngine(),
                 salonConfigRepo, directory, tierGrants, feedback, square, prepaidRedemptions, prepaidPackages,
-                providerRepo, redoRepo, mock(com.salonreview.repo.ManualCreditRepository.class), mock(com.salonreview.square.NoShowFeeService.class));
+                providerRepo, redoRepo, mock(com.salonreview.repo.ManualCreditRepository.class), mock(com.salonreview.square.NoShowFeeService.class), mock(com.salonreview.square.SuspiciousBookingService.class));
 
         SalonConfig sc = mock(SalonConfig.class);
         when(sc.toCommissionConfig()).thenReturn(new CommissionConfig(60,
@@ -65,7 +65,7 @@ class RedoMoveTest {
         ProviderMonth bayan = new ProviderMonth("TM_B", "Bayan", HalfInput.empty(),
                 new HalfInput(1, new BigDecimal("150.00"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
         when(aggregator.aggregate(eq(2026), eq(5), any())).thenReturn(
-                new MonthAggregation(2026, 5, "UTC", List.of(susan, bayan), new SquareMonthAggregator.Diag(), List.of(), List.of()));
+                new MonthAggregation(2026, 5, "UTC", List.of(susan, bayan), new SquareMonthAggregator.Diag(), List.of(), List.of(), List.of()));
         when(directory.resolveOrCreate("TM_S", "Susan")).thenReturn(Provider.builder().id(1L).displayName("Susan").build());
         when(directory.resolveOrCreate("TM_B", "Bayan")).thenReturn(Provider.builder().id(2L).displayName("Bayan").build());
         when(providerRepo.findById(1L)).thenReturn(Optional.of(Provider.builder().id(1L).displayName("Susan").build()));
