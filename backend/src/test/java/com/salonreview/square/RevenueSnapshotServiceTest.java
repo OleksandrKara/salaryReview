@@ -61,7 +61,7 @@ class RevenueSnapshotServiceTest {
                                    org.mockito.ArgumentMatchers.anyInt(), any()))
                 .thenReturn(new SquareMonthAggregator.MonthAggregation(
                         2026, 6, "UTC", List.of(), new SquareMonthAggregator.Diag(),
-                        List.of(), List.of()));
+                        List.of(), List.of(), List.of()));
     }
 
     @Test

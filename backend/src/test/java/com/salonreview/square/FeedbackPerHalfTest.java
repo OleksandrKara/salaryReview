@@ -44,7 +44,7 @@ class FeedbackPerHalfTest {
         ProviderRepository providerRepo = mock(ProviderRepository.class);
 
         SettlementPreviewService service = new SettlementPreviewService(aggregator, new TierCommissionEngine(),
-                salonConfigRepo, directory, tierGrants, feedback, square, prepaidRedemptions, prepaidPackages, providerRepo, mock(com.salonreview.repo.RedoRepository.class), mock(com.salonreview.repo.ManualCreditRepository.class), mock(com.salonreview.square.NoShowFeeService.class));
+                salonConfigRepo, directory, tierGrants, feedback, square, prepaidRedemptions, prepaidPackages, providerRepo, mock(com.salonreview.repo.RedoRepository.class), mock(com.salonreview.repo.ManualCreditRepository.class), mock(com.salonreview.square.NoShowFeeService.class), mock(com.salonreview.square.SuspiciousBookingService.class));
 
         SalonConfig sc = mock(SalonConfig.class);
         when(sc.toCommissionConfig()).thenReturn(new CommissionConfig(60,
@@ -59,7 +59,7 @@ class FeedbackPerHalfTest {
         HalfInput first = new HalfInput(1, new BigDecimal("100.00"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
         ProviderMonth pm = new ProviderMonth("TM1", "Anna", first, HalfInput.empty());
         MonthAggregation agg = new MonthAggregation(2026, 5, "UTC", List.of(pm),
-                new SquareMonthAggregator.Diag(), List.of(), List.of());
+                new SquareMonthAggregator.Diag(), List.of(), List.of(), List.of());
         when(aggregator.aggregate(eq(2026), eq(5), any())).thenReturn(agg);
         when(directory.resolveOrCreate("TM1", "Anna"))
                 .thenReturn(Provider.builder().id(1L).name("Anna").displayName("Anna").build());

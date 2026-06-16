@@ -27,8 +27,28 @@ function TierBadge({ p }: { p: ProviderPayout }) {
   return <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 ring-1 ring-zinc-300">45/55</span>;
 }
 
+// Badge linking to the suspicious-bookings review page for one provider × half. Hidden when count = 0.
+function SuspiciousBadge({ count, providerId, year, month, half }: {
+  count: number; providerId: number; year: number; month: number; half: 'FIRST' | 'SECOND';
+}) {
+  if (count <= 0) return null;
+  const display = count > 99 ? '99+' : String(count);
+  return (
+    <Link
+      href={`/reports/${providerId}/suspicious?year=${year}&month=${month}&half=${half}`}
+      title={`${count} appointment${count === 1 ? '' : 's'} need${count === 1 ? 's' : ''} review`}
+      data-testid={`suspicious-badge-${providerId}-${half}`}
+      className="ml-1 inline-flex items-center gap-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-300 hover:bg-amber-100"
+    >
+      ⚠ {display}
+    </Link>
+  );
+}
+
 // A period/month cell: Zelle paid to the provider (top) over cash returned to the salon (below).
-function MoneyCell({ zelle, cash, bonus = 0, strong = false }: { zelle: number; cash: number; bonus?: number; strong?: boolean }) {
+function MoneyCell({ zelle, cash, bonus = 0, strong = false, badge }: {
+  zelle: number; cash: number; bonus?: number; strong?: boolean; badge?: React.ReactNode;
+}) {
   return (
     <div className="text-right tabular-nums">
       <div className={strong ? 'font-semibold' : 'text-zinc-700'}>
@@ -39,6 +59,7 @@ function MoneyCell({ zelle, cash, bonus = 0, strong = false }: { zelle: number; 
             +{usd(bonus)}
           </span>
         )}
+        {badge}
       </div>
       <div className="text-xs text-zinc-400">cash {usd(cash)}</div>
     </div>
@@ -46,10 +67,12 @@ function MoneyCell({ zelle, cash, bonus = 0, strong = false }: { zelle: number; 
 }
 
 // One period line on the mobile card: label … Zelle → provider · cash → salon.
-function MobileMoney({ label, zelle, cash, bonus = 0, strong = false }: { label: string; zelle: number; cash: number; bonus?: number; strong?: boolean }) {
+function MobileMoney({ label, zelle, cash, bonus = 0, strong = false, badge }: {
+  label: string; zelle: number; cash: number; bonus?: number; strong?: boolean; badge?: React.ReactNode;
+}) {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-zinc-500">{label}</dt>
+      <dt className="text-zinc-500">{label}{badge}</dt>
       <dd className="text-right tabular-nums">
         <span className={strong ? 'font-semibold' : ''}>{usd(zelle)}</span>
         {bonus > 0 && (
@@ -161,8 +184,10 @@ export default async function ReportsPage({
             </div>
             <dl className="mt-3 space-y-1 text-sm">
               <MobileMoney label="Month → you" zelle={p.monthZelleToProvider} cash={p.monthCashToSalon} strong />
-              <MobileMoney label="1–15" zelle={p.firstHalf.zelleToProvider} cash={p.firstHalf.cashToSalon} bonus={p.firstHalf.tierBonus} />
-              <MobileMoney label="16–end" zelle={p.secondHalf.zelleToProvider} cash={p.secondHalf.cashToSalon} bonus={p.secondHalf.tierBonus} />
+              <MobileMoney label="1–15" zelle={p.firstHalf.zelleToProvider} cash={p.firstHalf.cashToSalon} bonus={p.firstHalf.tierBonus}
+                badge={<SuspiciousBadge count={p.firstHalfSuspicious} providerId={p.providerId} year={year} month={month} half="FIRST" />} />
+              <MobileMoney label="16–end" zelle={p.secondHalf.zelleToProvider} cash={p.secondHalf.cashToSalon} bonus={p.secondHalf.tierBonus}
+                badge={<SuspiciousBadge count={p.secondHalfSuspicious} providerId={p.providerId} year={year} month={month} half="SECOND" />} />
             </dl>
             <div className="mt-3"><SalaryButtons name={p.name} firstHalfMessage={p.firstHalfMessage} secondHalfMessage={p.secondHalfMessage} /></div>
           </div>
@@ -209,8 +234,10 @@ export default async function ReportsPage({
                     )}
                   </div>
                 </td>
-                <td className="px-3 py-2"><MoneyCell zelle={p.firstHalf.zelleToProvider} cash={p.firstHalf.cashToSalon} bonus={p.firstHalf.tierBonus} /></td>
-                <td className="px-3 py-2"><MoneyCell zelle={p.secondHalf.zelleToProvider} cash={p.secondHalf.cashToSalon} bonus={p.secondHalf.tierBonus} /></td>
+                <td className="px-3 py-2"><MoneyCell zelle={p.firstHalf.zelleToProvider} cash={p.firstHalf.cashToSalon} bonus={p.firstHalf.tierBonus}
+                  badge={<SuspiciousBadge count={p.firstHalfSuspicious} providerId={p.providerId} year={year} month={month} half="FIRST" />} /></td>
+                <td className="px-3 py-2"><MoneyCell zelle={p.secondHalf.zelleToProvider} cash={p.secondHalf.cashToSalon} bonus={p.secondHalf.tierBonus}
+                  badge={<SuspiciousBadge count={p.secondHalfSuspicious} providerId={p.providerId} year={year} month={month} half="SECOND" />} /></td>
                 <td className="px-3 py-2"><MoneyCell zelle={p.monthZelleToProvider} cash={p.monthCashToSalon} strong /></td>
                 <td className="px-3 py-2">
                   <SalaryButtons name={p.name} firstHalfMessage={p.firstHalfMessage} secondHalfMessage={p.secondHalfMessage} />
