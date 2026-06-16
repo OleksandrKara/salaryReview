@@ -289,7 +289,45 @@ public class SquareMonthAggregator {
         // Label the (small) set of unattributed lines with their customer name for the trace view.
         List<UnmatchedLine> namedUnmatched = withCustomerNames(unmatched);
 
-        return new MonthAggregation(year, month, zone.getId(), providers, diag, services, namedUnmatched);
+        // --- Suspicious bookings: appointments that happened but have no money trail. Detection
+        // happens after the order-matching, cash-note, and owner-comp passes are complete so we can
+        // honestly say "this one slipped through all of them". A booking is suspicious when ALL of:
+        //   1. Status is not CANCELLED/DECLINED/NO_SHOW.
+        //   2. startAt is strictly in the past.
+        //   3. Its booking ID is not in paidBookings (no order matched).
+        //   4. It has no cash note in seller or customer note.
+        //   5. The customer is not in the owner-customer list.
+        // We emit one candidate per appointment segment that has provider + customer + service all set.
+        Instant nowForSuspicious = Instant.now();
+        List<SuspiciousCandidate> suspicious = new ArrayList<>();
+        for (Booking b : bookings) {
+            if (b.appointmentSegments() == null) continue;
+            if (didNotHappen(b.status())) continue;
+            LocalDate day = localDate(b.startAt(), zone);
+            if (day == null || day.getYear() != year || day.getMonthValue() != month) continue;
+            Instant startAt = instant(b.startAt());
+            if (startAt == null || !startAt.isBefore(nowForSuspicious)) continue;
+            if (b.id() != null && paidBookings.contains(b.id())) continue;
+            if (b.customerId() != null && ownerCustomerIds.contains(b.customerId())) continue;
+            if (cashNotes.parse(b.sellerNote()).isPresent()
+                    || cashNotes.parse(b.customerNote()).isPresent()) continue;
+
+            Half half = halfOf(day);
+            for (var seg : b.appointmentSegments()) {
+                if (seg.teamMemberId() == null || b.customerId() == null
+                        || seg.serviceVariationId() == null) continue;
+                BigDecimal gross = catalogPrice.get(seg.serviceVariationId()); // nullable
+                suspicious.add(new SuspiciousCandidate(
+                        b.id(), b.customerId(), seg.teamMemberId(),
+                        nameById.getOrDefault(seg.teamMemberId(), "?"),
+                        seg.serviceVariationId(),
+                        day, startAt, half, gross,
+                        b.sellerNote(), b.customerNote()));
+            }
+        }
+
+        return new MonthAggregation(year, month, zone.getId(), providers, diag, services,
+                namedUnmatched, suspicious);
     }
 
     /** Resolve customer names for the unattributed lines (one bulk Square call); best-effort. */
@@ -525,7 +563,22 @@ public class SquareMonthAggregator {
 
     public record MonthAggregation(int year, int month, String timezone,
                                    List<ProviderMonth> providers, Diag diagnostics,
-                                   List<AttributedService> services, List<UnmatchedLine> unmatched) {}
+                                   List<AttributedService> services, List<UnmatchedLine> unmatched,
+                                   List<SuspiciousCandidate> suspicious) {}
+
+    /**
+     * A past appointment that produced no order, has no cash note, and isn't an owner comp — i.e.,
+     * an appointment that happened with no money trail. One candidate per booking-segment with all of
+     * provider, customer, and service set. {@code gross} may be null when the catalog lookup didn't
+     * resolve the variation's price. {@code sellerNote}/{@code customerNote} are passed through as-is
+     * so the review page can show whatever context the salon/customer wrote on the appointment.
+     */
+    public record SuspiciousCandidate(String bookingId, String customerId,
+                                      String providerId, String providerName,
+                                      String serviceVariationId,
+                                      LocalDate day, Instant startAt, Half half,
+                                      BigDecimal gross,
+                                      String sellerNote, String customerNote) {}
 
     public record AttributedService(String providerId, String providerName, String date, String half,
                                     String service, BigDecimal gross, BigDecimal discount, BigDecimal net,

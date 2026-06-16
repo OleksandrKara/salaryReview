@@ -57,7 +57,7 @@ class SalaryProcedureCountTest {
 
         SettlementPreviewService service = new SettlementPreviewService(aggregator,
                 new TierCommissionEngine(), salonConfigRepo, directory, tierGrants, feedback, square,
-                prepaidRedemptions, prepaidPackages, providerRepo, mock(com.salonreview.repo.RedoRepository.class), mock(com.salonreview.repo.ManualCreditRepository.class), mock(com.salonreview.square.NoShowFeeService.class));
+                prepaidRedemptions, prepaidPackages, providerRepo, mock(com.salonreview.repo.RedoRepository.class), mock(com.salonreview.repo.ManualCreditRepository.class), mock(com.salonreview.square.NoShowFeeService.class), mock(com.salonreview.square.SuspiciousBookingService.class));
 
         SalonConfig sc = mock(SalonConfig.class);
         when(sc.toCommissionConfig()).thenReturn(new CommissionConfig(60,
@@ -76,7 +76,7 @@ class SalaryProcedureCountTest {
         List<AttributedService> services = List.of(
                 line("Mani", "100", true), line("Pedi", "100", true), line("Add-on", "20", false));
         MonthAggregation agg = new MonthAggregation(2026, 5, "UTC", List.of(pm),
-                new SquareMonthAggregator.Diag(), services, List.of());
+                new SquareMonthAggregator.Diag(), services, List.of(), List.of());
         when(aggregator.aggregate(eq(2026), eq(5), any())).thenReturn(agg);
         when(directory.resolveOrCreate("TM1", "Anna"))
                 .thenReturn(Provider.builder().id(1L).name("Anna").displayName("Anna").build());

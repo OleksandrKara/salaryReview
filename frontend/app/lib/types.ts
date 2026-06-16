@@ -109,6 +109,30 @@ export interface ProviderPayout {
   // Copy-pasteable #salary block per half (null if no activity that half).
   firstHalfMessage: string | null;
   secondHalfMessage: string | null;
+  // Owner+manager badge counts — every uncleared suspicious booking, per half.
+  firstHalfSuspicious: number;
+  secondHalfSuspicious: number;
+  // Provider self-view badge counts — only bookings with no notes at all (their actionable subset).
+  firstHalfSuspiciousNoNotes: number;
+  secondHalfSuspiciousNoNotes: number;
+}
+
+export interface SuspiciousBooking {
+  bookingId: string;
+  date: string;           // yyyy-MM-dd
+  time: string;           // h:mm a salon-local
+  customerId: string;
+  customerName: string | null;
+  serviceName: string | null;
+  gross: number | null;
+  half: 'FIRST' | 'SECOND';
+  // Free-text notes attached to the appointment in Square (nullable / blank-normalized to null).
+  sellerNote: string | null;
+  customerNote: string | null;
+  cleared: boolean;
+  clearedBy: string | null;
+  clearedAt: string | null;   // ISO instant
+  clearedNote: string | null;
 }
 
 export interface Feedback {

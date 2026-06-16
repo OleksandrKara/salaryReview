@@ -45,7 +45,7 @@ class PrepaidDiscountTest {
         ProviderRepository providerRepo = mock(ProviderRepository.class);
 
         SettlementPreviewService service = new SettlementPreviewService(aggregator, new TierCommissionEngine(),
-                salonConfigRepo, directory, tierGrants, feedback, square, prepaidRedemptions, prepaidPackages, providerRepo, mock(com.salonreview.repo.RedoRepository.class), mock(com.salonreview.repo.ManualCreditRepository.class), mock(com.salonreview.square.NoShowFeeService.class));
+                salonConfigRepo, directory, tierGrants, feedback, square, prepaidRedemptions, prepaidPackages, providerRepo, mock(com.salonreview.repo.RedoRepository.class), mock(com.salonreview.repo.ManualCreditRepository.class), mock(com.salonreview.square.NoShowFeeService.class), mock(com.salonreview.square.SuspiciousBookingService.class));
 
         SalonConfig sc = mock(SalonConfig.class);
         when(sc.toCommissionConfig()).thenReturn(new CommissionConfig(60,
@@ -59,7 +59,7 @@ class PrepaidDiscountTest {
         when(square.customerNames(any())).thenReturn(java.util.Map.of());
         // No Square orders this month — provider 1's only activity is the prepaid draw-down.
         when(aggregator.aggregate(eq(2026), eq(5), any())).thenReturn(
-                new MonthAggregation(2026, 5, "UTC", List.of(), new SquareMonthAggregator.Diag(), List.of(), List.of()));
+                new MonthAggregation(2026, 5, "UTC", List.of(), new SquareMonthAggregator.Diag(), List.of(), List.of(), List.of()));
         when(providerRepo.findById(1L)).thenReturn(Optional.of(Provider.builder().id(1L).displayName("Bayan").build()));
 
         // Package: $294.30 paid for 3 sessions ($98.10 each); a May-20 draw-down at the $109 menu price.
