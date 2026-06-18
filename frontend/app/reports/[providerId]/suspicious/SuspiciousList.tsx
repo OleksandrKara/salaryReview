@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import type { SuspiciousBooking } from '../../../lib/types';
+import type { SuspiciousBooking, TriageResult } from '../../../lib/types';
+import TriagePanel from './TriagePanel';
 
 // Same URL constant used by AppointmentCell — opens the booking in Square's dashboard.
 const SQUARE_RESERVATION = 'https://app.squareup.com/dashboard/appointments/calendar/reservations/';
@@ -48,10 +49,26 @@ function fmtClearedAt(iso: string | null) {
   return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-export default function SuspiciousList({ initial }: { initial: SuspiciousBooking[] }) {
+export default function SuspiciousList({
+  initial,
+  aiTriageEnabled,
+  year,
+  month,
+}: {
+  initial: SuspiciousBooking[];
+  aiTriageEnabled: boolean;
+  year: number;
+  month: number;
+}) {
   const [items, setItems] = useState(initial);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState('');
+
+  // Persist a freshly-fetched triage onto the item so the panel keeps showing it after the row
+  // moves between the uncleared and cleared sections (which remounts TriagePanel).
+  function rememberTriage(bookingId: string, triage: TriageResult) {
+    setItems((prev) => prev.map((x) => (x.bookingId === bookingId ? { ...x, triage } : x)));
+  }
 
   const uncleared = items.filter((i) => !i.cleared);
   const cleared   = items.filter((i) =>  i.cleared);
@@ -127,6 +144,15 @@ export default function SuspiciousList({ initial }: { initial: SuspiciousBooking
                     <CustomerLink b={b} /> · {b.serviceName ?? '(service?)'} · {usd(b.gross)}
                   </div>
                   <AppointmentNotes b={b} />
+                  {aiTriageEnabled && (
+                    <TriagePanel
+                      bookingId={b.bookingId}
+                      year={year}
+                      month={month}
+                      initialTriage={b.triage}
+                      onTriageLoaded={(t) => rememberTriage(b.bookingId, t)}
+                    />
+                  )}
                 </div>
                 <button
                   data-testid={`suspicious-clear-${b.bookingId}`}
@@ -158,6 +184,15 @@ export default function SuspiciousList({ initial }: { initial: SuspiciousBooking
                     <CustomerLink b={b} /> · {b.serviceName ?? '(service?)'} · {usd(b.gross)}
                   </div>
                   <AppointmentNotes b={b} />
+                  {aiTriageEnabled && (
+                    <TriagePanel
+                      bookingId={b.bookingId}
+                      year={year}
+                      month={month}
+                      initialTriage={b.triage}
+                      onTriageLoaded={(t) => rememberTriage(b.bookingId, t)}
+                    />
+                  )}
                   <div className="mt-0.5 text-[11px] text-zinc-400">
                     cleared by {b.clearedBy ?? '?'} {fmtClearedAt(b.clearedAt) && `· ${fmtClearedAt(b.clearedAt)}`}
                   </div>

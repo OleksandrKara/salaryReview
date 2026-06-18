@@ -39,6 +39,12 @@ services:
       # First owner account, seeded when the user table is empty. Use a strong password on a server.
       APP_OWNER_USERNAME: ${APP_OWNER_USERNAME:-owner}
       APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:-changeme}
+      # AI triage (suspicious-booking explainer). Feature flag is off by default —
+      # set AI_TRIAGE_ENABLED=true to expose the Explain button in the UI.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-salary-review-suspicious-triage}
+      AI_TRIAGE_ENABLED: ${AI_TRIAGE_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy
