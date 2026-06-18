@@ -260,6 +260,16 @@ salaryReview/
 
 ---
 
+## Design docs
+
+Larger features ship with a spec-driven proposal + design + tasks workflow under
+[`openspec/changes/`](openspec/changes/). For a worked end-to-end example —
+proposal, technical design with rationale and alternatives, testable spec with
+scenarios, and the implementation task list — see the AI triage change at
+[`openspec/changes/suspicious-booking-ai-triage/`](openspec/changes/suspicious-booking-ai-triage/).
+
+---
+
 ## Roadmap
 
 Square OAuth + multi-tenant isolation (per-merchant credentials instead of a
