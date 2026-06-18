@@ -212,7 +212,12 @@ public class SquareClient {
         });
     }
 
-    /** Display name per service-variation id (for labelling bookings, which carry no service name). */
+    /**
+     * Display name per service-variation id, formatted for human reading. Combines the parent
+     * item name with the variation name when both exist (e.g. {@code "Pedicure · Nail Artist"}),
+     * which is much more useful for triage than just the variation name. Falls back gracefully if
+     * either side is missing or generic.
+     */
     public Map<String, String> catalogNames(Collection<String> variationIds) {
         List<String> ids = variationIds.stream().filter(id -> id != null && !id.isBlank()).distinct().sorted().toList();
         if (ids.isEmpty()) return new HashMap<>();
@@ -220,17 +225,55 @@ public class SquareClient {
             Map<String, String> names = new HashMap<>();
             CatalogBatchRetrieveResponse resp = http.post()
                     .uri("/v2/catalog/batch-retrieve")
-                    .body(Map.of("object_ids", ids))
+                    // include_related_objects=true returns the parent items alongside the requested
+                    // variations in `related_objects` — one HTTP call instead of two.
+                    .body(Map.of("object_ids", ids, "include_related_objects", true))
                     .retrieve()
                     .body(CatalogBatchRetrieveResponse.class);
             if (resp == null || resp.objects() == null) return names;
-            for (CatalogObject obj : resp.objects()) {
-                if (obj.itemVariationData() != null && obj.itemVariationData().name() != null) {
-                    names.put(obj.id(), obj.itemVariationData().name());
+
+            // Build itemId → item name map from related_objects.
+            Map<String, String> itemNames = new HashMap<>();
+            if (resp.relatedObjects() != null) {
+                for (CatalogObject obj : resp.relatedObjects()) {
+                    if (obj.itemData() != null && obj.itemData().name() != null) {
+                        itemNames.put(obj.id(), obj.itemData().name());
+                    }
                 }
+            }
+
+            for (CatalogObject obj : resp.objects()) {
+                if (obj.itemVariationData() == null) continue;
+                String varName = obj.itemVariationData().name();
+                String itemName = obj.itemVariationData().itemId() == null
+                        ? null
+                        : itemNames.get(obj.itemVariationData().itemId());
+                String combined = combineCatalogName(itemName, varName);
+                if (combined != null) names.put(obj.id(), combined);
             }
             return names;
         });
+    }
+
+    /**
+     * Format a parent-item + variation name pair for display. Skips redundant pieces:
+     * if the variation is a generic placeholder (e.g. "Regular") we just show the item name;
+     * if the two are the same we don't duplicate; if one is missing we show the other.
+     */
+    static String combineCatalogName(String itemName, String variationName) {
+        boolean hasItem = itemName != null && !itemName.isBlank();
+        boolean hasVar = variationName != null && !variationName.isBlank();
+        if (!hasItem && !hasVar) return null;
+        if (!hasItem) return variationName.trim();
+        if (!hasVar) return itemName.trim();
+        String i = itemName.trim();
+        String v = variationName.trim();
+        if (i.equalsIgnoreCase(v)) return i;
+        String vLower = v.toLowerCase(java.util.Locale.US);
+        // Square's default variation name is "Regular" when the salon didn't customize it —
+        // surfacing that adds no information, so we suppress it.
+        if (vLower.equals("regular") || vLower.equals("standard") || vLower.equals("default")) return i;
+        return i + " · " + v;
     }
 
     // Square's bulk-retrieve-customers endpoint 404s on this account, so names are fetched one GET
@@ -450,11 +493,19 @@ public class SquareClient {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record CatalogItemVariationData(String name, String itemId, Money priceMoney) {}
 
+    /** Parent catalog item — Square models a "service" as an item with one or more variations. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record CatalogObject(String type, String id, CatalogItemVariationData itemVariationData) {}
+    public record CatalogItemData(String name) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record CatalogBatchRetrieveResponse(List<CatalogObject> objects) {}
+    public record CatalogObject(String type, String id,
+                                CatalogItemVariationData itemVariationData,
+                                CatalogItemData itemData) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record CatalogBatchRetrieveResponse(List<CatalogObject> objects,
+                                               List<CatalogObject> relatedObjects) {}
 }

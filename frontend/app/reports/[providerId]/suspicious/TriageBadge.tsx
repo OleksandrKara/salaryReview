@@ -8,16 +8,20 @@ const LABEL: Record<TriageClassification, string> = {
   LIKELY_FRAUD: 'Likely fraud',
 };
 
-/** Per-class Tailwind classes. Kept inline-literal so Tailwind's JIT can statically pick them up. */
+/**
+ * Per-class Tailwind classes — matches the project's existing badge palette
+ * (see {@code reports/page.tsx}: bg-{color}-50 / text-{color}-700 / ring-{color}-300).
+ * Kept inline-literal so Tailwind's JIT can statically pick them up.
+ */
 const RING: Record<TriageClassification, string> = {
-  LIKELY_LEGIT: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  NEEDS_REVIEW: 'bg-amber-50 text-amber-700 ring-amber-200',
-  LIKELY_FRAUD: 'bg-red-50 text-red-700 ring-red-200',
+  LIKELY_LEGIT: 'bg-green-50 text-green-700 ring-green-300',
+  NEEDS_REVIEW: 'bg-amber-50 text-amber-700 ring-amber-300',
+  LIKELY_FRAUD: 'bg-red-50 text-red-700 ring-red-300',
 };
 
 /** Small dot color used to make the chip readable at a glance even when the text is muted. */
 const DOT: Record<TriageClassification, string> = {
-  LIKELY_LEGIT: 'bg-emerald-500',
+  LIKELY_LEGIT: 'bg-green-500',
   NEEDS_REVIEW: 'bg-amber-500',
   LIKELY_FRAUD: 'bg-red-500',
 };
@@ -38,7 +42,7 @@ export default function TriageBadge({ triage }: { triage: TriageResult | null })
     <span
       data-testid={`triage-badge-${c}`}
       title={`AI classification: ${LABEL[c]} (${pct}% confidence)`}
-      className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${RING[c]}`}
+      className={`inline-flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium ring-1 ${RING[c]}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${DOT[c]}`} aria-hidden="true" />
       {LABEL[c]}
