@@ -25,6 +25,10 @@ export default async function SuspiciousPage({
 
   const me = await serverApi.getMe();
   if (me?.role === 'PROVIDER') redirect('/me');
+  // me.features comes from /api/me — the AI triage feature flag is read from the backend env
+  // (AI_TRIAGE_ENABLED) and piggybacks on the existing me round-trip. Defaults to false if the
+  // backend hasn't shipped the field yet (e.g. older /api/me caches).
+  const aiTriageEnabled = me?.features?.aiTriageEnabled ?? false;
 
   const items: SuspiciousBooking[] = await serverApi.listSuspicious(
     year, month, half, Number(providerId),
@@ -48,7 +52,7 @@ export default async function SuspiciousPage({
         <span className="font-medium">Undo</span> to re-flag if you cleared by mistake.
       </p>
 
-      <SuspiciousList initial={items} />
+      <SuspiciousList initial={items} aiTriageEnabled={aiTriageEnabled} year={year} month={month} />
     </main>
   );
 }
