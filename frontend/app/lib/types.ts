@@ -117,14 +117,22 @@ export interface ProviderPayout {
   secondHalfSuspiciousNoNotes: number;
 }
 
+export interface ServiceLine {
+  name: string | null;
+  gross: number | null;
+}
+
 export interface SuspiciousBooking {
   bookingId: string;
   date: string;           // yyyy-MM-dd
   time: string;           // h:mm a salon-local
   customerId: string;
   customerName: string | null;
-  serviceName: string | null;
-  gross: number | null;
+  serviceName: string | null;  // combined "A + B + C", convenience fallback
+  gross: number | null;        // summed across services
+  // Per-segment breakdown — render as chips for at-a-glance scanning. Empty array (not null)
+  // when no services resolved.
+  services: ServiceLine[];
   half: 'FIRST' | 'SECOND';
   // Free-text notes attached to the appointment in Square (nullable / blank-normalized to null).
   sellerNote: string | null;

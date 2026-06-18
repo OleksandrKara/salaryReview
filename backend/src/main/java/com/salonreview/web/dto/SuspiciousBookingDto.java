@@ -4,6 +4,7 @@ import com.salonreview.ai.TriageResult;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 /**
  * One suspicious booking row for the /reports/{providerId}/suspicious detail page. {@code cleared}
@@ -22,8 +23,15 @@ public record SuspiciousBookingDto(
         String time,                 // h:mm a, salon-local
         String customerId,
         String customerName,         // best-effort, nullable
-        String serviceName,          // best-effort, nullable
-        BigDecimal gross,            // nullable
+        String serviceName,          // best-effort, nullable; joined with " + " across segments
+        BigDecimal gross,            // nullable; summed across segments
+        /**
+         * Per-segment service breakdown — one entry per service variation on the booking. The
+         * detail page renders these as chips alongside the combined {@link #serviceName} for
+         * easier scanning of multi-service appointments. Empty (not null) when no services
+         * resolved.
+         */
+        List<ServiceLineDto> services,
         String half,                 // "FIRST" / "SECOND"
         /** Seller-side note on the appointment (the salon's internal note), nullable. */
         String sellerNote,
