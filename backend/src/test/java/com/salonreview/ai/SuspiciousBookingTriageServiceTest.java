@@ -273,6 +273,6 @@ class SuspiciousBookingTriageServiceTest {
                 Half.SECOND, BigDecimal.valueOf(80), null, null);
         when(suspiciousBookings.findCandidateForTriage(2026, 6, "bk1"))
                 .thenReturn(Optional.of(new SuspiciousBookingService.CandidateLookup(
-                        candidate, "America/New_York")));
+                        candidate, "America/New_York", "Classic facial")));
     }
 }

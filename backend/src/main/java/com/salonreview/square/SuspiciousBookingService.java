@@ -269,17 +269,30 @@ public class SuspiciousBookingService {
      * Look up the raw suspicious-candidate context for a single booking — used by the AI triage
      * service to build its LLM input. Returns empty if the booking isn't currently flagged as
      * suspicious in the requested month (which the triage controller treats as 404).
+     *
+     * <p>Best-effort service-name resolution included so the LLM can read it directly (rather than
+     * a raw variation ID) and so the signal detector can look for "fix"/"redo" keywords in the
+     * service name as well as the notes.
      */
     public Optional<CandidateLookup> findCandidateForTriage(int year, int month, String bookingId) {
         SquareMonthAggregator.MonthAggregation agg = aggregator.aggregate(year, month, priceCutoff());
         return agg.suspicious().stream()
                 .filter(c -> bookingId.equals(c.bookingId()))
                 .findFirst()
-                .map(c -> new CandidateLookup(c, agg.timezone()));
+                .map(c -> {
+                    String serviceName = c.serviceVariationId() == null ? null
+                            : safeCatalogNames(List.of(c.serviceVariationId())).get(c.serviceVariationId());
+                    return new CandidateLookup(c, agg.timezone(), serviceName);
+                });
     }
 
-    /** Pairs the raw candidate with the salon-local timezone (needed to compute weekend/late signals). */
-    public record CandidateLookup(SquareMonthAggregator.SuspiciousCandidate candidate, String timezone) {}
+    /**
+     * Pairs the raw candidate with the salon-local timezone (needed to compute weekend/late signals)
+     * and the resolved service name (best-effort, null on catalog lookup failure).
+     */
+    public record CandidateLookup(SquareMonthAggregator.SuspiciousCandidate candidate,
+                                  String timezone,
+                                  String serviceName) {}
 
     // --- internals ---
 
