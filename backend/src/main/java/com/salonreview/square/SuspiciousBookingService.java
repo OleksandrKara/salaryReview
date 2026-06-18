@@ -12,6 +12,7 @@ import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.repo.SuspiciousBookingClearanceRepository;
 import com.salonreview.repo.SuspiciousTriageRepository;
 import com.salonreview.service.ProviderDirectory;
+import com.salonreview.web.dto.ServiceLineDto;
 import com.salonreview.web.dto.SuspiciousBookingDto;
 import java.math.BigDecimal;
 import org.springframework.beans.factory.ObjectProvider;
@@ -146,6 +147,13 @@ public class SuspiciousBookingService {
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             BigDecimal grossOrNull = summedGross.signum() > 0 ? summedGross : null;
 
+            // Per-segment breakdown: one line per service variation in input order. Skips
+            // entries where both the name and the price failed to resolve (no useful info).
+            List<ServiceLineDto> serviceLines = segments.stream()
+                    .map(c -> new ServiceLineDto(serviceNames.get(c.serviceVariationId()), c.gross()))
+                    .filter(line -> line.name() != null || line.gross() != null)
+                    .toList();
+
             SuspiciousBookingClearance cleared = clearedById.get(head.bookingId());
             SuspiciousTriage cachedTriage = triageById.get(head.bookingId());
             TriageResult triage = cachedTriage == null ? null : TriageResult.fromEntity(cachedTriage);
@@ -157,6 +165,7 @@ public class SuspiciousBookingService {
                     customerNames.get(head.customerId()),
                     combinedService,
                     grossOrNull,
+                    serviceLines,
                     head.half().name(),
                     blankToNull(head.sellerNote()),
                     blankToNull(head.customerNote()),
