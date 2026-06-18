@@ -101,8 +101,9 @@ public class SuspiciousBookingTriageService {
 
         SquareMonthAggregator.SuspiciousCandidate candidate = lookup.get().candidate();
         String tz = lookup.get().timezone();
-        List<String> signals = computeSignals(candidate, tz);
-        String userMessage = buildUserMessage(candidate, tz, signals);
+        String serviceName = lookup.get().serviceName();
+        List<String> signals = computeSignals(candidate, tz, serviceName);
+        String userMessage = buildUserMessage(candidate, tz, serviceName, signals);
 
         // 3. Open the LangSmith trace (skipped when the tracer bean isn't registered).
         LangSmithTracer tracer = tracerProvider.getIfAvailable();
@@ -184,7 +185,7 @@ public class SuspiciousBookingTriageService {
                 .maxTokens(MAX_OUTPUT_TOKENS)
                 .systemOfTextBlockParams(List.of(
                         TextBlockParam.builder()
-                                .text(TriagePrompts.SYSTEM_PROMPT_V1)
+                                .text(TriagePrompts.SYSTEM_PROMPT_V2)
                                 .cacheControl(CacheControlEphemeral.builder().build())
                                 .build()))
                 .addUserMessage(userMessage)
@@ -253,8 +254,18 @@ public class SuspiciousBookingTriageService {
         return TriageResult.fromEntity(t);
     }
 
+    /**
+     * Keywords that suggest a free fix / redo / correction within the salon's warranty window.
+     * Matched case-insensitively as substrings in the service name and notes. Intentionally tight
+     * — broader words like "follow-up" have too many other meanings.
+     */
+    private static final String[] FIX_KEYWORDS = {
+            "fix", "redo", "rework", "correction", "touch-up", "touchup"
+    };
+
     /** Compute the named signal list from the raw candidate. The LLM cites these by name. */
-    private List<String> computeSignals(SquareMonthAggregator.SuspiciousCandidate c, String tz) {
+    private List<String> computeSignals(SquareMonthAggregator.SuspiciousCandidate c, String tz,
+                                        String serviceName) {
         List<String> signals = new ArrayList<>();
         // Three signals are always true for any suspicious candidate (they're how detection works).
         signals.add("past_appointment_no_order");
@@ -270,12 +281,28 @@ public class SuspiciousBookingTriageService {
         if (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY) signals.add("weekend_appointment");
         if (local.getHour() >= 19) signals.add("late_evening_appointment");
 
+        if (containsAnyIgnoreCase(serviceName, FIX_KEYWORDS)
+                || containsAnyIgnoreCase(c.sellerNote(), FIX_KEYWORDS)
+                || containsAnyIgnoreCase(c.customerNote(), FIX_KEYWORDS)) {
+            signals.add("possible_fix_or_redo");
+        }
+
         return signals;
+    }
+
+    /** Case-insensitive substring match against any of the given keywords. Null-safe. */
+    private static boolean containsAnyIgnoreCase(String haystack, String[] keywords) {
+        if (haystack == null || haystack.isBlank()) return false;
+        String lower = haystack.toLowerCase(Locale.US);
+        for (String kw : keywords) {
+            if (lower.contains(kw)) return true;
+        }
+        return false;
     }
 
     /** Format the booking context as the model's user message — matches the few-shot example shape. */
     private String buildUserMessage(SquareMonthAggregator.SuspiciousCandidate c,
-                                    String tz, List<String> signals) {
+                                    String tz, String serviceName, List<String> signals) {
         ZonedDateTime local = c.startAt().atZone(safeZone(tz));
         String dayName = local.format(DAY_FMT);
         String time = local.format(TIME_FMT);
@@ -283,10 +310,16 @@ public class SuspiciousBookingTriageService {
         StringBuilder sb = new StringBuilder();
         sb.append("Booking: ").append(time).append(", ").append(dayName).append('\n');
         sb.append("Service: ");
-        if (c.gross() == null) {
+        // Show the resolved service name (when available) alongside the catalog price — gives the
+        // model the "fix"/"correction" keywords it needs to detect a redo without a Square pull.
+        if (serviceName != null && !serviceName.isBlank()) {
+            sb.append(serviceName);
+            if (c.gross() != null) sb.append(" ($").append(c.gross().toPlainString()).append(")");
+            sb.append('\n');
+        } else if (c.gross() == null) {
             sb.append("(catalog price unknown)").append('\n');
         } else {
-            sb.append("(catalog price $").append(c.gross().toPlainString()).append(")").append('\n');
+            sb.append("(unknown service, catalog price $").append(c.gross().toPlainString()).append(")").append('\n');
         }
         sb.append("Customer: (id ").append(c.customerId() == null ? "(none)" : c.customerId()).append(")").append('\n');
         sb.append("Provider: ").append(c.providerName() == null ? "(unknown)" : c.providerName()).append('\n');
