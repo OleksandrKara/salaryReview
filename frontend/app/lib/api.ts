@@ -15,6 +15,8 @@ import type {
   PrepaidInvoice,
   PrepaidPackage,
   PrepaidRedemption,
+  TriageClassification,
+  TriageResult,
   UserCreateRequest,
   UserUpdateRequest,
 } from './types';
@@ -92,6 +94,26 @@ export const api = {
 
   // Force a fresh pull from Square (busts the read cache) — the "Sync now" button.
   syncSquare: () => proxyVoid(`/api/sync`, 'POST'),
+
+  // AI triage (suspicious-booking explainer) — owner clicks Explain on a flagged booking.
+  requestTriage: (bookingId: string, year: number, month: number) =>
+    proxyJson<TriageResult>(
+      `/api/suspicious/${encodeURIComponent(bookingId)}/triage?year=${year}&month=${month}`,
+      'POST',
+      {},
+    ),
+
+  // Record owner's thumbs-up/down on a triage card. correctedClassification is sent only on a
+  // thumbs-down when the owner picks the actually-right classification.
+  submitTriageFeedback: (
+    bookingId: string,
+    helpful: boolean,
+    correctedClassification: TriageClassification | null,
+  ) =>
+    proxyVoid(`/api/suspicious/${encodeURIComponent(bookingId)}/triage/feedback`, 'POST', {
+      helpful,
+      correctedClassification,
+    }),
 };
 
 async function proxyVoid(path: string, method: string, body?: unknown): Promise<void> {

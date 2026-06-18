@@ -4,11 +4,17 @@ import com.salonreview.domain.Half;
 import com.salonreview.domain.Provider;
 import com.salonreview.domain.SalonConfig;
 import com.salonreview.domain.SuspiciousBookingClearance;
+import com.salonreview.ai.TriageFeedbackPublisher;
+import com.salonreview.ai.TriagePrompts;
+import com.salonreview.ai.TriageResult;
+import com.salonreview.domain.SuspiciousTriage;
 import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.repo.SuspiciousBookingClearanceRepository;
+import com.salonreview.repo.SuspiciousTriageRepository;
 import com.salonreview.service.ProviderDirectory;
 import com.salonreview.web.dto.SuspiciousBookingDto;
 import java.math.BigDecimal;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +29,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -43,17 +50,32 @@ public class SuspiciousBookingService {
     private final SalonConfigRepository salonConfig;
     private final ProviderDirectory providers;
     private final SuspiciousBookingClearanceRepository clearances;
+    /**
+     * Optional AI hook: when the feature flag is on, Clear/Undo actions ship implicit feedback to
+     * LangSmith. When the flag is off, the bean isn't registered and {@link ObjectProvider} no-ops.
+     */
+    private final ObjectProvider<TriageFeedbackPublisher> triageFeedbackProvider;
+    /**
+     * Always-registered repo (no AI conditional) — when the AI feature has never been used, this
+     * table is just empty, so the bulk lookup costs nothing. Kept here (rather than via an AI
+     * abstraction) so cached triages survive even after the feature flag is later flipped off.
+     */
+    private final SuspiciousTriageRepository triages;
 
     public SuspiciousBookingService(SquareMonthAggregator aggregator,
                                     SquareClient square,
                                     SalonConfigRepository salonConfig,
                                     ProviderDirectory providers,
-                                    SuspiciousBookingClearanceRepository clearances) {
+                                    SuspiciousBookingClearanceRepository clearances,
+                                    ObjectProvider<TriageFeedbackPublisher> triageFeedbackProvider,
+                                    SuspiciousTriageRepository triages) {
         this.aggregator = aggregator;
         this.square = square;
         this.salonConfig = salonConfig;
         this.providers = providers;
         this.clearances = clearances;
+        this.triageFeedbackProvider = triageFeedbackProvider;
+        this.triages = triages;
     }
 
     /**
@@ -94,6 +116,12 @@ public class SuspiciousBookingService {
         Map<String, SuspiciousBookingClearance> clearedById = clearances.findAllBySquareBookingIdIn(bookingIds)
                 .stream().collect(Collectors.toMap(SuspiciousBookingClearance::getSquareBookingId, c -> c));
 
+        // Bulk-fetch any cached AI triages under the current prompt version so the page renders
+        // them on initial load (no per-row click needed to see a triage the owner already requested).
+        Map<String, SuspiciousTriage> triageById = triages
+                .findAllBySquareBookingIdInAndPromptVersion(bookingIds, TriagePrompts.PROMPT_VERSION)
+                .stream().collect(Collectors.toMap(SuspiciousTriage::getSquareBookingId, t -> t));
+
         ZoneId zone = ZoneId.of(agg.timezone());
 
         // Collapse multi-segment bookings into one row each. The badge counts unique bookings, so
@@ -119,6 +147,8 @@ public class SuspiciousBookingService {
             BigDecimal grossOrNull = summedGross.signum() > 0 ? summedGross : null;
 
             SuspiciousBookingClearance cleared = clearedById.get(head.bookingId());
+            SuspiciousTriage cachedTriage = triageById.get(head.bookingId());
+            TriageResult triage = cachedTriage == null ? null : TriageResult.fromEntity(cachedTriage);
             return new SuspiciousBookingDto(
                     head.bookingId(),
                     head.day().toString(),
@@ -133,7 +163,8 @@ public class SuspiciousBookingService {
                     cleared != null,
                     cleared == null ? null : cleared.getClearedByUsername(),
                     cleared == null ? null : cleared.getClearedAt(),
-                    cleared == null ? null : cleared.getNote());
+                    cleared == null ? null : cleared.getNote(),
+                    triage);
         }).toList();
     }
 
@@ -224,13 +255,31 @@ public class SuspiciousBookingService {
                 .clearedAt(Instant.now())
                 .note(note)
                 .build());
+        triageFeedbackProvider.ifAvailable(p -> p.onClear(bookingId, username, note));
     }
 
     /** Remove the clearance row, restoring the booking to the uncleared list. */
     @Transactional
     public void unclear(String bookingId) {
         clearances.deleteBySquareBookingId(bookingId);
+        triageFeedbackProvider.ifAvailable(p -> p.onUnclear(bookingId));
     }
+
+    /**
+     * Look up the raw suspicious-candidate context for a single booking — used by the AI triage
+     * service to build its LLM input. Returns empty if the booking isn't currently flagged as
+     * suspicious in the requested month (which the triage controller treats as 404).
+     */
+    public Optional<CandidateLookup> findCandidateForTriage(int year, int month, String bookingId) {
+        SquareMonthAggregator.MonthAggregation agg = aggregator.aggregate(year, month, priceCutoff());
+        return agg.suspicious().stream()
+                .filter(c -> bookingId.equals(c.bookingId()))
+                .findFirst()
+                .map(c -> new CandidateLookup(c, agg.timezone()));
+    }
+
+    /** Pairs the raw candidate with the salon-local timezone (needed to compute weekend/late signals). */
+    public record CandidateLookup(SquareMonthAggregator.SuspiciousCandidate candidate, String timezone) {}
 
     // --- internals ---
 
