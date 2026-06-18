@@ -1,11 +1,11 @@
 # salaryReview
 
-A real, in-production payroll engine for a small nail salon. It replaces a manual
+A real, in-production payroll engine for a nail salons. It replaces a manual
 spreadsheet by reading the salon's **Square** account (bookings, orders, catalog,
 team members) live and computing exact commission payouts — *"Zelle AK to Anna:
 $284.55 / Cash from Anna to AK: $160.05"* — with no manual data entry.
 
-It started as a calculator and grew into a small but real full-stack system: a
+It started as a calculator and grew into a real full-stack system: a
 tiered no-clawback commission engine, a Square reconciliation pipeline validated
 against real transaction data, role-based accounts for the owner/manager/providers,
 fraud-style anomaly detection, and an **LLM-powered triage assistant** that
