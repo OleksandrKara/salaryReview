@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import type { SuspiciousBooking, TriageResult } from '../../../lib/types';
+import type { ServiceLine, SuspiciousBooking, TriageResult } from '../../../lib/types';
+import TriageBadge from './TriageBadge';
 import TriagePanel from './TriagePanel';
 
 // Same URL constant used by AppointmentCell — opens the booking in Square's dashboard.
@@ -9,6 +10,59 @@ const SQUARE_RESERVATION = 'https://app.squareup.com/dashboard/appointments/cale
 
 const usd = (n: number | null) =>
   n == null ? '—' : n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+
+/** Short whole-dollar formatter for the per-service chips ("$80", not "$80.00"). */
+const usdShort = (n: number | null) => (n == null ? null : `$${Math.round(n)}`);
+
+/**
+ * Per-service chip list. Renders one chip per service variation on the booking — each chip shows
+ * the service name and (when known) the catalog price. Wraps naturally on narrow screens for
+ * mobile-friendliness. Falls back to a single chip with the joined {@code serviceName} when the
+ * per-segment breakdown isn't available (e.g. older backend versions).
+ */
+function ServiceChips({
+  services,
+  fallback,
+  muted = false,
+}: {
+  services: ServiceLine[];
+  fallback: string | null;
+  muted?: boolean;
+}) {
+  const bg = muted ? 'bg-zinc-50 ring-zinc-200' : 'bg-zinc-100';
+  const fg = muted ? 'text-zinc-500' : 'text-zinc-700';
+  const priceColor = muted ? 'text-zinc-400' : 'text-zinc-500';
+
+  if (services.length === 0) {
+    if (!fallback) return null;
+    return (
+      <div className="mt-1.5">
+        <span
+          data-testid="service-chip-fallback"
+          className={`inline-block rounded ${bg} px-2 py-0.5 text-xs ${fg} ring-1 ring-inset ring-zinc-200`}
+        >
+          {fallback}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1.5" data-testid="service-chips">
+      {services.map((s, i) => (
+        <span
+          key={i}
+          className={`inline-flex items-center gap-1 rounded ${bg} px-2 py-0.5 text-xs ${fg} ring-1 ring-inset ring-zinc-200`}
+        >
+          <span className="max-w-[180px] truncate sm:max-w-none">{s.name ?? '(service?)'}</span>
+          {s.gross != null && (
+            <span className={`tabular-nums ${priceColor}`}>{usdShort(s.gross)}</span>
+          )}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 /** Render the customer's name as a link to the appointment in Square (falls back to a plain span). */
 function CustomerLink({ b }: { b: SuspiciousBooking }) {
@@ -140,9 +194,14 @@ export default function SuspiciousList({
                   <div className="font-medium">
                     {b.date} · <span className="font-normal text-zinc-500">{b.time}</span>
                   </div>
-                  <div className="text-zinc-500">
-                    <CustomerLink b={b} /> · {b.serviceName ?? '(service?)'} · {usd(b.gross)}
+                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-zinc-500">
+                    <CustomerLink b={b} />
+                    {b.gross != null && (
+                      <span className="text-zinc-400">· {usd(b.gross)} total</span>
+                    )}
+                    {aiTriageEnabled && <TriageBadge triage={b.triage} />}
                   </div>
+                  <ServiceChips services={b.services} fallback={b.serviceName} />
                   <AppointmentNotes b={b} />
                   {aiTriageEnabled && (
                     <TriagePanel
@@ -180,9 +239,14 @@ export default function SuspiciousList({
                   <div className="text-zinc-600">
                     {b.date} · <span className="text-zinc-400">{b.time}</span>
                   </div>
-                  <div className="text-xs text-zinc-500">
-                    <CustomerLink b={b} /> · {b.serviceName ?? '(service?)'} · {usd(b.gross)}
+                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-zinc-500">
+                    <CustomerLink b={b} />
+                    {b.gross != null && (
+                      <span className="text-zinc-400">· {usd(b.gross)} total</span>
+                    )}
+                    {aiTriageEnabled && <TriageBadge triage={b.triage} />}
                   </div>
+                  <ServiceChips services={b.services} fallback={b.serviceName} muted />
                   <AppointmentNotes b={b} />
                   {aiTriageEnabled && (
                     <TriagePanel
