@@ -35,7 +35,9 @@ class SuspiciousBookingServiceTest {
                 mock(SquareClient.class),
                 mock(SalonConfigRepository.class),
                 mock(ProviderDirectory.class),
-                repo);
+                repo,
+                mock(org.springframework.beans.factory.ObjectProvider.class),
+                mock(com.salonreview.repo.SuspiciousTriageRepository.class));
     }
 
     @Test

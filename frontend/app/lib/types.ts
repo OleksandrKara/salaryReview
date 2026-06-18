@@ -133,6 +133,8 @@ export interface SuspiciousBooking {
   clearedBy: string | null;
   clearedAt: string | null;   // ISO instant
   clearedNote: string | null;
+  // Cached AI triage under the current prompt version (null when no triage exists yet).
+  triage: TriageResult | null;
 }
 
 export interface Feedback {
@@ -150,6 +152,35 @@ export interface Me {
   username: string;
   role: Role;
   providerId: number | null;
+  features: Features;
+}
+
+export interface Features {
+  aiTriageEnabled: boolean;
+}
+
+// --- AI triage (suspicious-booking explainer) ---
+// Mirrors TriageResult / TriageClassification in com.salonreview.ai.
+
+export type TriageClassification = 'LIKELY_LEGIT' | 'NEEDS_REVIEW' | 'LIKELY_FRAUD';
+
+export interface TriageResult {
+  classification: TriageClassification;
+  // 0.0 to 1.0 — sent as a JSON number on the wire.
+  confidence: number;
+  explanation: string;
+  // Empty string when classification is LIKELY_LEGIT (no message needed when nothing's wrong).
+  draftMessage: string;
+  // Detection-signal names the explanation cites (e.g. "past_appointment_no_order").
+  signals: string[];
+  promptVersion: string;
+  model: string;
+}
+
+export interface TriageFeedbackRequest {
+  helpful: boolean;
+  // Owner's corrected classification on a thumbs-down; null when no correction was provided.
+  correctedClassification: TriageClassification | null;
 }
 
 export interface AppUser {
