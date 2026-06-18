@@ -28,6 +28,12 @@ const usdShort = (n: number | null) => (n == null ? null : `$${Math.round(n)}`);
  * ({@code rounded bg-zinc-100 ring-zinc-300}, see reports/page.tsx) so chips feel native and
  * distinct from the bordered note cards.
  */
+/**
+ * Per-service chip list. Pill-shaped (rounded-full), white background with a zinc border —
+ * visually a "tag" that's clearly distinct from amber-accented note cards. Full service names
+ * (no truncation) so the owner sees e.g. "Pedicure · Nail Artist" not just "Nail Artist". Wraps
+ * naturally on mobile via flex-wrap.
+ */
 function ServiceChips({
   services,
   fallback,
@@ -38,17 +44,17 @@ function ServiceChips({
   muted?: boolean;
 }) {
   const chipClass = muted
-    ? 'bg-zinc-50 text-zinc-500 ring-zinc-300'
-    : 'bg-zinc-100 text-zinc-700 ring-zinc-300';
+    ? 'bg-white text-zinc-500 border-zinc-200'
+    : 'bg-white text-zinc-700 border-zinc-300';
   const priceClass = muted ? 'text-zinc-400' : 'text-zinc-500';
 
   if (services.length === 0) {
     if (!fallback) return null;
     return (
-      <div className="mt-1.5">
+      <div className="mt-2">
         <span
           data-testid="service-chip-fallback"
-          className={`inline-block rounded px-2 py-0.5 text-xs font-medium ring-1 ${chipClass}`}
+          className={`inline-block rounded-full border px-2.5 py-0.5 text-xs font-medium ${chipClass}`}
         >
           {fallback}
         </span>
@@ -57,11 +63,11 @@ function ServiceChips({
   }
 
   return (
-    <div className="mt-1.5 flex flex-wrap gap-1.5" data-testid="service-chips">
+    <div className="mt-2 flex flex-wrap gap-1.5" data-testid="service-chips">
       {services.map((s, i) => (
         <span
           key={i}
-          className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium ring-1 ${chipClass}`}
+          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${chipClass}`}
         >
           <span>{s.name ?? '(service?)'}</span>
           {s.gross != null && (
@@ -90,16 +96,20 @@ function CustomerLink({ b }: { b: SuspiciousBooking }) {
   );
 }
 
-/** Two-line note display (seller + customer); renders nothing when both are blank. */
+/**
+ * Two-line note display (seller + customer). Card-shaped (rounded-md) with a warm amber left
+ * accent — visually a "callout" that's clearly different from the white pill service chips
+ * above. Renders nothing when both notes are blank.
+ */
 function AppointmentNotes({ b }: { b: SuspiciousBooking }) {
   if (!b.sellerNote && !b.customerNote) return null;
   return (
-    <div className="mt-1.5 space-y-0.5 rounded-md bg-zinc-50 px-2 py-1.5 text-xs text-zinc-600 ring-1 ring-zinc-200">
+    <div className="mt-2 space-y-0.5 rounded-md border-l-4 border-amber-300 bg-amber-50/50 px-3 py-2 text-xs text-zinc-700">
       {b.sellerNote && (
-        <div><span className="font-medium text-zinc-500">Salon note:</span> {b.sellerNote}</div>
+        <div><span className="font-medium text-amber-800">Salon note:</span> {b.sellerNote}</div>
       )}
       {b.customerNote && (
-        <div><span className="font-medium text-zinc-500">Customer note:</span> {b.customerNote}</div>
+        <div><span className="font-medium text-amber-800">Customer note:</span> {b.customerNote}</div>
       )}
     </div>
   );
@@ -315,10 +325,10 @@ export default function SuspiciousList({
             All cleared — nothing left in this period.
           </p>
         ) : (
-          <ul className="divide-y divide-zinc-100 rounded-lg ring-1 ring-zinc-200">
+          <ul className="space-y-3">
             {uncleared.map((b) => (
               <li key={b.bookingId} data-testid={`suspicious-row-${b.bookingId}`}
-                  className="flex flex-col gap-1 px-3 py-2.5 text-sm">
+                  className="flex flex-col gap-1 rounded-lg bg-white px-4 py-3 text-sm shadow-sm ring-1 ring-zinc-200">
                 <div className="font-medium">
                   {b.date} · <span className="font-normal text-zinc-500">{b.time}</span>
                 </div>
@@ -343,10 +353,10 @@ export default function SuspiciousList({
       {cleared.length > 0 && (
         <section data-testid="suspicious-cleared-section">
           <h2 className="mb-2 text-sm font-medium text-zinc-500">Cleared earlier · {cleared.length}</h2>
-          <ul className="divide-y divide-zinc-100 rounded-lg ring-1 ring-zinc-200 bg-zinc-50/40">
+          <ul className="space-y-3">
             {cleared.map((b) => (
               <li key={b.bookingId} data-testid={`suspicious-cleared-row-${b.bookingId}`}
-                  className="flex flex-col gap-1 px-3 py-2.5 text-sm">
+                  className="flex flex-col gap-1 rounded-lg bg-zinc-50/60 px-4 py-3 text-sm shadow-sm ring-1 ring-zinc-200">
                 <div className="text-zinc-600">
                   {b.date} · <span className="text-zinc-400">{b.time}</span>
                 </div>
