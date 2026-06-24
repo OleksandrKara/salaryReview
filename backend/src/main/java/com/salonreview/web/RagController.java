@@ -5,6 +5,7 @@ import com.salonreview.config.RagProperties;
 import com.salonreview.rag.RagAnswer;
 import com.salonreview.rag.RagAnswerService;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,6 +23,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/rag")
+@ConditionalOnProperty(prefix = "rag", name = "enabled", havingValue = "true")
 public class RagController {
 
     private final RagAnswerService answerService;

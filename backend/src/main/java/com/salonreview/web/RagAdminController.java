@@ -8,6 +8,7 @@ import com.salonreview.rag.RagConfigService;
 import com.salonreview.rag.RagIngestionService;
 import com.salonreview.repo.RagChunkRepository;
 import com.salonreview.repo.RagDocumentRepository;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -24,6 +25,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/rag/admin")
+@ConditionalOnProperty(prefix = "rag", name = "enabled", havingValue = "true")
 public class RagAdminController {
 
     private final RagIngestionService ingestion;
