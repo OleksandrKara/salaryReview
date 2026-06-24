@@ -17,7 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        # pgvector image (official postgres:16 + the vector extension) so Flyway V22 can
+        # CREATE EXTENSION vector during the migration run. Matches docker-compose.yml.
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_DB: salonreview
           POSTGRES_USER: salon

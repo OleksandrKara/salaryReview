@@ -2,6 +2,43 @@
 
 export type Half = 'FIRST' | 'SECOND';
 
+// --- RAG knowledge assistant (com.salonreview.rag / web.Rag*Controller) ---
+
+export interface RagCitation {
+  documentId: number | null;
+  documentTitle: string;
+  citedText: string;
+}
+
+export interface RagAnswer {
+  answer: string;
+  citations: RagCitation[];
+  configVersion: number;
+  traceRunId: string | null;
+  answered: boolean;
+}
+
+export interface RagDocumentSummary {
+  id: number;
+  filename: string;
+  sourceType: string;
+  status: 'PENDING' | 'INDEXING' | 'INDEXED' | 'QUARANTINED' | 'FAILED';
+  statusDetail: string | null;
+  indexedChunks: number;
+  quarantinedChunks: number;
+  createdAt: string;
+  indexedAt: string | null;
+}
+
+export interface RagAgentConfigDto {
+  version: number;
+  systemPrompt: string;
+  model: string;
+  temperature: number;
+  k: number;
+  distanceThreshold: number;
+}
+
 export interface Provider {
   id: number;
   name: string;

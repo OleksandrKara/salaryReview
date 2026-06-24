@@ -15,6 +15,9 @@ import type {
   PrepaidInvoice,
   PrepaidPackage,
   PrepaidRedemption,
+  RagAgentConfigDto,
+  RagAnswer,
+  RagDocumentSummary,
   TriageClassification,
   TriageResult,
   UserCreateRequest,
@@ -114,6 +117,34 @@ export const api = {
       helpful,
       correctedClassification,
     }),
+
+  // RAG knowledge assistant — manager/owner asks a question; backend returns a cited answer.
+  askRag: (question: string) => proxyJson<RagAnswer>(`/api/rag/ask`, 'POST', { question }),
+
+  submitRagFeedback: (runId: string, helpful: boolean) =>
+    proxyVoid(`/api/rag/ask/feedback`, 'POST', { runId, helpful }),
+
+  // RAG admin (owner). Upload is multipart, so it bypasses proxyJson (which forces JSON).
+  listRagDocuments: () => proxyGet<RagDocumentSummary[]>(`/api/rag/admin/documents`),
+
+  uploadRagDocument: async (file: File): Promise<RagDocumentSummary> => {
+    const form = new FormData();
+    form.append('file', file);
+    // No Content-Type header — the browser sets multipart/form-data with the boundary.
+    const res = await fetch(`/api/rag/admin/documents`, { method: 'POST', body: form });
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+    return (await res.json()) as RagDocumentSummary;
+  },
+
+  approveRagDocument: (id: number) =>
+    proxyJson<RagDocumentSummary>(`/api/rag/admin/documents/${id}/approve`, 'POST', {}),
+
+  deleteRagDocument: (id: number) => proxyVoid(`/api/rag/admin/documents/${id}`, 'DELETE'),
+
+  getRagConfig: () => proxyGet<RagAgentConfigDto>(`/api/rag/admin/config`),
+
+  updateRagConfig: (body: Omit<RagAgentConfigDto, 'version'>) =>
+    proxyJson<RagAgentConfigDto>(`/api/rag/admin/config`, 'POST', body),
 };
 
 async function proxyVoid(path: string, method: string, body?: unknown): Promise<void> {

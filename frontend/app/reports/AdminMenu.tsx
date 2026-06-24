@@ -6,6 +6,7 @@ import { useState } from 'react';
 // Owner/manager admin navigation. On desktop the links sit inline next to the page title; on a phone
 // that row overflowed the viewport, so there we collapse them behind a hamburger that opens a dropdown.
 const LINKS = [
+  { href: '/rag', label: 'Assistant' },
   { href: '/admin/prepaid', label: 'Prepaid' },
   { href: '/admin/owner-customers', label: 'Owner comps' },
   { href: '/admin/redos', label: 'Redos' },
@@ -15,7 +16,12 @@ const LINKS = [
 export default function AdminMenu({ isOwner }: { isOwner: boolean }) {
   const [open, setOpen] = useState(false);
   const links = isOwner
-    ? [{ href: '/owner/overview', label: 'Overview' }, ...LINKS, { href: '/admin/users', label: 'Users' }]
+    ? [
+        { href: '/owner/overview', label: 'Overview' },
+        ...LINKS,
+        { href: '/rag/admin', label: 'Knowledge base' },
+        { href: '/admin/users', label: 'Users' },
+      ]
     : LINKS;
   const link = 'text-xs text-zinc-400 hover:text-zinc-600';
 

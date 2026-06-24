@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: postgres:16
+    # pgvector image is the official postgres:16 plus the `vector` extension — same PGDATA layout,
+    # so the existing postgres-data volume mounts unchanged (RAG knowledge assistant, V22 enables it).
+    image: pgvector/pgvector:pg16
     container_name: salonreview-postgres
     restart: unless-stopped
     environment:
@@ -45,6 +47,10 @@ services:
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-salary-review-suspicious-triage}
       AI_TRIAGE_ENABLED: ${AI_TRIAGE_ENABLED:-false}
+      # RAG knowledge assistant. Feature flag is off by default — set RAG_ENABLED=true (and a
+      # VOYAGE_API_KEY for embeddings) to expose the /api/rag endpoints and the chat/admin UI.
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
+      RAG_ENABLED: ${RAG_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy

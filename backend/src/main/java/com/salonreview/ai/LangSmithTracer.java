@@ -3,7 +3,7 @@ package com.salonreview.ai;
 import com.salonreview.config.AiTriageProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -21,7 +21,7 @@ import java.util.concurrent.Executors;
  * action. Nothing this class does can fail in a way that affects the user-facing response.
  */
 @Component
-@ConditionalOnProperty(prefix = "ai.triage", name = "enabled", havingValue = "true")
+@ConditionalOnExpression("${ai.triage.enabled:false} or ${rag.enabled:false}")
 public class LangSmithTracer {
 
     private static final Logger log = LoggerFactory.getLogger(LangSmithTracer.class);
