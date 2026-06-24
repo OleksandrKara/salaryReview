@@ -39,8 +39,11 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/info", "/api/login").permitAll()
-                        .requestMatchers("/api/users/**", "/api/owner/**").hasRole("OWNER")
+                        .requestMatchers("/api/users/**", "/api/owner/**", "/api/rag/admin/**").hasRole("OWNER")
                         .requestMatchers("/api/settlements/me/**").hasRole("PROVIDER")
+                        // RAG admin (upload/approve/delete/config) is OWNER-only above; asking +
+                        // feedback are OWNER+MANAGER. The admin matcher is listed first so it wins.
+                        .requestMatchers("/api/rag/**").hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers("/api/settlements/**", "/api/providers/**", "/api/square/**",
                                 "/api/pay-periods/**", "/api/prepaid/**", "/api/owner-customers/**", "/api/redos/**",
                                 "/api/manual-credits/**", "/api/no-show-fees/**", "/api/suspicious/**")

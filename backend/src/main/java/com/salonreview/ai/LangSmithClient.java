@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.config.AiTriageProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -25,7 +25,7 @@ import java.util.Map;
  * dispatch so callers don't block on the network.
  */
 @Component
-@ConditionalOnProperty(prefix = "ai.triage", name = "enabled", havingValue = "true")
+@ConditionalOnExpression("${ai.triage.enabled:false} or ${rag.enabled:false}")
 public class LangSmithClient {
 
     private static final Logger log = LoggerFactory.getLogger(LangSmithClient.class);

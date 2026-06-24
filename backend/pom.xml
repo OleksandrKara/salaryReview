@@ -88,6 +88,18 @@
 			<artifactId>anthropic-java</artifactId>
 			<version>2.40.1</version>
 		</dependency>
+		<!-- Text extraction for the RAG knowledge assistant (PDF / docs / markdown → plain text).
+		     Standalone library — not Spring AI; see openspec design D5 for why we hand-roll the rest. -->
+		<dependency>
+			<groupId>org.apache.tika</groupId>
+			<artifactId>tika-core</artifactId>
+			<version>2.9.2</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.tika</groupId>
+			<artifactId>tika-parsers-standard-package</artifactId>
+			<version>2.9.2</version>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator-test</artifactId>

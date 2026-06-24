@@ -43,6 +43,13 @@ ai:
     langsmith-api-key: ${LANGSMITH_API_KEY:}
     langsmith-project: ${LANGSMITH_PROJECT:salary-review-suspicious-triage}
 
+# RAG knowledge assistant. Feature flag is off by default; turn on per environment only after
+# ANTHROPIC_API_KEY (answers, shared with triage) and VOYAGE_API_KEY (embeddings) are set.
+# See RagProperties.java.
+rag:
+  enabled: ${RAG_ENABLED:false}
+  voyage-api-key: ${VOYAGE_API_KEY:}
+
 server:
   port: 8080
   forward-headers-strategy: framework
