@@ -15,6 +15,8 @@ import type {
   PrepaidInvoice,
   PrepaidPackage,
   PrepaidRedemption,
+  KbArticle,
+  KbWriteRequest,
   RagAgentConfigDto,
   RagAnswer,
   RagDocumentSummary,
@@ -145,6 +147,29 @@ export const api = {
 
   updateRagConfig: (body: Omit<RagAgentConfigDto, 'version'>) =>
     proxyJson<RagAgentConfigDto>(`/api/rag/admin/config`, 'POST', body),
+
+  // Knowledge Base articles. Reads are role-filtered by the backend; writes/sync are OWNER+MANAGER.
+  listKbArticles: () => proxyGet<KbArticle[]>(`/api/kb-articles`),
+
+  getKbArticle: (id: number) => proxyGet<KbArticle>(`/api/kb-articles/${id}`),
+
+  createKbArticle: (body: KbWriteRequest) => proxyJson<KbArticle>(`/api/kb-articles`, 'POST', body),
+
+  updateKbArticle: (id: number, body: KbWriteRequest) =>
+    proxyJson<KbArticle>(`/api/kb-articles/${id}`, 'PUT', body),
+
+  deleteKbArticle: (id: number) => proxyVoid(`/api/kb-articles/${id}`, 'DELETE'),
+
+  // Sync one article into the RAG store; returns the updated article (possibly in ERROR).
+  syncKbArticle: (id: number) => proxyJson<KbArticle>(`/api/kb-articles/${id}/sync`, 'POST', {}),
+
+  // Bulk sync (backend returns 409 if one is already running). The admin UI drives per-article
+  // sync in a loop for live progress; this is the one-shot equivalent.
+  syncAllKbArticles: () => proxyJson<KbArticle[]>(`/api/kb-articles/sync-all`, 'POST', {}),
+
+  // AI drafting via our own Claude endpoint (no paid editor-AI add-on).
+  aiDraftKbArticle: (prompt: string, currentBody: string | null) =>
+    proxyJson<{ markdown: string }>(`/api/kb-articles/ai-draft`, 'POST', { prompt, currentBody }),
 };
 
 async function proxyVoid(path: string, method: string, body?: unknown): Promise<void> {

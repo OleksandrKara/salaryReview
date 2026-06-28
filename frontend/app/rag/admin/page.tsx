@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { Spinner } from '../../components/Spinner';
+import KbSyncSection from './KbSyncSection';
 import type { RagAgentConfigDto, RagDocumentSummary } from '../../lib/types';
 
 // Owner-only admin surface for the knowledge corpus: upload documents (land PENDING), approve them
@@ -128,6 +129,8 @@ export default function RagAdminPage() {
           </div>
         )}
       </section>
+
+      <KbSyncSection />
 
       <ConfigEditor />
     </main>
