@@ -17,6 +17,11 @@ import type {
   PrepaidRedemption,
   KbArticle,
   KbWriteRequest,
+  Sop,
+  SopCreateRequest,
+  SopRosterEntry,
+  SopUpdateRequest,
+  SopVersion,
   RagAgentConfigDto,
   RagAnswer,
   RagDocumentSummary,
@@ -170,6 +175,30 @@ export const api = {
   // AI drafting via our own Claude endpoint (no paid editor-AI add-on).
   aiDraftKbArticle: (prompt: string, currentBody: string | null) =>
     proxyJson<{ markdown: string }>(`/api/kb-articles/ai-draft`, 'POST', { prompt, currentBody }),
+
+  // SOPs. Reads are audience-filtered by the backend; writes/publish/archive are OWNER; acknowledge
+  // is MANAGER/PROVIDER (and the backend checks the caller is in the SOP's audience).
+  listSops: () => proxyGet<Sop[]>(`/api/sops`),
+
+  createSop: (body: SopCreateRequest) => proxyJson<Sop>(`/api/sops`, 'POST', body),
+
+  updateSop: (id: number, body: SopUpdateRequest) => proxyJson<Sop>(`/api/sops/${id}`, 'PUT', body),
+
+  listSopVersions: (id: number) => proxyGet<SopVersion[]>(`/api/sops/${id}/versions`),
+
+  addSopVersion: (id: number, body: string) =>
+    proxyJson<SopVersion>(`/api/sops/${id}/versions`, 'POST', { body }),
+
+  publishSopVersion: (id: number, versionId: number) =>
+    proxyJson<Sop>(`/api/sops/${id}/versions/${versionId}/publish`, 'POST', {}),
+
+  archiveSop: (id: number) => proxyJson<Sop>(`/api/sops/${id}/archive`, 'POST', {}),
+
+  unarchiveSop: (id: number) => proxyJson<Sop>(`/api/sops/${id}/unarchive`, 'POST', {}),
+
+  sopRoster: (id: number) => proxyGet<SopRosterEntry[]>(`/api/sops/${id}/acknowledgment-status`),
+
+  acknowledgeSop: (id: number) => proxyJson<Sop>(`/api/sops/${id}/acknowledge`, 'POST', {}),
 };
 
 async function proxyVoid(path: string, method: string, body?: unknown): Promise<void> {

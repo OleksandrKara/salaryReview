@@ -1,0 +1,192 @@
+package com.salonreview.sop;
+
+import com.salonreview.domain.AppUser;
+import com.salonreview.domain.Role;
+import com.salonreview.domain.Sop;
+import com.salonreview.domain.SopAcknowledgment;
+import com.salonreview.domain.SopAudience;
+import com.salonreview.domain.SopStatus;
+import com.salonreview.domain.SopVersion;
+import com.salonreview.domain.SopVersionStatus;
+import com.salonreview.repo.AppUserRepository;
+import com.salonreview.repo.SopAcknowledgmentRepository;
+import com.salonreview.repo.SopRepository;
+import com.salonreview.repo.SopVersionRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/** Unit tests for {@link SopService}: authoring/publish, audience-filtered reads, acknowledge, roster. */
+class SopServiceTest {
+
+    private SopRepository sops;
+    private SopVersionRepository versions;
+    private SopAcknowledgmentRepository acks;
+    private AppUserRepository users;
+    private SopService service;
+
+    @BeforeEach
+    void setUp() {
+        sops = mock(SopRepository.class);
+        versions = mock(SopVersionRepository.class);
+        acks = mock(SopAcknowledgmentRepository.class);
+        users = mock(AppUserRepository.class);
+        when(sops.save(any())).thenAnswer(inv -> {
+            Sop s = inv.getArgument(0);
+            if (s.getId() == null) s.setId(1L);
+            return s;
+        });
+        when(versions.save(any())).thenAnswer(inv -> {
+            SopVersion v = inv.getArgument(0);
+            if (v.getId() == null) v.setId(100L);
+            return v;
+        });
+        service = new SopService(sops, versions, acks, users);
+    }
+
+    private Sop sop(SopAudience audience, SopStatus status, Long currentVersionId) {
+        return Sop.builder().id(1L).title("Cleaning").category("Hygiene").audience(audience)
+                .status(status).currentVersionId(currentVersionId).createdBy("owner").build();
+    }
+
+    @Test
+    @DisplayName("create makes a SOP plus a version-1 draft")
+    void createMakesV1Draft() {
+        service.create("Cleaning", "Hygiene", SopAudience.PROVIDER, "wash hands", "owner");
+        ArgumentCaptor<SopVersion> cap = ArgumentCaptor.forClass(SopVersion.class);
+        verify(versions).save(cap.capture());
+        assertThat(cap.getValue().getVersionNumber()).isEqualTo(1);
+        assertThat(cap.getValue().getStatus()).isEqualTo(SopVersionStatus.DRAFT);
+    }
+
+    @Test
+    @DisplayName("publish sets current version + marks PUBLISHED")
+    void publishSetsCurrent() {
+        when(sops.findById(1L)).thenReturn(Optional.of(sop(SopAudience.PROVIDER, SopStatus.ACTIVE, null)));
+        when(versions.findById(100L)).thenReturn(Optional.of(SopVersion.builder().id(100L).sopId(1L)
+                .versionNumber(1).body("b").status(SopVersionStatus.DRAFT).createdBy("owner").build()));
+
+        Sop out = service.publish(1L, 100L).orElseThrow();
+
+        assertThat(out.getCurrentVersionId()).isEqualTo(100L);
+        ArgumentCaptor<SopVersion> cap = ArgumentCaptor.forClass(SopVersion.class);
+        verify(versions).save(cap.capture());
+        assertThat(cap.getValue().getStatus()).isEqualTo(SopVersionStatus.PUBLISHED);
+    }
+
+    @Test
+    @DisplayName("re-publishing an already-published version is rejected")
+    void rePublishRejected() {
+        when(sops.findById(1L)).thenReturn(Optional.of(sop(SopAudience.PROVIDER, SopStatus.ACTIVE, 100L)));
+        when(versions.findById(100L)).thenReturn(Optional.of(SopVersion.builder().id(100L).sopId(1L)
+                .versionNumber(1).body("b").status(SopVersionStatus.PUBLISHED).createdBy("owner").build()));
+
+        assertThatThrownBy(() -> service.publish(1L, 100L))
+                .isInstanceOf(SopService.AlreadyPublishedException.class);
+    }
+
+    @Test
+    @DisplayName("new draft is max+1 and doesn't change the live version")
+    void addVersionMaxPlusOne() {
+        when(sops.findById(1L)).thenReturn(Optional.of(sop(SopAudience.PROVIDER, SopStatus.ACTIVE, 100L)));
+        when(versions.findTopBySopIdOrderByVersionNumberDesc(1L)).thenReturn(Optional.of(
+                SopVersion.builder().id(100L).sopId(1L).versionNumber(2).status(SopVersionStatus.PUBLISHED).build()));
+
+        service.addVersion(1L, "v3 body", "owner");
+
+        ArgumentCaptor<SopVersion> cap = ArgumentCaptor.forClass(SopVersion.class);
+        verify(versions).save(cap.capture());
+        assertThat(cap.getValue().getVersionNumber()).isEqualTo(3);
+        assertThat(cap.getValue().getStatus()).isEqualTo(SopVersionStatus.DRAFT);
+        verify(sops, never()).save(any()); // current unchanged
+    }
+
+    @Test
+    @DisplayName("audience filtering: provider sees PROVIDER/BOTH published+active; manager-only and draft excluded")
+    void audienceFiltering() {
+        Sop providerSop = Sop.builder().id(1L).title("a").category("c").audience(SopAudience.PROVIDER)
+                .status(SopStatus.ACTIVE).currentVersionId(100L).createdBy("o").build();
+        Sop bothSop = Sop.builder().id(2L).title("b").category("c").audience(SopAudience.BOTH)
+                .status(SopStatus.ACTIVE).currentVersionId(200L).createdBy("o").build();
+        Sop managerSop = Sop.builder().id(3L).title("c").category("c").audience(SopAudience.MANAGER)
+                .status(SopStatus.ACTIVE).currentVersionId(300L).createdBy("o").build();
+        Sop draftSop = Sop.builder().id(4L).title("d").category("c").audience(SopAudience.PROVIDER)
+                .status(SopStatus.ACTIVE).currentVersionId(null).createdBy("o").build();
+        when(sops.findByStatusOrderByCategoryAscTitleAsc(SopStatus.ACTIVE))
+                .thenReturn(List.of(providerSop, bothSop, managerSop, draftSop));
+        when(versions.findById(anyLong())).thenReturn(Optional.of(
+                SopVersion.builder().id(100L).sopId(1L).versionNumber(1).body("x").status(SopVersionStatus.PUBLISHED).build()));
+        when(acks.findBySopVersionIdAndUserId(anyLong(), anyLong())).thenReturn(Optional.empty());
+
+        List<SopService.SopListItem> seen = service.list(Role.PROVIDER, 7L);
+
+        assertThat(seen).extracting(i -> i.sop().getId()).containsExactly(1L, 2L); // provider + both, not manager, not draft
+    }
+
+    @Test
+    @DisplayName("acknowledge is idempotent and audience-gated; nothing-to-ack rejected")
+    void acknowledgeRules() {
+        // out of audience: provider acking a manager-only SOP
+        when(sops.findById(1L)).thenReturn(Optional.of(sop(SopAudience.MANAGER, SopStatus.ACTIVE, 100L)));
+        assertThatThrownBy(() -> service.acknowledge(1L, 7L, Role.PROVIDER))
+                .isInstanceOf(SopService.OutOfAudienceException.class);
+
+        // nothing to acknowledge: no published version
+        when(sops.findById(2L)).thenReturn(Optional.of(Sop.builder().id(2L).title("t").category("c")
+                .audience(SopAudience.PROVIDER).status(SopStatus.ACTIVE).currentVersionId(null).createdBy("o").build()));
+        assertThatThrownBy(() -> service.acknowledge(2L, 7L, Role.PROVIDER))
+                .isInstanceOf(SopService.NothingToAcknowledgeException.class);
+
+        // idempotent: already acknowledged → no new row
+        Sop ok = sop(SopAudience.PROVIDER, SopStatus.ACTIVE, 100L);
+        when(sops.findById(3L)).thenReturn(Optional.of(ok));
+        when(acks.existsBySopVersionIdAndUserId(100L, 7L)).thenReturn(true);
+        when(versions.findById(100L)).thenReturn(Optional.of(SopVersion.builder().id(100L).build()));
+        when(acks.findBySopVersionIdAndUserId(100L, 7L)).thenReturn(Optional.of(
+                SopAcknowledgment.builder().sopVersionId(100L).userId(7L).acknowledgedAt(Instant.now()).build()));
+        service.acknowledge(3L, 7L, Role.PROVIDER);
+        verify(acks, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("republish resets acknowledgment: ack against the old version doesn't satisfy the new current")
+    void republishResetsAck() {
+        Sop s = sop(SopAudience.PROVIDER, SopStatus.ACTIVE, 300L); // current is v3 (id 300)
+        when(versions.findById(300L)).thenReturn(Optional.of(SopVersion.builder().id(300L).build()));
+        when(acks.findBySopVersionIdAndUserId(300L, 7L)).thenReturn(Optional.empty()); // only acked v2, not v3
+
+        assertThat(service.item(s, 7L).acknowledged()).isFalse();
+    }
+
+    @Test
+    @DisplayName("roster lists the audience's active users with correct ack flags")
+    void roster() {
+        when(sops.findById(1L)).thenReturn(Optional.of(sop(SopAudience.BOTH, SopStatus.ACTIVE, 100L)));
+        when(users.findByRoleInAndActiveTrueOrderByUsernameAsc(any())).thenReturn(List.of(
+                AppUser.builder().id(10L).username("mgr").role(Role.MANAGER).active(true).passwordHash("x").build(),
+                AppUser.builder().id(11L).username("prov").role(Role.PROVIDER).active(true).passwordHash("x").build()));
+        when(acks.findBySopVersionId(100L)).thenReturn(List.of(
+                SopAcknowledgment.builder().sopVersionId(100L).userId(10L).acknowledgedAt(Instant.now()).build()));
+
+        List<SopService.RosterEntry> roster = service.roster(1L);
+
+        assertThat(roster).hasSize(2);
+        assertThat(roster).filteredOn(SopService.RosterEntry::acknowledged).extracting(SopService.RosterEntry::userId)
+                .containsExactly(10L);
+    }
+}

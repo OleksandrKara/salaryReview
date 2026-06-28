@@ -7,6 +7,7 @@ import type {
   KbArticle,
   ManualCredit,
   Me,
+  Sop,
   OwnerCustomer,
   OwnerOverviewData,
   PrepaidPackage,
@@ -46,6 +47,9 @@ export const serverApi = {
 
   // KB articles, role-filtered by the backend using the session.
   listKbArticles: () => serverFetch<KbArticle[]>(`/api/kb-articles`),
+
+  // SOPs, audience-filtered by the backend using the session.
+  listSops: () => serverFetch<Sop[]>(`/api/sops`),
 
   getSettlementPreview: (year: number, month: number) =>
     serverFetch<SettlementPreview>(`/api/settlements/preview?year=${year}&month=${month}`),

@@ -8,6 +8,7 @@ import { useState } from 'react';
 const LINKS = [
   { href: '/rag', label: 'Assistant' },
   { href: '/kb', label: 'Knowledge base' },
+  { href: '/sops', label: 'SOPs' },
   { href: '/admin/prepaid', label: 'Prepaid' },
   { href: '/admin/owner-customers', label: 'Owner comps' },
   { href: '/admin/redos', label: 'Redos' },
@@ -21,6 +22,7 @@ export default function AdminMenu({ isOwner }: { isOwner: boolean }) {
         { href: '/owner/overview', label: 'Overview' },
         ...LINKS,
         { href: '/rag/admin', label: 'Assistant admin' },
+        { href: '/sops/admin', label: 'SOPs admin' },
         { href: '/admin/users', label: 'Users' },
       ]
     : LINKS;

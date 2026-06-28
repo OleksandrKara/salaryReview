@@ -561,3 +561,53 @@ export interface KbWriteRequest {
   body: string;
   visibleRoles: Role[];
 }
+
+// --- SOPs (com.salonreview.web.SopController) ---
+
+export type SopAudience = 'MANAGER' | 'PROVIDER' | 'BOTH';
+export type SopStatus = 'ACTIVE' | 'ARCHIVED';
+export type SopVersionStatus = 'DRAFT' | 'PUBLISHED';
+
+export interface SopVersion {
+  id: number;
+  versionNumber: number;
+  body: string;
+  status: SopVersionStatus;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface Sop {
+  id: number;
+  title: string;
+  category: string;
+  audience: SopAudience;
+  status: SopStatus;
+  currentVersion: SopVersion | null;
+  acknowledged: boolean;
+  acknowledgedAt: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SopRosterEntry {
+  userId: number;
+  username: string;
+  role: Role;
+  acknowledged: boolean;
+  acknowledgedAt: string | null;
+}
+
+export interface SopCreateRequest {
+  title: string;
+  category: string;
+  audience: SopAudience;
+  body: string;
+}
+
+export interface SopUpdateRequest {
+  title: string;
+  category: string;
+  audience: SopAudience;
+}
