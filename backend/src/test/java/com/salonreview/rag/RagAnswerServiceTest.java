@@ -77,6 +77,34 @@ class RagAnswerServiceTest {
     }
 
     @Test
+    @DisplayName("streaming: empty retrieval emits the 'don't know' token then done, no LLM call")
+    void streamingEmptyRetrieval() {
+        when(retrieval.retrieve(anyString(), any())).thenReturn(List.of());
+
+        class Capture implements RagAnswerService.StreamSink {
+            final java.util.List<String> tokens = new java.util.ArrayList<>();
+            java.util.List<Citation> cites;
+            Boolean answered;
+            boolean done, error;
+            @Override public void token(String t) { tokens.add(t); }
+            @Override public void citations(java.util.List<Citation> c) { cites = c; }
+            @Override public void done(String runId, boolean a) { done = true; answered = a; }
+            @Override public void error(String m) { error = true; }
+        }
+        Capture cap = new Capture();
+
+        service.answerStream("what is the refund policy?", cap);
+
+        assertThat(cap.tokens).hasSize(1);
+        assertThat(cap.tokens.get(0)).contains("couldn't find");
+        assertThat(cap.cites).isEmpty();
+        assertThat(cap.done).isTrue();
+        assertThat(cap.answered).isFalse();
+        assertThat(cap.error).isFalse();
+        verify(anthropicProvider, never()).getIfAvailable();
+    }
+
+    @Test
     @DisplayName("hits present → answer assembled with citations from the model")
     void hitsProduceCitedAnswer() {
         ChunkMatch hit = mock(ChunkMatch.class);
