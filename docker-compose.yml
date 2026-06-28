@@ -51,6 +51,8 @@ services:
       # VOYAGE_API_KEY for embeddings) to expose the /api/rag endpoints and the chat/admin UI.
       VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
       RAG_ENABLED: ${RAG_ENABLED:-false}
+      # Grounded starter prompts in the chat widget. On by default; set false to hide them.
+      RAG_SUGGESTIONS_ENABLED: ${RAG_SUGGESTIONS_ENABLED:-true}
     depends_on:
       postgres:
         condition: service_healthy
