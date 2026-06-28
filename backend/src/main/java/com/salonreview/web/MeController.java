@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.salonreview.config.AiTriageProperties;
 import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.config.RagProperties;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,9 +22,11 @@ import java.util.Map;
 public class MeController {
 
     private final AiTriageProperties aiTriage;
+    private final RagProperties rag;
 
-    public MeController(AiTriageProperties aiTriage) {
+    public MeController(AiTriageProperties aiTriage, RagProperties rag) {
         this.aiTriage = aiTriage;
+        this.rag = rag;
     }
 
     @GetMapping("/api/me")
@@ -32,7 +35,9 @@ public class MeController {
         body.put("username", principal.getUsername());
         body.put("role", principal.getRole().name());
         body.put("providerId", principal.getProviderId());
-        body.put("features", Map.of("aiTriageEnabled", aiTriage.isEnabled()));
+        body.put("features", Map.of(
+                "aiTriageEnabled", aiTriage.isEnabled(),
+                "ragSuggestionsEnabled", rag.isEnabled() && rag.getSuggestions().isEnabled()));
         return body;
     }
 }

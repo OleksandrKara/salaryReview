@@ -5,6 +5,8 @@ import com.salonreview.ai.LangSmithTracer;
 import com.salonreview.config.RagProperties;
 import com.salonreview.rag.RagAnswer;
 import com.salonreview.rag.RagAnswerService;
+import com.salonreview.rag.RagSuggestionService;
+import com.salonreview.rag.StarterSuggestions;
 import com.salonreview.rag.Citation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,6 +22,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -32,6 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class RagControllerTest {
 
     private RagAnswerService answerService;
+    private RagSuggestionService suggestionService;
     private RagProperties props;
     @SuppressWarnings("unchecked")
     private ObjectProvider<LangSmithTracer> tracerProvider = mock(ObjectProvider.class);
@@ -42,10 +46,23 @@ class RagControllerTest {
     @SuppressWarnings("unchecked")
     void setUp() {
         answerService = mock(RagAnswerService.class);
+        suggestionService = mock(RagSuggestionService.class);
         props = mock(RagProperties.class);
         tracerProvider = mock(ObjectProvider.class);
-        RagController controller = new RagController(answerService, tracerProvider, props);
+        RagController controller = new RagController(answerService, suggestionService, tracerProvider, props);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
+    }
+
+    @Test
+    @DisplayName("suggestions endpoint returns the service's topic-grouped prompts")
+    void suggestions() throws Exception {
+        when(suggestionService.get()).thenReturn(new StarterSuggestions(List.of(
+                new StarterSuggestions.Topic("Policies", List.of("What's our no-show fee policy?")))));
+
+        mvc.perform(get("/api/rag/suggestions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.topics[0].label").value("Policies"))
+                .andExpect(jsonPath("$.topics[0].questions[0]").value("What's our no-show fee policy?"));
     }
 
     @Test

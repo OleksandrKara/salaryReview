@@ -202,6 +202,17 @@ export interface Me {
 
 export interface Features {
   aiTriageEnabled: boolean;
+  ragSuggestionsEnabled: boolean;
+}
+
+// Grounded starter prompts for the assistant's empty state (com.salonreview.rag.StarterSuggestions).
+export interface StarterTopic {
+  label: string;
+  questions: string[];
+}
+
+export interface StarterSuggestions {
+  topics: StarterTopic[];
 }
 
 // --- AI triage (suspicious-booking explainer) ---

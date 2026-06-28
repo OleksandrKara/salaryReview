@@ -27,6 +27,7 @@ import type {
   RagAnswer,
   RagCitation,
   RagDocumentSummary,
+  StarterSuggestions,
   TriageClassification,
   TriageResult,
   UserCreateRequest,
@@ -204,6 +205,9 @@ export const api = {
 
   // The authenticated principal — used by the assistant widget to self-gate by role.
   getMe: () => proxyGet<Me>(`/api/me`),
+
+  // Grounded starter prompts for the assistant's empty state.
+  getRagSuggestions: () => proxyGet<StarterSuggestions>(`/api/rag/suggestions`),
 
   // Stream a grounded answer token-by-token over SSE. Calls back as events arrive.
   askRagStream: async (

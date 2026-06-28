@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { Spinner } from './Spinner';
-import type { RagCitation, Role } from '../lib/types';
+import type { RagCitation, Role, StarterSuggestions } from '../lib/types';
 
 type Msg = {
   id: number;
@@ -29,6 +29,8 @@ export default function AssistantWidget() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [suggestEnabled, setSuggestEnabled] = useState(false);
+  const [suggestions, setSuggestions] = useState<StarterSuggestions | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
 
@@ -39,10 +41,27 @@ export default function AssistantWidget() {
     if (role === 'OWNER' || role === 'MANAGER' || role === 'PROVIDER') return;
     let cancelled = false;
     api.getMe()
-      .then((me) => { if (!cancelled) setRole(me.role); })
+      .then((me) => {
+        if (cancelled) return;
+        setRole(me.role);
+        setSuggestEnabled(me.features.ragSuggestionsEnabled);
+      })
       .catch(() => { if (!cancelled) setRole(null); });
     return () => { cancelled = true; };
   }, [pathname, role]);
+
+  // Fetch grounded starter prompts the first time the panel is opened (server-cached, so it's cheap).
+  useEffect(() => {
+    if (!open || !suggestEnabled || suggestions !== null) return;
+    let cancelled = false;
+    api.getRagSuggestions()
+      .then((s) => { if (!cancelled) setSuggestions(s); })
+      .catch(() => { if (!cancelled) setSuggestions({ topics: [] }); });
+    return () => { cancelled = true; };
+  }, [open, suggestEnabled, suggestions]);
+
+  // Loading is derived, not state — true while the first fetch is in flight.
+  const suggestLoading = open && suggestEnabled && suggestions === null;
 
   useEffect(() => {
     if (open) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -54,8 +73,8 @@ export default function AssistantWidget() {
     setMessages((ms) => ms.map((m) => (m.id === id ? fn(m) : m)));
   }
 
-  async function send() {
-    const q = input.trim();
+  async function send(textOverride?: string) {
+    const q = (textOverride ?? input).trim();
     if (!q || busy) return;
     setInput('');
     setBusy(true);
@@ -119,9 +138,32 @@ export default function AssistantWidget() {
 
           <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
             {messages.length === 0 ? (
-              <p className="mt-6 text-center text-xs text-[var(--muted)]">
-                Ask about salon policies, pricing, or procedures. Answers come only from the knowledge base.
-              </p>
+              <div className="mt-3 space-y-4">
+                <p className="text-center text-xs text-[var(--muted)]">
+                  Ask about salon policies, pricing, or procedures — answers come only from your knowledge base.
+                </p>
+                {suggestLoading ? (
+                  <div className="flex justify-center"><Spinner className="h-4 w-4 text-[var(--muted)]" /></div>
+                ) : null}
+                {suggestions?.topics.map((t) => (
+                  <div key={t.label}>
+                    <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-[var(--accent-ink)]">
+                      {t.label}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {t.questions.map((q) => (
+                        <button
+                          key={q}
+                          onClick={() => send(q)}
+                          className="rounded-full bg-[var(--paper-2)] px-3 py-1.5 text-left text-xs text-[var(--ink)] ring-1 ring-[var(--line)] transition hover:ring-[var(--accent)]"
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : null}
             {messages.map((m) => (
               <div key={m.id} className={m.who === 'user' ? 'text-right' : ''}>
