@@ -26,11 +26,22 @@ public class RagProperties {
     /** Feature flag — when false, all RAG endpoints return 404 and no RAG beans register. */
     private boolean enabled = false;
 
+    /** Grounded starter-prompt suggestions in the chat widget — a sub-flag of the RAG feature. */
+    private final Suggestions suggestions = new Suggestions();
+
     /** Voyage AI API key, used by {@link com.salonreview.rag.VoyageClient} to embed text. */
     private String voyageApiKey;
 
     /** True once a Voyage key has actually been supplied — embedding should fail fast otherwise. */
     public boolean isVoyageConfigured() {
         return voyageApiKey != null && !voyageApiKey.isBlank();
+    }
+
+    /** {@code rag.suggestions.*} — toggle the starter-prompt feature without disabling RAG itself. */
+    @Getter
+    @Setter
+    public static class Suggestions {
+        /** Defaults on; set {@code RAG_SUGGESTIONS_ENABLED=false} to hide the starter prompts. */
+        private boolean enabled = true;
     }
 }

@@ -49,6 +49,9 @@ ai:
 rag:
   enabled: ${RAG_ENABLED:false}
   voyage-api-key: ${VOYAGE_API_KEY:}
+  suggestions:
+    # Grounded starter prompts in the chat widget. On by default; set false to hide them.
+    enabled: ${RAG_SUGGESTIONS_ENABLED:true}
 
 server:
   port: 8080

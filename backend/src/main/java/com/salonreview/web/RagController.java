@@ -5,6 +5,8 @@ import com.salonreview.config.RagProperties;
 import com.salonreview.rag.Citation;
 import com.salonreview.rag.RagAnswer;
 import com.salonreview.rag.RagAnswerService;
+import com.salonreview.rag.RagSuggestionService;
+import com.salonreview.rag.StarterSuggestions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -12,6 +14,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,6 +41,7 @@ public class RagController {
     private static final Logger log = LoggerFactory.getLogger(RagController.class);
 
     private final RagAnswerService answerService;
+    private final RagSuggestionService suggestionService;
     private final ObjectProvider<LangSmithTracer> tracerProvider;
     private final RagProperties props;
     // Streaming runs the (blocking) Anthropic stream off the request thread. Daemon, small pool.
@@ -47,11 +51,18 @@ public class RagController {
         return t;
     });
 
-    public RagController(RagAnswerService answerService, ObjectProvider<LangSmithTracer> tracerProvider,
-                        RagProperties props) {
+    public RagController(RagAnswerService answerService, RagSuggestionService suggestionService,
+                        ObjectProvider<LangSmithTracer> tracerProvider, RagProperties props) {
         this.answerService = answerService;
+        this.suggestionService = suggestionService;
         this.tracerProvider = tracerProvider;
         this.props = props;
+    }
+
+    /** Grounded starter prompts for the chat empty state (topic-grouped; empty when disabled/no corpus). */
+    @GetMapping("/suggestions")
+    public StarterSuggestions suggestions() {
+        return suggestionService.get();
     }
 
     /**
