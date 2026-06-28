@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type {
   AppUser,
+  KbArticle,
   ManualCredit,
   Me,
   OwnerCustomer,
@@ -42,6 +43,9 @@ async function serverFetch<T>(path: string): Promise<T> {
 
 export const serverApi = {
   getMe: () => serverFetch<Me>(`/api/me`),
+
+  // KB articles, role-filtered by the backend using the session.
+  listKbArticles: () => serverFetch<KbArticle[]>(`/api/kb-articles`),
 
   getSettlementPreview: (year: number, month: number) =>
     serverFetch<SettlementPreview>(`/api/settlements/preview?year=${year}&month=${month}`),

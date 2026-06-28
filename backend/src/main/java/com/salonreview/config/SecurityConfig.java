@@ -16,6 +16,7 @@ import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 
 /**
@@ -44,6 +45,11 @@ public class SecurityConfig {
                         // RAG admin (upload/approve/delete/config) is OWNER-only above; asking +
                         // feedback are OWNER+MANAGER. The admin matcher is listed first so it wins.
                         .requestMatchers("/api/rag/**").hasAnyRole("OWNER", "MANAGER")
+                        // KB articles: any authenticated role may read (per-article visibility is
+                        // enforced in the service via visible_roles); only OWNER+MANAGER may write,
+                        // sync, or use AI drafting. The GET matcher is listed first so it wins.
+                        .requestMatchers(HttpMethod.GET, "/api/kb-articles/**").authenticated()
+                        .requestMatchers("/api/kb-articles/**").hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers("/api/settlements/**", "/api/providers/**", "/api/square/**",
                                 "/api/pay-periods/**", "/api/prepaid/**", "/api/owner-customers/**", "/api/redos/**",
                                 "/api/manual-credits/**", "/api/no-show-fees/**", "/api/suspicious/**")

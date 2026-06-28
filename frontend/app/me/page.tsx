@@ -73,6 +73,7 @@ export default async function MyReportPage({
       <div className="mb-6 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div className="flex items-baseline gap-3">
           <h1 className="text-xl font-semibold sm:text-2xl">My pay</h1>
+          <Link href="/kb" className="text-xs text-zinc-400 hover:text-zinc-600">Knowledge base</Link>
           <a href="/api/logout" className="text-xs text-zinc-400 hover:text-zinc-600">Log out</a>
         </div>
         <MonthNav base="/me" year={year} month={month} prev={prev} next={next} />

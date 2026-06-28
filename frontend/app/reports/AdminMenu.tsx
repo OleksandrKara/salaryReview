@@ -7,6 +7,7 @@ import { useState } from 'react';
 // that row overflowed the viewport, so there we collapse them behind a hamburger that opens a dropdown.
 const LINKS = [
   { href: '/rag', label: 'Assistant' },
+  { href: '/kb', label: 'Knowledge base' },
   { href: '/admin/prepaid', label: 'Prepaid' },
   { href: '/admin/owner-customers', label: 'Owner comps' },
   { href: '/admin/redos', label: 'Redos' },
@@ -19,7 +20,7 @@ export default function AdminMenu({ isOwner }: { isOwner: boolean }) {
     ? [
         { href: '/owner/overview', label: 'Overview' },
         ...LINKS,
-        { href: '/rag/admin', label: 'Knowledge base' },
+        { href: '/rag/admin', label: 'Assistant admin' },
         { href: '/admin/users', label: 'Users' },
       ]
     : LINKS;

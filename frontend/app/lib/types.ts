@@ -534,3 +534,30 @@ export interface OwnerOverviewData {
   providers: ProviderYtd[];
   prevYear: YearTotals | null;
 }
+
+// --- Knowledge Base articles (com.salonreview.web.KbArticleController) ---
+
+export type KbSyncStatus = 'NOT_SYNCED' | 'SYNCED' | 'CHANGED' | 'ERROR';
+
+export interface KbArticle {
+  id: number;
+  title: string;
+  category: string;
+  body: string;
+  visibleRoles: Role[];
+  syncStatus: KbSyncStatus;
+  ragDocId: number | null;
+  lastSyncedAt: string | null;
+  lastSyncedBy: string | null;
+  lastSyncError: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KbWriteRequest {
+  title: string;
+  category: string;
+  body: string;
+  visibleRoles: Role[];
+}
