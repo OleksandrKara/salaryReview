@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { Spinner } from './Spinner';
@@ -29,10 +30,19 @@ export default function AssistantWidget() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
 
+  // Re-check the role on mount and on every client-side navigation until it resolves to a concrete
+  // role. The widget lives in the root layout, which does NOT remount on client navigation — so after
+  // signing in (a router.replace, not a reload) this is what makes it appear without a manual refresh.
   useEffect(() => {
-    api.getMe().then((me) => setRole(me.role)).catch(() => setRole(null));
-  }, []);
+    if (role === 'OWNER' || role === 'MANAGER' || role === 'PROVIDER') return;
+    let cancelled = false;
+    api.getMe()
+      .then((me) => { if (!cancelled) setRole(me.role); })
+      .catch(() => { if (!cancelled) setRole(null); });
+    return () => { cancelled = true; };
+  }, [pathname, role]);
 
   useEffect(() => {
     if (open) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -86,7 +96,7 @@ export default function AssistantWidget() {
         <button
           onClick={() => setOpen(true)}
           aria-label="Ask the assistant"
-          className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-white shadow-lg transition hover:scale-105"
+          className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent)] to-[var(--accent-ink)] text-[var(--paper)] shadow-[0_10px_30px_-8px_rgba(184,151,90,0.7)] ring-1 ring-[var(--accent)]/40 transition hover:scale-105"
         >
           <SparkleIcon className="h-6 w-6" />
         </button>
@@ -94,22 +104,22 @@ export default function AssistantWidget() {
 
       {/* Panel */}
       {open ? (
-        <div className="fixed bottom-6 right-6 z-50 flex h-[32rem] w-[22rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-zinc-200">
-          <div className="flex items-center justify-between bg-gradient-to-br from-indigo-500 to-fuchsia-500 px-4 py-3 text-white">
-            <span className="flex items-center gap-2 text-sm font-medium">
-              <SparkleIcon className="h-4 w-4" /> Assistant
+        <div className="fixed bottom-6 right-6 z-50 flex h-[32rem] w-[22rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl bg-[var(--paper)] shadow-2xl ring-1 ring-[var(--line)]">
+          <div className="flex items-center justify-between bg-[var(--ink)] px-4 py-3 text-[var(--paper)]">
+            <span className="flex items-center gap-2 text-base tracking-wide" style={{ fontFamily: 'var(--serif)' }}>
+              <SparkleIcon className="h-4 w-4 text-[var(--accent)]" /> Assistant
             </span>
             <span className="flex items-center gap-3">
               {role === 'OWNER' ? (
-                <Link href="/rag/admin" className="text-xs text-white/80 hover:text-white">Admin</Link>
+                <Link href="/rag/admin" className="text-xs text-[var(--accent)] hover:opacity-80">Admin</Link>
               ) : null}
-              <button onClick={() => setOpen(false)} aria-label="Close" className="text-white/80 hover:text-white">✕</button>
+              <button onClick={() => setOpen(false)} aria-label="Close" className="text-[var(--paper)]/70 hover:text-[var(--paper)]">✕</button>
             </span>
           </div>
 
           <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
             {messages.length === 0 ? (
-              <p className="mt-6 text-center text-xs text-zinc-400">
+              <p className="mt-6 text-center text-xs text-[var(--muted)]">
                 Ask about salon policies, pricing, or procedures. Answers come only from the knowledge base.
               </p>
             ) : null}
@@ -117,25 +127,27 @@ export default function AssistantWidget() {
               <div key={m.id} className={m.who === 'user' ? 'text-right' : ''}>
                 <div
                   className={`inline-block max-w-[90%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${
-                    m.who === 'user' ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-800'
+                    m.who === 'user'
+                      ? 'bg-[var(--ink)] text-[var(--paper)]'
+                      : 'bg-[var(--paper-2)] text-[var(--ink)]'
                   }`}
                 >
-                  {m.text || (m.streaming ? <Spinner className="h-4 w-4 text-zinc-400" /> : '')}
+                  {m.text || (m.streaming ? <Spinner className="h-4 w-4 text-[var(--muted)]" /> : '')}
                 </div>
                 {m.who === 'assistant' && !m.streaming ? (
                   <div className="mt-1">
                     {m.citations && m.citations.length > 0 ? (
                       <ul className="space-y-0.5">
                         {m.citations.map((c, i) => (
-                          <li key={i} className="text-[11px] text-zinc-500">
-                            <span className="font-medium text-zinc-700">{c.documentTitle}</span>
+                          <li key={i} className="text-[11px] text-[var(--muted)]">
+                            <span className="font-medium text-[var(--accent-ink)]">{c.documentTitle}</span>
                             {c.citedText ? <span> — “{c.citedText}”</span> : null}
                           </li>
                         ))}
                       </ul>
                     ) : null}
                     {m.answered && m.runId ? (
-                      <div className="mt-1 flex items-center gap-2 text-xs text-zinc-400">
+                      <div className="mt-1 flex items-center gap-2 text-xs text-[var(--muted)]">
                         <button onClick={() => rate(m, true)} disabled={m.rated} className="disabled:opacity-50">👍</button>
                         <button onClick={() => rate(m, false)} disabled={m.rated} className="disabled:opacity-50">👎</button>
                         {m.rated ? <span>thanks</span> : null}
@@ -150,21 +162,21 @@ export default function AssistantWidget() {
 
           <form
             onSubmit={(e) => { e.preventDefault(); send(); }}
-            className="flex items-center gap-2 border-t border-zinc-100 p-3"
+            className="flex items-center gap-2 border-t border-[var(--line)] p-3"
           >
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask a question…"
-              className="flex-1 rounded-full px-3 py-2 text-sm ring-1 ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              className="flex-1 rounded-full bg-white px-3 py-2 text-sm text-[var(--ink)] ring-1 ring-[var(--line)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
             />
             <button
               type="submit"
               disabled={busy || !input.trim()}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-white disabled:opacity-40"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent)] to-[var(--accent-ink)] text-[var(--paper)] disabled:opacity-40"
               aria-label="Send"
             >
-              {busy ? <Spinner className="h-4 w-4 text-white" /> : '➤'}
+              {busy ? <Spinner className="h-4 w-4 text-[var(--paper)]" /> : '➤'}
             </button>
           </form>
         </div>
