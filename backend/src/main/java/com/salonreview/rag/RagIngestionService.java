@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
@@ -89,12 +90,13 @@ public class RagIngestionService {
 
         try {
             List<Chunk> pieces = chunker.chunk(doc.getExtractedText());
-            int indexed = 0;
+
+            // Phase 1: classify every chunk and persist rows. Quarantined chunks are saved with a null
+            // embedding and never sent to Voyage — the safety gate runs first.
+            List<RagChunk> toEmbed = new ArrayList<>(pieces.size());
             int ordinal = 0;
             for (Chunk piece : pieces) {
-                // SAFETY GATE — classify BEFORE embedding.
                 ChunkClassification verdict = classifier.classify(piece.text());
-
                 RagChunk row = RagChunk.builder()
                         .documentId(doc.getId())
                         .ordinal(ordinal++)
@@ -106,14 +108,20 @@ public class RagIngestionService {
                         .quarantineReason(verdict.isQuarantined() ? verdict.quarantineReason() : null)
                         .build();
                 row = chunks.save(row);
+                if (!verdict.isQuarantined()) toEmbed.add(row);
+            }
 
-                // Only INDEXED chunks are embedded — quarantined text never reaches Voyage.
-                if (!verdict.isQuarantined()) {
-                    float[] vec = voyage.embedDocument(piece.text());
-                    chunks.updateEmbedding(row.getId(), VoyageClient.toVectorLiteral(vec));
-                    indexed++;
+            // Phase 2: embed all non-quarantined chunks in ONE Voyage API call (free tier = 3 RPM;
+            // batching keeps each document to a single request regardless of chunk count).
+            if (!toEmbed.isEmpty()) {
+                List<String> texts = toEmbed.stream().map(RagChunk::getChunkText).toList();
+                List<float[]> vecs = voyage.embedDocuments(texts);
+                for (int i = 0; i < toEmbed.size(); i++) {
+                    chunks.updateEmbedding(toEmbed.get(i).getId(), VoyageClient.toVectorLiteral(vecs.get(i)));
                 }
             }
+
+            int indexed = toEmbed.size();
             doc.setStatus(indexed > 0 ? RagDocumentStatus.INDEXED : RagDocumentStatus.QUARANTINED);
             doc.setIndexedAt(Instant.now());
             return Optional.of(documents.save(doc));

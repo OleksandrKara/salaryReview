@@ -17,6 +17,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -78,7 +79,7 @@ class RagIngestionServiceTest {
         Optional<RagDocument> result = service.approve(1L);
 
         // The core guarantee: Voyage is never called for a quarantined chunk.
-        verify(voyage, never()).embedDocument(any());
+        verify(voyage, never()).embedDocuments(any());
         verify(chunks, never()).updateEmbedding(any(), any());
 
         ArgumentCaptor<RagChunk> cap = ArgumentCaptor.forClass(RagChunk.class);
@@ -97,11 +98,11 @@ class RagIngestionServiceTest {
         when(chunker.chunk(anyString())).thenReturn(List.of(new Chunk("the no-show fee is $25", 0, 21)));
         when(classifier.classify(anyString()))
                 .thenReturn(new ChunkClassification(false, List.of(), "RELEVANT", "policy"));
-        when(voyage.embedDocument(anyString())).thenReturn(new float[]{0.1f, 0.2f, 0.3f});
+        when(voyage.embedDocuments(anyList())).thenReturn(List.of(new float[]{0.1f, 0.2f, 0.3f}));
 
         Optional<RagDocument> result = service.approve(1L);
 
-        verify(voyage).embedDocument("the no-show fee is $25");
+        verify(voyage).embedDocuments(List.of("the no-show fee is $25"));
         verify(chunks).updateEmbedding(any(), anyString());
 
         ArgumentCaptor<RagChunk> cap = ArgumentCaptor.forClass(RagChunk.class);
@@ -121,7 +122,7 @@ class RagIngestionServiceTest {
         service.approve(1L);
 
         verify(chunker, never()).chunk(anyString());
-        verify(voyage, never()).embedDocument(any());
+        verify(voyage, never()).embedDocuments(any());
     }
 
     @Test
