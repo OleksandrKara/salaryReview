@@ -5,8 +5,9 @@ import { useState } from 'react';
 
 // Owner/manager admin navigation. On desktop the links sit inline next to the page title; on a phone
 // that row overflowed the viewport, so there we collapse them behind a hamburger that opens a dropdown.
+// Note: the assistant (/rag) and its admin (/rag/admin) intentionally aren't here — the assistant is
+// the floating chat widget now, and owners reach its admin from the widget's "Admin" link.
 const LINKS = [
-  { href: '/rag', label: 'Assistant' },
   { href: '/kb', label: 'Knowledge base' },
   { href: '/sops', label: 'SOPs' },
   { href: '/admin/prepaid', label: 'Prepaid' },
@@ -21,7 +22,6 @@ export default function AdminMenu({ isOwner }: { isOwner: boolean }) {
     ? [
         { href: '/owner/overview', label: 'Overview' },
         ...LINKS,
-        { href: '/rag/admin', label: 'Assistant admin' },
         { href: '/sops/admin', label: 'SOPs admin' },
         { href: '/admin/users', label: 'Users' },
       ]

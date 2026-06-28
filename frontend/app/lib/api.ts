@@ -23,7 +23,9 @@ import type {
   SopUpdateRequest,
   SopVersion,
   RagAgentConfigDto,
+  Me,
   RagAnswer,
+  RagCitation,
   RagDocumentSummary,
   TriageClassification,
   TriageResult,
@@ -199,6 +201,62 @@ export const api = {
   sopRoster: (id: number) => proxyGet<SopRosterEntry[]>(`/api/sops/${id}/acknowledgment-status`),
 
   acknowledgeSop: (id: number) => proxyJson<Sop>(`/api/sops/${id}/acknowledge`, 'POST', {}),
+
+  // The authenticated principal — used by the assistant widget to self-gate by role.
+  getMe: () => proxyGet<Me>(`/api/me`),
+
+  // Stream a grounded answer token-by-token over SSE. Calls back as events arrive.
+  askRagStream: async (
+    question: string,
+    h: {
+      onToken: (text: string) => void;
+      onCitations: (citations: RagCitation[]) => void;
+      onDone: (d: { traceRunId: string | null; answered: boolean }) => void;
+      onError: (message: string) => void;
+    },
+  ): Promise<void> => {
+    let res: Response;
+    try {
+      res = await fetch(`/api/rag/ask/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
+      });
+    } catch {
+      h.onError('Network error.');
+      return;
+    }
+    if (!res.ok || !res.body) {
+      h.onError('The assistant is unavailable right now.');
+      return;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let sep: number;
+      // SSE events are separated by a blank line.
+      while ((sep = buffer.indexOf('\n\n')) !== -1) {
+        const rawEvent = buffer.slice(0, sep);
+        buffer = buffer.slice(sep + 2);
+        let event = 'message';
+        let data = '';
+        for (const line of rawEvent.split('\n')) {
+          if (line.startsWith('event:')) event = line.slice(6).trim();
+          else if (line.startsWith('data:')) data += line.slice(5).trim();
+        }
+        if (!data) continue;
+        const parsed = JSON.parse(data);
+        if (event === 'token') h.onToken(parsed.text as string);
+        else if (event === 'citations') h.onCitations(parsed as RagCitation[]);
+        else if (event === 'done') h.onDone(parsed as { traceRunId: string | null; answered: boolean });
+        else if (event === 'error') h.onError((parsed.message as string) ?? 'Error');
+      }
+    }
+  },
 };
 
 async function proxyVoid(path: string, method: string, body?: unknown): Promise<void> {
