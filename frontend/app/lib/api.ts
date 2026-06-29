@@ -17,6 +17,7 @@ import type {
   PrepaidRedemption,
   KbArticle,
   KbWriteRequest,
+  Language,
   Sop,
   SopCreateRequest,
   SopRosterEntry,
@@ -213,6 +214,9 @@ export const api = {
 
   // The authenticated principal — used by the assistant widget to self-gate by role.
   getMe: () => proxyGet<Me>(`/api/me`),
+
+  // Set the caller's preferred language (owner/manager).
+  setLanguage: (language: Language) => proxyVoid(`/api/me/language`, 'POST', { language }),
 
   // Grounded starter prompts for the assistant's empty state.
   getRagSuggestions: () => proxyGet<StarterSuggestions>(`/api/rag/suggestions`),

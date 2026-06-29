@@ -42,6 +42,8 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health", "/actuator/info", "/api/login").permitAll()
                         .requestMatchers("/api/users/**", "/api/owner/**", "/api/rag/admin/**").hasRole("OWNER")
                         .requestMatchers("/api/settlements/me/**").hasRole("PROVIDER")
+                        // Language preference is an owner/manager feature (GET /api/me stays open to all).
+                        .requestMatchers(HttpMethod.POST, "/api/me/language").hasAnyRole("OWNER", "MANAGER")
                         // RAG admin (upload/approve/delete/config) is OWNER-only above; asking +
                         // feedback are OWNER+MANAGER. The admin matcher is listed first so it wins.
                         .requestMatchers("/api/rag/**").hasAnyRole("OWNER", "MANAGER")

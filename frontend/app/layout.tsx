@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import AssistantWidget from "./components/AssistantWidget";
+import LanguagePrompt from "./components/LanguagePrompt";
 import "./globals.css";
 // The salon's AK.LUX.STUDIO theme (paper background, serif headings) — imported app-wide so /reports
 // and /me share the landing's look, consistently on every load (not just when arriving from the landing).
@@ -35,6 +36,8 @@ export default function RootLayout({
         {children}
         {/* Global assistant — self-gates to OWNER/MANAGER, renders nothing otherwise. */}
         <AssistantWidget />
+        {/* One-time language setup for owners/managers who haven't chosen yet. */}
+        <LanguagePrompt />
       </body>
     </html>
   );

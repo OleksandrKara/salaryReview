@@ -147,7 +147,7 @@ export default async function ReportsPage({
       <div className="mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold sm:text-2xl">Salary report</h1>
-          <AdminMenu isOwner={me?.role === 'OWNER'} />
+          <AdminMenu isOwner={me?.role === 'OWNER'} language={me?.preferredLanguage ?? null} />
         </div>
         <MonthNav base="/reports" year={year} month={month} prev={prev} next={next} />
       </div>

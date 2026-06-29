@@ -193,10 +193,14 @@ export type Role = 'OWNER' | 'MANAGER' | 'PROVIDER';
 
 export type FeedbackStatus = 'APPROVED' | 'CHANGES_REQUESTED';
 
+export type Language = 'EN' | 'RU';
+
 export interface Me {
   username: string;
   role: Role;
   providerId: number | null;
+  // null until an owner/manager has chosen — the frontend uses that to show the one-time prompt.
+  preferredLanguage: Language | null;
   features: Features;
 }
 
