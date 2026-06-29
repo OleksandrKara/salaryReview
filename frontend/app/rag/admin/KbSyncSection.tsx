@@ -66,8 +66,10 @@ export default function KbSyncSection() {
         </button>
       </div>
       <p className="mb-3 text-xs text-zinc-500">
-        Push Knowledge Base articles into the assistant. Flagged content (PII) is rejected as a whole
-        and shown as an error below.
+        Push Knowledge Base articles into the assistant. Both languages are indexed when an article has
+        a Russian translation — <span className="text-green-700">EN&nbsp;+&nbsp;RU</span> means Russian
+        is in the vector store, <span className="text-amber-700">RU&nbsp;pending</span> means it still
+        needs a sync. Flagged content (PII) is rejected as a whole and shown as an error below.
       </p>
 
       {articles === null ? (
@@ -88,6 +90,7 @@ export default function KbSyncSection() {
                   <span className="ml-2 text-xs text-zinc-400">{a.category}</span>
                   <div className="mt-1 flex items-center gap-1.5">
                     <SyncBadge status={a.syncStatus} />
+                    <LangIndexBadge hasRu={!!a.bodyRu} synced={a.syncStatus === 'SYNCED'} />
                     {current === a.id ? <span className="text-[10px] text-zinc-400">processing…</span> : null}
                   </div>
                 </div>
@@ -107,5 +110,16 @@ export default function KbSyncSection() {
         </ul>
       )}
     </section>
+  );
+}
+
+// Shows whether an article's Russian translation is in the vector store. Nothing for English-only
+// articles; green once the bilingual content is synced, amber while a translation awaits sync.
+function LangIndexBadge({ hasRu, synced }: { hasRu: boolean; synced: boolean }) {
+  if (!hasRu) return null;
+  return synced ? (
+    <span className="rounded bg-green-50 px-1.5 py-0.5 text-[10px] text-green-700">EN + RU</span>
+  ) : (
+    <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">RU pending</span>
   );
 }
