@@ -6,6 +6,7 @@ import NoShowBreakdown from './NoShowBreakdown';
 import ServiceBreakdown from './ServiceBreakdown';
 import SettlementFeedbackForm from './SettlementFeedbackForm';
 import SalaryPopupButton from '../components/SalaryPopupButton';
+import LanguageSwitch from '../components/LanguageSwitch';
 import { SyncBadge } from '../components/SyncBadge';
 import { InfoTip } from '../components/InfoTip';
 
@@ -53,6 +54,7 @@ export default async function MyReportPage({
     }
   }
   const me = detail.payout;
+  const principal = await serverApi.getMe();
   const prev = shift(year, month, -1);
   const next = shift(year, month, 1);
 
@@ -75,6 +77,7 @@ export default async function MyReportPage({
           <h1 className="text-xl font-semibold sm:text-2xl">My pay</h1>
           <Link href="/kb" className="text-xs text-zinc-400 hover:text-zinc-600">Knowledge base</Link>
           <Link href="/sops" className="text-xs text-zinc-400 hover:text-zinc-600">SOPs</Link>
+          <LanguageSwitch language={principal?.preferredLanguage ?? null} />
           <a href="/api/logout" className="text-xs text-zinc-400 hover:text-zinc-600">Log out</a>
         </div>
         <MonthNav base="/me" year={year} month={month} prev={prev} next={next} />

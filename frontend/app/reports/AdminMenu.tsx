@@ -1,9 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { api } from '../lib/api';
+import LanguageSwitch from '../components/LanguageSwitch';
 import type { Language } from '../lib/types';
 
 // Owner/manager admin navigation. On desktop the links sit inline next to the page title; on a phone
@@ -21,19 +20,6 @@ const LINKS = [
 
 export default function AdminMenu({ isOwner, language }: { isOwner: boolean; language: Language | null }) {
   const [open, setOpen] = useState(false);
-  const [lang, setLang] = useState<Language>(language ?? 'EN');
-  const router = useRouter();
-
-  async function switchTo(next: Language) {
-    if (next === lang) return;
-    setLang(next);
-    try {
-      await api.setLanguage(next);
-      router.refresh();
-    } catch {
-      /* leave the optimistic state; a reload will reconcile */
-    }
-  }
 
   const links = isOwner
     ? [
@@ -52,7 +38,7 @@ export default function AdminMenu({ isOwner, language }: { isOwner: boolean; lan
         {links.map((l) => (
           <Link key={l.href} href={l.href} className={link}>{l.label}</Link>
         ))}
-        <LangPills lang={lang} onPick={switchTo} />
+        <LanguageSwitch language={language} />
         <a href="/api/logout" className={link}>Log out</a>
       </span>
 
@@ -78,7 +64,7 @@ export default function AdminMenu({ isOwner, language }: { isOwner: boolean; lan
               ))}
               <div className="flex items-center gap-2 border-t border-zinc-100 px-4 py-2 text-sm text-zinc-500">
                 <span className="text-zinc-400">Language</span>
-                <LangPills lang={lang} onPick={switchTo} />
+                <LanguageSwitch language={language} />
               </div>
               <a href="/api/logout" className="block border-t border-zinc-100 px-4 py-2 text-sm text-zinc-500 hover:bg-zinc-50">Log out</a>
             </div>
@@ -86,18 +72,5 @@ export default function AdminMenu({ isOwner, language }: { isOwner: boolean; lan
         )}
       </div>
     </>
-  );
-}
-
-// "EN / RU" toggle; the active language is emphasized, clicking the other switches it.
-function LangPills({ lang, onPick }: { lang: Language; onPick: (l: Language) => void }) {
-  const pill = (l: Language) =>
-    `text-xs ${lang === l ? 'font-semibold text-zinc-700' : 'text-zinc-400 hover:text-zinc-600'}`;
-  return (
-    <span className="flex items-center gap-1" title="Language">
-      <button type="button" onClick={() => onPick('EN')} className={pill('EN')}>EN</button>
-      <span className="text-zinc-300">/</span>
-      <button type="button" onClick={() => onPick('RU')} className={pill('RU')}>RU</button>
-    </span>
   );
 }
