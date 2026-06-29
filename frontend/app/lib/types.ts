@@ -550,6 +550,16 @@ export interface OwnerOverviewData {
 
 export type KbSyncStatus = 'NOT_SYNCED' | 'SYNCED' | 'CHANGED' | 'ERROR';
 
+// A SOP's RAG-sync state for the assistant-admin section (com.salonreview.web.SopSyncController).
+export interface SopSyncItem {
+  id: number;
+  title: string;
+  category: string;
+  syncStatus: KbSyncStatus;
+  lastSyncError: string | null;
+  published: boolean;
+}
+
 export interface KbArticle {
   id: number;
   title: string;

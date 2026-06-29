@@ -43,6 +43,30 @@ public class Sop {
     @Column(name = "created_by", nullable = false)
     private String createdBy;
 
+    // --- RAG sync (V29): pushes the current published version into the assistant's corpus ---
+
+    /** The rag_document holding this SOP's synced content; null when not synced. */
+    @Column(name = "rag_doc_id")
+    private Long ragDocId;
+
+    /** Which version was synced — when this differs from currentVersionId, the sync is stale. */
+    @Column(name = "synced_version_id")
+    private Long syncedVersionId;
+
+    @Column(name = "last_synced_at")
+    private Instant lastSyncedAt;
+
+    @Column(name = "last_synced_by")
+    private String lastSyncedBy;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sync_status", nullable = false, length = 32)
+    @Builder.Default
+    private SyncStatus syncStatus = SyncStatus.NOT_SYNCED;
+
+    @Column(name = "last_sync_error")
+    private String lastSyncError;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
