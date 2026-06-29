@@ -50,9 +50,10 @@ public class SecurityConfig {
                         // sync, or use AI drafting. The GET matcher is listed first so it wins.
                         .requestMatchers(HttpMethod.GET, "/api/kb-articles/**").authenticated()
                         .requestMatchers("/api/kb-articles/**").hasAnyRole("OWNER", "MANAGER")
-                        // SOPs: owner authors/publishes/archives + views the roster and version
-                        // history; managers/providers read (audience-filtered in the service) and
+                        // SOPs: owner authors/publishes/archives + views the roster, version history,
+                        // and RAG sync; managers/providers read (audience-filtered in the service) and
                         // acknowledge. Specific matchers first; the catch-all is OWNER-only.
+                        .requestMatchers(HttpMethod.GET, "/api/sops/rag-sync").hasRole("OWNER")
                         .requestMatchers(HttpMethod.GET, "/api/sops/*/acknowledgment-status").hasRole("OWNER")
                         .requestMatchers(HttpMethod.GET, "/api/sops/*/versions").hasRole("OWNER")
                         .requestMatchers(HttpMethod.POST, "/api/sops/*/acknowledge").hasAnyRole("MANAGER", "PROVIDER")

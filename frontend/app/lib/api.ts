@@ -21,6 +21,7 @@ import type {
   SopCreateRequest,
   SopRosterEntry,
   SopUpdateRequest,
+  SopSyncItem,
   SopVersion,
   RagAgentConfigDto,
   Me,
@@ -202,6 +203,13 @@ export const api = {
   sopRoster: (id: number) => proxyGet<SopRosterEntry[]>(`/api/sops/${id}/acknowledgment-status`),
 
   acknowledgeSop: (id: number) => proxyJson<Sop>(`/api/sops/${id}/acknowledge`, 'POST', {}),
+
+  // SOP → RAG sync (owner). Pushes published SOPs into the assistant corpus.
+  listSopRagSync: () => proxyGet<SopSyncItem[]>(`/api/sops/rag-sync`),
+
+  syncSopRag: (id: number) => proxyJson<SopSyncItem>(`/api/sops/${id}/rag-sync`, 'POST', {}),
+
+  syncAllSopsRag: () => proxyJson<SopSyncItem[]>(`/api/sops/rag-sync-all`, 'POST', {}),
 
   // The authenticated principal — used by the assistant widget to self-gate by role.
   getMe: () => proxyGet<Me>(`/api/me`),
