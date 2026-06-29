@@ -37,6 +37,10 @@ public class KbArticle {
     @Column(nullable = false, columnDefinition = "text")
     private String body;
 
+    /** Russian translation of {@link #body}; null when not translated (English is shown as fallback). */
+    @Column(name = "body_ru", columnDefinition = "text")
+    private String bodyRu;
+
     /** Roles allowed to read this article. Stored as a JSON array of role names (e.g. ["OWNER"]). */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "visible_roles", nullable = false, columnDefinition = "jsonb")
