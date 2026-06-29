@@ -67,13 +67,20 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
   const [category, setCategory] = useState('');
   const [audience, setAudience] = useState<SopAudience>('PROVIDER');
   const [body, setBody] = useState('');
+  const [bodyRu, setBodyRu] = useState('');
   const [busy, setBusy] = useState(false);
 
   async function save() {
     if (!title.trim() || !category.trim()) return;
     setBusy(true);
     try {
-      onCreated(await api.createSop({ title: title.trim(), category: category.trim(), audience, body }));
+      onCreated(await api.createSop({
+        title: title.trim(),
+        category: category.trim(),
+        audience,
+        body,
+        bodyRu: bodyRu.trim() ? bodyRu : null,
+      }));
     } finally {
       setBusy(false);
     }
@@ -89,7 +96,7 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
           {AUDIENCES.map((a) => <option key={a} value={a}>{a}</option>)}
         </select>
       </div>
-      <div data-color-mode="light"><MDEditor value={body} onChange={(v) => setBody(v ?? '')} height={280} /></div>
+      <BilingualBody body={body} bodyRu={bodyRu} onBody={setBody} onBodyRu={setBodyRu} height={280} />
       <div className="flex gap-2">
         <button onClick={save} disabled={busy} className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">
           {busy ? <Spinner className="h-4 w-4 text-white" /> : null}
@@ -106,6 +113,7 @@ function SopDetail({ sop, onChanged }: { sop: Sop; onChanged: (s: Sop) => void }
   const [roster, setRoster] = useState<SopRosterEntry[] | null>(null);
   const [audience, setAudience] = useState<SopAudience>(sop.audience);
   const [newDraft, setNewDraft] = useState<string | null>(null);
+  const [newDraftRu, setNewDraftRu] = useState('');
   const [compare, setCompare] = useState<SopVersion | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -123,8 +131,12 @@ function SopDetail({ sop, onChanged }: { sop: Sop; onChanged: (s: Sop) => void }
   async function addDraft() {
     if (newDraft == null) return;
     setBusy(true);
-    try { await api.addSopVersion(sop.id, newDraft); setNewDraft(null); load(); }
-    finally { setBusy(false); }
+    try {
+      await api.addSopVersion(sop.id, newDraft, newDraftRu.trim() ? newDraftRu : null);
+      setNewDraft(null);
+      setNewDraftRu('');
+      load();
+    } finally { setBusy(false); }
   }
   async function doPublish(v: SopVersion) {
     setBusy(true);
@@ -180,10 +192,15 @@ function SopDetail({ sop, onChanged }: { sop: Sop; onChanged: (s: Sop) => void }
           </ul>
         )}
         {newDraft == null ? (
-          <button onClick={() => setNewDraft(currentBody)} className="mt-2 rounded px-2 py-1 text-xs ring-1 ring-zinc-200">New draft</button>
+          <button
+            onClick={() => { setNewDraft(currentBody); setNewDraftRu(sop.currentVersion?.bodyRu ?? ''); }}
+            className="mt-2 rounded px-2 py-1 text-xs ring-1 ring-zinc-200"
+          >
+            New draft
+          </button>
         ) : (
           <div className="mt-2 space-y-2">
-            <div data-color-mode="light"><MDEditor value={newDraft} onChange={(v) => setNewDraft(v ?? '')} height={260} /></div>
+            <BilingualBody body={newDraft} bodyRu={newDraftRu} onBody={(v) => setNewDraft(v)} onBodyRu={setNewDraftRu} height={260} />
             <div className="flex gap-2">
               <button onClick={addDraft} disabled={busy} className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">Save draft</button>
               <button onClick={() => setNewDraft(null)} className="rounded-lg px-3 py-1.5 text-xs ring-1 ring-zinc-200">Cancel</button>
@@ -236,6 +253,75 @@ function SopDetail({ sop, onChanged }: { sop: Sop; onChanged: (s: Sop) => void }
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+// English/Русский tabs for a SOP version body, with one-click AI translation of the English content.
+// Reused by the create form and the new-draft editor.
+function BilingualBody({
+  body,
+  bodyRu,
+  onBody,
+  onBodyRu,
+  height = 280,
+}: {
+  body: string;
+  bodyRu: string;
+  onBody: (v: string) => void;
+  onBodyRu: (v: string) => void;
+  height?: number;
+}) {
+  const [lang, setLang] = useState<'EN' | 'RU'>('EN');
+  const [translating, setTranslating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function translate() {
+    if (!body.trim()) {
+      setError('Add English content first, then translate.');
+      return;
+    }
+    setTranslating(true);
+    setError(null);
+    try {
+      const { markdown } = await api.aiTranslateSop(body);
+      onBodyRu(markdown);
+    } catch {
+      setError('AI translation is unavailable right now.');
+    } finally {
+      setTranslating(false);
+    }
+  }
+
+  const tab = (l: 'EN' | 'RU') =>
+    `rounded px-2 py-1 text-xs ${lang === l ? 'bg-zinc-900 text-white' : 'ring-1 ring-zinc-200 text-zinc-600'}`;
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-2">
+        <button type="button" onClick={() => setLang('EN')} className={tab('EN')}>English</button>
+        <button type="button" onClick={() => setLang('RU')} className={tab('RU')}>Русский</button>
+        {lang === 'RU' ? (
+          <button
+            type="button"
+            onClick={translate}
+            disabled={translating || !body.trim()}
+            className="ml-auto inline-flex items-center gap-1.5 rounded bg-zinc-100 px-3 py-1 text-xs disabled:opacity-50"
+          >
+            {translating ? <Spinner className="h-3.5 w-3.5 text-zinc-400" /> : null}
+            Translate from English
+          </button>
+        ) : null}
+      </div>
+      <div data-color-mode="light">
+        {lang === 'EN' ? (
+          <MDEditor value={body} onChange={(v) => onBody(v ?? '')} height={height} />
+        ) : (
+          <MDEditor value={bodyRu} onChange={(v) => onBodyRu(v ?? '')} height={height} />
+        )}
+      </div>
+      {error ? <p className="mt-1 text-xs text-red-600">{error}</p> : null}
+      {lang === 'RU' ? <p className="mt-1 text-[10px] text-zinc-400">Readers see English when this is empty.</p> : null}
     </div>
   );
 }

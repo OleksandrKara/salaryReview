@@ -45,7 +45,7 @@ class SopControllerTest {
     @BeforeEach
     void setUp() {
         sops = mock(SopService.class);
-        mvc = MockMvcBuilders.standaloneSetup(new SopController(sops))
+        mvc = MockMvcBuilders.standaloneSetup(new SopController(sops, mock(com.salonreview.kb.KbAiDraftService.class)))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
 

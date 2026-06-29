@@ -67,7 +67,7 @@ class SopServiceTest {
     @Test
     @DisplayName("create makes a SOP plus a version-1 draft")
     void createMakesV1Draft() {
-        service.create("Cleaning", "Hygiene", SopAudience.PROVIDER, "wash hands", "owner");
+        service.create("Cleaning", "Hygiene", SopAudience.PROVIDER, "wash hands", null, "owner");
         ArgumentCaptor<SopVersion> cap = ArgumentCaptor.forClass(SopVersion.class);
         verify(versions).save(cap.capture());
         assertThat(cap.getValue().getVersionNumber()).isEqualTo(1);
@@ -107,7 +107,7 @@ class SopServiceTest {
         when(versions.findTopBySopIdOrderByVersionNumberDesc(1L)).thenReturn(Optional.of(
                 SopVersion.builder().id(100L).sopId(1L).versionNumber(2).status(SopVersionStatus.PUBLISHED).build()));
 
-        service.addVersion(1L, "v3 body", "owner");
+        service.addVersion(1L, "v3 body", null, "owner");
 
         ArgumentCaptor<SopVersion> cap = ArgumentCaptor.forClass(SopVersion.class);
         verify(versions).save(cap.capture());

@@ -141,7 +141,12 @@ public class SopSyncService {
         }
 
         try {
-            RagDocument doc = rag.upload(sop.getTitle() + ".md", body.getBytes(StandardCharsets.UTF_8), by);
+            // Index both languages so the assistant can retrieve in either (English + any translation).
+            String combined = body;
+            if (version.getBodyRu() != null && !version.getBodyRu().isBlank()) {
+                combined = combined + "\n\n---\n\n" + version.getBodyRu();
+            }
+            RagDocument doc = rag.upload(sop.getTitle() + ".md", combined.getBytes(StandardCharsets.UTF_8), by);
             rag.approve(doc.getId());
 
             long quarantined = ragChunks.countByDocumentIdAndStatus(doc.getId(), RagChunkStatus.QUARANTINED);
