@@ -60,7 +60,7 @@ public class KbSyncService {
             throw new SyncInProgressException();
         }
         try {
-            return repo.findBySyncStatusInOrderByCategoryAscTitleAsc(
+            return repo.findPendingSyncOrderByCategoryAscTitleAsc(
                             EnumSet.of(SyncStatus.NOT_SYNCED, SyncStatus.CHANGED, SyncStatus.ERROR)).stream()
                     .map(a -> doSync(a, by))
                     .toList();

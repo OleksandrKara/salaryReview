@@ -53,51 +53,80 @@ public class VoyageClient {
         this.props = props;
     }
 
-    /** Embed a document chunk for storage. Voyage recommends input_type=document at ingest time. */
-    public float[] embedDocument(String text) {
-        return embed(text, "document");
+    // Free tier: 3 RPM, 10K TPM. On 429 we back off and retry up to this many times.
+    private static final int MAX_RETRIES = 3;
+    private static final long RETRY_BACKOFF_MS = 20_000L;
+
+    /**
+     * Embed a batch of document chunks in a single API call. Callers should pass all chunks for
+     * one document together — one network round-trip instead of one per chunk, which is critical on
+     * the free tier (3 RPM limit). Returns embeddings in the same order as {@code texts}.
+     */
+    public List<float[]> embedDocuments(List<String> texts) {
+        return embedBatch(texts, "document");
     }
 
     /** Embed a user question for search. Voyage recommends input_type=query at retrieval time. */
     public float[] embedQuery(String text) {
-        return embed(text, "query");
+        return embedBatch(List.of(text), "query").get(0);
     }
 
-    private float[] embed(String text, String inputType) {
+    private List<float[]> embedBatch(List<String> texts, String inputType) {
         if (!props.isVoyageConfigured()) {
             throw new IllegalStateException("VOYAGE_API_KEY is missing — cannot embed.");
         }
-        try {
-            Map<String, Object> body = Map.of(
-                    "input", List.of(text),
-                    "model", MODEL,
-                    "input_type", inputType,
-                    "output_dimension", DIMENSIONS);
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(URL))
-                    .timeout(Duration.ofSeconds(30))
-                    .header("Content-Type", "application/json")
-                    .header("Authorization", "Bearer " + props.getVoyageApiKey())
-                    .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(body)))
-                    .build();
-            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (res.statusCode() < 200 || res.statusCode() >= 300) {
-                throw new IllegalStateException("Voyage embeddings returned " + res.statusCode() + ": " + res.body());
+        Exception lastEx = null;
+        for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                Map<String, Object> body = Map.of(
+                        "input", texts,
+                        "model", MODEL,
+                        "input_type", inputType,
+                        "output_dimension", DIMENSIONS);
+                HttpRequest req = HttpRequest.newBuilder()
+                        .uri(URI.create(URL))
+                        .timeout(Duration.ofSeconds(30))
+                        .header("Content-Type", "application/json")
+                        .header("Authorization", "Bearer " + props.getVoyageApiKey())
+                        .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(body)))
+                        .build();
+                HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                if (res.statusCode() == 429) {
+                    // Rate-limited: back off and retry (3 RPM free tier = ~20 s between calls).
+                    if (attempt < MAX_RETRIES) {
+                        Thread.sleep(RETRY_BACKOFF_MS * (attempt + 1));
+                        continue;
+                    }
+                    throw new IllegalStateException("Voyage embeddings returned 429: " + res.body());
+                }
+                if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                    throw new IllegalStateException("Voyage embeddings returned " + res.statusCode() + ": " + res.body());
+                }
+                JsonNode data = json.readTree(res.body()).path("data");
+                if (!data.isArray() || data.size() != texts.size()) {
+                    throw new IllegalStateException("Voyage returned unexpected number of embeddings");
+                }
+                List<float[]> result = new java.util.ArrayList<>(texts.size());
+                for (JsonNode item : data) {
+                    JsonNode embedding = item.path("embedding");
+                    if (!embedding.isArray() || embedding.size() != DIMENSIONS) {
+                        throw new IllegalStateException("Voyage returned an unexpected embedding shape");
+                    }
+                    float[] vec = new float[DIMENSIONS];
+                    for (int i = 0; i < DIMENSIONS; i++) vec[i] = (float) embedding.get(i).asDouble();
+                    result.add(vec);
+                }
+                return result;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while waiting to retry Voyage call", e);
+            } catch (RuntimeException e) {
+                throw e;
+            } catch (Exception e) {
+                lastEx = e;
             }
-            JsonNode embedding = json.readTree(res.body()).path("data").path(0).path("embedding");
-            if (!embedding.isArray() || embedding.size() != DIMENSIONS) {
-                throw new IllegalStateException("Voyage returned an unexpected embedding shape");
-            }
-            float[] vec = new float[embedding.size()];
-            for (int i = 0; i < vec.length; i++) {
-                vec[i] = (float) embedding.get(i).asDouble();
-            }
-            return vec;
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new IllegalStateException("Voyage embedding call failed", e);
         }
+        throw new IllegalStateException("Voyage embedding call failed", lastEx);
     }
 
     /** Format an embedding as a pgvector literal: {@code [0.1,0.2,...]}. */
