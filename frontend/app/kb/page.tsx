@@ -22,7 +22,7 @@ export default async function KbPage() {
           ? ' Edit here; sync to the assistant from the RAG admin page.'
           : ' Read-only.'}
       </p>
-      <KbManager role={me.role} initialArticles={articles} />
+      <KbManager role={me.role} language={me.preferredLanguage} initialArticles={articles} />
     </main>
   );
 }

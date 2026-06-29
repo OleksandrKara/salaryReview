@@ -569,6 +569,7 @@ export interface KbArticle {
   title: string;
   category: string;
   body: string;
+  bodyRu: string | null;
   visibleRoles: Role[];
   syncStatus: KbSyncStatus;
   ragDocId: number | null;
@@ -584,6 +585,7 @@ export interface KbWriteRequest {
   title: string;
   category: string;
   body: string;
+  bodyRu: string | null;
   visibleRoles: Role[];
 }
 

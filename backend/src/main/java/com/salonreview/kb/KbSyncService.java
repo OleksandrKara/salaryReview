@@ -77,7 +77,7 @@ public class KbSyncService {
     // ---------------------------------------------------------------- internals
 
     private KbArticle doSync(KbArticle a, String by) {
-        String freshHash = KbArticleService.contentHash(a.getBody());
+        String freshHash = KbArticleService.contentHash(a.getBody(), a.getBodyRu());
 
         // Already up to date — no-op (verify the hash, don't trust a possibly-stale flag).
         if (a.getSyncStatus() == SyncStatus.SYNCED && a.getRagDocId() != null
@@ -105,8 +105,13 @@ public class KbSyncService {
         }
 
         try {
+            // Index both languages so the assistant can retrieve in either (English + any translation).
+            String combined = a.getBody();
+            if (a.getBodyRu() != null && !a.getBodyRu().isBlank()) {
+                combined = combined + "\n\n---\n\n" + a.getBodyRu();
+            }
             RagDocument doc = rag.upload(a.getTitle() + ".md",
-                    a.getBody().getBytes(StandardCharsets.UTF_8), by);
+                    combined.getBytes(StandardCharsets.UTF_8), by);
             rag.approve(doc.getId());
 
             long quarantined = ragChunks.countByDocumentIdAndStatus(doc.getId(), RagChunkStatus.QUARANTINED);
