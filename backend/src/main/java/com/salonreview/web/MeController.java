@@ -24,7 +24,7 @@ import java.util.Map;
  * flags here piggybacks on the existing /api/me round-trip the frontend already does on every
  * page load — no separate config endpoint needed.
  *
- * <p>{@code preferredLanguage} (owner/manager) rides along too: null means the user hasn't chosen,
+ * <p>{@code preferredLanguage} rides along too: null means the user hasn't chosen,
  * which the frontend uses to show the one-time setup prompt. It's read fresh from the DB so a change
  * is reflected immediately (the session principal isn't reloaded mid-session).
  */
@@ -58,7 +58,7 @@ public class MeController {
         return body;
     }
 
-    /** Set the caller's preferred language (OWNER+MANAGER, gated in SecurityConfig). */
+    /** Set the caller's preferred language (any authenticated user). */
     @PostMapping("/api/me/language")
     public ResponseEntity<Void> setLanguage(@RequestBody LanguageRequest body,
                                             @AuthenticationPrincipal AppUserPrincipal principal) {

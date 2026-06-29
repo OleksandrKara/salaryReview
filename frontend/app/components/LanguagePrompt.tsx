@@ -5,9 +5,10 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import type { Language, Me } from '../lib/types';
 
-// One-time language setup for owners/managers. Shown when they haven't chosen yet (preferredLanguage
-// null). Lives in the root layout, which doesn't remount on client navigation — so it re-checks
-// /api/me on each navigation, which is what makes it appear right after sign-in.
+// One-time language setup for any signed-in user (owners/managers via the assistant + KB, providers
+// for SOPs). Shown when they haven't chosen yet (preferredLanguage null). Lives in the root layout,
+// which doesn't remount on client navigation — so it re-checks /api/me on each navigation, which is
+// what makes it appear right after sign-in.
 export default function LanguagePrompt() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
@@ -20,7 +21,7 @@ export default function LanguagePrompt() {
     return () => { cancelled = true; };
   }, [pathname]);
 
-  const show = !!me && (me.role === 'OWNER' || me.role === 'MANAGER') && me.preferredLanguage === null;
+  const show = !!me && me.preferredLanguage === null;
   if (!show) return null;
 
   async function choose(language: Language) {
