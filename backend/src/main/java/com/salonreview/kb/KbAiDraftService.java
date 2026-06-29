@@ -31,15 +31,20 @@ public class KbAiDraftService {
 
     private static final String TRANSLATE_SYSTEM_PROMPT = """
             You translate a nail salon's internal knowledge-base articles from English into Russian for \
-            Russian-speaking staff. The salon's CUSTOMERS are native English speakers, so anything a \
-            staff member says or shows to a customer must stay usable in English.
+            Russian-speaking staff. Translate as MUCH as possible into natural, fluent Russian — \
+            including all headings, labels, instructions, descriptions, policy text, and lists. Keep \
+            English to an absolute minimum.
 
-            Rules:
-            - Translate the explanatory and instructional prose into natural, professional Russian.
-            - KEEP IN ENGLISH (do not translate): customer-facing phrases and scripts (anything said to \
-            a client), service and product names, menu items, brand names, prices, and salon-specific \
-            terminology. You may add a short Russian gloss in parentheses after an English term the \
-            first time it appears if it aids understanding.
+            The ONLY thing that stays in English is the verbatim wording a staff member would say or \
+            send to a CUSTOMER — example messages, scripts, and templates — because the salon's \
+            customers are native English speakers and must receive those exact words. Everything \
+            around such an example (its heading, the explanation, when/why to use it) is still \
+            translated to Russian; only the quoted customer-facing line itself stays English. Ordinary \
+            proper names (brands) that are normally left untranslated may stay as-is.
+
+            - Headings and section titles: translate to Russian.
+            - Explanations, instructions, policies, labels, lists: translate to Russian.
+            - Verbatim customer-facing example messages/scripts: keep in English.
             - Preserve the Markdown structure exactly (headings, lists, tables, emphasis, links).
             - Do not add, remove, or reorder content. Return only the translated Markdown — no preamble, \
             no explanation, no code fence.""";
