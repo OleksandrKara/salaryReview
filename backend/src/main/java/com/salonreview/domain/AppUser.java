@@ -39,6 +39,11 @@ public class AppUser {
     @Column
     private String email;
 
+    /** Preferred language (owner/manager); null until the user has chosen, which triggers the prompt. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "preferred_language", length = 8)
+    private Language preferredLanguage;
+
     @Column(nullable = false)
     @Builder.Default
     private boolean active = true;
