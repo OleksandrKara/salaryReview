@@ -50,12 +50,12 @@ public class SopService {
 
     /** Create a SOP and its first draft version (version 1). */
     @Transactional
-    public Sop create(String title, String category, SopAudience audience, String body, String by) {
+    public Sop create(String title, String category, SopAudience audience, String body, String bodyRu, String by) {
         Sop sop = sops.save(Sop.builder()
                 .title(title).category(category).audience(audience)
                 .status(SopStatus.ACTIVE).createdBy(by).build());
         versions.save(SopVersion.builder()
-                .sopId(sop.getId()).versionNumber(1).body(body == null ? "" : body)
+                .sopId(sop.getId()).versionNumber(1).body(body == null ? "" : body).bodyRu(blankToNull(bodyRu))
                 .status(SopVersionStatus.DRAFT).createdBy(by).build());
         return sop;
     }
@@ -73,13 +73,17 @@ public class SopService {
 
     /** Add a new draft version (max + 1). Does not change the live version. */
     @Transactional
-    public Optional<SopVersion> addVersion(Long id, String body, String by) {
+    public Optional<SopVersion> addVersion(Long id, String body, String bodyRu, String by) {
         if (sops.findById(id).isEmpty()) return Optional.empty();
         int next = versions.findTopBySopIdOrderByVersionNumberDesc(id)
                 .map(v -> v.getVersionNumber() + 1).orElse(1);
         return Optional.of(versions.save(SopVersion.builder()
-                .sopId(id).versionNumber(next).body(body == null ? "" : body)
+                .sopId(id).versionNumber(next).body(body == null ? "" : body).bodyRu(blankToNull(bodyRu))
                 .status(SopVersionStatus.DRAFT).createdBy(by).build()));
+    }
+
+    private static String blankToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s;
     }
 
     /** Publish a draft version: make it live (current) and mark it PUBLISHED. */

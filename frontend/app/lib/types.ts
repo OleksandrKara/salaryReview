@@ -599,6 +599,7 @@ export interface SopVersion {
   id: number;
   versionNumber: number;
   body: string;
+  bodyRu: string | null;
   status: SopVersionStatus;
   createdBy: string;
   createdAt: string;
@@ -631,6 +632,7 @@ export interface SopCreateRequest {
   category: string;
   audience: SopAudience;
   body: string;
+  bodyRu: string | null;
 }
 
 export interface SopUpdateRequest {

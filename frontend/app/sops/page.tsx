@@ -23,7 +23,7 @@ export default async function SopsPage() {
       ) : (
         <p className="mt-1 text-sm text-zinc-500">Open each SOP and acknowledge that you have read and agree to follow it.</p>
       )}
-      <SopList role={me.role} initialSops={sops} />
+      <SopList role={me.role} language={me.preferredLanguage} initialSops={sops} />
     </main>
   );
 }

@@ -6,6 +6,7 @@ import com.salonreview.domain.Sop;
 import com.salonreview.domain.SopAudience;
 import com.salonreview.domain.SopStatus;
 import com.salonreview.domain.SopVersion;
+import com.salonreview.kb.KbAiDraftService;
 import com.salonreview.sop.SopService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -25,9 +26,11 @@ import java.util.List;
 public class SopController {
 
     private final SopService sops;
+    private final KbAiDraftService aiDraft;
 
-    public SopController(SopService sops) {
+    public SopController(SopService sops, KbAiDraftService aiDraft) {
         this.sops = sops;
+        this.aiDraft = aiDraft;
     }
 
     // ---- reads ----
@@ -58,7 +61,8 @@ public class SopController {
         if (isBlank(body.title()) || isBlank(body.category()) || body.audience() == null) {
             return ResponseEntity.badRequest().build();
         }
-        Sop sop = sops.create(body.title(), body.category(), body.audience(), body.body(), me.getUsername());
+        Sop sop = sops.create(body.title(), body.category(), body.audience(), body.body(), body.bodyRu(),
+                me.getUsername());
         return ResponseEntity.ok(toDto(sops.item(sop, null)));
     }
 
@@ -75,9 +79,20 @@ public class SopController {
     @PostMapping("/{id}/versions")
     public ResponseEntity<SopVersionDto> addVersion(@PathVariable Long id, @RequestBody VersionRequest body,
                                                     @AuthenticationPrincipal AppUserPrincipal me) {
-        return sops.addVersion(id, body.body(), me.getUsername())
+        return sops.addVersion(id, body.body(), body.bodyRu(), me.getUsername())
                 .map(v -> ResponseEntity.ok(toVersionDto(v)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /** Translate an English version body into Russian (owner; keeps customer-facing English intact). */
+    @PostMapping("/ai-translate")
+    public ResponseEntity<AiTranslateResponse> aiTranslate(@RequestBody AiTranslateRequest body) {
+        if (isBlank(body.body())) return ResponseEntity.badRequest().build();
+        try {
+            return ResponseEntity.ok(new AiTranslateResponse(aiDraft.translateToRussian(body.body())));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
     }
 
     @PostMapping("/{id}/versions/{versionId}/publish")
@@ -137,7 +152,7 @@ public class SopController {
     }
 
     private static SopVersionDto toVersionDto(SopVersion v) {
-        return new SopVersionDto(v.getId(), v.getVersionNumber(), v.getBody(),
+        return new SopVersionDto(v.getId(), v.getVersionNumber(), v.getBody(), v.getBodyRu(),
                 v.getStatus().name(), v.getCreatedBy(), v.getCreatedAt());
     }
 
@@ -145,15 +160,19 @@ public class SopController {
                          SopVersionDto currentVersion, boolean acknowledged, Instant acknowledgedAt,
                          String createdBy, Instant createdAt, Instant updatedAt) {}
 
-    public record SopVersionDto(Long id, Integer versionNumber, String body, String status,
+    public record SopVersionDto(Long id, Integer versionNumber, String body, String bodyRu, String status,
                                 String createdBy, Instant createdAt) {}
 
     public record RosterDto(Long userId, String username, String role, boolean acknowledged,
                             Instant acknowledgedAt) {}
 
-    public record CreateRequest(String title, String category, SopAudience audience, String body) {}
+    public record CreateRequest(String title, String category, SopAudience audience, String body, String bodyRu) {}
 
     public record UpdateRequest(String title, String category, SopAudience audience) {}
 
-    public record VersionRequest(String body) {}
+    public record VersionRequest(String body, String bodyRu) {}
+
+    public record AiTranslateRequest(String body) {}
+
+    public record AiTranslateResponse(String markdown) {}
 }

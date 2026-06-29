@@ -29,6 +29,10 @@ public class SopVersion {
     @Column(nullable = false, columnDefinition = "text")
     private String body;
 
+    /** Russian translation of {@link #body}; null when not translated (English is shown as fallback). */
+    @Column(name = "body_ru", columnDefinition = "text")
+    private String bodyRu;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     @Builder.Default

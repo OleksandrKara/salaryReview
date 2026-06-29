@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic';
 import { useState } from 'react';
 import { api } from '../lib/api';
 import { Spinner } from '../components/Spinner';
-import type { Role, Sop } from '../lib/types';
+import type { Language, Role, Sop, SopVersion } from '../lib/types';
 
 const Markdown = dynamic(
   () => import('@uiw/react-md-editor').then((m) => ({ default: m.default.Markdown })),
@@ -16,7 +16,15 @@ const fmt = (iso: string | null) =>
 
 // Shared read + acknowledge list for managers/providers (owners view it read-only). The acknowledge
 // button arms only after the SOP's content has been opened this session — a light UX gate.
-export default function SopList({ role, initialSops }: { role: Role; initialSops: Sop[] }) {
+export default function SopList({
+  role,
+  language,
+  initialSops,
+}: {
+  role: Role;
+  language: Language | null;
+  initialSops: Sop[];
+}) {
   const [sops, setSops] = useState<Sop[]>(initialSops);
   const [openId, setOpenId] = useState<number | null>(null);
   const [viewed, setViewed] = useState<Set<number>>(new Set());
@@ -72,12 +80,37 @@ export default function SopList({ role, initialSops }: { role: Role; initialSops
             </div>
           </div>
           {openId === s.id ? (
-            <div data-color-mode="light" className="mt-3 border-t border-zinc-100 pt-3 text-sm">
-              <Markdown source={s.currentVersion?.body || '_(no content)_'} />
+            <div className="mt-3 border-t border-zinc-100 pt-3">
+              <ReaderBody version={s.currentVersion} defaultLang={language ?? 'EN'} />
             </div>
           ) : null}
         </li>
       ))}
     </ul>
+  );
+}
+
+// SOP content with a per-SOP EN/RU toggle. Defaults to the reader's preferred language, falling back
+// to English when there's no Russian; the toggle only appears when a translation exists.
+function ReaderBody({ version, defaultLang }: { version: SopVersion | null; defaultLang: Language }) {
+  const hasRu = !!(version?.bodyRu && version.bodyRu.trim());
+  const [lang, setLang] = useState<Language>(defaultLang === 'RU' && hasRu ? 'RU' : 'EN');
+  const content = lang === 'RU' && hasRu ? version!.bodyRu! : version?.body;
+  const pill = (l: Language) =>
+    `text-xs ${lang === l ? 'font-semibold text-zinc-700' : 'text-zinc-400 hover:text-zinc-600'}`;
+
+  return (
+    <div data-color-mode="light">
+      {hasRu ? (
+        <div className="mb-2 flex items-center gap-1">
+          <button type="button" onClick={() => setLang('EN')} className={pill('EN')}>EN</button>
+          <span className="text-zinc-300">/</span>
+          <button type="button" onClick={() => setLang('RU')} className={pill('RU')}>RU</button>
+        </div>
+      ) : null}
+      <div className="text-sm">
+        <Markdown source={content || '_(no content)_'} />
+      </div>
+    </div>
   );
 }

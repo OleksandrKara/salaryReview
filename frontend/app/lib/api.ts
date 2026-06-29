@@ -195,8 +195,12 @@ export const api = {
 
   listSopVersions: (id: number) => proxyGet<SopVersion[]>(`/api/sops/${id}/versions`),
 
-  addSopVersion: (id: number, body: string) =>
-    proxyJson<SopVersion>(`/api/sops/${id}/versions`, 'POST', { body }),
+  addSopVersion: (id: number, body: string, bodyRu: string | null) =>
+    proxyJson<SopVersion>(`/api/sops/${id}/versions`, 'POST', { body, bodyRu }),
+
+  // AI translate a SOP version body to Russian (keeps customer-facing English intact).
+  aiTranslateSop: (body: string) =>
+    proxyJson<{ markdown: string }>(`/api/sops/ai-translate`, 'POST', { body }),
 
   publishSopVersion: (id: number, versionId: number) =>
     proxyJson<Sop>(`/api/sops/${id}/versions/${versionId}/publish`, 'POST', {}),
