@@ -1,12 +1,16 @@
 package com.salonreview.web;
 
 import com.salonreview.ai.LangSmithTracer;
+import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.config.RagProperties;
+import com.salonreview.domain.AppUser;
+import com.salonreview.domain.Language;
 import com.salonreview.rag.Citation;
 import com.salonreview.rag.RagAnswer;
 import com.salonreview.rag.RagAnswerService;
 import com.salonreview.rag.RagSuggestionService;
 import com.salonreview.rag.StarterSuggestions;
+import com.salonreview.repo.AppUserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -14,6 +18,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -44,6 +49,7 @@ public class RagController {
     private final RagSuggestionService suggestionService;
     private final ObjectProvider<LangSmithTracer> tracerProvider;
     private final RagProperties props;
+    private final AppUserRepository users;
     // Streaming runs the (blocking) Anthropic stream off the request thread. Daemon, small pool.
     private final ExecutorService streamExecutor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "rag-stream");
@@ -52,17 +58,19 @@ public class RagController {
     });
 
     public RagController(RagAnswerService answerService, RagSuggestionService suggestionService,
-                        ObjectProvider<LangSmithTracer> tracerProvider, RagProperties props) {
+                        ObjectProvider<LangSmithTracer> tracerProvider, RagProperties props,
+                        AppUserRepository users) {
         this.answerService = answerService;
         this.suggestionService = suggestionService;
         this.tracerProvider = tracerProvider;
         this.props = props;
+        this.users = users;
     }
 
-    /** Grounded starter prompts for the chat empty state (topic-grouped; empty when disabled/no corpus). */
+    /** Grounded starter prompts for the chat empty state, in the caller's language (cached per language). */
     @GetMapping("/suggestions")
-    public StarterSuggestions suggestions() {
-        return suggestionService.get();
+    public StarterSuggestions suggestions(@AuthenticationPrincipal AppUserPrincipal me) {
+        return suggestionService.get(language(me));
     }
 
     /**
@@ -72,13 +80,14 @@ public class RagController {
      * SecurityConfig ({@code /api/rag/**} = OWNER+MANAGER) + this controller's feature-flag condition.
      */
     @PostMapping(value = "/ask/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter askStream(@RequestBody AskRequest body) {
+    public SseEmitter askStream(@RequestBody AskRequest body, @AuthenticationPrincipal AppUserPrincipal me) {
         SseEmitter emitter = new SseEmitter(120_000L); // 2 min ceiling per answer
         if (body == null || body.question() == null || body.question().isBlank()) {
             send(emitter, "error", Map.of("message", "A question is required."));
             emitter.complete();
             return emitter;
         }
+        Language lang = language(me);
         RagAnswerService.StreamSink sink = new RagAnswerService.StreamSink() {
             @Override public void token(String text) { send(emitter, "token", Map.of("text", text)); }
             @Override public void citations(List<Citation> citations) { send(emitter, "citations", citations); }
@@ -96,7 +105,7 @@ public class RagController {
         };
         streamExecutor.execute(() -> {
             try {
-                answerService.answerStream(body.question(), sink);
+                answerService.answerStream(body.question(), lang, sink);
             } catch (Exception e) {
                 log.error("RAG stream failed: {}", e.toString());
                 sink.error("The assistant is unavailable right now. Please try again.");
@@ -116,13 +125,13 @@ public class RagController {
 
     /** Ask a question; returns a grounded, cited answer (or a "don't know" when the corpus lacks it). */
     @PostMapping("/ask")
-    public ResponseEntity<RagAnswer> ask(@RequestBody AskRequest body) {
+    public ResponseEntity<RagAnswer> ask(@RequestBody AskRequest body, @AuthenticationPrincipal AppUserPrincipal me) {
         if (!props.isEnabled()) return ResponseEntity.notFound().build();
         if (body == null || body.question() == null || body.question().isBlank()) {
             return ResponseEntity.badRequest().build();
         }
         try {
-            return ResponseEntity.ok(answerService.answer(body.question()));
+            return ResponseEntity.ok(answerService.answer(body.question(), language(me)));
         } catch (RagAnswerService.RagAnswerException e) {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
         }
@@ -141,6 +150,14 @@ public class RagController {
             tracer.feedback(body.runId(), body.helpful() ? 1.0 : 0.0, "rag_user_feedback", metadata);
         });
         return ResponseEntity.ok().build();
+    }
+
+    /** The caller's preferred language, read fresh from the DB; English when unset. */
+    private Language language(AppUserPrincipal me) {
+        if (me == null) return Language.EN;
+        return users.findById(me.getUserId())
+                .map(AppUser::getPreferredLanguage)
+                .orElse(Language.EN) == Language.RU ? Language.RU : Language.EN;
     }
 
     public record AskRequest(String question) {}

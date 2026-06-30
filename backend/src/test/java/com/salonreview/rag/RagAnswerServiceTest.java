@@ -2,6 +2,7 @@ package com.salonreview.rag;
 
 import com.anthropic.client.AnthropicClient;
 import com.salonreview.ai.LangSmithTracer;
+import com.salonreview.domain.Language;
 import com.salonreview.domain.RagAgentConfig;
 import com.salonreview.domain.RagDocument;
 import com.salonreview.repo.ChunkMatch;
@@ -67,7 +68,7 @@ class RagAnswerServiceTest {
     void emptyRetrievalYieldsDontKnow() {
         when(retrieval.retrieve(anyString(), any())).thenReturn(List.of());
 
-        RagAnswer answer = spied.answer("what is the refund policy?");
+        RagAnswer answer = spied.answer("what is the refund policy?", Language.EN);
 
         assertThat(answer.answered()).isFalse();
         assertThat(answer.citations()).isEmpty();
@@ -93,7 +94,7 @@ class RagAnswerServiceTest {
         }
         Capture cap = new Capture();
 
-        service.answerStream("what is the refund policy?", cap);
+        service.answerStream("what is the refund policy?", Language.EN, cap);
 
         assertThat(cap.tokens).hasSize(1);
         assertThat(cap.tokens.get(0)).contains("couldn't find");
@@ -102,6 +103,17 @@ class RagAnswerServiceTest {
         assertThat(cap.answered).isFalse();
         assertThat(cap.error).isFalse();
         verify(anthropicProvider, never()).getIfAvailable();
+    }
+
+    @Test
+    @DisplayName("empty retrieval in Russian → the Russian 'don't know' message")
+    void emptyRetrievalRussian() {
+        when(retrieval.retrieve(anyString(), any())).thenReturn(List.of());
+
+        RagAnswer answer = spied.answer("какая политика возврата?", Language.RU);
+
+        assertThat(answer.answered()).isFalse();
+        assertThat(answer.answer()).isEqualTo("Я не нашёл ничего об этом в текущих документах.");
     }
 
     @Test
@@ -119,9 +131,9 @@ class RagAnswerServiceTest {
         doReturn(new RagAnswerService.ParsedAnswer(
                 "The no-show fee is $25.",
                 List.of(new Citation(5L, "policies.md", "The no-show fee is $25."))))
-                .when(spied).callClaude(any(), any(), anyString(), any(), any());
+                .when(spied).callClaude(any(), any(), anyString(), any(), any(), any());
 
-        RagAnswer answer = spied.answer("what's the no-show fee?");
+        RagAnswer answer = spied.answer("what's the no-show fee?", Language.EN);
 
         assertThat(answer.answered()).isTrue();
         assertThat(answer.answer()).contains("$25");
@@ -142,10 +154,10 @@ class RagAnswerServiceTest {
         when(documents.findAllById(any())).thenReturn(List.of(
                 RagDocument.builder().id(5L).filename("p.md").build()));
         org.mockito.Mockito.doThrow(new RagAnswerService.RagAnswerException("anthropic 5xx"))
-                .when(spied).callClaude(any(), any(), anyString(), any(), any());
+                .when(spied).callClaude(any(), any(), anyString(), any(), any(), any());
 
         try {
-            spied.answer("q");
+            spied.answer("q", Language.EN);
             org.junit.jupiter.api.Assertions.fail("expected RagAnswerException");
         } catch (RagAnswerService.RagAnswerException expected) {
             assertThat(expected.getMessage()).contains("anthropic 5xx");

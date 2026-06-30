@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { Spinner } from './Spinner';
-import type { RagCitation, Role, StarterSuggestions } from '../lib/types';
+import type { Language, RagCitation, Role, StarterSuggestions } from '../lib/types';
 
 type Msg = {
   id: number;
@@ -31,26 +31,32 @@ export default function AssistantWidget() {
   const [busy, setBusy] = useState(false);
   const [suggestEnabled, setSuggestEnabled] = useState(false);
   const [suggestions, setSuggestions] = useState<StarterSuggestions | null>(null);
+  const langRef = useRef<Language | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
 
-  // Re-check the role on mount and on every client-side navigation until it resolves to a concrete
-  // role. The widget lives in the root layout, which does NOT remount on client navigation — so after
-  // signing in (a router.replace, not a reload) this is what makes it appear without a manual refresh.
+  // Re-read the principal on mount and on every client-side navigation. The widget lives in the root
+  // layout, which does NOT remount on client navigation — so this is what makes it appear right after
+  // sign-in and pick up a language change made from the menu. When the language changes, drop any
+  // cached suggestions so they re-fetch in the new language.
   useEffect(() => {
-    if (role === 'OWNER' || role === 'MANAGER' || role === 'PROVIDER') return;
     let cancelled = false;
     api.getMe()
       .then((me) => {
         if (cancelled) return;
         setRole(me.role);
         setSuggestEnabled(me.features.ragSuggestionsEnabled);
+        if (langRef.current !== null && langRef.current !== me.preferredLanguage) {
+          setSuggestions(null); // language changed — re-fetch chips in the new language
+        }
+        langRef.current = me.preferredLanguage;
       })
       .catch(() => { if (!cancelled) setRole(null); });
     return () => { cancelled = true; };
-  }, [pathname, role]);
+  }, [pathname]);
 
-  // Fetch grounded starter prompts the first time the panel is opened (server-cached, so it's cheap).
+  // Fetch grounded starter prompts the first time the panel is opened (server-cached per language, so
+  // no LLM call on a normal open). Re-fetches after a language change cleared them above.
   useEffect(() => {
     if (!open || !suggestEnabled || suggestions !== null) return;
     let cancelled = false;
