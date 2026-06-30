@@ -38,14 +38,22 @@ export default async function RetentionPage({
 
   let series;
   let report;
+  // Salon-wide series (provider = null) for the fresh-vs-returning chart. When no provider is filtered
+  // it's identical to `series`, so we skip the extra call and reuse it below.
+  let salonSeries;
   try {
-    [series, report] = await Promise.all([
+    [series, report, salonSeries] = await Promise.all([
       serverApi.getRetentionSeries(fromYear, fromMonth, toYear, toMonth, provider || undefined),
       serverApi.getRetention(toYear, toMonth),
+      provider
+        ? serverApi.getRetentionSeries(fromYear, fromMonth, toYear, toMonth)
+        : Promise.resolve(null),
     ]);
+    salonSeries = salonSeries ?? series;
   } catch {
     series = { fromYear, fromMonth, toYear, toMonth, providerRef: null, providers: [], points: [] as RetentionSeriesPoint[] };
     report = { year: toYear, month: toMonth, retentionWindowDays: 60, providers: [] };
+    salonSeries = series;
   }
 
   const providerName = provider
@@ -111,7 +119,23 @@ export default async function RetentionPage({
           No visits recorded for this period yet. (The ledger backfills on deploy and refreshes daily.)
         </p>
       ) : (
-        <NewReturningChart points={series.points} label={providerName} />
+        <div className="space-y-4">
+          <NewReturningChart points={series.points} label={providerName} />
+          {/* Salon-wide acquisition vs retention, month by month — always the whole salon, regardless of
+              the provider filter above. Fresh = clients on their first-ever salon visit. */}
+          <div>
+            <NewReturningChart
+              points={salonSeries.points}
+              label="Salon"
+              newLabel="Fresh"
+              testId="salon-fresh-returning-chart"
+            />
+            <p className="mt-1.5 px-1 text-[11px] text-zinc-400">
+              Whole-salon acquisition vs retention — <span className="font-medium">Fresh</span> = clients on
+              their first-ever salon visit. Always the full salon{provider ? ', not just the filtered provider' : ' (matches the chart above when no provider is filtered)'}.
+            </p>
+          </div>
+        </div>
       )}
 
       {/* Latest-month per-provider scorecard — set apart from the period chart above. */}
