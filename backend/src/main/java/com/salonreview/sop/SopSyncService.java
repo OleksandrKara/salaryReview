@@ -93,6 +93,14 @@ public class SopSyncService {
         return sop.getSyncStatus();
     }
 
+    /** Whether the SOP's current published version carries a Russian translation (drives the EN/RU chip). */
+    public boolean currentVersionHasTranslation(Sop sop) {
+        if (sop.getCurrentVersionId() == null) return false;
+        return versions.findById(sop.getCurrentVersionId())
+                .map(v -> v.getBodyRu() != null && !v.getBodyRu().isBlank())
+                .orElse(false);
+    }
+
     // ---------------------------------------------------------------- internals
 
     private Sop doSync(Sop sop, String by) {

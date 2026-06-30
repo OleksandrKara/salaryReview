@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { Spinner } from '../../components/Spinner';
 import { SyncBadge } from '../../kb/KbManager';
+import LangIndexBadge from './LangIndexBadge';
 import type { SopSyncItem } from '../../lib/types';
 
 // SOP → RAG sync. Mirrors the KB section: a bulk "Sync" drives per-SOP syncs sequentially (live
@@ -66,7 +67,10 @@ export default function SopSyncSection() {
         </button>
       </div>
       <p className="mb-3 text-xs text-zinc-500">
-        Push published SOPs into the assistant — the current published version is indexed. Flagged
+        Push published SOPs into the assistant — the current published version is indexed. Both
+        languages are indexed when a version has a Russian translation —{' '}
+        <span className="text-green-700">EN&nbsp;+&nbsp;RU</span> means Russian is in the vector store,{' '}
+        <span className="text-amber-700">RU&nbsp;pending</span> means it still needs a sync. Flagged
         content (PII) is rejected as a whole and shown as an error below.
       </p>
 
@@ -88,7 +92,10 @@ export default function SopSyncSection() {
                   <span className="ml-2 text-xs text-zinc-400">{s.category}</span>
                   <div className="mt-1 flex items-center gap-1.5">
                     {s.published ? (
-                      <SyncBadge status={s.syncStatus} />
+                      <>
+                        <SyncBadge status={s.syncStatus} />
+                        <LangIndexBadge hasRu={s.hasTranslation} synced={s.syncStatus === 'SYNCED'} />
+                      </>
                     ) : (
                       <span className="rounded bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">
                         No published version

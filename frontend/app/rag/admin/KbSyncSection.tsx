@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { Spinner } from '../../components/Spinner';
 import { SyncBadge } from '../../kb/KbManager';
+import LangIndexBadge from './LangIndexBadge';
 import type { KbArticle } from '../../lib/types';
 
 // KB → RAG sync. The bulk "Sync" button drives per-article syncs sequentially (live progress, each
@@ -110,16 +111,5 @@ export default function KbSyncSection() {
         </ul>
       )}
     </section>
-  );
-}
-
-// Shows whether an article's Russian translation is in the vector store. Nothing for English-only
-// articles; green once the bilingual content is synced, amber while a translation awaits sync.
-function LangIndexBadge({ hasRu, synced }: { hasRu: boolean; synced: boolean }) {
-  if (!hasRu) return null;
-  return synced ? (
-    <span className="rounded bg-green-50 px-1.5 py-0.5 text-[10px] text-green-700">EN + RU</span>
-  ) : (
-    <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">RU pending</span>
   );
 }
