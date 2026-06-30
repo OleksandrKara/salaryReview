@@ -91,7 +91,7 @@ export default function Landing() {
       if (!res.ok) { setError(res.status === 401 ? 'Incorrect username or password.' : 'Sign in failed.'); return; }
       const { role } = (await res.json().catch(() => ({}))) as { role?: string };
       setDone(true);
-      router.replace(role === 'PROVIDER' ? '/me' : '/reports');
+      router.replace(role === 'PROVIDER' ? '/me' : role === 'MANAGER' ? '/manager' : '/reports');
       router.refresh();
     } finally {
       setBusy(false);

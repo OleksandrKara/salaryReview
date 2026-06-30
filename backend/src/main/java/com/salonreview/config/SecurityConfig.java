@@ -59,10 +59,15 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/sops/*/acknowledge").hasAnyRole("MANAGER", "PROVIDER")
                         .requestMatchers(HttpMethod.GET, "/api/sops/**").authenticated()
                         .requestMatchers("/api/sops/**").hasRole("OWNER")
-                        .requestMatchers("/api/settlements/**", "/api/providers/**", "/api/square/**",
-                                "/api/pay-periods/**", "/api/prepaid/**", "/api/owner-customers/**", "/api/redos/**",
-                                "/api/manual-credits/**", "/api/no-show-fees/**", "/api/suspicious/**")
-                                .hasAnyRole("OWNER", "MANAGER")
+                        // Redos are a manager's only management task (owner + manager); the providers
+                        // list is needed to record one. Everything else below — salary settlements,
+                        // Square sync, prepaid, owner comps, manual credits, no-show fees, suspicious
+                        // review — is owner-only (managers don't manage salaries).
+                        .requestMatchers("/api/redos/**", "/api/providers/**").hasAnyRole("OWNER", "MANAGER")
+                        .requestMatchers("/api/settlements/**", "/api/square/**", "/api/pay-periods/**",
+                                "/api/prepaid/**", "/api/owner-customers/**", "/api/manual-credits/**",
+                                "/api/no-show-fees/**", "/api/suspicious/**")
+                                .hasRole("OWNER")
                         .anyRequest().authenticated())
                 .formLogin(form -> form
                         .loginProcessingUrl("/api/login")

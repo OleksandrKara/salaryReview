@@ -1,22 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Next 16 renamed `middleware` → `proxy`. This is the single edge gate for every authenticated page:
+// Next 16 renamed `middleware` → `proxy`. This is the single edge gate for every authenticated page,
+// routing by role to a role-specific home:
 //  - no session (`sid`) → `/` (the landing page, with its sign-in modal)
-//  - PROVIDER → only their own view (/me, plus /kb and /sops); kept out of owner/manager pages
-//  - OWNER/MANAGER → reports etc.; /me is meaningless for them → /reports
-//  - owner-only areas (user management, owner overview, assistant admin, SOP authoring) → OWNER only
+//  - PROVIDER → /me (their pay), plus /kb and /sops
+//  - MANAGER → /manager (redos, KB, SOPs, assistant). Managers don't manage salaries, so they're kept
+//    out of /reports and the owner admin tools; redos is their one management task.
+//  - OWNER → /reports and everything
 //
 // The matcher MUST list every authenticated page area. A page left out gets no edge gate and is only
-// as protected as its own code — `/rag/admin` (a client component with no server guard) was rendering
-// its shell to logged-out visitors for exactly that reason. `/`, `/api/*`, and static assets are
-// excluded so the landing page, the proxy API routes, and assets stay reachable.
+// as protected as its own code. `/`, `/api/*`, and static assets are excluded so the landing page,
+// the proxy API routes, and assets stay reachable.
 const PROVIDER_HOME = '/me';
-const STAFF_HOME = '/reports';
-// Owner + manager only (providers blocked). `/kb` and `/sops` are intentionally absent — providers
-// read KB articles shared with them and must acknowledge SOPs.
-const STAFF_ONLY = ['/reports', '/admin', '/owner', '/rag'];
-// Owner only (managers and providers blocked). `/admin/prepaid` etc. stay owner+manager (not listed).
-const OWNER_ONLY = ['/admin/users', '/owner', '/rag/admin', '/sops/admin'];
+const MANAGER_HOME = '/manager';
+const OWNER_HOME = '/reports';
+
+// Owner + manager (providers blocked).
+const STAFF_ONLY = ['/manager', '/admin/redos'];
+// Owner only (managers and providers blocked). /reports (salary) and the other admin tools live here;
+// redos is intentionally absent (it's the manager's one task, gated by STAFF_ONLY instead).
+const OWNER_ONLY = [
+  '/reports', '/owner', '/admin/users', '/admin/prepaid', '/admin/owner-customers',
+  '/admin/manual-credits', '/rag/admin', '/sops/admin',
+];
 const PROVIDER_AREAS = ['/me']; // /me and /me/* belong to providers
 
 function matches(pathname: string, prefixes: string[]) {
@@ -31,12 +37,13 @@ export function proxy(req: NextRequest) {
   const role = req.cookies.get('role')?.value;
   const isProvider = role === 'PROVIDER';
   const isOwner = role === 'OWNER';
-  const home = isProvider ? PROVIDER_HOME : STAFF_HOME;
+  const home = isProvider ? PROVIDER_HOME : isOwner ? OWNER_HOME : MANAGER_HOME;
 
-  // Providers see only their own view; owner-only areas are off-limits to everyone else.
+  // Providers see only their own view; owner-only areas are off-limits to everyone else; /me is the
+  // provider's space, so staff are sent to their own home.
   if (isProvider && matches(pathname, STAFF_ONLY)) return redirect(req, PROVIDER_HOME);
   if (!isOwner && matches(pathname, OWNER_ONLY)) return redirect(req, home);
-  if (!isProvider && matches(pathname, PROVIDER_AREAS)) return redirect(req, STAFF_HOME);
+  if (!isProvider && matches(pathname, PROVIDER_AREAS)) return redirect(req, home);
 
   return NextResponse.next();
 }
@@ -56,6 +63,8 @@ export const config = {
     '/rag/:path*',
     '/sops/:path*',
     '/kb/:path*',
+    '/manager',
+    '/manager/:path*',
     '/me',
     '/me/:path*',
   ],
