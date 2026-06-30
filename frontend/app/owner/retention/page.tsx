@@ -51,6 +51,17 @@ export default async function RetentionPage({
     ? series.providers.find((p) => p.ref === provider)?.name ?? provider
     : 'All providers';
 
+  // Best performer first: most clients, then most returning clients, then fewest fresh (leans least on
+  // new-client supply), then highest same-day rebook rate. Lexicographic — each tie-break only decides
+  // when the prior metric is equal.
+  const ranked = [...report.providers].sort(
+    (a, b) =>
+      b.clientsSeen - a.clientsSeen ||
+      b.returningToProvider - a.returningToProvider ||
+      a.newToSalonViaP - b.newToSalonViaP ||
+      (b.sameDayRebookRate ?? 0) - (a.sameDayRebookRate ?? 0),
+  );
+
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
       <div className="mb-1 flex items-baseline gap-3">
@@ -81,7 +92,7 @@ export default async function RetentionPage({
       <div className="my-8 border-t border-zinc-200" />
       <div className="mb-3 flex items-baseline gap-2">
         <h2 className="text-sm font-semibold text-zinc-700">Provider scorecard</h2>
-        <span className="text-xs text-zinc-400">{MONTHS[toMonth - 1]} {toYear}</span>
+        <span className="text-xs text-zinc-400">{MONTHS[toMonth - 1]} {toYear} · best performer first</span>
       </div>
       {report.providers.length === 0 ? (
         <p className="rounded-lg px-4 py-4 text-sm text-zinc-400 ring-1 ring-zinc-200">No visits this month yet.</p>
@@ -89,7 +100,7 @@ export default async function RetentionPage({
         <>
           {/* Mobile: cards */}
           <ul data-testid="retention-scorecard-cards" className="space-y-3 sm:hidden">
-            {report.providers.map((p) => (
+            {ranked.map((p) => (
               <li key={p.providerRef} className="rounded-xl p-4 ring-1 ring-zinc-200">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-zinc-800">{p.providerName}</span>
@@ -122,7 +133,7 @@ export default async function RetentionPage({
                 </tr>
               </thead>
               <tbody>
-                {report.providers.map((p) => (
+                {ranked.map((p) => (
                   <tr key={p.providerRef} className="border-t border-zinc-100">
                     <td className="px-3 py-2 font-medium text-zinc-800">{p.providerName}</td>
                     <td className="px-3 py-2 tabular-nums">{p.clientsSeen}</td>
