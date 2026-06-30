@@ -14,6 +14,7 @@ import type {
   Provider,
   ProviderDetail,
   ProviderPayout,
+  RetentionReport,
   Redo,
   RevenuePulse,
   SettlementPreview,
@@ -50,6 +51,10 @@ export const serverApi = {
 
   // SOPs, audience-filtered by the backend using the session.
   listSops: () => serverFetch<Sop[]>(`/api/sops`),
+
+  // Provider retention analytics (owner-only).
+  getRetention: (year: number, month: number) =>
+    serverFetch<RetentionReport>(`/api/owner/retention?year=${year}&month=${month}`),
 
   getSettlementPreview: (year: number, month: number) =>
     serverFetch<SettlementPreview>(`/api/settlements/preview?year=${year}&month=${month}`),

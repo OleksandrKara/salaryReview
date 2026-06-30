@@ -24,6 +24,7 @@ export default function AdminMenu({ isOwner, language }: { isOwner: boolean; lan
   const links = isOwner
     ? [
         { href: '/owner/overview', label: 'Overview' },
+        { href: '/owner/retention', label: 'Retention' },
         ...LINKS,
         { href: '/sops/admin', label: 'SOPs admin' },
         { href: '/admin/users', label: 'Users' },

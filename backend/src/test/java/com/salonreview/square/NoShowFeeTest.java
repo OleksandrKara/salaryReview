@@ -47,7 +47,7 @@ class NoShowFeeTest {
         when(overrides.findAll()).thenReturn(List.of());
 
         // One NO_SHOW booking on May 10 with two providers (two segments), customer CUST1.
-        Booking noShow = new Booking("BK1", "NO_SHOW", "2026-05-10T17:00:00Z", "2026-05-10T17:00:00Z", "LOC",
+        Booking noShow = new Booking("BK1", "NO_SHOW", "2026-05-10T17:00:00Z", null, "2026-05-10T17:00:00Z", "LOC",
                 "CUST1", null, null,
                 List.of(new AppointmentSegment("M1", "V1", 60), new AppointmentSegment("M2", "V2", 60)));
         when(square.bookings(any(), any())).thenReturn(List.of(noShow));

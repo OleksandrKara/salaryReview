@@ -50,7 +50,7 @@ class OwnerCompAggregatorTest {
     }
 
     private static Booking booking(String customerId) {
-        return new Booking("bk1", "ACCEPTED", "2026-05-18T15:00:00Z", null, "LOC", customerId,
+        return new Booking("bk1", "ACCEPTED", "2026-05-18T15:00:00Z", null, null, "LOC", customerId,
                 null, null, List.of(new AppointmentSegment(TM, VAR, 60)));
     }
 
