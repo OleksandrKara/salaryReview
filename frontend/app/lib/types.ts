@@ -564,6 +564,29 @@ export interface RetentionReport {
   providers: ProviderRetentionRow[];
 }
 
+export interface RetentionSeriesPoint {
+  year: number;
+  month: number;
+  clientsSeen: number;
+  newClients: number;
+  returningClients: number;
+}
+
+export interface RetentionProviderOption {
+  ref: string;
+  name: string;
+}
+
+export interface RetentionSeries {
+  fromYear: number;
+  fromMonth: number;
+  toYear: number;
+  toMonth: number;
+  providerRef: string | null; // null = all providers
+  providers: RetentionProviderOption[];
+  points: RetentionSeriesPoint[];
+}
+
 // --- Owner overview dashboard (owner-only) ---
 
 export interface MonthSummary {

@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.salonreview.square.RetentionAnalyticsService;
 import com.salonreview.web.dto.RetentionReport;
+import com.salonreview.web.dto.RetentionSeries;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -30,5 +31,13 @@ public class RetentionController {
         int y = year != null ? year : today.getYear();
         int m = month != null ? month : today.getMonthValue();
         return service.report(y, m);
+    }
+
+    /** New-vs-returning over a month range, for all providers or one (the chart). */
+    @GetMapping("/retention/series")
+    public RetentionSeries series(@RequestParam int fromYear, @RequestParam int fromMonth,
+                                  @RequestParam int toYear, @RequestParam int toMonth,
+                                  @RequestParam(required = false) String provider) {
+        return service.series(fromYear, fromMonth, toYear, toMonth, provider);
     }
 }

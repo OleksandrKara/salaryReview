@@ -76,6 +76,31 @@ class RetentionAnalyticsServiceTest {
     }
 
     @Test
+    @DisplayName("series: salon-level and provider-filtered new vs returning over a range")
+    void series() {
+        YearMonth m1 = YearMonth.now(ZoneOffset.UTC).minusMonths(6);
+        YearMonth m2 = m1.plusMonths(1);
+        when(repo.findAllByOrderByServiceDateAsc()).thenReturn(List.of(
+                visit("C1", "P1", m1.atDay(5), false),
+                visit("C1", "P1", m2.atDay(5), false),   // C1 returns
+                visit("C2", "P2", m2.atDay(8), false)));  // C2 is new in m2
+
+        var salon = service.series(m1.getYear(), m1.getMonthValue(), m2.getYear(), m2.getMonthValue(), null);
+        assertThat(salon.points()).hasSize(2);
+        assertThat(salon.points().get(0).newClients()).isEqualTo(1);       // m1: C1 new
+        assertThat(salon.points().get(0).returningClients()).isEqualTo(0);
+        assertThat(salon.points().get(1).clientsSeen()).isEqualTo(2);      // m2: C1 + C2
+        assertThat(salon.points().get(1).newClients()).isEqualTo(1);       // C2 new to salon
+        assertThat(salon.points().get(1).returningClients()).isEqualTo(1); // C1 returning
+        assertThat(salon.providers()).extracting("ref").containsExactlyInAnyOrder("P1", "P2");
+
+        var p1 = service.series(m1.getYear(), m1.getMonthValue(), m2.getYear(), m2.getMonthValue(), "P1");
+        assertThat(p1.points().get(1).clientsSeen()).isEqualTo(1);         // only C1 with P1 in m2
+        assertThat(p1.points().get(1).newClients()).isEqualTo(0);         // C1 first-with-P1 was m1
+        assertThat(p1.points().get(1).returningClients()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("empty ledger → no providers")
     void emptyLedger() {
         when(repo.findAllByOrderByServiceDateAsc()).thenReturn(List.of());

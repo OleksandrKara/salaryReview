@@ -1,58 +1,88 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { serverApi } from '../../lib/serverApi';
-import MonthNav from '../../components/MonthNav';
-import type { RetentionTrendPoint } from '../../lib/types';
+import RetentionControls from './RetentionControls';
+import NewReturningChart from './NewReturningChart';
+import type { RetentionSeriesPoint } from '../../lib/types';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const pct = (n: number | null) => (n == null ? '—' : `${Math.round(n * 100)}%`);
 
-// Owner-only provider retention analytics. Reads the visit ledger (no Square call). Server component;
-// month navigation re-renders via the URL. The proxy also gates /owner/* to owners.
+// Owner-only provider retention. A period view (like /overview): a new-vs-returning chart over a date
+// range, all providers by default or one selected, plus the latest-month per-provider scorecard.
 export default async function RetentionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string; month?: string }>;
+  searchParams: Promise<{
+    fromYear?: string; fromMonth?: string; toYear?: string; toMonth?: string; provider?: string;
+  }>;
 }) {
   const me = await serverApi.getMe();
   if (me.role !== 'OWNER') redirect(me.role === 'MANAGER' ? '/manager' : '/me');
 
   const sp = await searchParams;
   const now = new Date();
-  const year = Number(sp.year) || now.getUTCFullYear();
-  const month = Number(sp.month) || now.getUTCMonth() + 1;
+  const curYear = now.getUTCFullYear();
+  const curMonth = now.getUTCMonth() + 1;
+  // Default: last 12 complete months (exclude the current, unfinished month).
+  const defToMonth = curMonth === 1 ? 12 : curMonth - 1;
+  const defToYear = curMonth === 1 ? curYear - 1 : curYear;
+  const defFrom = new Date(Date.UTC(defToYear, defToMonth - 1 - 11, 1));
 
+  const fromYear = Number(sp.fromYear) || defFrom.getUTCFullYear();
+  const fromMonth = Number(sp.fromMonth) || defFrom.getUTCMonth() + 1;
+  const toYear = Number(sp.toYear) || defToYear;
+  const toMonth = Number(sp.toMonth) || defToMonth;
+  const provider = sp.provider ?? '';
+
+  let series;
   let report;
   try {
-    report = await serverApi.getRetention(year, month);
+    [series, report] = await Promise.all([
+      serverApi.getRetentionSeries(fromYear, fromMonth, toYear, toMonth, provider || undefined),
+      serverApi.getRetention(toYear, toMonth),
+    ]);
   } catch {
-    report = { year, month, retentionWindowDays: 60, providers: [] };
+    series = { fromYear, fromMonth, toYear, toMonth, providerRef: null, providers: [], points: [] as RetentionSeriesPoint[] };
+    report = { year: toYear, month: toMonth, retentionWindowDays: 60, providers: [] };
   }
 
-  const prev = month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
-  const next = month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
+  const providerName = provider
+    ? series.providers.find((p) => p.ref === provider)?.name ?? provider
+    : 'All providers';
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
-      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-3">
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-2xl font-semibold">Provider retention</h1>
-          <Link href="/reports" className="text-xs text-zinc-400 hover:text-zinc-600">← Reports</Link>
-        </div>
-        <MonthNav base="/owner/retention" year={year} month={month} prev={prev} next={next} />
+      <div className="mb-1 flex items-baseline gap-3">
+        <h1 className="text-2xl font-semibold">Provider retention</h1>
+        <Link href="/reports" className="text-xs text-zinc-400 hover:text-zinc-600">← Reports</Link>
       </div>
-      <p className="mb-5 text-xs text-zinc-500">
-        Who keeps clients, who grows their book, and where the salon&apos;s new-client pipeline is leaking.
-        Retention = of a provider&apos;s new clients this month, how many returned within{' '}
-        {report.retentionWindowDays} days — <span className="font-medium">to that provider</span> /{' '}
-        <span className="font-medium">to the salon</span>. Recent months show{' '}
-        <span className="italic">too soon</span> until the window elapses.
+      <p className="mb-4 text-xs text-zinc-500">
+        New vs returning clients over time — for the whole salon or one provider. Retention (below) = of a
+        provider&apos;s new clients in a month, how many returned within {report.retentionWindowDays} days.
       </p>
 
-      {report.providers.length === 0 ? (
+      <div className="mb-5">
+        <RetentionControls
+          fromYear={fromYear} fromMonth={fromMonth} toYear={toYear} toMonth={toMonth}
+          provider={provider} providers={series.providers}
+        />
+      </div>
+
+      {series.points.length === 0 ? (
         <p className="rounded-lg px-4 py-6 text-sm text-zinc-400 ring-1 ring-zinc-200">
-          No visits recorded for {MONTHS[month - 1]} {year} yet. (The ledger backfills on deploy and refreshes daily.)
+          No visits recorded for this period yet. (The ledger backfills on deploy and refreshes daily.)
         </p>
+      ) : (
+        <NewReturningChart points={series.points} label={providerName} />
+      )}
+
+      {/* Latest-month per-provider scorecard. */}
+      <h2 className="mt-8 mb-2 text-sm font-semibold text-zinc-700">
+        {MONTHS[toMonth - 1]} {toYear} — provider scorecard
+      </h2>
+      {report.providers.length === 0 ? (
+        <p className="rounded-lg px-4 py-4 text-sm text-zinc-400 ring-1 ring-zinc-200">No visits this month yet.</p>
       ) : (
         <>
           {/* Mobile: cards */}
@@ -71,7 +101,6 @@ export default async function RetentionPage({
                   <Stat label="Returned to provider" value={p.cohortMatured ? pct(p.providerRetention) : 'too soon'} />
                   <Stat label="Returned to salon" value={p.cohortMatured ? pct(p.salonRetention) : 'too soon'} />
                 </div>
-                <div className="mt-2"><Sparkline trend={p.trend} /></div>
               </li>
             ))}
           </ul>
@@ -87,7 +116,6 @@ export default async function RetentionPage({
                   <th className="px-3 py-2" title="New salon clients this provider acquired">Fresh</th>
                   <th className="px-3 py-2">Rebook</th>
                   <th className="px-3 py-2" title="Of new clients, % who returned (to provider / to salon)">Retention</th>
-                  <th className="px-3 py-2">Trend</th>
                   <th className="px-3 py-2"></th>
                 </tr>
               </thead>
@@ -111,7 +139,6 @@ export default async function RetentionPage({
                         <span className="text-xs italic text-zinc-400">too soon</span>
                       )}
                     </td>
-                    <td className="px-3 py-2"><Sparkline trend={p.trend} /></td>
                     <td className="px-3 py-2">{p.leakRisk ? <RiskBadge /> : null}</td>
                   </tr>
                 ))}
@@ -120,10 +147,11 @@ export default async function RetentionPage({
           </div>
 
           <p className="mt-3 text-[11px] text-zinc-400">
-            <span className="font-medium">Fresh</span> = brand-new salon clients this provider acquired this
-            month. <span className="font-medium text-amber-700">⚠ At risk</span> = many fresh clients but a low
-            return rate — the salon&apos;s new-client pipeline leaking through this provider. Retention shows{' '}
-            <span className="text-zinc-600">provider</span> / <span className="text-zinc-400">salon</span>.
+            <span className="font-medium">Fresh</span> = brand-new salon clients this provider acquired.{' '}
+            <span className="font-medium text-amber-700">⚠ At risk</span> = many fresh clients but a low return
+            rate. Retention shows <span className="text-zinc-600">provider</span> /{' '}
+            <span className="text-zinc-400">salon</span>; recent cohorts read <span className="italic">too soon</span>{' '}
+            until the {report.retentionWindowDays}-day window elapses.
           </p>
         </>
       )}
@@ -143,21 +171,5 @@ function Stat({ label, value }: { label: string; value: string }) {
 function RiskBadge() {
   return (
     <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">⚠ At risk</span>
-  );
-}
-
-// Tiny bar sparkline of clients-seen over the trend window; the last bar (this month) is accented.
-function Sparkline({ trend }: { trend: RetentionTrendPoint[] }) {
-  const max = Math.max(1, ...trend.map((t) => t.clientsSeen));
-  return (
-    <span className="inline-flex h-6 items-end gap-0.5" title={trend.map((t) => `${MONTHS[t.month - 1]} ${t.clientsSeen}`).join(' · ')}>
-      {trend.map((t, i) => (
-        <span
-          key={`${t.year}-${t.month}`}
-          className={`inline-block w-1.5 rounded-sm ${i === trend.length - 1 ? 'bg-zinc-700' : 'bg-zinc-300'}`}
-          style={{ height: `${Math.max(8, (t.clientsSeen / max) * 100)}%` }}
-        />
-      ))}
-    </span>
   );
 }

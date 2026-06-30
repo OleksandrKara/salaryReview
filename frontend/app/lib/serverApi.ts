@@ -15,6 +15,7 @@ import type {
   ProviderDetail,
   ProviderPayout,
   RetentionReport,
+  RetentionSeries,
   Redo,
   RevenuePulse,
   SettlementPreview,
@@ -55,6 +56,12 @@ export const serverApi = {
   // Provider retention analytics (owner-only).
   getRetention: (year: number, month: number) =>
     serverFetch<RetentionReport>(`/api/owner/retention?year=${year}&month=${month}`),
+
+  getRetentionSeries: (fromYear: number, fromMonth: number, toYear: number, toMonth: number, provider?: string) =>
+    serverFetch<RetentionSeries>(
+      `/api/owner/retention/series?fromYear=${fromYear}&fromMonth=${fromMonth}&toYear=${toYear}&toMonth=${toMonth}` +
+        (provider ? `&provider=${encodeURIComponent(provider)}` : ''),
+    ),
 
   getSettlementPreview: (year: number, month: number) =>
     serverFetch<SettlementPreview>(`/api/settlements/preview?year=${year}&month=${month}`),
