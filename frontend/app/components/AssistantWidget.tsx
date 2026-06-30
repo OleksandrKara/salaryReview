@@ -308,8 +308,10 @@ function AssistantMessage({ m, onRate }: { m: Msg; onRate: (m: Msg, helpful: boo
               </div>
             ) : null}
 
-            {/* No answer → offer to file a knowledge-gap request for the owner to address. */}
-            {m.answered === false && m.question ? <RequestGap question={m.question} /> : null}
+            {/* Always offer to file a knowledge-gap request — the answer may be missing or incomplete
+                even when the corpus returned something (answered=true), which is the common case once
+                documents are synced. Emphasized for the explicit "couldn't find that" reply. */}
+            {m.question ? <RequestGap question={m.question} emphasize={m.answered === false} /> : null}
           </>
         ) : null}
       </div>
@@ -317,9 +319,10 @@ function AssistantMessage({ m, onRate }: { m: Msg; onRate: (m: Msg, helpful: boo
   );
 }
 
-// Shown under an unanswered answer: a one-click "add to the knowledge base" request the owner triages
-// on /rag/admin. Expands to an optional note + a KB/SOP target hint; collapses to a thank-you on send.
-function RequestGap({ question }: { question: string }) {
+// A one-click "add to the knowledge base" request the owner triages on /rag/admin. Offered under every
+// answer (the answer may be missing/incomplete even when something was retrieved); emphasized when the
+// assistant explicitly couldn't find it. Expands to an optional note + a KB/SOP target hint.
+function RequestGap({ question, emphasize }: { question: string; emphasize?: boolean }) {
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState('');
   const [target, setTarget] = useState<KbRequestTarget>('UNSURE');
@@ -347,9 +350,11 @@ function RequestGap({ question }: { question: string }) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="mt-2 inline-flex items-center gap-1 rounded-lg bg-[var(--paper-2)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--accent-ink)] ring-1 ring-[var(--line)] hover:ring-[var(--accent)]"
+        className={`mt-2 inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-[var(--accent-ink)] ring-1 hover:ring-[var(--accent)] ${
+          emphasize ? 'bg-[var(--accent-soft)] ring-[var(--accent)]' : 'bg-[var(--paper-2)] ring-[var(--line)]'
+        }`}
       >
-        ＋ Request this be added to the knowledge base
+        ＋ {emphasize ? 'Request this be added to the knowledge base' : 'Missing or incomplete? Request a KB/SOP update'}
       </button>
     );
   }
