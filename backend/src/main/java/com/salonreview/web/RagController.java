@@ -67,10 +67,16 @@ public class RagController {
         this.users = users;
     }
 
-    /** Grounded starter prompts for the chat empty state, in the caller's language (cached per language). */
+    /** Stored starter prompts for the chat empty state, in the caller's language (no LLM call). */
     @GetMapping("/suggestions")
     public StarterSuggestions suggestions(@AuthenticationPrincipal AppUserPrincipal me) {
         return suggestionService.get(language(me));
+    }
+
+    /** Regenerate and overwrite the stored starter prompts — the chat's on-demand refresh. */
+    @PostMapping("/suggestions/refresh")
+    public StarterSuggestions refreshSuggestions(@AuthenticationPrincipal AppUserPrincipal me) {
+        return suggestionService.refresh(language(me));
     }
 
     /**

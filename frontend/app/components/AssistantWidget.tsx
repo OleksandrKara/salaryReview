@@ -39,6 +39,7 @@ export default function AssistantWidget() {
   const [busy, setBusy] = useState(false);
   const [suggestEnabled, setSuggestEnabled] = useState(false);
   const [suggestions, setSuggestions] = useState<StarterSuggestions | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const langRef = useRef<Language | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
@@ -112,6 +113,19 @@ export default function AssistantWidget() {
     });
   }
 
+  // On-demand regeneration of the starter prompts (they're otherwise permanent — generated once).
+  async function refreshSuggestions() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      setSuggestions(await api.refreshRagSuggestions());
+    } catch {
+      /* leave the existing suggestions in place */
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   async function rate(m: Msg, helpful: boolean) {
     if (!m.runId || m.rated) return;
     patch(m.id, (x) => ({ ...x, rated: true }));
@@ -158,6 +172,22 @@ export default function AssistantWidget() {
                 </p>
                 {suggestLoading ? (
                   <div className="flex justify-center"><Spinner className="h-4 w-4 text-[var(--muted)]" /></div>
+                ) : null}
+                {suggestions && suggestions.topics.length > 0 ? (
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--muted)]">
+                      Suggested
+                    </span>
+                    <button
+                      onClick={refreshSuggestions}
+                      disabled={refreshing}
+                      title="Refresh suggestions"
+                      aria-label="Refresh suggestions"
+                      className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--muted)] transition hover:bg-[var(--paper-2)] hover:text-[var(--accent-ink)] disabled:opacity-50"
+                    >
+                      {refreshing ? <Spinner className="h-3.5 w-3.5" /> : <RefreshIcon className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
                 ) : null}
                 {suggestions?.topics.map((t) => (
                   <div key={t.label}>
@@ -399,6 +429,14 @@ function RequestGap({ question, emphasize }: { question: string; emphasize?: boo
         </span>
       </div>
     </div>
+  );
+}
+
+function RefreshIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" />
+    </svg>
   );
 }
 

@@ -72,6 +72,17 @@ class RagControllerTest {
     }
 
     @Test
+    @DisplayName("refresh endpoint regenerates and returns the prompts")
+    void refreshSuggestions() throws Exception {
+        when(suggestionService.refresh(any())).thenReturn(new StarterSuggestions(List.of(
+                new StarterSuggestions.Topic("Pricing", List.of("What's the gel price?")))));
+
+        mvc.perform(post("/api/rag/suggestions/refresh"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.topics[0].label").value("Pricing"));
+    }
+
+    @Test
     @DisplayName("flag off → 404 without invoking the service")
     void flagOffReturns404() throws Exception {
         when(props.isEnabled()).thenReturn(false);
