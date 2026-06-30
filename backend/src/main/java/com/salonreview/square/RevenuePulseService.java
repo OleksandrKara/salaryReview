@@ -1,5 +1,7 @@
 package com.salonreview.square;
 
+import com.salonreview.domain.SalonConfig;
+import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.web.dto.RevenuePulseDto;
 import org.springframework.stereotype.Service;
 
@@ -7,14 +9,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -24,54 +22,38 @@ public class RevenuePulseService {
 
     private final SquareClient square;
     private final RevenueForecastService forecaster;
+    private final SquareMonthAggregator aggregator;
+    private final SalonConfigRepository salonConfig;
 
-    public RevenuePulseService(SquareClient square, RevenueForecastService forecaster) {
+    public RevenuePulseService(SquareClient square, RevenueForecastService forecaster,
+                               SquareMonthAggregator aggregator, SalonConfigRepository salonConfig) {
         this.square = square;
         this.forecaster = forecaster;
+        this.aggregator = aggregator;
+        this.salonConfig = salonConfig;
     }
 
     public RevenuePulseDto pulse(int year, int month) {
         ZoneId zone = resolveZone();
-        ZonedDateTime nowZoned = ZonedDateTime.now(zone);
-        LocalDate today = nowZoned.toLocalDate();
+        LocalDate today = LocalDate.now(zone);
         YearMonth ym = YearMonth.of(year, month);
         YearMonth priorYm = ym.minusMonths(1);
 
         boolean isCurrentMonth = today.getYear() == year && today.getMonthValue() == month;
 
-        LocalDate curStart   = ym.atDay(1);
-        LocalDate priorStart = priorYm.atDay(1);
-        Instant curFrom   = curStart.atStartOfDay(zone).toInstant();
-        Instant priorFrom = priorStart.atStartOfDay(zone).toInstant();
+        // Compare the same span of days on both sides (1 → endDay). When prior month is shorter the
+        // ordinal is clamped (e.g. comparing through May 31 against Apr 30). Day-granular — the same
+        // basis the /overview and the daily snapshot use — so the figures reconcile across the app.
+        int currentEndDay = isCurrentMonth ? today.getDayOfMonth() : ym.lengthOfMonth();
+        int priorEndDay   = Math.min(currentEndDay, priorYm.lengthOfMonth());
+        String asOfTime   = null;
 
-        // Window upper bounds + labelling fields:
-        //  - Current month: truncate both sides at the same wall-clock time-of-day. Comparing
-        //    "Jun 1 → Jun 14 11:22 PM" against "May 1 → May 14 11:22 PM" is the apples-to-apples
-        //    read; using full days on both sides falsely inflates the prior period in the morning.
-        //  - Past month: compare full calendar days (the historical comparison is fixed).
-        Instant curTo, priorTo;
-        int currentEndDay, priorEndDay;
-        String asOfTime;
-        if (isCurrentMonth) {
-            LocalDateTime nowLocal = nowZoned.toLocalDateTime();
-            // minusMonths clamps the day-of-month when the prior month is shorter (e.g. May 31 → Apr 30).
-            LocalDateTime priorCutoff = nowLocal.minusMonths(1);
-            curTo         = nowZoned.toInstant();
-            priorTo       = priorCutoff.atZone(zone).toInstant();
-            currentEndDay = today.getDayOfMonth();
-            priorEndDay   = priorCutoff.toLocalDate().getDayOfMonth();
-            asOfTime      = nowLocal.format(TIME_FMT);
-        } else {
-            currentEndDay = ym.lengthOfMonth();
-            priorEndDay   = Math.min(currentEndDay, priorYm.lengthOfMonth());
-            curTo         = ym.atDay(currentEndDay).plusDays(1).atStartOfDay(zone).toInstant();
-            priorTo       = priorYm.atDay(priorEndDay).plusDays(1).atStartOfDay(zone).toInstant();
-            asOfTime      = null;
-        }
-
-        // Fetch current orders, prior orders, and upcoming bookings in parallel.
-        var currentF = CompletableFuture.supplyAsync(() -> square.completedOrders(curFrom, curTo));
-        var priorF   = CompletableFuture.supplyAsync(() -> square.completedOrders(priorFrom, priorTo));
+        // Card vs cash, attributed through the month aggregator (which includes cash notes — the
+        // reason a raw Square-orders sum understated cash). Run the two months in parallel.
+        BigDecimal cutoff = priceCutoff();
+        var currentF = CompletableFuture.supplyAsync(() -> mtdSplit(year, month, currentEndDay, cutoff));
+        var priorF   = CompletableFuture.supplyAsync(
+                () -> mtdSplit(priorYm.getYear(), priorYm.getMonthValue(), priorEndDay, cutoff));
 
         // Upcoming bookings are only meaningful for the current or a future month.
         boolean fetchUpcoming = !today.isAfter(ym.atEndOfMonth());
@@ -81,8 +63,8 @@ public class RevenuePulseService {
                 ? CompletableFuture.supplyAsync(() -> square.bookings(nowInstant, endOfMonth))
                 : CompletableFuture.completedFuture(List.<SquareClient.Booking>of());
 
-        Split current = splitOrders(currentF.join());
-        Split prior   = splitOrders(priorF.join());
+        Split current = currentF.join();
+        Split prior   = priorF.join();
         BigDecimal deltaPct = delta(current.total(), prior.total());
 
         UpcomingResult upcoming = processUpcoming(upcomingF.join(), year, month, zone);
@@ -119,8 +101,41 @@ public class RevenuePulseService {
         return new Split(card, cash);
     }
 
-    private static final DateTimeFormatter TIME_FMT =
-            DateTimeFormatter.ofPattern("h:mm a", Locale.US);
+    /**
+     * Card vs cash for {@code year}-{@code month}, days 1 → {@code throughDay}, via the month
+     * aggregator. Cash = the CASH and CASH-NOTE channels (cash-tender Square orders + manual cash
+     * notes), so it matches what the /overview and the daily snapshot report.
+     */
+    private Split mtdSplit(int year, int month, int throughDay, BigDecimal cutoff) {
+        SquareMonthAggregator.MonthAggregation agg = aggregator.aggregate(year, month, cutoff);
+        LocalDate cutoffDay = LocalDate.of(year, month, throughDay);
+        BigDecimal card = BigDecimal.ZERO, cash = BigDecimal.ZERO;
+        for (SquareMonthAggregator.AttributedService s : agg.services()) {
+            LocalDate day = parseIso(s.date());
+            if (day == null || day.isAfter(cutoffDay)) continue;
+            if ("CASH".equals(s.channel()) || "CASH-NOTE".equals(s.channel())) {
+                cash = cash.add(s.gross());
+            } else {
+                card = card.add(s.gross());
+            }
+        }
+        return new Split(card.setScale(2, RoundingMode.HALF_UP), cash.setScale(2, RoundingMode.HALF_UP));
+    }
+
+    private static LocalDate parseIso(String iso) {
+        if (iso == null || iso.isBlank()) return null;
+        try {
+            return LocalDate.parse(iso);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private BigDecimal priceCutoff() {
+        SalonConfig cfg = salonConfig.findById(1)
+                .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"));
+        return cfg.getServicePriceCutoff();
+    }
 
     // --- upcoming bookings ---
 
@@ -172,32 +187,11 @@ public class RevenuePulseService {
         }
     }
 
-    /** Card/cash split of a set of orders (catalog line items only), attributed per order by tender. */
-    private static Split splitOrders(List<SquareClient.Order> orders) {
-        BigDecimal card = BigDecimal.ZERO, cash = BigDecimal.ZERO;
-        for (var o : orders) {
-            if (o.lineItems() == null) continue;
-            BigDecimal orderTotal = BigDecimal.ZERO;
-            for (var li : o.lineItems()) {
-                if (li.catalogObjectId() == null) continue; // skip non-catalog items
-                orderTotal = orderTotal.add(lineRevenue(li));
-            }
-            if (SquareClient.isCashOrder(o)) cash = cash.add(orderTotal);
-            else card = card.add(orderTotal);
-        }
-        return new Split(card.setScale(2, RoundingMode.HALF_UP), cash.setScale(2, RoundingMode.HALF_UP));
-    }
-
     /** Card + cash dollars (total is derived); used for both realized periods and the projection split. */
     private record Split(BigDecimal card, BigDecimal cash) {
         BigDecimal total() {
             return card.add(cash).setScale(2, RoundingMode.HALF_UP);
         }
-    }
-
-    private static BigDecimal lineRevenue(SquareClient.OrderLineItem li) {
-        if (li.grossSalesMoney() != null) return SquareClient.toDollars(li.grossSalesMoney());
-        return SquareClient.toDollars(li.totalMoney());
     }
 
     private static BigDecimal delta(BigDecimal current, BigDecimal prior) {
