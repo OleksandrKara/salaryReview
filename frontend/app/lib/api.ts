@@ -27,6 +27,9 @@ import type {
   RagAgentConfigDto,
   Me,
   RagAnswer,
+  KbRequest,
+  KbRequestStatus,
+  KbRequestTarget,
   RagCitation,
   RagDocumentSummary,
   StarterSuggestions,
@@ -228,6 +231,17 @@ export const api = {
 
   // Grounded starter prompts for the assistant's empty state.
   getRagSuggestions: () => proxyGet<StarterSuggestions>(`/api/rag/suggestions`),
+
+  // Knowledge-gap requests. Create = owner/manager (from the assistant); manage = owner (/rag/admin).
+  createKbRequest: (body: { question: string; note: string | null; target: KbRequestTarget }) =>
+    proxyJson<KbRequest>(`/api/rag/requests`, 'POST', body),
+
+  listKbRequests: () => proxyGet<KbRequest[]>(`/api/rag/admin/requests`),
+
+  setKbRequestStatus: (id: number, status: KbRequestStatus) =>
+    proxyJson<KbRequest>(`/api/rag/admin/requests/${id}/status`, 'POST', { status }),
+
+  deleteKbRequest: (id: number) => proxyVoid(`/api/rag/admin/requests/${id}`, 'DELETE'),
 
   // Stream a grounded answer token-by-token over SSE. Calls back as events arrive.
   askRagStream: async (

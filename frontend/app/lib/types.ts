@@ -209,6 +209,22 @@ export interface Features {
   ragSuggestionsEnabled: boolean;
 }
 
+// Knowledge-gap requests (com.salonreview.web.KbRequestController).
+export type KbRequestTarget = 'KB' | 'SOP' | 'UNSURE';
+export type KbRequestStatus = 'OPEN' | 'RESOLVED' | 'DISMISSED';
+
+export interface KbRequest {
+  id: number;
+  question: string;
+  note: string | null;
+  target: KbRequestTarget;
+  status: KbRequestStatus;
+  requestedBy: string;
+  createdAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+}
+
 // Grounded starter prompts for the assistant's empty state (com.salonreview.rag.StarterSuggestions).
 export interface StarterTopic {
   label: string;
