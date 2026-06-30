@@ -232,6 +232,9 @@ export const api = {
   // Grounded starter prompts for the assistant's empty state.
   getRagSuggestions: () => proxyGet<StarterSuggestions>(`/api/rag/suggestions`),
 
+  // Regenerate the starter prompts on demand (owner/manager).
+  refreshRagSuggestions: () => proxyJson<StarterSuggestions>(`/api/rag/suggestions/refresh`, 'POST', {}),
+
   // Knowledge-gap requests. Create = owner/manager (from the assistant); manage = owner (/rag/admin).
   createKbRequest: (body: { question: string; note: string | null; target: KbRequestTarget }) =>
     proxyJson<KbRequest>(`/api/rag/requests`, 'POST', body),

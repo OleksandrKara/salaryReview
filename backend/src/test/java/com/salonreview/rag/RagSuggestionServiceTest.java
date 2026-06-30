@@ -5,6 +5,7 @@ import com.salonreview.config.RagProperties;
 import com.salonreview.domain.Language;
 import com.salonreview.domain.RagDocument;
 import com.salonreview.domain.RagDocumentStatus;
+import com.salonreview.domain.RagSuggestionCache;
 import com.salonreview.repo.RagDocumentRepository;
 import com.salonreview.repo.RagSuggestionCacheRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -66,5 +67,38 @@ class RagSuggestionServiceTest {
         when(clientProvider.getIfAvailable()).thenReturn(null);
 
         assertThat(service.get(Language.EN).topics()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("get is permanent: a stored row is returned as-is, never regenerated")
+    void getReturnsStoredWithoutRegenerating() {
+        when(cacheRepo.findById("EN")).thenReturn(Optional.of(RagSuggestionCache.builder()
+                .language("EN").signature("sig")
+                .payload("{\"topics\":[{\"label\":\"Policies\",\"questions\":[\"What's the no-show fee?\"]}]}")
+                .build()));
+
+        StarterSuggestions out = service.get(Language.EN);
+
+        assertThat(out.topics()).hasSize(1);
+        assertThat(out.topics().get(0).label()).isEqualTo("Policies");
+        // Permanent: no corpus scan and no LLM when a row already exists.
+        verify(documents, never()).findByStatusOrderByCreatedAtDesc(any());
+        verify(clientProvider, never()).getIfAvailable();
+    }
+
+    @Test
+    @DisplayName("refresh regenerates even when a row exists (re-scans the corpus)")
+    void refreshRegenerates() {
+        when(cacheRepo.findById("EN")).thenReturn(Optional.of(RagSuggestionCache.builder()
+                .language("EN").signature("sig").payload("{\"topics\":[]}").build()));
+        when(documents.findByStatusOrderByCreatedAtDesc(RagDocumentStatus.INDEXED)).thenReturn(List.of(
+                RagDocument.builder().id(1L).filename("No-show policy.md").status(RagDocumentStatus.INDEXED).build()));
+        when(clientProvider.getIfAvailable()).thenReturn(null); // generation stops here (empty), but it tried
+
+        service.refresh(Language.EN);
+
+        // Refresh ignores the stored row and re-scans the corpus (the regeneration path).
+        verify(documents).findByStatusOrderByCreatedAtDesc(RagDocumentStatus.INDEXED);
+        verify(clientProvider).getIfAvailable();
     }
 }
