@@ -7,7 +7,7 @@ import SopList from './SopList';
 // this role may see (audience-filtered, published, active), so the page renders what it's given.
 export default async function SopsPage() {
   const [me, sops] = await Promise.all([serverApi.getMe(), serverApi.listSops()]);
-  const backHref = me.role === 'PROVIDER' ? '/me' : '/reports';
+  const backHref = me.role === 'PROVIDER' ? '/me' : me.role === 'MANAGER' ? '/manager' : '/reports';
   const lang = me.preferredLanguage;
 
   return (

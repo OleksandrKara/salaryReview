@@ -8,7 +8,7 @@ import KbManager from './KbManager';
 // the RAG admin page. Role + initial (role-filtered) list are fetched server-side.
 export default async function KbPage() {
   const [me, articles] = await Promise.all([serverApi.getMe(), serverApi.listKbArticles()]);
-  const backHref = me.role === 'PROVIDER' ? '/me' : '/reports';
+  const backHref = me.role === 'PROVIDER' ? '/me' : me.role === 'MANAGER' ? '/manager' : '/reports';
   const lang = me.preferredLanguage;
 
   return (

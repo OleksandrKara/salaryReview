@@ -6,16 +6,18 @@ import RedoManager from './RedoManager';
 // the provider who redid it. The backend gates /api/redos by role; the proxy keeps providers out of
 // /admin.
 export default async function RedosPage() {
-  const [redos, providers] = await Promise.all([
+  const [me, redos, providers] = await Promise.all([
+    serverApi.getMe(),
     serverApi.listRedos(),
     serverApi.listProviders(),
   ]);
+  const backHref = me.role === 'OWNER' ? '/reports' : '/manager';
 
   return (
     <main className="mx-auto max-w-4xl p-4 sm:p-8">
       <div className="mb-1 flex items-baseline gap-3">
         <h1 className="text-2xl font-semibold">Redos</h1>
-        <Link href="/reports" className="text-xs text-zinc-400 hover:text-zinc-600">← Reports</Link>
+        <Link href={backHref} className="text-xs text-zinc-400 hover:text-zinc-600">← Back</Link>
         <a href="/api/logout" className="text-xs text-zinc-400 hover:text-zinc-600">Log out</a>
       </div>
       <p className="mb-6 text-xs text-zinc-500">

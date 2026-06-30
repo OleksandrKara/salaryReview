@@ -30,6 +30,25 @@ const STRINGS = {
     RU: 'Откройте каждую процедуру и подтвердите, что вы прочитали её и согласны соблюдать.',
   },
 
+  // Manager home (/manager)
+  mgrTitle: { EN: 'Manager', RU: 'Менеджер' },
+  mgrSubtitle: {
+    EN: 'Your tools — redos, knowledge base, and SOPs. Ask the assistant (bottom-right) anytime.',
+    RU: 'Ваши инструменты — переделки, база знаний и регламенты. Ассистент (внизу справа) — в любой момент.',
+  },
+  mgrRedos: { EN: 'Redos', RU: 'Переделки' },
+  mgrRedosDesc: {
+    EN: 'Record a service redone by another provider.',
+    RU: 'Зафиксируйте услугу, переделанную другим мастером.',
+  },
+  mgrKb: { EN: 'Knowledge base', RU: 'База знаний' },
+  mgrKbDesc: { EN: 'Menus, scripts, and FAQ for the team.', RU: 'Меню, скрипты и FAQ для команды.' },
+  mgrSops: { EN: 'SOPs', RU: 'Регламенты' },
+  mgrSopsDesc: {
+    EN: 'Policies and procedures to read and acknowledge.',
+    RU: 'Политики и процедуры для ознакомления и подтверждения.',
+  },
+
   // SOP admin (/sops/admin)
   sopAdminTitle: { EN: 'SOPs — admin', RU: 'Процедуры — администрирование' },
   sopAdminDesc: {
