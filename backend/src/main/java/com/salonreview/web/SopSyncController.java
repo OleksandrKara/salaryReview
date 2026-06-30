@@ -56,10 +56,14 @@ public class SopSyncController {
 
     private SopSyncDto toDto(Sop s) {
         return new SopSyncDto(s.getId(), s.getTitle(), s.getCategory(),
-                sync.effectiveStatus(s).name(), s.getLastSyncError(), s.getCurrentVersionId() != null);
+                sync.effectiveStatus(s).name(), s.getLastSyncError(),
+                s.getCurrentVersionId() != null, sync.currentVersionHasTranslation(s));
     }
 
-    /** {@code published} = has a live version to sync (a draft-only SOP can't be synced yet). */
+    /**
+     * {@code published} = has a live version to sync (a draft-only SOP can't be synced yet).
+     * {@code hasTranslation} = the current version has a Russian body (drives the EN/RU chip).
+     */
     public record SopSyncDto(Long id, String title, String category, String syncStatus,
-                             String lastSyncError, boolean published) {}
+                             String lastSyncError, boolean published, boolean hasTranslation) {}
 }

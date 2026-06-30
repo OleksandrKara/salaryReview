@@ -562,6 +562,7 @@ export interface SopSyncItem {
   syncStatus: KbSyncStatus;
   lastSyncError: string | null;
   published: boolean;
+  hasTranslation: boolean;
 }
 
 export interface KbArticle {
