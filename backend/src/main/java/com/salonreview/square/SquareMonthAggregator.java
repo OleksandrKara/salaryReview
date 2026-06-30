@@ -43,8 +43,6 @@ import java.util.Optional;
 @Service
 public class SquareMonthAggregator {
 
-    private static final String CASH = "CASH";
-
     private final SquareClient square;
     private final CashNoteParser cashNotes;
     private final com.salonreview.repo.OwnerCustomerRepository ownerCustomers;
@@ -466,14 +464,7 @@ public class SquareMonthAggregator {
     }
 
     private static boolean isCashOrder(Order o) {
-        if (o.tenders() == null) return false;
-        BigDecimal cash = BigDecimal.ZERO, other = BigDecimal.ZERO;
-        for (var t : o.tenders()) {
-            BigDecimal amt = SquareClient.toDollars(t.amountMoney());
-            if (CASH.equals(t.type())) cash = cash.add(amt);
-            else other = other.add(amt);
-        }
-        return cash.compareTo(other) > 0;
+        return SquareClient.isCashOrder(o); // single source of truth — shared with the revenue pulse
     }
 
     /** Price used for the tier cutoff: catalog list price, falling back to the charged line amount. */

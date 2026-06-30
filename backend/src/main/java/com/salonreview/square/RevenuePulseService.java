@@ -81,23 +81,42 @@ public class RevenuePulseService {
                 ? CompletableFuture.supplyAsync(() -> square.bookings(nowInstant, endOfMonth))
                 : CompletableFuture.completedFuture(List.<SquareClient.Booking>of());
 
-        BigDecimal currentGross = sumOrders(currentF.join());
-        BigDecimal priorGross   = sumOrders(priorF.join());
-        BigDecimal deltaPct     = delta(currentGross, priorGross);
+        Split current = splitOrders(currentF.join());
+        Split prior   = splitOrders(priorF.join());
+        BigDecimal deltaPct = delta(current.total(), prior.total());
 
         UpcomingResult upcoming = processUpcoming(upcomingF.join(), year, month, zone);
-        BigDecimal naiveProjected = currentGross.add(upcoming.gross()).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal naiveProjected = current.total().add(upcoming.gross()).setScale(2, RoundingMode.HALF_UP);
 
         // Smart forecast: blends pattern-match (from PeriodEntry history) and booking-ceiling
         // calibration (from revenue_snapshot rows). Falls back to naive when neither has enough data.
-        ForecastResult forecast = forecaster.forecast(year, month, currentGross, upcoming.gross());
+        ForecastResult forecast = forecaster.forecast(year, month, current.total(), upcoming.gross());
+
+        // Project card vs cash by applying the recent card:cash mix to the forecast total. The current
+        // month's mix is the most representative; fall back to the prior period's, since upcoming
+        // bookings have no tender yet (the mix can only be estimated from realized revenue).
+        Split projectedSplit = splitProjection(forecast.projectedMid(), current, prior);
 
         return new RevenuePulseDto(
                 year, month, currentEndDay, currentEndDay, priorEndDay, asOfTime,
-                currentGross, priorGross, deltaPct,
+                current.total(), current.card(), current.cash(),
+                prior.total(), prior.card(), prior.cash(), deltaPct,
                 upcoming.count(), upcoming.gross(), naiveProjected,
-                forecast.projectedMid(), forecast.projectedLow(), forecast.projectedHigh(),
+                forecast.projectedMid(), projectedSplit.card(), projectedSplit.cash(),
+                forecast.projectedLow(), forecast.projectedHigh(),
                 forecast.calibrationDataPoints(), forecast.historyMonths());
+    }
+
+    /** Split a forecast total into card/cash using the card share of {@code current}, else {@code prior}. */
+    private static Split splitProjection(BigDecimal projectedMid, Split current, Split prior) {
+        Split basis = current.total().signum() > 0 ? current : prior;
+        if (projectedMid == null || basis.total().signum() == 0) {
+            return new Split(BigDecimal.ZERO, BigDecimal.ZERO); // no realized revenue to infer the mix
+        }
+        BigDecimal card = projectedMid.multiply(basis.card())
+                .divide(basis.total(), 2, RoundingMode.HALF_UP);
+        BigDecimal cash = projectedMid.subtract(card).setScale(2, RoundingMode.HALF_UP);
+        return new Split(card, cash);
     }
 
     private static final DateTimeFormatter TIME_FMT =
@@ -153,16 +172,27 @@ public class RevenuePulseService {
         }
     }
 
-    private static BigDecimal sumOrders(List<SquareClient.Order> orders) {
-        BigDecimal total = BigDecimal.ZERO;
+    /** Card/cash split of a set of orders (catalog line items only), attributed per order by tender. */
+    private static Split splitOrders(List<SquareClient.Order> orders) {
+        BigDecimal card = BigDecimal.ZERO, cash = BigDecimal.ZERO;
         for (var o : orders) {
             if (o.lineItems() == null) continue;
+            BigDecimal orderTotal = BigDecimal.ZERO;
             for (var li : o.lineItems()) {
                 if (li.catalogObjectId() == null) continue; // skip non-catalog items
-                total = total.add(lineRevenue(li));
+                orderTotal = orderTotal.add(lineRevenue(li));
             }
+            if (SquareClient.isCashOrder(o)) cash = cash.add(orderTotal);
+            else card = card.add(orderTotal);
         }
-        return total.setScale(2, RoundingMode.HALF_UP);
+        return new Split(card.setScale(2, RoundingMode.HALF_UP), cash.setScale(2, RoundingMode.HALF_UP));
+    }
+
+    /** Card + cash dollars (total is derived); used for both realized periods and the projection split. */
+    private record Split(BigDecimal card, BigDecimal cash) {
+        BigDecimal total() {
+            return card.add(cash).setScale(2, RoundingMode.HALF_UP);
+        }
     }
 
     private static BigDecimal lineRevenue(SquareClient.OrderLineItem li) {
