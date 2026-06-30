@@ -19,9 +19,10 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
 
   const {
     currentEndDay, priorEndDay, asOfTime,
-    currentGross, priorGross, deltaPct,
+    currentGross, currentCard, currentCash,
+    priorGross, priorCard, priorCash, deltaPct,
     upcomingBookings, upcomingGross,
-    projectedMid, projectedLow, projectedHigh,
+    projectedMid, projectedCard, projectedCash, projectedLow, projectedHigh,
     forecastCalibrationDataPoints, forecastHistoryMonths,
   } = pulse;
   // projectedMonthGross (the transparent naive ceiling) is kept on the DTO for debugging but not
@@ -62,8 +63,12 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
               </span>
             )}
           </div>
-          <p className="mt-1 text-xs text-zinc-400">
-            vs {priorLabel}: {usd(priorGross)}
+          <TenderSplit card={currentCard} cash={currentCash} />
+          <p className="mt-2 text-xs text-zinc-400">
+            vs {priorLabel}: <span className="tabular-nums">{usd(priorGross)}</span>
+            {priorGross > 0 && (
+              <span className="text-zinc-400"> ({usd(priorCard)} card · {usd(priorCash)} cash)</span>
+            )}
             {deltaPct == null && priorGross === 0 && (
               <span className="ml-1">(no prior data)</span>
             )}
@@ -111,6 +116,9 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
               </span>
             )}
           </div>
+          {projectedCard + projectedCash > 0 && (
+            <TenderSplit card={projectedCard} cash={projectedCash} approx />
+          )}
 
           {hasRange ? (
             <p className="mt-1 text-xs text-zinc-400">
@@ -126,6 +134,22 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Card vs cash breakdown shown under a revenue figure — a colored dot per tender + its dollar amount.
+function TenderSplit({ card, cash, approx }: { card: number; cash: number; approx?: boolean }) {
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+      <span className="flex items-center gap-1.5 text-zinc-600">
+        <span className="inline-block h-1.5 w-1.5 rounded-full bg-indigo-500" />
+        Card <span className="font-medium tabular-nums text-zinc-800">{approx ? '~' : ''}{usd(card)}</span>
+      </span>
+      <span className="flex items-center gap-1.5 text-zinc-600">
+        <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        Cash <span className="font-medium tabular-nums text-zinc-800">{approx ? '~' : ''}{usd(cash)}</span>
+      </span>
     </div>
   );
 }

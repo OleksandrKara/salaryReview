@@ -370,6 +370,22 @@ public class SquareClient {
         return BigDecimal.valueOf(money.amount(), 2);
     }
 
+    /**
+     * Whether an order was paid mostly in cash — its cash tenders outweigh its non-cash tenders. The
+     * single source of truth for the cash/card split, shared by the month aggregator and the revenue
+     * pulse so both attribute tender the same way.
+     */
+    public static boolean isCashOrder(Order o) {
+        if (o == null || o.tenders() == null) return false;
+        BigDecimal cash = BigDecimal.ZERO, other = BigDecimal.ZERO;
+        for (Tender t : o.tenders()) {
+            BigDecimal amt = toDollars(t.amountMoney());
+            if ("CASH".equals(t.type())) cash = cash.add(amt);
+            else other = other.add(amt);
+        }
+        return cash.compareTo(other) > 0;
+    }
+
     // --- Response models (only the fields we use; unknown JSON ignored) ---
 
     @JsonIgnoreProperties(ignoreUnknown = true)

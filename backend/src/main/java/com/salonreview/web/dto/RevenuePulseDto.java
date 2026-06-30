@@ -19,8 +19,16 @@ public record RevenuePulseDto(
         String asOfTime,
         /** Gross revenue day 1 → currentEndDay of this month. */
         BigDecimal currentGross,
+        /** Card portion of {@link #currentGross} (orders paid mostly by card). */
+        BigDecimal currentCard,
+        /** Cash portion of {@link #currentGross} (orders paid mostly in cash). */
+        BigDecimal currentCash,
         /** Gross revenue day 1 → priorEndDay of last month. */
         BigDecimal priorGross,
+        /** Card portion of {@link #priorGross}. */
+        BigDecimal priorCard,
+        /** Cash portion of {@link #priorGross}. */
+        BigDecimal priorCash,
         /** (currentGross − priorGross) / priorGross × 100; null when priorGross = 0. */
         BigDecimal deltaPct,
         /** Non-cancelled future appointments remaining this month. */
@@ -31,6 +39,10 @@ public record RevenuePulseDto(
         BigDecimal projectedMonthGross,
         /** Forecaster's best estimate, blending pattern match + booking-ceiling calibration. */
         BigDecimal projectedMid,
+        /** Projected month-end card revenue — {@link #projectedMid} split by the recent card share. */
+        BigDecimal projectedCard,
+        /** Projected month-end cash revenue — {@link #projectedMid} split by the recent cash share. */
+        BigDecimal projectedCash,
         /** Confidence range floor — null in cold-start mode (insufficient history). */
         BigDecimal projectedLow,
         /** Confidence range ceiling — null in cold-start mode. */

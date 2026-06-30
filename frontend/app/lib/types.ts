@@ -494,7 +494,11 @@ export interface RevenuePulse {
   // looking at the current month. Null for past months (no time cutoff — full days compared).
   asOfTime: string | null;
   currentGross: number;
+  currentCard: number;
+  currentCash: number;
   priorGross: number;
+  priorCard: number;
+  priorCash: number;
   deltaPct: number | null;
   // Non-cancelled upcoming bookings remaining this month.
   upcomingBookings: number;
@@ -503,6 +507,9 @@ export interface RevenuePulse {
   projectedMonthGross: number;
   // Forecaster output: blends pattern-match (PeriodEntry) and booking-ceiling calibration (snapshots).
   projectedMid: number;
+  // projectedMid split by the recent card:cash mix (0 when there's no realized revenue to infer from).
+  projectedCard: number;
+  projectedCash: number;
   projectedLow: number | null;        // null in cold-start mode
   projectedHigh: number | null;       // null in cold-start mode
   forecastCalibrationDataPoints: number;
