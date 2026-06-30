@@ -18,7 +18,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.util.List;
 import java.util.Map;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -49,14 +51,18 @@ class RagControllerTest {
         suggestionService = mock(RagSuggestionService.class);
         props = mock(RagProperties.class);
         tracerProvider = mock(ObjectProvider.class);
-        RagController controller = new RagController(answerService, suggestionService, tracerProvider, props);
-        mvc = MockMvcBuilders.standaloneSetup(controller).build();
+        RagController controller = new RagController(answerService, suggestionService, tracerProvider, props,
+                mock(com.salonreview.repo.AppUserRepository.class));
+        mvc = MockMvcBuilders.standaloneSetup(controller)
+                .setCustomArgumentResolvers(
+                        new org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver())
+                .build();
     }
 
     @Test
     @DisplayName("suggestions endpoint returns the service's topic-grouped prompts")
     void suggestions() throws Exception {
-        when(suggestionService.get()).thenReturn(new StarterSuggestions(List.of(
+        when(suggestionService.get(any())).thenReturn(new StarterSuggestions(List.of(
                 new StarterSuggestions.Topic("Policies", List.of("What's our no-show fee policy?")))));
 
         mvc.perform(get("/api/rag/suggestions"))
@@ -85,7 +91,7 @@ class RagControllerTest {
                 "The no-show fee is $25.",
                 List.of(new Citation(5L, "policies.md", "The no-show fee is $25.")),
                 1, "run-abc", true);
-        when(answerService.answer("what's the no-show fee?")).thenReturn(answer);
+        when(answerService.answer(eq("what's the no-show fee?"), any())).thenReturn(answer);
 
         mvc.perform(post("/api/rag/ask").contentType("application/json")
                         .content(json.writeValueAsString(Map.of("question", "what's the no-show fee?"))))
@@ -110,7 +116,7 @@ class RagControllerTest {
     @DisplayName("RagAnswerException → 502")
     void answerFailureReturns502() throws Exception {
         when(props.isEnabled()).thenReturn(true);
-        when(answerService.answer(anyString()))
+        when(answerService.answer(anyString(), any()))
                 .thenThrow(new RagAnswerService.RagAnswerException("anthropic 5xx"));
 
         mvc.perform(post("/api/rag/ask").contentType("application/json")

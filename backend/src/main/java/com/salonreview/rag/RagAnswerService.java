@@ -12,6 +12,7 @@ import com.anthropic.models.messages.RawContentBlockDelta;
 import com.anthropic.models.messages.RawMessageStreamEvent;
 import com.anthropic.models.messages.TextBlockParam;
 import com.salonreview.ai.LangSmithTracer;
+import com.salonreview.domain.Language;
 import com.salonreview.domain.RagAgentConfig;
 import com.salonreview.domain.RagDocument;
 import com.salonreview.repo.ChunkMatch;
@@ -46,8 +47,10 @@ public class RagAnswerService {
 
     private static final Logger log = LoggerFactory.getLogger(RagAnswerService.class);
     private static final long MAX_OUTPUT_TOKENS = 1024L;
-    private static final String NO_ANSWER =
+    private static final String NO_ANSWER_EN =
             "I couldn't find anything about that in the current documents.";
+    private static final String NO_ANSWER_RU =
+            "Я не нашёл ничего об этом в текущих документах.";
 
     private final ObjectProvider<AnthropicClient> anthropicClientProvider;
     private final RagRetrievalService retrieval;
@@ -67,14 +70,14 @@ public class RagAnswerService {
 
     // ---------------------------------------------------------------- buffered
 
-    public RagAnswer answer(String question) {
+    public RagAnswer answer(String question, Language lang) {
         RagAgentConfig cfg = configService.getActive();
         List<ChunkMatch> hits = retrieval.retrieve(question, cfg);
         String requestId = UUID.randomUUID().toString();
         openRetrievalSpan(requestId, cfg, question, hits);
 
         if (hits.isEmpty()) {
-            return new RagAnswer(NO_ANSWER, List.of(), cfg.getVersion(), null, false);
+            return new RagAnswer(noAnswer(lang), List.of(), cfg.getVersion(), null, false);
         }
 
         Map<Long, String> filenames = filenamesFor(hits);
@@ -83,7 +86,7 @@ public class RagAnswerService {
 
         try {
             AnthropicClient client = requireClient();
-            ParsedAnswer parsed = callClaude(client, cfg, question, hits, filenames);
+            ParsedAnswer parsed = callClaude(client, cfg, question, hits, filenames, lang);
             if (gt != null) {
                 gt.complete(Map.of("answer", parsed.text(), "citation_count", parsed.citations().size()), null, null);
             }
@@ -97,8 +100,8 @@ public class RagAnswerService {
 
     /** One buffered Claude call with retrieved chunks as cited document blocks. Package-private for tests. */
     ParsedAnswer callClaude(AnthropicClient client, RagAgentConfig cfg, String question,
-                            List<ChunkMatch> hits, Map<Long, String> filenames) {
-        var response = client.messages().create(buildParams(cfg, question, hits, filenames));
+                            List<ChunkMatch> hits, Map<Long, String> filenames, Language lang) {
+        var response = client.messages().create(buildParams(cfg, question, hits, filenames, lang));
         StringBuilder answer = new StringBuilder();
         Set<Citation> citations = new LinkedHashSet<>();
         response.content().forEach(cb -> cb.text().ifPresent(tb -> {
@@ -117,14 +120,14 @@ public class RagAnswerService {
      * grounding, assembly, citation mapping, and two-span trace as {@link #answer}. Runs synchronously
      * (the controller drives it on a worker thread).
      */
-    public void answerStream(String question, StreamSink sink) {
+    public void answerStream(String question, Language lang, StreamSink sink) {
         RagAgentConfig cfg = configService.getActive();
         List<ChunkMatch> hits = retrieval.retrieve(question, cfg);
         String requestId = UUID.randomUUID().toString();
         openRetrievalSpan(requestId, cfg, question, hits);
 
         if (hits.isEmpty()) {
-            sink.token(NO_ANSWER);
+            sink.token(noAnswer(lang));
             sink.citations(List.of());
             sink.done(null, false);
             return;
@@ -137,7 +140,7 @@ public class RagAnswerService {
         StringBuilder answer = new StringBuilder();
         Set<Citation> citations = new LinkedHashSet<>();
         try (StreamResponse<RawMessageStreamEvent> stream =
-                     requireClient().messages().createStreaming(buildParams(cfg, question, hits, filenames))) {
+                     requireClient().messages().createStreaming(buildParams(cfg, question, hits, filenames, lang))) {
             stream.stream().forEach(event -> event.contentBlockDelta().ifPresent(cbd -> {
                 RawContentBlockDelta delta = cbd.delta();
                 delta.text().ifPresent(td -> {
@@ -170,7 +173,7 @@ public class RagAnswerService {
     // ---------------------------------------------------------------- shared internals
 
     private MessageCreateParams buildParams(RagAgentConfig cfg, String question,
-                                            List<ChunkMatch> hits, Map<Long, String> filenames) {
+                                            List<ChunkMatch> hits, Map<Long, String> filenames, Language lang) {
         List<ContentBlockParam> blocks = new ArrayList<>();
         for (ChunkMatch hit : hits) {
             String title = filenames.getOrDefault(hit.getDocumentId(), "document " + hit.getDocumentId());
@@ -182,16 +185,42 @@ public class RagAnswerService {
         }
         blocks.add(ContentBlockParam.ofText(TextBlockParam.builder().text(question).build()));
 
+        // The base system prompt is the cached block (identical for every request, so the cache hits).
+        // The language directive rides in a separate, uncached block — only added for non-English — so
+        // English requests keep their stable cached prefix.
+        List<TextBlockParam> system = new ArrayList<>();
+        system.add(TextBlockParam.builder()
+                .text(cfg.getSystemPrompt())
+                .cacheControl(CacheControlEphemeral.builder().build())
+                .build());
+        String directive = languageDirective(lang);
+        if (directive != null) {
+            system.add(TextBlockParam.builder().text(directive).build());
+        }
+
         return MessageCreateParams.builder()
                 .model(cfg.getModel())
                 .maxTokens(MAX_OUTPUT_TOKENS)
                 .temperature(cfg.getTemperature().doubleValue())
-                .systemOfTextBlockParams(List.of(TextBlockParam.builder()
-                        .text(cfg.getSystemPrompt())
-                        .cacheControl(CacheControlEphemeral.builder().build())
-                        .build()))
+                .systemOfTextBlockParams(system)
                 .addUserMessageOfBlockParams(blocks)
                 .build();
+    }
+
+    /** Per-language response directive, or null for English (the default — no directive needed). */
+    private static String languageDirective(Language lang) {
+        if (lang == Language.RU) {
+            return "Respond in Russian (Русский). The retrieved documents may be in English, Russian, "
+                    + "or both — answer in Russian regardless. Keep verbatim customer-facing phrases, "
+                    + "scripts, service/product names, and prices in English, since the salon's customers "
+                    + "are English-speaking.";
+        }
+        return null;
+    }
+
+    /** Localized "couldn't find that" message for when no chunk passes the distance floor. */
+    private static String noAnswer(Language lang) {
+        return lang == Language.RU ? NO_ANSWER_RU : NO_ANSWER_EN;
     }
 
     private Citation citationFrom(CitationCharLocation loc, List<ChunkMatch> hits, Map<Long, String> filenames) {
