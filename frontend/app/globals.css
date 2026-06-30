@@ -16,3 +16,55 @@
    removed; it flipped the body to near-black under OS dark mode while the light content stayed put.)
    The body theme (paper background, fonts, colors) is owned by landing.css, which is imported app-wide
    in the root layout — so there's a single, deterministic body style across every page. */
+
+/* Assistant chat answers: tighten the Markdown renderer (@uiw/react-md-editor) for the compact panel
+   so it reads like a chat reply, not a document. Collapse outer margins to the card padding, give
+   headings/lists/paragraphs comfortable rhythm, and use the brand accent for links. */
+.assistant-md .wmde-markdown {
+  background: transparent;
+  color: var(--ink);
+  line-height: 1.55;
+}
+.assistant-md .wmde-markdown > *:first-child { margin-top: 0; }
+.assistant-md .wmde-markdown > *:last-child { margin-bottom: 0; }
+.assistant-md .wmde-markdown p { margin: 0 0 0.6em; }
+.assistant-md .wmde-markdown h1,
+.assistant-md .wmde-markdown h2,
+.assistant-md .wmde-markdown h3,
+.assistant-md .wmde-markdown h4 {
+  margin: 0.9em 0 0.45em;
+  line-height: 1.3;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.assistant-md .wmde-markdown h1 { font-size: 1.1rem; }
+.assistant-md .wmde-markdown h2 { font-size: 1.02rem; }
+.assistant-md .wmde-markdown h3 { font-size: 0.94rem; }
+.assistant-md .wmde-markdown ul,
+.assistant-md .wmde-markdown ol { margin: 0 0 0.6em; padding-left: 1.25em; }
+.assistant-md .wmde-markdown li { margin: 0.15em 0; }
+.assistant-md .wmde-markdown li + li { margin-top: 0.1em; }
+.assistant-md .wmde-markdown a { color: var(--accent-ink); text-decoration: underline; }
+.assistant-md .wmde-markdown strong { color: var(--ink); font-weight: 600; }
+.assistant-md .wmde-markdown code {
+  background: var(--paper-2);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-size: 0.85em;
+}
+.assistant-md .wmde-markdown pre {
+  background: var(--paper-2);
+  border-radius: 8px;
+  padding: 0.7em 0.85em;
+  margin: 0 0 0.6em;
+}
+.assistant-md .wmde-markdown pre code { background: transparent; padding: 0; }
+.assistant-md .wmde-markdown blockquote {
+  margin: 0 0 0.6em;
+  padding-left: 0.8em;
+  border-left: 3px solid var(--accent);
+  color: var(--ink-soft);
+}
+.assistant-md .wmde-markdown table { display: table; width: 100%; font-size: 0.85em; }
+.assistant-md .wmde-markdown th,
+.assistant-md .wmde-markdown td { border: 1px solid var(--line); padding: 0.3em 0.5em; }
