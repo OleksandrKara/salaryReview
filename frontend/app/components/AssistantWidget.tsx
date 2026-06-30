@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { Spinner } from './Spinner';
-import type { Language, RagCitation, Role, StarterSuggestions } from '../lib/types';
+import type { KbRequestTarget, Language, RagCitation, Role, StarterSuggestions } from '../lib/types';
 
 // @uiw/react-md-editor's Markdown renderer (already a dependency) — client-only since it touches DOM.
 const Markdown = dynamic(
@@ -18,6 +18,7 @@ type Msg = {
   id: number;
   who: 'user' | 'assistant';
   text: string;
+  question?: string; // the asked question (assistant turns) — used when filing a knowledge-gap request
   citations?: RagCitation[];
   runId?: string | null;
   answered?: boolean;
@@ -95,7 +96,7 @@ export default function AssistantWidget() {
     setMessages((ms) => [
       ...ms,
       { id: nextId(), who: 'user', text: q },
-      { id: aid, who: 'assistant', text: '', streaming: true },
+      { id: aid, who: 'assistant', text: '', question: q, streaming: true },
     ]);
     await api.askRagStream(q, {
       onToken: (t) => patch(aid, (m) => ({ ...m, text: m.text + t })),
@@ -306,8 +307,91 @@ function AssistantMessage({ m, onRate }: { m: Msg; onRate: (m: Msg, helpful: boo
                 ) : null}
               </div>
             ) : null}
+
+            {/* No answer → offer to file a knowledge-gap request for the owner to address. */}
+            {m.answered === false && m.question ? <RequestGap question={m.question} /> : null}
           </>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+// Shown under an unanswered answer: a one-click "add to the knowledge base" request the owner triages
+// on /rag/admin. Expands to an optional note + a KB/SOP target hint; collapses to a thank-you on send.
+function RequestGap({ question }: { question: string }) {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState('');
+  const [target, setTarget] = useState<KbRequestTarget>('UNSURE');
+  const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle');
+
+  async function submit() {
+    setState('sending');
+    try {
+      await api.createKbRequest({ question, note: note.trim() || null, target });
+      setState('sent');
+    } catch {
+      setState('idle');
+    }
+  }
+
+  if (state === 'sent') {
+    return (
+      <p className="mt-2 rounded-lg bg-[var(--paper-2)] px-2.5 py-1.5 text-[11px] text-[var(--accent-ink)]">
+        ✅ Sent to the owner to add to the knowledge base.
+      </p>
+    );
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="mt-2 inline-flex items-center gap-1 rounded-lg bg-[var(--paper-2)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--accent-ink)] ring-1 ring-[var(--line)] hover:ring-[var(--accent)]"
+      >
+        ＋ Request this be added to the knowledge base
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-2 space-y-2 rounded-lg bg-[var(--paper-2)] p-2.5">
+      <p className="text-[11px] text-[var(--muted)]">
+        Ask the owner to cover this. <span className="text-[var(--ink)]">“{question}”</span>
+      </p>
+      <textarea
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="Add context (optional) — what should the answer say?"
+        rows={2}
+        className="w-full resize-none rounded bg-white px-2 py-1 text-xs text-[var(--ink)] ring-1 ring-[var(--line)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+      />
+      <div className="flex items-center justify-between gap-2">
+        <label className="flex items-center gap-1 text-[11px] text-[var(--muted)]">
+          Add to
+          <select
+            value={target}
+            onChange={(e) => setTarget(e.target.value as KbRequestTarget)}
+            className="rounded bg-white px-1.5 py-1 text-[11px] text-[var(--ink)] ring-1 ring-[var(--line)]"
+          >
+            <option value="UNSURE">Not sure</option>
+            <option value="KB">Knowledge base</option>
+            <option value="SOP">SOP</option>
+          </select>
+        </label>
+        <span className="flex items-center gap-1.5">
+          <button onClick={() => setOpen(false)} className="rounded px-2 py-1 text-[11px] text-[var(--muted)] hover:text-[var(--ink)]">
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={state === 'sending'}
+            className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-br from-[var(--accent)] to-[var(--accent-ink)] px-3 py-1 text-[11px] font-medium text-[var(--paper)] disabled:opacity-50"
+          >
+            {state === 'sending' ? <Spinner className="h-3 w-3 text-[var(--paper)]" /> : null}
+            Send request
+          </button>
+        </span>
       </div>
     </div>
   );
