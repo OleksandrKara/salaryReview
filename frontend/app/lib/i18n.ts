@@ -30,6 +30,22 @@ const STRINGS = {
     RU: 'Откройте каждую процедуру и подтвердите, что вы прочитали её и согласны соблюдать.',
   },
 
+  // Mandatory SOP acknowledgment gate
+  sopAckTitle: { EN: 'Action required', RU: 'Требуется действие' },
+  sopAckIntro: {
+    EN: 'Please read the following and confirm before continuing.',
+    RU: 'Пожалуйста, прочитайте следующее и подтвердите, прежде чем продолжить.',
+  },
+  sopAckScroll: {
+    EN: 'Scroll to the end to enable confirmation',
+    RU: 'Прокрутите до конца, чтобы подтвердить',
+  },
+  sopAckButton: {
+    EN: 'I have read and agree to follow this SOP',
+    RU: 'Я прочитал(а) и согласен(на) соблюдать этот регламент',
+  },
+  sopAckRemaining: { EN: 'to confirm', RU: 'к подтверждению' },
+
   // Manager home (/manager)
   mgrTitle: { EN: 'Manager', RU: 'Менеджер' },
   mgrSubtitle: {
