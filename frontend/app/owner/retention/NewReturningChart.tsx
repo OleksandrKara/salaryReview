@@ -9,9 +9,13 @@ export default function NewReturningChart({ points, label }: { points: Retention
   const totalNew = points.reduce((s, p) => s + p.newClients, 0);
   const totalRet = points.reduce((s, p) => s + p.returningClients, 0);
 
+  // Up to ~12 months fit a phone width; beyond that, let the chart scroll horizontally rather than
+  // squeezing bars into slivers.
+  const scrolls = points.length > 12;
+
   return (
-    <div className="rounded-xl bg-white p-4 ring-1 ring-zinc-200">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+    <div data-testid="retention-chart" className="rounded-xl bg-white p-3 ring-1 ring-zinc-200 sm:p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <span className="text-sm font-medium text-zinc-700">New vs returning clients — {label}</span>
         <span className="flex items-center gap-3 text-xs text-zinc-500">
           <Legend className="bg-emerald-500" text={`New (${totalNew})`} />
@@ -19,23 +23,26 @@ export default function NewReturningChart({ points, label }: { points: Retention
         </span>
       </div>
 
-      <div className="overflow-x-auto">
-        <div className="flex min-w-full items-end gap-1" style={{ minWidth: `${points.length * 28}px` }}>
-          {points.map((p) => {
+      <div className={scrolls ? '-mx-1 overflow-x-auto px-1' : ''}>
+        <div
+          className="flex items-end gap-[2px] sm:gap-1"
+          style={scrolls ? { minWidth: `${points.length * 26}px` } : undefined}
+        >
+          {points.map((p, i) => {
             const total = p.newClients + p.returningClients;
             return (
               <div key={`${p.year}-${p.month}`} className="flex flex-1 flex-col items-center gap-1">
                 <div
-                  className="flex h-40 w-full max-w-[2.5rem] flex-col justify-end overflow-hidden rounded-t"
+                  className="flex h-32 w-full max-w-[2.75rem] flex-col justify-end overflow-hidden rounded-t sm:h-40"
                   title={`${MONTHS[p.month - 1]} ${p.year} · ${p.newClients} new · ${p.returningClients} returning · ${total} total`}
                 >
                   <div className="w-full bg-emerald-500" style={{ height: `${(p.newClients / max) * 100}%` }} />
                   <div className="w-full bg-zinc-300" style={{ height: `${(p.returningClients / max) * 100}%` }} />
                 </div>
-                <span className="text-[9px] leading-tight text-zinc-400">
+                <span className="text-center text-[9px] leading-tight text-zinc-400">
                   {MONTHS[p.month - 1]}
-                  {p.month === 1 || points.indexOf(p) === 0 ? (
-                    <span className="block text-center text-[8px] text-zinc-300">{`’${String(p.year).slice(2)}`}</span>
+                  {p.month === 1 || i === 0 ? (
+                    <span className="block text-[8px] text-zinc-300">{`’${String(p.year).slice(2)}`}</span>
                   ) : null}
                 </span>
               </div>

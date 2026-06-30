@@ -77,16 +77,18 @@ export default async function RetentionPage({
         <NewReturningChart points={series.points} label={providerName} />
       )}
 
-      {/* Latest-month per-provider scorecard. */}
-      <h2 className="mt-8 mb-2 text-sm font-semibold text-zinc-700">
-        {MONTHS[toMonth - 1]} {toYear} — provider scorecard
-      </h2>
+      {/* Latest-month per-provider scorecard — set apart from the period chart above. */}
+      <div className="my-8 border-t border-zinc-200" />
+      <div className="mb-3 flex items-baseline gap-2">
+        <h2 className="text-sm font-semibold text-zinc-700">Provider scorecard</h2>
+        <span className="text-xs text-zinc-400">{MONTHS[toMonth - 1]} {toYear}</span>
+      </div>
       {report.providers.length === 0 ? (
         <p className="rounded-lg px-4 py-4 text-sm text-zinc-400 ring-1 ring-zinc-200">No visits this month yet.</p>
       ) : (
         <>
           {/* Mobile: cards */}
-          <ul className="space-y-3 sm:hidden">
+          <ul data-testid="retention-scorecard-cards" className="space-y-3 sm:hidden">
             {report.providers.map((p) => (
               <li key={p.providerRef} className="rounded-xl p-4 ring-1 ring-zinc-200">
                 <div className="flex items-center justify-between">
@@ -107,7 +109,7 @@ export default async function RetentionPage({
 
           {/* Desktop: table */}
           <div className="hidden overflow-x-auto rounded-lg ring-1 ring-zinc-200 sm:block">
-            <table className="w-full text-sm">
+            <table data-testid="retention-scorecard-table" className="w-full text-sm">
               <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wide text-zinc-500">
                 <tr>
                   <th className="px-3 py-2">Provider</th>
