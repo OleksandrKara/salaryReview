@@ -54,14 +54,14 @@ class SuspiciousBookingDetectionTest {
     /** A booking 3 days ago — clearly in the past for any salon timezone. */
     private static Booking pastBooking(String customerId, String status, String sellerNote, String customerNote) {
         String pastIso = Instant.now().minus(3, ChronoUnit.DAYS).toString();
-        return new Booking("bk-past", status, pastIso, null, "LOC", customerId,
+        return new Booking("bk-past", status, pastIso, null, null, "LOC", customerId,
                 sellerNote, customerNote, List.of(new AppointmentSegment(TM, VAR, 60)));
     }
 
     /** A booking 3 days in the future. */
     private static Booking futureBooking(String customerId) {
         String futureIso = Instant.now().plus(3, ChronoUnit.DAYS).toString();
-        return new Booking("bk-future", "ACCEPTED", futureIso, null, "LOC", customerId,
+        return new Booking("bk-future", "ACCEPTED", futureIso, null, null, "LOC", customerId,
                 null, null, List.of(new AppointmentSegment(TM, VAR, 60)));
     }
 

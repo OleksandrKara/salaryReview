@@ -45,7 +45,7 @@ class TipAllocationTest {
     private static Booking booking(String... variationIds) {
         var segs = java.util.Arrays.stream(variationIds)
                 .map(v -> new AppointmentSegment(TM, v, 60)).toList();
-        return new Booking("bk1", "ACCEPTED", "2026-05-10T15:00:00Z", null, "LOC", CUST, null, null, segs);
+        return new Booking("bk1", "ACCEPTED", "2026-05-10T15:00:00Z", null, null, "LOC", CUST, null, null, segs);
     }
 
     private static OrderLineItem li(String var, String gross) {

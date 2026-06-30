@@ -29,7 +29,7 @@ import static org.mockito.Mockito.*;
 class PrepaidServiceTest {
 
     private static Booking booking(String id, String start, String teamMemberId, String variationId) {
-        return new Booking(id, "ACCEPTED", start, null, "LOC", "C1", null, null,
+        return new Booking(id, "ACCEPTED", start, null, null, "LOC", "C1", null, null,
                 List.of(new AppointmentSegment(teamMemberId, variationId, 60)));
     }
 

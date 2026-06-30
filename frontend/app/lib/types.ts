@@ -532,6 +532,61 @@ export interface RevenuePulse {
   forecastHistoryMonths: number;
 }
 
+// --- Provider retention analytics (owner-only) ---
+
+export interface RetentionTrendPoint {
+  year: number;
+  month: number;
+  clientsSeen: number;
+  newToProvider: number;
+}
+
+export interface ProviderRetentionRow {
+  providerRef: string;
+  providerName: string;
+  clientsSeen: number;
+  newToProvider: number;
+  returningToProvider: number;
+  newToSalonViaP: number;
+  sameDayRebookRate: number | null;
+  cohortSize: number;
+  providerRetention: number | null;
+  salonRetention: number | null;
+  cohortMatured: boolean;
+  leakRisk: boolean;
+  trend: RetentionTrendPoint[];
+}
+
+export interface RetentionReport {
+  year: number;
+  month: number;
+  retentionWindowDays: number;
+  providers: ProviderRetentionRow[];
+}
+
+export interface RetentionSeriesPoint {
+  year: number;
+  month: number;
+  clientsSeen: number;
+  newClients: number;
+  returningClients: number;
+}
+
+export interface RetentionProviderOption {
+  ref: string;
+  name: string;
+}
+
+export interface RetentionSeries {
+  fromYear: number;
+  fromMonth: number;
+  toYear: number;
+  toMonth: number;
+  providerRef: string | null; // null = all providers
+  providers: RetentionProviderOption[];
+  points: RetentionSeriesPoint[];
+}
+
 // --- Owner overview dashboard (owner-only) ---
 
 export interface MonthSummary {
