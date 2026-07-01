@@ -20,21 +20,22 @@ keep it from ever silently going stale.
 
 | Data | Method | TTL |
 |------|--------|-----|
-| Bookings (per window) | `bookings(start,end)` | **3 min** |
-| Completed orders (per window) | `completedOrders(start,end)` | **3 min** |
+| Bookings (per window) | `bookings(start,end)` | **10 min** |
+| Completed orders (per window) | `completedOrders(start,end)` | **10 min** |
 | Team members | `allTeamMembers` / `activeTeamMembers` | 5 min |
 | Catalog prices / names (per id set) | `catalogPrices` / `catalogNames` | 10 min |
 | Location timezone | `locationTimeZone` | 1 h |
 | Customer names | `customerNames` | own process‑wide map (names rarely change) |
 
-**Why 3 min for bookings/orders?** This is a periodic‑review tool, not a live dashboard — payroll is
-reviewed after shifts and at period close, not monitored second‑by‑second. 3 minutes keeps a normal
-review sitting instant while keeping the current month's data fairly fresh, and the honest badge + Sync
+**Why 10 min for bookings/orders?** This is a periodic‑review tool, not a live dashboard — payroll is
+reviewed after shifts and at period close, not monitored second‑by‑second. 10 minutes keeps a normal
+review sitting instant while keeping the current month's data reasonably fresh, and the honest badge + Sync
 button mean anyone who needs newer data sees the age and can force a pull. Past/closed months never
 change, so caching them is risk‑free; only the current month accrues new checkouts. It's a one‑line tune
-in `SquareClient` (10–15 min is also defensible given Sync; 3 min is the freshness‑leaning choice).
+in `SquareClient` (a shorter 3 min is the freshness‑leaning alternative; 10 min leans toward fewer Square
+calls, which Sync makes safe).
 
-**Staleness guarantee:** automatically, the money‑moving tables (bookings, orders) are at most **~3 min**
+**Staleness guarantee:** automatically, the money‑moving tables (bookings, orders) are at most **~10 min**
 behind Square; the next load after the TTL lapses pulls fresh — and **Sync** makes it current instantly.
 
 Also: within the aggregator and the no‑show scan, the independent **bookings + orders** fetches run
@@ -77,10 +78,11 @@ For when someone suspects a gap with Square and wants fresh data immediately:
 
 Different clock from the data cache. Two cookies bound a session and the shorter wins:
 
-- **Server session — 30 min idle** (Tomcat default, not overridden). Resets on every request, so active
-  use keeps it alive.
+- **Server session — 12 h idle** (`server.servlet.session.timeout: 12h` in `application.yml`). Resets on
+  every request, so active use keeps it alive.
 - **`sid` cookie — 12 h** absolute (set in `app/api/login/route.ts`).
 
-So: active within 30 min → stays logged in (up to the 12 h cap); **idle ≥ 30 min → must sign in again**.
-To change this, set `server.servlet.session.timeout` (backend) and the `sid` `maxAge` (frontend) together,
-or wire up the "Remember me" checkbox (currently inert).
+So a login lasts **up to 12 h**: you stay signed in as long as you use it within any 12 h window, capped
+at 12 h absolute by the `sid` cookie; **idle ≥ 12 h → must sign in again**. To change this, set
+`server.servlet.session.timeout` (backend) and the `sid` `maxAge` (frontend) together, or wire up the
+"Remember me" checkbox (currently inert).
