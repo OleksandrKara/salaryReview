@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Suspense } from 'react';
 import { serverApi } from '../lib/serverApi';
 import type { Feedback, ProviderPayout } from '../lib/types';
-import AdminMenu from './AdminMenu';
+import AdminMenu from '../components/AdminMenu';
 import MonthNav from '../components/MonthNav';
 import GrantTierButton from './GrantTierButton';
 import NoShowFeesPanel from './NoShowFeesPanel';
@@ -145,11 +145,11 @@ export default async function ReportsPage({
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <h1 className="text-xl font-semibold sm:text-2xl">Salary report</h1>
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold sm:text-2xl">Salary report</h1>
-          <AdminMenu isOwner={me?.role === 'OWNER'} language={me?.preferredLanguage ?? null} />
+          <MonthNav base="/reports" year={year} month={month} prev={prev} next={next} />
+          <AdminMenu role={me.role} language={me.preferredLanguage} />
         </div>
-        <MonthNav base="/reports" year={year} month={month} prev={prev} next={next} />
       </div>
       <div className="mb-3"><SyncBadge syncedAt={report.syncedAt} timezone={report.timezone} /></div>
       <p className="mb-6 text-xs text-zinc-500">

@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import { serverApi } from '../../lib/serverApi';
+import PageHeader from '../../components/PageHeader';
 import ManualCreditManager from './ManualCreditManager';
 
 // Owner/manager: manual service credits — a deliberate exception for a service Square recorded too
@@ -12,11 +12,7 @@ export default async function ManualCreditsPage() {
 
   return (
     <main className="mx-auto max-w-4xl p-4 sm:p-8">
-      <div className="mb-1 flex items-baseline gap-3">
-        <h1 className="text-2xl font-semibold">Manual credits</h1>
-        <Link href="/reports" className="text-xs text-zinc-400 hover:text-zinc-600">← Reports</Link>
-        <a href="/api/logout" className="text-xs text-zinc-400 hover:text-zinc-600">Log out</a>
-      </div>
+      <PageHeader title="Manual credits" />
       <p className="mb-6 text-xs text-zinc-500">
         Credit a provider for a service Square couldn&apos;t auto-attribute (paid on a card machine with
         no service line, checked out under the wrong date, etc.). Enter the service&apos;s{' '}

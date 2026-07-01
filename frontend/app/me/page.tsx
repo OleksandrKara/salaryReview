@@ -6,7 +6,7 @@ import NoShowBreakdown from './NoShowBreakdown';
 import ServiceBreakdown from './ServiceBreakdown';
 import SettlementFeedbackForm from './SettlementFeedbackForm';
 import SalaryPopupButton from '../components/SalaryPopupButton';
-import LanguageSwitch from '../components/LanguageSwitch';
+import AdminMenu from '../components/AdminMenu';
 import { SyncBadge } from '../components/SyncBadge';
 import { InfoTip } from '../components/InfoTip';
 
@@ -73,14 +73,11 @@ export default async function MyReportPage({
   return (
     <main className="mx-auto max-w-3xl p-4 sm:p-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-xl font-semibold sm:text-2xl">My pay</h1>
-          <Link href="/kb" className="text-xs text-zinc-400 hover:text-zinc-600">Knowledge base</Link>
-          <Link href="/sops" className="text-xs text-zinc-400 hover:text-zinc-600">SOPs</Link>
-          <LanguageSwitch language={principal?.preferredLanguage ?? null} />
-          <a href="/api/logout" className="text-xs text-zinc-400 hover:text-zinc-600">Log out</a>
+        <h1 className="text-xl font-semibold sm:text-2xl">My pay</h1>
+        <div className="flex items-center gap-3">
+          <MonthNav base="/me" year={year} month={month} prev={prev} next={next} />
+          <AdminMenu role={principal.role} language={principal.preferredLanguage} />
         </div>
-        <MonthNav base="/me" year={year} month={month} prev={prev} next={next} />
       </div>
       <div className="mb-4"><SyncBadge syncedAt={detail.syncedAt} timezone={detail.timezone} /></div>
 

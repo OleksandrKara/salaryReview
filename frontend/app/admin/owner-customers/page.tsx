@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import { serverApi } from '../../lib/serverApi';
+import PageHeader from '../../components/PageHeader';
 import OwnerCustomerManager from './OwnerCustomerManager';
 
 // Owner/manager: the Square customers who are owner(s)/family. A booking for one of them with no
@@ -10,11 +10,7 @@ export default async function OwnerCustomersPage() {
 
   return (
     <main className="mx-auto max-w-3xl p-4 sm:p-8">
-      <div className="mb-1 flex items-baseline gap-3">
-        <h1 className="text-2xl font-semibold">Owner customers</h1>
-        <Link href="/reports" className="text-xs text-zinc-400 hover:text-zinc-600">← Reports</Link>
-        <a href="/api/logout" className="text-xs text-zinc-400 hover:text-zinc-600">Log out</a>
-      </div>
+      <PageHeader title="Owner customers" />
       <p className="mb-6 text-xs text-zinc-500">
         When one of these customers receives a service, the owner isn&apos;t charged — so Square has no
         payment for it. The provider who did the work is still credited their commission on the

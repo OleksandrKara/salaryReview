@@ -1,6 +1,6 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { serverApi } from '../../lib/serverApi';
+import PageHeader from '../../components/PageHeader';
 import OverviewClient from './OverviewClient';
 import ProviderTable from './ProviderTable';
 
@@ -35,12 +35,7 @@ export default async function OwnerOverviewPage({
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <h1 className="text-xl font-semibold sm:text-2xl">Salon Overview</h1>
-        <Link href="/reports" className="text-xs text-zinc-400 hover:text-zinc-600">
-          ← Salary report
-        </Link>
-      </div>
+      <PageHeader title="Revenue" role={me.role} language={me.preferredLanguage} />
 
       <OverviewClient data={data} />
 
