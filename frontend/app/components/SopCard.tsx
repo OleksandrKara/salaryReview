@@ -93,7 +93,7 @@ export default function SopCard({
         ref={scrollRef}
         onScroll={checkScrolled}
         data-color-mode="light"
-        className="sop-md min-h-0 flex-1 overflow-y-auto px-5 py-4 text-sm"
+        className="min-h-0 flex-1 overflow-y-auto px-5 py-4 text-sm"
       >
         <div ref={contentRef}>
           <Markdown source={body || '_(no content)_'} style={{ background: 'transparent', fontSize: '0.9rem' }} />
