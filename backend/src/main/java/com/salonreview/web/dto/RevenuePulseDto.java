@@ -50,5 +50,9 @@ public record RevenuePulseDto(
         /** Distinct months of usable calibration data behind the forecast (0 = pattern-only). */
         int forecastCalibrationDataPoints,
         /** Settled months of PeriodEntry history behind the forecast (3+ enables pattern match). */
-        int forecastHistoryMonths
+        int forecastHistoryMonths,
+        /** Total days in the current month — lets the UI flag when the two months differ in length. */
+        int currentMonthLength,
+        /** Total days in the prior month — e.g. 31 for May even when only 30 are compared to June. */
+        int priorMonthLength
 ) {}

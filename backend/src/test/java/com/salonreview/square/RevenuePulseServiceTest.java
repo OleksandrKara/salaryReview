@@ -10,6 +10,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
@@ -49,9 +52,13 @@ class RevenuePulseServiceTest {
     }
 
     private static AttributedService svc(String date, String channel, String gross) {
+        return svcAt(date, null, channel, gross);
+    }
+
+    private static AttributedService svcAt(String date, String time, String channel, String gross) {
         return new AttributedService("p1", "P", date, "FIRST", "Manicure", new BigDecimal(gross),
                 BigDecimal.ZERO, new BigDecimal(gross), BigDecimal.ZERO, true, 1, 1, false, channel,
-                null, null, null, null);
+                time, null, null, null);
     }
 
     private static MonthAggregation aggOf(int year, int month, List<AttributedService> services) {
@@ -80,6 +87,38 @@ class RevenuePulseServiceTest {
         assertThat(p.currentGross()).isEqualByComparingTo("200.00");
         assertThat(p.priorCard()).isEqualByComparingTo("80.00");
         assertThat(p.priorCash()).isEqualByComparingTo("0.00");
+        // Month lengths are surfaced so the UI can flag the mismatch (May 31 vs April 30).
+        assertThat(p.currentMonthLength()).isEqualTo(31);
+        assertThat(p.priorMonthLength()).isEqualTo(30);
+        assertThat(p.asOfTime()).isNull(); // past month → whole-day comparison, no time cutoff
+    }
+
+    @Test
+    @DisplayName("current month cuts both windows at the same time-of-day, to the minute")
+    void currentMonthHonoursTimeOfDayCutoff() {
+        // Fix 'now' to Aug 15 2026, 12:00 PM UTC. Both months are compared through day 15 at noon.
+        Clock clock = Clock.fixed(Instant.parse("2026-08-15T12:00:00Z"), ZoneOffset.UTC);
+        RevenuePulseService timed = new RevenuePulseService(square, forecaster, aggregator, salonConfig, clock);
+
+        when(aggregator.aggregate(eq(2026), eq(8), any())).thenReturn(aggOf(2026, 8, List.of(
+                svcAt("2026-08-03", "9:00 AM", "CARD", "50.00"),   // earlier day → counted
+                svcAt("2026-08-15", "10:00 AM", "CARD", "100.00"), // today, before noon → counted
+                svcAt("2026-08-15", "2:00 PM", "CARD", "500.00")))); // today, after noon → excluded
+        when(aggregator.aggregate(eq(2026), eq(7), any())).thenReturn(aggOf(2026, 7, List.of(
+                svcAt("2026-07-02", "8:00 AM", "CARD", "20.00"),   // earlier day → counted
+                svcAt("2026-07-15", "11:00 AM", "CARD", "30.00"),  // matching day, before noon → counted
+                svcAt("2026-07-15", "3:00 PM", "CARD", "999.00")))); // matching day, after noon → excluded
+        when(forecaster.forecast(anyInt(), anyInt(), any(), any()))
+                .thenReturn(new ForecastResult(new BigDecimal("300.00"), null, null, 0, 0));
+
+        RevenuePulseDto p = timed.pulse(2026, 8);
+
+        assertThat(p.currentGross()).isEqualByComparingTo("150.00"); // 50 + 100, not the 2 PM 500
+        assertThat(p.priorGross()).isEqualByComparingTo("50.00");    // 20 + 30, not the 3 PM 999
+        assertThat(p.deltaPct()).isEqualByComparingTo("200.0");      // (150 − 50) / 50
+        assertThat(p.asOfTime()).isEqualTo("12:00 PM");
+        assertThat(p.currentEndDay()).isEqualTo(15);
+        assertThat(p.priorEndDay()).isEqualTo(15);
     }
 
     @Test
