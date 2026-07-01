@@ -11,8 +11,9 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.LocalDate;
 
 /**
- * Owner-only provider retention analytics. Under {@code /api/owner/**} (OWNER-gated in SecurityConfig),
- * so managers/providers are denied. Reads the visit ledger; no Square call on request.
+ * Provider retention analytics. Under {@code /api/owner/**}, but reads are opened to MANAGER too
+ * (OWNER+MANAGER GET, everyone else denied) in SecurityConfig — managers get the same visibility,
+ * view-only. Reads the visit ledger; no Square call on request.
  */
 @RestController
 @RequestMapping("/api/owner")

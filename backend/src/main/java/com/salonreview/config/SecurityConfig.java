@@ -40,6 +40,10 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/info", "/api/login").permitAll()
+                        // Retention is read-only visibility for managers too (same data as owners, no
+                        // other owner routes). Listed first so it wins over the owner-only catch-all.
+                        .requestMatchers(HttpMethod.GET, "/api/owner/retention", "/api/owner/retention/**")
+                                .hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers("/api/users/**", "/api/owner/**", "/api/rag/admin/**").hasRole("OWNER")
                         .requestMatchers("/api/settlements/me/**").hasRole("PROVIDER")
                         // RAG admin (upload/approve/delete/config) is OWNER-only above; asking +

@@ -4,8 +4,9 @@ import { NextRequest, NextResponse } from 'next/server';
 // routing by role to a role-specific home:
 //  - no session (`sid`) → `/` (the landing page, with its sign-in modal)
 //  - PROVIDER → /me (their pay), plus /kb and /sops
-//  - MANAGER → /manager (redos, KB, SOPs, assistant). Managers don't manage salaries, so they're kept
-//    out of /reports and the owner admin tools; redos is their one management task.
+//  - MANAGER → /manager (redos, KB, SOPs, assistant, retention). Managers don't manage salaries, so
+//    they're kept out of /reports and the owner admin tools; redos is their one management task, and
+//    retention is read-only visibility shared with the owner.
 //  - OWNER → /reports and everything
 //
 // The matcher MUST list every authenticated page area. A page left out gets no edge gate and is only
@@ -15,12 +16,13 @@ const PROVIDER_HOME = '/me';
 const MANAGER_HOME = '/manager';
 const OWNER_HOME = '/reports';
 
-// Owner + manager (providers blocked).
-const STAFF_ONLY = ['/manager', '/admin/redos'];
+// Owner + manager (providers blocked). Retention is view-only for managers, same data as owners.
+const STAFF_ONLY = ['/manager', '/admin/redos', '/owner/retention'];
 // Owner only (managers and providers blocked). /reports (salary) and the other admin tools live here;
-// redos is intentionally absent (it's the manager's one task, gated by STAFF_ONLY instead).
+// redos is intentionally absent (it's the manager's one task, gated by STAFF_ONLY instead). Retention
+// is carved out of /owner into STAFF_ONLY above, so only /owner/overview stays owner-only here.
 const OWNER_ONLY = [
-  '/reports', '/owner', '/admin/users', '/admin/prepaid', '/admin/owner-customers',
+  '/reports', '/owner/overview', '/admin/users', '/admin/prepaid', '/admin/owner-customers',
   '/admin/manual-credits', '/rag/admin', '/sops/admin',
 ];
 const PROVIDER_AREAS = ['/me']; // /me and /me/* belong to providers

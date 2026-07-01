@@ -14,4 +14,7 @@ public interface SopAcknowledgmentRepository extends JpaRepository<SopAcknowledg
 
     /** All acknowledgments for a version — used to build the roster (user_id → acknowledged_at). */
     List<SopAcknowledgment> findBySopVersionId(Long sopVersionId);
+
+    /** Remove a user's acknowledgments — called before deleting the user (the FK has no cascade). */
+    void deleteByUserId(Long userId);
 }

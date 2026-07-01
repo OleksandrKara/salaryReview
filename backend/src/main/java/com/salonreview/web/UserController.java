@@ -5,6 +5,7 @@ import com.salonreview.domain.Provider;
 import com.salonreview.domain.Role;
 import com.salonreview.repo.AppUserRepository;
 import com.salonreview.repo.ProviderRepository;
+import com.salonreview.repo.SopAcknowledgmentRepository;
 import com.salonreview.service.ProviderDirectory;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClient.TeamMember;
@@ -32,14 +33,17 @@ public class UserController {
     private final ProviderDirectory directory;
     private final SquareClient square;
     private final PasswordEncoder encoder;
+    private final SopAcknowledgmentRepository sopAcks;
 
     public UserController(AppUserRepository users, ProviderRepository providers,
-                          ProviderDirectory directory, SquareClient square, PasswordEncoder encoder) {
+                          ProviderDirectory directory, SquareClient square, PasswordEncoder encoder,
+                          SopAcknowledgmentRepository sopAcks) {
         this.users = users;
         this.providers = providers;
         this.directory = directory;
         this.square = square;
         this.encoder = encoder;
+        this.sopAcks = sopAcks;
     }
 
     @GetMapping
@@ -135,6 +139,9 @@ public class UserController {
         if (u.getRole() == Role.OWNER && u.isActive() && activeOwners() <= 1) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot remove the last active owner");
         }
+        // Clear this user's SOP acknowledgments first — that FK has no ON DELETE cascade, so leaving
+        // them would fail the delete with a constraint violation (previously surfaced as a 500).
+        sopAcks.deleteByUserId(id);
         users.delete(u);
     }
 
