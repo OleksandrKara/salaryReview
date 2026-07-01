@@ -536,7 +536,7 @@ export interface RevenuePulse {
   priorMonthLength: number;
 }
 
-// --- Provider retention analytics (owner-only) ---
+// --- Provider retention analytics (owner + manager, view-only for the latter) ---
 
 export interface RetentionTrendPoint {
   year: number;

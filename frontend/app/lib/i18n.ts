@@ -49,8 +49,8 @@ const STRINGS = {
   // Manager home (/manager)
   mgrTitle: { EN: 'Manager', RU: 'Менеджер' },
   mgrSubtitle: {
-    EN: 'Your tools — redos, knowledge base, and SOPs. Ask the assistant (bottom-right) anytime.',
-    RU: 'Ваши инструменты — переделки, база знаний и регламенты. Ассистент (внизу справа) — в любой момент.',
+    EN: 'Your tools — redos, knowledge base, and SOPs — plus provider retention. Ask the assistant (bottom-right) anytime.',
+    RU: 'Ваши инструменты — переделки, база знаний и регламенты — плюс удержание клиентов. Ассистент (внизу справа) — в любой момент.',
   },
   mgrRedos: { EN: 'Redos', RU: 'Переделки' },
   mgrRedosDesc: {
