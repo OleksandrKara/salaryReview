@@ -56,7 +56,7 @@ public class SopSyncService {
 
     /** The syncable corpus: ACTIVE SOPs (newest categories first), for the admin section. */
     public List<Sop> list() {
-        return sops.findByStatusOrderByCategoryAscTitleAsc(SopStatus.ACTIVE);
+        return sops.findByStatusOrderByPriorityAscCategoryAscTitleAsc(SopStatus.ACTIVE);
     }
 
     /** Sync one SOP. Returns the updated SOP (possibly ERROR); empty when it doesn't exist. */
@@ -73,7 +73,7 @@ public class SopSyncService {
             throw new SyncInProgressException();
         }
         try {
-            sops.findAllByOrderByCategoryAscTitleAsc().forEach(s -> doSync(s, by));
+            sops.findAllByOrderByPriorityAscCategoryAscTitleAsc().forEach(s -> doSync(s, by));
             return list();
         } finally {
             syncAllRunning.set(false);
