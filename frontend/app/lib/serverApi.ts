@@ -53,7 +53,7 @@ export const serverApi = {
   // SOPs, audience-filtered by the backend using the session.
   listSops: () => serverFetch<Sop[]>(`/api/sops`),
 
-  // Provider retention analytics (owner-only).
+  // Provider retention analytics (owner + manager, view-only for the latter).
   getRetention: (year: number, month: number) =>
     serverFetch<RetentionReport>(`/api/owner/retention?year=${year}&month=${month}`),
 
