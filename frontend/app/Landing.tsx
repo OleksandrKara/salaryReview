@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 // landing.css is imported app-wide in the root layout (the salon theme applies to every page).
 import { LANDING_MARKUP } from './landingMarkup';
 import { Spinner } from './components/Spinner';
@@ -9,7 +8,6 @@ import { Spinner } from './components/Spinner';
 // AK.LUX.STUDIO landing (Claude Design) — the homepage at `/`. Marketing markup is injected as-is;
 // the sign-in modal is real React so the buttons reliably open it. Posts to /api/login, routes by role.
 export default function Landing() {
-  const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
   const wasOpen = useRef(false); // track open→close so we only re-reveal on an actual close
   const [modalOpen, setModalOpen] = useState(false);
@@ -91,8 +89,10 @@ export default function Landing() {
       if (!res.ok) { setError(res.status === 401 ? 'Incorrect username or password.' : 'Sign in failed.'); return; }
       const { role } = (await res.json().catch(() => ({}))) as { role?: string };
       setDone(true);
-      router.replace(role === 'PROVIDER' ? '/me' : role === 'MANAGER' ? '/manager' : '/reports');
-      router.refresh();
+      // Full document load (not router.replace) so the server renders the root layout — and its
+      // mandatory language/SOP gate — from scratch. A client navigation would reuse the existing
+      // layout and briefly show the home page before the gate mounts.
+      window.location.assign(role === 'PROVIDER' ? '/me' : role === 'MANAGER' ? '/manager' : '/reports');
     } finally {
       setBusy(false);
     }

@@ -68,3 +68,56 @@
 .assistant-md .wmde-markdown table { display: table; width: 100%; font-size: 0.85em; }
 .assistant-md .wmde-markdown th,
 .assistant-md .wmde-markdown td { border: 1px solid var(--line); padding: 0.3em 0.5em; }
+
+/* SOP reading view (the acknowledgment gate). @uiw/react-md-editor ships no base CSS in this app, and
+   Tailwind's preflight strips list markers globally — so ordered/unordered lists lost their numbers and
+   bullets. Restore full document styling (markers, headings, spacing, code, tables) at a comfortable
+   reading size. Scoped to .sop-md so it doesn't affect the compact assistant panel. */
+.sop-md .wmde-markdown {
+  background: transparent;
+  color: var(--ink);
+  line-height: 1.6;
+}
+.sop-md .wmde-markdown > *:first-child { margin-top: 0; }
+.sop-md .wmde-markdown p { margin: 0 0 0.75em; }
+.sop-md .wmde-markdown h1,
+.sop-md .wmde-markdown h2,
+.sop-md .wmde-markdown h3,
+.sop-md .wmde-markdown h4 { margin: 1em 0 0.5em; line-height: 1.3; font-weight: 600; }
+.sop-md .wmde-markdown h1 { font-size: 1.35rem; }
+.sop-md .wmde-markdown h2 { font-size: 1.18rem; }
+.sop-md .wmde-markdown h3 { font-size: 1.04rem; }
+.sop-md .wmde-markdown ul { list-style: disc; margin: 0 0 0.75em; padding-left: 1.6em; }
+.sop-md .wmde-markdown ol { list-style: decimal; margin: 0 0 0.75em; padding-left: 1.6em; }
+.sop-md .wmde-markdown li { margin: 0.3em 0; }
+.sop-md .wmde-markdown li > ul,
+.sop-md .wmde-markdown li > ol { margin: 0.3em 0; }
+.sop-md .wmde-markdown li::marker { color: var(--ink); }
+.sop-md .wmde-markdown a { color: var(--accent-ink); text-decoration: underline; }
+.sop-md .wmde-markdown strong { color: var(--ink); font-weight: 600; }
+.sop-md .wmde-markdown em { font-style: italic; }
+.sop-md .wmde-markdown hr { border: 0; border-top: 1px solid var(--line); margin: 1.2em 0; }
+.sop-md .wmde-markdown code {
+  background: var(--paper-2);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-size: 0.88em;
+}
+.sop-md .wmde-markdown pre {
+  background: var(--paper-2);
+  border-radius: 8px;
+  padding: 0.8em 0.95em;
+  margin: 0 0 0.75em;
+  overflow-x: auto;
+}
+.sop-md .wmde-markdown pre code { background: transparent; padding: 0; }
+.sop-md .wmde-markdown blockquote {
+  margin: 0 0 0.75em;
+  padding-left: 0.9em;
+  border-left: 3px solid var(--accent);
+  color: var(--ink-soft);
+}
+.sop-md .wmde-markdown table { display: table; width: 100%; border-collapse: collapse; margin: 0 0 0.75em; }
+.sop-md .wmde-markdown th,
+.sop-md .wmde-markdown td { border: 1px solid var(--line); padding: 0.35em 0.55em; text-align: left; }
+.sop-md .wmde-markdown th { background: var(--paper-2); font-weight: 600; }
