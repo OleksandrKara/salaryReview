@@ -78,8 +78,10 @@ class OwnerOverviewServiceTest {
         entries     = mock(PeriodEntryRepository.class);
         salonConfig = mock(SalonConfigRepository.class);
         aggregator  = mock(SquareMonthAggregator.class);
+        // Retention (client counts) isn't the focus here; an unstubbed mock yields no counts, so months
+        // simply report 0 clients seen/returning — which these revenue/payroll assertions ignore.
         service     = new OwnerOverviewService(payPeriods, entries, new CommissionCalculator(),
-                salonConfig, aggregator);
+                salonConfig, aggregator, mock(RetentionAnalyticsService.class));
 
         when(salonConfig.findById(1)).thenReturn(Optional.of(CFG));
         // Default: no periods for any year (overridden per test)

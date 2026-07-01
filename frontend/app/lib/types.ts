@@ -606,6 +606,9 @@ export interface MonthSummary {
   payrollCost: number | null;
   payrollPct: number | null;
   finalized: boolean;
+  // Salon-level client counts from the visit ledger (0 when the ledger doesn't yet cover the month).
+  clientsSeen: number;
+  returningClients: number;
 }
 
 export interface ProviderYtd {
