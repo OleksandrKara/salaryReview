@@ -50,23 +50,27 @@ public class SopService {
 
     /** Create a SOP and its first draft version (version 1). */
     @Transactional
-    public Sop create(String title, String category, SopAudience audience, String body, String bodyRu, String by) {
-        Sop sop = sops.save(Sop.builder()
+    public Sop create(String title, String category, SopAudience audience, Integer priority,
+                      String body, String bodyRu, String by) {
+        Sop.SopBuilder builder = Sop.builder()
                 .title(title).category(category).audience(audience)
-                .status(SopStatus.ACTIVE).createdBy(by).build());
+                .status(SopStatus.ACTIVE).createdBy(by);
+        if (priority != null) builder.priority(priority);
+        Sop sop = sops.save(builder.build());
         versions.save(SopVersion.builder()
                 .sopId(sop.getId()).versionNumber(1).body(body == null ? "" : body).bodyRu(blankToNull(bodyRu))
                 .status(SopVersionStatus.DRAFT).createdBy(by).build());
         return sop;
     }
 
-    /** Update title/category/audience on the SOP itself (not content). Audience change is immediate. */
+    /** Update title/category/audience/priority on the SOP itself (not content). Applies immediately. */
     @Transactional
-    public Optional<Sop> updateMeta(Long id, String title, String category, SopAudience audience) {
+    public Optional<Sop> updateMeta(Long id, String title, String category, SopAudience audience, Integer priority) {
         return sops.findById(id).map(s -> {
             s.setTitle(title);
             s.setCategory(category);
             s.setAudience(audience);
+            if (priority != null) s.setPriority(priority);
             return sops.save(s);
         });
     }
@@ -127,12 +131,12 @@ public class SopService {
      */
     public List<SopListItem> list(Role role, Long userId) {
         if (role == Role.OWNER) {
-            return sops.findAllByOrderByCategoryAscTitleAsc().stream()
+            return sops.findAllByOrderByPriorityAscCategoryAscTitleAsc().stream()
                     .map(s -> item(s, null))
                     .toList();
         }
         List<SopListItem> out = new ArrayList<>();
-        for (Sop s : sops.findByStatusOrderByCategoryAscTitleAsc(SopStatus.ACTIVE)) {
+        for (Sop s : sops.findByStatusOrderByPriorityAscCategoryAscTitleAsc(SopStatus.ACTIVE)) {
             if (s.getCurrentVersionId() == null || !s.getAudience().includes(role)) continue;
             out.add(item(s, userId));
         }

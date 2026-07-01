@@ -40,6 +40,12 @@ public class Sop {
     @Builder.Default
     private SopStatus status = SopStatus.ACTIVE;
 
+    /** Onboarding sort order — lower shows first; unset SOPs default high so they sort after the ones
+     *  an owner has prioritized (see V36). */
+    @Column(nullable = false)
+    @Builder.Default
+    private int priority = 1000;
+
     @Column(name = "created_by", nullable = false)
     private String createdBy;
 

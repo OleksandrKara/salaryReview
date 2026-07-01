@@ -697,6 +697,7 @@ export interface Sop {
   category: string;
   audience: SopAudience;
   status: SopStatus;
+  priority: number; // onboarding sort order — lower shows first
   currentVersion: SopVersion | null;
   acknowledged: boolean;
   acknowledgedAt: string | null;
@@ -717,6 +718,7 @@ export interface SopCreateRequest {
   title: string;
   category: string;
   audience: SopAudience;
+  priority?: number;
   body: string;
   bodyRu: string | null;
 }
@@ -725,4 +727,5 @@ export interface SopUpdateRequest {
   title: string;
   category: string;
   audience: SopAudience;
+  priority?: number;
 }

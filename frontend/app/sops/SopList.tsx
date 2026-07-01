@@ -53,13 +53,23 @@ export default function SopList({
 
   return (
     <ul className="mt-6 space-y-2">
-      {sops.map((s) => (
+      {sops.map((s, i) => (
         <li key={s.id} className="rounded-lg p-3 ring-1 ring-zinc-200">
           <div className="flex items-start justify-between gap-3">
-            <button className="text-left" onClick={() => toggle(s)}>
-              <span className="text-sm font-medium text-zinc-800">{s.title}</span>
-              <span className="ml-2 text-xs text-zinc-400">
-                {s.category} · v{s.currentVersion?.versionNumber ?? '—'}
+            <button className="flex items-start gap-2 text-left" onClick={() => toggle(s)}>
+              <span
+                className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums ${
+                  s.acknowledged ? 'bg-green-100 text-green-700' : 'bg-zinc-800 text-white'
+                }`}
+                aria-hidden
+              >
+                {i + 1}
+              </span>
+              <span>
+                <span className="text-sm font-medium text-zinc-800">{s.title}</span>
+                <span className="ml-2 text-xs text-zinc-400">
+                  {s.category} · v{s.currentVersion?.versionNumber ?? '—'}
+                </span>
               </span>
             </button>
             <div className="shrink-0">
