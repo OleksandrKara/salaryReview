@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { serverApi } from '../lib/serverApi';
 import { t } from '../lib/i18n';
-import LanguageSwitch from '../components/LanguageSwitch';
+import PageHeader from '../components/PageHeader';
 
 // Manager home — a focused hub for the few things a manager owns: redos, the knowledge base, SOPs,
 // and the floating assistant. Managers don't manage salaries, so this replaces the salary report as
@@ -22,11 +22,7 @@ export default async function ManagerPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
-      <div className="mb-6 flex items-center justify-end gap-3">
-        <LanguageSwitch language={lang} />
-        <a href="/api/logout" className="text-xs text-zinc-400 hover:text-zinc-600">{t(lang, 'logout')}</a>
-      </div>
-      <h1 className="text-2xl font-semibold">{t(lang, 'mgrTitle')}</h1>
+      <PageHeader title={t(lang, 'mgrTitle')} role={me.role} language={lang} />
       <p className="mt-1 text-sm text-zinc-500">{t(lang, 'mgrSubtitle')}</p>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">

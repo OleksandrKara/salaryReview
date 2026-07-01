@@ -1,6 +1,6 @@
-import Link from 'next/link';
 import { serverApi } from '../../lib/serverApi';
 import type { SquareRosterEntry } from '../../lib/types';
+import PageHeader from '../../components/PageHeader';
 import UsersManager from './UsersManager';
 
 // Owner-only user management. The backend gates /api/users by role; the proxy also keeps providers
@@ -15,11 +15,7 @@ export default async function UsersPage() {
 
   return (
     <main className="mx-auto max-w-4xl p-4 sm:p-8">
-      <div className="mb-6 flex items-baseline gap-3">
-        <h1 className="text-2xl font-semibold">Users</h1>
-        <Link href="/reports" className="text-xs text-zinc-400 hover:text-zinc-600">← Reports</Link>
-        <a href="/api/logout" className="text-xs text-zinc-400 hover:text-zinc-600">Log out</a>
-      </div>
+      <PageHeader title="Users" />
       <UsersManager initialUsers={users} providers={providers} roster={roster} />
     </main>
   );

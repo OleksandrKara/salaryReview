@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import { serverApi } from '../../lib/serverApi';
+import PageHeader from '../../components/PageHeader';
 import RedoManager from './RedoManager';
 
 // Owner/manager: redos. Recording a redo moves a service's commission from the original provider to
@@ -11,15 +11,10 @@ export default async function RedosPage() {
     serverApi.listRedos(),
     serverApi.listProviders(),
   ]);
-  const backHref = me.role === 'OWNER' ? '/reports' : '/manager';
 
   return (
     <main className="mx-auto max-w-4xl p-4 sm:p-8">
-      <div className="mb-1 flex items-baseline gap-3">
-        <h1 className="text-2xl font-semibold">Redos</h1>
-        <Link href={backHref} className="text-xs text-zinc-400 hover:text-zinc-600">← Back</Link>
-        <a href="/api/logout" className="text-xs text-zinc-400 hover:text-zinc-600">Log out</a>
-      </div>
+      <PageHeader title="Redos" role={me.role} language={me.preferredLanguage} />
       <p className="mb-6 text-xs text-zinc-500">
         When a customer is unhappy and has a service redone by a <span className="font-medium">different</span>{' '}
         provider, record it here. The service&apos;s commission moves from the original provider (on the

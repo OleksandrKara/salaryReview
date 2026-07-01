@@ -1,6 +1,6 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { serverApi } from '../../lib/serverApi';
+import PageHeader from '../../components/PageHeader';
 import RetentionControls from './RetentionControls';
 import NewReturningChart from './NewReturningChart';
 import InfoTip from './InfoTip';
@@ -90,10 +90,7 @@ export default async function RetentionPage({
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
-      <div className="mb-1 flex items-baseline gap-3">
-        <h1 className="text-2xl font-semibold">Provider retention</h1>
-        <Link href="/reports" className="text-xs text-zinc-400 hover:text-zinc-600">← Reports</Link>
-      </div>
+      <PageHeader title="Provider retention" role={me.role} language={me.preferredLanguage} />
       <p className="mb-4 text-xs text-zinc-500">
         New vs returning clients over time — for the whole salon or one provider. Retention (below) = of a
         provider&apos;s new clients in a month, how many returned within {report.retentionWindowDays} days.
