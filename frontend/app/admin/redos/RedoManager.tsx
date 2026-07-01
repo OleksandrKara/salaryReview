@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Provider, Redo } from '../../lib/types';
+import { t, tf } from '../../lib/i18n';
+import type { Language, Provider, Redo } from '../../lib/types';
 
 const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
@@ -20,9 +21,11 @@ const input = 'w-full rounded border border-zinc-300 px-2 py-1.5 text-sm focus:b
 export default function RedoManager({
   initialRedos,
   providers,
+  language = null,
 }: {
   initialRedos: Redo[];
   providers: Provider[];
+  language?: Language | null;
 }) {
   const router = useRouter();
   const [redos, setRedos] = useState(initialRedos);
@@ -45,7 +48,7 @@ export default function RedoManager({
     e.preventDefault();
     setError('');
     if (originalProviderId === redoProviderId) {
-      setError('The redo provider must differ from the original.');
+      setError(t(language, 'redoErrSameProvider'));
       return;
     }
     setBusy(true);
@@ -61,23 +64,23 @@ export default function RedoManager({
           serviceName: serviceName || null,
         }),
       });
-      if (!res.ok) throw new Error('Could not create the redo.');
+      if (!res.ok) throw new Error(t(language, 'redoErrCreate'));
       setOriginalProviderId(''); setRedoProviderId('');
       setOriginalDate(''); setRedoDate('');
       setAmount(''); setServiceName('');
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create');
+      setError(err instanceof Error ? err.message : t(language, 'redoErrCreateFallback'));
     } finally {
       setBusy(false);
     }
   }
 
   async function remove(r: Redo) {
-    if (!window.confirm(`Delete this redo (${r.originalProviderName} → ${r.redoProviderName})?`)) return;
+    if (!window.confirm(tf(language, 'redoConfirmDelete', { from: r.originalProviderName, to: r.redoProviderName }))) return;
     setError('');
     const res = await fetch(`/api/redos/${r.id}`, { method: 'DELETE' });
-    if (!res.ok && res.status !== 204) { setError('Could not delete.'); return; }
+    if (!res.ok && res.status !== 204) { setError(t(language, 'redoErrDelete')); return; }
     await refresh();
   }
 
@@ -86,38 +89,38 @@ export default function RedoManager({
       {/* Form — stacks on mobile, wraps on desktop */}
       <form onSubmit={create} data-testid="redo-form" className="rounded-lg p-4 ring-1 ring-zinc-200">
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-          <Field label="Original provider">
+          <Field label={t(language, 'redoOriginalProvider')}>
             <select
               value={originalProviderId}
               onChange={(e) => setOriginalProviderId(Number(e.target.value) || '')}
               required
               className={input}
             >
-              <option value="">Select…</option>
+              <option value="">{t(language, 'redoSelect')}</option>
               {providers.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
             </select>
           </Field>
-          <Field label="Original date">
+          <Field label={t(language, 'redoOriginalDate')}>
             <input type="date" value={originalDate} onChange={(e) => setOriginalDate(e.target.value)} required className={input} />
           </Field>
-          <Field label="Redo provider">
+          <Field label={t(language, 'redoProvider')}>
             <select
               value={redoProviderId}
               onChange={(e) => setRedoProviderId(Number(e.target.value) || '')}
               required
               className={input}
             >
-              <option value="">Select…</option>
+              <option value="">{t(language, 'redoSelect')}</option>
               {providers.map((p) => <option key={p.id} value={p.id}>{p.displayName}</option>)}
             </select>
           </Field>
-          <Field label="Redo date">
+          <Field label={t(language, 'redoDate')}>
             <input type="date" value={redoDate} onChange={(e) => setRedoDate(e.target.value)} required className={input} />
           </Field>
-          <Field label="Service amount">
+          <Field label={t(language, 'redoServiceAmount')}>
             <input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} required className={`${input} sm:w-28`} />
           </Field>
-          <Field label="Service (optional)">
+          <Field label={t(language, 'redoServiceOptional')}>
             <input value={serviceName} onChange={(e) => setServiceName(e.target.value)} className={`${input} sm:w-40`} />
           </Field>
           <button
@@ -126,7 +129,7 @@ export default function RedoManager({
             data-testid="redo-submit"
           className="rounded bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50 sm:mb-px"
           >
-            {busy ? 'Adding…' : 'Add redo'}
+            {busy ? t(language, 'redoAdding') : t(language, 'redoAdd')}
           </button>
         </div>
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
@@ -135,19 +138,19 @@ export default function RedoManager({
       {/* Mobile: cards */}
       <div data-testid="redo-list" className="flex flex-col gap-3 sm:hidden">
         {redos.length === 0 && (
-          <p className="py-4 text-center text-sm text-zinc-400">No redos recorded.</p>
+          <p className="py-4 text-center text-sm text-zinc-400">{t(language, 'redoNone')}</p>
         )}
         {redos.map((r) => (
           <div key={r.id} className="rounded-lg p-4 ring-1 ring-zinc-200">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm text-zinc-500">From</p>
+                <p className="text-sm text-zinc-500">{t(language, 'redoFrom')}</p>
                 <p className="font-medium text-zinc-800">{r.originalProviderName}</p>
                 <p className="text-xs text-zinc-400">{r.originalDate}</p>
               </div>
               <div className="text-zinc-400">→</div>
               <div>
-                <p className="text-sm text-zinc-500">To</p>
+                <p className="text-sm text-zinc-500">{t(language, 'redoTo')}</p>
                 <p className="font-medium text-zinc-800">{r.redoProviderName}</p>
                 <p className="text-xs text-zinc-400">{r.redoDate}</p>
               </div>
@@ -158,7 +161,7 @@ export default function RedoManager({
             </div>
             <div className="mt-3 border-t border-zinc-100 pt-3">
               <button data-testid={`redo-delete-${r.id}`} onClick={() => remove(r)} className="text-xs text-red-500 hover:text-red-700">
-                Delete
+                {t(language, 'redoDelete')}
               </button>
             </div>
           </div>
@@ -170,12 +173,12 @@ export default function RedoManager({
         <table className="w-full text-sm">
           <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
             <tr>
-              <th className="px-3 py-2">From (original)</th>
-              <th className="px-3 py-2">Original date</th>
-              <th className="px-3 py-2">To (redo)</th>
-              <th className="px-3 py-2">Redo date</th>
-              <th className="px-3 py-2 text-right">Amount</th>
-              <th className="px-3 py-2">Service</th>
+              <th className="px-3 py-2">{t(language, 'redoColFrom')}</th>
+              <th className="px-3 py-2">{t(language, 'redoOriginalDate')}</th>
+              <th className="px-3 py-2">{t(language, 'redoColTo')}</th>
+              <th className="px-3 py-2">{t(language, 'redoDate')}</th>
+              <th className="px-3 py-2 text-right">{t(language, 'redoAmount')}</th>
+              <th className="px-3 py-2">{t(language, 'redoService')}</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
@@ -198,7 +201,7 @@ export default function RedoManager({
             {redos.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-3 py-4 text-center text-zinc-400">
-                  No redos recorded.
+                  {t(language, 'redoNone')}
                 </td>
               </tr>
             )}

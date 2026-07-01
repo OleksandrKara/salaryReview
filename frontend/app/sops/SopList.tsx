@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import { useState } from 'react';
 import { api } from '../lib/api';
 import { Spinner } from '../components/Spinner';
+import { t } from '../lib/i18n';
 import type { Language, Role, Sop, SopVersion } from '../lib/types';
 
 const Markdown = dynamic(
@@ -11,8 +12,8 @@ const Markdown = dynamic(
   { ssr: false },
 );
 
-const fmt = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+const fmt = (iso: string | null, language: Language | null) =>
+  iso ? new Date(iso).toLocaleDateString(language === 'RU' ? 'ru-RU' : 'en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
 
 // Shared read + acknowledge list for managers/providers (owners view it read-only). The acknowledge
 // button arms only after the SOP's content has been opened this session — a light UX gate.
@@ -47,7 +48,7 @@ export default function SopList({
   }
 
   if (sops.length === 0) {
-    return <p className="mt-6 rounded-lg px-4 py-3 text-sm text-zinc-400 ring-1 ring-zinc-200">No SOPs yet.</p>;
+    return <p className="mt-6 rounded-lg px-4 py-3 text-sm text-zinc-400 ring-1 ring-zinc-200">{t(language, 'sopNone')}</p>;
   }
 
   return (
@@ -64,17 +65,17 @@ export default function SopList({
             <div className="shrink-0">
               {s.acknowledged ? (
                 <span className="rounded bg-green-50 px-2 py-1 text-xs text-green-700">
-                  ✅ Acknowledged {fmt(s.acknowledgedAt)}
+                  ✅ {t(language, 'sopAcknowledged')} {fmt(s.acknowledgedAt, language)}
                 </span>
               ) : canAck ? (
                 <button
                   onClick={() => acknowledge(s)}
                   disabled={busy === s.id || !viewed.has(s.id)}
-                  title={viewed.has(s.id) ? '' : 'Open the SOP first'}
+                  title={viewed.has(s.id) ? '' : t(language, 'sopOpenFirst')}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40"
                 >
                   {busy === s.id ? <Spinner className="h-3.5 w-3.5 text-white" /> : null}
-                  I have read and agree to follow this SOP
+                  {t(language, 'sopAckButton')}
                 </button>
               ) : null}
             </div>

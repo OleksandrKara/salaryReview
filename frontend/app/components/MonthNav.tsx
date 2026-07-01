@@ -3,11 +3,8 @@
 import Link from 'next/link';
 import { useLinkStatus } from 'next/link';
 import { Spinner } from './Spinner';
-
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
+import { monthName, monthShort } from '../lib/i18n';
+import type { Language } from '../lib/types';
 
 // Shown inside a <Link>: a spinner while that navigation is pending. Switching month only changes the
 // search params on the same route, so the route-level loading.tsx doesn't re-trigger — this gives the
@@ -24,17 +21,17 @@ function NavSpinner() {
 
 type Ym = { year: number; month: number };
 
-export default function MonthNav({ base, year, month, prev, next }:
-  { base: string; year: number; month: number; prev: Ym; next: Ym }) {
+export default function MonthNav({ base, year, month, prev, next, language = null }:
+  { base: string; year: number; month: number; prev: Ym; next: Ym; language?: Language | null }) {
   const link = 'inline-flex items-center gap-1 text-zinc-500 hover:text-zinc-800';
   return (
     <div className="flex items-center gap-3 text-sm">
       <Link prefetch={false} href={`${base}?year=${prev.year}&month=${prev.month}`} className={link} data-testid="month-nav-prev">
-        <NavSpinner /> ← {MONTHS[prev.month - 1].slice(0, 3)}
+        <NavSpinner /> ← {monthShort(language, prev.month - 1)}
       </Link>
-      <span className="font-medium" data-testid="month-nav-label">{MONTHS[month - 1]} {year}</span>
+      <span className="font-medium" data-testid="month-nav-label">{monthName(language, month - 1)} {year}</span>
       <Link prefetch={false} href={`${base}?year=${next.year}&month=${next.month}`} className={link} data-testid="month-nav-next">
-        {MONTHS[next.month - 1].slice(0, 3)} → <NavSpinner />
+        {monthShort(language, next.month - 1)} → <NavSpinner />
       </Link>
     </div>
   );

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import type { AttributedService, HalfSettlement } from '../lib/types';
+import type { AttributedService, HalfSettlement, Language } from '../lib/types';
+import { t, tf } from '../lib/i18n';
 import SalaryCopyButton from './SalaryCopyButton';
 import ServiceLinesTable from './ServiceLinesTable';
 
@@ -19,6 +20,7 @@ export default function CollapsibleHalf({
   baseRate,
   defaultOpen = false,
   showSalary = true,
+  language = null,
 }: {
   title: string;
   lines: AttributedService[];
@@ -28,6 +30,7 @@ export default function CollapsibleHalf({
   baseRate: number;
   defaultOpen?: boolean;
   showSalary?: boolean;
+  language?: Language | null;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const gross = lines.reduce((s, l) => s + l.gross, 0);
@@ -40,13 +43,13 @@ export default function CollapsibleHalf({
         <div className="min-w-0">
           <span className="text-sm font-medium">{title}</span>
           <span className="ml-3 text-sm text-zinc-600">
-            {lines.length} {lines.length === 1 ? 'service' : 'services'}
-            <span className="text-zinc-400"> · gross {usd(gross)}{discount > 0 && ` · discounts ${usd(discount)}`}{tip > 0 && ` · tips ${usd(tip)}`}</span>
+            {tf(language, 'cbServiceCount', { n: lines.length })}
+            <span className="text-zinc-400"> · {t(language, 'cbGross')} {usd(gross)}{discount > 0 && ` · ${t(language, 'cbDiscounts')} ${usd(discount)}`}{tip > 0 && ` · ${t(language, 'cbTips')} ${usd(tip)}`}</span>
           </span>
         </div>
         {lines.length > 0 && (
           <button onClick={() => setOpen((o) => !o)} className="shrink-0 whitespace-nowrap text-xs text-blue-600 hover:underline">
-            {open ? 'Hide' : 'Show'} breakdown
+            {open ? t(language, 'cbHideBreakdown') : t(language, 'cbShowBreakdown')}
           </button>
         )}
       </div>

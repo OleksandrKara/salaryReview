@@ -4,42 +4,44 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import LanguageSwitch from './LanguageSwitch';
+import { t } from '../lib/i18n';
 import type { Language, Role } from '../lib/types';
 
 // The one navigation menu, shown in every page header via PageHeader. A single dropdown at all screen
 // sizes so it's identical everywhere and copes with the owner's long link list. Links are role-scoped
 // to what the edge proxy actually lets each role reach, so no dead links. Language + Log out live in
 // the same menu. The assistant (/rag chat) is the floating widget; its admin is reached from there.
-type NavLink = { href: string; label: string };
+type NavKey = Parameters<typeof t>[1];
+type NavLink = { href: string; key: NavKey };
 
 const COMMON: NavLink[] = [
-  { href: '/kb', label: 'Knowledge base' },
-  { href: '/sops', label: 'SOPs' },
+  { href: '/kb', key: 'kbTitle' },
+  { href: '/sops', key: 'mgrSops' },
 ];
 
 function linksFor(role: Role): NavLink[] {
   if (role === 'OWNER') {
     return [
-      { href: '/reports', label: 'Salary report' },
-      { href: '/owner/overview', label: 'Revenue' },
-      { href: '/owner/retention', label: 'Retention' },
+      { href: '/reports', key: 'navSalaryReport' },
+      { href: '/owner/overview', key: 'navRevenue' },
+      { href: '/owner/retention', key: 'navRetention' },
       ...COMMON,
-      { href: '/admin/prepaid', label: 'Prepaid' },
-      { href: '/admin/owner-customers', label: 'Owner comps' },
-      { href: '/admin/redos', label: 'Redos' },
-      { href: '/admin/manual-credits', label: 'Manual credits' },
-      { href: '/sops/admin', label: 'SOPs admin' },
-      { href: '/admin/users', label: 'Users' },
+      { href: '/admin/prepaid', key: 'navPrepaid' },
+      { href: '/admin/owner-customers', key: 'navOwnerComps' },
+      { href: '/admin/redos', key: 'mgrRedos' },
+      { href: '/admin/manual-credits', key: 'navManualCredits' },
+      { href: '/sops/admin', key: 'sopAdminTitle' },
+      { href: '/admin/users', key: 'navUsers' },
     ];
   }
   if (role === 'MANAGER') {
     return [
-      { href: '/manager', label: 'Dashboard' },
-      { href: '/admin/redos', label: 'Redos' },
+      { href: '/manager', key: 'navDashboard' },
+      { href: '/admin/redos', key: 'mgrRedos' },
       ...COMMON,
     ];
   }
-  return [{ href: '/me', label: 'My pay' }, ...COMMON]; // PROVIDER
+  return [{ href: '/me', key: 'navMyPay' }, ...COMMON]; // PROVIDER
 }
 
 export default function AdminMenu({ role, language }: { role: Role; language: Language | null }) {
@@ -59,7 +61,7 @@ export default function AdminMenu({ role, language }: { role: Role; language: La
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100"
       >
-        Menu
+        {t(language, 'navMenu')}
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <polyline points="6 9 12 15 18 9" />
         </svg>
@@ -82,18 +84,18 @@ export default function AdminMenu({ role, language }: { role: Role; language: La
                   isActive(l.href) ? 'font-semibold text-zinc-900' : 'text-zinc-700'
                 }`}
               >
-                {l.label}
+                {t(language, l.key)}
               </Link>
             ))}
             <div className="flex items-center gap-2 border-t border-zinc-100 px-4 py-2 text-sm text-zinc-500">
-              <span className="text-zinc-400">Language</span>
+              <span className="text-zinc-400">{t(language, 'navLanguage')}</span>
               <LanguageSwitch language={language} />
             </div>
             <a
               href="/api/logout"
               className="block border-t border-zinc-100 px-4 py-2 text-sm text-zinc-500 hover:bg-zinc-50"
             >
-              Log out
+              {t(language, 'logout')}
             </a>
           </div>
         </>
