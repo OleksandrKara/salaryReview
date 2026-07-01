@@ -70,7 +70,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/redos/**", "/api/providers/**").hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers("/api/settlements/**", "/api/square/**", "/api/pay-periods/**",
                                 "/api/prepaid/**", "/api/owner-customers/**", "/api/manual-credits/**",
-                                "/api/no-show-fees/**", "/api/suspicious/**")
+                                "/api/no-show-fees/**", "/api/suspicious/**", "/api/cancellations/**")
                                 .hasRole("OWNER")
                         .anyRequest().authenticated())
                 .formLogin(form -> form

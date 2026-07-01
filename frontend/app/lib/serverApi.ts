@@ -21,6 +21,7 @@ import type {
   SettlementPreview,
   SquareRosterEntry,
   SuspiciousBooking,
+  CancelledAppointment,
 } from './types';
 
 // Server-only backend calls. Auth is the backend session: we hold its JSESSIONID in our httpOnly
@@ -95,6 +96,12 @@ export const serverApi = {
   listSuspicious: (year: number, month: number, half: 'FIRST' | 'SECOND', providerId: number) =>
     serverFetch<SuspiciousBooking[]>(
       `/api/suspicious?year=${year}&month=${month}&half=${half}&providerId=${providerId}`
+    ),
+
+  // Owner-only: cancelled appointments (CANCELLED_BY_SELLER) for one provider × half, for review.
+  listCancellations: (year: number, month: number, half: 'FIRST' | 'SECOND', providerId: number) =>
+    serverFetch<CancelledAppointment[]>(
+      `/api/cancellations?year=${year}&month=${month}&half=${half}&providerId=${providerId}`
     ),
 
   // Provider self-view: their own no-notes suspicious bookings (read-only). Server scopes to the

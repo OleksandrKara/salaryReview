@@ -152,6 +152,9 @@ export interface ProviderPayout {
   // Provider self-view badge counts — only bookings with no notes at all (their actionable subset).
   firstHalfSuspiciousNoNotes: number;
   secondHalfSuspiciousNoNotes: number;
+  // Owner-only warning counts — uncleared provider cancellations per half (informational only).
+  firstHalfCancellations: number;
+  secondHalfCancellations: number;
 }
 
 export interface ServiceLine {
@@ -180,6 +183,26 @@ export interface SuspiciousBooking {
   clearedNote: string | null;
   // Cached AI triage under the current prompt version (null when no triage exists yet).
   triage: TriageResult | null;
+}
+
+// A cancelled appointment (CANCELLED_BY_SELLER) surfaced for owner review — confirm on camera that
+// no procedure was done. Shape mirrors SuspiciousBooking (minus AI triage).
+export interface CancelledAppointment {
+  bookingId: string;
+  date: string;           // yyyy-MM-dd
+  time: string;           // h:mm a salon-local
+  customerId: string;
+  customerName: string | null;
+  serviceName: string | null;
+  gross: number | null;
+  services: ServiceLine[];
+  half: 'FIRST' | 'SECOND';
+  sellerNote: string | null;
+  customerNote: string | null;
+  cleared: boolean;
+  clearedBy: string | null;
+  clearedAt: string | null;   // ISO instant
+  clearedNote: string | null;
 }
 
 export interface Feedback {
