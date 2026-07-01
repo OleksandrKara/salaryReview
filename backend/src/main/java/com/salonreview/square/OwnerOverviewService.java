@@ -10,6 +10,7 @@ import com.salonreview.service.CommissionCalculator;
 import com.salonreview.service.SettlementLine;
 import com.salonreview.web.dto.OwnerOverviewDto;
 import com.salonreview.web.dto.OwnerOverviewDto.MonthSummary;
+import com.salonreview.web.dto.RetentionSeries;
 import com.salonreview.web.dto.OwnerOverviewDto.ProviderYtd;
 import com.salonreview.web.dto.OwnerOverviewDto.YearTotals;
 import org.springframework.stereotype.Service;
@@ -44,15 +45,17 @@ public class OwnerOverviewService {
     private final CommissionCalculator calculator;
     private final SalonConfigRepository salonConfig;
     private final SquareMonthAggregator aggregator;
+    private final RetentionAnalyticsService retention;
 
     public OwnerOverviewService(PayPeriodRepository payPeriods, PeriodEntryRepository entries,
                                 CommissionCalculator calculator, SalonConfigRepository salonConfig,
-                                SquareMonthAggregator aggregator) {
+                                SquareMonthAggregator aggregator, RetentionAnalyticsService retention) {
         this.payPeriods = payPeriods;
         this.entries = entries;
         this.calculator = calculator;
         this.salonConfig = salonConfig;
         this.aggregator = aggregator;
+        this.retention = retention;
     }
 
     public OwnerOverviewDto overview(int fromYear, int fromMonth, int toYear, int toMonth) {
@@ -96,18 +99,26 @@ public class OwnerOverviewService {
             CompletableFuture.allOf(futures).join();
         }
 
+        // Salon-level distinct/returning client counts per month, from the visit ledger (same source as
+        // the Retention page). Best-effort — the ledger backfills a rolling window, so months it doesn't
+        // yet cover simply report 0 and the UI treats them as unknown.
+        Map<String, int[]> clientCounts = clientCountsByMonth(fromYear, fromMonth, toYear, toMonth);
+
         // Assemble summaries and accumulate provider totals (settled months only).
         Map<Long, ProviderAcc> providerAccs = new LinkedHashMap<>();
         List<MonthSummary> months = new ArrayList<>(range.size());
         for (int[] ym : range) {
             String key = ymKey(ym[0], ym[1]);
+            MonthSummary base;
             if (entriesByYearMonth.containsKey(key)) {
-                months.add(fromEntries(ym[0], ym[1], entriesByYearMonth.get(key), cfg, providerAccs));
+                base = fromEntries(ym[0], ym[1], entriesByYearMonth.get(key), cfg, providerAccs);
             } else if (liveResults.containsKey(key)) {
-                months.add(liveResults.get(key));
+                base = liveResults.get(key);
             } else {
-                months.add(emptyMonth(ym[0], ym[1]));
+                base = emptyMonth(ym[0], ym[1]);
             }
+            int[] c = clientCounts.get(key);
+            months.add(c == null ? base : base.withClients(c[0], c[1]));
         }
 
         List<ProviderYtd> providers = providerAccs.values().stream()
@@ -150,7 +161,7 @@ public class OwnerOverviewService {
 
         BigDecimal gross = card.add(cash);
         return new MonthSummary(year, month, label(month), card, cash, gross, tips, procedures,
-                avg(gross, procedures), payroll, pct(payroll, gross), true);
+                avg(gross, procedures), payroll, pct(payroll, gross), true, 0, 0);
     }
 
     // --- live month from Square ---
@@ -177,10 +188,24 @@ public class OwnerOverviewService {
                     .setScale(2, RoundingMode.HALF_UP);
 
             return new MonthSummary(year, month, label(month), card, cash, gross, tips, procedures,
-                    avg(gross, procedures), payroll, pct(payroll, gross), false);
+                    avg(gross, procedures), payroll, pct(payroll, gross), false, 0, 0);
         } catch (RuntimeException e) {
             return emptyMonth(year, month);
         }
+    }
+
+    /** ymKey → [distinct clients seen, returning clients] for the range, from the visit ledger. */
+    private Map<String, int[]> clientCountsByMonth(int fy, int fm, int ty, int tm) {
+        Map<String, int[]> out = new HashMap<>();
+        try {
+            RetentionSeries s = retention.series(fy, fm, ty, tm, null); // null = whole salon
+            for (RetentionSeries.SeriesPoint p : s.points()) {
+                out.put(ymKey(p.year(), p.month()), new int[]{p.clientsSeen(), p.returningClients()});
+            }
+        } catch (RuntimeException e) {
+            // Ledger unavailable / empty → no counts; the UI shows these months as unknown.
+        }
+        return out;
     }
 
     // --- prior period totals (same range, prior year) ---
@@ -231,7 +256,7 @@ public class OwnerOverviewService {
 
     private static MonthSummary emptyMonth(int year, int month) {
         return new MonthSummary(year, month, label(month), null, null, null, null, 0,
-                null, null, null, false);
+                null, null, null, false, 0, 0);
     }
 
     private static String label(int month) {

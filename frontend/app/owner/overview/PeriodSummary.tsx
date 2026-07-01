@@ -26,7 +26,7 @@ function weightedPayrollPct(months: MonthSummary[]): string | null {
 // month formula, which swung wildly whenever one endpoint month happened to be high or low — e.g. adding
 // a single softer month could drop the headline growth from +70% to +50%. Averaging a window at each end
 // tracks the real trend instead of one month's noise.
-function smoothedGrowth(active: MonthSummary[], key: 'grossRevenue' | 'procedures') {
+function smoothedGrowth(active: MonthSummary[], key: 'grossRevenue' | 'procedures' | 'returningClients') {
   if (active.length < 2) return null;
   const w = Math.max(1, Math.min(3, Math.floor(active.length / 2)));
   const avg = (win: MonthSummary[]) => {
@@ -64,10 +64,10 @@ function GrowthChip({ name, growth, what }: { name: string; growth: Growth | nul
   );
 }
 
-function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Kpi({ label, value, sub, tip }: { label: string; value: string; sub?: string; tip?: string }) {
   return (
     <div>
-      <p className="text-xs text-zinc-400">{label}</p>
+      <p className="text-xs text-zinc-400">{label}{tip && <InfoTip text={tip} label={`What is ${label}`} />}</p>
       <p className="mt-0.5 text-lg font-semibold tabular-nums text-zinc-800">{value}</p>
       {sub && <p className="text-xs text-zinc-400">{sub}</p>}
     </div>
@@ -87,6 +87,15 @@ export default function PeriodSummary({ data }: { data: OwnerOverviewData }) {
   const payrollPct = weightedPayrollPct(active);
   const revenueGrowth = smoothedGrowth(active, 'grossRevenue');
   const servicesGrowth = smoothedGrowth(active, 'procedures');
+
+  // Client counts come from the visit ledger, which only covers months it has backfilled — restrict all
+  // client math to months that actually have data so empty months don't drag the averages to zero.
+  const clientMonths = active.filter((m) => m.clientsSeen > 0);
+  const returningGrowth = smoothedGrowth(clientMonths, 'returningClients');
+  const totReturning = sum(clientMonths, 'returningClients');
+  const totSeen = sum(clientMonths, 'clientsSeen');
+  const avgReturning = clientMonths.length > 0 ? Math.round(totReturning / clientMonths.length) : null;
+  const pctReturning = totSeen > 0 ? Math.round((totReturning / totSeen) * 100) : null;
 
   const n = active.length;
   const periodLabel =
@@ -117,11 +126,22 @@ export default function PeriodSummary({ data }: { data: OwnerOverviewData }) {
             growth={servicesGrowth}
             what="Completed service volume (the count behind ‘Avg / appt’). For distinct-client growth, see the Retention page."
           />
+          <GrowthChip
+            name="Returning clients"
+            growth={returningGrowth}
+            what="Distinct clients each month who had visited the salon before that month, from the visit ledger."
+          />
           <span className="text-xs text-zinc-400">{endpoints}</span>
         </div>
       )}
 
-      <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-zinc-100 pt-4 sm:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-zinc-100 pt-4 sm:grid-cols-3 lg:grid-cols-5">
+        <div data-testid="period-summary-returning"><Kpi
+          label="Returning / mo"
+          value={avgReturning != null ? String(avgReturning) : '—'}
+          sub={pctReturning != null ? `${pctReturning}% of clients` : undefined}
+          tip="Average number of returning clients per month — distinct clients who had visited the salon before that month (from the visit ledger). ‘% of clients’ is returning ÷ all clients seen."
+        /></div>
         <div data-testid="period-summary-payroll-pct"><Kpi label="Payroll %" value={payrollPct ?? '—'} sub="of gross revenue" /></div>
         <div data-testid="period-summary-avg-appt"><Kpi label="Avg / appt" value={usd(avgPerAppt)} sub={`${totalSvc} services`} /></div>
         <div data-testid="period-summary-card"><Kpi
