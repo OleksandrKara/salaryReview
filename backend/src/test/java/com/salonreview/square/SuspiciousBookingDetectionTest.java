@@ -4,6 +4,8 @@ import com.salonreview.domain.OwnerCustomer;
 import com.salonreview.repo.OwnerCustomerRepository;
 import com.salonreview.square.SquareClient.AppointmentSegment;
 import com.salonreview.square.SquareClient.Booking;
+import com.salonreview.square.SquareClient.Order;
+import com.salonreview.square.SquareClient.OrderLineItem;
 import com.salonreview.square.SquareClient.TeamMember;
 import com.salonreview.square.SquareMonthAggregator.MonthAggregation;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,8 +67,23 @@ class SuspiciousBookingDetectionTest {
                 null, null, List.of(new AppointmentSegment(TM, VAR, 60)));
     }
 
+    /** A completed order for {@code customerId} whose line carries {@code catalogObjectId} (may differ
+     *  from the booked SKU, or be null for a custom amount), closed at {@code when}. */
+    private static Order paidOrder(String customerId, String catalogObjectId, Instant when) {
+        SquareClient.Money gross = new SquareClient.Money(8000L, "USD");
+        OrderLineItem line = new OrderLineItem("uid", "Some service", "1", catalogObjectId,
+                gross, gross, gross, null);
+        return new Order("ord-1", "LOC", customerId, "COMPLETED", when.toString(), when.toString(),
+                List.of(line), null, null, null);
+    }
+
     private MonthAggregation runForBookingMonth(List<Booking> bookings) {
+        return runForBookingMonth(bookings, List.of());
+    }
+
+    private MonthAggregation runForBookingMonth(List<Booking> bookings, List<Order> orders) {
         when(square.bookings(any(), any())).thenReturn(bookings);
+        when(square.completedOrders(any(), any())).thenReturn(orders);
         // Run against the booking's actual month — pull from the first one.
         Instant t = Instant.parse(bookings.get(0).startAt());
         int year = t.atZone(java.time.ZoneOffset.UTC).getYear();
@@ -133,5 +150,47 @@ class SuspiciousBookingDetectionTest {
     void futureBookingExcluded() {
         MonthAggregation agg = runForBookingMonth(List.of(futureBooking(CUST)));
         assertThat(agg.suspicious()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Customer paid a different SKU the same day → not suspicious (payment trail)")
+    void sameDayPaymentDifferentSkuExcludes() {
+        Booking booking = pastBooking(CUST, "ACCEPTED", null, null); // booked VAR
+        Instant sameDay = Instant.parse(booking.startAt());
+        // Order for the same customer, same day, but a DIFFERENT catalog SKU — the strict payout
+        // matcher won't tie it to the booking, yet the visit clearly has a payment.
+        MonthAggregation agg = runForBookingMonth(List.of(booking),
+                List.of(paidOrder(CUST, "OTHER_VAR", sameDay)));
+        assertThat(agg.suspicious()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Customer paid a custom amount (no catalog id) the same day → not suspicious")
+    void sameDayCustomAmountExcludes() {
+        Booking booking = pastBooking(CUST, "ACCEPTED", null, null);
+        Instant sameDay = Instant.parse(booking.startAt());
+        MonthAggregation agg = runForBookingMonth(List.of(booking),
+                List.of(paidOrder(CUST, null, sameDay)));
+        assertThat(agg.suspicious()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("A different customer's payment nearby → still suspicious")
+    void otherCustomerPaymentDoesNotExclude() {
+        Booking booking = pastBooking(CUST, "ACCEPTED", null, null);
+        Instant sameDay = Instant.parse(booking.startAt());
+        MonthAggregation agg = runForBookingMonth(List.of(booking),
+                List.of(paidOrder("SOMEONE_ELSE", "OTHER_VAR", sameDay)));
+        assertThat(agg.suspicious()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Same customer's payment more than 2 days away → still suspicious")
+    void distantPaymentDoesNotExclude() {
+        Booking booking = pastBooking(CUST, "ACCEPTED", null, null);
+        Instant fiveDaysBefore = Instant.parse(booking.startAt()).minus(5, ChronoUnit.DAYS);
+        MonthAggregation agg = runForBookingMonth(List.of(booking),
+                List.of(paidOrder(CUST, "OTHER_VAR", fiveDaysBefore)));
+        assertThat(agg.suspicious()).hasSize(1);
     }
 }
