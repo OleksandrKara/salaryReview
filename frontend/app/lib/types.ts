@@ -530,6 +530,10 @@ export interface RevenuePulse {
   projectedHigh: number | null;       // null in cold-start mode
   forecastCalibrationDataPoints: number;
   forecastHistoryMonths: number;
+  // Total days in each month — lets the UI flag when the two months differ in length (e.g. May 31 vs
+  // June 30), so a clamped like-for-like window is obvious rather than a silent dropped day.
+  currentMonthLength: number;
+  priorMonthLength: number;
 }
 
 // --- Provider retention analytics (owner-only) ---

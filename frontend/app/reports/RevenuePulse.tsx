@@ -5,7 +5,7 @@ const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
 function DayRange(month: number, endDay: number, asOfTime: string | null) {
-  const base = `${MONTHS[month - 1]} 1–${endDay}`;
+  const base = endDay <= 1 ? `${MONTHS[month - 1]} 1` : `${MONTHS[month - 1]} 1–${endDay}`;
   return asOfTime ? `${base} (${asOfTime})` : base;
 }
 
@@ -24,6 +24,7 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
     upcomingBookings, upcomingGross,
     projectedMid, projectedCard, projectedCash, projectedLow, projectedHigh,
     forecastCalibrationDataPoints, forecastHistoryMonths,
+    currentMonthLength, priorMonthLength,
   } = pulse;
   // projectedMonthGross (the transparent naive ceiling) is kept on the DTO for debugging but not
   // shown — the calibrated/pattern projection above replaces it.
@@ -38,6 +39,23 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
   const curLabel  = DayRange(month, currentEndDay, asOfTime);
   const prevMonth = month === 1 ? 12 : month - 1;
   const priorLabel = DayRange(prevMonth, priorEndDay, asOfTime);
+
+  // Make an uneven month length obvious. Only for past-month views — the current month compares to the
+  // same day+time last month, so nothing is "dropped", just not yet elapsed. When looking at a settled
+  // month: flag a prior day left out (May 31 vs June 30) or full months of differing length.
+  const isCurrentMonthView = asOfTime != null;
+  const prevName = MONTHS[prevMonth - 1];
+  let dayNote: string | null = null;
+  if (!isCurrentMonthView) {
+    const droppedPrior = priorMonthLength - priorEndDay;
+    if (droppedPrior > 0) {
+      dayNote = `${prevName} has ${priorMonthLength} days — ${
+        droppedPrior === 1 ? `the ${priorMonthLength}th is` : `days ${priorEndDay + 1}–${priorMonthLength} are`
+      } left out so both sides cover the same ${priorEndDay} days.`;
+    } else if (currentEndDay !== priorEndDay) {
+      dayNote = `Full months of different length: ${MONTHS[month - 1]} ${currentMonthLength} days vs ${prevName} ${priorMonthLength}.`;
+    }
+  }
 
   return (
     <div className="mb-4 overflow-hidden rounded-xl border border-zinc-200 bg-white">
@@ -73,6 +91,17 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
               <span className="ml-1">(no prior data)</span>
             )}
           </p>
+          {dayNote && (
+            <p className="mt-1.5 flex items-start gap-1 text-[11px] text-amber-600">
+              <span aria-hidden>⚠</span>
+              <span>{dayNote}</span>
+            </p>
+          )}
+          {isCurrentMonthView && (
+            <p className="mt-1.5 text-[11px] text-zinc-400">
+              Compared to the same day &amp; time last month, to the minute.
+            </p>
+          )}
         </div>
 
         {/* Right: smart forecast */}
