@@ -18,7 +18,13 @@ export default function SopAdmin({ initialSops }: { initialSops: Sop[] }) {
   const [creating, setCreating] = useState(false);
 
   function upsert(s: Sop) {
-    setSops((xs) => (xs.some((x) => x.id === s.id) ? xs.map((x) => (x.id === s.id ? s : x)) : [s, ...xs]));
+    setSops((xs) => {
+      const next = xs.some((x) => x.id === s.id) ? xs.map((x) => (x.id === s.id ? s : x)) : [s, ...xs];
+      // Keep the list in the same onboarding order the staff see: priority, then category, then title.
+      return [...next].sort(
+        (a, b) => a.priority - b.priority || a.category.localeCompare(b.category) || a.title.localeCompare(b.title),
+      );
+    });
   }
 
   const selected = sops.find((s) => s.id === selectedId) ?? null;
@@ -43,9 +49,16 @@ export default function SopAdmin({ initialSops }: { initialSops: Sop[] }) {
         {sops.map((s) => (
           <li key={s.id} className="rounded-lg ring-1 ring-zinc-200">
             <button className="flex w-full items-center justify-between gap-3 p-3 text-left" onClick={() => { setSelectedId(selectedId === s.id ? null : s.id); setCreating(false); }}>
-              <span>
-                <span className="text-sm font-medium text-zinc-800">{s.title}</span>
-                <span className="ml-2 text-xs text-zinc-400">{s.category}</span>
+              <span className="flex items-center gap-2">
+                {s.priority < 1000 && (
+                  <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-white" title="Onboarding order (lower shows first)">
+                    #{s.priority}
+                  </span>
+                )}
+                <span>
+                  <span className="text-sm font-medium text-zinc-800">{s.title}</span>
+                  <span className="ml-2 text-xs text-zinc-400">{s.category}</span>
+                </span>
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500">{s.audience}</span>
@@ -66,6 +79,7 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('');
   const [audience, setAudience] = useState<SopAudience>('PROVIDER');
+  const [priority, setPriority] = useState('');
   const [body, setBody] = useState('');
   const [bodyRu, setBodyRu] = useState('');
   const [busy, setBusy] = useState(false);
@@ -78,6 +92,7 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
         title: title.trim(),
         category: category.trim(),
         audience,
+        priority: priority.trim() ? Number(priority) : undefined,
         body,
         bodyRu: bodyRu.trim() ? bodyRu : null,
       }));
@@ -89,12 +104,20 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
   return (
     <div className="mb-4 space-y-3 rounded-lg p-4 ring-1 ring-zinc-200">
       <h2 className="text-sm font-semibold">New SOP</h2>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className="rounded px-2 py-1 text-sm ring-1 ring-zinc-200" />
         <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Category" className="rounded px-2 py-1 text-sm ring-1 ring-zinc-200" />
         <select value={audience} onChange={(e) => setAudience(e.target.value as SopAudience)} className="rounded px-2 py-1 text-sm ring-1 ring-zinc-200">
           {AUDIENCES.map((a) => <option key={a} value={a}>{a}</option>)}
         </select>
+        <input
+          type="number"
+          value={priority}
+          onChange={(e) => setPriority(e.target.value)}
+          placeholder="Order (e.g. 1)"
+          title="Onboarding order — lower shows first. Leave blank to sort after prioritized SOPs."
+          className="rounded px-2 py-1 text-sm ring-1 ring-zinc-200"
+        />
       </div>
       <BilingualBody body={body} bodyRu={bodyRu} onBody={setBody} onBodyRu={setBodyRu} height={280} />
       <div className="flex gap-2">
@@ -112,6 +135,7 @@ function SopDetail({ sop, onChanged }: { sop: Sop; onChanged: (s: Sop) => void }
   const [versions, setVersions] = useState<SopVersion[] | null>(null);
   const [roster, setRoster] = useState<SopRosterEntry[] | null>(null);
   const [audience, setAudience] = useState<SopAudience>(sop.audience);
+  const [priority, setPriority] = useState(String(sop.priority));
   const [newDraft, setNewDraft] = useState<string | null>(null);
   const [newDraftRu, setNewDraftRu] = useState('');
   const [compare, setCompare] = useState<SopVersion | null>(null);
@@ -123,10 +147,14 @@ function SopDetail({ sop, onChanged }: { sop: Sop; onChanged: (s: Sop) => void }
   }, [sop.id]);
   useEffect(() => { load(); }, [load]);
 
-  async function saveAudience() {
+  async function saveMeta() {
     setBusy(true);
-    try { onChanged(await api.updateSop(sop.id, { title: sop.title, category: sop.category, audience })); }
-    finally { setBusy(false); }
+    try {
+      onChanged(await api.updateSop(sop.id, {
+        title: sop.title, category: sop.category, audience,
+        priority: priority.trim() ? Number(priority) : sop.priority,
+      }));
+    } finally { setBusy(false); }
   }
   async function addDraft() {
     if (newDraft == null) return;
@@ -162,8 +190,12 @@ function SopDetail({ sop, onChanged }: { sop: Sop; onChanged: (s: Sop) => void }
             {AUDIENCES.map((a) => <option key={a} value={a}>{a}</option>)}
           </select>
         </label>
-        {audience !== sop.audience ? (
-          <button onClick={saveAudience} disabled={busy} className="rounded px-2 py-1 text-xs ring-1 ring-zinc-200">Save audience</button>
+        <label className="text-xs font-medium text-zinc-600" title="Onboarding order — lower shows first">
+          Order
+          <input type="number" value={priority} onChange={(e) => setPriority(e.target.value)} className="ml-2 w-20 rounded px-2 py-1 text-sm tabular-nums ring-1 ring-zinc-200" />
+        </label>
+        {(audience !== sop.audience || priority !== String(sop.priority)) ? (
+          <button onClick={saveMeta} disabled={busy} className="rounded px-2 py-1 text-xs ring-1 ring-zinc-200">Save</button>
         ) : null}
         <button onClick={toggleArchive} disabled={busy} className="ml-auto rounded px-2 py-1 text-xs ring-1 ring-zinc-200">
           {sop.status === 'ARCHIVED' ? 'Unarchive' : 'Archive'}
