@@ -56,6 +56,11 @@ rag:
 server:
   port: 8080
   forward-headers-strategy: framework
+  servlet:
+    session:
+      # Stay signed in through a 12 h idle window (was Tomcat's 30 min default), matching the 12 h
+      # `sid` cookie set in the frontend login route — so a session lasts up to 12 h. See docs/CACHING.md.
+      timeout: 12h
 
 management:
   endpoints:
