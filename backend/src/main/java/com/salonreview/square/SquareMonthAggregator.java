@@ -340,8 +340,37 @@ public class SquareMonthAggregator {
             }
         }
 
+        // --- Cancelled appointments: appointments the salon marked CANCELLED_BY_SELLER whose start is
+        // in the past. Surfaced (owner-only) so the owner can confirm on camera that the appointment
+        // truly didn't happen and no cash was pocketed — the "provider cancelled it and took cash"
+        // risk. We emit every seller-cancelled segment regardless of the assigned team member's role;
+        // the service layer drops those assigned to owner/manager staff (a non-fraud concern) since it,
+        // not the aggregator, knows app roles. Customer-side cancellations are the customer's action,
+        // not a provider one, so they're intentionally not included. ---
+        List<CancelledCandidate> cancellations = new ArrayList<>();
+        for (Booking b : bookings) {
+            if (b.appointmentSegments() == null) continue;
+            if (!"CANCELLED_BY_SELLER".equals(b.status())) continue;
+            LocalDate day = localDate(b.startAt(), zone);
+            if (day == null || day.getYear() != year || day.getMonthValue() != month) continue;
+            Instant startAt = instant(b.startAt());
+            if (startAt == null || !startAt.isBefore(nowForSuspicious)) continue; // future cancels: nothing happened yet
+            Half half = halfOf(day);
+            for (var seg : b.appointmentSegments()) {
+                if (seg.teamMemberId() == null || b.customerId() == null
+                        || seg.serviceVariationId() == null) continue;
+                BigDecimal gross = catalogPrice.get(seg.serviceVariationId()); // nullable
+                cancellations.add(new CancelledCandidate(
+                        b.id(), b.customerId(), seg.teamMemberId(),
+                        nameById.getOrDefault(seg.teamMemberId(), "?"),
+                        seg.serviceVariationId(),
+                        day, startAt, half, gross,
+                        b.sellerNote(), b.customerNote()));
+            }
+        }
+
         return new MonthAggregation(year, month, zone.getId(), providers, diag, services,
-                namedUnmatched, suspicious);
+                namedUnmatched, suspicious, cancellations);
     }
 
     /** Resolve customer names for the unattributed lines (one bulk Square call); best-effort. */
@@ -584,7 +613,15 @@ public class SquareMonthAggregator {
     public record MonthAggregation(int year, int month, String timezone,
                                    List<ProviderMonth> providers, Diag diagnostics,
                                    List<AttributedService> services, List<UnmatchedLine> unmatched,
-                                   List<SuspiciousCandidate> suspicious) {}
+                                   List<SuspiciousCandidate> suspicious,
+                                   List<CancelledCandidate> cancellations) {
+        /** Back-compat constructor for callers (and tests) that predate the cancellations list. */
+        public MonthAggregation(int year, int month, String timezone, List<ProviderMonth> providers,
+                                Diag diagnostics, List<AttributedService> services,
+                                List<UnmatchedLine> unmatched, List<SuspiciousCandidate> suspicious) {
+            this(year, month, timezone, providers, diagnostics, services, unmatched, suspicious, List.of());
+        }
+    }
 
     /**
      * A past appointment that produced no order, has no cash note, and isn't an owner comp — i.e.,
@@ -599,6 +636,19 @@ public class SquareMonthAggregator {
                                       LocalDate day, Instant startAt, Half half,
                                       BigDecimal gross,
                                       String sellerNote, String customerNote) {}
+
+    /**
+     * A past appointment the salon marked CANCELLED_BY_SELLER. Emitted one per booking-segment with
+     * provider + customer + service set, so the owner-review page can show the service(s) and the
+     * assigned provider. {@code providerId} is the Square team member; role filtering (excluding
+     * owner/manager staff) is applied later in the service layer, which knows app roles.
+     */
+    public record CancelledCandidate(String bookingId, String customerId,
+                                     String providerId, String providerName,
+                                     String serviceVariationId,
+                                     LocalDate day, Instant startAt, Half half,
+                                     BigDecimal gross,
+                                     String sellerNote, String customerNote) {}
 
     public record AttributedService(String providerId, String providerName, String date, String half,
                                     String service, BigDecimal gross, BigDecimal discount, BigDecimal net,

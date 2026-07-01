@@ -45,6 +45,26 @@ function SuspiciousBadge({ count, providerId, year, month, half }: {
   );
 }
 
+// Badge linking to the cancelled-appointments review page for one provider × half. Owner-only,
+// informational (never blocks salary). Red to read as a "please verify on camera" warning, distinct
+// from the amber suspicious badge. Hidden when count = 0.
+function CancelledBadge({ count, providerId, year, month, half }: {
+  count: number; providerId: number; year: number; month: number; half: 'FIRST' | 'SECOND';
+}) {
+  if (count <= 0) return null;
+  const display = count > 99 ? '99+' : String(count);
+  return (
+    <Link
+      href={`/reports/${providerId}/cancellations?year=${year}&month=${month}&half=${half}`}
+      title={`${count} cancelled appointment${count === 1 ? '' : 's'} to verify on camera`}
+      data-testid={`cancelled-badge-${providerId}-${half}`}
+      className="ml-1 inline-flex items-center gap-0.5 rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-medium text-rose-700 ring-1 ring-rose-300 hover:bg-rose-100"
+    >
+      ⊘ {display}
+    </Link>
+  );
+}
+
 // A period/month cell: Zelle paid to the provider (top) over cash returned to the salon (below).
 function MoneyCell({ zelle, cash, bonus = 0, strong = false, badge }: {
   zelle: number; cash: number; bonus?: number; strong?: boolean; badge?: React.ReactNode;
@@ -185,9 +205,9 @@ export default async function ReportsPage({
             <dl className="mt-3 space-y-1 text-sm">
               <MobileMoney label="Month → you" zelle={p.monthZelleToProvider} cash={p.monthCashToSalon} strong />
               <MobileMoney label="1–15" zelle={p.firstHalf.zelleToProvider} cash={p.firstHalf.cashToSalon} bonus={p.firstHalf.tierBonus}
-                badge={<SuspiciousBadge count={p.firstHalfSuspicious} providerId={p.providerId} year={year} month={month} half="FIRST" />} />
+                badge={<><SuspiciousBadge count={p.firstHalfSuspicious} providerId={p.providerId} year={year} month={month} half="FIRST" /><CancelledBadge count={p.firstHalfCancellations} providerId={p.providerId} year={year} month={month} half="FIRST" /></>} />
               <MobileMoney label="16–end" zelle={p.secondHalf.zelleToProvider} cash={p.secondHalf.cashToSalon} bonus={p.secondHalf.tierBonus}
-                badge={<SuspiciousBadge count={p.secondHalfSuspicious} providerId={p.providerId} year={year} month={month} half="SECOND" />} />
+                badge={<><SuspiciousBadge count={p.secondHalfSuspicious} providerId={p.providerId} year={year} month={month} half="SECOND" /><CancelledBadge count={p.secondHalfCancellations} providerId={p.providerId} year={year} month={month} half="SECOND" /></>} />
             </dl>
             <div className="mt-3"><SalaryButtons name={p.name} firstHalfMessage={p.firstHalfMessage} secondHalfMessage={p.secondHalfMessage} /></div>
           </div>
@@ -235,9 +255,9 @@ export default async function ReportsPage({
                   </div>
                 </td>
                 <td className="px-3 py-2"><MoneyCell zelle={p.firstHalf.zelleToProvider} cash={p.firstHalf.cashToSalon} bonus={p.firstHalf.tierBonus}
-                  badge={<SuspiciousBadge count={p.firstHalfSuspicious} providerId={p.providerId} year={year} month={month} half="FIRST" />} /></td>
+                  badge={<><SuspiciousBadge count={p.firstHalfSuspicious} providerId={p.providerId} year={year} month={month} half="FIRST" /><CancelledBadge count={p.firstHalfCancellations} providerId={p.providerId} year={year} month={month} half="FIRST" /></>} /></td>
                 <td className="px-3 py-2"><MoneyCell zelle={p.secondHalf.zelleToProvider} cash={p.secondHalf.cashToSalon} bonus={p.secondHalf.tierBonus}
-                  badge={<SuspiciousBadge count={p.secondHalfSuspicious} providerId={p.providerId} year={year} month={month} half="SECOND" />} /></td>
+                  badge={<><SuspiciousBadge count={p.secondHalfSuspicious} providerId={p.providerId} year={year} month={month} half="SECOND" /><CancelledBadge count={p.secondHalfCancellations} providerId={p.providerId} year={year} month={month} half="SECOND" /></>} /></td>
                 <td className="px-3 py-2"><MoneyCell zelle={p.monthZelleToProvider} cash={p.monthCashToSalon} strong /></td>
                 <td className="px-3 py-2">
                   <SalaryButtons name={p.name} firstHalfMessage={p.firstHalfMessage} secondHalfMessage={p.secondHalfMessage} />

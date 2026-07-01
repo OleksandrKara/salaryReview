@@ -92,7 +92,7 @@ class NoShowFeeTest {
         SettlementPreviewService service = new SettlementPreviewService(aggregator, new TierCommissionEngine(),
                 salonConfigRepo, directory, tierGrants, feedback, square, mock(PrepaidRedemptionRepository.class),
                 mock(PrepaidPackageRepository.class), providerRepo, mock(RedoRepository.class),
-                mock(ManualCreditRepository.class), noShowFees, mock(SuspiciousBookingService.class));
+                mock(ManualCreditRepository.class), noShowFees, mock(SuspiciousBookingService.class), mock(com.salonreview.square.CancelledAppointmentService.class));
 
         SalonConfig sc = mock(SalonConfig.class);
         when(sc.toCommissionConfig()).thenReturn(new CommissionConfig(60,
