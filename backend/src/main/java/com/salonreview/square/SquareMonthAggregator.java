@@ -287,12 +287,26 @@ public class SquareMonthAggregator {
         // Label the (small) set of unattributed lines with their customer name for the trace view.
         List<UnmatchedLine> namedUnmatched = withCustomerNames(unmatched);
 
+        // A completed order from the same customer near the appointment day means the visit WAS paid —
+        // even when our strict payout matcher (customer + exact service SKU, within 2 days) couldn't tie
+        // a line to this specific booking. That miss is common: the front desk rings up a custom amount,
+        // a different SKU, or a line with no catalog id (which the matcher skips). Such appointments have
+        // a money trail, so the owner shouldn't have to review them — index each customer's completed
+        // order days to suppress them below (regardless of any note on the booking).
+        Map<String, List<LocalDate>> orderDaysByCustomer = new HashMap<>();
+        for (Order o : orders) {
+            if (o.customerId() == null) continue;
+            LocalDate od = localDate(o.closedAt() != null ? o.closedAt() : o.createdAt(), zone);
+            if (od != null) orderDaysByCustomer.computeIfAbsent(o.customerId(), k -> new ArrayList<>()).add(od);
+        }
+
         // --- Suspicious bookings: appointments that happened but have no money trail. Detection
         // happens after the order-matching, cash-note, and owner-comp passes are complete so we can
         // honestly say "this one slipped through all of them". A booking is suspicious when ALL of:
         //   1. Status is not CANCELLED/DECLINED/NO_SHOW.
         //   2. startAt is strictly in the past.
-        //   3. Its booking ID is not in paidBookings (no order matched).
+        //   3. Its booking ID is not in paidBookings (no order matched) AND the customer has no
+        //      completed order within 2 days of the visit (no payment trail at all).
         //   4. It has no cash note in seller or customer note.
         //   5. The customer is not in the owner-customer list.
         // We emit one candidate per appointment segment that has provider + customer + service all set.
@@ -306,6 +320,8 @@ public class SquareMonthAggregator {
             Instant startAt = instant(b.startAt());
             if (startAt == null || !startAt.isBefore(nowForSuspicious)) continue;
             if (b.id() != null && paidBookings.contains(b.id())) continue;
+            if (b.customerId() != null
+                    && hasPaymentWithinDays(orderDaysByCustomer.get(b.customerId()), day, 2)) continue;
             if (b.customerId() != null && ownerCustomerIds.contains(b.customerId())) continue;
             if (cashNotes.parse(b.sellerNote()).isPresent()
                     || cashNotes.parse(b.customerNote()).isPresent()) continue;
@@ -371,6 +387,19 @@ public class SquareMonthAggregator {
             case "CANCELLED_BY_CUSTOMER", "CANCELLED_BY_SELLER", "DECLINED", "NO_SHOW" -> true;
             default -> false;
         };
+    }
+
+    /**
+     * True if the customer has any completed order within {@code maxDays} of the appointment day — i.e.
+     * the visit has a payment trail even when the strict line matcher couldn't tie the exact SKU to this
+     * booking. Uses the same 2-day tolerance as the payout matcher (a normal same-visit checkout).
+     */
+    private static boolean hasPaymentWithinDays(List<LocalDate> orderDays, LocalDate day, long maxDays) {
+        if (orderDays == null) return false;
+        for (LocalDate od : orderDays) {
+            if (Math.abs(od.toEpochDay() - day.toEpochDay()) <= maxDays) return true;
+        }
+        return false;
     }
 
     private static LocalDate localDate(String iso, ZoneId zone) {
