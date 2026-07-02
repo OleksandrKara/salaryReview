@@ -30,6 +30,7 @@ function linksFor(role: Role): NavLink[] {
       { href: '/admin/owner-customers', key: 'navOwnerComps' },
       { href: '/admin/redos', key: 'mgrRedos' },
       { href: '/admin/manual-credits', key: 'navManualCredits' },
+      { href: '/admin/manager-time', key: 'navManagerTime' },
       { href: '/sops/admin', key: 'sopAdminTitle' },
       { href: '/admin/users', key: 'navUsers' },
     ];
@@ -37,6 +38,7 @@ function linksFor(role: Role): NavLink[] {
   if (role === 'MANAGER') {
     return [
       { href: '/manager', key: 'navDashboard' },
+      { href: '/manager/time', key: 'navMyTime' },
       { href: '/admin/redos', key: 'mgrRedos' },
       ...COMMON,
     ];

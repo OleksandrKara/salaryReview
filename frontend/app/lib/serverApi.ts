@@ -22,6 +22,8 @@ import type {
   SquareRosterEntry,
   SuspiciousBooking,
   CancelledAppointment,
+  ManagerTimesheet,
+  AdminTimesheet,
 } from './types';
 
 // Server-only backend calls. Auth is the backend session: we hold its JSESSIONID in our httpOnly
@@ -97,6 +99,12 @@ export const serverApi = {
     serverFetch<SuspiciousBooking[]>(
       `/api/suspicious?year=${year}&month=${month}&half=${half}&providerId=${providerId}`
     ),
+
+  // Manager time tracking: a manager's own month; the owner's payroll view of all managers.
+  getMyTimesheet: (year: number, month: number) =>
+    serverFetch<ManagerTimesheet>(`/api/time/me?year=${year}&month=${month}`),
+  getAdminTimesheet: (year: number, month: number) =>
+    serverFetch<AdminTimesheet>(`/api/time/admin?year=${year}&month=${month}`),
 
   // Owner-only: cancelled appointments (CANCELLED_BY_SELLER) for one provider × half, for review.
   listCancellations: (year: number, month: number, half: 'FIRST' | 'SECOND', providerId: number) =>

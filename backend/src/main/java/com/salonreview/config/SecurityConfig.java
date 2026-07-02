@@ -67,6 +67,11 @@ public class SecurityConfig {
                         // list is needed to record one. Everything else below — salary settlements,
                         // Square sync, prepaid, owner comps, manual credits, no-show fees, suspicious
                         // review — is owner-only (managers don't manage salaries).
+                        // Manager time tracking: the payroll view + rate-setting are owner-only; the
+                        // self endpoints (clock in/out, own entries) are for managers (owner allowed too,
+                        // though owners don't clock time). Specific /admin matcher first so it wins.
+                        .requestMatchers("/api/time/admin/**").hasRole("OWNER")
+                        .requestMatchers("/api/time/**").hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers("/api/redos/**", "/api/providers/**").hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers("/api/settlements/**", "/api/square/**", "/api/pay-periods/**",
                                 "/api/prepaid/**", "/api/owner-customers/**", "/api/manual-credits/**",

@@ -35,11 +35,24 @@ import type {
   StarterSuggestions,
   TriageClassification,
   TriageResult,
+  TimeEntry,
+  TimeEntryInput,
   UserCreateRequest,
   UserUpdateRequest,
 } from './types';
 
 export const api = {
+  // Manager time tracking. Self actions (clock in/out, own entries) act on the authenticated caller;
+  // setManagerRate is owner-only (enforced server-side).
+  clockIn: () => proxyJson<TimeEntry>(`/api/time/clock-in`, 'POST', {}),
+  clockOut: () => proxyJson<TimeEntry>(`/api/time/clock-out`, 'POST', {}),
+  addTimeEntry: (body: TimeEntryInput) => proxyJson<TimeEntry>(`/api/time/entries`, 'POST', body),
+  updateTimeEntry: (id: number, body: TimeEntryInput) =>
+    proxyJson<TimeEntry>(`/api/time/entries/${id}`, 'PATCH', body),
+  deleteTimeEntry: (id: number) => proxyVoid(`/api/time/entries/${id}`, 'DELETE'),
+  setManagerRate: (userId: number, usdPerHour: number) =>
+    proxyVoid(`/api/time/admin/rate/${userId}`, 'PUT', { usdPerHour }),
+
   // Tier grant/revoke (owner/manager).
   grantTier: (providerId: number, year: number, month: number) =>
     proxyVoid(`/api/grants?providerId=${providerId}&year=${year}&month=${month}`, 'POST'),

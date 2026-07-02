@@ -210,6 +210,65 @@ export interface Feedback {
   comment: string | null;
 }
 
+// --- Manager time tracking ---
+
+// One worked shift. `open` = currently clocked in (endAt/endLabel null, minutes 0).
+export interface TimeEntry {
+  id: number;
+  workDate: string;          // yyyy-MM-dd (salon-local)
+  half: 'FIRST' | 'SECOND';
+  startAt: string;           // ISO instant
+  endAt: string | null;
+  startLabel: string;        // "9:00 AM" salon-local
+  endLabel: string | null;
+  minutes: number;           // 0 while open
+  open: boolean;
+  note: string | null;
+}
+
+// A manager's own month, split into half-month periods. Pay fields are null until the owner sets a rate.
+export interface ManagerTimesheet {
+  year: number;
+  month: number;
+  timezone: string;
+  usdPerHour: number | null;
+  firstMinutes: number;
+  secondMinutes: number;
+  monthMinutes: number;
+  firstPay: number | null;
+  secondPay: number | null;
+  monthPay: number | null;
+  entries: TimeEntry[];      // completed shifts this month, start ascending
+  open: TimeEntry | null;    // the currently-open shift, if any
+}
+
+// Input for adding/editing a manual shift (date + start/end are salon-local, HH:mm).
+export interface TimeEntryInput {
+  date: string;
+  startTime: string;
+  endTime: string;
+  note?: string | null;
+}
+
+export interface AdminTimesheetRow {
+  userId: number;
+  username: string;
+  email: string | null;
+  usdPerHour: number | null;
+  firstMinutes: number;
+  secondMinutes: number;
+  monthMinutes: number;
+  monthPay: number | null;
+  clockedIn: boolean;
+}
+
+export interface AdminTimesheet {
+  year: number;
+  month: number;
+  timezone: string;
+  managers: AdminTimesheetRow[];
+}
+
 // --- Accounts & roles (Phase 2) ---
 
 export type Role = 'OWNER' | 'MANAGER' | 'PROVIDER';
