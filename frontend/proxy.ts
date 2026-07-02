@@ -23,7 +23,7 @@ const STAFF_ONLY = ['/manager', '/admin/redos', '/owner/retention'];
 // is carved out of /owner into STAFF_ONLY above, so only /owner/overview stays owner-only here.
 const OWNER_ONLY = [
   '/reports', '/owner/overview', '/admin/users', '/admin/prepaid', '/admin/owner-customers',
-  '/admin/manual-credits', '/rag/admin', '/sops/admin',
+  '/admin/manual-credits', '/admin/manager-time', '/rag/admin', '/sops/admin',
 ];
 const PROVIDER_AREAS = ['/me']; // /me and /me/* belong to providers
 
