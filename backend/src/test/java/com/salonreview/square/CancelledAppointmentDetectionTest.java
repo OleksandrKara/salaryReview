@@ -3,6 +3,9 @@ package com.salonreview.square;
 import com.salonreview.repo.OwnerCustomerRepository;
 import com.salonreview.square.SquareClient.AppointmentSegment;
 import com.salonreview.square.SquareClient.Booking;
+import com.salonreview.square.SquareClient.Money;
+import com.salonreview.square.SquareClient.Order;
+import com.salonreview.square.SquareClient.OrderLineItem;
 import com.salonreview.square.SquareClient.TeamMember;
 import com.salonreview.square.SquareMonthAggregator.MonthAggregation;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,10 +24,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Verifies which cancelled appointments the aggregator emits: only past, in-month,
- * CANCELLED_BY_SELLER bookings with provider + customer + service set. Customer-side cancellations
- * and future cancellations are excluded. Role filtering (owner/manager exclusion) is the service
- * layer's job — see {@link CancelledAppointmentServiceTest}.
+ * Verifies which cancelled appointments the aggregator emits: only in-month CANCELLED_BY_SELLER
+ * bookings cancelled AFTER their start time (the "slot happened, then voided" pattern), with
+ * provider + customer + service set, and with no cancellation fee charged. Customer-side cancels,
+ * advance cancels, and fee-charged cancels are excluded. Role filtering (owner/manager exclusion) is
+ * the service layer's job — see {@link CancelledAppointmentServiceTest}.
  */
 class CancelledAppointmentDetectionTest {
 
@@ -49,9 +53,19 @@ class CancelledAppointmentDetectionTest {
         when(ownerRepo.findAll()).thenReturn(List.of());
     }
 
-    private static Booking booking(String status, Instant start) {
-        return new Booking("bk-1", status, start.toString(), null, null, "LOC", CUST,
+    /** @param startAt when the appointment was scheduled; @param updatedAt when it was last changed (the cancel). */
+    private static Booking booking(String status, Instant startAt, Instant updatedAt) {
+        return new Booking("bk-1", status, startAt.toString(), null,
+                updatedAt == null ? null : updatedAt.toString(), "LOC", CUST,
                 null, null, List.of(new AppointmentSegment(TM, VAR, 60)));
+    }
+
+    /** A ~$25 "Cancelation Policy" fee order for CUST, closed at {@code closedAt}. */
+    private static Order feeOrder(Instant closedAt) {
+        OrderLineItem line = new OrderLineItem("uid", "Cancelation Policy", "1", null,
+                null, null, new Money(2500L, "USD"), null);
+        return new Order("ord-fee", "LOC", CUST, "COMPLETED", closedAt.toString(), closedAt.toString(),
+                List.of(line), null, null, null);
     }
 
     private MonthAggregation runFor(Booking b) {
@@ -63,37 +77,57 @@ class CancelledAppointmentDetectionTest {
     }
 
     @Test
-    @DisplayName("Past CANCELLED_BY_SELLER → emitted as a cancellation")
-    void sellerCancelledPastIsEmitted() {
-        MonthAggregation agg = runFor(booking("CANCELLED_BY_SELLER", Instant.now().minus(3, ChronoUnit.DAYS)));
+    @DisplayName("Seller-cancelled AFTER start → emitted as a cancellation")
+    void cancelledAfterStartIsEmitted() {
+        Instant start = Instant.now().minus(3, ChronoUnit.DAYS);
+        MonthAggregation agg = runFor(booking("CANCELLED_BY_SELLER", start, start.plus(2, ChronoUnit.HOURS)));
         assertThat(agg.cancellations()).hasSize(1);
         var c = agg.cancellations().get(0);
         assertThat(c.bookingId()).isEqualTo("bk-1");
         assertThat(c.providerId()).isEqualTo(TM);
         assertThat(c.customerId()).isEqualTo(CUST);
         assertThat(c.gross()).isEqualByComparingTo("80.00");
-        // A seller-cancelled booking is never also suspicious.
         assertThat(agg.suspicious()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Seller-cancelled BEFORE start (advance cancel) → not emitted")
+    void cancelledBeforeStartNotEmitted() {
+        Instant start = Instant.now().minus(3, ChronoUnit.DAYS);
+        MonthAggregation agg = runFor(booking("CANCELLED_BY_SELLER", start, start.minus(1, ChronoUnit.DAYS)));
+        assertThat(agg.cancellations()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Cancelled after start but we charged a cancellation fee → not emitted")
+    void feeChargedNotEmitted() {
+        Instant start = Instant.now().minus(3, ChronoUnit.DAYS);
+        when(square.completedOrders(any(), any())).thenReturn(List.of(feeOrder(start)));
+        MonthAggregation agg = runFor(booking("CANCELLED_BY_SELLER", start, start.plus(2, ChronoUnit.HOURS)));
+        assertThat(agg.cancellations()).isEmpty();
     }
 
     @Test
     @DisplayName("Customer-side cancellation → not emitted (not a provider action)")
     void customerCancelledNotEmitted() {
-        MonthAggregation agg = runFor(booking("CANCELLED_BY_CUSTOMER", Instant.now().minus(3, ChronoUnit.DAYS)));
+        Instant start = Instant.now().minus(3, ChronoUnit.DAYS);
+        MonthAggregation agg = runFor(booking("CANCELLED_BY_CUSTOMER", start, start.plus(2, ChronoUnit.HOURS)));
         assertThat(agg.cancellations()).isEmpty();
     }
 
     @Test
-    @DisplayName("Future seller cancellation → not emitted (nothing happened yet)")
+    @DisplayName("Future seller cancellation (cancelled before its start) → not emitted")
     void futureSellerCancelNotEmitted() {
-        MonthAggregation agg = runFor(booking("CANCELLED_BY_SELLER", Instant.now().plus(3, ChronoUnit.DAYS)));
+        Instant start = Instant.now().plus(3, ChronoUnit.DAYS);
+        MonthAggregation agg = runFor(booking("CANCELLED_BY_SELLER", start, Instant.now()));
         assertThat(agg.cancellations()).isEmpty();
     }
 
     @Test
     @DisplayName("Accepted appointment → not a cancellation")
     void acceptedNotEmitted() {
-        MonthAggregation agg = runFor(booking("ACCEPTED", Instant.now().minus(3, ChronoUnit.DAYS)));
+        Instant start = Instant.now().minus(3, ChronoUnit.DAYS);
+        MonthAggregation agg = runFor(booking("ACCEPTED", start, start.plus(2, ChronoUnit.HOURS)));
         assertThat(agg.cancellations()).isEmpty();
     }
 }
