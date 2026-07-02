@@ -44,9 +44,10 @@ export default async function CancellationsPage({
         </span>
       </div>
       <p className="mb-6 text-xs text-zinc-500">
-        Appointments the salon marked <span className="font-medium">cancelled</span> for this provider.
-        Check the cameras to confirm nothing was done and no cash was taken, then click{' '}
-        <span className="font-medium">Clear</span> to remove it from the warning — use{' '}
+        Appointments the salon <span className="font-medium">cancelled after their start time</span> for
+        this provider — the slot had already come, so it&apos;s worth a look. Advance cancellations and any
+        we charged a cancellation fee on are hidden. Check the cameras to confirm nothing was done and no
+        cash was taken, then click <span className="font-medium">Clear</span> to remove it — use{' '}
         <span className="font-medium">Undo</span> to re-flag. This never blocks the provider&apos;s salary.
       </p>
 

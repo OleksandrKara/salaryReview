@@ -340,13 +340,24 @@ public class SquareMonthAggregator {
             }
         }
 
-        // --- Cancelled appointments: appointments the salon marked CANCELLED_BY_SELLER whose start is
-        // in the past. Surfaced (owner-only) so the owner can confirm on camera that the appointment
-        // truly didn't happen and no cash was pocketed — the "provider cancelled it and took cash"
-        // risk. We emit every seller-cancelled segment regardless of the assigned team member's role;
-        // the service layer drops those assigned to owner/manager staff (a non-fraud concern) since it,
-        // not the aggregator, knows app roles. Customer-side cancellations are the customer's action,
-        // not a provider one, so they're intentionally not included. ---
+        // Customers we charged a ~$25 "Cancelation Policy" (no-show) fee, by the fee's local day. A cancelled
+        // appointment we already billed a fee on is accounted for — not a cash-fraud risk — so it's dropped
+        // below. Fee detection is shared with NoShowFeeService (single source of truth for the fee shape).
+        Map<String, List<LocalDate>> feeDaysByCustomer = new HashMap<>();
+        for (Order o : orders) {
+            if (o.customerId() == null || !NoShowFeeService.isCancellationFeeOrder(o)) continue;
+            LocalDate fd = localDate(o.closedAt() != null ? o.closedAt() : o.createdAt(), zone);
+            if (fd != null) feeDaysByCustomer.computeIfAbsent(o.customerId(), k -> new ArrayList<>()).add(fd);
+        }
+
+        // --- Cancelled appointments: appointments the salon marked CANCELLED_BY_SELLER that were cancelled
+        // AFTER their start time — i.e. the slot's time had already arrived when it was voided. That's the
+        // "service happened, then cancelled to hide cash" pattern; a cancellation made in advance is a normal
+        // reschedule and is ignored. Surfaced (owner-only) so the owner can confirm on camera nothing was
+        // done. We also drop cancellations we already charged a no-show/cancellation fee on (accounted for).
+        // We emit every qualifying seller-cancelled segment regardless of the assigned team member's role;
+        // the service layer drops those assigned to owner/manager staff (a non-fraud concern) since it, not
+        // the aggregator, knows app roles. Customer-side cancellations aren't a provider action, so excluded. ---
         List<CancelledCandidate> cancellations = new ArrayList<>();
         for (Booking b : bookings) {
             if (b.appointmentSegments() == null) continue;
@@ -354,7 +365,12 @@ public class SquareMonthAggregator {
             LocalDate day = localDate(b.startAt(), zone);
             if (day == null || day.getYear() != year || day.getMonthValue() != month) continue;
             Instant startAt = instant(b.startAt());
-            if (startAt == null || !startAt.isBefore(nowForSuspicious)) continue; // future cancels: nothing happened yet
+            Instant cancelledAt = instant(b.updatedAt()); // last change on a cancelled booking ≈ the cancel
+            // Only appointments cancelled after their start time (the slot already came). This also implies
+            // the start is in the past, so no separate past-check is needed.
+            if (startAt == null || cancelledAt == null || !cancelledAt.isAfter(startAt)) continue;
+            LocalDate cancelDay = cancelledAt.atZone(zone).toLocalDate();
+            if (hasFeeNear(feeDaysByCustomer.get(b.customerId()), day, cancelDay)) continue; // fee charged → skip
             Half half = halfOf(day);
             for (var seg : b.appointmentSegments()) {
                 if (seg.teamMemberId() == null || b.customerId() == null
@@ -427,6 +443,22 @@ public class SquareMonthAggregator {
         if (orderDays == null) return false;
         for (LocalDate od : orderDays) {
             if (Math.abs(od.toEpochDay() - day.toEpochDay()) <= maxDays) return true;
+        }
+        return false;
+    }
+
+    /**
+     * True if a cancellation fee for this customer falls in the window around the cancellation — from 2
+     * days before the appointment to 2 days after it was cancelled — i.e. we charged a fee for this
+     * cancelled visit, so it's accounted for and shouldn't be flagged for review.
+     */
+    private static boolean hasFeeNear(List<LocalDate> feeDays, LocalDate apptDay, LocalDate cancelDay) {
+        if (feeDays == null) return false;
+        long lo = apptDay.toEpochDay() - 2;
+        long hi = cancelDay.toEpochDay() + 2;
+        for (LocalDate fd : feeDays) {
+            long e = fd.toEpochDay();
+            if (e >= lo && e <= hi) return true;
         }
         return false;
     }

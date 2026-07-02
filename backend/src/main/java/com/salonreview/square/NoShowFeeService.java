@@ -66,6 +66,21 @@ public class NoShowFeeService {
         this.overrides = overrides;
     }
 
+    /**
+     * True if this order is the salon's ~$25 "Cancelation Policy" charge — the no-show / late-cancellation
+     * fee. Same definition used to pair fees to no-shows above; exposed so the cancelled-appointments
+     * review can drop cancellations we already charged a fee on (single source of truth for the fee shape).
+     */
+    public static boolean isCancellationFeeOrder(Order o) {
+        if (o == null || o.lineItems() == null) return false;
+        for (OrderLineItem li : o.lineItems()) {
+            if (li.name() == null || !CANCEL.matcher(li.name()).find()) continue;
+            BigDecimal amt = SquareClient.toDollars(li.totalMoney());
+            if (amt.compareTo(FEE_MIN) >= 0 && amt.compareTo(FEE_MAX) <= 0) return true;
+        }
+        return false;
+    }
+
     /** One row in the no-show table — one per provider on the booking (a multi-provider no-show splits). */
     public record NoShowRow(String bookingId, Long providerId, String providerName, String customer,
                             String noShowAt, String noShowDate, BigDecimal feeAmount, String feePaidDate,
