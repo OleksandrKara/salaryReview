@@ -90,8 +90,8 @@ const STRINGS = {
   // Manager time tracking
   timeMyTitle: { EN: 'My time', RU: 'Моё время' },
   timeMySubtitle: {
-    EN: 'Clock in and out, or add a shift by hand. Your hours roll up per pay period.',
-    RU: 'Отмечайте начало и конец смены или добавьте её вручную. Часы суммируются по периодам.',
+    EN: 'Clock in and out, or add a shift by hand. Your hours add up for the month.',
+    RU: 'Отмечайте начало и конец смены или добавьте её вручную. Часы суммируются за месяц.',
   },
   timeClockIn: { EN: 'Clock in', RU: 'Начать смену' },
   timeClockOut: { EN: 'Clock out', RU: 'Закончить смену' },

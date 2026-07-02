@@ -141,7 +141,7 @@ public class ManagerTimeService {
         entries.delete(ownEntry(userId, id));
     }
 
-    /** The manager's own month, split into half-month periods with computed pay. */
+    /** The manager's own (calendar) month with computed pay. */
     public ManagerTimesheetDto myTimesheet(Long userId, int year, int month) {
         ZoneId z = zone();
         YearMonth ym = YearMonth.of(year, month);
@@ -149,19 +149,16 @@ public class ManagerTimeService {
                 userId, ym.atDay(1), ym.atEndOfMonth());
         BigDecimal rate = rateOf(userId);
 
-        int firstMin = 0, secondMin = 0;
+        int monthMin = 0;
         List<TimeEntryDto> dtos = new ArrayList<>();
         for (ManagerTimeEntry e : list) {
             if (e.getEndAt() == null) continue; // the open shift is surfaced separately, not in totals
             TimeEntryDto dto = toDto(e, z);
             dtos.add(dto);
-            if ("FIRST".equals(dto.half())) firstMin += dto.minutes(); else secondMin += dto.minutes();
+            monthMin += dto.minutes();
         }
-        int monthMin = firstMin + secondMin;
         return new ManagerTimesheetDto(year, month, z.getId(), rate,
-                firstMin, secondMin, monthMin,
-                pay(rate, firstMin), pay(rate, secondMin), pay(rate, monthMin),
-                dtos, openShift(userId));
+                monthMin, pay(rate, monthMin), dtos, openShift(userId));
     }
 
     // --- owner actions ---
@@ -176,22 +173,20 @@ public class ManagerTimeService {
         Map<Long, BigDecimal> rateById = rates.findByUserIdIn(ids).stream()
                 .collect(Collectors.toMap(ManagerPayRate::getUserId, ManagerPayRate::getUsdPerHour));
 
-        Map<Long, int[]> minsById = new HashMap<>(); // [firstHalf, secondHalf]
+        Map<Long, Integer> minsById = new HashMap<>();
         for (ManagerTimeEntry e : entries.findByWorkDateBetween(ym.atDay(1), ym.atEndOfMonth())) {
             if (e.getEndAt() == null) continue;
-            int idx = e.getWorkDate().getDayOfMonth() <= 15 ? 0 : 1;
-            minsById.computeIfAbsent(e.getUserId(), k -> new int[2])[idx] +=
-                    (int) Duration.between(e.getStartAt(), e.getEndAt()).toMinutes();
+            minsById.merge(e.getUserId(),
+                    (int) Duration.between(e.getStartAt(), e.getEndAt()).toMinutes(), Integer::sum);
         }
         Set<Long> clockedIn = entries.findByEndAtIsNull().stream()
                 .map(ManagerTimeEntry::getUserId).collect(Collectors.toSet());
 
         List<AdminTimesheetDto.Row> rows = managers.stream().map(u -> {
-            int[] m = minsById.getOrDefault(u.getId(), new int[2]);
-            int monthMin = m[0] + m[1];
+            int monthMin = minsById.getOrDefault(u.getId(), 0);
             BigDecimal rate = rateById.get(u.getId());
             return new AdminTimesheetDto.Row(u.getId(), u.getUsername(), u.getEmail(), rate,
-                    m[0], m[1], monthMin, pay(rate, monthMin), clockedIn.contains(u.getId()));
+                    monthMin, pay(rate, monthMin), clockedIn.contains(u.getId()));
         }).toList();
         return new AdminTimesheetDto(year, month, z.getId(), rows);
     }

@@ -99,8 +99,6 @@ export default function ManagerTimeAdmin({
           <div key={r.userId} data-testid={`manager-card-${r.userId}`} className="rounded-lg p-4 ring-1 ring-zinc-200">
             <NameCell r={r} />
             <dl className="mt-3 space-y-1 text-sm">
-              <div className="flex justify-between"><dt className="text-zinc-500">{t(language, 'timeFirstHalf')}</dt><dd className="tabular-nums">{fmtHM(r.firstMinutes)}</dd></div>
-              <div className="flex justify-between"><dt className="text-zinc-500">{t(language, 'timeSecondHalf')}</dt><dd className="tabular-nums">{fmtHM(r.secondMinutes)}</dd></div>
               <div className="flex justify-between font-medium"><dt>{t(language, 'timeMonthTotal')}</dt><dd className="tabular-nums">{fmtHM(r.monthMinutes)}{r.monthPay != null && <span className="ml-1 font-normal text-emerald-700">· {usd(r.monthPay)}</span>}</dd></div>
             </dl>
             <div className="mt-3 flex items-center justify-between">
@@ -117,8 +115,6 @@ export default function ManagerTimeAdmin({
           <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
             <tr>
               <th className="px-3 py-2">{t(language, 'timeManager')}</th>
-              <th className="px-3 py-2 text-right">{t(language, 'timeFirstHalf')}</th>
-              <th className="px-3 py-2 text-right">{t(language, 'timeSecondHalf')}</th>
               <th className="px-3 py-2 text-right">{t(language, 'timeMonthTotal')}</th>
               <th className="px-3 py-2">{t(language, 'timeRate')}</th>
               <th className="px-3 py-2 text-right">{t(language, 'timePay')}</th>
@@ -128,8 +124,6 @@ export default function ManagerTimeAdmin({
             {rows.map((r) => (
               <tr key={r.userId} data-testid={`manager-row-${r.userId}`} className="hover:bg-zinc-50">
                 <td className="px-3 py-2"><NameCell r={r} /></td>
-                <td className="px-3 py-2 text-right tabular-nums">{fmtHM(r.firstMinutes)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{fmtHM(r.secondMinutes)}</td>
                 <td className="px-3 py-2 text-right font-medium tabular-nums">{fmtHM(r.monthMinutes)}</td>
                 <td className="px-3 py-2"><RateEditor r={r} /></td>
                 <td className="px-3 py-2 text-right font-medium tabular-nums text-emerald-700">
