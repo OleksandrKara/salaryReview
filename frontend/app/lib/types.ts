@@ -226,17 +226,13 @@ export interface TimeEntry {
   note: string | null;
 }
 
-// A manager's own month, split into half-month periods. Pay fields are null until the owner sets a rate.
+// A manager's own calendar month. Pay fields are null until the owner sets a rate.
 export interface ManagerTimesheet {
   year: number;
   month: number;
   timezone: string;
   usdPerHour: number | null;
-  firstMinutes: number;
-  secondMinutes: number;
   monthMinutes: number;
-  firstPay: number | null;
-  secondPay: number | null;
   monthPay: number | null;
   entries: TimeEntry[];      // completed shifts this month, start ascending
   open: TimeEntry | null;    // the currently-open shift, if any
@@ -255,8 +251,6 @@ export interface AdminTimesheetRow {
   username: string;
   email: string | null;
   usdPerHour: number | null;
-  firstMinutes: number;
-  secondMinutes: number;
   monthMinutes: number;
   monthPay: number | null;
   clockedIn: boolean;

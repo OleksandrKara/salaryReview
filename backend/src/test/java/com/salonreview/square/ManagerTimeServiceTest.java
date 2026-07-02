@@ -94,26 +94,22 @@ class ManagerTimeServiceTest {
     }
 
     @Test
-    void timesheetSplitsHalvesAndComputesPay() {
-        ManagerTimeEntry first = ManagerTimeEntry.builder().id(1L).userId(7L)
+    void timesheetSumsMonthAndComputesPay() {
+        ManagerTimeEntry a = ManagerTimeEntry.builder().id(1L).userId(7L)
                 .workDate(LocalDate.of(2026, 7, 5))
                 .startAt(Instant.parse("2026-07-05T16:00:00Z")).endAt(Instant.parse("2026-07-05T17:00:00Z")).build(); // 60m
-        ManagerTimeEntry second = ManagerTimeEntry.builder().id(2L).userId(7L)
+        ManagerTimeEntry b = ManagerTimeEntry.builder().id(2L).userId(7L)
                 .workDate(LocalDate.of(2026, 7, 20))
                 .startAt(Instant.parse("2026-07-20T16:00:00Z")).endAt(Instant.parse("2026-07-20T17:30:00Z")).build(); // 90m
         when(entries.findByUserIdAndWorkDateBetweenOrderByStartAtAsc(7L,
-                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31))).thenReturn(List.of(first, second));
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31))).thenReturn(List.of(a, b));
         when(entries.findByUserIdAndEndAtIsNull(7L)).thenReturn(Optional.empty());
         when(rates.findById(7L)).thenReturn(Optional.of(
                 ManagerPayRate.builder().userId(7L).usdPerHour(new BigDecimal("25.00")).build()));
 
         ManagerTimesheetDto ts = service.myTimesheet(7L, 2026, 7);
 
-        assertThat(ts.firstMinutes()).isEqualTo(60);
-        assertThat(ts.secondMinutes()).isEqualTo(90);
         assertThat(ts.monthMinutes()).isEqualTo(150);
-        assertThat(ts.firstPay()).isEqualByComparingTo("25.00");
-        assertThat(ts.secondPay()).isEqualByComparingTo("37.50");
         assertThat(ts.monthPay()).isEqualByComparingTo("62.50");
         assertThat(ts.entries()).hasSize(2);
     }

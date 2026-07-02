@@ -60,13 +60,8 @@ export default function TimeTracker({
   }, [open]);
 
   const totals = useMemo(() => {
-    let first = 0, second = 0;
-    for (const e of entries) {
-      if (e.half === 'FIRST') first += e.minutes;
-      else second += e.minutes;
-    }
-    const pay = (min: number) => (rate == null ? null : (rate * min) / 60);
-    return { first, second, month: first + second, firstPay: pay(first), secondPay: pay(second), monthPay: pay(first + second) };
+    const month = entries.reduce((sum, e) => sum + e.minutes, 0);
+    return { month, monthPay: rate == null ? null : (rate * month) / 60 };
   }, [entries, rate]);
 
   function upsertEntry(e: TimeEntry) {
@@ -125,9 +120,6 @@ export default function TimeTracker({
     setEditDraft({ date: e.workDate, startTime: sh ? `${sh}:${sm}` : '', endTime: eh ? `${eh}:${em}` : '', note: e.note ?? '' });
   }
 
-  const firstEntries = entries.filter((e) => e.half === 'FIRST');
-  const secondEntries = entries.filter((e) => e.half === 'SECOND');
-
   return (
     <div className="space-y-5">
       {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
@@ -144,19 +136,6 @@ export default function TimeTracker({
               <div className="text-xs text-zinc-500">${rate.toFixed(2)}/hr</div>
               <div className="text-2xl font-semibold tabular-nums text-emerald-700">{usd(totals.monthPay ?? 0)}</div>
             </div>
-          )}
-        </div>
-        <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-          {([['timeFirstHalf', totals.first, totals.firstPay], ['timeSecondHalf', totals.second, totals.secondPay]] as const).map(
-            ([key, min, pay]) => (
-              <div key={key} className="rounded-lg bg-zinc-50 px-3 py-2">
-                <div className="text-xs text-zinc-500">{t(language, key)}</div>
-                <div className="font-medium tabular-nums">
-                  {fmtHM(min)}
-                  {pay != null && <span className="ml-1 font-normal text-emerald-700">· {usd(pay)}</span>}
-                </div>
-              </div>
-            ),
           )}
         </div>
         {rate == null && <p className="mt-3 text-xs text-amber-700">{t(language, 'timeRateUnset')}</p>}
@@ -219,61 +198,54 @@ export default function TimeTracker({
       {entries.length === 0 ? (
         <p className="rounded-lg p-4 text-center text-sm text-zinc-400 ring-1 ring-zinc-200">{t(language, 'timeNoEntries')}</p>
       ) : (
-        <div className="space-y-4">
-          {([['timeFirstHalf', firstEntries], ['timeSecondHalf', secondEntries]] as const).map(
-            ([key, list]) =>
-              list.length > 0 && (
-                <section key={key}>
-                  <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">{t(language, key)}</h2>
-                  <ul className="space-y-2">
-                    {list.map((e) =>
-                      editId === e.id ? (
-                        <li key={e.id} className="rounded-lg p-3 ring-1 ring-zinc-200">
-                          <ShiftForm
-                            language={language}
-                            draft={editDraft}
-                            setDraft={setEditDraft}
-                            busy={busy}
-                            onSubmit={() => saveEdit(e.id)}
-                            onCancel={() => setEditId(null)}
-                            submitLabel={t(language, 'timeSave')}
-                          />
-                        </li>
-                      ) : (
-                        <li
-                          key={e.id}
-                          data-testid={`time-row-${e.id}`}
-                          className="flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm ring-1 ring-zinc-200"
-                        >
-                          <div className="min-w-0">
-                            <div className="font-medium">{weekday(e.workDate)}</div>
-                            <div className="text-zinc-500">
-                              {e.startLabel} – {e.endLabel}
-                              {e.note && <span className="text-zinc-400"> · {e.note}</span>}
-                            </div>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-3">
-                            <span className="tabular-nums font-medium">{fmtHM(e.minutes)}</span>
-                            <button onClick={() => beginEdit(e)} className="text-xs text-zinc-500 hover:text-zinc-900">
-                              {t(language, 'timeEdit')}
-                            </button>
-                            <button
-                              onClick={() => del(e.id)}
-                              disabled={busy}
-                              data-testid={`time-delete-${e.id}`}
-                              className="text-xs text-rose-600 hover:text-rose-800 disabled:opacity-50"
-                            >
-                              {t(language, 'timeDelete')}
-                            </button>
-                          </div>
-                        </li>
-                      ),
-                    )}
-                  </ul>
-                </section>
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">{t(language, 'timeShifts')}</h2>
+          <ul className="space-y-2">
+            {entries.map((e) =>
+              editId === e.id ? (
+                <li key={e.id} className="rounded-lg p-3 ring-1 ring-zinc-200">
+                  <ShiftForm
+                    language={language}
+                    draft={editDraft}
+                    setDraft={setEditDraft}
+                    busy={busy}
+                    onSubmit={() => saveEdit(e.id)}
+                    onCancel={() => setEditId(null)}
+                    submitLabel={t(language, 'timeSave')}
+                  />
+                </li>
+              ) : (
+                <li
+                  key={e.id}
+                  data-testid={`time-row-${e.id}`}
+                  className="flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm ring-1 ring-zinc-200"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium">{weekday(e.workDate)}</div>
+                    <div className="text-zinc-500">
+                      {e.startLabel} – {e.endLabel}
+                      {e.note && <span className="text-zinc-400"> · {e.note}</span>}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <span className="tabular-nums font-medium">{fmtHM(e.minutes)}</span>
+                    <button onClick={() => beginEdit(e)} className="text-xs text-zinc-500 hover:text-zinc-900">
+                      {t(language, 'timeEdit')}
+                    </button>
+                    <button
+                      onClick={() => del(e.id)}
+                      disabled={busy}
+                      data-testid={`time-delete-${e.id}`}
+                      className="text-xs text-rose-600 hover:text-rose-800 disabled:opacity-50"
+                    >
+                      {t(language, 'timeDelete')}
+                    </button>
+                  </div>
+                </li>
               ),
-          )}
-        </div>
+            )}
+          </ul>
+        </section>
       )}
     </div>
   );
