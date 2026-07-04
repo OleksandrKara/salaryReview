@@ -44,6 +44,9 @@ public class SecurityConfig {
                         // other owner routes). Listed first so it wins over the owner-only catch-all.
                         .requestMatchers(HttpMethod.GET, "/api/owner/retention", "/api/owner/retention/**")
                                 .hasAnyRole("OWNER", "MANAGER")
+                        // /api/owner/marketing (MarketingDashboardController, read-only cross-schema
+                        // view of the separate salonLandings service's experiment data) is covered
+                        // by the /api/owner/** matcher below — no dedicated rule needed.
                         .requestMatchers("/api/users/**", "/api/owner/**", "/api/rag/admin/**").hasRole("OWNER")
                         .requestMatchers("/api/settlements/me/**").hasRole("PROVIDER")
                         // RAG admin (upload/approve/delete/config) is OWNER-only above; asking +
