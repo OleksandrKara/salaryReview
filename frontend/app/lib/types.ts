@@ -711,6 +711,26 @@ export interface OwnerOverviewData {
   prevYear: YearTotals | null;
 }
 
+// --- Marketing dashboard (owner-only, com.salonreview.web.MarketingDashboardController) ---
+// Read-only view of the separate salonLandings service's landing-page experiment data.
+
+export interface MarketingVariantStat {
+  variantId: string;
+  name: string;
+  weight: number;
+  active: boolean;
+  pageViews: number;
+  bookingsCompleted: number;
+  conversionRate: number;
+}
+
+export interface MarketingDashboardData {
+  available: boolean;
+  landingPageSlug: string;
+  experimentStatus: 'active' | 'paused' | 'none';
+  variants: MarketingVariantStat[];
+}
+
 // --- Knowledge Base articles (com.salonreview.web.KbArticleController) ---
 
 export type KbSyncStatus = 'NOT_SYNCED' | 'SYNCED' | 'CHANGED' | 'ERROR';

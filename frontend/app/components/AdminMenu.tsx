@@ -24,6 +24,7 @@ function linksFor(role: Role): NavLink[] {
     return [
       { href: '/reports', key: 'navSalaryReport' },
       { href: '/owner/overview', key: 'navRevenue' },
+      { href: '/owner/marketing', key: 'navMarketing' },
       { href: '/owner/retention', key: 'navRetention' },
       ...COMMON,
       { href: '/admin/prepaid', key: 'navPrepaid' },

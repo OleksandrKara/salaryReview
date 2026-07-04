@@ -8,6 +8,7 @@ import type {
   ManualCredit,
   Me,
   Sop,
+  MarketingDashboardData,
   OwnerCustomer,
   OwnerOverviewData,
   PrepaidPackage,
@@ -123,4 +124,7 @@ export const serverApi = {
     serverFetch<OwnerOverviewData>(
       `/api/owner/overview?fromYear=${fromYear}&fromMonth=${fromMonth}&toYear=${toYear}&toMonth=${toMonth}`
     ),
+
+  getMarketingDashboard: (slug?: string) =>
+    serverFetch<MarketingDashboardData>(`/api/owner/marketing${slug ? `?slug=${encodeURIComponent(slug)}` : ''}`),
 };
