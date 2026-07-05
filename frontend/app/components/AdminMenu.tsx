@@ -25,6 +25,7 @@ function linksFor(role: Role): NavLink[] {
       { href: '/reports', key: 'navSalaryReport' },
       { href: '/owner/overview', key: 'navRevenue' },
       { href: '/owner/marketing', key: 'navMarketing' },
+      { href: '/owner/marketing/contacts', key: 'navMarketingContacts' },
       { href: '/owner/retention', key: 'navRetention' },
       ...COMMON,
       { href: '/admin/prepaid', key: 'navPrepaid' },
@@ -52,7 +53,13 @@ export default function AdminMenu({ role, language }: { role: Role; language: La
   const pathname = usePathname();
   const links = linksFor(role);
 
-  const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
+  // Highlight only the single most specific match — otherwise a nested route like
+  // /owner/marketing/contacts would light up both "Marketing" and "Marketing Contacts" at once.
+  const bestMatch = links
+    .map((l) => l.href)
+    .filter((href) => pathname === href || pathname.startsWith(href + '/'))
+    .sort((a, b) => b.length - a.length)[0];
+  const isActive = (href: string) => href === bestMatch;
 
   return (
     <div className="relative">
