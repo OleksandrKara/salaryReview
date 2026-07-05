@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { serverApi } from '../../lib/serverApi';
 import PageHeader from '../../components/PageHeader';
 import ExperimentStatusBadge from './ExperimentStatusBadge';
-import VariantTable from './VariantTable';
+import MarketingManager from './MarketingManager';
 
 export default async function MarketingDashboardPage() {
   const [me, data] = await Promise.all([serverApi.getMe(), serverApi.getMarketingDashboard()]);
@@ -27,7 +27,7 @@ export default async function MarketingDashboardPage() {
 
           <div className="mt-6">
             <h2 className="mb-2 text-sm font-medium text-zinc-500">Variant performance</h2>
-            <VariantTable variants={data.variants} />
+            <MarketingManager slug={data.landingPageSlug} initialVariants={data.variants} initialStatsSince={data.statsSince} />
           </div>
         </>
       )}

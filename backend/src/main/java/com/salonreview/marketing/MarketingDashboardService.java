@@ -6,10 +6,14 @@ import com.salonreview.web.dto.MarketingDashboardDto.VariantStat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -42,15 +46,61 @@ public class MarketingDashboardService {
             }
 
             String experimentStatus = repository.findExperimentStatus(landingPageId.get()).orElse("none");
-            List<VariantStat> variants = repository.findVariantStats(landingPageId.get()).stream()
+            Instant statsSince = repository.findStatsSince(landingPageId.get()).orElse(null);
+            List<VariantStat> variants = repository.findVariantStats(landingPageId.get(), statsSince).stream()
                     .map(this::toVariantStat)
                     .collect(Collectors.toList());
 
-            return new MarketingDashboardDto(true, slug, experimentStatus, variants);
+            return new MarketingDashboardDto(true, slug, experimentStatus, variants, statsSince == null ? null : statsSince.toString());
         } catch (DataAccessException ex) {
             log.warn("Marketing schema unavailable while building dashboard for slug={}", slug, ex);
             return MarketingDashboardDto.unavailable(slug);
         }
+    }
+
+    /** Also regenerates the deep-link key from the new name, same convention as the CLI's
+     * `rename` command, so the ?v=<key> link always matches the current display name.
+     */
+    public void renameVariant(UUID variantId, String newName) {
+        if (newName == null || newName.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Name cannot be blank");
+        }
+        repository.renameVariant(variantId, newName.trim(), Slugs.slugify(newName));
+    }
+
+    public void setVariantActive(UUID variantId, boolean active) {
+        repository.setVariantActive(variantId, active);
+    }
+
+    /** Blocks deletion with a friendly message when the variant has recorded page views or
+     * bookings (the FK from events/attribution has no ON DELETE CASCADE — that's intentional,
+     * historical data shouldn't silently disappear) rather than surfacing a raw DB error.
+     */
+    public void deleteVariant(UUID variantId) {
+        try {
+            repository.deleteVariant(variantId);
+        } catch (DataIntegrityViolationException ex) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Can't delete — this variant has recorded page views or bookings. Deactivate it instead.");
+        }
+    }
+
+    /** Copies weight/content from the source variant; the new variant always starts active
+     * with a key auto-generated from its name, same convention as the CLI's `add` command.
+     */
+    public UUID duplicateVariant(UUID sourceVariantId, String newName) {
+        if (newName == null || newName.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Name cannot be blank");
+        }
+        MarketingDashboardRepository.VariantSource source = repository.findVariantSource(sourceVariantId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such variant"));
+        return repository.duplicateVariant(source, newName.trim(), Slugs.slugify(newName));
+    }
+
+    public void updateStatsSince(String slug, Instant statsSince) {
+        UUID landingPageId = repository.findLandingPageId(slug)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such landing page"));
+        repository.updateStatsSince(landingPageId, statsSince);
     }
 
     private VariantStat toVariantStat(MarketingDashboardRepository.RawVariantStat raw) {
