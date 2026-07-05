@@ -7,7 +7,6 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -79,12 +78,6 @@ public class MarketingContactsRepository {
     public List<RawContact> listAll() {
         String sql = "SELECT " + CONTACT_COLUMNS + " FROM marketing.contacts ORDER BY created_at DESC";
         return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact);
-    }
-
-    public Optional<RawContact> findById(UUID id) {
-        String sql = "SELECT " + CONTACT_COLUMNS + " FROM marketing.contacts WHERE id = ?";
-        List<RawContact> rows = jdbcTemplate.query(sql, (rs, rowNum) -> mapContact(rs, rowNum), id);
-        return rows.stream().findFirst();
     }
 
     /** Every submission this phone number or email address ever made, most recent first —

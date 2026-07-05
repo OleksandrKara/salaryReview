@@ -5,23 +5,21 @@ import com.salonreview.square.SquareClient.AppointmentSegment;
 import com.salonreview.square.SquareClient.Booking;
 import com.salonreview.square.SquareClient.TeamMember;
 import com.salonreview.web.dto.MarketingContactDto;
+import com.salonreview.web.dto.MarketingContactDto.Appointment;
 import com.salonreview.web.dto.MarketingContactDto.Contact;
-import com.salonreview.web.dto.MarketingContactHistoryDto;
-import com.salonreview.web.dto.MarketingContactHistoryDto.Appointment;
-import com.salonreview.web.dto.MarketingContactHistoryDto.Submission;
+import com.salonreview.web.dto.MarketingContactDto.Submission;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
+import java.util.Objects;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 public class MarketingContactsService {
@@ -30,8 +28,6 @@ public class MarketingContactsService {
 
     // Square has no public API for a direct "view this booking" link (confirmed — nothing
     // documented), but the customer profile URL is a stable, long-standing Dashboard pattern.
-    // The booking's own date/time/provider/services/price are shown inline in this table
-    // anyway, so clicking through is only needed to see the customer's full Square history.
     private static final String SQUARE_CUSTOMER_PROFILE_URL = "https://app.squareup.com/dashboard/customers/%s";
 
     private final MarketingContactsRepository repository;
@@ -43,12 +39,15 @@ public class MarketingContactsService {
     }
 
     /** Never throws: same "this app's health must never depend on the other service's
-     * schema" guarantee as MarketingDashboardService.dashboard.
+     * schema" guarantee as MarketingDashboardService.dashboard. Submissions and (when a Square
+     * customer is known) appointment history are fetched eagerly for every contact here, rather
+     * than lazily per-click, so the UI can show "no appointments"/"no submissions" without an
+     * extra round trip — see the Contact record's field docs.
      */
     public MarketingContactDto contacts() {
         try {
             List<Contact> contacts = repository.listAll().stream()
-                    .map(MarketingContactsService::toContact)
+                    .map(this::toContact)
                     .collect(Collectors.toList());
             return new MarketingContactDto(true, contacts);
         } catch (DataAccessException ex) {
@@ -57,26 +56,44 @@ public class MarketingContactsService {
         }
     }
 
-    /** Submission history always comes from our own DB (never throws beyond a 404 for an unknown
-     * contact); Square appointment history is best-effort — if Square is unreachable, the
-     * contact's own data still renders with an empty appointments list rather than a 500.
-     */
-    public MarketingContactHistoryDto history(UUID contactId) {
-        MarketingContactsRepository.RawContact contact = repository.findById(contactId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such contact"));
+    private Contact toContact(MarketingContactsRepository.RawContact raw) {
+        String squareProfileUrl = raw.squareCustomerId() == null
+                ? null
+                : String.format(SQUARE_CUSTOMER_PROFILE_URL, raw.squareCustomerId());
 
-        List<Submission> submissions = repository.findSubmissionHistory(contact.phoneNumber(), contact.emailAddress())
+        List<Submission> submissions = repository.findSubmissionHistory(raw.phoneNumber(), raw.emailAddress())
                 .stream()
                 .map(MarketingContactsService::toSubmission)
                 .collect(Collectors.toList());
 
-        List<Appointment> appointments = contact.squareCustomerId() == null
-                ? List.of()
-                : fetchAppointments(contact.squareCustomerId());
+        List<Appointment> appointments = raw.squareCustomerId() == null ? List.of() : fetchAppointments(raw.squareCustomerId());
 
-        return new MarketingContactHistoryDto(submissions, appointments);
+        return new Contact(
+                raw.id().toString(),
+                raw.givenName(),
+                raw.phoneNumber(),
+                raw.emailAddress(),
+                raw.originalTrafficSource(),
+                raw.marketingTrafficSource(),
+                raw.landingPageSlug(),
+                raw.variantName(),
+                raw.deviceType(),
+                raw.osName(),
+                raw.osVersion(),
+                raw.browserName(),
+                raw.browserVersion(),
+                raw.smsMarketingConsent(),
+                raw.emailMarketingConsent(),
+                squareProfileUrl,
+                submissions,
+                appointments,
+                raw.createdAt()
+        );
     }
 
+    /** Best-effort: if Square is unreachable, the contact's own data still renders with an
+     * empty appointments list rather than breaking the whole page.
+     */
     private List<Appointment> fetchAppointments(String squareCustomerId) {
         try {
             List<Booking> bookings = square.bookingsForCustomer(squareCustomerId);
@@ -86,9 +103,9 @@ public class MarketingContactsService {
             for (TeamMember tm : square.allTeamMembers()) memberNames.put(tm.id(), tm.fullName());
 
             List<String> variationIds = bookings.stream()
-                    .flatMap(b -> b.appointmentSegments() == null ? java.util.stream.Stream.<AppointmentSegment>empty() : b.appointmentSegments().stream())
+                    .flatMap(b -> b.appointmentSegments() == null ? Stream.<AppointmentSegment>empty() : b.appointmentSegments().stream())
                     .map(AppointmentSegment::serviceVariationId)
-                    .filter(java.util.Objects::nonNull)
+                    .filter(Objects::nonNull)
                     .toList();
             Map<String, String> serviceNames = square.catalogNames(variationIds);
             Map<String, BigDecimal> servicePrices = square.catalogPrices(variationIds);
@@ -138,37 +155,6 @@ public class MarketingContactsService {
                 raw.utmCampaign(),
                 raw.serviceName(),
                 raw.price()
-        );
-    }
-
-    private static Contact toContact(MarketingContactsRepository.RawContact raw) {
-        String squareProfileUrl = raw.squareCustomerId() == null
-                ? null
-                : String.format(SQUARE_CUSTOMER_PROFILE_URL, raw.squareCustomerId());
-        return new Contact(
-                raw.id().toString(),
-                raw.givenName(),
-                raw.phoneNumber(),
-                raw.emailAddress(),
-                raw.originalTrafficSource(),
-                raw.marketingTrafficSource(),
-                raw.landingPageSlug(),
-                raw.variantName(),
-                raw.deviceType(),
-                raw.osName(),
-                raw.osVersion(),
-                raw.browserName(),
-                raw.browserVersion(),
-                raw.smsMarketingConsent(),
-                raw.emailMarketingConsent(),
-                raw.squareBookingId() != null,
-                squareProfileUrl,
-                raw.bookingStatus(),
-                raw.bookingStartAt(),
-                raw.bookingServiceName(),
-                raw.bookingPrice(),
-                raw.bookingArtistName(),
-                raw.createdAt()
         );
     }
 }

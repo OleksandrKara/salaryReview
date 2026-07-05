@@ -760,15 +760,17 @@ export interface MarketingContact {
   browserVersion: string | null;
   smsMarketingConsent: boolean | null;
   emailMarketingConsent: boolean | null;
-  /** True once this lead has completed a real Square booking. */
-  hasAppointment: boolean;
-  /** Square Dashboard customer profile link, or null if no Square customer exists yet. */
+  /** Square Dashboard customer profile link, or null if no Square customer is known for this
+   * contact yet (neither found by lookup nor created by a booking). */
   squareProfileUrl: string | null;
-  bookingStatus: string | null;
-  bookingStartAt: string | null;
-  bookingServiceName: string | null;
-  bookingPrice: number | null;
-  bookingArtistName: string | null;
+  /** Every form submission this contact's phone/email ever made, most recent first. Always
+   * populated (cheap — our own DB) so the UI can show "no submissions" without an extra click,
+   * though in practice every contact has at least one. */
+  submissions: MarketingContactSubmission[];
+  /** This contact's Square appointment history, most recent/upcoming first. Empty (never null)
+   * when no Square customer is known, or Square has no bookings for them — the UI doesn't need
+   * to distinguish those two cases. */
+  appointments: MarketingContactAppointment[];
   createdAt: string;
 }
 
@@ -798,11 +800,6 @@ export interface MarketingContactAppointment {
    * best-effort estimate, not a payroll figure. */
   price: number | null;
   artistName: string | null;
-}
-
-export interface MarketingContactHistory {
-  submissions: MarketingContactSubmission[];
-  appointments: MarketingContactAppointment[];
 }
 
 // --- Knowledge Base articles (com.salonreview.web.KbArticleController) ---
