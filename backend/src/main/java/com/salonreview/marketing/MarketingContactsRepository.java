@@ -107,16 +107,19 @@ public class MarketingContactsRepository {
         return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact);
     }
 
-    /** Every submission this phone number or email address ever made, most recent first —
-     * matched on either since a contact's email can be filled in on a later visit than their
-     * first (phone is the stable identifier; email may only appear from a later submission).
+    /** Every submission this phone number ever made, most recent first. Phone is the sole match
+     * key — it's the contact's stable identifier (marketing.contacts is keyed on phone_number,
+     * and SquareCustomerGateway matches phone-first-then-email for the same reason): the same
+     * real person can submit the form under more than one email over time, and matching on email
+     * too would risk pulling a *different* phone number's history in just because it happens to
+     * share an email (e.g. a shared family address).
      */
-    public List<RawSubmission> findSubmissionHistory(String phoneNumber, String emailAddress) {
+    public List<RawSubmission> findSubmissionHistory(String phoneNumber) {
         String sql = """
                 SELECT submission_type, occurred_at, landing_page_slug, variant_name,
                        traffic_source, utm_source, utm_medium, utm_campaign, service_name, price
                 FROM marketing.submissions
-                WHERE customer_phone = ? OR (? IS NOT NULL AND customer_email = ?)
+                WHERE customer_phone = ?
                 ORDER BY occurred_at DESC
                 """;
         return jdbcTemplate.query(sql, (rs, rowNum) -> new RawSubmission(
@@ -130,7 +133,7 @@ public class MarketingContactsRepository {
                 rs.getString("utm_campaign"),
                 rs.getString("service_name"),
                 rs.getBigDecimal("price")
-        ), phoneNumber, emailAddress, emailAddress);
+        ), phoneNumber);
     }
 
     /** The originating submission for each of the given Square booking ids, keyed by booking id
