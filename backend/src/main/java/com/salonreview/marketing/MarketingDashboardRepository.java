@@ -59,7 +59,16 @@ public class MarketingDashboardRepository {
                 "SELECT stats_since FROM marketing.landing_pages WHERE id = ?",
                 (rs, rowNum) -> rs.getTimestamp("stats_since"),
                 landingPageId);
-        return rows.stream().findFirst().filter(java.util.Objects::nonNull).map(Timestamp::toInstant);
+        return firstNonNullInstant(rows);
+    }
+
+    /** Package-private so it's independently unit-testable without a database: filter() must
+     * run before findFirst(), since findFirst() itself does Optional.of(element) internally,
+     * which throws NPE the instant it reaches a null Timestamp — the default state for every
+     * landing page until a cutoff is explicitly set.
+     */
+    static Optional<Instant> firstNonNullInstant(List<Timestamp> rows) {
+        return rows.stream().filter(java.util.Objects::nonNull).findFirst().map(Timestamp::toInstant);
     }
 
     public void updateStatsSince(UUID landingPageId, Instant statsSince) {
