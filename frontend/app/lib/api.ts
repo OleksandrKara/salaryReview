@@ -30,6 +30,7 @@ import type {
   KbRequest,
   KbRequestStatus,
   KbRequestTarget,
+  MarketingContactHistory,
   MarketingDashboardData,
   RagCitation,
   RagDocumentSummary,
@@ -333,6 +334,11 @@ export const api = {
 
   duplicateMarketingVariant: (variantId: string, name: string) =>
     proxyJson<{ variantId: string }>(`/api/owner/marketing/variants/${variantId}/duplicate`, 'POST', { name }),
+
+  // Lazy, per-contact: Square appointment history + submission history, fetched only when a
+  // contact row is expanded so the main list never pays for N Square API calls.
+  getMarketingContactHistory: (contactId: string) =>
+    proxyGet<MarketingContactHistory>(`/api/owner/marketing/contacts/${contactId}/history`),
 
   setMarketingStatsSince: (slug: string, value: string | null) =>
     proxyVoid(`/api/owner/marketing/stats-since?slug=${encodeURIComponent(slug)}`, 'PUT', { value }),

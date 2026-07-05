@@ -160,6 +160,41 @@ public class SquareClient {
         return all;
     }
 
+    /** Every booking (past and upcoming) for one Square customer, most recent first — no date
+     * bound, since this backs an on-demand "appointment history" view rather than a payroll
+     * window. Short TTL: called lazily per-contact from the marketing Contacts page, not in a
+     * hot path, but still worth not re-fetching on every render while that page is open.
+     */
+    public List<Booking> bookingsForCustomer(String customerId) {
+        if (customerId == null || customerId.isBlank()) return List.of();
+        return cached("bookingsForCustomer:" + customerId, Duration.ofMinutes(2), () -> {
+            List<Booking> all = new ArrayList<>();
+            String cursor = null;
+            do {
+                final String c = cursor;
+                BookingsListResponse resp = http.get()
+                        .uri(b -> {
+                            b.path("/v2/bookings")
+                                    .queryParam("location_id", locationId)
+                                    .queryParam("customer_id", customerId)
+                                    .queryParam("limit", PAGE_LIMIT);
+                            if (c != null) b.queryParam("cursor", c);
+                            return b.build();
+                        })
+                        .retrieve()
+                        .body(BookingsListResponse.class);
+                if (resp != null && resp.bookings() != null) all.addAll(resp.bookings());
+                cursor = resp == null ? null : resp.cursor();
+            } while (cursor != null && !cursor.isBlank());
+            all.sort((a, b) -> {
+                if (a.startAt() == null) return 1;
+                if (b.startAt() == null) return -1;
+                return b.startAt().compareTo(a.startAt());
+            });
+            return all;
+        });
+    }
+
     /** Completed orders closed in [start, end) for the configured location, following pagination. */
     public List<Order> completedOrders(Instant start, Instant end) {
         return cached("orders:" + start + ":" + end, Duration.ofMinutes(10), () -> completedOrdersUncached(start, end));
