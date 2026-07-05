@@ -44,7 +44,7 @@ function AppointmentInfo({ c }: { c: MarketingContact }) {
   );
 }
 
-function TrafficSource({ c }: { c: MarketingContact }) {
+function SourceInfo({ c }: { c: MarketingContact }) {
   const same = c.originalTrafficSource === c.marketingTrafficSource;
   return (
     <div className="text-xs">
@@ -56,6 +56,27 @@ function TrafficSource({ c }: { c: MarketingContact }) {
           <span className="text-zinc-500">Latest:</span> {c.marketingTrafficSource ?? '—'}
         </div>
       )}
+      {(c.landingPageSlug || c.variantName) && (
+        <div className="mt-1 text-zinc-400">
+          {c.landingPageSlug ?? '—'}
+          {c.variantName ? ` · ${c.variantName}` : ''}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DeviceInfo({ c }: { c: MarketingContact }) {
+  if (!c.deviceType && !c.osName && !c.browserName) {
+    return <span className="text-xs text-zinc-400">—</span>;
+  }
+  return (
+    <div className="text-xs text-zinc-600">
+      {c.deviceType && <div className="capitalize">{c.deviceType}</div>}
+      <div className="text-zinc-400">
+        {[c.osName, c.osVersion].filter(Boolean).join(' ')}
+        {c.browserName ? ` · ${c.browserName}` : ''}
+      </div>
     </div>
   );
 }
@@ -76,7 +97,10 @@ export default function ContactsTable({ contacts }: { contacts: MarketingContact
             <div className="mt-1 text-sm text-zinc-600">{c.phoneNumber}</div>
             {c.emailAddress && <div className="text-sm text-zinc-600">{c.emailAddress}</div>}
             <div className="mt-2">
-              <TrafficSource c={c} />
+              <SourceInfo c={c} />
+            </div>
+            <div className="mt-2">
+              <DeviceInfo c={c} />
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
               <ConsentBadge label="SMS" value={c.smsMarketingConsent} />
@@ -95,7 +119,8 @@ export default function ContactsTable({ contacts }: { contacts: MarketingContact
           <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
             <tr>
               <th className="px-3 py-2">Contact</th>
-              <th className="px-3 py-2">Traffic Source</th>
+              <th className="px-3 py-2">Source</th>
+              <th className="px-3 py-2">Device</th>
               <th className="px-3 py-2">Consent</th>
               <th className="px-3 py-2">Appointment</th>
             </tr>
@@ -109,7 +134,10 @@ export default function ContactsTable({ contacts }: { contacts: MarketingContact
                   {c.emailAddress && <div className="text-xs text-zinc-500">{c.emailAddress}</div>}
                 </td>
                 <td className="px-3 py-2">
-                  <TrafficSource c={c} />
+                  <SourceInfo c={c} />
+                </td>
+                <td className="px-3 py-2">
+                  <DeviceInfo c={c} />
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex flex-col gap-1">

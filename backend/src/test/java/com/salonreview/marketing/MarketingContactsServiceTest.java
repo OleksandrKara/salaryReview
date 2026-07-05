@@ -35,6 +35,8 @@ class MarketingContactsServiceTest {
         when(repository.listAll()).thenReturn(List.of(new RawContact(
                 id, "(858) 555-0100", "Jane", "jane@example.com",
                 "instagram / paid / promo", "google / cpc / retargeting",
+                "mani", "Version_1",
+                "mobile", "iOS", "17.5", "Mobile Safari", "17.5",
                 true, true,
                 "SQCUST123", "SQBOOK456", "ACCEPTED", Instant.parse("2026-07-31T17:00:00Z"),
                 "Manicure", new BigDecimal("85.00"), "Susan A.",
@@ -49,6 +51,10 @@ class MarketingContactsServiceTest {
         assertThat(c.squareProfileUrl()).isEqualTo("https://app.squareup.com/dashboard/customers/SQCUST123");
         assertThat(c.originalTrafficSource()).isEqualTo("instagram / paid / promo");
         assertThat(c.marketingTrafficSource()).isEqualTo("google / cpc / retargeting");
+        assertThat(c.landingPageSlug()).isEqualTo("mani");
+        assertThat(c.variantName()).isEqualTo("Version_1");
+        assertThat(c.deviceType()).isEqualTo("mobile");
+        assertThat(c.osName()).isEqualTo("iOS");
         assertThat(c.bookingPrice()).isEqualByComparingTo("85.00");
     }
 
@@ -59,6 +65,8 @@ class MarketingContactsServiceTest {
         when(repository.listAll()).thenReturn(List.of(new RawContact(
                 id, "(858) 555-0100", "Jane", null,
                 "instagram / paid / promo", "instagram / paid / promo",
+                "mani", "Version_1",
+                "desktop", "Windows", "10", "Chrome", "126",
                 null, null,
                 null, null, null, null,
                 null, null, null,

@@ -15,6 +15,16 @@ public record MarketingContactDto(
             String emailAddress,
             String originalTrafficSource,
             String marketingTrafficSource,
+            /** Landing page + variant the lead first saw — denormalized at capture time, so a
+             * later rename/delete of the variant never changes what this record says. */
+            String landingPageSlug,
+            String variantName,
+            /** Most recent visit's device/OS/browser. */
+            String deviceType,
+            String osName,
+            String osVersion,
+            String browserName,
+            String browserVersion,
             Boolean smsMarketingConsent,
             Boolean emailMarketingConsent,
             /** True once this lead has completed a real Square booking. */
