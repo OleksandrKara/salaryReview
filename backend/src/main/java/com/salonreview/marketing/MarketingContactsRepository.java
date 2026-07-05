@@ -27,6 +27,11 @@ public class MarketingContactsRepository {
             String emailAddress,
             String originalTrafficSource,
             String marketingTrafficSource,
+            /** Latest touch's raw UTM — like marketingTrafficSource, overwritten on every
+             * capture event, not preserved as first-touch. */
+            String utmSource,
+            String utmMedium,
+            String utmCampaign,
             String landingPageSlug,
             String variantName,
             String deviceType,
@@ -43,7 +48,8 @@ public class MarketingContactsRepository {
             String bookingServiceName,
             BigDecimal bookingPrice,
             String bookingArtistName,
-            Instant createdAt
+            Instant createdAt,
+            Instant updatedAt
     ) {}
 
     /** One row of marketing.submissions — every Step 1 capture, booking, or 4-hand request this
@@ -59,6 +65,9 @@ public class MarketingContactsRepository {
             String landingPageSlug,
             String variantName,
             String trafficSource,
+            String utmSource,
+            String utmMedium,
+            String utmCampaign,
             String serviceName,
             BigDecimal price
     ) {}
@@ -79,11 +88,12 @@ public class MarketingContactsRepository {
     private static final String CONTACT_COLUMNS = """
             id, phone_number, given_name, email_address,
             original_traffic_source, marketing_traffic_source,
+            utm_source, utm_medium, utm_campaign,
             landing_page_slug, variant_name,
             device_type, os_name, os_version, browser_name, browser_version,
             sms_marketing_consent, email_marketing_consent,
             square_customer_id, square_booking_id, booking_status, booking_start_at,
-            booking_service_name, booking_price, booking_artist_name, created_at
+            booking_service_name, booking_price, booking_artist_name, created_at, updated_at
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -104,7 +114,7 @@ public class MarketingContactsRepository {
     public List<RawSubmission> findSubmissionHistory(String phoneNumber, String emailAddress) {
         String sql = """
                 SELECT submission_type, occurred_at, landing_page_slug, variant_name,
-                       traffic_source, service_name, price
+                       traffic_source, utm_source, utm_medium, utm_campaign, service_name, price
                 FROM marketing.submissions
                 WHERE customer_phone = ? OR (? IS NOT NULL AND customer_email = ?)
                 ORDER BY occurred_at DESC
@@ -115,6 +125,9 @@ public class MarketingContactsRepository {
                 rs.getString("landing_page_slug"),
                 rs.getString("variant_name"),
                 rs.getString("traffic_source"),
+                rs.getString("utm_source"),
+                rs.getString("utm_medium"),
+                rs.getString("utm_campaign"),
                 rs.getString("service_name"),
                 rs.getBigDecimal("price")
         ), phoneNumber, emailAddress, emailAddress);
@@ -153,6 +166,9 @@ public class MarketingContactsRepository {
                 rs.getString("email_address"),
                 rs.getString("original_traffic_source"),
                 rs.getString("marketing_traffic_source"),
+                rs.getString("utm_source"),
+                rs.getString("utm_medium"),
+                rs.getString("utm_campaign"),
                 rs.getString("landing_page_slug"),
                 rs.getString("variant_name"),
                 rs.getString("device_type"),
@@ -169,7 +185,8 @@ public class MarketingContactsRepository {
                 rs.getString("booking_service_name"),
                 rs.getBigDecimal("booking_price"),
                 rs.getString("booking_artist_name"),
-                toInstant(rs.getTimestamp("created_at"))
+                toInstant(rs.getTimestamp("created_at")),
+                toInstant(rs.getTimestamp("updated_at"))
         );
     }
 

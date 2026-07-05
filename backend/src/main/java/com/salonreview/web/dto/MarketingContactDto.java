@@ -15,6 +15,11 @@ public record MarketingContactDto(
             String emailAddress,
             String originalTrafficSource,
             String marketingTrafficSource,
+            /** Latest touch's raw UTM — like marketingTrafficSource, overwritten on every
+             * capture event, not preserved as first-touch. */
+            String utmSource,
+            String utmMedium,
+            String utmCampaign,
             /** Landing page + variant the lead first saw — denormalized at capture time, so a
              * later rename/delete of the variant never changes what this record says. */
             String landingPageSlug,
@@ -41,7 +46,8 @@ public record MarketingContactDto(
              * distinguish those cases from "genuinely no appointments".
              */
             List<Appointment> appointments,
-            Instant createdAt
+            Instant createdAt,
+            Instant updatedAt
     ) {}
 
     public record Submission(
@@ -53,6 +59,9 @@ public record MarketingContactDto(
              * fields (e.g. "Direct / No referrer", "google / cpc / promo") — never blank for a
              * submission recorded after this column existed; null only on older rows. */
             String trafficSource,
+            String utmSource,
+            String utmMedium,
+            String utmCampaign,
             String serviceName,
             BigDecimal price
     ) {}

@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { serverApi } from '../../../lib/serverApi';
 import PageHeader from '../../../components/PageHeader';
-import ContactsTable from './ContactsTable';
+import ContactsFilterBar from './ContactsFilterBar';
 
 export default async function MarketingContactsPage() {
   const [me, data] = await Promise.all([serverApi.getMe(), serverApi.getMarketingContacts()]);
@@ -29,10 +29,9 @@ export default async function MarketingContactsPage() {
       ) : (
         <div className="mt-6">
           <p className="mb-3 text-xs text-zinc-500">
-            {data.contacts.length} contact{data.contacts.length === 1 ? '' : 's'} · a lead is captured the moment
-            someone submits their name and phone number, before they finish booking.
+            A lead is captured the moment someone submits their name and phone number, before they finish booking.
           </p>
-          <ContactsTable contacts={data.contacts} />
+          <ContactsFilterBar contacts={data.contacts} />
         </div>
       )}
     </main>

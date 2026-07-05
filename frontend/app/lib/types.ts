@@ -765,6 +765,11 @@ export interface MarketingContact {
   emailAddress: string | null;
   originalTrafficSource: string | null;
   marketingTrafficSource: string | null;
+  /** Latest touch's raw UTM — like marketingTrafficSource, overwritten on every capture event,
+   * not preserved as first-touch. */
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
   /** Landing page + variant the lead first saw — denormalized at capture time, so a later
    * rename/delete of the variant never changes what this record says. */
   landingPageSlug: string | null;
@@ -789,6 +794,7 @@ export interface MarketingContact {
    * to distinguish those two cases. */
   appointments: MarketingContactAppointment[];
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface MarketingContactsData {
@@ -805,6 +811,9 @@ export interface MarketingContactSubmission {
    * "google / cpc / promo") — never blank for a submission recorded after this field existed;
    * null only on older rows. */
   trafficSource: string | null;
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
   serviceName: string | null;
   price: number | null;
 }
