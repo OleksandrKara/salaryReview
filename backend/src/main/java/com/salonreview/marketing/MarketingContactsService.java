@@ -64,7 +64,7 @@ public class MarketingContactsService {
                 ? null
                 : String.format(SQUARE_CUSTOMER_PROFILE_URL, raw.squareCustomerId());
 
-        List<Submission> submissions = repository.findSubmissionHistory(raw.phoneNumber(), raw.emailAddress())
+        List<Submission> submissions = repository.findSubmissionHistory(raw.phoneNumber())
                 .stream()
                 .map(MarketingContactsService::toSubmission)
                 .collect(Collectors.toList());

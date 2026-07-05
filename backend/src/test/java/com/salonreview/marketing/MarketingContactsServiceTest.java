@@ -36,7 +36,7 @@ class MarketingContactsServiceTest {
         repository = mock(MarketingContactsRepository.class);
         square = mock(SquareClient.class);
         service = new MarketingContactsService(repository, square);
-        when(repository.findSubmissionHistory(any(), any())).thenReturn(List.of());
+        when(repository.findSubmissionHistory(any())).thenReturn(List.of());
         when(repository.findSubmissionsByBookingIds(any())).thenReturn(Map.of());
     }
 
@@ -108,7 +108,7 @@ class MarketingContactsServiceTest {
     void submissionsAlwaysPopulated() {
         UUID id = UUID.randomUUID();
         when(repository.listAll()).thenReturn(List.of(rawContact(id, null)));
-        when(repository.findSubmissionHistory("(858) 555-0100", "jane@example.com")).thenReturn(List.of(
+        when(repository.findSubmissionHistory("(858) 555-0100")).thenReturn(List.of(
                 new RawSubmission("step1", Instant.parse("2026-07-01T00:00:00Z"), "mani", "Version_1",
                         "google / cpc / promo", "google", "cpc", "promo", null, null)
         ));
