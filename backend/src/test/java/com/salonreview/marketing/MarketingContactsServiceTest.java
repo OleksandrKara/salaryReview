@@ -1,5 +1,6 @@
 package com.salonreview.marketing;
 
+import com.salonreview.marketing.MarketingContactsRepository.RawAppointmentSubmission;
 import com.salonreview.marketing.MarketingContactsRepository.RawContact;
 import com.salonreview.marketing.MarketingContactsRepository.RawSubmission;
 import com.salonreview.square.SquareClient;
@@ -36,6 +37,7 @@ class MarketingContactsServiceTest {
         square = mock(SquareClient.class);
         service = new MarketingContactsService(repository, square);
         when(repository.findSubmissionHistory(any(), any())).thenReturn(List.of());
+        when(repository.findSubmissionsByBookingIds(any())).thenReturn(Map.of());
     }
 
     private static RawContact rawContact(UUID id, String squareCustomerId) {
@@ -62,7 +64,7 @@ class MarketingContactsServiceTest {
 
         assertThat(dto.available()).isTrue();
         Contact c = dto.contacts().get(0);
-        assertThat(c.squareProfileUrl()).isEqualTo("https://app.squareup.com/dashboard/customers/SQCUST123");
+        assertThat(c.squareProfileUrl()).isEqualTo("https://app.squareup.com/dashboard/customers/directory/SQCUST123");
         assertThat(c.originalTrafficSource()).isEqualTo("instagram / paid / promo");
         assertThat(c.marketingTrafficSource()).isEqualTo("google / cpc / retargeting");
         assertThat(c.landingPageSlug()).isEqualTo("mani");
@@ -135,6 +137,35 @@ class MarketingContactsServiceTest {
         assertThat(appt.serviceName()).isEqualTo("Manicure");
         assertThat(appt.price()).isEqualByComparingTo("85.00");
         assertThat(appt.artistName()).isEqualTo("Susan A.");
+        assertThat(appt.utmSource()).isNull();
+        assertThat(appt.submissionOccurredAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("an appointment that came through our own funnel is enriched with its originating submission's traffic/device info")
+    void appointmentEnrichedWithOriginatingSubmission() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+
+        Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2026-07-31T17:00:00Z", null, null,
+                "LOC1", "SQCUST123", null, null,
+                List.of(new AppointmentSegment("TM1", "VAR1", 60)));
+        when(square.bookingsForCustomer("SQCUST123")).thenReturn(List.of(booking));
+        when(square.allTeamMembers()).thenReturn(List.of());
+        when(square.catalogNames(List.of("VAR1"))).thenReturn(Map.of());
+        when(square.catalogPrices(List.of("VAR1"))).thenReturn(Map.of());
+        when(repository.findSubmissionsByBookingIds(List.of("SQBOOK1"))).thenReturn(Map.of(
+                "SQBOOK1", new RawAppointmentSubmission("SQBOOK1", Instant.parse("2026-07-30T10:00:00Z"),
+                        "google", "cpc", "promo", "mobile", "iOS", "17.5", "Mobile Safari")
+        ));
+
+        MarketingContactDto dto = service.contacts();
+
+        var appt = dto.contacts().get(0).appointments().get(0);
+        assertThat(appt.utmSource()).isEqualTo("google");
+        assertThat(appt.deviceType()).isEqualTo("mobile");
+        assertThat(appt.osName()).isEqualTo("iOS");
+        assertThat(appt.submissionOccurredAt()).isEqualTo(Instant.parse("2026-07-30T10:00:00Z"));
     }
 
     @Test

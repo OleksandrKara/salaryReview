@@ -119,6 +119,7 @@ function AppointmentHistoryList({ appointments }: { appointments: MarketingConta
     <ul className="flex flex-col gap-2">
       {appointments.map((a) => {
         const upcoming = a.startAt != null && new Date(a.startAt).getTime() > now;
+        const hasSubmission = a.submissionOccurredAt != null;
         return (
           <li key={a.bookingId} className="flex items-start justify-between gap-3 rounded-md bg-white p-2 ring-1 ring-zinc-100">
             <div>
@@ -131,6 +132,23 @@ function AppointmentHistoryList({ appointments }: { appointments: MarketingConta
                 {a.artistName ? ` · ${a.artistName}` : ''}
                 {a.price != null ? ` · ~${usd(a.price)}` : ''}
               </div>
+              {hasSubmission ? (
+                <div className="mt-1 text-xs text-zinc-400">
+                  Booked {fmtDate(a.submissionOccurredAt as string)}
+                  {(a.utmSource || a.utmMedium || a.utmCampaign) && (
+                    <> · {[a.utmSource, a.utmMedium, a.utmCampaign].filter(Boolean).join(' / ')}</>
+                  )}
+                  {(a.deviceType || a.osName || a.browserName) && (
+                    <>
+                      {' '}
+                      · {a.deviceType ?? ''} {[a.osName, a.osVersion].filter(Boolean).join(' ')}
+                      {a.browserName ? ` · ${a.browserName}` : ''}
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="mt-1 text-xs text-zinc-300">Not booked through this landing page</div>
+              )}
             </div>
             <AppointmentStatusBadge status={a.status} />
           </li>
@@ -166,20 +184,27 @@ function SubmissionHistoryList({ submissions }: { submissions: MarketingContactS
   );
 }
 
+/** Only rendered when a Square customer is actually known for this contact. */
+function SquareProfileLink({ url }: { url: string }) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="whitespace-nowrap text-xs font-medium text-blue-600 hover:underline"
+    >
+      View in Square →
+    </a>
+  );
+}
+
 function ExpandedSections({ c, showAppointments, showSubmissions }: { c: MarketingContact; showAppointments: boolean; showSubmissions: boolean }) {
   if (!showAppointments && !showSubmissions) return null;
   return (
     <div className="flex flex-col gap-4">
       {showAppointments && (
         <div>
-          <div className="mb-2 flex items-center justify-between">
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Appointment History</h4>
-            {c.squareProfileUrl && (
-              <a href={c.squareProfileUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-blue-600 hover:underline">
-                View in Square →
-              </a>
-            )}
-          </div>
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Appointment History</h4>
           <AppointmentHistoryList appointments={c.appointments} />
         </div>
       )}
@@ -212,6 +237,7 @@ export default function ContactsTable({ contacts }: { contacts: MarketingContact
           <div key={c.id} className="rounded-lg p-4 ring-1 ring-zinc-200">
             <div className="flex items-center justify-between gap-2">
               <span className="font-medium">{c.givenName ?? '—'}</span>
+              {c.squareProfileUrl && <SquareProfileLink url={c.squareProfileUrl} />}
             </div>
             <div className="mt-1 text-sm text-zinc-600">{c.phoneNumber}</div>
             {c.emailAddress && <div className="text-sm text-zinc-600">{c.emailAddress}</div>}
@@ -267,7 +293,10 @@ export default function ContactsTable({ contacts }: { contacts: MarketingContact
                 <Fragment key={c.id}>
                   <tr className="hover:bg-zinc-50">
                     <td className="px-3 py-2">
-                      <div className="font-medium">{c.givenName ?? '—'}</div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="font-medium">{c.givenName ?? '—'}</div>
+                        {c.squareProfileUrl && <SquareProfileLink url={c.squareProfileUrl} />}
+                      </div>
                       <div className="text-xs text-zinc-500">{c.phoneNumber}</div>
                       {c.emailAddress && <div className="text-xs text-zinc-500">{c.emailAddress}</div>}
                     </td>
