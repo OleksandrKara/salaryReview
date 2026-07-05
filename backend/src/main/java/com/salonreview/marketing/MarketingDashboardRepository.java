@@ -25,7 +25,8 @@ public class MarketingDashboardRepository {
             int weight,
             boolean active,
             long pageViews,
-            long bookingsCompleted
+            long bookingsCompleted,
+            String key
     ) {}
 
     private final JdbcTemplate jdbcTemplate;
@@ -54,6 +55,7 @@ public class MarketingDashboardRepository {
     public List<RawVariantStat> findVariantStats(UUID landingPageId) {
         String sql = """
                 SELECT v.id AS variant_id, v.name AS name, v.weight AS weight, v.active AS active,
+                       v.key AS key,
                        COALESCE(pv.page_views, 0) AS page_views,
                        COALESCE(bk.bookings_completed, 0) AS bookings_completed
                 FROM marketing.landing_variants v
@@ -77,7 +79,8 @@ public class MarketingDashboardRepository {
                 rs.getInt("weight"),
                 rs.getBoolean("active"),
                 rs.getLong("page_views"),
-                rs.getLong("bookings_completed")
+                rs.getLong("bookings_completed"),
+                rs.getString("key")
         ), landingPageId);
     }
 }

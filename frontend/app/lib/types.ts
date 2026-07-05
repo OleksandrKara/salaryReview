@@ -722,6 +722,8 @@ export interface MarketingVariantStat {
   pageViews: number;
   bookingsCompleted: number;
   conversionRate: number;
+  /** Direct ?v=<key> link to view this exact variant, or null if it has no key yet. */
+  deepLinkUrl: string | null;
 }
 
 export interface MarketingDashboardData {

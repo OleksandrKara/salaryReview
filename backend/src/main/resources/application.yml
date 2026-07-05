@@ -28,6 +28,11 @@ square:
   access-token: ${SQUARE_ACCESS_TOKEN:}
   location-id: ${SQUARE_LOCATION_ID:}
 
+# Base URL of the public landing page (the separate salonLandings service) — used to build
+# ?v=<key> deep links to a specific marketing variant on the owner marketing dashboard.
+marketing:
+  landing-base-url: ${MARKETING_LANDING_BASE_URL:https://mani.akluxnails.com}
+
 # Single shared owner login (Phase 1). The frontend holds these server-side and proxies calls.
 app:
   auth:
