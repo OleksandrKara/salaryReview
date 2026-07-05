@@ -44,12 +44,14 @@ class MarketingContactsServiceTest {
         return new RawContact(
                 id, "(858) 555-0100", "Jane", "jane@example.com",
                 "instagram / paid / promo", "google / cpc / retargeting",
+                "google", "cpc", "retargeting",
                 "mani", "Version_1",
                 "mobile", "iOS", "17.5", "Mobile Safari", "17.5",
                 true, true,
                 squareCustomerId, null, null, null,
                 null, null, null,
-                Instant.parse("2026-07-01T00:00:00Z")
+                Instant.parse("2026-07-01T00:00:00Z"),
+                Instant.parse("2026-07-02T00:00:00Z")
         );
     }
 
@@ -71,6 +73,10 @@ class MarketingContactsServiceTest {
         assertThat(c.variantName()).isEqualTo("Version_1");
         assertThat(c.deviceType()).isEqualTo("mobile");
         assertThat(c.osName()).isEqualTo("iOS");
+        assertThat(c.utmSource()).isEqualTo("google");
+        assertThat(c.utmMedium()).isEqualTo("cpc");
+        assertThat(c.utmCampaign()).isEqualTo("retargeting");
+        assertThat(c.updatedAt()).isEqualTo(Instant.parse("2026-07-02T00:00:00Z"));
     }
 
     @Test
@@ -104,7 +110,7 @@ class MarketingContactsServiceTest {
         when(repository.listAll()).thenReturn(List.of(rawContact(id, null)));
         when(repository.findSubmissionHistory("(858) 555-0100", "jane@example.com")).thenReturn(List.of(
                 new RawSubmission("step1", Instant.parse("2026-07-01T00:00:00Z"), "mani", "Version_1",
-                        "google / cpc / promo", null, null)
+                        "google / cpc / promo", "google", "cpc", "promo", null, null)
         ));
 
         MarketingContactDto dto = service.contacts();
@@ -113,6 +119,7 @@ class MarketingContactsServiceTest {
         assertThat(c.submissions()).hasSize(1);
         assertThat(c.submissions().get(0).submissionType()).isEqualTo("step1");
         assertThat(c.submissions().get(0).trafficSource()).isEqualTo("google / cpc / promo");
+        assertThat(c.submissions().get(0).utmCampaign()).isEqualTo("promo");
     }
 
     @Test

@@ -78,6 +78,9 @@ public class MarketingContactsService {
                 raw.emailAddress(),
                 raw.originalTrafficSource(),
                 raw.marketingTrafficSource(),
+                raw.utmSource(),
+                raw.utmMedium(),
+                raw.utmCampaign(),
                 raw.landingPageSlug(),
                 raw.variantName(),
                 raw.deviceType(),
@@ -90,7 +93,8 @@ public class MarketingContactsService {
                 squareProfileUrl,
                 submissions,
                 appointments,
-                raw.createdAt()
+                raw.createdAt(),
+                raw.updatedAt()
         );
     }
 
@@ -171,6 +175,9 @@ public class MarketingContactsService {
                 raw.landingPageSlug(),
                 raw.variantName(),
                 raw.trafficSource(),
+                raw.utmSource(),
+                raw.utmMedium(),
+                raw.utmCampaign(),
                 raw.serviceName(),
                 raw.price()
         );
