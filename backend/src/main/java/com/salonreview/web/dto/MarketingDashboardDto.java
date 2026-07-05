@@ -20,7 +20,10 @@ public record MarketingDashboardDto(
             long bookingsCompleted,
             double conversionRate,
             /** Direct ?v=<key> link to view this exact variant, or null if it has no key yet. */
-            String deepLinkUrl
+            String deepLinkUrl,
+            /** What this variant is testing and why, e.g. "urgency-focused headline + green
+             * accent vs. control's neutral tone" — free text, null if never set. */
+            String description
     ) {}
 
     /** Rendered when the marketing schema/tables aren't reachable yet, or the slug is unknown. */

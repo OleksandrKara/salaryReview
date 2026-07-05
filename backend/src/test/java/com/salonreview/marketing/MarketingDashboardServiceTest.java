@@ -49,7 +49,7 @@ class MarketingDashboardServiceTest {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findExperimentStatus(LANDING_PAGE_ID)).thenReturn(Optional.of("active"));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), isNull())).thenReturn(List.of(
-                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 25, "control")
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 25, "control", "Baseline, no changes")
         ));
 
         MarketingDashboardDto dashboard = service.dashboard("mani");
@@ -61,6 +61,7 @@ class MarketingDashboardServiceTest {
         assertThat(variant.bookingsCompleted()).isEqualTo(25);
         assertThat(variant.conversionRate()).isEqualTo(0.25);
         assertThat(variant.deepLinkUrl()).isEqualTo("https://mani.akluxnails.com/?v=control");
+        assertThat(variant.description()).isEqualTo("Baseline, no changes");
         assertThat(dashboard.statsSince()).isNull();
     }
 
@@ -85,7 +86,7 @@ class MarketingDashboardServiceTest {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findExperimentStatus(LANDING_PAGE_ID)).thenReturn(Optional.of("active"));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), isNull())).thenReturn(List.of(
-                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 25, null)
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 25, null, null)
         ));
 
         MarketingDashboardDto dashboard = service.dashboard("mani");
@@ -99,7 +100,7 @@ class MarketingDashboardServiceTest {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findExperimentStatus(LANDING_PAGE_ID)).thenReturn(Optional.empty());
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), isNull())).thenReturn(List.of(
-                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 0, 0, "control")
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 0, 0, "control", null)
         ));
 
         MarketingDashboardDto dashboard = service.dashboard("mani");
@@ -180,7 +181,7 @@ class MarketingDashboardServiceTest {
     @DisplayName("duplicate surfaces a friendly conflict, not a raw 500, when the generated key collides " +
             "(e.g. duplicating the same variant twice in a row with the same default name)")
     void duplicateBlockedByKeyCollision() {
-        VariantSource source = new VariantSource(LANDING_PAGE_ID, 0, "{}");
+        VariantSource source = new VariantSource(LANDING_PAGE_ID, 0, "{}", null);
         when(repository.findVariantSource(VARIANT_ID)).thenReturn(Optional.of(source));
         doThrow(new DataIntegrityViolationException("unique violation"))
                 .when(repository).duplicateVariant(eq(source), any(), any());
@@ -193,7 +194,7 @@ class MarketingDashboardServiceTest {
     @Test
     @DisplayName("duplicate copies weight/content from the source and auto-generates a key from the new name")
     void duplicateCopiesSourceAndGeneratesKey() {
-        VariantSource source = new VariantSource(LANDING_PAGE_ID, 0, "{\"ctaText\":\"Hi\"}");
+        VariantSource source = new VariantSource(LANDING_PAGE_ID, 0, "{\"ctaText\":\"Hi\"}", "Testing a friendlier CTA");
         UUID newId = UUID.randomUUID();
         when(repository.findVariantSource(VARIANT_ID)).thenReturn(Optional.of(source));
         when(repository.duplicateVariant(source, "Holiday Gold (copy)", "holiday-gold-copy")).thenReturn(newId);
@@ -201,6 +202,22 @@ class MarketingDashboardServiceTest {
         UUID result = service.duplicateVariant(VARIANT_ID, "Holiday Gold (copy)");
 
         assertThat(result).isEqualTo(newId);
+    }
+
+    @Test
+    @DisplayName("description is trimmed before being stored")
+    void descriptionIsTrimmed() {
+        service.updateVariantDescription(VARIANT_ID, "  Testing a bolder headline  ");
+
+        verify(repository).updateVariantDescription(VARIANT_ID, "Testing a bolder headline");
+    }
+
+    @Test
+    @DisplayName("a blank description clears it to null rather than storing whitespace")
+    void blankDescriptionClearsToNull() {
+        service.updateVariantDescription(VARIANT_ID, "   ");
+
+        verify(repository).updateVariantDescription(VARIANT_ID, null);
     }
 
     @Test

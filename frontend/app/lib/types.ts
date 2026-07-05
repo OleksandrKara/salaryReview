@@ -724,6 +724,9 @@ export interface MarketingVariantStat {
   conversionRate: number;
   /** Direct ?v=<key> link to view this exact variant, or null if it has no key yet. */
   deepLinkUrl: string | null;
+  /** What this variant is testing and why, e.g. "urgency-focused headline + green accent vs.
+   * control's neutral tone" — free text, null if never set. */
+  description: string | null;
 }
 
 export interface MarketingDashboardData {

@@ -76,6 +76,10 @@ public class MarketingDashboardService {
         repository.setVariantActive(variantId, active);
     }
 
+    public void updateVariantDescription(UUID variantId, String description) {
+        repository.updateVariantDescription(variantId, description == null || description.isBlank() ? null : description.trim());
+    }
+
     /** Blocks deletion with a friendly message when the variant has recorded page views or
      * bookings (the FK from events/attribution has no ON DELETE CASCADE — that's intentional,
      * historical data shouldn't silently disappear) rather than surfacing a raw DB error.
@@ -124,7 +128,7 @@ public class MarketingDashboardService {
         double conversionRate = raw.pageViews() == 0 ? 0.0 : (double) raw.bookingsCompleted() / raw.pageViews();
         String deepLinkUrl = raw.key() == null ? null : buildDeepLinkUrl(raw.key());
         return new VariantStat(raw.variantId(), raw.name(), raw.weight(), raw.active(),
-                raw.pageViews(), raw.bookingsCompleted(), conversionRate, deepLinkUrl);
+                raw.pageViews(), raw.bookingsCompleted(), conversionRate, deepLinkUrl, raw.description());
     }
 
     private String buildDeepLinkUrl(String key) {

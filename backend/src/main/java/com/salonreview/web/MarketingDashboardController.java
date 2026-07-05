@@ -30,6 +30,8 @@ public class MarketingDashboardController {
     public void updateVariant(@PathVariable UUID variantId, @RequestBody UpdateVariantRequest req) {
         if (req.name() != null) service.renameVariant(variantId, req.name());
         if (req.active() != null) service.setVariantActive(variantId, req.active());
+        // "" clears the description; a genuinely absent field (null) leaves it untouched.
+        if (req.description() != null) service.updateVariantDescription(variantId, req.description());
     }
 
     @DeleteMapping("/marketing/variants/{variantId}")
@@ -60,7 +62,7 @@ public class MarketingDashboardController {
         }
     }
 
-    public record UpdateVariantRequest(String name, Boolean active) {}
+    public record UpdateVariantRequest(String name, Boolean active, String description) {}
     public record DuplicateVariantRequest(String name) {}
     public record DuplicateVariantResponse(String variantId) {}
     public record StatsSinceRequest(String value) {}

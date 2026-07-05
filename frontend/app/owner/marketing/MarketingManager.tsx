@@ -58,6 +58,15 @@ export default function MarketingManager({
     return withVariantBusy(v, () => api.renameMarketingVariant(v.variantId, name.trim()));
   }
 
+  function onEditDescription(v: MarketingVariantStat) {
+    const description = prompt(
+      "What is this variant testing and why? (e.g. hooks/offers, colors, headline) Leave blank to clear.",
+      v.description ?? ''
+    );
+    if (description === null || description === v.description) return;
+    return withVariantBusy(v, () => api.setMarketingVariantDescription(v.variantId, description.trim()));
+  }
+
   function onDuplicate(v: MarketingVariantStat) {
     const name = prompt('Name for the copy:', `${v.name} (copy)`);
     if (!name || !name.trim()) return;
@@ -137,6 +146,7 @@ export default function MarketingManager({
         variants={variants}
         onToggleActive={onToggleActive}
         onRename={onRename}
+        onEditDescription={onEditDescription}
         onDuplicate={onDuplicate}
         onDelete={onDelete}
         busyVariantId={busyVariantId}
