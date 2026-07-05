@@ -784,9 +784,10 @@ export interface MarketingContactSubmission {
   occurredAt: string;
   landingPageSlug: string | null;
   variantName: string | null;
-  utmSource: string | null;
-  utmMedium: string | null;
-  utmCampaign: string | null;
+  /** Same classification shown for a contact's own traffic source (e.g. "Direct / No referrer",
+   * "google / cpc / promo") — never blank for a submission recorded after this field existed;
+   * null only on older rows. */
+  trafficSource: string | null;
   serviceName: string | null;
   price: number | null;
 }
@@ -803,9 +804,7 @@ export interface MarketingContactAppointment {
   /** From the marketing.submissions row that actually created this booking (matched by
    * square_booking_id) — all null if this appointment didn't originate through our own booking
    * funnel (e.g. booked in person, or through Square directly, before we ever tracked them). */
-  utmSource: string | null;
-  utmMedium: string | null;
-  utmCampaign: string | null;
+  trafficSource: string | null;
   deviceType: string | null;
   osName: string | null;
   osVersion: string | null;

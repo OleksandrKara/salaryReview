@@ -104,7 +104,7 @@ class MarketingContactsServiceTest {
         when(repository.listAll()).thenReturn(List.of(rawContact(id, null)));
         when(repository.findSubmissionHistory("(858) 555-0100", "jane@example.com")).thenReturn(List.of(
                 new RawSubmission("step1", Instant.parse("2026-07-01T00:00:00Z"), "mani", "Version_1",
-                        "google", "cpc", "promo", null, null)
+                        "google / cpc / promo", null, null)
         ));
 
         MarketingContactDto dto = service.contacts();
@@ -112,6 +112,7 @@ class MarketingContactsServiceTest {
         Contact c = dto.contacts().get(0);
         assertThat(c.submissions()).hasSize(1);
         assertThat(c.submissions().get(0).submissionType()).isEqualTo("step1");
+        assertThat(c.submissions().get(0).trafficSource()).isEqualTo("google / cpc / promo");
     }
 
     @Test
@@ -137,7 +138,7 @@ class MarketingContactsServiceTest {
         assertThat(appt.serviceName()).isEqualTo("Manicure");
         assertThat(appt.price()).isEqualByComparingTo("85.00");
         assertThat(appt.artistName()).isEqualTo("Susan A.");
-        assertThat(appt.utmSource()).isNull();
+        assertThat(appt.trafficSource()).isNull();
         assertThat(appt.submissionOccurredAt()).isNull();
     }
 
@@ -156,13 +157,13 @@ class MarketingContactsServiceTest {
         when(square.catalogPrices(List.of("VAR1"))).thenReturn(Map.of());
         when(repository.findSubmissionsByBookingIds(List.of("SQBOOK1"))).thenReturn(Map.of(
                 "SQBOOK1", new RawAppointmentSubmission("SQBOOK1", Instant.parse("2026-07-30T10:00:00Z"),
-                        "google", "cpc", "promo", "mobile", "iOS", "17.5", "Mobile Safari")
+                        "google / cpc / promo", "mobile", "iOS", "17.5", "Mobile Safari")
         ));
 
         MarketingContactDto dto = service.contacts();
 
         var appt = dto.contacts().get(0).appointments().get(0);
-        assertThat(appt.utmSource()).isEqualTo("google");
+        assertThat(appt.trafficSource()).isEqualTo("google / cpc / promo");
         assertThat(appt.deviceType()).isEqualTo("mobile");
         assertThat(appt.osName()).isEqualTo("iOS");
         assertThat(appt.submissionOccurredAt()).isEqualTo(Instant.parse("2026-07-30T10:00:00Z"));
