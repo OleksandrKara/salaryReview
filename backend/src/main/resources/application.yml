@@ -66,6 +66,12 @@ server:
       # Stay signed in through a 12 h idle window (was Tomcat's 30 min default), matching the 12 h
       # `sid` cookie set in the frontend login route — so a session lasts up to 12 h. See docs/CACHING.md.
       timeout: 12h
+  error:
+    # Without this, ResponseStatusException's reason (e.g. "Username already taken", "Can't
+    # delete — has recorded activity") never reaches the JSON body's `message` field, so callers
+    # only ever see a generic "409 Conflict". All owner-only endpoints already require auth, so
+    # there's no sensitive-leakage concern in exposing these deliberately-written messages.
+    include-message: always
 
 management:
   endpoints:

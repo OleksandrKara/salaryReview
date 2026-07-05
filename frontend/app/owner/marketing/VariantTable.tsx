@@ -3,15 +3,48 @@ import VariantLinkButton from './VariantLinkButton';
 
 const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 
-function ActiveDot({ active }: { active: boolean }) {
-  return active ? (
-    <span className="text-emerald-600">●</span>
-  ) : (
-    <span className="text-zinc-300">●</span>
+const actionButtonClass = 'rounded px-2 py-0.5 text-xs font-medium ring-1 hover:bg-zinc-50';
+
+interface VariantActions {
+  onToggleActive: (v: MarketingVariantStat) => void;
+  onRename: (v: MarketingVariantStat) => void;
+  onDuplicate: (v: MarketingVariantStat) => void;
+  onDelete: (v: MarketingVariantStat) => void;
+  busyVariantId: string | null;
+}
+
+function ActiveToggle({ v, onToggleActive, busy }: { v: MarketingVariantStat; onToggleActive: (v: MarketingVariantStat) => void; busy: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onToggleActive(v)}
+      disabled={busy}
+      title={v.active ? 'Active — click to turn off' : 'Inactive — click to turn on'}
+      className="disabled:opacity-50"
+    >
+      <span className={v.active ? 'text-emerald-600' : 'text-zinc-300'}>●</span>
+    </button>
   );
 }
 
-export default function VariantTable({ variants }: { variants: MarketingVariantStat[] }) {
+function ActionButtons({ v, actions }: { v: MarketingVariantStat; actions: VariantActions }) {
+  const busy = actions.busyVariantId === v.variantId;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <button type="button" disabled={busy} onClick={() => actions.onRename(v)} className={`${actionButtonClass} text-blue-600 ring-blue-200`}>
+        Rename
+      </button>
+      <button type="button" disabled={busy} onClick={() => actions.onDuplicate(v)} className={`${actionButtonClass} text-zinc-600 ring-zinc-200`}>
+        Duplicate
+      </button>
+      <button type="button" disabled={busy} onClick={() => actions.onDelete(v)} className={`${actionButtonClass} text-red-600 ring-red-200`}>
+        Delete
+      </button>
+    </div>
+  );
+}
+
+export default function VariantTable({ variants, ...actions }: { variants: MarketingVariantStat[] } & VariantActions) {
   if (variants.length === 0) return null;
 
   return (
@@ -23,7 +56,7 @@ export default function VariantTable({ variants }: { variants: MarketingVariantS
             <div className="flex items-center justify-between gap-2">
               <span className="font-medium">{v.name}</span>
               <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-                <ActiveDot active={v.active} /> weight {v.weight}
+                <ActiveToggle v={v} onToggleActive={actions.onToggleActive} busy={actions.busyVariantId === v.variantId} /> weight {v.weight}
               </span>
             </div>
             <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
@@ -45,6 +78,9 @@ export default function VariantTable({ variants }: { variants: MarketingVariantS
                 <VariantLinkButton url={v.deepLinkUrl} />
               </div>
             )}
+            <div className="mt-3 border-t border-zinc-100 pt-3">
+              <ActionButtons v={v} actions={actions} />
+            </div>
           </div>
         ))}
       </div>
@@ -61,6 +97,7 @@ export default function VariantTable({ variants }: { variants: MarketingVariantS
               <th className="px-3 py-2 text-right">Bookings</th>
               <th className="px-3 py-2 text-right">Conversion %</th>
               <th className="px-3 py-2">Link</th>
+              <th className="px-3 py-2">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
@@ -69,13 +106,16 @@ export default function VariantTable({ variants }: { variants: MarketingVariantS
                 <td className="px-3 py-2 font-medium">{v.name}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{v.weight}</td>
                 <td className="px-3 py-2 text-center">
-                  <ActiveDot active={v.active} />
+                  <ActiveToggle v={v} onToggleActive={actions.onToggleActive} busy={actions.busyVariantId === v.variantId} />
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{v.pageViews.toLocaleString('en-US')}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{v.bookingsCompleted.toLocaleString('en-US')}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{pct(v.conversionRate)}</td>
                 <td className="px-3 py-2">
                   {v.deepLinkUrl ? <VariantLinkButton url={v.deepLinkUrl} /> : <span className="text-zinc-300">—</span>}
+                </td>
+                <td className="px-3 py-2">
+                  <ActionButtons v={v} actions={actions} />
                 </td>
               </tr>
             ))}

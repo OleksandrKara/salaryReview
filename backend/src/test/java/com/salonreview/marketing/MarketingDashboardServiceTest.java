@@ -2,19 +2,28 @@ package com.salonreview.marketing;
 
 import com.salonreview.config.MarketingLandingProperties;
 import com.salonreview.marketing.MarketingDashboardRepository.RawVariantStat;
+import com.salonreview.marketing.MarketingDashboardRepository.VariantSource;
 import com.salonreview.web.dto.MarketingDashboardDto;
 import com.salonreview.web.dto.MarketingDashboardDto.VariantStat;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MarketingDashboardServiceTest {
@@ -38,7 +47,7 @@ class MarketingDashboardServiceTest {
     void computesConversionRate() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findExperimentStatus(LANDING_PAGE_ID)).thenReturn(Optional.of("active"));
-        when(repository.findVariantStats(LANDING_PAGE_ID)).thenReturn(List.of(
+        when(repository.findVariantStats(eq(LANDING_PAGE_ID), isNull())).thenReturn(List.of(
                 new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 25, "control")
         ));
 
@@ -51,6 +60,22 @@ class MarketingDashboardServiceTest {
         assertThat(variant.bookingsCompleted()).isEqualTo(25);
         assertThat(variant.conversionRate()).isEqualTo(0.25);
         assertThat(variant.deepLinkUrl()).isEqualTo("https://mani.akluxnails.com/?v=control");
+        assertThat(dashboard.statsSince()).isNull();
+    }
+
+    @Test
+    @DisplayName("passes the stored stats_since cutoff through to the stats query and the DTO")
+    void statsSinceCutoffIsAppliedAndExposed() {
+        Instant cutoff = Instant.parse("2026-07-10T09:00:00Z");
+        when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(repository.findExperimentStatus(LANDING_PAGE_ID)).thenReturn(Optional.of("active"));
+        when(repository.findStatsSince(LANDING_PAGE_ID)).thenReturn(Optional.of(cutoff));
+        when(repository.findVariantStats(LANDING_PAGE_ID, cutoff)).thenReturn(List.of());
+
+        MarketingDashboardDto dashboard = service.dashboard("mani");
+
+        assertThat(dashboard.statsSince()).isEqualTo(cutoff.toString());
+        verify(repository).findVariantStats(LANDING_PAGE_ID, cutoff);
     }
 
     @Test
@@ -58,7 +83,7 @@ class MarketingDashboardServiceTest {
     void deepLinkIsNullWithoutKey() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findExperimentStatus(LANDING_PAGE_ID)).thenReturn(Optional.of("active"));
-        when(repository.findVariantStats(LANDING_PAGE_ID)).thenReturn(List.of(
+        when(repository.findVariantStats(eq(LANDING_PAGE_ID), isNull())).thenReturn(List.of(
                 new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 25, null)
         ));
 
@@ -72,7 +97,7 @@ class MarketingDashboardServiceTest {
     void zeroPageViewsYieldsZeroConversionRate() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findExperimentStatus(LANDING_PAGE_ID)).thenReturn(Optional.empty());
-        when(repository.findVariantStats(LANDING_PAGE_ID)).thenReturn(List.of(
+        when(repository.findVariantStats(eq(LANDING_PAGE_ID), isNull())).thenReturn(List.of(
                 new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 0, 0, "control")
         ));
 
@@ -103,5 +128,73 @@ class MarketingDashboardServiceTest {
 
         assertThat(dashboard.available()).isFalse();
         assertThat(dashboard.landingPageSlug()).isEqualTo("unknown-slug");
+    }
+
+    @Test
+    @DisplayName("rename regenerates the deep-link key from the new name")
+    void renameRegeneratesKey() {
+        service.renameVariant(VARIANT_ID, "Winter Gold!");
+
+        verify(repository).renameVariant(VARIANT_ID, "Winter Gold!", "winter-gold");
+    }
+
+    @Test
+    @DisplayName("rename rejects a blank name")
+    void renameRejectsBlankName() {
+        assertThatThrownBy(() -> service.renameVariant(VARIANT_ID, "   "))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("blank");
+    }
+
+    @Test
+    @DisplayName("delete surfaces a friendly conflict instead of a raw DB error when the variant has recorded activity")
+    void deleteBlockedByRecordedActivity() {
+        doThrow(new DataIntegrityViolationException("fk violation")).when(repository).deleteVariant(VARIANT_ID);
+
+        assertThatThrownBy(() -> service.deleteVariant(VARIANT_ID))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("recorded page views or bookings");
+    }
+
+    @Test
+    @DisplayName("delete succeeds silently when the variant has no recorded activity")
+    void deleteSucceedsWithoutActivity() {
+        service.deleteVariant(VARIANT_ID);
+
+        verify(repository).deleteVariant(VARIANT_ID);
+    }
+
+    @Test
+    @DisplayName("duplicate copies weight/content from the source and auto-generates a key from the new name")
+    void duplicateCopiesSourceAndGeneratesKey() {
+        VariantSource source = new VariantSource(LANDING_PAGE_ID, 0, "{\"ctaText\":\"Hi\"}");
+        UUID newId = UUID.randomUUID();
+        when(repository.findVariantSource(VARIANT_ID)).thenReturn(Optional.of(source));
+        when(repository.duplicateVariant(source, "Holiday Gold (copy)", "holiday-gold-copy")).thenReturn(newId);
+
+        UUID result = service.duplicateVariant(VARIANT_ID, "Holiday Gold (copy)");
+
+        assertThat(result).isEqualTo(newId);
+    }
+
+    @Test
+    @DisplayName("duplicate 404s when the source variant doesn't exist")
+    void duplicateNotFoundWhenSourceMissing() {
+        when(repository.findVariantSource(VARIANT_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.duplicateVariant(VARIANT_ID, "Copy"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("No such variant");
+    }
+
+    @Test
+    @DisplayName("updateStatsSince resolves the slug to a landing page id before writing")
+    void updateStatsSinceResolvesSlug() {
+        Instant cutoff = Instant.parse("2026-07-10T09:00:00Z");
+        when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
+
+        service.updateStatsSince("mani", cutoff);
+
+        verify(repository).updateStatsSince(LANDING_PAGE_ID, cutoff);
     }
 }

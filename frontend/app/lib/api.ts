@@ -30,6 +30,7 @@ import type {
   KbRequest,
   KbRequestStatus,
   KbRequestTarget,
+  MarketingDashboardData,
   RagCitation,
   RagDocumentSummary,
   StarterSuggestions,
@@ -311,7 +312,40 @@ export const api = {
       }
     }
   },
+
+  // Owner marketing dashboard: variant management + the "hide test data before this date"
+  // stats cutoff. All owner-only, enforced server-side.
+  getMarketingDashboard: (slug: string) =>
+    proxyGet<MarketingDashboardData>(`/api/owner/marketing?slug=${encodeURIComponent(slug)}`),
+
+  renameMarketingVariant: (variantId: string, name: string) =>
+    proxyVoid(`/api/owner/marketing/variants/${variantId}`, 'PATCH', { name }),
+
+  setMarketingVariantActive: (variantId: string, active: boolean) =>
+    proxyVoid(`/api/owner/marketing/variants/${variantId}`, 'PATCH', { active }),
+
+  deleteMarketingVariant: (variantId: string) => proxyVoid(`/api/owner/marketing/variants/${variantId}`, 'DELETE'),
+
+  duplicateMarketingVariant: (variantId: string, name: string) =>
+    proxyJson<{ variantId: string }>(`/api/owner/marketing/variants/${variantId}/duplicate`, 'POST', { name }),
+
+  setMarketingStatsSince: (slug: string, value: string | null) =>
+    proxyVoid(`/api/owner/marketing/stats-since?slug=${encodeURIComponent(slug)}`, 'PUT', { value }),
 };
+
+// The backend's default Spring error body is {"message": "...", "error": "...", "status": ...} —
+// prefer the deliberately-written `message` (e.g. "Can't delete — has recorded activity")
+// over the generic HTTP reason phrase, falling back to raw text if the body isn't JSON.
+async function extractErrorMessage(res: Response): Promise<string> {
+  const text = await res.text();
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed.message === 'string' && parsed.message) return parsed.message;
+  } catch {
+    // not JSON — fall through to raw text
+  }
+  return text || `${res.status} ${res.statusText}`;
+}
 
 async function proxyVoid(path: string, method: string, body?: unknown): Promise<void> {
   const res = await fetch(path, {
@@ -319,12 +353,12 @@ async function proxyVoid(path: string, method: string, body?: unknown): Promise<
     headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) throw new Error(await extractErrorMessage(res));
 }
 
 async function proxyGet<T>(path: string): Promise<T> {
   const res = await fetch(path, { cache: 'no-store' });
-  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  if (!res.ok) throw new Error(await extractErrorMessage(res));
   return (await res.json()) as T;
 }
 
@@ -334,6 +368,6 @@ async function proxyJson<T>(path: string, method: string, body: unknown): Promis
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  if (!res.ok) throw new Error(await extractErrorMessage(res));
   return (await res.json()) as T;
 }
