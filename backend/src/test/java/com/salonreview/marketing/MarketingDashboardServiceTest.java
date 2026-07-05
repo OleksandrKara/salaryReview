@@ -19,6 +19,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
@@ -162,6 +163,31 @@ class MarketingDashboardServiceTest {
         service.deleteVariant(VARIANT_ID);
 
         verify(repository).deleteVariant(VARIANT_ID);
+    }
+
+    @Test
+    @DisplayName("rename surfaces a friendly conflict, not a raw 500, when the generated key collides")
+    void renameBlockedByKeyCollision() {
+        doThrow(new DataIntegrityViolationException("unique violation"))
+                .when(repository).renameVariant(eq(VARIANT_ID), any(), any());
+
+        assertThatThrownBy(() -> service.renameVariant(VARIANT_ID, "Control"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("already uses the link");
+    }
+
+    @Test
+    @DisplayName("duplicate surfaces a friendly conflict, not a raw 500, when the generated key collides " +
+            "(e.g. duplicating the same variant twice in a row with the same default name)")
+    void duplicateBlockedByKeyCollision() {
+        VariantSource source = new VariantSource(LANDING_PAGE_ID, 0, "{}");
+        when(repository.findVariantSource(VARIANT_ID)).thenReturn(Optional.of(source));
+        doThrow(new DataIntegrityViolationException("unique violation"))
+                .when(repository).duplicateVariant(eq(source), any(), any());
+
+        assertThatThrownBy(() -> service.duplicateVariant(VARIANT_ID, "Control (copy)"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("already uses the link");
     }
 
     @Test

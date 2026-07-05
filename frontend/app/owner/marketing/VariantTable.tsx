@@ -13,6 +13,8 @@ interface VariantActions {
   busyVariantId: string | null;
 }
 
+// A bare colored dot didn't read as clickable — a labeled pill (matching ExperimentStatusBadge's
+// visual language elsewhere on this page) makes it obvious this is a toggle, not just a status icon.
 function ActiveToggle({ v, onToggleActive, busy }: { v: MarketingVariantStat; onToggleActive: (v: MarketingVariantStat) => void; busy: boolean }) {
   return (
     <button
@@ -20,9 +22,11 @@ function ActiveToggle({ v, onToggleActive, busy }: { v: MarketingVariantStat; on
       onClick={() => onToggleActive(v)}
       disabled={busy}
       title={v.active ? 'Active — click to turn off' : 'Inactive — click to turn on'}
-      className="disabled:opacity-50"
+      className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset disabled:opacity-50 ${
+        v.active ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100' : 'bg-zinc-100 text-zinc-500 ring-zinc-200 hover:bg-zinc-200'
+      }`}
     >
-      <span className={v.active ? 'text-emerald-600' : 'text-zinc-300'}>●</span>
+      {v.active ? 'Active' : 'Inactive'}
     </button>
   );
 }
