@@ -64,7 +64,20 @@ public record MarketingContactDto(
             /** Current catalog list price — Square's Bookings API doesn't retain what was
              * actually charged, so this is a best-effort estimate, not a payroll figure. */
             BigDecimal price,
-            String artistName
+            String artistName,
+            /** The rest of these come from the marketing.submissions row that actually created
+             * this booking (matched by square_booking_id) — all null if this appointment didn't
+             * originate through our own booking funnel (e.g. booked in person, or through Square
+             * directly, before we ever tracked this customer).
+             */
+            String utmSource,
+            String utmMedium,
+            String utmCampaign,
+            String deviceType,
+            String osName,
+            String osVersion,
+            String browserName,
+            Instant submissionOccurredAt
     ) {}
 
     /** Rendered when the marketing schema/table isn't reachable yet. */

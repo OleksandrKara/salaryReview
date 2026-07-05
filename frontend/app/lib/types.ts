@@ -800,6 +800,17 @@ export interface MarketingContactAppointment {
    * best-effort estimate, not a payroll figure. */
   price: number | null;
   artistName: string | null;
+  /** From the marketing.submissions row that actually created this booking (matched by
+   * square_booking_id) — all null if this appointment didn't originate through our own booking
+   * funnel (e.g. booked in person, or through Square directly, before we ever tracked them). */
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  deviceType: string | null;
+  osName: string | null;
+  osVersion: string | null;
+  browserName: string | null;
+  submissionOccurredAt: string | null;
 }
 
 // --- Knowledge Base articles (com.salonreview.web.KbArticleController) ---

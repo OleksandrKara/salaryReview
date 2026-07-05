@@ -26,9 +26,12 @@ public class MarketingContactsService {
 
     private static final Logger log = LoggerFactory.getLogger(MarketingContactsService.class);
 
-    // Square has no public API for a direct "view this booking" link (confirmed — nothing
-    // documented), but the customer profile URL is a stable, long-standing Dashboard pattern.
-    private static final String SQUARE_CUSTOMER_PROFILE_URL = "https://app.squareup.com/dashboard/customers/%s";
+    // Square has no public API for a direct "view this booking" link, and no officially
+    // documented deep link to one specific customer either. /dashboard/customers/directory is
+    // Square's own confirmed path for the customer directory (support article); appending the
+    // customer id to it is the best-available link — the previous .../customers/{id} form
+    // (with no /directory) was reported broken.
+    private static final String SQUARE_CUSTOMER_PROFILE_URL = "https://app.squareup.com/dashboard/customers/directory/%s";
 
     private final MarketingContactsRepository repository;
     private final SquareClient square;
@@ -110,7 +113,14 @@ public class MarketingContactsService {
             Map<String, String> serviceNames = square.catalogNames(variationIds);
             Map<String, BigDecimal> servicePrices = square.catalogPrices(variationIds);
 
-            return bookings.stream().map(b -> toAppointment(b, memberNames, serviceNames, servicePrices)).toList();
+            // Only bookings that came through our own funnel have a matching submission row —
+            // this is what surfaces traffic source/device/OS/submission time per appointment.
+            Map<String, MarketingContactsRepository.RawAppointmentSubmission> submissionsByBookingId =
+                    repository.findSubmissionsByBookingIds(bookings.stream().map(Booking::id).toList());
+
+            return bookings.stream()
+                    .map(b -> toAppointment(b, memberNames, serviceNames, servicePrices, submissionsByBookingId.get(b.id())))
+                    .toList();
         } catch (RuntimeException ex) {
             log.warn("Failed to fetch Square appointment history for customer {}", squareCustomerId, ex);
             return List.of();
@@ -118,7 +128,11 @@ public class MarketingContactsService {
     }
 
     private static Appointment toAppointment(
-            Booking booking, Map<String, String> memberNames, Map<String, String> serviceNames, Map<String, BigDecimal> servicePrices
+            Booking booking,
+            Map<String, String> memberNames,
+            Map<String, String> serviceNames,
+            Map<String, BigDecimal> servicePrices,
+            MarketingContactsRepository.RawAppointmentSubmission submission
     ) {
         List<AppointmentSegment> segments = booking.appointmentSegments() == null ? List.of() : booking.appointmentSegments();
         String serviceName = segments.stream()
@@ -140,7 +154,15 @@ public class MarketingContactsService {
                 booking.startAt() == null ? null : java.time.Instant.parse(booking.startAt()),
                 serviceName.isBlank() ? null : serviceName,
                 price.signum() == 0 ? null : price,
-                artistName
+                artistName,
+                submission == null ? null : submission.utmSource(),
+                submission == null ? null : submission.utmMedium(),
+                submission == null ? null : submission.utmCampaign(),
+                submission == null ? null : submission.deviceType(),
+                submission == null ? null : submission.osName(),
+                submission == null ? null : submission.osVersion(),
+                submission == null ? null : submission.browserName(),
+                submission == null ? null : submission.occurredAt()
         );
     }
 

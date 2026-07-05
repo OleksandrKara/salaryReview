@@ -7,7 +7,9 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Reads marketing.contacts — leads captured by the separate salonLandings service as soon as
@@ -59,6 +61,21 @@ public class MarketingContactsRepository {
             BigDecimal price
     ) {}
 
+    /** The marketing.submissions row that actually created a given Square booking — matched by
+     * square_booking_id, populated only for the "booking" submission_type.
+     */
+    public record RawAppointmentSubmission(
+            String squareBookingId,
+            Instant occurredAt,
+            String utmSource,
+            String utmMedium,
+            String utmCampaign,
+            String deviceType,
+            String osName,
+            String osVersion,
+            String browserName
+    ) {}
+
     private static final String CONTACT_COLUMNS = """
             id, phone_number, given_name, email_address,
             original_traffic_source, marketing_traffic_source,
@@ -103,6 +120,33 @@ public class MarketingContactsRepository {
                 rs.getString("service_name"),
                 rs.getBigDecimal("price")
         ), phoneNumber, emailAddress, emailAddress);
+    }
+
+    /** The originating submission for each of the given Square booking ids, keyed by booking id
+     * — only bookings that came through our own funnel have one. Empty map for an empty input,
+     * no query fired.
+     */
+    public Map<String, RawAppointmentSubmission> findSubmissionsByBookingIds(List<String> bookingIds) {
+        if (bookingIds.isEmpty()) return Map.of();
+        String placeholders = bookingIds.stream().map(id -> "?").collect(Collectors.joining(","));
+        String sql = """
+                SELECT square_booking_id, occurred_at, utm_source, utm_medium, utm_campaign,
+                       device_type, os_name, os_version, browser_name
+                FROM marketing.submissions
+                WHERE square_booking_id IN (%s)
+                """.formatted(placeholders);
+        List<RawAppointmentSubmission> rows = jdbcTemplate.query(sql, (rs, rowNum) -> new RawAppointmentSubmission(
+                rs.getString("square_booking_id"),
+                toInstant(rs.getTimestamp("occurred_at")),
+                rs.getString("utm_source"),
+                rs.getString("utm_medium"),
+                rs.getString("utm_campaign"),
+                rs.getString("device_type"),
+                rs.getString("os_name"),
+                rs.getString("os_version"),
+                rs.getString("browser_name")
+        ), bookingIds.toArray());
+        return rows.stream().collect(Collectors.toMap(RawAppointmentSubmission::squareBookingId, r -> r, (a, b) -> a));
     }
 
     private static RawContact mapContact(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
