@@ -1,4 +1,5 @@
 import type { MarketingVariantStat } from '../../lib/types';
+import VariantLinkButton from './VariantLinkButton';
 
 const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 
@@ -39,6 +40,11 @@ export default function VariantTable({ variants }: { variants: MarketingVariantS
                 <dd className="tabular-nums text-zinc-500">{pct(v.conversionRate)}</dd>
               </div>
             </dl>
+            {v.deepLinkUrl && (
+              <div className="mt-3 border-t border-zinc-100 pt-3">
+                <VariantLinkButton url={v.deepLinkUrl} />
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -54,6 +60,7 @@ export default function VariantTable({ variants }: { variants: MarketingVariantS
               <th className="px-3 py-2 text-right">Page Views</th>
               <th className="px-3 py-2 text-right">Bookings</th>
               <th className="px-3 py-2 text-right">Conversion %</th>
+              <th className="px-3 py-2">Link</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
@@ -67,6 +74,9 @@ export default function VariantTable({ variants }: { variants: MarketingVariantS
                 <td className="px-3 py-2 text-right tabular-nums">{v.pageViews.toLocaleString('en-US')}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{v.bookingsCompleted.toLocaleString('en-US')}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{pct(v.conversionRate)}</td>
+                <td className="px-3 py-2">
+                  {v.deepLinkUrl ? <VariantLinkButton url={v.deepLinkUrl} /> : <span className="text-zinc-300">—</span>}
+                </td>
               </tr>
             ))}
           </tbody>

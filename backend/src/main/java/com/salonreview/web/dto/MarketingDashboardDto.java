@@ -15,7 +15,9 @@ public record MarketingDashboardDto(
             boolean active,
             long pageViews,
             long bookingsCompleted,
-            double conversionRate
+            double conversionRate,
+            /** Direct ?v=<key> link to view this exact variant, or null if it has no key yet. */
+            String deepLinkUrl
     ) {}
 
     /** Rendered when the marketing schema/tables aren't reachable yet, or the slug is unknown. */
