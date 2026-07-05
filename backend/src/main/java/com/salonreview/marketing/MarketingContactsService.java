@@ -155,9 +155,7 @@ public class MarketingContactsService {
                 serviceName.isBlank() ? null : serviceName,
                 price.signum() == 0 ? null : price,
                 artistName,
-                submission == null ? null : submission.utmSource(),
-                submission == null ? null : submission.utmMedium(),
-                submission == null ? null : submission.utmCampaign(),
+                submission == null ? null : submission.trafficSource(),
                 submission == null ? null : submission.deviceType(),
                 submission == null ? null : submission.osName(),
                 submission == null ? null : submission.osVersion(),
@@ -172,9 +170,7 @@ public class MarketingContactsService {
                 raw.occurredAt(),
                 raw.landingPageSlug(),
                 raw.variantName(),
-                raw.utmSource(),
-                raw.utmMedium(),
-                raw.utmCampaign(),
+                raw.trafficSource(),
                 raw.serviceName(),
                 raw.price()
         );

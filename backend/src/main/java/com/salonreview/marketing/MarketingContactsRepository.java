@@ -47,16 +47,18 @@ public class MarketingContactsRepository {
     ) {}
 
     /** One row of marketing.submissions — every Step 1 capture, booking, or 4-hand request this
-     * phone/email ever made, each carrying the landing page/variant/UTM context at that moment.
+     * phone/email ever made, each carrying the landing page/variant/traffic-source context at
+     * that moment. trafficSource is the same classify_traffic_source() label used for
+     * contacts.original_traffic_source (falls back through fbclid/gclid/referrer to
+     * "Direct / No referrer") — never blank on a submission recorded after this column existed;
+     * null only on rows written before it did.
      */
     public record RawSubmission(
             String submissionType,
             Instant occurredAt,
             String landingPageSlug,
             String variantName,
-            String utmSource,
-            String utmMedium,
-            String utmCampaign,
+            String trafficSource,
             String serviceName,
             BigDecimal price
     ) {}
@@ -67,9 +69,7 @@ public class MarketingContactsRepository {
     public record RawAppointmentSubmission(
             String squareBookingId,
             Instant occurredAt,
-            String utmSource,
-            String utmMedium,
-            String utmCampaign,
+            String trafficSource,
             String deviceType,
             String osName,
             String osVersion,
@@ -104,7 +104,7 @@ public class MarketingContactsRepository {
     public List<RawSubmission> findSubmissionHistory(String phoneNumber, String emailAddress) {
         String sql = """
                 SELECT submission_type, occurred_at, landing_page_slug, variant_name,
-                       utm_source, utm_medium, utm_campaign, service_name, price
+                       traffic_source, service_name, price
                 FROM marketing.submissions
                 WHERE customer_phone = ? OR (? IS NOT NULL AND customer_email = ?)
                 ORDER BY occurred_at DESC
@@ -114,9 +114,7 @@ public class MarketingContactsRepository {
                 toInstant(rs.getTimestamp("occurred_at")),
                 rs.getString("landing_page_slug"),
                 rs.getString("variant_name"),
-                rs.getString("utm_source"),
-                rs.getString("utm_medium"),
-                rs.getString("utm_campaign"),
+                rs.getString("traffic_source"),
                 rs.getString("service_name"),
                 rs.getBigDecimal("price")
         ), phoneNumber, emailAddress, emailAddress);
@@ -130,7 +128,7 @@ public class MarketingContactsRepository {
         if (bookingIds.isEmpty()) return Map.of();
         String placeholders = bookingIds.stream().map(id -> "?").collect(Collectors.joining(","));
         String sql = """
-                SELECT square_booking_id, occurred_at, utm_source, utm_medium, utm_campaign,
+                SELECT square_booking_id, occurred_at, traffic_source,
                        device_type, os_name, os_version, browser_name
                 FROM marketing.submissions
                 WHERE square_booking_id IN (%s)
@@ -138,9 +136,7 @@ public class MarketingContactsRepository {
         List<RawAppointmentSubmission> rows = jdbcTemplate.query(sql, (rs, rowNum) -> new RawAppointmentSubmission(
                 rs.getString("square_booking_id"),
                 toInstant(rs.getTimestamp("occurred_at")),
-                rs.getString("utm_source"),
-                rs.getString("utm_medium"),
-                rs.getString("utm_campaign"),
+                rs.getString("traffic_source"),
                 rs.getString("device_type"),
                 rs.getString("os_name"),
                 rs.getString("os_version"),

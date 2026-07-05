@@ -49,9 +49,10 @@ public record MarketingContactDto(
             Instant occurredAt,
             String landingPageSlug,
             String variantName,
-            String utmSource,
-            String utmMedium,
-            String utmCampaign,
+            /** Same classify_traffic_source() label used for a contact's own traffic-source
+             * fields (e.g. "Direct / No referrer", "google / cpc / promo") — never blank for a
+             * submission recorded after this column existed; null only on older rows. */
+            String trafficSource,
             String serviceName,
             BigDecimal price
     ) {}
@@ -70,9 +71,7 @@ public record MarketingContactDto(
              * originate through our own booking funnel (e.g. booked in person, or through Square
              * directly, before we ever tracked this customer).
              */
-            String utmSource,
-            String utmMedium,
-            String utmCampaign,
+            String trafficSource,
             String deviceType,
             String osName,
             String osVersion,

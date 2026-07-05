@@ -8,8 +8,6 @@ const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', curren
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-const fmtDateShort = (iso: string) => new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-
 const SUBMISSION_LABELS: Record<string, string> = {
   step1: 'Lead capture',
   booking: 'Booking',
@@ -134,10 +132,7 @@ function AppointmentHistoryList({ appointments }: { appointments: MarketingConta
               </div>
               {hasSubmission ? (
                 <div className="mt-1 text-xs text-zinc-400">
-                  Booked {fmtDate(a.submissionOccurredAt as string)}
-                  {(a.utmSource || a.utmMedium || a.utmCampaign) && (
-                    <> · {[a.utmSource, a.utmMedium, a.utmCampaign].filter(Boolean).join(' / ')}</>
-                  )}
+                  Booked {fmtDate(a.submissionOccurredAt as string)} · {a.trafficSource ?? '—'}
                   {(a.deviceType || a.osName || a.browserName) && (
                     <>
                       {' '}
@@ -164,16 +159,12 @@ function SubmissionHistoryList({ submissions }: { submissions: MarketingContactS
       {submissions.map((s, i) => (
         <li key={i} className="flex items-start justify-between gap-3 rounded-md bg-white p-2 ring-1 ring-zinc-100">
           <div>
-            <div className="text-sm font-medium">{fmtDateShort(s.occurredAt)}</div>
+            <div className="text-sm font-medium">{fmtDate(s.occurredAt)}</div>
             <div className="text-xs text-zinc-500">
               {s.landingPageSlug ?? '—'}
               {s.variantName ? ` · ${s.variantName}` : ''}
             </div>
-            {(s.utmSource || s.utmMedium || s.utmCampaign) && (
-              <div className="text-xs text-zinc-400">
-                {[s.utmSource, s.utmMedium, s.utmCampaign].filter(Boolean).join(' / ')}
-              </div>
-            )}
+            <div className="text-xs text-zinc-400">{s.trafficSource ?? '—'}</div>
           </div>
           <span className="whitespace-nowrap rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 ring-1 ring-inset ring-zinc-200">
             {SUBMISSION_LABELS[s.submissionType] ?? s.submissionType}
