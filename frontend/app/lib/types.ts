@@ -736,6 +736,34 @@ export interface MarketingDashboardData {
   statsSince: string | null;
 }
 
+// --- Marketing contacts (com.salonreview.web.MarketingContactsController) ---
+
+export interface MarketingContact {
+  id: string;
+  givenName: string | null;
+  phoneNumber: string;
+  emailAddress: string | null;
+  originalTrafficSource: string | null;
+  marketingTrafficSource: string | null;
+  smsMarketingConsent: boolean | null;
+  emailMarketingConsent: boolean | null;
+  /** True once this lead has completed a real Square booking. */
+  hasAppointment: boolean;
+  /** Square Dashboard customer profile link, or null if no Square customer exists yet. */
+  squareProfileUrl: string | null;
+  bookingStatus: string | null;
+  bookingStartAt: string | null;
+  bookingServiceName: string | null;
+  bookingPrice: number | null;
+  bookingArtistName: string | null;
+  createdAt: string;
+}
+
+export interface MarketingContactsData {
+  available: boolean;
+  contacts: MarketingContact[];
+}
+
 // --- Knowledge Base articles (com.salonreview.web.KbArticleController) ---
 
 export type KbSyncStatus = 'NOT_SYNCED' | 'SYNCED' | 'CHANGED' | 'ERROR';

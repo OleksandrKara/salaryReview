@@ -1,0 +1,79 @@
+package com.salonreview.marketing;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * Reads marketing.contacts — leads captured by the separate salonLandings service as soon as
+ * Step 1 (name + phone) is submitted, later linked to a real Square booking/customer if one
+ * happens. Plain JdbcTemplate for the same reason as MarketingDashboardRepository: this table
+ * is owned and migrated by salonLandings, not by this app's Flyway/JPA.
+ */
+@Repository
+public class MarketingContactsRepository {
+
+    public record RawContact(
+            UUID id,
+            String phoneNumber,
+            String givenName,
+            String emailAddress,
+            String originalTrafficSource,
+            String marketingTrafficSource,
+            Boolean smsMarketingConsent,
+            Boolean emailMarketingConsent,
+            String squareCustomerId,
+            String squareBookingId,
+            String bookingStatus,
+            Instant bookingStartAt,
+            String bookingServiceName,
+            BigDecimal bookingPrice,
+            String bookingArtistName,
+            Instant createdAt
+    ) {}
+
+    private final JdbcTemplate jdbcTemplate;
+
+    public MarketingContactsRepository(JdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    public List<RawContact> listAll() {
+        String sql = """
+                SELECT id, phone_number, given_name, email_address,
+                       original_traffic_source, marketing_traffic_source,
+                       sms_marketing_consent, email_marketing_consent,
+                       square_customer_id, square_booking_id, booking_status, booking_start_at,
+                       booking_service_name, booking_price, booking_artist_name, created_at
+                FROM marketing.contacts
+                ORDER BY created_at DESC
+                """;
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new RawContact(
+                (UUID) rs.getObject("id"),
+                rs.getString("phone_number"),
+                rs.getString("given_name"),
+                rs.getString("email_address"),
+                rs.getString("original_traffic_source"),
+                rs.getString("marketing_traffic_source"),
+                (Boolean) rs.getObject("sms_marketing_consent"),
+                (Boolean) rs.getObject("email_marketing_consent"),
+                rs.getString("square_customer_id"),
+                rs.getString("square_booking_id"),
+                rs.getString("booking_status"),
+                toInstant(rs.getTimestamp("booking_start_at")),
+                rs.getString("booking_service_name"),
+                rs.getBigDecimal("booking_price"),
+                rs.getString("booking_artist_name"),
+                toInstant(rs.getTimestamp("created_at"))
+        ));
+    }
+
+    private static Instant toInstant(Timestamp ts) {
+        return ts == null ? null : ts.toInstant();
+    }
+}
