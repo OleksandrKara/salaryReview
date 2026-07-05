@@ -2,11 +2,16 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { serverApi } from '../../lib/serverApi';
 import PageHeader from '../../components/PageHeader';
+import AbuseBlocksPanel from './AbuseBlocksPanel';
 import ExperimentStatusBadge from './ExperimentStatusBadge';
 import MarketingManager from './MarketingManager';
 
 export default async function MarketingDashboardPage() {
-  const [me, data] = await Promise.all([serverApi.getMe(), serverApi.getMarketingDashboard()]);
+  const [me, data, abuseBlocks] = await Promise.all([
+    serverApi.getMe(),
+    serverApi.getMarketingDashboard(),
+    serverApi.getAbuseBlocks(),
+  ]);
 
   if (me?.role !== 'OWNER') redirect('/reports');
 
@@ -34,6 +39,8 @@ export default async function MarketingDashboardPage() {
             <h2 className="mb-2 text-sm font-medium text-zinc-500">Variant performance</h2>
             <MarketingManager slug={data.landingPageSlug} initialVariants={data.variants} initialStatsSince={data.statsSince} />
           </div>
+
+          <AbuseBlocksPanel data={abuseBlocks} />
         </>
       )}
     </main>

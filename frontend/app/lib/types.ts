@@ -739,6 +739,23 @@ export interface MarketingDashboardData {
   statsSince: string | null;
 }
 
+// --- Abuse blocks (com.salonreview.web.AbuseBlocksController) ---
+
+export interface AbuseBlockEntry {
+  endpoint: string;
+  reason: string;
+  phoneNumber: string | null;
+  ipAddress: string | null;
+  occurredAt: string;
+}
+
+export interface AbuseBlocksData {
+  available: boolean;
+  /** Count of rejected submissions in the last 24h, grouped by reason. */
+  countsByReasonLast24h: Record<string, number>;
+  recent: AbuseBlockEntry[];
+}
+
 // --- Marketing contacts (com.salonreview.web.MarketingContactsController) ---
 
 export interface MarketingContact {
