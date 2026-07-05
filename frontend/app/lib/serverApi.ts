@@ -8,6 +8,7 @@ import type {
   ManualCredit,
   Me,
   Sop,
+  MarketingContactsData,
   MarketingDashboardData,
   OwnerCustomer,
   OwnerOverviewData,
@@ -127,4 +128,6 @@ export const serverApi = {
 
   getMarketingDashboard: (slug?: string) =>
     serverFetch<MarketingDashboardData>(`/api/owner/marketing${slug ? `?slug=${encodeURIComponent(slug)}` : ''}`),
+
+  getMarketingContacts: () => serverFetch<MarketingContactsData>('/api/owner/marketing/contacts'),
 };
