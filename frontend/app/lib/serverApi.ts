@@ -3,6 +3,7 @@ import 'server-only';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type {
+  AbuseBlocksData,
   AppUser,
   KbArticle,
   ManualCredit,
@@ -130,4 +131,6 @@ export const serverApi = {
     serverFetch<MarketingDashboardData>(`/api/owner/marketing${slug ? `?slug=${encodeURIComponent(slug)}` : ''}`),
 
   getMarketingContacts: () => serverFetch<MarketingContactsData>('/api/owner/marketing/contacts'),
+
+  getAbuseBlocks: () => serverFetch<AbuseBlocksData>('/api/owner/marketing/abuse-blocks'),
 };
