@@ -65,7 +65,11 @@ public class MarketingDashboardService {
         if (newName == null || newName.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Name cannot be blank");
         }
-        repository.renameVariant(variantId, newName.trim(), Slugs.slugify(newName));
+        try {
+            repository.renameVariant(variantId, newName.trim(), Slugs.slugify(newName));
+        } catch (DataIntegrityViolationException ex) {
+            throw keyCollisionError();
+        }
     }
 
     public void setVariantActive(UUID variantId, boolean active) {
@@ -94,7 +98,20 @@ public class MarketingDashboardService {
         }
         MarketingDashboardRepository.VariantSource source = repository.findVariantSource(sourceVariantId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such variant"));
-        return repository.duplicateVariant(source, newName.trim(), Slugs.slugify(newName));
+        try {
+            return repository.duplicateVariant(source, newName.trim(), Slugs.slugify(newName));
+        } catch (DataIntegrityViolationException ex) {
+            throw keyCollisionError();
+        }
+    }
+
+    /** Rename/duplicate both auto-generate a key from the name (e.g. "Control (copy)" ->
+     * "control-copy") — this fires when that key already belongs to another variant, most
+     * commonly from duplicating the same source twice in a row with the same default name.
+     */
+    private static ResponseStatusException keyCollisionError() {
+        return new ResponseStatusException(HttpStatus.CONFLICT,
+                "Another variant already uses the link generated from that name — try a slightly different name.");
     }
 
     public void updateStatsSince(String slug, Instant statsSince) {
