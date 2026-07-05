@@ -78,7 +78,6 @@ const STRINGS = {
   navSalaryReport: { EN: 'Salary report', RU: 'Отчёт по зарплате' },
   navRevenue: { EN: 'Revenue', RU: 'Выручка' },
   navMarketing: { EN: 'Marketing', RU: 'Маркетинг' },
-  navMarketingContacts: { EN: 'Marketing Contacts', RU: 'Маркетинговые контакты' },
   navRetention: { EN: 'Retention', RU: 'Удержание' },
   navPrepaid: { EN: 'Prepaid', RU: 'Предоплата' },
   navOwnerComps: { EN: 'Owner comps', RU: 'Услуги владельцу' },

@@ -745,6 +745,16 @@ export interface MarketingContact {
   emailAddress: string | null;
   originalTrafficSource: string | null;
   marketingTrafficSource: string | null;
+  /** Landing page + variant the lead first saw — denormalized at capture time, so a later
+   * rename/delete of the variant never changes what this record says. */
+  landingPageSlug: string | null;
+  variantName: string | null;
+  /** Most recent visit's device/OS/browser. */
+  deviceType: string | null;
+  osName: string | null;
+  osVersion: string | null;
+  browserName: string | null;
+  browserVersion: string | null;
   smsMarketingConsent: boolean | null;
   emailMarketingConsent: boolean | null;
   /** True once this lead has completed a real Square booking. */
