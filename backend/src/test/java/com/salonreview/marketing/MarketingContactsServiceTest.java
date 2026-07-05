@@ -8,22 +8,19 @@ import com.salonreview.square.SquareClient.Booking;
 import com.salonreview.square.SquareClient.TeamMember;
 import com.salonreview.web.dto.MarketingContactDto;
 import com.salonreview.web.dto.MarketingContactDto.Contact;
-import com.salonreview.web.dto.MarketingContactHistoryDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -38,28 +35,33 @@ class MarketingContactsServiceTest {
         repository = mock(MarketingContactsRepository.class);
         square = mock(SquareClient.class);
         service = new MarketingContactsService(repository, square);
+        when(repository.findSubmissionHistory(any(), any())).thenReturn(List.of());
     }
 
-    @Test
-    @DisplayName("a contact with a booking exposes hasAppointment=true and a Square profile link")
-    void bookedContactHasAppointmentAndProfileLink() {
-        UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(new RawContact(
+    private static RawContact rawContact(UUID id, String squareCustomerId) {
+        return new RawContact(
                 id, "(858) 555-0100", "Jane", "jane@example.com",
                 "instagram / paid / promo", "google / cpc / retargeting",
                 "mani", "Version_1",
                 "mobile", "iOS", "17.5", "Mobile Safari", "17.5",
                 true, true,
-                "SQCUST123", "SQBOOK456", "ACCEPTED", Instant.parse("2026-07-31T17:00:00Z"),
-                "Manicure", new BigDecimal("85.00"), "Susan A.",
+                squareCustomerId, null, null, null,
+                null, null, null,
                 Instant.parse("2026-07-01T00:00:00Z")
-        )));
+        );
+    }
+
+    @Test
+    @DisplayName("a contact with a known Square customer gets a profile link")
+    void contactWithSquareCustomerHasProfileLink() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(square.bookingsForCustomer("SQCUST123")).thenReturn(List.of());
 
         MarketingContactDto dto = service.contacts();
 
         assertThat(dto.available()).isTrue();
         Contact c = dto.contacts().get(0);
-        assertThat(c.hasAppointment()).isTrue();
         assertThat(c.squareProfileUrl()).isEqualTo("https://app.squareup.com/dashboard/customers/SQCUST123");
         assertThat(c.originalTrafficSource()).isEqualTo("instagram / paid / promo");
         assertThat(c.marketingTrafficSource()).isEqualTo("google / cpc / retargeting");
@@ -67,29 +69,19 @@ class MarketingContactsServiceTest {
         assertThat(c.variantName()).isEqualTo("Version_1");
         assertThat(c.deviceType()).isEqualTo("mobile");
         assertThat(c.osName()).isEqualTo("iOS");
-        assertThat(c.bookingPrice()).isEqualByComparingTo("85.00");
     }
 
     @Test
-    @DisplayName("a lead with no booking yet has hasAppointment=false and no Square link")
-    void leadWithoutBookingHasNoAppointmentOrLink() {
+    @DisplayName("a lead with no known Square customer has no profile link and an empty appointments list")
+    void leadWithoutSquareCustomerHasNoLinkOrAppointments() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(new RawContact(
-                id, "(858) 555-0100", "Jane", null,
-                "instagram / paid / promo", "instagram / paid / promo",
-                "mani", "Version_1",
-                "desktop", "Windows", "10", "Chrome", "126",
-                null, null,
-                null, null, null, null,
-                null, null, null,
-                Instant.parse("2026-07-01T00:00:00Z")
-        )));
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, null)));
 
         MarketingContactDto dto = service.contacts();
 
         Contact c = dto.contacts().get(0);
-        assertThat(c.hasAppointment()).isFalse();
         assertThat(c.squareProfileUrl()).isNull();
+        assertThat(c.appointments()).isEmpty();
     }
 
     @Test
@@ -103,53 +95,28 @@ class MarketingContactsServiceTest {
         assertThat(dto.contacts()).isEmpty();
     }
 
-    private static RawContact rawContact(UUID id, String squareCustomerId) {
-        return new RawContact(
-                id, "(858) 555-0100", "Jane", "jane@example.com",
-                "instagram / paid / promo", "instagram / paid / promo",
-                "mani", "Version_1",
-                "mobile", "iOS", "17.5", "Mobile Safari", "17.5",
-                true, true,
-                squareCustomerId, null, null, null,
-                null, null, null,
-                Instant.parse("2026-07-01T00:00:00Z")
-        );
-    }
-
     @Test
-    @DisplayName("history() 404s for an unknown contact")
-    void historyNotFoundForUnknownContact() {
+    @DisplayName("submissions come from our own DB regardless of whether a Square customer is known")
+    void submissionsAlwaysPopulated() {
         UUID id = UUID.randomUUID();
-        when(repository.findById(id)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> service.history(id))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("No such contact");
-    }
-
-    @Test
-    @DisplayName("history() returns submissions with empty appointments when there's no Square customer")
-    void historyWithoutSquareCustomerHasEmptyAppointments() {
-        UUID id = UUID.randomUUID();
-        when(repository.findById(id)).thenReturn(Optional.of(rawContact(id, null)));
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, null)));
         when(repository.findSubmissionHistory("(858) 555-0100", "jane@example.com")).thenReturn(List.of(
                 new RawSubmission("step1", Instant.parse("2026-07-01T00:00:00Z"), "mani", "Version_1",
                         "google", "cpc", "promo", null, null)
         ));
 
-        MarketingContactHistoryDto history = service.history(id);
+        MarketingContactDto dto = service.contacts();
 
-        assertThat(history.submissions()).hasSize(1);
-        assertThat(history.submissions().get(0).submissionType()).isEqualTo("step1");
-        assertThat(history.appointments()).isEmpty();
+        Contact c = dto.contacts().get(0);
+        assertThat(c.submissions()).hasSize(1);
+        assertThat(c.submissions().get(0).submissionType()).isEqualTo("step1");
     }
 
     @Test
-    @DisplayName("history() resolves Square bookings into service name, price, and provider name")
-    void historyResolvesSquareAppointments() {
+    @DisplayName("appointments resolve Square bookings into service name, price, and provider name")
+    void appointmentsResolveFromSquare() {
         UUID id = UUID.randomUUID();
-        when(repository.findById(id)).thenReturn(Optional.of(rawContact(id, "SQCUST123")));
-        when(repository.findSubmissionHistory("(858) 555-0100", "jane@example.com")).thenReturn(List.of());
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
 
         Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2026-07-31T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null,
@@ -159,10 +126,11 @@ class MarketingContactsServiceTest {
         when(square.catalogNames(List.of("VAR1"))).thenReturn(Map.of("VAR1", "Manicure"));
         when(square.catalogPrices(List.of("VAR1"))).thenReturn(Map.of("VAR1", new BigDecimal("85.00")));
 
-        MarketingContactHistoryDto history = service.history(id);
+        MarketingContactDto dto = service.contacts();
 
-        assertThat(history.appointments()).hasSize(1);
-        var appt = history.appointments().get(0);
+        Contact c = dto.contacts().get(0);
+        assertThat(c.appointments()).hasSize(1);
+        var appt = c.appointments().get(0);
         assertThat(appt.bookingId()).isEqualTo("SQBOOK1");
         assertThat(appt.serviceName()).isEqualTo("Manicure");
         assertThat(appt.price()).isEqualByComparingTo("85.00");
@@ -170,15 +138,15 @@ class MarketingContactsServiceTest {
     }
 
     @Test
-    @DisplayName("history() yields empty appointments, not a thrown exception, when Square is unreachable")
-    void historyToleratesSquareFailure() {
+    @DisplayName("yields an empty appointments list, not a thrown exception, when Square is unreachable")
+    void toleratesSquareFailure() {
         UUID id = UUID.randomUUID();
-        when(repository.findById(id)).thenReturn(Optional.of(rawContact(id, "SQCUST123")));
-        when(repository.findSubmissionHistory("(858) 555-0100", "jane@example.com")).thenReturn(List.of());
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
         when(square.bookingsForCustomer("SQCUST123")).thenThrow(new RuntimeException("Square unreachable"));
 
-        MarketingContactHistoryDto history = service.history(id);
+        MarketingContactDto dto = service.contacts();
 
-        assertThat(history.appointments()).isEmpty();
+        assertThat(dto.available()).isTrue();
+        assertThat(dto.contacts().get(0).appointments()).isEmpty();
     }
 }

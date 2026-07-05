@@ -1,8 +1,7 @@
 'use client';
 
 import { Fragment, useState } from 'react';
-import { api } from '../../../lib/api';
-import type { MarketingContact, MarketingContactAppointment, MarketingContactHistory, MarketingContactSubmission } from '../../../lib/types';
+import type { MarketingContact, MarketingContactAppointment, MarketingContactSubmission } from '../../../lib/types';
 
 const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
@@ -38,30 +37,6 @@ function ConsentBadge({ label, value }: { label: string; value: boolean | null }
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${cls}`}>
       {label}: {text}
     </span>
-  );
-}
-
-function AppointmentInfo({ c }: { c: MarketingContact }) {
-  if (!c.hasAppointment) {
-    return <span className="text-xs text-zinc-400">No appointment yet</span>;
-  }
-  return (
-    <div className="text-sm">
-      <div className="font-medium">
-        {c.bookingStartAt ? fmtDate(c.bookingStartAt) : '—'}
-        {c.bookingArtistName ? ` · ${c.bookingArtistName}` : ''}
-      </div>
-      <div className="text-xs text-zinc-500">
-        {c.bookingServiceName ?? '—'}
-        {c.bookingPrice != null ? ` · ${usd(c.bookingPrice)}` : ''}
-        {c.bookingStatus ? ` · ${c.bookingStatus}` : ''}
-      </div>
-      {c.squareProfileUrl && (
-        <a href={c.squareProfileUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-blue-600 hover:underline">
-          View in Square →
-        </a>
-      )}
-    </div>
   );
 }
 
@@ -102,7 +77,13 @@ function DeviceInfo({ c }: { c: MarketingContact }) {
   );
 }
 
-function HistoryToggle({ open, onClick }: { open: boolean; onClick: () => void }) {
+/** Empty state is visible without a click (a plain label); non-empty is a toggle showing the
+ * count, so an owner never has to expand something just to learn it's empty.
+ */
+function HistoryToggle({ label, count, open, onClick }: { label: string; count: number; open: boolean; onClick: () => void }) {
+  if (count === 0) {
+    return <span className="text-xs text-zinc-400">No {label.toLowerCase()}</span>;
+  }
   return (
     <button
       type="button"
@@ -113,7 +94,7 @@ function HistoryToggle({ open, onClick }: { open: boolean; onClick: () => void }
         className={`transition-transform ${open ? 'rotate-90' : ''}`} aria-hidden>
         <polyline points="9 6 15 12 9 18" />
       </svg>
-      History
+      {label} ({count})
     </button>
   );
 }
@@ -185,58 +166,42 @@ function SubmissionHistoryList({ submissions }: { submissions: MarketingContactS
   );
 }
 
-type HistoryState = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: MarketingContactHistory };
-
-function HistoryPanel({ c, state }: { c: MarketingContact; state: HistoryState | undefined }) {
-  if (!state || state.status === 'loading') {
-    return <p className="text-xs text-zinc-400">Loading history…</p>;
-  }
-  if (state.status === 'error') {
-    return <p className="text-xs text-red-600">Couldn&apos;t load history — try again.</p>;
-  }
-
-  const { submissions, appointments } = state.data;
+function ExpandedSections({ c, showAppointments, showSubmissions }: { c: MarketingContact; showAppointments: boolean; showSubmissions: boolean }) {
+  if (!showAppointments && !showSubmissions) return null;
   return (
     <div className="flex flex-col gap-4">
-      {c.squareProfileUrl && (
+      {showAppointments && (
         <div>
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Square Appointment History</h4>
-          {appointments.length === 0 ? (
-            <p className="text-xs text-zinc-400">No Square appointments found for this customer.</p>
-          ) : (
-            <AppointmentHistoryList appointments={appointments} />
-          )}
+          <div className="mb-2 flex items-center justify-between">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Appointment History</h4>
+            {c.squareProfileUrl && (
+              <a href={c.squareProfileUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-blue-600 hover:underline">
+                View in Square →
+              </a>
+            )}
+          </div>
+          <AppointmentHistoryList appointments={c.appointments} />
         </div>
       )}
-      <div>
-        <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Submission History</h4>
-        <SubmissionHistoryList submissions={submissions} />
-      </div>
+      {showSubmissions && (
+        <div>
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Submission History</h4>
+          <SubmissionHistoryList submissions={c.submissions} />
+        </div>
+      )}
     </div>
   );
 }
 
 export default function ContactsTable({ contacts }: { contacts: MarketingContact[] }) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [history, setHistory] = useState<Record<string, HistoryState>>({});
+  const [expandedAppointments, setExpandedAppointments] = useState<Set<string>>(new Set());
+  const [expandedSubmissions, setExpandedSubmissions] = useState<Set<string>>(new Set());
 
-  function toggle(c: MarketingContact) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(c.id)) {
-        next.delete(c.id);
-      } else {
-        next.add(c.id);
-        if (!history[c.id]) {
-          setHistory((h) => ({ ...h, [c.id]: { status: 'loading' } }));
-          api
-            .getMarketingContactHistory(c.id)
-            .then((data) => setHistory((h) => ({ ...h, [c.id]: { status: 'ready', data } })))
-            .catch(() => setHistory((h) => ({ ...h, [c.id]: { status: 'error' } })));
-        }
-      }
-      return next;
-    });
+  function toggle(set: Set<string>, setSet: (s: Set<string>) => void, id: string) {
+    const next = new Set(set);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSet(next);
   }
 
   return (
@@ -247,9 +212,6 @@ export default function ContactsTable({ contacts }: { contacts: MarketingContact
           <div key={c.id} className="rounded-lg p-4 ring-1 ring-zinc-200">
             <div className="flex items-center justify-between gap-2">
               <span className="font-medium">{c.givenName ?? '—'}</span>
-              <span className={`text-xs font-medium ${c.hasAppointment ? 'text-emerald-700' : 'text-zinc-400'}`}>
-                {c.hasAppointment ? 'Booked' : 'Lead only'}
-              </span>
             </div>
             <div className="mt-1 text-sm text-zinc-600">{c.phoneNumber}</div>
             {c.emailAddress && <div className="text-sm text-zinc-600">{c.emailAddress}</div>}
@@ -263,16 +225,22 @@ export default function ContactsTable({ contacts }: { contacts: MarketingContact
               <ConsentBadge label="SMS" value={c.smsMarketingConsent} />
               <ConsentBadge label="Email" value={c.emailMarketingConsent} />
             </div>
-            <div className="mt-3 border-t border-zinc-100 pt-3">
-              <AppointmentInfo c={c} />
+            <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-zinc-100 pt-3">
+              <HistoryToggle
+                label="Appointments"
+                count={c.appointments.length}
+                open={expandedAppointments.has(c.id)}
+                onClick={() => toggle(expandedAppointments, setExpandedAppointments, c.id)}
+              />
+              <HistoryToggle
+                label="Submissions"
+                count={c.submissions.length}
+                open={expandedSubmissions.has(c.id)}
+                onClick={() => toggle(expandedSubmissions, setExpandedSubmissions, c.id)}
+              />
             </div>
-            <div className="mt-3 border-t border-zinc-100 pt-3">
-              <HistoryToggle open={expanded.has(c.id)} onClick={() => toggle(c)} />
-              {expanded.has(c.id) && (
-                <div className="mt-3 rounded-md bg-zinc-50 p-3">
-                  <HistoryPanel c={c} state={history[c.id]} />
-                </div>
-              )}
+            <div className="mt-3">
+              <ExpandedSections c={c} showAppointments={expandedAppointments.has(c.id)} showSubmissions={expandedSubmissions.has(c.id)} />
             </div>
           </div>
         ))}
@@ -287,47 +255,61 @@ export default function ContactsTable({ contacts }: { contacts: MarketingContact
               <th className="px-3 py-2">Source</th>
               <th className="px-3 py-2">Device</th>
               <th className="px-3 py-2">Consent</th>
-              <th className="px-3 py-2">Appointment</th>
-              <th className="px-3 py-2"></th>
+              <th className="px-3 py-2">Appointments</th>
+              <th className="px-3 py-2">Submissions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
-            {contacts.map((c) => (
-              <Fragment key={c.id}>
-                <tr className="hover:bg-zinc-50">
-                  <td className="px-3 py-2">
-                    <div className="font-medium">{c.givenName ?? '—'}</div>
-                    <div className="text-xs text-zinc-500">{c.phoneNumber}</div>
-                    {c.emailAddress && <div className="text-xs text-zinc-500">{c.emailAddress}</div>}
-                  </td>
-                  <td className="px-3 py-2">
-                    <SourceInfo c={c} />
-                  </td>
-                  <td className="px-3 py-2">
-                    <DeviceInfo c={c} />
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="flex flex-col gap-1">
-                      <ConsentBadge label="SMS" value={c.smsMarketingConsent} />
-                      <ConsentBadge label="Email" value={c.emailMarketingConsent} />
-                    </div>
-                  </td>
-                  <td className="px-3 py-2">
-                    <AppointmentInfo c={c} />
-                  </td>
-                  <td className="px-3 py-2">
-                    <HistoryToggle open={expanded.has(c.id)} onClick={() => toggle(c)} />
-                  </td>
-                </tr>
-                {expanded.has(c.id) && (
-                  <tr className="bg-zinc-50">
-                    <td colSpan={6} className="px-3 py-3">
-                      <HistoryPanel c={c} state={history[c.id]} />
+            {contacts.map((c) => {
+              const showAppointments = expandedAppointments.has(c.id);
+              const showSubmissions = expandedSubmissions.has(c.id);
+              return (
+                <Fragment key={c.id}>
+                  <tr className="hover:bg-zinc-50">
+                    <td className="px-3 py-2">
+                      <div className="font-medium">{c.givenName ?? '—'}</div>
+                      <div className="text-xs text-zinc-500">{c.phoneNumber}</div>
+                      {c.emailAddress && <div className="text-xs text-zinc-500">{c.emailAddress}</div>}
+                    </td>
+                    <td className="px-3 py-2">
+                      <SourceInfo c={c} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <DeviceInfo c={c} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex flex-col gap-1">
+                        <ConsentBadge label="SMS" value={c.smsMarketingConsent} />
+                        <ConsentBadge label="Email" value={c.emailMarketingConsent} />
+                      </div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <HistoryToggle
+                        label="Appointments"
+                        count={c.appointments.length}
+                        open={showAppointments}
+                        onClick={() => toggle(expandedAppointments, setExpandedAppointments, c.id)}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <HistoryToggle
+                        label="Submissions"
+                        count={c.submissions.length}
+                        open={showSubmissions}
+                        onClick={() => toggle(expandedSubmissions, setExpandedSubmissions, c.id)}
+                      />
                     </td>
                   </tr>
-                )}
-              </Fragment>
-            ))}
+                  {(showAppointments || showSubmissions) && (
+                    <tr className="bg-zinc-50">
+                      <td colSpan={6} className="px-3 py-3">
+                        <ExpandedSections c={c} showAppointments={showAppointments} showSubmissions={showSubmissions} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
