@@ -324,6 +324,11 @@ export const api = {
   setMarketingVariantActive: (variantId: string, active: boolean) =>
     proxyVoid(`/api/owner/marketing/variants/${variantId}`, 'PATCH', { active }),
 
+  // description: '' clears it; the backend only leaves it untouched when the field is absent
+  // entirely, which this always-present-key call never does.
+  setMarketingVariantDescription: (variantId: string, description: string) =>
+    proxyVoid(`/api/owner/marketing/variants/${variantId}`, 'PATCH', { description }),
+
   deleteMarketingVariant: (variantId: string) => proxyVoid(`/api/owner/marketing/variants/${variantId}`, 'DELETE'),
 
   duplicateMarketingVariant: (variantId: string, name: string) =>

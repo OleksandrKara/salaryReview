@@ -28,7 +28,8 @@ public class MarketingDashboardRepository {
             boolean active,
             long pageViews,
             long bookingsCompleted,
-            String key
+            String key,
+            String description
     ) {}
 
     private final JdbcTemplate jdbcTemplate;
@@ -82,7 +83,7 @@ public class MarketingDashboardRepository {
     public List<RawVariantStat> findVariantStats(UUID landingPageId, Instant statsSince) {
         String sql = """
                 SELECT v.id AS variant_id, v.name AS name, v.weight AS weight, v.active AS active,
-                       v.key AS key,
+                       v.key AS key, v.description AS description,
                        COALESCE(pv.page_views, 0) AS page_views,
                        COALESCE(bk.bookings_completed, 0) AS bookings_completed
                 FROM marketing.landing_variants v
@@ -109,7 +110,8 @@ public class MarketingDashboardRepository {
                 rs.getBoolean("active"),
                 rs.getLong("page_views"),
                 rs.getLong("bookings_completed"),
-                rs.getString("key")
+                rs.getString("key"),
+                rs.getString("description")
         ), cutoff, cutoff, cutoff, cutoff, landingPageId);
     }
 
@@ -131,6 +133,10 @@ public class MarketingDashboardRepository {
         jdbcTemplate.update("UPDATE marketing.landing_variants SET active = ? WHERE id = ?", active, variantId);
     }
 
+    public void updateVariantDescription(UUID variantId, String description) {
+        jdbcTemplate.update("UPDATE marketing.landing_variants SET description = ? WHERE id = ?", description, variantId);
+    }
+
     /** Throws org.springframework.dao.DataIntegrityViolationException if the variant has
      * recorded events/attribution — the service layer translates that into a friendly error.
      */
@@ -140,26 +146,27 @@ public class MarketingDashboardRepository {
 
     public Optional<VariantSource> findVariantSource(UUID variantId) {
         List<VariantSource> rows = jdbcTemplate.query(
-                "SELECT landing_page_id, weight, content FROM marketing.landing_variants WHERE id = ?",
+                "SELECT landing_page_id, weight, content, description FROM marketing.landing_variants WHERE id = ?",
                 (rs, rowNum) -> new VariantSource(
                         (UUID) rs.getObject("landing_page_id"),
                         rs.getInt("weight"),
-                        rs.getString("content")),
+                        rs.getString("content"),
+                        rs.getString("description")),
                 variantId);
         return rows.stream().findFirst();
     }
 
-    public record VariantSource(UUID landingPageId, int weight, String contentJson) {}
+    public record VariantSource(UUID landingPageId, int weight, String contentJson, String description) {}
 
     public UUID duplicateVariant(VariantSource source, String newName, String newKey) {
         List<UUID> ids = jdbcTemplate.query(
                 """
-                INSERT INTO marketing.landing_variants (landing_page_id, name, weight, content, active, key)
-                VALUES (?, ?, ?, ?::jsonb, true, ?)
+                INSERT INTO marketing.landing_variants (landing_page_id, name, weight, content, active, key, description)
+                VALUES (?, ?, ?, ?::jsonb, true, ?, ?)
                 RETURNING id
                 """,
                 (rs, rowNum) -> (UUID) rs.getObject("id"),
-                source.landingPageId(), newName, source.weight(), source.contentJson(), newKey);
+                source.landingPageId(), newName, source.weight(), source.contentJson(), newKey, source.description());
         return ids.get(0);
     }
 }

@@ -8,9 +8,15 @@ const actionButtonClass = 'rounded px-2 py-0.5 text-xs font-medium ring-1 hover:
 interface VariantActions {
   onToggleActive: (v: MarketingVariantStat) => void;
   onRename: (v: MarketingVariantStat) => void;
+  onEditDescription: (v: MarketingVariantStat) => void;
   onDuplicate: (v: MarketingVariantStat) => void;
   onDelete: (v: MarketingVariantStat) => void;
   busyVariantId: string | null;
+}
+
+function Description({ v }: { v: MarketingVariantStat }) {
+  if (!v.description) return <span className="text-xs italic text-zinc-400">No description</span>;
+  return <p className="text-xs text-zinc-500">{v.description}</p>;
 }
 
 // A bare colored dot didn't read as clickable — a labeled pill (matching ExperimentStatusBadge's
@@ -38,6 +44,9 @@ function ActionButtons({ v, actions }: { v: MarketingVariantStat; actions: Varia
       <button type="button" disabled={busy} onClick={() => actions.onRename(v)} className={`${actionButtonClass} text-blue-600 ring-blue-200`}>
         Rename
       </button>
+      <button type="button" disabled={busy} onClick={() => actions.onEditDescription(v)} className={`${actionButtonClass} text-blue-600 ring-blue-200`}>
+        {v.description ? 'Edit description' : 'Add description'}
+      </button>
       <button type="button" disabled={busy} onClick={() => actions.onDuplicate(v)} className={`${actionButtonClass} text-zinc-600 ring-zinc-200`}>
         Duplicate
       </button>
@@ -62,6 +71,9 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
               <span className="flex items-center gap-1.5 text-xs text-zinc-500">
                 <ActiveToggle v={v} onToggleActive={actions.onToggleActive} busy={actions.busyVariantId === v.variantId} /> weight {v.weight}
               </span>
+            </div>
+            <div className="mt-1">
+              <Description v={v} />
             </div>
             <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
               <div>
@@ -107,7 +119,10 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
           <tbody className="divide-y divide-zinc-100">
             {variants.map((v) => (
               <tr key={v.variantId} className="hover:bg-zinc-50">
-                <td className="px-3 py-2 font-medium">{v.name}</td>
+                <td className="px-3 py-2">
+                  <div className="font-medium">{v.name}</div>
+                  <Description v={v} />
+                </td>
                 <td className="px-3 py-2 text-right tabular-nums">{v.weight}</td>
                 <td className="px-3 py-2 text-center">
                   <ActiveToggle v={v} onToggleActive={actions.onToggleActive} busy={actions.busyVariantId === v.variantId} />
