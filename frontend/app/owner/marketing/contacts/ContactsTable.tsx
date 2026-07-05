@@ -17,6 +17,15 @@ const SUBMISSION_LABELS: Record<string, string> = {
   four_hand_request: '4-hand request',
 };
 
+const APPOINTMENT_STATUS_LABELS: Record<string, string> = {
+  ACCEPTED: 'Confirmed',
+  PENDING: 'Pending',
+  CANCELLED_BY_CUSTOMER: 'Cancelled by customer',
+  CANCELLED_BY_SELLER: 'Cancelled by salon',
+  DECLINED: 'Declined',
+  NO_SHOW: 'No-show',
+};
+
 function ConsentBadge({ label, value }: { label: string; value: boolean | null }) {
   const text = value === null ? 'Unknown' : value ? 'Yes' : 'No';
   const cls =
@@ -113,10 +122,14 @@ function AppointmentStatusBadge({ status }: { status: string }) {
   const cls =
     status === 'ACCEPTED'
       ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-      : status === 'CANCELLED_BY_CUSTOMER' || status === 'CANCELLED_BY_SELLER' || status === 'DECLINED'
+      : status === 'CANCELLED_BY_CUSTOMER' || status === 'CANCELLED_BY_SELLER' || status === 'DECLINED' || status === 'NO_SHOW'
         ? 'bg-red-50 text-red-700 ring-red-200'
         : 'bg-zinc-100 text-zinc-600 ring-zinc-200';
-  return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${cls}`}>{status}</span>;
+  return (
+    <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${cls}`}>
+      {APPOINTMENT_STATUS_LABELS[status] ?? status}
+    </span>
+  );
 }
 
 function AppointmentHistoryList({ appointments }: { appointments: MarketingContactAppointment[] }) {
