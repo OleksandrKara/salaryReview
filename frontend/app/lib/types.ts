@@ -777,6 +777,34 @@ export interface MarketingContactsData {
   contacts: MarketingContact[];
 }
 
+export interface MarketingContactSubmission {
+  submissionType: string;
+  occurredAt: string;
+  landingPageSlug: string | null;
+  variantName: string | null;
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  serviceName: string | null;
+  price: number | null;
+}
+
+export interface MarketingContactAppointment {
+  bookingId: string;
+  status: string;
+  startAt: string | null;
+  serviceName: string | null;
+  /** Current catalog list price — Square doesn't retain what was actually charged, so this is a
+   * best-effort estimate, not a payroll figure. */
+  price: number | null;
+  artistName: string | null;
+}
+
+export interface MarketingContactHistory {
+  submissions: MarketingContactSubmission[];
+  appointments: MarketingContactAppointment[];
+}
+
 // --- Knowledge Base articles (com.salonreview.web.KbArticleController) ---
 
 export type KbSyncStatus = 'NOT_SYNCED' | 'SYNCED' | 'CHANGED' | 'ERROR';

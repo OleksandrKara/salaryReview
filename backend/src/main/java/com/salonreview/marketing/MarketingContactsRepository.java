@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -44,6 +45,31 @@ public class MarketingContactsRepository {
             Instant createdAt
     ) {}
 
+    /** One row of marketing.submissions — every Step 1 capture, booking, or 4-hand request this
+     * phone/email ever made, each carrying the landing page/variant/UTM context at that moment.
+     */
+    public record RawSubmission(
+            String submissionType,
+            Instant occurredAt,
+            String landingPageSlug,
+            String variantName,
+            String utmSource,
+            String utmMedium,
+            String utmCampaign,
+            String serviceName,
+            BigDecimal price
+    ) {}
+
+    private static final String CONTACT_COLUMNS = """
+            id, phone_number, given_name, email_address,
+            original_traffic_source, marketing_traffic_source,
+            landing_page_slug, variant_name,
+            device_type, os_name, os_version, browser_name, browser_version,
+            sms_marketing_consent, email_marketing_consent,
+            square_customer_id, square_booking_id, booking_status, booking_start_at,
+            booking_service_name, booking_price, booking_artist_name, created_at
+            """;
+
     private final JdbcTemplate jdbcTemplate;
 
     public MarketingContactsRepository(JdbcTemplate jdbcTemplate) {
@@ -51,18 +77,43 @@ public class MarketingContactsRepository {
     }
 
     public List<RawContact> listAll() {
+        String sql = "SELECT " + CONTACT_COLUMNS + " FROM marketing.contacts ORDER BY created_at DESC";
+        return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact);
+    }
+
+    public Optional<RawContact> findById(UUID id) {
+        String sql = "SELECT " + CONTACT_COLUMNS + " FROM marketing.contacts WHERE id = ?";
+        List<RawContact> rows = jdbcTemplate.query(sql, (rs, rowNum) -> mapContact(rs, rowNum), id);
+        return rows.stream().findFirst();
+    }
+
+    /** Every submission this phone number or email address ever made, most recent first —
+     * matched on either since a contact's email can be filled in on a later visit than their
+     * first (phone is the stable identifier; email may only appear from a later submission).
+     */
+    public List<RawSubmission> findSubmissionHistory(String phoneNumber, String emailAddress) {
         String sql = """
-                SELECT id, phone_number, given_name, email_address,
-                       original_traffic_source, marketing_traffic_source,
-                       landing_page_slug, variant_name,
-                       device_type, os_name, os_version, browser_name, browser_version,
-                       sms_marketing_consent, email_marketing_consent,
-                       square_customer_id, square_booking_id, booking_status, booking_start_at,
-                       booking_service_name, booking_price, booking_artist_name, created_at
-                FROM marketing.contacts
-                ORDER BY created_at DESC
+                SELECT submission_type, occurred_at, landing_page_slug, variant_name,
+                       utm_source, utm_medium, utm_campaign, service_name, price
+                FROM marketing.submissions
+                WHERE customer_phone = ? OR (? IS NOT NULL AND customer_email = ?)
+                ORDER BY occurred_at DESC
                 """;
-        return jdbcTemplate.query(sql, (rs, rowNum) -> new RawContact(
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new RawSubmission(
+                rs.getString("submission_type"),
+                toInstant(rs.getTimestamp("occurred_at")),
+                rs.getString("landing_page_slug"),
+                rs.getString("variant_name"),
+                rs.getString("utm_source"),
+                rs.getString("utm_medium"),
+                rs.getString("utm_campaign"),
+                rs.getString("service_name"),
+                rs.getBigDecimal("price")
+        ), phoneNumber, emailAddress, emailAddress);
+    }
+
+    private static RawContact mapContact(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
+        return new RawContact(
                 (UUID) rs.getObject("id"),
                 rs.getString("phone_number"),
                 rs.getString("given_name"),
@@ -86,7 +137,7 @@ public class MarketingContactsRepository {
                 rs.getBigDecimal("booking_price"),
                 rs.getString("booking_artist_name"),
                 toInstant(rs.getTimestamp("created_at"))
-        ));
+        );
     }
 
     private static Instant toInstant(Timestamp ts) {
