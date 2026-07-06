@@ -739,6 +739,20 @@ export interface MarketingDashboardData {
   statsSince: string | null;
 }
 
+// --- Marketing analytics (com.salonreview.web.MarketingAnalyticsController) ---
+
+export interface MarketingAnalyticsData {
+  /** ISO-8601 date (yyyy-MM-dd), inclusive on both ends. */
+  from: string;
+  to: string;
+  /** Distinct ads-attributed (Meta/Google paid click) customers with a service in range. */
+  customerCount: number;
+  /** Individual service line items — a mani+pedi visit counts as 2. */
+  serviceCount: number;
+  /** Sum of menu-price ("gross") revenue for those services. */
+  grossRevenue: number;
+}
+
 // --- Abuse blocks (com.salonreview.web.AbuseBlocksController) ---
 
 export interface AbuseBlockEntry {

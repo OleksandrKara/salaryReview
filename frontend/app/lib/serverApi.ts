@@ -9,6 +9,7 @@ import type {
   ManualCredit,
   Me,
   Sop,
+  MarketingAnalyticsData,
   MarketingContactsData,
   MarketingDashboardData,
   OwnerCustomer,
@@ -133,4 +134,13 @@ export const serverApi = {
   getMarketingContacts: () => serverFetch<MarketingContactsData>('/api/owner/marketing/contacts'),
 
   getAbuseBlocks: () => serverFetch<AbuseBlocksData>('/api/owner/marketing/abuse-blocks'),
+
+  /** from/to are ISO dates (yyyy-MM-dd); omitting both defaults to month-to-date on the backend. */
+  getMarketingAnalytics: (from?: string, to?: string) => {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const qs = params.toString();
+    return serverFetch<MarketingAnalyticsData>(`/api/owner/marketing/analytics${qs ? `?${qs}` : ''}`);
+  },
 };

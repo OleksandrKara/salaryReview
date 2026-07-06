@@ -8,6 +8,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -105,6 +106,23 @@ public class MarketingContactsRepository {
     public List<RawContact> listAll() {
         String sql = "SELECT " + CONTACT_COLUMNS + " FROM marketing.contacts ORDER BY created_at DESC";
         return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact);
+    }
+
+    /** Square customer ids for contacts whose first- or latest-touch traffic source is a paid ad
+     * click — the exact labels classify_traffic_source() (salonLandings) assigns for a tracked
+     * Meta/Google ad click, never a substring/prefix match since that's the complete label. Only
+     * contacts with a known Square customer id are useful here — one is required to later match
+     * against SquareMonthAggregator's AttributedService.customerId().
+     */
+    public Set<String> findAdsAttributedSquareCustomerIds() {
+        String sql = """
+                SELECT DISTINCT square_customer_id
+                FROM marketing.contacts
+                WHERE square_customer_id IS NOT NULL
+                  AND (original_traffic_source IN ('Meta Ads (click)', 'Google Ads (click)')
+                       OR marketing_traffic_source IN ('Meta Ads (click)', 'Google Ads (click)'))
+                """;
+        return Set.copyOf(jdbcTemplate.queryForList(sql, String.class));
     }
 
     /** Every submission this phone number ever made, most recent first. Phone is the sole match
