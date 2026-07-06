@@ -8,6 +8,7 @@ import com.salonreview.repo.PayPeriodRepository;
 import com.salonreview.repo.PeriodEntryRepository;
 import com.salonreview.repo.RevenueSnapshotRepository;
 import com.salonreview.repo.SalonConfigRepository;
+import com.salonreview.web.dto.RevenueDayDetailDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Captures one {@link RevenueSnapshot} per day (MTD revenue, MTD card/cash, services count, and the
@@ -42,19 +44,22 @@ public class RevenueSnapshotService {
     private final SalonConfigRepository salonConfig;
     private final PayPeriodRepository payPeriods;
     private final PeriodEntryRepository entries;
+    private final RevenueForecastService forecaster;
 
     public RevenueSnapshotService(RevenueSnapshotRepository repo,
                                   SquareMonthAggregator aggregator,
                                   SquareClient square,
                                   SalonConfigRepository salonConfig,
                                   PayPeriodRepository payPeriods,
-                                  PeriodEntryRepository entries) {
+                                  PeriodEntryRepository entries,
+                                  RevenueForecastService forecaster) {
         this.repo = repo;
         this.aggregator = aggregator;
         this.square = square;
         this.salonConfig = salonConfig;
         this.payPeriods = payPeriods;
         this.entries = entries;
+        this.forecaster = forecaster;
     }
 
     /**
@@ -148,6 +153,35 @@ public class RevenueSnapshotService {
         }
         log.info("fillMonthEndActualsFor({}): wrote ${} to {} snapshot rows", month, finalActual, rows.size());
         return rows.size();
+    }
+
+    /**
+     * What was known and projected as of {@code date} — the frozen {@link RevenueSnapshot} row
+     * (MTD revenue/card/cash/services, upcoming pipeline), plus the month-end forecast recomputed
+     * live from that day's own inputs via {@link RevenueForecastService}. If the month has since
+     * closed, {@code monthEndActual} lets the caller compare projection vs. reality directly.
+     *
+     * <p>The forecast isn't literally frozen from that day (it re-runs the pattern/calibration
+     * signals against whatever history exists now, which only grows over time) — in practice this
+     * is a non-issue for a settled month (the actual is what it is regardless), and a reasonable
+     * best-effort answer for a still-open month.
+     *
+     * <p>Returns {@code hasSnapshot=false} with everything else null/zero when no snapshot was ever
+     * captured for that date (before the feature existed, or a gap the backfill didn't cover).
+     */
+    public RevenueDayDetailDto dayDetail(LocalDate date) {
+        Optional<RevenueSnapshot> row = repo.findBySnapshotDate(date);
+        if (row.isEmpty()) {
+            return RevenueDayDetailDto.noSnapshot(date);
+        }
+        RevenueSnapshot s = row.get();
+        ForecastResult forecast = forecaster.forecast(date.getYear(), date.getMonthValue(), s.getMtdRevenue(), s.getUpcomingGross());
+        return new RevenueDayDetailDto(
+                date, true,
+                s.getMtdRevenue(), s.getMtdCard(), s.getMtdCash(), s.getMtdServices(),
+                s.getUpcomingCount(), s.getUpcomingGross(),
+                forecast.projectedMid(), forecast.projectedLow(), forecast.projectedHigh(),
+                s.getMonthEndActual());
     }
 
     // --- internals ---

@@ -613,6 +613,25 @@ export interface RevenuePulse {
   priorMonthLength: number;
 }
 
+// What was known/projected as of a specific past date (com.salonreview.web.RevenuePulseController#day),
+// from that day's frozen daily snapshot plus a forecast recomputed from its stored inputs.
+export interface RevenueDayDetail {
+  date: string; // ISO yyyy-MM-dd
+  // False when no snapshot was ever captured for this date — every other field is null/0 then.
+  hasSnapshot: boolean;
+  mtdRevenue: number | null;
+  mtdCard: number | null;
+  mtdCash: number | null;
+  mtdServices: number;
+  upcomingCount: number;
+  upcomingGross: number | null;
+  projectedMid: number | null;
+  projectedLow: number | null; // null in cold-start mode
+  projectedHigh: number | null;
+  // The month's actual final total, once settled; null while still open.
+  monthEndActual: number | null;
+}
+
 // --- Provider retention analytics (owner + manager, view-only for the latter) ---
 
 export interface RetentionTrendPoint {
