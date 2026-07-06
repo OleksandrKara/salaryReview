@@ -57,8 +57,21 @@ function ActionButtons({ v, actions }: { v: MarketingVariantStat; actions: Varia
   );
 }
 
+function totalsFor(variants: MarketingVariantStat[]) {
+  const totalWeight = variants.reduce((sum, v) => sum + v.weight, 0);
+  const activeCount = variants.filter((v) => v.active).length;
+  const totalPageViews = variants.reduce((sum, v) => sum + v.pageViews, 0);
+  const totalContacts = variants.reduce((sum, v) => sum + v.contactsCreated, 0);
+  const totalBookings = variants.reduce((sum, v) => sum + v.bookingsCompleted, 0);
+  // The aggregate rate, not an average of the per-variant rates — a variant with 10 views at 50%
+  // shouldn't count as much as one with 10,000 views at 2% when rolled up.
+  const conversionRate = totalPageViews === 0 ? 0 : totalBookings / totalPageViews;
+  return { totalWeight, activeCount, totalPageViews, totalContacts, totalBookings, conversionRate };
+}
+
 export default function VariantTable({ variants, ...actions }: { variants: MarketingVariantStat[] } & VariantActions) {
   if (variants.length === 0) return null;
+  const totals = totalsFor(variants);
 
   return (
     <>
@@ -103,6 +116,30 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
             </div>
           </div>
         ))}
+        <div className="rounded-lg bg-zinc-50 p-4 ring-1 ring-zinc-200">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-semibold">Total</span>
+            <span className="text-xs text-zinc-500">{totals.activeCount} of {variants.length} active</span>
+          </div>
+          <dl className="mt-3 grid grid-cols-4 gap-2 text-sm">
+            <div>
+              <dt className="text-xs text-zinc-500">Page Views</dt>
+              <dd className="font-semibold tabular-nums">{totals.totalPageViews.toLocaleString('en-US')}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-zinc-500">Contacts</dt>
+              <dd className="font-semibold tabular-nums">{totals.totalContacts.toLocaleString('en-US')}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-zinc-500">Bookings</dt>
+              <dd className="font-semibold tabular-nums">{totals.totalBookings.toLocaleString('en-US')}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-zinc-500">Conversion</dt>
+              <dd className="font-semibold tabular-nums text-zinc-600">{pct(totals.conversionRate)}</dd>
+            </div>
+          </dl>
+        </div>
       </div>
 
       {/* Desktop table */}
@@ -145,6 +182,21 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
               </tr>
             ))}
           </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-zinc-200 bg-zinc-50 font-semibold">
+              <td className="px-3 py-2">Total</td>
+              <td className="px-3 py-2 text-right tabular-nums">{totals.totalWeight}</td>
+              <td className="px-3 py-2 text-center text-xs font-normal text-zinc-500">
+                {totals.activeCount} of {variants.length} active
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums">{totals.totalPageViews.toLocaleString('en-US')}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{totals.totalContacts.toLocaleString('en-US')}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{totals.totalBookings.toLocaleString('en-US')}</td>
+              <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{pct(totals.conversionRate)}</td>
+              <td className="px-3 py-2" />
+              <td className="px-3 py-2" />
+            </tr>
+          </tfoot>
         </table>
       </div>
     </>
