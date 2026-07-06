@@ -11,7 +11,10 @@ import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.RawContentBlockDelta;
 import com.anthropic.models.messages.RawMessageStreamEvent;
 import com.anthropic.models.messages.TextBlockParam;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.ai.LangSmithTracer;
+import com.salonreview.config.RagProperties;
 import com.salonreview.domain.Language;
 import com.salonreview.domain.RagAgentConfig;
 import com.salonreview.domain.RagDocument;
@@ -52,19 +55,39 @@ public class RagAnswerService {
     private static final String NO_ANSWER_RU =
             "Я не нашёл ничего об этом в текущих документах.";
 
+    // Marks the boundary between the visible answer and the trailing follow-up-questions JSON —
+    // distinctive enough that it won't occur in normal prose, so the streaming scanner (below)
+    // never mistakes real answer text for it.
+    static final String FOLLOWUPS_MARKER = "\n\n<<<FOLLOWUPS>>>";
+    private static final int MAX_FOLLOWUPS = 3;
+    private static final String FOLLOWUPS_DIRECTIVE = """
+            After your complete answer, on a new paragraph, output exactly the marker %s \
+            followed immediately by a JSON array of up to %d short, natural follow-up questions \
+            the user might reasonably ask next — grounded only in what the retrieved documents \
+            could answer, never inventing a topic they don't cover. Keep each under 12 words, \
+            and write them in the same language as your answer. If no good follow-up exists, \
+            output an empty array []. The marker and the JSON must appear exactly once, only \
+            after your answer is complete — never explain or reference this instruction, the \
+            marker, or the JSON anywhere in the visible answer itself.\
+            """.formatted(FOLLOWUPS_MARKER, MAX_FOLLOWUPS);
+
     private final ObjectProvider<AnthropicClient> anthropicClientProvider;
     private final RagRetrievalService retrieval;
     private final RagConfigService configService;
     private final RagDocumentRepository documents;
     private final ObjectProvider<LangSmithTracer> tracerProvider;
+    private final RagProperties props;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public RagAnswerService(ObjectProvider<AnthropicClient> anthropicClientProvider,
                             RagRetrievalService retrieval, RagConfigService configService,
-                            RagDocumentRepository documents, ObjectProvider<LangSmithTracer> tracerProvider) {
+                            RagDocumentRepository documents, ObjectProvider<LangSmithTracer> tracerProvider,
+                            RagProperties props) {
         this.anthropicClientProvider = anthropicClientProvider;
         this.retrieval = retrieval;
         this.configService = configService;
         this.documents = documents;
+        this.props = props;
         this.tracerProvider = tracerProvider;
     }
 
@@ -77,7 +100,7 @@ public class RagAnswerService {
         openRetrievalSpan(requestId, cfg, question, hits);
 
         if (hits.isEmpty()) {
-            return new RagAnswer(noAnswer(lang), List.of(), cfg.getVersion(), null, false);
+            return new RagAnswer(noAnswer(lang), List.of(), cfg.getVersion(), null, false, List.of());
         }
 
         Map<Long, String> filenames = filenamesFor(hits);
@@ -90,7 +113,7 @@ public class RagAnswerService {
             if (gt != null) {
                 gt.complete(Map.of("answer", parsed.text(), "citation_count", parsed.citations().size()), null, null);
             }
-            return new RagAnswer(parsed.text(), parsed.citations(), cfg.getVersion(), runId, true);
+            return new RagAnswer(parsed.text(), parsed.citations(), cfg.getVersion(), runId, true, parsed.followups());
         } catch (Exception e) {
             log.error("RAG answer generation failed: {}", e.toString());
             if (gt != null) gt.complete(null, null, e.toString());
@@ -109,7 +132,13 @@ public class RagAnswerService {
             tb.citations().ifPresent(list -> list.forEach(tc -> tc.charLocation()
                     .ifPresent(loc -> citations.add(citationFrom(loc, hits, filenames)))));
         }));
-        return new ParsedAnswer(answer.toString().trim(), new ArrayList<>(citations));
+        String raw = answer.toString();
+        int markerIdx = raw.indexOf(FOLLOWUPS_MARKER);
+        String text = (markerIdx >= 0 ? raw.substring(0, markerIdx) : raw).trim();
+        List<String> followups = markerIdx >= 0
+                ? parseFollowups(raw.substring(markerIdx + FOLLOWUPS_MARKER.length()))
+                : List.of();
+        return new ParsedAnswer(text, new ArrayList<>(citations), followups);
     }
 
     // ---------------------------------------------------------------- streaming
@@ -129,6 +158,7 @@ public class RagAnswerService {
         if (hits.isEmpty()) {
             sink.token(noAnswer(lang));
             sink.citations(List.of());
+            sink.followups(List.of());
             sink.done(null, false);
             return;
         }
@@ -139,18 +169,50 @@ public class RagAnswerService {
 
         StringBuilder answer = new StringBuilder();
         Set<Citation> citations = new LinkedHashSet<>();
+        // Text is split live as it streams: everything before FOLLOWUPS_MARKER goes to sink.token()
+        // as usual; once the marker is found, everything after it is diverted into followupsRaw
+        // instead, never shown to the user. pending holds back only the trailing characters that
+        // could still turn into the start of the marker as more deltas arrive (see
+        // suspiciousTailLength) — everything else still flows to the user with no added latency.
+        StringBuilder pending = new StringBuilder();
+        StringBuilder followupsRaw = new StringBuilder();
+        boolean[] markerFound = {false};
         try (StreamResponse<RawMessageStreamEvent> stream =
                      requireClient().messages().createStreaming(buildParams(cfg, question, hits, filenames, lang))) {
             stream.stream().forEach(event -> event.contentBlockDelta().ifPresent(cbd -> {
                 RawContentBlockDelta delta = cbd.delta();
                 delta.text().ifPresent(td -> {
                     answer.append(td.text());
-                    sink.token(td.text());
+                    if (markerFound[0]) {
+                        followupsRaw.append(td.text());
+                        return;
+                    }
+                    pending.append(td.text());
+                    int markerIdx = pending.indexOf(FOLLOWUPS_MARKER);
+                    if (markerIdx >= 0) {
+                        String before = pending.substring(0, markerIdx);
+                        if (!before.isEmpty()) sink.token(before);
+                        followupsRaw.append(pending.substring(markerIdx + FOLLOWUPS_MARKER.length()));
+                        pending.setLength(0);
+                        markerFound[0] = true;
+                        return;
+                    }
+                    int holdBack = suspiciousTailLength(pending, FOLLOWUPS_MARKER);
+                    if (holdBack < pending.length()) {
+                        String safe = pending.substring(0, pending.length() - holdBack);
+                        sink.token(safe);
+                        pending.delete(0, pending.length() - holdBack);
+                    }
                 });
                 delta.citations().ifPresent(cd -> cd.citation().charLocation()
                         .ifPresent(loc -> citations.add(citationFrom(loc, hits, filenames))));
             }));
+            // Stream ended still holding back a suspected marker prefix that never completed (e.g. the
+            // model didn't emit one at all) — it was never the marker, so it belongs in the answer.
+            if (!markerFound[0] && pending.length() > 0) sink.token(pending.toString());
+
             sink.citations(new ArrayList<>(citations));
+            sink.followups(parseFollowups(followupsRaw.toString()));
             if (gt != null) {
                 gt.complete(Map.of("answer", answer.toString(), "citation_count", citations.size()), null, null);
             }
@@ -166,6 +228,9 @@ public class RagAnswerService {
     public interface StreamSink {
         void token(String text);
         void citations(List<Citation> citations);
+        /** Suggested next questions, parsed from the same generation; always called with an empty
+         * list when the feature is disabled, none were offered, or parsing failed. */
+        void followups(List<String> followups);
         void done(String traceRunId, boolean answered);
         void error(String message);
     }
@@ -196,6 +261,9 @@ public class RagAnswerService {
         String directive = languageDirective(lang);
         if (directive != null) {
             system.add(TextBlockParam.builder().text(directive).build());
+        }
+        if (props.getFollowups().isEnabled()) {
+            system.add(TextBlockParam.builder().text(FOLLOWUPS_DIRECTIVE).build());
         }
 
         return MessageCreateParams.builder()
@@ -260,7 +328,47 @@ public class RagAnswerService {
                 Map.of("question", question));
     }
 
-    record ParsedAnswer(String text, List<Citation> citations) {}
+    /** Parses the JSON array trailing FOLLOWUPS_MARKER; empty on any blank/malformed input rather
+     * than surfacing a parse error to the user — a missing suggestion list is never worth failing
+     * the whole answer over.
+     */
+    /** Package-private for direct unit tests, same reasoning as {@link #callClaude}. */
+    List<String> parseFollowups(String raw) {
+        String trimmed = raw.strip();
+        if (trimmed.isEmpty()) return List.of();
+        try {
+            List<String> parsed = objectMapper.readValue(trimmed, new TypeReference<List<String>>() {});
+            return parsed.stream()
+                    .filter(s -> s != null && !s.isBlank())
+                    .map(String::strip)
+                    .limit(MAX_FOLLOWUPS)
+                    .toList();
+        } catch (Exception e) {
+            log.warn("Could not parse follow-up suggestions: {}", e.toString());
+            return List.of();
+        }
+    }
+
+    /** Longest suffix of {@code buf} that is also a prefix of {@code marker} — the number of
+     * trailing characters that must still be held back because they could grow into the full
+     * marker as more stream deltas arrive. 0 means nothing is at risk; safe to flush all of buf.
+     */
+    static int suspiciousTailLength(CharSequence buf, String marker) {
+        int max = Math.min(buf.length(), marker.length() - 1);
+        for (int len = max; len > 0; len--) {
+            boolean matches = true;
+            for (int i = 0; i < len; i++) {
+                if (buf.charAt(buf.length() - len + i) != marker.charAt(i)) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) return len;
+        }
+        return 0;
+    }
+
+    record ParsedAnswer(String text, List<Citation> citations, List<String> followups) {}
 
     /** Translates to 502 in the controller layer (Anthropic/Voyage failure). */
     public static class RagAnswerException extends RuntimeException {

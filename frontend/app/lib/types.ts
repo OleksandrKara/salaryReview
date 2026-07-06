@@ -283,6 +283,7 @@ export interface Me {
 export interface Features {
   aiTriageEnabled: boolean;
   ragSuggestionsEnabled: boolean;
+  ragFollowupsEnabled: boolean;
 }
 
 // Knowledge-gap requests (com.salonreview.web.KbRequestController).

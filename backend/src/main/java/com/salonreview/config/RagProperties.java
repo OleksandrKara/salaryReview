@@ -29,6 +29,9 @@ public class RagProperties {
     /** Grounded starter-prompt suggestions in the chat widget — a sub-flag of the RAG feature. */
     private final Suggestions suggestions = new Suggestions();
 
+    /** Post-answer "what to ask next" suggestions — a sub-flag of the RAG feature. */
+    private final Followups followups = new Followups();
+
     /** Voyage AI API key, used by {@link com.salonreview.rag.VoyageClient} to embed text. */
     private String voyageApiKey;
 
@@ -42,6 +45,14 @@ public class RagProperties {
     @Setter
     public static class Suggestions {
         /** Defaults on; set {@code RAG_SUGGESTIONS_ENABLED=false} to hide the starter prompts. */
+        private boolean enabled = true;
+    }
+
+    /** {@code rag.followups.*} — toggle post-answer follow-up suggestions without disabling RAG itself. */
+    @Getter
+    @Setter
+    public static class Followups {
+        /** Defaults on; set {@code RAG_FOLLOWUPS_ENABLED=false} to stop asking the model for them. */
         private boolean enabled = true;
     }
 }
