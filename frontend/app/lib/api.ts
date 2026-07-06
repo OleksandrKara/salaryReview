@@ -30,6 +30,7 @@ import type {
   KbRequest,
   KbRequestStatus,
   KbRequestTarget,
+  MarketingAnalyticsData,
   MarketingDashboardData,
   RagCitation,
   RagDocumentSummary,
@@ -336,6 +337,15 @@ export const api = {
 
   setMarketingStatsSince: (slug: string, value: string | null) =>
     proxyVoid(`/api/owner/marketing/stats-since?slug=${encodeURIComponent(slug)}`, 'PUT', { value }),
+
+  // from/to are ISO dates (yyyy-MM-dd); omitting both defaults to month-to-date on the backend.
+  getMarketingAnalytics: (from?: string, to?: string) => {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const qs = params.toString();
+    return proxyGet<MarketingAnalyticsData>(`/api/owner/marketing/analytics${qs ? `?${qs}` : ''}`);
+  },
 };
 
 // The backend's default Spring error body is {"message": "...", "error": "...", "status": ...} —

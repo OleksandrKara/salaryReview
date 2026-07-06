@@ -19,9 +19,14 @@ export default async function MarketingDashboardPage() {
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
       <PageHeader title="Marketing" role={me.role} language={me.preferredLanguage} />
 
-      <Link href="/owner/marketing/contacts" className="mt-2 inline-block text-sm font-medium text-blue-600 hover:underline">
-        Contacts →
-      </Link>
+      <div className="mt-2 flex flex-wrap gap-4">
+        <Link href="/owner/marketing/contacts" className="inline-block text-sm font-medium text-blue-600 hover:underline">
+          Contacts →
+        </Link>
+        <Link href="/owner/marketing/analytics" className="inline-block text-sm font-medium text-blue-600 hover:underline">
+          Marketing Analytics →
+        </Link>
+      </div>
 
       {!data.available ? (
         <div className="mt-6 rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">
