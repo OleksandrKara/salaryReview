@@ -7,7 +7,7 @@ import NoShowBreakdown from './NoShowBreakdown';
 import ServiceBreakdown from './ServiceBreakdown';
 import SettlementFeedbackForm from './SettlementFeedbackForm';
 import SalaryPopupButton from '../components/SalaryPopupButton';
-import AdminMenu from '../components/AdminMenu';
+import PageHeader from '../components/PageHeader';
 import { SyncBadge } from '../components/SyncBadge';
 import { InfoTip } from '../components/InfoTip';
 
@@ -69,12 +69,9 @@ export default async function MyReportPage({
 
   return (
     <main className="mx-auto max-w-3xl p-4 sm:p-8">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <h1 className="text-xl font-semibold sm:text-2xl">{t(lang, 'navMyPay')}</h1>
-        <div className="flex items-center gap-3">
-          <MonthNav base="/me" year={year} month={month} prev={prev} next={next} language={lang} />
-          <AdminMenu role={principal.role} language={lang} />
-        </div>
+      <PageHeader title={t(lang, 'navMyPay')} role={principal.role} language={lang} />
+      <div className="-mt-4 mb-4">
+        <MonthNav base="/me" year={year} month={month} prev={prev} next={next} language={lang} />
       </div>
       <div className="mb-4"><SyncBadge syncedAt={detail.syncedAt} timezone={detail.timezone} language={lang} /></div>
 
