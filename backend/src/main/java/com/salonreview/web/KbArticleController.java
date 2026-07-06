@@ -5,12 +5,16 @@ import com.salonreview.domain.KbArticle;
 import com.salonreview.domain.Role;
 import com.salonreview.kb.KbAiDraftService;
 import com.salonreview.kb.KbArticleService;
+import com.salonreview.kb.KbExportService;
 import com.salonreview.kb.KbSyncService;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 
@@ -26,16 +30,39 @@ public class KbArticleController {
     private final KbArticleService articles;
     private final KbSyncService sync;
     private final KbAiDraftService aiDraft;
+    private final KbExportService export;
 
-    public KbArticleController(KbArticleService articles, KbSyncService sync, KbAiDraftService aiDraft) {
+    public KbArticleController(KbArticleService articles, KbSyncService sync, KbAiDraftService aiDraft,
+                               KbExportService export) {
         this.articles = articles;
         this.sync = sync;
         this.aiDraft = aiDraft;
+        this.export = export;
     }
 
     @GetMapping
     public List<KbArticleDto> list(@AuthenticationPrincipal AppUserPrincipal me) {
         return articles.list(me.getRole()).stream().map(KbArticleController::toDto).toList();
+    }
+
+    /** One article as a standalone .md file. */
+    @GetMapping("/{id}/download")
+    public ResponseEntity<byte[]> downloadOne(@PathVariable Long id) {
+        return export.exportOne(id)
+                .map(e -> ResponseEntity.ok()
+                        .contentType(MediaType.parseMediaType("text/markdown; charset=UTF-8"))
+                        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + e.filename() + "\"")
+                        .body(e.markdown().getBytes(StandardCharsets.UTF_8)))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /** Every KB article zipped into one archive of .md files. */
+    @GetMapping("/download-all")
+    public ResponseEntity<byte[]> downloadAll() {
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"kb-articles.zip\"")
+                .body(export.exportAllAsZip());
     }
 
     @GetMapping("/{id}")

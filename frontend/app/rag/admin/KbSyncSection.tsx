@@ -55,16 +55,27 @@ export default function KbSyncSection() {
 
   return (
     <section className="mt-10">
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-2 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">KB articles</h2>
-        <button
-          onClick={syncAll}
-          disabled={running || pending === 0}
-          className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
-        >
-          {running ? <Spinner className="h-4 w-4 text-white" /> : null}
-          {running ? 'Syncing…' : `Sync${pending ? ` (${pending})` : ''}`}
-        </button>
+        <div className="flex items-center gap-2">
+          {articles && articles.length > 0 ? (
+            <a
+              href={api.kbArticleDownloadAllUrl()}
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-50"
+              title="Download every KB article as a .zip of Markdown files"
+            >
+              <DownloadIcon className="h-3.5 w-3.5" /> Download all
+            </a>
+          ) : null}
+          <button
+            onClick={syncAll}
+            disabled={running || pending === 0}
+            className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+          >
+            {running ? <Spinner className="h-4 w-4 text-white" /> : null}
+            {running ? 'Syncing…' : `Sync${pending ? ` (${pending})` : ''}`}
+          </button>
+        </div>
       </div>
       <p className="mb-3 text-xs text-zinc-500">
         Push Knowledge Base articles into the assistant. Both languages are indexed when an article has
@@ -95,13 +106,22 @@ export default function KbSyncSection() {
                     {current === a.id ? <span className="text-[10px] text-zinc-400">processing…</span> : null}
                   </div>
                 </div>
-                <button
-                  onClick={() => syncOne(a.id)}
-                  disabled={running || current === a.id}
-                  className="shrink-0 rounded px-2 py-1 text-xs text-zinc-500 ring-1 ring-zinc-200 disabled:opacity-50"
-                >
-                  Sync
-                </button>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <a
+                    href={api.kbArticleDownloadUrl(a.id)}
+                    title="Download as Markdown"
+                    className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-zinc-500 ring-1 ring-zinc-200 hover:bg-zinc-50"
+                  >
+                    <DownloadIcon className="h-3 w-3" /> Download
+                  </a>
+                  <button
+                    onClick={() => syncOne(a.id)}
+                    disabled={running || current === a.id}
+                    className="rounded px-2 py-1 text-xs text-zinc-500 ring-1 ring-zinc-200 disabled:opacity-50"
+                  >
+                    Sync
+                  </button>
+                </div>
               </div>
               {a.syncStatus === 'ERROR' && a.lastSyncError ? (
                 <p className="mt-2 border-t border-zinc-100 pt-2 text-xs text-red-600">{a.lastSyncError}</p>
@@ -111,5 +131,13 @@ export default function KbSyncSection() {
         </ul>
       )}
     </section>
+  );
+}
+
+function DownloadIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
   );
 }

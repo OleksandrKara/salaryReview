@@ -55,6 +55,8 @@ public class SecurityConfig {
                         // KB articles: any authenticated role may read (per-article visibility is
                         // enforced in the service via visible_roles); only OWNER+MANAGER may write,
                         // sync, or use AI drafting. The GET matcher is listed first so it wins.
+                        .requestMatchers(HttpMethod.GET, "/api/kb-articles/download-all").hasRole("OWNER")
+                        .requestMatchers(HttpMethod.GET, "/api/kb-articles/*/download").hasRole("OWNER")
                         .requestMatchers(HttpMethod.GET, "/api/kb-articles/**").authenticated()
                         .requestMatchers("/api/kb-articles/**").hasAnyRole("OWNER", "MANAGER")
                         // SOPs: owner authors/publishes/archives + views the roster, version history,

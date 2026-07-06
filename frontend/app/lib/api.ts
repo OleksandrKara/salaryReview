@@ -195,6 +195,11 @@ export const api = {
   // sync in a loop for live progress; this is the one-shot equivalent.
   syncAllKbArticles: () => proxyJson<KbArticle[]>(`/api/kb-articles/sync-all`, 'POST', {}),
 
+  // Export URLs, not fetch calls — used directly as an <a href> so the browser handles the
+  // Content-Disposition download natively (same-origin, session cookie sent automatically).
+  kbArticleDownloadUrl: (id: number) => `/api/kb-articles/${id}/download`,
+  kbArticleDownloadAllUrl: () => `/api/kb-articles/download-all`,
+
   // AI drafting via our own Claude endpoint (no paid editor-AI add-on).
   aiDraftKbArticle: (prompt: string, currentBody: string | null) =>
     proxyJson<{ markdown: string }>(`/api/kb-articles/ai-draft`, 'POST', { prompt, currentBody }),
