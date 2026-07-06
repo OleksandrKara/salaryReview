@@ -97,6 +97,7 @@ public class RagController {
         RagAnswerService.StreamSink sink = new RagAnswerService.StreamSink() {
             @Override public void token(String text) { send(emitter, "token", Map.of("text", text)); }
             @Override public void citations(List<Citation> citations) { send(emitter, "citations", citations); }
+            @Override public void followups(List<String> followups) { send(emitter, "followups", followups); }
             @Override public void done(String traceRunId, boolean answered) {
                 Map<String, Object> d = new HashMap<>();
                 d.put("traceRunId", traceRunId);

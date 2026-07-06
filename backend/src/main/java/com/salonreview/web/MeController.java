@@ -54,7 +54,8 @@ public class MeController {
         body.put("preferredLanguage", lang == null ? null : lang.name());
         body.put("features", Map.of(
                 "aiTriageEnabled", aiTriage.isEnabled(),
-                "ragSuggestionsEnabled", rag.isEnabled() && rag.getSuggestions().isEnabled()));
+                "ragSuggestionsEnabled", rag.isEnabled() && rag.getSuggestions().isEnabled(),
+                "ragFollowupsEnabled", rag.isEnabled() && rag.getFollowups().isEnabled()));
         return body;
     }
 

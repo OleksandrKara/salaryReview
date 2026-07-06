@@ -101,7 +101,7 @@ class RagControllerTest {
         RagAnswer answer = new RagAnswer(
                 "The no-show fee is $25.",
                 List.of(new Citation(5L, "policies.md", "The no-show fee is $25.")),
-                1, "run-abc", true);
+                1, "run-abc", true, List.of());
         when(answerService.answer(eq("what's the no-show fee?"), any())).thenReturn(answer);
 
         mvc.perform(post("/api/rag/ask").contentType("application/json")

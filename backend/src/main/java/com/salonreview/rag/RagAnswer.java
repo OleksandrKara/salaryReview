@@ -10,10 +10,13 @@ import java.util.List;
  * @param configVersion the {@link com.salonreview.domain.RagAgentConfig} version used
  * @param traceRunId    the LangSmith generation-span run id (for feedback); null when not traced
  * @param answered      false when no chunk passed the distance floor (corpus had no answer)
+ * @param followups     suggested next questions, parsed from the same generation; empty when
+ *                      disabled, none were offered, or parsing failed
  */
 public record RagAnswer(
         String answer,
         List<Citation> citations,
         int configVersion,
         String traceRunId,
-        boolean answered) {}
+        boolean answered,
+        List<String> followups) {}

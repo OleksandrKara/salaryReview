@@ -267,6 +267,7 @@ export const api = {
     h: {
       onToken: (text: string) => void;
       onCitations: (citations: RagCitation[]) => void;
+      onFollowups: (followups: string[]) => void;
       onDone: (d: { traceRunId: string | null; answered: boolean }) => void;
       onError: (message: string) => void;
     },
@@ -308,6 +309,7 @@ export const api = {
         const parsed = JSON.parse(data);
         if (event === 'token') h.onToken(parsed.text as string);
         else if (event === 'citations') h.onCitations(parsed as RagCitation[]);
+        else if (event === 'followups') h.onFollowups(parsed as string[]);
         else if (event === 'done') h.onDone(parsed as { traceRunId: string | null; answered: boolean });
         else if (event === 'error') h.onError((parsed.message as string) ?? 'Error');
       }

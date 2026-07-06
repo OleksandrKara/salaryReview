@@ -20,6 +20,7 @@ type Msg = {
   text: string;
   question?: string; // the asked question (assistant turns) — used when filing a knowledge-gap request
   citations?: RagCitation[];
+  followups?: string[];
   runId?: string | null;
   answered?: boolean;
   streaming?: boolean;
@@ -102,6 +103,7 @@ export default function AssistantWidget() {
     await api.askRagStream(q, {
       onToken: (t) => patch(aid, (m) => ({ ...m, text: m.text + t })),
       onCitations: (c) => patch(aid, (m) => ({ ...m, citations: c })),
+      onFollowups: (f) => patch(aid, (m) => ({ ...m, followups: f })),
       onDone: (d) => {
         patch(aid, (m) => ({ ...m, streaming: false, runId: d.traceRunId, answered: d.answered }));
         setBusy(false);
@@ -217,7 +219,7 @@ export default function AssistantWidget() {
                   </div>
                 </div>
               ) : (
-                <AssistantMessage key={m.id} m={m} onRate={rate} />
+                <AssistantMessage key={m.id} m={m} onRate={rate} onAsk={send} disabled={busy} />
               ),
             )}
             <div ref={bottomRef} />
@@ -250,7 +252,17 @@ export default function AssistantWidget() {
 
 // An assistant turn: sparkle marker + a clean white "prose card" rendering Markdown (headings, lists,
 // bold, code), a streaming cursor while it arrives, then a Copy button, Sources, and feedback.
-function AssistantMessage({ m, onRate }: { m: Msg; onRate: (m: Msg, helpful: boolean) => void }) {
+function AssistantMessage({
+  m,
+  onRate,
+  onAsk,
+  disabled,
+}: {
+  m: Msg;
+  onRate: (m: Msg, helpful: boolean) => void;
+  onAsk: (question: string) => void;
+  disabled: boolean;
+}) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -335,6 +347,21 @@ function AssistantMessage({ m, onRate }: { m: Msg; onRate: (m: Msg, helpful: boo
                     {m.rated ? <span className="text-[11px]">Thanks</span> : null}
                   </span>
                 ) : null}
+              </div>
+            ) : null}
+
+            {m.followups && m.followups.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {m.followups.map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => onAsk(f)}
+                    disabled={disabled}
+                    className="rounded-full bg-[var(--paper-2)] px-3 py-1.5 text-left text-xs text-[var(--ink)] ring-1 ring-[var(--line)] transition hover:ring-[var(--accent)] disabled:opacity-50"
+                  >
+                    {f}
+                  </button>
+                ))}
               </div>
             ) : null}
 

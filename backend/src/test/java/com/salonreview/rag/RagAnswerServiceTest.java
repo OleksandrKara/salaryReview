@@ -2,6 +2,7 @@ package com.salonreview.rag;
 
 import com.anthropic.client.AnthropicClient;
 import com.salonreview.ai.LangSmithTracer;
+import com.salonreview.config.RagProperties;
 import com.salonreview.domain.Language;
 import com.salonreview.domain.RagAgentConfig;
 import com.salonreview.domain.RagDocument;
@@ -59,7 +60,8 @@ class RagAnswerServiceTest {
                 .temperature(BigDecimal.ZERO).k(6).distanceThreshold(new BigDecimal("0.600")).active(true)
                 .build());
 
-        service = new RagAnswerService(anthropicProvider, retrieval, configService, documents, tracerProvider);
+        RagProperties props = new RagProperties();
+        service = new RagAnswerService(anthropicProvider, retrieval, configService, documents, tracerProvider, props);
         spied = spy(service);
     }
 
@@ -85,10 +87,12 @@ class RagAnswerServiceTest {
         class Capture implements RagAnswerService.StreamSink {
             final java.util.List<String> tokens = new java.util.ArrayList<>();
             java.util.List<Citation> cites;
+            java.util.List<String> followups;
             Boolean answered;
             boolean done, error;
             @Override public void token(String t) { tokens.add(t); }
             @Override public void citations(java.util.List<Citation> c) { cites = c; }
+            @Override public void followups(java.util.List<String> f) { followups = f; }
             @Override public void done(String runId, boolean a) { done = true; answered = a; }
             @Override public void error(String m) { error = true; }
         }
@@ -99,6 +103,7 @@ class RagAnswerServiceTest {
         assertThat(cap.tokens).hasSize(1);
         assertThat(cap.tokens.get(0)).contains("couldn't find");
         assertThat(cap.cites).isEmpty();
+        assertThat(cap.followups).isEmpty();
         assertThat(cap.done).isTrue();
         assertThat(cap.answered).isFalse();
         assertThat(cap.error).isFalse();
@@ -130,7 +135,8 @@ class RagAnswerServiceTest {
 
         doReturn(new RagAnswerService.ParsedAnswer(
                 "The no-show fee is $25.",
-                List.of(new Citation(5L, "policies.md", "The no-show fee is $25."))))
+                List.of(new Citation(5L, "policies.md", "The no-show fee is $25.")),
+                List.of()))
                 .when(spied).callClaude(any(), any(), anyString(), any(), any(), any());
 
         RagAnswer answer = spied.answer("what's the no-show fee?", Language.EN);
@@ -162,5 +168,52 @@ class RagAnswerServiceTest {
         } catch (RagAnswerService.RagAnswerException expected) {
             assertThat(expected.getMessage()).contains("anthropic 5xx");
         }
+    }
+
+    // --- follow-up marker splitting (the streaming scanner's building blocks) ---
+
+    @Test
+    @DisplayName("parseFollowups: valid JSON array, blanks filtered, capped at 3")
+    void parseFollowupsHappyPath() {
+        List<String> result = service.parseFollowups(
+                "[\"What's the cancellation policy?\", \"  \", \"How much is a redo?\", \"Third?\", \"Fourth?\"]");
+        assertThat(result).containsExactly("What's the cancellation policy?", "How much is a redo?", "Third?");
+    }
+
+    @Test
+    @DisplayName("parseFollowups: blank input → empty list")
+    void parseFollowupsBlankInput() {
+        assertThat(service.parseFollowups("")).isEmpty();
+        assertThat(service.parseFollowups("   ")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("parseFollowups: malformed JSON → empty list, not an exception")
+    void parseFollowupsMalformed() {
+        assertThat(service.parseFollowups("not json at all")).isEmpty();
+        assertThat(service.parseFollowups("[\"unclosed")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("suspiciousTailLength: no overlap with the marker → 0, safe to flush everything")
+    void suspiciousTailLengthNoOverlap() {
+        assertThat(RagAnswerService.suspiciousTailLength("The fee is $25.", RagAnswerService.FOLLOWUPS_MARKER)).isZero();
+    }
+
+    @Test
+    @DisplayName("suspiciousTailLength: tail exactly matches a prefix of the marker")
+    void suspiciousTailLengthPartialMatch() {
+        // FOLLOWUPS_MARKER = "\n\n<<<FOLLOWUPS>>>" — a trailing "\n\n<<<FOLL" is a genuine prefix match.
+        String buf = "Some answer text.\n\n<<<FOLL";
+        int held = RagAnswerService.suspiciousTailLength(buf, RagAnswerService.FOLLOWUPS_MARKER);
+        assertThat(held).isEqualTo("\n\n<<<FOLL".length());
+    }
+
+    @Test
+    @DisplayName("suspiciousTailLength: a tail ending in the complete marker returns 0 — the caller's " +
+            "indexOf() check handles a completed marker; this marker has no self-overlapping prefix/suffix")
+    void suspiciousTailLengthCompletedMarkerHasNoSelfOverlap() {
+        String buf = "prefix" + RagAnswerService.FOLLOWUPS_MARKER;
+        assertThat(RagAnswerService.suspiciousTailLength(buf, RagAnswerService.FOLLOWUPS_MARKER)).isZero();
     }
 }
