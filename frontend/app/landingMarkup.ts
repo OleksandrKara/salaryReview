@@ -360,7 +360,7 @@ export const LANDING_MARKUP = `<!-- ============================ HEADER ========
   <p class="lede reveal d2" style="margin:1.2rem auto 0;text-align:center;">Join the studios paying their teams transparently and reading clean numbers every single day.</p>
   <div class="final-cta reveal d2">
     <button class="btn" data-signin>Get started <span class="arrow">&rarr;</span></button>
-    <a class="btn ghost" href="#how">Book a demo</a>
+    <a class="btn ghost" href="https://calendly.com/olexandr-kara2/30min" target="_blank" rel="noopener noreferrer">Book a demo</a>
   </div>
 </section>
 
