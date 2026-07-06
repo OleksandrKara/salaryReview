@@ -26,12 +26,9 @@ public class MarketingContactsService {
 
     private static final Logger log = LoggerFactory.getLogger(MarketingContactsService.class);
 
-    // Square has no public API for a direct "view this booking" link, and no officially
-    // documented deep link to one specific customer either. /dashboard/customers/directory is
-    // Square's own confirmed path for the customer directory (support article); appending the
-    // customer id to it is the best-available link — the previous .../customers/{id} form
-    // (with no /directory) was reported broken.
-    private static final String SQUARE_CUSTOMER_PROFILE_URL = "https://app.squareup.com/dashboard/customers/directory/%s";
+    // Square's actual customer profile deep link — confirmed correct after the previous
+    // .../directory/{id} form (missing the /customer/ segment) was reported broken too.
+    private static final String SQUARE_CUSTOMER_PROFILE_URL = "https://app.squareup.com/dashboard/customers/directory/customer/%s";
 
     private final MarketingContactsRepository repository;
     private final SquareClient square;
