@@ -3,6 +3,7 @@ import { serverApi } from '../../lib/serverApi';
 import PageHeader from '../../components/PageHeader';
 import OverviewClient from './OverviewClient';
 import ProviderTable from './ProviderTable';
+import RevenueTabs from './RevenueTabs';
 
 export default async function OwnerOverviewPage({
   searchParams,
@@ -36,6 +37,7 @@ export default async function OwnerOverviewPage({
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
       <PageHeader title="Revenue" role={me.role} language={me.preferredLanguage} />
+      <RevenueTabs />
 
       <OverviewClient data={data} />
 
