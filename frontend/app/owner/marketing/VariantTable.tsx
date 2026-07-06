@@ -75,10 +75,14 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
             <div className="mt-1">
               <Description v={v} />
             </div>
-            <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
+            <dl className="mt-3 grid grid-cols-4 gap-2 text-sm">
               <div>
                 <dt className="text-xs text-zinc-500">Page Views</dt>
                 <dd className="tabular-nums">{v.pageViews.toLocaleString('en-US')}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-zinc-500">Contacts</dt>
+                <dd className="tabular-nums">{v.contactsCreated.toLocaleString('en-US')}</dd>
               </div>
               <div>
                 <dt className="text-xs text-zinc-500">Bookings</dt>
@@ -110,6 +114,7 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
               <th className="px-3 py-2 text-right">Weight</th>
               <th className="px-3 py-2 text-center">Active</th>
               <th className="px-3 py-2 text-right">Page Views</th>
+              <th className="px-3 py-2 text-right">Contacts</th>
               <th className="px-3 py-2 text-right">Bookings</th>
               <th className="px-3 py-2 text-right">Conversion %</th>
               <th className="px-3 py-2">Link</th>
@@ -128,6 +133,7 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
                   <ActiveToggle v={v} onToggleActive={actions.onToggleActive} busy={actions.busyVariantId === v.variantId} />
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{v.pageViews.toLocaleString('en-US')}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{v.contactsCreated.toLocaleString('en-US')}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{v.bookingsCompleted.toLocaleString('en-US')}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{pct(v.conversionRate)}</td>
                 <td className="px-3 py-2">
