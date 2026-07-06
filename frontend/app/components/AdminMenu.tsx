@@ -74,7 +74,10 @@ export default function AdminMenu({
   const isActive = (href: string) => href === bestMatch;
 
   return (
-    <div className="fixed right-4 top-4 z-40 flex items-center gap-2">
+    // Above the assistant widget's z-50 (button + open panel) — otherwise, on a short viewport,
+    // an open chat panel (h-[32rem] anchored bottom-right) can reach up far enough to overlap this
+    // corner and, being on top, visually hide the menu/dropdown entirely.
+    <div className="fixed right-4 top-4 z-[60] flex items-center gap-2">
       {role === 'OWNER' ? (
         <Link
           href="/rag/admin#kb-requests"
