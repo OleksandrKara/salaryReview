@@ -2,8 +2,11 @@ package com.salonreview.web;
 
 import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.domain.Sop;
+import com.salonreview.sop.SopExportService;
 import com.salonreview.sop.SopSyncService;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -12,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -24,14 +28,36 @@ import java.util.List;
 public class SopSyncController {
 
     private final SopSyncService sync;
+    private final SopExportService export;
 
-    public SopSyncController(SopSyncService sync) {
+    public SopSyncController(SopSyncService sync, SopExportService export) {
         this.sync = sync;
+        this.export = export;
     }
 
     @GetMapping("/rag-sync")
     public List<SopSyncDto> list() {
         return sync.list().stream().map(this::toDto).toList();
+    }
+
+    /** One SOP's current published version as a standalone .md file. */
+    @GetMapping("/{id}/download")
+    public ResponseEntity<byte[]> downloadOne(@PathVariable Long id) {
+        return export.exportOne(id)
+                .map(e -> ResponseEntity.ok()
+                        .contentType(MediaType.parseMediaType("text/markdown; charset=UTF-8"))
+                        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + e.filename() + "\"")
+                        .body(e.markdown().getBytes(StandardCharsets.UTF_8)))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /** Every ACTIVE, published SOP zipped into one archive of .md files. */
+    @GetMapping("/download-all")
+    public ResponseEntity<byte[]> downloadAll() {
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"sops.zip\"")
+                .body(export.exportAllAsZip());
     }
 
     @PostMapping("/{id}/rag-sync")

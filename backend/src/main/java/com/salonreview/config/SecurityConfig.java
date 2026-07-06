@@ -61,6 +61,8 @@ public class SecurityConfig {
                         // and RAG sync; managers/providers read (audience-filtered in the service) and
                         // acknowledge. Specific matchers first; the catch-all is OWNER-only.
                         .requestMatchers(HttpMethod.GET, "/api/sops/rag-sync").hasRole("OWNER")
+                        .requestMatchers(HttpMethod.GET, "/api/sops/download-all").hasRole("OWNER")
+                        .requestMatchers(HttpMethod.GET, "/api/sops/*/download").hasRole("OWNER")
                         .requestMatchers(HttpMethod.GET, "/api/sops/*/acknowledgment-status").hasRole("OWNER")
                         .requestMatchers(HttpMethod.GET, "/api/sops/*/versions").hasRole("OWNER")
                         .requestMatchers(HttpMethod.POST, "/api/sops/*/acknowledge").hasAnyRole("MANAGER", "PROVIDER")

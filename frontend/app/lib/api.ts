@@ -238,6 +238,11 @@ export const api = {
 
   syncAllSopsRag: () => proxyJson<SopSyncItem[]>(`/api/sops/rag-sync-all`, 'POST', {}),
 
+  // Export URLs, not fetch calls — used directly as an <a href> so the browser handles the
+  // Content-Disposition download natively (same-origin, session cookie sent automatically).
+  sopDownloadUrl: (id: number) => `/api/sops/${id}/download`,
+  sopDownloadAllUrl: () => `/api/sops/download-all`,
+
   // The authenticated principal — used by the assistant widget to self-gate by role.
   getMe: () => proxyGet<Me>(`/api/me`),
 
