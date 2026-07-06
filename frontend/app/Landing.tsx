@@ -145,7 +145,12 @@ export default function Landing() {
                 <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="4" fill="currentColor" /><rect x="9" y="9" width="6" height="6" rx="1.4" fill="var(--paper)" /></svg>
                 Continue with Square <span style={{ fontSize: '0.7em', letterSpacing: '0.1em' }}>(soon)</span>
               </button>
-              <p className="m-foot">New to AK.LUX.STUDIO? {soon('Book a demo')}</p>
+              <p className="m-foot">
+                New to AK.LUX.STUDIO?{' '}
+                <a href="https://calendly.com/olexandr-kara2/30min" target="_blank" rel="noopener noreferrer">
+                  Book a demo
+                </a>
+              </p>
             </div>
           ) : (
             <div className="m-success">
