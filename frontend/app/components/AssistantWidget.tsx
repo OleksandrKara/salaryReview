@@ -265,6 +265,8 @@ function AssistantMessage({
 }) {
   const [copied, setCopied] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [gapOpen, setGapOpen] = useState(false);
+  const [gapSent, setGapSent] = useState(false);
 
   async function copy() {
     try {
@@ -277,6 +279,7 @@ function AssistantMessage({
   }
 
   const empty = !m.text && m.streaming;
+  const emphasizeGap = m.answered === false;
 
   return (
     <div className="flex gap-2">
@@ -301,43 +304,37 @@ function AssistantMessage({
 
         {!m.streaming ? (
           <>
-            {m.citations && m.citations.length > 0 ? (
-              <div className="mt-2">
-                <button
-                  type="button"
-                  onClick={() => setSourcesOpen((o) => !o)}
-                  aria-expanded={sourcesOpen}
-                  className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-[var(--accent-ink)] hover:opacity-75"
-                >
-                  <BookIcon className="h-3 w-3" />
-                  Sources ({m.citations.length})
-                  <ChevronIcon className={`h-2.5 w-2.5 transition-transform ${sourcesOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {sourcesOpen ? (
-                  <ul className="mt-1 space-y-1">
-                    {m.citations.map((c, i) => (
-                      <li key={i} className="rounded-lg bg-[var(--paper-2)] px-2.5 py-1.5 text-[11px] text-[var(--muted)]">
-                        <div className="font-medium text-[var(--ink)]">{c.documentTitle}</div>
-                        {c.citedText ? <div className="mt-0.5 line-clamp-2 italic">“{c.citedText}”</div> : null}
-                      </li>
-                    ))}
-                  </ul>
+            {/* One compact row for every per-answer action — previously Sources and Copy/feedback
+                were two separate rows, and "report a gap" was a full-width text button below that;
+                merging them keeps the focus on the answer itself. */}
+            {m.text || (m.citations && m.citations.length > 0) ? (
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[var(--muted)]">
+                {m.citations && m.citations.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setSourcesOpen((o) => !o)}
+                    aria-expanded={sourcesOpen}
+                    className="inline-flex items-center gap-1 text-[11px] hover:text-[var(--ink)]"
+                  >
+                    <BookIcon className="h-3.5 w-3.5" />
+                    Sources ({m.citations.length})
+                    <ChevronIcon className={`h-2.5 w-2.5 transition-transform ${sourcesOpen ? 'rotate-180' : ''}`} />
+                  </button>
                 ) : null}
-              </div>
-            ) : null}
 
-            {m.text ? (
-              <div className="mt-1.5 flex items-center gap-3 text-[var(--muted)]">
-                <button
-                  onClick={copy}
-                  className="inline-flex items-center gap-1 text-[11px] hover:text-[var(--ink)]"
-                  aria-label="Copy answer"
-                >
-                  {copied ? <CheckIcon className="h-3.5 w-3.5 text-green-600" /> : <CopyIcon className="h-3.5 w-3.5" />}
-                  {copied ? 'Copied' : 'Copy'}
-                </button>
+                {m.text ? (
+                  <button
+                    onClick={copy}
+                    className="inline-flex items-center gap-1 text-[11px] hover:text-[var(--ink)]"
+                    aria-label="Copy answer"
+                  >
+                    {copied ? <CheckIcon className="h-3.5 w-3.5 text-green-600" /> : <CopyIcon className="h-3.5 w-3.5" />}
+                    {copied ? 'Copied' : 'Copy'}
+                  </button>
+                ) : null}
+
                 {m.answered && m.runId ? (
-                  <span className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-2">
                     <button
                       onClick={() => onRate(m, true)}
                       disabled={m.rated}
@@ -357,28 +354,71 @@ function AssistantMessage({
                     {m.rated ? <span className="text-[11px]">Thanks</span> : null}
                   </span>
                 ) : null}
+
+                {/* Always offered — the answer may be missing or incomplete even when something was
+                    retrieved (answered=true), which is the common case once documents are synced.
+                    Kept as a small icon on the side instead of its own full-width row; emphasized
+                    color for the explicit "couldn't find that" reply. */}
+                {m.question && !gapSent ? (
+                  <button
+                    type="button"
+                    onClick={() => setGapOpen((o) => !o)}
+                    aria-expanded={gapOpen}
+                    title={emphasizeGap ? 'Request this be added to the knowledge base' : 'Missing or incomplete? Report it'}
+                    aria-label="Report a missing or incomplete answer"
+                    className={`ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${
+                      emphasizeGap
+                        ? 'bg-[var(--accent-soft)] text-[var(--accent-ink)] ring-1 ring-[var(--accent)]'
+                        : 'hover:text-[var(--ink)]'
+                    }`}
+                  >
+                    <FlagIcon className="h-3.5 w-3.5" />
+                    {emphasizeGap ? 'Report gap' : null}
+                  </button>
+                ) : null}
               </div>
             ) : null}
 
+            {sourcesOpen && m.citations ? (
+              <ul className="mt-1.5 space-y-1">
+                {m.citations.map((c, i) => (
+                  <li key={i} className="rounded-lg bg-[var(--paper-2)] px-2.5 py-1.5 text-[11px] text-[var(--muted)]">
+                    <div className="font-medium text-[var(--ink)]">{c.documentTitle}</div>
+                    {c.citedText ? <div className="mt-0.5 line-clamp-2 italic">“{c.citedText}”</div> : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            {gapSent ? (
+              <p className="mt-1.5 rounded-lg bg-[var(--paper-2)] px-2.5 py-1.5 text-[11px] text-[var(--accent-ink)]">
+                ✅ Sent to the owner to add to the knowledge base.
+              </p>
+            ) : gapOpen && m.question ? (
+              <RequestGapPanel
+                question={m.question}
+                onCancel={() => setGapOpen(false)}
+                onSent={() => {
+                  setGapOpen(false);
+                  setGapSent(true);
+                }}
+              />
+            ) : null}
+
             {m.followups && m.followups.length > 0 ? (
-              <div className="mt-2 flex flex-wrap gap-1.5">
+              <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
                 {m.followups.map((f) => (
                   <button
                     key={f}
                     onClick={() => onAsk(f)}
                     disabled={disabled}
-                    className="rounded-full bg-[var(--paper-2)] px-3 py-1.5 text-left text-xs text-[var(--ink)] ring-1 ring-[var(--line)] transition hover:ring-[var(--accent)] disabled:opacity-50"
+                    className="shrink-0 whitespace-nowrap rounded-full bg-[var(--paper-2)] px-3 py-1.5 text-left text-xs text-[var(--ink)] ring-1 ring-[var(--line)] transition hover:ring-[var(--accent)] disabled:opacity-50"
                   >
                     {f}
                   </button>
                 ))}
               </div>
             ) : null}
-
-            {/* Always offer to file a knowledge-gap request — the answer may be missing or incomplete
-                even when the corpus returned something (answered=true), which is the common case once
-                documents are synced. Emphasized for the explicit "couldn't find that" reply. */}
-            {m.question ? <RequestGap question={m.question} emphasize={m.answered === false} /> : null}
           </>
         ) : null}
       </div>
@@ -386,58 +426,62 @@ function AssistantMessage({
   );
 }
 
-// A one-click "add to the knowledge base" request the owner triages on /rag/admin. Offered under every
-// answer (the answer may be missing/incomplete even when something was retrieved); emphasized when the
-// assistant explicitly couldn't find it. Expands to an optional note + a KB/SOP target hint.
-function RequestGap({ question, emphasize }: { question: string; emphasize?: boolean }) {
-  const [open, setOpen] = useState(false);
+// The expanded "add to the knowledge base" form — trigger lives in AssistantMessage's action row
+// (a small side icon, not a full-width row); this renders only once opened. Includes a one-click
+// translate of the note to Russian, for a Russian-speaking owner triaging requests on /rag/admin.
+function RequestGapPanel({ question, onCancel, onSent }: { question: string; onCancel: () => void; onSent: () => void }) {
   const [note, setNote] = useState('');
   const [target, setTarget] = useState<KbRequestTarget>('UNSURE');
-  const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const [sending, setSending] = useState(false);
+  const [translating, setTranslating] = useState(false);
 
   async function submit() {
-    setState('sending');
+    setSending(true);
     try {
       await api.createKbRequest({ question, note: note.trim() || null, target });
-      setState('sent');
+      onSent();
     } catch {
-      setState('idle');
+      setSending(false);
     }
   }
 
-  if (state === 'sent') {
-    return (
-      <p className="mt-2 rounded-lg bg-[var(--paper-2)] px-2.5 py-1.5 text-[11px] text-[var(--accent-ink)]">
-        ✅ Sent to the owner to add to the knowledge base.
-      </p>
-    );
-  }
-
-  if (!open) {
-    return (
-      <button
-        onClick={() => setOpen(true)}
-        className={`mt-2 inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-[var(--accent-ink)] ring-1 hover:ring-[var(--accent)] ${
-          emphasize ? 'bg-[var(--accent-soft)] ring-[var(--accent)]' : 'bg-[var(--paper-2)] ring-[var(--line)]'
-        }`}
-      >
-        ＋ {emphasize ? 'Request this be added to the knowledge base' : 'Missing or incomplete? Request a KB/SOP update'}
-      </button>
-    );
+  async function translate() {
+    if (!note.trim()) return;
+    setTranslating(true);
+    try {
+      const { translated } = await api.translateKbRequestNote(note.trim());
+      setNote(translated);
+    } catch {
+      /* translation unavailable — leave the note as typed */
+    } finally {
+      setTranslating(false);
+    }
   }
 
   return (
-    <div className="mt-2 space-y-2 rounded-lg bg-[var(--paper-2)] p-2.5">
+    <div className="mt-1.5 space-y-2 rounded-lg bg-[var(--paper-2)] p-2.5">
       <p className="text-[11px] text-[var(--muted)]">
         Ask the owner to cover this. <span className="text-[var(--ink)]">“{question}”</span>
       </p>
-      <textarea
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
-        placeholder="Add context (optional) — what should the answer say?"
-        rows={2}
-        className="w-full resize-none rounded bg-white px-2 py-1 text-xs text-[var(--ink)] ring-1 ring-[var(--line)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-      />
+      <div className="relative">
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Add context (optional) — what should the answer say?"
+          rows={2}
+          className="w-full resize-none rounded bg-white px-2 py-1 pr-16 text-xs text-[var(--ink)] ring-1 ring-[var(--line)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+        />
+        <button
+          type="button"
+          onClick={translate}
+          disabled={!note.trim() || translating}
+          title="Translate note to Russian"
+          className="absolute bottom-1.5 right-1.5 inline-flex items-center gap-1 rounded bg-[var(--paper-2)] px-1.5 py-0.5 text-[10px] text-[var(--muted)] ring-1 ring-[var(--line)] hover:text-[var(--ink)] disabled:opacity-40"
+        >
+          {translating ? <Spinner className="h-3 w-3" /> : <TranslateIcon className="h-3 w-3" />}
+          RU
+        </button>
+      </div>
       <div className="flex items-center justify-between gap-2">
         <label className="flex items-center gap-1 text-[11px] text-[var(--muted)]">
           Add to
@@ -452,15 +496,15 @@ function RequestGap({ question, emphasize }: { question: string; emphasize?: boo
           </select>
         </label>
         <span className="flex items-center gap-1.5">
-          <button onClick={() => setOpen(false)} className="rounded px-2 py-1 text-[11px] text-[var(--muted)] hover:text-[var(--ink)]">
+          <button onClick={onCancel} className="rounded px-2 py-1 text-[11px] text-[var(--muted)] hover:text-[var(--ink)]">
             Cancel
           </button>
           <button
             onClick={submit}
-            disabled={state === 'sending'}
+            disabled={sending}
             className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-br from-[var(--accent)] to-[var(--accent-ink)] px-3 py-1 text-[11px] font-medium text-[var(--paper)] disabled:opacity-50"
           >
-            {state === 'sending' ? <Spinner className="h-3 w-3 text-[var(--paper)]" /> : null}
+            {sending ? <Spinner className="h-3 w-3 text-[var(--paper)]" /> : null}
             Send request
           </button>
         </span>
@@ -505,6 +549,23 @@ function ChevronIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+
+function FlagIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><path d="M4 22V3" />
+    </svg>
+  );
+}
+
+function TranslateIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" /><path d="M2 12h20" />
+      <path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z" />
     </svg>
   );
 }

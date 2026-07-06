@@ -39,6 +39,7 @@ class RagControllerTest {
     private RagAnswerService answerService;
     private RagSuggestionService suggestionService;
     private RagProperties props;
+    private com.salonreview.kb.KbAiDraftService aiDraft;
     @SuppressWarnings("unchecked")
     private ObjectProvider<LangSmithTracer> tracerProvider = mock(ObjectProvider.class);
     private MockMvc mvc;
@@ -51,8 +52,9 @@ class RagControllerTest {
         suggestionService = mock(RagSuggestionService.class);
         props = mock(RagProperties.class);
         tracerProvider = mock(ObjectProvider.class);
+        aiDraft = mock(com.salonreview.kb.KbAiDraftService.class);
         RagController controller = new RagController(answerService, suggestionService, tracerProvider, props,
-                mock(com.salonreview.repo.AppUserRepository.class));
+                mock(com.salonreview.repo.AppUserRepository.class), aiDraft);
         mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setCustomArgumentResolvers(
                         new org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver())
@@ -153,5 +155,39 @@ class RagControllerTest {
         mvc.perform(post("/api/rag/ask/feedback").contentType("application/json")
                         .content(json.writeValueAsString(Map.of("runId", "", "helpful", true))))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("translate-note returns the translated text")
+    void translateNoteSucceeds() throws Exception {
+        when(props.isEnabled()).thenReturn(true);
+        when(aiDraft.translateNoteToRussian("missing the late-arrival policy"))
+                .thenReturn("отсутствует политика опоздания");
+
+        mvc.perform(post("/api/rag/requests/translate-note").contentType("application/json")
+                        .content(json.writeValueAsString(Map.of("note", "missing the late-arrival policy"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.translated").value("отсутствует политика опоздания"));
+    }
+
+    @Test
+    @DisplayName("translate-note with a blank note → 400")
+    void translateNoteBlankReturns400() throws Exception {
+        when(props.isEnabled()).thenReturn(true);
+
+        mvc.perform(post("/api/rag/requests/translate-note").contentType("application/json")
+                        .content(json.writeValueAsString(Map.of("note", "  "))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("translate-note → 503 when the AI feature is unavailable")
+    void translateNoteUnavailableReturns503() throws Exception {
+        when(props.isEnabled()).thenReturn(true);
+        when(aiDraft.translateNoteToRussian(any())).thenThrow(new IllegalStateException("no key"));
+
+        mvc.perform(post("/api/rag/requests/translate-note").contentType("application/json")
+                        .content(json.writeValueAsString(Map.of("note", "some note"))))
+                .andExpect(status().isServiceUnavailable());
     }
 }

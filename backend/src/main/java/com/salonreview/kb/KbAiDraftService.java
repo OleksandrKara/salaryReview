@@ -29,6 +29,12 @@ public class KbAiDraftService {
             and ready to use. Do not include personal data about specific real clients or staff \
             (names, emails, phone numbers). Do not wrap the output in a code fence.""";
 
+    private static final long MAX_TRANSLATE_NOTE_TOKENS = 500L;
+    private static final String TRANSLATE_NOTE_SYSTEM_PROMPT = """
+            Translate this short internal note from English into natural, fluent Russian. The note \
+            is context a manager is attaching to a knowledge-base gap report, for a Russian-speaking \
+            owner to read. Return only the translated text — no preamble, no quotes, no explanation.""";
+
     private static final String TRANSLATE_SYSTEM_PROMPT = """
             You translate a nail salon's internal knowledge-base articles from English into Russian for \
             Russian-speaking staff. Translate as MUCH as possible into natural, fluent Russian — \
@@ -127,6 +133,44 @@ public class KbAiDraftService {
                     .trim();
             if (trace != null) trace.complete(Map.of("length", markdown.length()), null, null);
             return markdown;
+        } catch (RuntimeException e) {
+            if (trace != null) trace.complete(null, null, e.toString());
+            throw e;
+        }
+    }
+
+    /**
+     * Translate a short freeform note (not a full article — no Markdown/customer-script handling
+     * needed) into Russian, e.g. the context a manager attaches to a knowledge-base gap report.
+     *
+     * @throws IllegalStateException when no AI feature is enabled (no Anthropic bean / key)
+     */
+    public String translateNoteToRussian(String note) {
+        AnthropicClient client = anthropicClientProvider.getIfAvailable();
+        if (client == null) {
+            throw new IllegalStateException(
+                    "AI translation is unavailable — enable an AI feature (RAG or triage) and set ANTHROPIC_API_KEY.");
+        }
+
+        LangSmithTracer tracer = tracerProvider.getIfAvailable();
+        LangSmithTracer.Trace trace = (tracer == null) ? null : tracer.startTrace("kb-note-translate",
+                Map.of("model", MODEL), Map.of("chars", String.valueOf(note.length())));
+
+        try {
+            MessageCreateParams params = MessageCreateParams.builder()
+                    .model(MODEL)
+                    .maxTokens(MAX_TRANSLATE_NOTE_TOKENS)
+                    .system(TRANSLATE_NOTE_SYSTEM_PROMPT)
+                    .addUserMessage(note)
+                    .build();
+
+            String translated = client.messages().create(params).content().stream()
+                    .flatMap(cb -> cb.text().stream())
+                    .map(t -> t.text())
+                    .collect(Collectors.joining())
+                    .trim();
+            if (trace != null) trace.complete(Map.of("length", translated.length()), null, null);
+            return translated;
         } catch (RuntimeException e) {
             if (trace != null) trace.complete(null, null, e.toString());
             throw e;

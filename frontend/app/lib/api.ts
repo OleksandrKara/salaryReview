@@ -254,6 +254,10 @@ export const api = {
   createKbRequest: (body: { question: string; note: string | null; target: KbRequestTarget }) =>
     proxyJson<KbRequest>(`/api/rag/requests`, 'POST', body),
 
+  // Translates a gap-report note to Russian, so a Russian-speaking owner can read it directly.
+  translateKbRequestNote: (note: string) =>
+    proxyJson<{ translated: string }>(`/api/rag/requests/translate-note`, 'POST', { note }),
+
   listKbRequests: () => proxyGet<KbRequest[]>(`/api/rag/admin/requests`),
 
   setKbRequestStatus: (id: number, status: KbRequestStatus) =>
