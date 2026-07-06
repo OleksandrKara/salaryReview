@@ -46,6 +46,12 @@ public class KbRequestController {
         return requests.list().stream().map(KbRequestController::toDto).toList();
     }
 
+    /** Count of OPEN (not yet triaged) requests — powers the nav badge, cheaper than fetching the list. */
+    @GetMapping("/admin/requests/open-count")
+    public OpenCountDto openCount() {
+        return new OpenCountDto(requests.openCount());
+    }
+
     /** Owner triage: resolve / dismiss / reopen (OPEN). */
     @PostMapping("/admin/requests/{id}/status")
     public ResponseEntity<KbRequestDto> setStatus(@PathVariable Long id, @RequestBody StatusRequest body,
@@ -91,4 +97,6 @@ public class KbRequestController {
     public record CreateRequest(String question, String note, String target) {}
 
     public record StatusRequest(String status) {}
+
+    public record OpenCountDto(long count) {}
 }

@@ -78,6 +78,13 @@ class KbRequestServiceTest {
     }
 
     @Test
+    @DisplayName("openCount delegates to the OPEN-status repository count")
+    void openCountDelegates() {
+        when(repo.countByStatus(KbRequestStatus.OPEN)).thenReturn(3L);
+        assertThat(service.openCount()).isEqualTo(3L);
+    }
+
+    @Test
     @DisplayName("null target falls back to UNSURE")
     void nullTargetDefaults() {
         ArgumentCaptor<KbRequest> cap = ArgumentCaptor.forClass(KbRequest.class);

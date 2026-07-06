@@ -55,6 +55,19 @@ async function serverFetch<T>(path: string): Promise<T> {
 export const serverApi = {
   getMe: () => serverFetch<Me>(`/api/me`),
 
+  // Open (untriaged) knowledge-gap request count, for the owner's nav badge. Never throws — a
+  // missing/disabled RAG feature or a hiccup here must not take down every page's header. A
+  // session-expired redirect must still propagate, not be swallowed as "no count".
+  getKbRequestOpenCount: async (): Promise<number> => {
+    try {
+      const { count } = await serverFetch<{ count: number }>(`/api/rag/admin/requests/open-count`);
+      return count;
+    } catch (e) {
+      if (e && typeof e === 'object' && 'digest' in e && String(e.digest).startsWith('NEXT_REDIRECT')) throw e;
+      return 0;
+    }
+  },
+
   // KB articles, role-filtered by the backend using the session.
   listKbArticles: () => serverFetch<KbArticle[]>(`/api/kb-articles`),
 

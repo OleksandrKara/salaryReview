@@ -49,7 +49,7 @@ export default function KbRequestsSection() {
   const openCount = (requests ?? []).filter((r) => r.status === 'OPEN').length;
 
   return (
-    <section className="mt-10">
+    <section id="kb-requests" className="mt-10 scroll-mt-6">
       <div className="mb-2 flex items-center gap-2">
         <h2 className="text-sm font-semibold">Knowledge requests</h2>
         {openCount > 0 ? (
