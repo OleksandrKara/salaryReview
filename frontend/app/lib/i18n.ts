@@ -87,7 +87,6 @@ const STRINGS = {
   navMyPay: { EN: 'My pay', RU: 'Моя зарплата' },
   navMyTime: { EN: 'My time', RU: 'Моё время' },
   navManagerTime: { EN: 'Manager time', RU: 'Время менеджеров' },
-  navBookCall: { EN: 'Book a call', RU: 'Записаться на звонок' },
 
   // Manager time tracking
   timeMyTitle: { EN: 'My time', RU: 'Моё время' },
