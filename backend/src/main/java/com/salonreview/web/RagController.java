@@ -5,6 +5,7 @@ import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.config.RagProperties;
 import com.salonreview.domain.AppUser;
 import com.salonreview.domain.Language;
+import com.salonreview.kb.KbAiDraftService;
 import com.salonreview.rag.Citation;
 import com.salonreview.rag.RagAnswer;
 import com.salonreview.rag.RagAnswerService;
@@ -50,6 +51,7 @@ public class RagController {
     private final ObjectProvider<LangSmithTracer> tracerProvider;
     private final RagProperties props;
     private final AppUserRepository users;
+    private final KbAiDraftService aiDraft;
     // Streaming runs the (blocking) Anthropic stream off the request thread. Daemon, small pool.
     private final ExecutorService streamExecutor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "rag-stream");
@@ -59,12 +61,13 @@ public class RagController {
 
     public RagController(RagAnswerService answerService, RagSuggestionService suggestionService,
                         ObjectProvider<LangSmithTracer> tracerProvider, RagProperties props,
-                        AppUserRepository users) {
+                        AppUserRepository users, KbAiDraftService aiDraft) {
         this.answerService = answerService;
         this.suggestionService = suggestionService;
         this.tracerProvider = tracerProvider;
         this.props = props;
         this.users = users;
+        this.aiDraft = aiDraft;
     }
 
     /** Stored starter prompts for the chat empty state, in the caller's language (no LLM call). */
@@ -159,6 +162,23 @@ public class RagController {
         return ResponseEntity.ok().build();
     }
 
+    /** Translate a short gap-report note to Russian, for a Russian-speaking owner reviewing it.
+     * Reuses the same Anthropic-backed drafting service as the KB article/SOP translators, with a
+     * prompt sized for a one-off note rather than a full article.
+     */
+    @PostMapping("/requests/translate-note")
+    public ResponseEntity<TranslateNoteResponse> translateNote(@RequestBody TranslateNoteRequest body) {
+        if (!props.isEnabled()) return ResponseEntity.notFound().build();
+        if (body == null || body.note() == null || body.note().isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        try {
+            return ResponseEntity.ok(new TranslateNoteResponse(aiDraft.translateNoteToRussian(body.note())));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
+    }
+
     /** The caller's preferred language, read fresh from the DB; English when unset. */
     private Language language(AppUserPrincipal me) {
         if (me == null) return Language.EN;
@@ -170,4 +190,8 @@ public class RagController {
     public record AskRequest(String question) {}
 
     public record FeedbackRequest(String runId, boolean helpful) {}
+
+    public record TranslateNoteRequest(String note) {}
+
+    public record TranslateNoteResponse(String translated) {}
 }
