@@ -109,18 +109,22 @@ public class MarketingContactsRepository {
     }
 
     /** Square customer ids for contacts whose first- or latest-touch traffic source is a paid ad
-     * click — the exact labels classify_traffic_source() (salonLandings) assigns for a tracked
-     * Meta/Google ad click, never a substring/prefix match since that's the complete label. Only
-     * contacts with a known Square customer id are useful here — one is required to later match
-     * against SquareMonthAggregator's AttributedService.customerId().
+     * click. classify_traffic_source() (salonLandings) always starts a paid-click label with
+     * "Meta Ads" or "Google Ads" — either the bare "Meta Ads (click)" fallback, or, when the click
+     * also carried UTM params (the common case for a real Meta ad — fbclid AND a full UTM set
+     * arrive together), the richer "Meta Ads (ig / Instagram_Stories / <campaign>)" form. A prefix
+     * match catches both; an exact match (the previous version of this query) missed every
+     * UTM-tagged ad click entirely, since fbclid/gclid only produces the bare fallback when no UTM
+     * is present. Only contacts with a known Square customer id are useful here — one is required
+     * to later match against SquareMonthAggregator's AttributedService.customerId().
      */
     public Set<String> findAdsAttributedSquareCustomerIds() {
         String sql = """
                 SELECT DISTINCT square_customer_id
                 FROM marketing.contacts
                 WHERE square_customer_id IS NOT NULL
-                  AND (original_traffic_source IN ('Meta Ads (click)', 'Google Ads (click)')
-                       OR marketing_traffic_source IN ('Meta Ads (click)', 'Google Ads (click)'))
+                  AND (original_traffic_source LIKE 'Meta Ads%' OR original_traffic_source LIKE 'Google Ads%'
+                       OR marketing_traffic_source LIKE 'Meta Ads%' OR marketing_traffic_source LIKE 'Google Ads%')
                 """;
         return Set.copyOf(jdbcTemplate.queryForList(sql, String.class));
     }
