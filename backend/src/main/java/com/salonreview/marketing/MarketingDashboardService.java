@@ -47,7 +47,7 @@ public class MarketingDashboardService {
 
             String experimentStatus = repository.findExperimentStatus(landingPageId.get()).orElse("none");
             Instant statsSince = repository.findStatsSince(landingPageId.get()).orElse(null);
-            List<VariantStat> variants = repository.findVariantStats(landingPageId.get(), statsSince).stream()
+            List<VariantStat> variants = repository.findVariantStats(landingPageId.get(), slug, statsSince).stream()
                     .map(this::toVariantStat)
                     .collect(Collectors.toList());
 
@@ -128,7 +128,7 @@ public class MarketingDashboardService {
         double conversionRate = raw.pageViews() == 0 ? 0.0 : (double) raw.bookingsCompleted() / raw.pageViews();
         String deepLinkUrl = raw.key() == null ? null : buildDeepLinkUrl(raw.key());
         return new VariantStat(raw.variantId(), raw.name(), raw.weight(), raw.active(),
-                raw.pageViews(), raw.bookingsCompleted(), conversionRate, deepLinkUrl, raw.description());
+                raw.pageViews(), raw.bookingsCompleted(), raw.contactsCreated(), conversionRate, deepLinkUrl, raw.description());
     }
 
     private String buildDeepLinkUrl(String key) {

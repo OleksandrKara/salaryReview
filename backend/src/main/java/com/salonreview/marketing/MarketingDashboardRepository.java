@@ -28,6 +28,7 @@ public class MarketingDashboardRepository {
             boolean active,
             long pageViews,
             long bookingsCompleted,
+            long contactsCreated,
             String key,
             String description
     ) {}
@@ -79,13 +80,19 @@ public class MarketingDashboardRepository {
                 landingPageId);
     }
 
-    /** statsSince null means "all time" — no filtering applied. */
-    public List<RawVariantStat> findVariantStats(UUID landingPageId, Instant statsSince) {
+    /** statsSince null means "all time" — no filtering applied. Contacts are matched to a variant
+     * by name, not id — marketing.contacts.variant_name is a denormalized snapshot of whatever the
+     * variant was called at capture time (see salonLandings; a later rename doesn't change past
+     * rows), the same tradeoff already accepted for that column. Also scoped by landing page slug
+     * so two different landing pages can't have their variant-name contact counts collide.
+     */
+    public List<RawVariantStat> findVariantStats(UUID landingPageId, String landingPageSlug, Instant statsSince) {
         String sql = """
                 SELECT v.id AS variant_id, v.name AS name, v.weight AS weight, v.active AS active,
                        v.key AS key, v.description AS description,
                        COALESCE(pv.page_views, 0) AS page_views,
-                       COALESCE(bk.bookings_completed, 0) AS bookings_completed
+                       COALESCE(bk.bookings_completed, 0) AS bookings_completed,
+                       COALESCE(ct.contacts_created, 0) AS contacts_created
                 FROM marketing.landing_variants v
                 LEFT JOIN (
                     SELECT variant_id, COUNT(*) AS page_views
@@ -99,6 +106,12 @@ public class MarketingDashboardRepository {
                     WHERE (?::timestamptz IS NULL OR created_at >= ?)
                     GROUP BY variant_id
                 ) bk ON bk.variant_id = v.id
+                LEFT JOIN (
+                    SELECT variant_name, COUNT(*) AS contacts_created
+                    FROM marketing.contacts
+                    WHERE landing_page_slug = ? AND (?::timestamptz IS NULL OR created_at >= ?)
+                    GROUP BY variant_name
+                ) ct ON ct.variant_name = v.name
                 WHERE v.landing_page_id = ?
                 ORDER BY v.created_at ASC
                 """;
@@ -110,9 +123,10 @@ public class MarketingDashboardRepository {
                 rs.getBoolean("active"),
                 rs.getLong("page_views"),
                 rs.getLong("bookings_completed"),
+                rs.getLong("contacts_created"),
                 rs.getString("key"),
                 rs.getString("description")
-        ), cutoff, cutoff, cutoff, cutoff, landingPageId);
+        ), cutoff, cutoff, cutoff, cutoff, landingPageSlug, cutoff, cutoff, landingPageId);
     }
 
     public Optional<UUID> findVariantLandingPageId(UUID variantId) {

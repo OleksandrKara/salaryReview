@@ -48,8 +48,8 @@ class MarketingDashboardServiceTest {
     void computesConversionRate() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findExperimentStatus(LANDING_PAGE_ID)).thenReturn(Optional.of("active"));
-        when(repository.findVariantStats(eq(LANDING_PAGE_ID), isNull())).thenReturn(List.of(
-                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 25, "control", "Baseline, no changes")
+        when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull())).thenReturn(List.of(
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 25, 40, "control", "Baseline, no changes")
         ));
 
         MarketingDashboardDto dashboard = service.dashboard("mani");
@@ -59,6 +59,7 @@ class MarketingDashboardServiceTest {
         VariantStat variant = dashboard.variants().get(0);
         assertThat(variant.pageViews()).isEqualTo(100);
         assertThat(variant.bookingsCompleted()).isEqualTo(25);
+        assertThat(variant.contactsCreated()).isEqualTo(40);
         assertThat(variant.conversionRate()).isEqualTo(0.25);
         assertThat(variant.deepLinkUrl()).isEqualTo("https://mani.akluxnails.com/?v=control");
         assertThat(variant.description()).isEqualTo("Baseline, no changes");
@@ -72,12 +73,12 @@ class MarketingDashboardServiceTest {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findExperimentStatus(LANDING_PAGE_ID)).thenReturn(Optional.of("active"));
         when(repository.findStatsSince(LANDING_PAGE_ID)).thenReturn(Optional.of(cutoff));
-        when(repository.findVariantStats(LANDING_PAGE_ID, cutoff)).thenReturn(List.of());
+        when(repository.findVariantStats(LANDING_PAGE_ID, "mani", cutoff)).thenReturn(List.of());
 
         MarketingDashboardDto dashboard = service.dashboard("mani");
 
         assertThat(dashboard.statsSince()).isEqualTo(cutoff.toString());
-        verify(repository).findVariantStats(LANDING_PAGE_ID, cutoff);
+        verify(repository).findVariantStats(LANDING_PAGE_ID, "mani", cutoff);
     }
 
     @Test
@@ -85,8 +86,8 @@ class MarketingDashboardServiceTest {
     void deepLinkIsNullWithoutKey() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findExperimentStatus(LANDING_PAGE_ID)).thenReturn(Optional.of("active"));
-        when(repository.findVariantStats(eq(LANDING_PAGE_ID), isNull())).thenReturn(List.of(
-                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 25, null, null)
+        when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull())).thenReturn(List.of(
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 25, 40, null, null)
         ));
 
         MarketingDashboardDto dashboard = service.dashboard("mani");
@@ -99,8 +100,8 @@ class MarketingDashboardServiceTest {
     void zeroPageViewsYieldsZeroConversionRate() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findExperimentStatus(LANDING_PAGE_ID)).thenReturn(Optional.empty());
-        when(repository.findVariantStats(eq(LANDING_PAGE_ID), isNull())).thenReturn(List.of(
-                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 0, 0, "control", null)
+        when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull())).thenReturn(List.of(
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 0, 0, 0, "control", null)
         ));
 
         MarketingDashboardDto dashboard = service.dashboard("mani");

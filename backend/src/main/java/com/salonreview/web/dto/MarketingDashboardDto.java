@@ -18,6 +18,10 @@ public record MarketingDashboardDto(
             boolean active,
             long pageViews,
             long bookingsCompleted,
+            /** Contacts (leads) captured under this variant — matched by variant name, since
+             * marketing.contacts.variant_name is a denormalized snapshot at capture time, not a
+             * foreign key; a later rename won't reattach older contacts to the new name. */
+            long contactsCreated,
             double conversionRate,
             /** Direct ?v=<key> link to view this exact variant, or null if it has no key yet. */
             String deepLinkUrl,

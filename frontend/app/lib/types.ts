@@ -741,6 +741,9 @@ export interface MarketingVariantStat {
   active: boolean;
   pageViews: number;
   bookingsCompleted: number;
+  /** Contacts (leads) captured under this variant, matched by name — a later rename won't
+   * reattach older contacts to the new name (see the backend DTO's field doc). */
+  contactsCreated: number;
   conversionRate: number;
   /** Direct ?v=<key> link to view this exact variant, or null if it has no key yet. */
   deepLinkUrl: string | null;
