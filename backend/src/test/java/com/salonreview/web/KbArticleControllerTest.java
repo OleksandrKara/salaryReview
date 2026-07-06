@@ -7,6 +7,7 @@ import com.salonreview.domain.Role;
 import com.salonreview.domain.SyncStatus;
 import com.salonreview.kb.KbAiDraftService;
 import com.salonreview.kb.KbArticleService;
+import com.salonreview.kb.KbExportService;
 import com.salonreview.kb.KbSyncService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,7 +50,7 @@ class KbArticleControllerTest {
         articles = mock(KbArticleService.class);
         sync = mock(KbSyncService.class);
         aiDraft = mock(KbAiDraftService.class);
-        KbArticleController controller = new KbArticleController(articles, sync, aiDraft);
+        KbArticleController controller = new KbArticleController(articles, sync, aiDraft, mock(KbExportService.class));
         mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
