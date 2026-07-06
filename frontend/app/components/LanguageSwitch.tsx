@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api } from '../lib/api';
+import { announceLanguageChange } from '../lib/languageEvents';
 import type { Language } from '../lib/types';
 
 // "EN / RU" toggle used in the owner/manager admin menu and on the provider /me header. The active
@@ -16,6 +17,7 @@ export default function LanguageSwitch({ language }: { language: Language | null
     setLang(next);
     try {
       await api.setLanguage(next);
+      announceLanguageChange(next);
       router.refresh();
     } catch {
       /* leave the optimistic state; a reload reconciles */
