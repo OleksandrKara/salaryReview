@@ -19,10 +19,11 @@ export async function forwardToBackend(
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
   const res = await fetch(`${BACKEND}${backendPath}`, { method, headers, body });
+  // Binary-safe passthrough — .text() would corrupt a non-UTF-8 body (e.g. a SOP export ZIP).
   // A 204/empty backend response must not carry a body, or the Response constructor throws.
-  const text = await res.text();
-  return new Response(text.length ? text : null, {
-    status: res.status,
-    headers: { 'Content-Type': res.headers.get('Content-Type') ?? 'application/json' },
-  });
+  const bytes = await res.arrayBuffer();
+  const outHeaders: Record<string, string> = { 'Content-Type': res.headers.get('Content-Type') ?? 'application/json' };
+  const disposition = res.headers.get('Content-Disposition');
+  if (disposition) outHeaders['Content-Disposition'] = disposition;
+  return new Response(bytes.byteLength ? bytes : null, { status: res.status, headers: outHeaders });
 }
