@@ -264,6 +264,7 @@ function AssistantMessage({
   disabled: boolean;
 }) {
   const [copied, setCopied] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
 
   async function copy() {
     try {
@@ -302,17 +303,26 @@ function AssistantMessage({
           <>
             {m.citations && m.citations.length > 0 ? (
               <div className="mt-2">
-                <div className="mb-1 flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-[var(--accent-ink)]">
-                  <BookIcon className="h-3 w-3" /> Sources
-                </div>
-                <ul className="space-y-1">
-                  {m.citations.map((c, i) => (
-                    <li key={i} className="rounded-lg bg-[var(--paper-2)] px-2.5 py-1.5 text-[11px] text-[var(--muted)]">
-                      <div className="font-medium text-[var(--ink)]">{c.documentTitle}</div>
-                      {c.citedText ? <div className="mt-0.5 line-clamp-2 italic">“{c.citedText}”</div> : null}
-                    </li>
-                  ))}
-                </ul>
+                <button
+                  type="button"
+                  onClick={() => setSourcesOpen((o) => !o)}
+                  aria-expanded={sourcesOpen}
+                  className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-[var(--accent-ink)] hover:opacity-75"
+                >
+                  <BookIcon className="h-3 w-3" />
+                  Sources ({m.citations.length})
+                  <ChevronIcon className={`h-2.5 w-2.5 transition-transform ${sourcesOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {sourcesOpen ? (
+                  <ul className="mt-1 space-y-1">
+                    {m.citations.map((c, i) => (
+                      <li key={i} className="rounded-lg bg-[var(--paper-2)] px-2.5 py-1.5 text-[11px] text-[var(--muted)]">
+                        <div className="font-medium text-[var(--ink)]">{c.documentTitle}</div>
+                        {c.citedText ? <div className="mt-0.5 line-clamp-2 italic">“{c.citedText}”</div> : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
             ) : null}
 
@@ -487,6 +497,14 @@ function BookIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </svg>
+  );
+}
+
+function ChevronIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="6 9 12 15 18 9" />
     </svg>
   );
 }
