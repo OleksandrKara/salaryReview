@@ -406,17 +406,27 @@ function AssistantMessage({
             ) : null}
 
             {m.followups && m.followups.length > 0 ? (
-              <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
-                {m.followups.map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => onAsk(f)}
-                    disabled={disabled}
-                    className="shrink-0 whitespace-nowrap rounded-full bg-[var(--paper-2)] px-3 py-1.5 text-left text-xs text-[var(--ink)] ring-1 ring-[var(--line)] transition hover:ring-[var(--accent)] disabled:opacity-50"
-                  >
-                    {f}
-                  </button>
-                ))}
+              <div className="relative mt-2">
+                <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
+                  {m.followups.map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => onAsk(f)}
+                      disabled={disabled}
+                      title={f}
+                      className="max-w-[75%] shrink-0 truncate rounded-full bg-[var(--paper-2)] px-3 py-1.5 text-left text-xs text-[var(--ink)] ring-1 ring-[var(--line)] transition hover:ring-[var(--accent)] disabled:opacity-50"
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
+                {/* Capping each chip below full width guarantees the next one always peeks in from
+                    the edge — without it, a long first suggestion could fill the whole row and hide
+                    that there's more than one. The fade reinforces "scroll for more" instead of an
+                    abrupt clip. */}
+                {m.followups.length > 1 ? (
+                  <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-[var(--paper)] to-transparent" />
+                ) : null}
               </div>
             ) : null}
           </>
