@@ -21,6 +21,7 @@ import type {
   RetentionReport,
   RetentionSeries,
   Redo,
+  RevenueDayDetail,
   RevenuePulse,
   SettlementPreview,
   SquareRosterEntry,
@@ -98,6 +99,10 @@ export const serverApi = {
 
   getRevenuePulse: (year: number, month: number) =>
     serverFetch<RevenuePulse>(`/api/owner/pulse?year=${year}&month=${month}`),
+
+  // date is an ISO yyyy-MM-dd string.
+  getRevenueDay: (date: string) =>
+    serverFetch<RevenueDayDetail>(`/api/owner/pulse/day?date=${encodeURIComponent(date)}`),
 
   listSuspicious: (year: number, month: number, half: 'FIRST' | 'SECOND', providerId: number) =>
     serverFetch<SuspiciousBooking[]>(

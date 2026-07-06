@@ -36,6 +36,7 @@ class RevenueSnapshotServiceTest {
     private SalonConfigRepository salonConfig;
     private PayPeriodRepository payPeriods;
     private PeriodEntryRepository entries;
+    private RevenueForecastService forecaster;
     private RevenueSnapshotService service;
 
     @BeforeEach
@@ -46,7 +47,8 @@ class RevenueSnapshotServiceTest {
         salonConfig = mock(SalonConfigRepository.class);
         payPeriods  = mock(PayPeriodRepository.class);
         entries     = mock(PeriodEntryRepository.class);
-        service     = new RevenueSnapshotService(repo, aggregator, square, salonConfig, payPeriods, entries);
+        forecaster  = mock(RevenueForecastService.class);
+        service     = new RevenueSnapshotService(repo, aggregator, square, salonConfig, payPeriods, entries, forecaster);
 
         when(salonConfig.findById(1)).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").tierServiceThreshold(25)
@@ -126,6 +128,48 @@ class RevenueSnapshotServiceTest {
         int updated = service.fillMonthEndActualsFor(may);
 
         assertThat(updated).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("dayDetail: no snapshot for that date → hasSnapshot=false, no forecast call")
+    void dayDetailNoSnapshot() {
+        LocalDate date = LocalDate.of(2026, 3, 10);
+        when(repo.findBySnapshotDate(date)).thenReturn(Optional.empty());
+
+        var detail = service.dayDetail(date);
+
+        assertThat(detail.hasSnapshot()).isFalse();
+        assertThat(detail.mtdRevenue()).isNull();
+        org.mockito.Mockito.verifyNoInteractions(forecaster);
+    }
+
+    @Test
+    @DisplayName("dayDetail: snapshot present → frozen MTD/upcoming data plus a recomputed forecast")
+    void dayDetailWithSnapshot() {
+        LocalDate date = LocalDate.of(2026, 6, 14);
+        RevenueSnapshot snap = RevenueSnapshot.builder()
+                .id(1L).snapshotDate(date)
+                .mtdRevenue(new BigDecimal("3200.00")).mtdCard(new BigDecimal("2800.00")).mtdCash(new BigDecimal("400.00"))
+                .mtdServices(42).upcomingCount(5).upcomingGross(new BigDecimal("600.00"))
+                .monthEndActual(new BigDecimal("9800.00"))
+                .build();
+        when(repo.findBySnapshotDate(date)).thenReturn(Optional.of(snap));
+        when(forecaster.forecast(2026, 6, new BigDecimal("3200.00"), new BigDecimal("600.00")))
+                .thenReturn(new ForecastResult(new BigDecimal("9500.00"), new BigDecimal("9000.00"), new BigDecimal("10000.00"), 4, 6));
+
+        var detail = service.dayDetail(date);
+
+        assertThat(detail.hasSnapshot()).isTrue();
+        assertThat(detail.mtdRevenue()).isEqualByComparingTo("3200.00");
+        assertThat(detail.mtdCard()).isEqualByComparingTo("2800.00");
+        assertThat(detail.mtdCash()).isEqualByComparingTo("400.00");
+        assertThat(detail.mtdServices()).isEqualTo(42);
+        assertThat(detail.upcomingCount()).isEqualTo(5);
+        assertThat(detail.upcomingGross()).isEqualByComparingTo("600.00");
+        assertThat(detail.projectedMid()).isEqualByComparingTo("9500.00");
+        assertThat(detail.projectedLow()).isEqualByComparingTo("9000.00");
+        assertThat(detail.projectedHigh()).isEqualByComparingTo("10000.00");
+        assertThat(detail.monthEndActual()).isEqualByComparingTo("9800.00");
     }
 
     private static PeriodEntry entry(Provider p, PayPeriod pp, String card) {

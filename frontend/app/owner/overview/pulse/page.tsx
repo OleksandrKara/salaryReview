@@ -4,6 +4,8 @@ import PageHeader from '../../../components/PageHeader';
 import MonthNav from '../../../components/MonthNav';
 import RevenueTabs from '../RevenueTabs';
 import PulseView from './PulseView';
+import DayPicker from './DayPicker';
+import DayDetailView from './DayDetailView';
 
 function shift(year: number, month: number, by: number) {
   const idx = month - 1 + by;
@@ -13,22 +15,21 @@ function shift(year: number, month: number, by: number) {
 export default async function RevenuePulsePage({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string; month?: string }>;
+  searchParams: Promise<{ year?: string; month?: string; day?: string }>;
 }) {
   const sp = await searchParams;
   const now = new Date();
   const year = Number(sp.year) || now.getUTCFullYear();
   const month = Number(sp.month) || now.getUTCMonth() + 1;
+  const day = sp.day || null;
 
   const me = await serverApi.getMe();
   if (me?.role !== 'OWNER') redirect('/reports');
 
-  let pulse;
-  try {
-    pulse = await serverApi.getRevenuePulse(year, month);
-  } catch {
-    pulse = null;
-  }
+  const [pulse, dayDetail] = await Promise.all([
+    serverApi.getRevenuePulse(year, month).catch(() => null),
+    day ? serverApi.getRevenueDay(day).catch(() => null) : Promise.resolve(null),
+  ]);
 
   const prev = shift(year, month, -1);
   const next = shift(year, month, 1);
@@ -49,6 +50,19 @@ export default async function RevenuePulsePage({
           Revenue data isn&apos;t available right now — Square may be temporarily unreachable. Try again shortly.
         </div>
       )}
+
+      <div className="mt-6 space-y-4">
+        <DayPicker />
+        {day ? (
+          dayDetail ? (
+            <DayDetailView detail={dayDetail} />
+          ) : (
+            <div className="rounded-2xl border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">
+              Couldn&apos;t load data for that day. Try again shortly.
+            </div>
+          )
+        ) : null}
+      </div>
     </main>
   );
 }
