@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
+import { onLanguageChange } from '../lib/languageEvents';
 import { Spinner } from './Spinner';
 import type { KbRequestTarget, Language, RagCitation, Role, StarterSuggestions } from '../lib/types';
 
@@ -64,6 +65,15 @@ export default function AssistantWidget() {
       .catch(() => { if (!cancelled) setRole(null); });
     return () => { cancelled = true; };
   }, [pathname]);
+
+  // LanguageSwitch's own change (no navigation, so the pathname-keyed effect above doesn't re-fire)
+  // — same effect as above, just on a different signal: drop cached suggestions so they re-fetch in
+  // the new language. The answer language itself needs nothing here — the backend already reads the
+  // account's current preferred language fresh on every question.
+  useEffect(() => onLanguageChange((lang) => {
+    if (langRef.current !== lang) setSuggestions(null);
+    langRef.current = lang;
+  }), []);
 
   // Fetch grounded starter prompts the first time the panel is opened (server-cached per language, so
   // no LLM call on a normal open). Re-fetches after a language change cleared them above.
