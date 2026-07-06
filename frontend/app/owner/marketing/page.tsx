@@ -1,10 +1,10 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { serverApi } from '../../lib/serverApi';
 import PageHeader from '../../components/PageHeader';
 import AbuseBlocksPanel from './AbuseBlocksPanel';
 import ExperimentStatusBadge from './ExperimentStatusBadge';
 import MarketingManager from './MarketingManager';
+import MarketingTabs from './MarketingTabs';
 
 export default async function MarketingDashboardPage() {
   const [me, data, abuseBlocks] = await Promise.all([
@@ -18,15 +18,7 @@ export default async function MarketingDashboardPage() {
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
       <PageHeader title="Marketing" role={me.role} language={me.preferredLanguage} />
-
-      <div className="mt-2 flex flex-wrap gap-4">
-        <Link href="/owner/marketing/contacts" className="inline-block text-sm font-medium text-blue-600 hover:underline">
-          Contacts →
-        </Link>
-        <Link href="/owner/marketing/analytics" className="inline-block text-sm font-medium text-blue-600 hover:underline">
-          Marketing Analytics →
-        </Link>
-      </div>
+      <MarketingTabs />
 
       {!data.available ? (
         <div className="mt-6 rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">

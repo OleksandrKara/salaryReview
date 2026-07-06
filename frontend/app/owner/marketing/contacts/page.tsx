@@ -1,8 +1,8 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { serverApi } from '../../../lib/serverApi';
 import PageHeader from '../../../components/PageHeader';
 import ContactsFilterBar from './ContactsFilterBar';
+import MarketingTabs from '../MarketingTabs';
 
 export default async function MarketingContactsPage() {
   const [me, data] = await Promise.all([serverApi.getMe(), serverApi.getMarketingContacts()]);
@@ -12,10 +12,7 @@ export default async function MarketingContactsPage() {
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
       <PageHeader title="Marketing Contacts" role={me.role} language={me.preferredLanguage} />
-
-      <Link href="/owner/marketing" className="mt-2 inline-block text-sm font-medium text-blue-600 hover:underline">
-        ← Back to Marketing
-      </Link>
+      <MarketingTabs />
 
       {!data.available ? (
         <div className="mt-6 rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">
