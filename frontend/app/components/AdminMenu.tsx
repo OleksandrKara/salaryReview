@@ -19,6 +19,9 @@ const COMMON: NavLink[] = [
   { href: '/sops', key: 'mgrSops' },
 ];
 
+// Direct line to book a 30-min call with the developer/consultant — owner only.
+const CALENDLY_URL = 'https://calendly.com/olexandr-kara2/30min';
+
 function linksFor(role: Role): NavLink[] {
   if (role === 'OWNER') {
     return [
@@ -96,6 +99,16 @@ export default function AdminMenu({ role, language }: { role: Role; language: La
                 {t(language, l.key)}
               </Link>
             ))}
+            {role === 'OWNER' ? (
+              <a
+                href={CALENDLY_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block border-t border-zinc-100 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+              >
+                {t(language, 'navBookCall')} ↗
+              </a>
+            ) : null}
             <div className="flex items-center gap-2 border-t border-zinc-100 px-4 py-2 text-sm text-zinc-500">
               <span className="text-zinc-400">{t(language, 'navLanguage')}</span>
               <LanguageSwitch language={language} />
