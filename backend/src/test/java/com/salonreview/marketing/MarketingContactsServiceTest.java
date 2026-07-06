@@ -66,7 +66,7 @@ class MarketingContactsServiceTest {
 
         assertThat(dto.available()).isTrue();
         Contact c = dto.contacts().get(0);
-        assertThat(c.squareProfileUrl()).isEqualTo("https://app.squareup.com/dashboard/customers/directory/SQCUST123");
+        assertThat(c.squareProfileUrl()).isEqualTo("https://app.squareup.com/dashboard/customers/directory/customer/SQCUST123");
         assertThat(c.originalTrafficSource()).isEqualTo("instagram / paid / promo");
         assertThat(c.marketingTrafficSource()).isEqualTo("google / cpc / retargeting");
         assertThat(c.landingPageSlug()).isEqualTo("mani");
