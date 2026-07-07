@@ -12,6 +12,7 @@ interface VariantActions {
   onDuplicate: (v: MarketingVariantStat) => void;
   onDelete: (v: MarketingVariantStat) => void;
   busyVariantId: string | null;
+  readOnly?: boolean;
 }
 
 function Description({ v }: { v: MarketingVariantStat }) {
@@ -21,16 +22,20 @@ function Description({ v }: { v: MarketingVariantStat }) {
 
 // A bare colored dot didn't read as clickable — a labeled pill (matching ExperimentStatusBadge's
 // visual language elsewhere on this page) makes it obvious this is a toggle, not just a status icon.
-function ActiveToggle({ v, onToggleActive, busy }: { v: MarketingVariantStat; onToggleActive: (v: MarketingVariantStat) => void; busy: boolean }) {
+function ActiveToggle({
+  v, onToggleActive, busy, readOnly,
+}: { v: MarketingVariantStat; onToggleActive: (v: MarketingVariantStat) => void; busy: boolean; readOnly?: boolean }) {
+  const pillClass = `rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+    v.active ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-zinc-100 text-zinc-500 ring-zinc-200'
+  }`;
+  if (readOnly) return <span className={pillClass}>{v.active ? 'Active' : 'Inactive'}</span>;
   return (
     <button
       type="button"
       onClick={() => onToggleActive(v)}
       disabled={busy}
       title={v.active ? 'Active — click to turn off' : 'Inactive — click to turn on'}
-      className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset disabled:opacity-50 ${
-        v.active ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100' : 'bg-zinc-100 text-zinc-500 ring-zinc-200 hover:bg-zinc-200'
-      }`}
+      className={`${pillClass} disabled:opacity-50 ${v.active ? 'hover:bg-emerald-100' : 'hover:bg-zinc-200'}`}
     >
       {v.active ? 'Active' : 'Inactive'}
     </button>
@@ -82,7 +87,7 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
             <div className="flex items-center justify-between gap-2">
               <span className="font-medium">{v.name}</span>
               <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-                <ActiveToggle v={v} onToggleActive={actions.onToggleActive} busy={actions.busyVariantId === v.variantId} /> weight {v.weight}
+                <ActiveToggle v={v} onToggleActive={actions.onToggleActive} busy={actions.busyVariantId === v.variantId} readOnly={actions.readOnly} /> weight {v.weight}
               </span>
             </div>
             <div className="mt-1">
@@ -111,9 +116,11 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
                 <VariantLinkButton url={v.deepLinkUrl} />
               </div>
             )}
-            <div className="mt-3 border-t border-zinc-100 pt-3">
-              <ActionButtons v={v} actions={actions} />
-            </div>
+            {!actions.readOnly && (
+              <div className="mt-3 border-t border-zinc-100 pt-3">
+                <ActionButtons v={v} actions={actions} />
+              </div>
+            )}
           </div>
         ))}
         <div className="rounded-lg bg-zinc-50 p-4 ring-1 ring-zinc-200">
@@ -155,7 +162,7 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
               <th className="px-3 py-2 text-right">Bookings</th>
               <th className="px-3 py-2 text-right">Conversion %</th>
               <th className="px-3 py-2">Link</th>
-              <th className="px-3 py-2">Actions</th>
+              {!actions.readOnly && <th className="px-3 py-2">Actions</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
@@ -167,7 +174,7 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{v.weight}</td>
                 <td className="px-3 py-2 text-center">
-                  <ActiveToggle v={v} onToggleActive={actions.onToggleActive} busy={actions.busyVariantId === v.variantId} />
+                  <ActiveToggle v={v} onToggleActive={actions.onToggleActive} busy={actions.busyVariantId === v.variantId} readOnly={actions.readOnly} />
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{v.pageViews.toLocaleString('en-US')}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{v.contactsCreated.toLocaleString('en-US')}</td>
@@ -176,9 +183,11 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
                 <td className="px-3 py-2">
                   {v.deepLinkUrl ? <VariantLinkButton url={v.deepLinkUrl} /> : <span className="text-zinc-300">—</span>}
                 </td>
-                <td className="px-3 py-2">
-                  <ActionButtons v={v} actions={actions} />
-                </td>
+                {!actions.readOnly && (
+                  <td className="px-3 py-2">
+                    <ActionButtons v={v} actions={actions} />
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -194,7 +203,7 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
               <td className="px-3 py-2 text-right tabular-nums">{totals.totalBookings.toLocaleString('en-US')}</td>
               <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{pct(totals.conversionRate)}</td>
               <td className="px-3 py-2" />
-              <td className="px-3 py-2" />
+              {!actions.readOnly && <td className="px-3 py-2" />}
             </tr>
           </tfoot>
         </table>

@@ -92,7 +92,12 @@ export default function Landing() {
       // Full document load (not router.replace) so the server renders the root layout — and its
       // mandatory language/SOP gate — from scratch. A client navigation would reuse the existing
       // layout and briefly show the home page before the gate mounts.
-      window.location.assign(role === 'PROVIDER' ? '/me' : role === 'MANAGER' ? '/manager' : '/reports');
+      window.location.assign(
+        role === 'PROVIDER' ? '/me'
+          : role === 'MANAGER' ? '/manager'
+          : role === 'ADS_MANAGER' ? '/owner/marketing'
+          : '/reports',
+      );
     } finally {
       setBusy(false);
     }

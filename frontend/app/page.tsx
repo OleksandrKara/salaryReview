@@ -19,7 +19,7 @@ export default async function Home() {
       });
       if (res.ok) {
         const me = (await res.json()) as { role?: string };
-        target = me.role === 'PROVIDER' ? '/me' : '/reports';
+        target = me.role === 'PROVIDER' ? '/me' : me.role === 'ADS_MANAGER' ? '/owner/marketing' : '/reports';
       }
       // 401/other → session is dead; fall through to the landing (no redirect).
     } catch {

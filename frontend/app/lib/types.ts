@@ -265,7 +265,7 @@ export interface AdminTimesheet {
 
 // --- Accounts & roles (Phase 2) ---
 
-export type Role = 'OWNER' | 'MANAGER' | 'PROVIDER';
+export type Role = 'OWNER' | 'MANAGER' | 'PROVIDER' | 'ADS_MANAGER';
 
 export type FeedbackStatus = 'APPROVED' | 'CHANGES_REQUESTED';
 

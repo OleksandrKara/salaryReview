@@ -24,7 +24,7 @@ export default async function RevenuePulsePage({
   const day = sp.day || null;
 
   const me = await serverApi.getMe();
-  if (me?.role !== 'OWNER') redirect('/reports');
+  if (me?.role !== 'OWNER') redirect(me?.role === 'ADS_MANAGER' ? '/owner/marketing' : '/reports');
 
   const [pulse, dayDetail] = await Promise.all([
     serverApi.getRevenuePulse(year, month).catch(() => null),

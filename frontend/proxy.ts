@@ -7,6 +7,9 @@ import { NextRequest, NextResponse } from 'next/server';
 //  - MANAGER → /manager (redos, KB, SOPs, assistant, retention). Managers don't manage salaries, so
 //    they're kept out of /reports and the owner admin tools; redos is their one management task, and
 //    retention is read-only visibility shared with the owner.
+//  - ADS_MANAGER → /owner/marketing only (read-only there too — enforced by the page/API, not here).
+//    An external ads contractor role; blocked from every other page this proxy covers, including
+//    KB/SOPs and the manager/provider areas, not just the owner-only ones.
 //  - OWNER → /reports and everything
 //
 // The matcher MUST list every authenticated page area. A page left out gets no edge gate and is only
@@ -15,6 +18,7 @@ import { NextRequest, NextResponse } from 'next/server';
 const PROVIDER_HOME = '/me';
 const MANAGER_HOME = '/manager';
 const OWNER_HOME = '/reports';
+const ADS_MANAGER_HOME = '/owner/marketing';
 
 // Owner + manager (providers blocked). Retention is view-only for managers, same data as owners.
 const STAFF_ONLY = ['/manager', '/admin/redos', '/owner/retention'];
@@ -26,6 +30,7 @@ const OWNER_ONLY = [
   '/admin/manual-credits', '/admin/manager-time', '/rag/admin', '/sops/admin',
 ];
 const PROVIDER_AREAS = ['/me']; // /me and /me/* belong to providers
+const ADS_MANAGER_AREAS = ['/owner/marketing']; // the only area this role may reach, full stop
 
 function matches(pathname: string, prefixes: string[]) {
   return prefixes.some((p) => pathname === p || pathname.startsWith(p + '/'));
@@ -39,7 +44,12 @@ export function proxy(req: NextRequest) {
   const role = req.cookies.get('role')?.value;
   const isProvider = role === 'PROVIDER';
   const isOwner = role === 'OWNER';
-  const home = isProvider ? PROVIDER_HOME : isOwner ? OWNER_HOME : MANAGER_HOME;
+  const isAdsManager = role === 'ADS_MANAGER';
+  const home = isProvider ? PROVIDER_HOME : isOwner ? OWNER_HOME : isAdsManager ? ADS_MANAGER_HOME : MANAGER_HOME;
+
+  // Ads Manager is scoped to /owner/marketing only — check this first, before the broader
+  // owner/staff/provider carve-outs below (which would otherwise also let it through /owner/**).
+  if (isAdsManager) return matches(pathname, ADS_MANAGER_AREAS) ? NextResponse.next() : redirect(req, home);
 
   // Providers see only their own view; owner-only areas are off-limits to everyone else; /me is the
   // provider's space, so staff are sent to their own home.

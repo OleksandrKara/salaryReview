@@ -49,6 +49,10 @@ function linksFor(role: Role): NavLink[] {
       ...COMMON,
     ];
   }
+  if (role === 'ADS_MANAGER') {
+    // Read-only marketing access only — no salary/SOP/KB data, so no COMMON links here.
+    return [{ href: '/owner/marketing', key: 'navMarketing' }];
+  }
   return [{ href: '/me', key: 'navMyPay' }, ...COMMON]; // PROVIDER
 }
 
