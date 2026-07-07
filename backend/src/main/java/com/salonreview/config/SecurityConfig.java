@@ -48,8 +48,12 @@ public class SecurityConfig {
                         // analytics, abuse blocks. Listed first (GET-only) so it wins over the owner-only
                         // catch-all below; every write under /api/owner/marketing/** (variant rename/
                         // active/description, delete, duplicate, stats-since) still falls through to that
-                        // catch-all and stays OWNER-only.
+                        // catch-all and stays OWNER-only — except ad spend just below, the one deliberate
+                        // write this role is allowed (entering the month's ad budget is what Ads Manager
+                        // is there to do, not a hole in its read-only scope).
                         .requestMatchers(HttpMethod.GET, "/api/owner/marketing", "/api/owner/marketing/**")
+                                .hasAnyRole("OWNER", "ADS_MANAGER")
+                        .requestMatchers(HttpMethod.PUT, "/api/owner/marketing/analytics/ad-spend")
                                 .hasAnyRole("OWNER", "ADS_MANAGER")
                         .requestMatchers("/api/users/**", "/api/owner/**", "/api/rag/admin/**").hasRole("OWNER")
                         .requestMatchers("/api/settlements/me/**").hasRole("PROVIDER")

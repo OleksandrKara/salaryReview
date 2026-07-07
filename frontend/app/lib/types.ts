@@ -798,7 +798,14 @@ export interface MarketingAnalyticsData {
   returning: MarketingAnalyticsSegment;
   /** Every still-upcoming appointment for an ads-attributed customer, regardless of [from, to]. */
   upcoming: MarketingUpcomingAppointment[];
+  /** Gross revenue for every ads customer, fixed to [1st of the current month, today] — independent
+   * of [from, to], so the ROI card always means "this month". */
+  currentMonthToDate: MarketingAnalyticsSegment;
+  /** Manually-entered ad spend for the current calendar month; zero if never entered. */
+  adSpendThisMonth: number;
 }
+
+export type MarketingAdSource = 'META' | 'GOOGLE';
 
 // --- Abuse blocks (com.salonreview.web.AbuseBlocksController) ---
 

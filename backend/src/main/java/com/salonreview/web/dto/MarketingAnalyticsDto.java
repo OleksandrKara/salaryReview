@@ -6,12 +6,14 @@ import java.time.LocalDate;
 import java.util.List;
 
 /** Gross revenue attributed to customers whose first- or latest-touch traffic source was a paid
- * ad click (Meta or Google), for services rendered within [from, to] inclusive — split into three
- * segments: every ads customer, only those whose Square record was created fresh off that ad touch
- * (a genuinely new customer the ad brought in), and only those who already existed in Square before
- * coming back through one (still a real ad-driven visit, just not new business). Also carries every
- * still-upcoming appointment for an ads-attributed customer, so the owner can see anticipated
- * revenue before it's actually rung up.
+ * ad click (Meta and/or Google, per the requested {@code sources}), for services rendered within
+ * [from, to] inclusive — split into three segments: every ads customer, only those whose Square
+ * record was created fresh off that ad touch (a genuinely new customer the ad brought in), and only
+ * those who already existed in Square before coming back through one (still a real ad-driven visit,
+ * just not new business). Also carries every still-upcoming appointment for an ads-attributed
+ * customer, the current calendar month's ad spend/ROI inputs (independent of [from, to] — "so far
+ * this month" is always the current month, whatever range is being viewed above it), and the ads
+ * spend figure itself.
  */
 public record MarketingAnalyticsDto(
         LocalDate from,
@@ -19,7 +21,14 @@ public record MarketingAnalyticsDto(
         Segment all,
         Segment fresh,
         Segment returning,
-        List<UpcomingAppointment> upcoming
+        List<UpcomingAppointment> upcoming,
+        /** Gross revenue for every ads customer, fixed to [1st of the current month, today] —
+         * independent of the requested [from, to] — so the ROI card always means "this month",
+         * matching the ad-spend figure below.
+         */
+        Segment currentMonthToDate,
+        /** Manually-entered ad spend for the current calendar month; zero if never entered. */
+        BigDecimal adSpendThisMonth
 ) {
     /** Distinct-customer / service-line-item / gross-revenue rollup for one customer segment.
      * serviceCount counts individual service line items (e.g. a mani+pedi visit counts as 2),

@@ -30,6 +30,7 @@ import type {
   KbRequest,
   KbRequestStatus,
   KbRequestTarget,
+  MarketingAdSource,
   MarketingAnalyticsData,
   MarketingDashboardData,
   RagCitation,
@@ -363,13 +364,19 @@ export const api = {
     proxyVoid(`/api/owner/marketing/stats-since?slug=${encodeURIComponent(slug)}`, 'PUT', { value }),
 
   // from/to are ISO dates (yyyy-MM-dd); omitting both defaults to month-to-date on the backend.
-  getMarketingAnalytics: (from?: string, to?: string) => {
+  // sources omitted defaults to every recognized ad platform (Meta + Google) on the backend.
+  getMarketingAnalytics: (from?: string, to?: string, sources?: MarketingAdSource[]) => {
     const params = new URLSearchParams();
     if (from) params.set('from', from);
     if (to) params.set('to', to);
+    if (sources) params.set('sources', sources.join(','));
     const qs = params.toString();
     return proxyGet<MarketingAnalyticsData>(`/api/owner/marketing/analytics${qs ? `?${qs}` : ''}`);
   },
+
+  setAdSpend: (year: number, month: number, amount: number) =>
+    proxyJson<{ year: number; month: number; amount: number }>(
+      '/api/owner/marketing/analytics/ad-spend', 'PUT', { year, month, amount }),
 };
 
 // The backend's default Spring error body is {"message": "...", "error": "...", "status": ...} —

@@ -2,7 +2,12 @@
 
 import { useMemo, useState } from 'react';
 import { api } from '../../../lib/api';
-import type { MarketingAnalyticsData, MarketingAnalyticsSegment, MarketingUpcomingAppointment } from '../../../lib/types';
+import type {
+  MarketingAdSource,
+  MarketingAnalyticsData,
+  MarketingAnalyticsSegment,
+  MarketingUpcomingAppointment,
+} from '../../../lib/types';
 
 const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -38,6 +43,9 @@ function fmtAppointment(iso: string): string {
   return `${day} · ${time}`;
 }
 
+const ALL_SOURCES: MarketingAdSource[] = ['META', 'GOOGLE'];
+const SOURCE_LABELS: Record<MarketingAdSource, string> = { META: 'Meta Ads', GOOGLE: 'Google Ads' };
+
 type PresetKey = 'mtd' | '7d' | '30d' | 'custom';
 type SegmentKey = 'all' | 'fresh' | 'returning';
 
@@ -45,16 +53,17 @@ export default function AnalyticsView({ initialData }: { initialData: MarketingA
   const [data, setData] = useState(initialData);
   const [preset, setPreset] = useState<PresetKey>('mtd');
   const [segment, setSegment] = useState<SegmentKey>('all');
+  const [sources, setSources] = useState<Set<MarketingAdSource>>(new Set(ALL_SOURCES));
   const [from, setFrom] = useState(initialData.from);
   const [to, setTo] = useState(initialData.to);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  async function load(nextFrom: string, nextTo: string) {
+  async function load(nextFrom: string, nextTo: string, nextSources: Set<MarketingAdSource>) {
     setLoading(true);
     setError('');
     try {
-      const result = await api.getMarketingAnalytics(nextFrom, nextTo);
+      const result = await api.getMarketingAnalytics(nextFrom, nextTo, Array.from(nextSources));
       setData(result);
       setFrom(result.from);
       setTo(result.to);
@@ -68,12 +77,19 @@ export default function AnalyticsView({ initialData }: { initialData: MarketingA
   function selectPreset(key: PresetKey) {
     setPreset(key);
     const range = key === 'mtd' ? monthToDateRange() : key === '7d' ? lastNDaysRange(7) : lastNDaysRange(30);
-    void load(range.from, range.to);
+    void load(range.from, range.to, sources);
   }
 
   function applyCustomRange() {
     setPreset('custom');
-    void load(from, to);
+    void load(from, to, sources);
+  }
+
+  function toggleSource(source: MarketingAdSource) {
+    const next = new Set(sources);
+    if (next.has(source)) next.delete(source); else next.add(source);
+    setSources(next);
+    void load(from, to, next);
   }
 
   const activeSegment: MarketingAnalyticsSegment = data[segment];
@@ -88,7 +104,9 @@ export default function AnalyticsView({ initialData }: { initialData: MarketingA
 
   return (
     <div>
-      <div className="flex flex-wrap gap-2">
+      <SourceFilter sources={sources} onToggle={toggleSource} />
+
+      <div className="mt-4 flex flex-wrap gap-2">
         <PresetButton label="Month to date" active={preset === 'mtd'} onClick={() => selectPreset('mtd')} />
         <PresetButton label="Last 7 days" active={preset === '7d'} onClick={() => selectPreset('7d')} />
         <PresetButton label="Last 30 days" active={preset === '30d'} onClick={() => selectPreset('30d')} />
@@ -160,12 +178,43 @@ export default function AnalyticsView({ initialData }: { initialData: MarketingA
           </>
         )}
       </div>
+
+      <AdSpendRoi data={data} onSaved={(amount) => setData((d) => ({ ...d, adSpendThisMonth: amount }))} />
     </div>
   );
 }
 
 function segmentLabel(key: SegmentKey): string {
   return key === 'fresh' ? 'new customers' : key === 'returning' ? 'returning customers' : 'ads customers';
+}
+
+function SourceFilter({
+  sources, onToggle,
+}: { sources: Set<MarketingAdSource>; onToggle: (s: MarketingAdSource) => void }) {
+  return (
+    <div className="rounded-lg p-3 ring-1 ring-zinc-200">
+      <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+        Counting customers from
+      </span>
+      <div className="mt-2 flex flex-wrap gap-4">
+        {ALL_SOURCES.map((s) => (
+          <label key={s} className="flex items-center gap-2 text-sm text-zinc-700">
+            <input
+              type="checkbox"
+              checked={sources.has(s)}
+              onChange={() => onToggle(s)}
+              className="h-4 w-4 rounded border-zinc-300"
+            />
+            {SOURCE_LABELS[s]}
+          </label>
+        ))}
+      </div>
+      <p className="mt-1 text-xs text-zinc-400">
+        Both are selected by default — everything below only ever counts customers whose first or latest
+        touch was one of the checked sources, never organic or direct traffic.
+      </p>
+    </div>
+  );
 }
 
 function SegmentTabs({ segment, onChange }: { segment: SegmentKey; onChange: (s: SegmentKey) => void }) {
@@ -258,6 +307,99 @@ function UpcomingList({ appointments }: { appointments: MarketingUpcomingAppoint
   );
 }
 
+// Ad spend is always "this calendar month", independent of whatever [from, to] range is selected
+// above — it pairs with currentMonthToDate, which the backend computes the same fixed way.
+function AdSpendRoi({
+  data, onSaved,
+}: { data: MarketingAnalyticsData; onSaved: (amount: number) => void }) {
+  const [spendInput, setSpendInput] = useState(data.adSpendThisMonth.toFixed(2));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  const now = new Date();
+  const monthLabel = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  async function save() {
+    const amount = Number(spendInput);
+    if (!Number.isFinite(amount) || amount < 0) {
+      setError('Enter a valid, non-negative amount.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const result = await api.setAdSpend(now.getFullYear(), now.getMonth() + 1, amount);
+      onSaved(result.amount);
+      setSpendInput(result.amount.toFixed(2));
+      setSavedAt(Date.now());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save ad spend.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const revenue = data.currentMonthToDate.grossRevenue;
+  const spend = data.adSpendThisMonth;
+  const hasSpend = spend > 0;
+  const roiMultiple = hasSpend ? revenue / spend : null;
+  const roiPercent = hasSpend ? ((revenue - spend) / spend) * 100 : null;
+
+  return (
+    <div className="mt-8 border-t border-zinc-100 pt-8">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-medium text-zinc-500">Ads ROI — {monthLabel}</h2>
+        <span className="text-xs text-zinc-400">always this calendar month, regardless of the range above</span>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-end gap-3 rounded-lg p-3 ring-1 ring-zinc-200">
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="font-medium text-zinc-500">Ad spend so far this month</span>
+          <div className="flex items-center gap-1">
+            <span className="text-zinc-400">$</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              value={spendInput}
+              onChange={(e) => setSpendInput(e.target.value)}
+              className="w-32 rounded border border-zinc-300 px-2 py-1.5 text-sm"
+            />
+          </div>
+        </label>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={save}
+          className="rounded bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+        >
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        {savedAt !== null && !busy && <span className="text-xs text-emerald-600">Saved</span>}
+      </div>
+      {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <StatCard label="Revenue this month" value={usd(revenue)} />
+        <StatCard label="Ad spend this month" value={usd(spend)} />
+        {hasSpend ? (
+          <StatCard
+            label="Return on ad spend"
+            value={`${roiMultiple!.toFixed(1)}x`}
+            hint={`${roiPercent! >= 0 ? '+' : ''}${roiPercent!.toFixed(0)}% ROI`}
+          />
+        ) : (
+          <div className="rounded-lg p-4 text-xs text-zinc-400 ring-1 ring-dashed ring-zinc-200">
+            Enter this month&apos;s ad spend above to see ROI.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PresetButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
@@ -274,11 +416,12 @@ function PresetButton({ label, active, onClick }: { label: string; active: boole
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-lg p-4 ring-1 ring-zinc-200">
       <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</div>
       <div className="mt-1 text-2xl font-semibold text-zinc-900">{value}</div>
+      {hint && <div className="mt-0.5 text-xs text-zinc-500">{hint}</div>}
     </div>
   );
 }
