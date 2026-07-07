@@ -261,6 +261,54 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
+    @DisplayName("still shows a same-day appointment as upcoming even though its exact start time has already passed")
+    void showsSameDayAppointmentEvenIfStartTimeAlreadyPassed() {
+        // FIXED_CLOCK is 2026-07-07T12:00:00Z (noon) — this booking started at 2am the same day.
+        when(contactsRepository.findAdsAttributedContacts()).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-01-01T00:00:00Z"), "META")));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
+
+        var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
+        var earlierToday = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-07T02:00:00Z", null, null,
+                "loc-1", "cust-1", null, null, List.of(seg));
+        when(square.bookingsForCustomer("cust-1")).thenReturn(List.of(earlierToday));
+        when(square.catalogPrices(List.of("var-mani"))).thenReturn(Map.of("var-mani", new BigDecimal("50.00")));
+        when(square.catalogNames(List.of("var-mani"))).thenReturn(Map.of("var-mani", "Manicure"));
+        when(square.customerNames(Set.of("cust-1"))).thenReturn(Map.of("cust-1", "Fowsiyo"));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), MarketingAnalyticsService.ALL_SOURCES);
+
+        assertThat(dto.upcoming()).hasSize(1);
+        assertThat(dto.upcoming().get(0).customerName()).isEqualTo("Fowsiyo");
+    }
+
+    @Test
+    @DisplayName("excludes a same-day appointment from upcoming once it's already been paid this month")
+    void excludesAlreadyPaidBookingFromUpcoming() {
+        when(contactsRepository.findAdsAttributedContacts()).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-01-01T00:00:00Z"), "META")));
+        // This month's aggregation already has a paid service tied to bk-1 — same booking as below.
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
+                new AttributedService("p1", "P", "2026-07-07", "FIRST", "Manicure", new BigDecimal("85.00"),
+                        BigDecimal.ZERO, new BigDecimal("85.00"), BigDecimal.ZERO, true, 1, 1, false, "CARD",
+                        null, "bk-1", "cust-1", "Customer")
+        )));
+
+        var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
+        var paidToday = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-07T02:00:00Z", null, null,
+                "loc-1", "cust-1", null, null, List.of(seg));
+        when(square.bookingsForCustomer("cust-1")).thenReturn(List.of(paidToday));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), MarketingAnalyticsService.ALL_SOURCES);
+
+        assertThat(dto.upcoming()).isEmpty();
+        assertThat(dto.all().customerCount()).isEqualTo(1);
+        assertThat(dto.all().grossRevenue()).isEqualByComparingTo("85.00");
+    }
+
+    @Test
     @DisplayName("ad spend defaults to zero when nothing has been entered for the current month")
     void adSpendDefaultsToZero() {
         when(contactsRepository.findAdsAttributedContacts()).thenReturn(List.of());
