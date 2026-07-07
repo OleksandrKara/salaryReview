@@ -50,6 +50,8 @@ export default function ManagerTimeAdmin({
     return <p className="rounded-lg p-6 text-center text-sm text-zinc-500 ring-1 ring-zinc-200">{t(language, 'timeNoManagers')}</p>;
   }
 
+  const totalMinutes = rows.reduce((sum, r) => sum + r.monthMinutes, 0);
+
   const RateEditor = ({ r }: { r: AdminTimesheetRow }) => (
     <div className="flex items-center gap-1">
       <span className="text-zinc-400">$</span>
@@ -92,6 +94,11 @@ export default function ManagerTimeAdmin({
   return (
     <div>
       {error && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
+
+      <div className="mb-4 flex items-baseline justify-between rounded-lg bg-zinc-50 px-4 py-3 ring-1 ring-zinc-200">
+        <span className="text-sm text-zinc-500">{t(language, 'timeAllManagersTotal')}</span>
+        <span className="text-lg font-semibold tabular-nums text-zinc-900">{fmtHM(totalMinutes)}</span>
+      </div>
 
       {/* Mobile cards */}
       <div className="flex flex-col gap-3 sm:hidden">
