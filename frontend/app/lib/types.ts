@@ -764,16 +764,40 @@ export interface MarketingDashboardData {
 
 // --- Marketing analytics (com.salonreview.web.MarketingAnalyticsController) ---
 
-export interface MarketingAnalyticsData {
-  /** ISO-8601 date (yyyy-MM-dd), inclusive on both ends. */
-  from: string;
-  to: string;
+export interface MarketingAnalyticsSegment {
   /** Distinct ads-attributed (Meta/Google paid click) customers with a service in range. */
   customerCount: number;
   /** Individual service line items — a mani+pedi visit counts as 2. */
   serviceCount: number;
   /** Sum of menu-price ("gross") revenue for those services. */
   grossRevenue: number;
+}
+
+export interface MarketingUpcomingAppointment {
+  customerId: string;
+  customerName: string;
+  /** Multi-service visits are joined with " + ", e.g. "Manicure + Pedicure". */
+  serviceName: string;
+  /** ISO-8601 instant. */
+  startAt: string;
+  /** Summed catalog list price across the visit's service(s). */
+  price: number;
+  /** Whether Square's record for this customer was created fresh off this ad touch. */
+  freshFromAds: boolean;
+}
+
+export interface MarketingAnalyticsData {
+  /** ISO-8601 date (yyyy-MM-dd), inclusive on both ends. */
+  from: string;
+  to: string;
+  /** Every ads-attributed customer with a service in range. */
+  all: MarketingAnalyticsSegment;
+  /** Only customers whose Square record was created fresh off the ad touch — a genuinely new customer. */
+  fresh: MarketingAnalyticsSegment;
+  /** Only customers who already existed in Square before coming back through an ad. */
+  returning: MarketingAnalyticsSegment;
+  /** Every still-upcoming appointment for an ads-attributed customer, regardless of [from, to]. */
+  upcoming: MarketingUpcomingAppointment[];
 }
 
 // --- Abuse blocks (com.salonreview.web.AbuseBlocksController) ---
