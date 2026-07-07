@@ -8,7 +8,6 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -109,24 +108,31 @@ public class MarketingContactsRepository {
     }
 
     /** Square customer ids for contacts whose first- or latest-touch traffic source is a paid ad
-     * click. classify_traffic_source() (salonLandings) always starts a paid-click label with
-     * "Meta Ads" or "Google Ads" — either the bare "Meta Ads (click)" fallback, or, when the click
-     * also carried UTM params (the common case for a real Meta ad — fbclid AND a full UTM set
-     * arrive together), the richer "Meta Ads (ig / Instagram_Stories / <campaign>)" form. A prefix
-     * match catches both; an exact match (the previous version of this query) missed every
-     * UTM-tagged ad click entirely, since fbclid/gclid only produces the bare fallback when no UTM
-     * is present. Only contacts with a known Square customer id are useful here — one is required
-     * to later match against SquareMonthAggregator's AttributedService.customerId().
+     * click, each with the earliest moment we ever captured that contact through an ad — used to
+     * tell a customer whose Square record was created fresh off this ad touch from one who already
+     * existed in Square and simply came back through one. classify_traffic_source() (salonLandings)
+     * always starts a paid-click label with "Meta Ads" or "Google Ads" — either the bare "Meta Ads
+     * (click)" fallback, or, when the click also carried UTM params (the common case for a real Meta
+     * ad — fbclid AND a full UTM set arrive together), the richer "Meta Ads (ig / Instagram_Stories /
+     * <campaign>)" form. A prefix match catches both; an exact match (an earlier version of this
+     * query) missed every UTM-tagged ad click entirely, since fbclid/gclid only produces the bare
+     * fallback when no UTM is present. Only contacts with a known Square customer id are useful here
+     * — one is required to later match against SquareMonthAggregator's AttributedService.customerId().
      */
-    public Set<String> findAdsAttributedSquareCustomerIds() {
+    public Map<String, Instant> findAdsAttributedCustomersWithFirstTouch() {
         String sql = """
-                SELECT DISTINCT square_customer_id
+                SELECT square_customer_id, MIN(created_at) AS first_touch
                 FROM marketing.contacts
                 WHERE square_customer_id IS NOT NULL
                   AND (original_traffic_source LIKE 'Meta Ads%' OR original_traffic_source LIKE 'Google Ads%'
                        OR marketing_traffic_source LIKE 'Meta Ads%' OR marketing_traffic_source LIKE 'Google Ads%')
+                GROUP BY square_customer_id
                 """;
-        return Set.copyOf(jdbcTemplate.queryForList(sql, String.class));
+        Map<String, Instant> out = new java.util.LinkedHashMap<>();
+        jdbcTemplate.query(sql, rs -> {
+            out.put(rs.getString("square_customer_id"), toInstant(rs.getTimestamp("first_touch")));
+        });
+        return out;
     }
 
     /** Every submission this phone number ever made, most recent first. Phone is the sole match

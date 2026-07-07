@@ -2,6 +2,7 @@ package com.salonreview.marketing;
 
 import com.salonreview.domain.SalonConfig;
 import com.salonreview.repo.SalonConfigRepository;
+import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareMonthAggregator;
 import com.salonreview.square.SquareMonthAggregator.AttributedService;
 import com.salonreview.square.SquareMonthAggregator.MonthAggregation;
@@ -11,10 +12,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -24,6 +26,7 @@ class MarketingAnalyticsServiceTest {
 
     private MarketingContactsRepository contactsRepository;
     private SquareMonthAggregator aggregator;
+    private SquareClient square;
     private SalonConfigRepository salonConfig;
     private MarketingAnalyticsService service;
 
@@ -31,10 +34,11 @@ class MarketingAnalyticsServiceTest {
     void setUp() {
         contactsRepository = mock(MarketingContactsRepository.class);
         aggregator = mock(SquareMonthAggregator.class);
+        square = mock(SquareClient.class);
         salonConfig = mock(SalonConfigRepository.class);
         when(salonConfig.findById(1)).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
-        service = new MarketingAnalyticsService(contactsRepository, aggregator, salonConfig);
+        service = new MarketingAnalyticsService(contactsRepository, aggregator, square, salonConfig);
     }
 
     private static AttributedService svc(String date, String customerId, String gross) {
@@ -51,7 +55,9 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("sums gross and counts distinct customers/services for ads-attributed customers only, within range")
     void aggregatesAdsAttributedServicesInRange() {
-        when(contactsRepository.findAdsAttributedSquareCustomerIds()).thenReturn(Set.of("cust-ads-1", "cust-ads-2"));
+        when(contactsRepository.findAdsAttributedCustomersWithFirstTouch()).thenReturn(Map.of(
+                "cust-ads-1", Instant.parse("2026-07-01T00:00:00Z"),
+                "cust-ads-2", Instant.parse("2026-07-01T00:00:00Z")));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
                 svc("2026-07-05", "cust-ads-1", "93.00"),
                 svc("2026-07-10", "cust-ads-1", "45.00"), // same customer, second visit
@@ -61,15 +67,16 @@ class MarketingAnalyticsServiceTest {
 
         MarketingAnalyticsDto dto = service.analytics(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31));
 
-        assertThat(dto.customerCount()).isEqualTo(2);
-        assertThat(dto.serviceCount()).isEqualTo(3);
-        assertThat(dto.grossRevenue()).isEqualByComparingTo("223.00");
+        assertThat(dto.all().customerCount()).isEqualTo(2);
+        assertThat(dto.all().serviceCount()).isEqualTo(3);
+        assertThat(dto.all().grossRevenue()).isEqualByComparingTo("223.00");
     }
 
     @Test
     @DisplayName("excludes services outside the requested date range even within the same month")
     void excludesServicesOutsideDateRange() {
-        when(contactsRepository.findAdsAttributedSquareCustomerIds()).thenReturn(Set.of("cust-ads-1"));
+        when(contactsRepository.findAdsAttributedCustomersWithFirstTouch())
+                .thenReturn(Map.of("cust-ads-1", Instant.parse("2026-07-01T00:00:00Z")));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
                 svc("2026-07-05", "cust-ads-1", "93.00"),
                 svc("2026-07-20", "cust-ads-1", "85.00")
@@ -77,14 +84,15 @@ class MarketingAnalyticsServiceTest {
 
         MarketingAnalyticsDto dto = service.analytics(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 10));
 
-        assertThat(dto.serviceCount()).isEqualTo(1);
-        assertThat(dto.grossRevenue()).isEqualByComparingTo("93.00");
+        assertThat(dto.all().serviceCount()).isEqualTo(1);
+        assertThat(dto.all().grossRevenue()).isEqualByComparingTo("93.00");
     }
 
     @Test
     @DisplayName("spans multiple calendar months for a custom range crossing a month boundary")
     void spansMultipleMonths() {
-        when(contactsRepository.findAdsAttributedSquareCustomerIds()).thenReturn(Set.of("cust-ads-1"));
+        when(contactsRepository.findAdsAttributedCustomersWithFirstTouch())
+                .thenReturn(Map.of("cust-ads-1", Instant.parse("2026-06-01T00:00:00Z")));
         when(aggregator.aggregate(2026, 6, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 6, List.of(
                 svc("2026-06-28", "cust-ads-1", "93.00")
         )));
@@ -94,20 +102,96 @@ class MarketingAnalyticsServiceTest {
 
         MarketingAnalyticsDto dto = service.analytics(LocalDate.of(2026, 6, 25), LocalDate.of(2026, 7, 5));
 
-        assertThat(dto.serviceCount()).isEqualTo(2);
-        assertThat(dto.grossRevenue()).isEqualByComparingTo("178.00");
+        assertThat(dto.all().serviceCount()).isEqualTo(2);
+        assertThat(dto.all().grossRevenue()).isEqualByComparingTo("178.00");
     }
 
     @Test
     @DisplayName("short-circuits with zeroed results, skipping Square entirely, when no contact is ads-attributed")
     void shortCircuitsWhenNoAdsAttributedContacts() {
-        when(contactsRepository.findAdsAttributedSquareCustomerIds()).thenReturn(Set.of());
+        when(contactsRepository.findAdsAttributedCustomersWithFirstTouch()).thenReturn(Map.of());
 
         MarketingAnalyticsDto dto = service.analytics(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31));
 
-        assertThat(dto.customerCount()).isZero();
-        assertThat(dto.serviceCount()).isZero();
-        assertThat(dto.grossRevenue()).isEqualByComparingTo("0.00");
+        assertThat(dto.all().customerCount()).isZero();
+        assertThat(dto.all().serviceCount()).isZero();
+        assertThat(dto.all().grossRevenue()).isEqualByComparingTo("0.00");
         org.mockito.Mockito.verifyNoInteractions(aggregator);
+    }
+
+    @Test
+    @DisplayName("splits fresh-to-Square vs already-existing customers by comparing Square creation date to first ad touch")
+    void splitsFreshFromReturningCustomers() {
+        when(contactsRepository.findAdsAttributedCustomersWithFirstTouch()).thenReturn(Map.of(
+                "cust-fresh", Instant.parse("2026-07-05T12:00:00Z"),
+                "cust-returning", Instant.parse("2026-07-05T12:00:00Z")));
+        // Fresh: Square created the record right at the ad touch. Returning: Square had them a year earlier.
+        when(square.customerCreatedAts(java.util.Set.of("cust-fresh", "cust-returning")))
+                .thenReturn(Map.of(
+                        "cust-fresh", Instant.parse("2026-07-05T12:05:00Z"),
+                        "cust-returning", Instant.parse("2025-01-01T00:00:00Z")));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
+                svc("2026-07-10", "cust-fresh", "100.00"),
+                svc("2026-07-12", "cust-returning", "80.00")
+        )));
+
+        MarketingAnalyticsDto dto = service.analytics(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31));
+
+        assertThat(dto.all().customerCount()).isEqualTo(2);
+        assertThat(dto.fresh().customerCount()).isEqualTo(1);
+        assertThat(dto.fresh().grossRevenue()).isEqualByComparingTo("100.00");
+        assertThat(dto.returning().customerCount()).isEqualTo(1);
+        assertThat(dto.returning().grossRevenue()).isEqualByComparingTo("80.00");
+    }
+
+    @Test
+    @DisplayName("treats an unresolvable Square creation date as returning, not fresh")
+    void unknownCreationDateIsTreatedAsReturning() {
+        when(contactsRepository.findAdsAttributedCustomersWithFirstTouch())
+                .thenReturn(Map.of("cust-unknown", Instant.parse("2026-07-05T12:00:00Z")));
+        when(square.customerCreatedAts(java.util.Set.of("cust-unknown")))
+                .thenReturn(Map.of()); // lookup failed / customer not found
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
+                svc("2026-07-10", "cust-unknown", "50.00")
+        )));
+
+        MarketingAnalyticsDto dto = service.analytics(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31));
+
+        assertThat(dto.fresh().customerCount()).isZero();
+        assertThat(dto.returning().customerCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("lists upcoming ads-attributed appointments, one row per booking with segments summed, tagged fresh/returning")
+    void listsUpcomingAppointments() {
+        when(contactsRepository.findAdsAttributedCustomersWithFirstTouch())
+                .thenReturn(Map.of("cust-1", Instant.parse("2026-01-01T00:00:00Z")));
+        when(square.customerCreatedAts(java.util.Set.of("cust-1")))
+                .thenReturn(Map.of("cust-1", Instant.parse("2026-01-01T00:00:00Z")));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
+
+        var seg1 = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
+        var seg2 = new SquareClient.AppointmentSegment("team-1", "var-pedi", 60);
+        var future = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-20T18:00:00Z", null, null,
+                "loc-1", "cust-1", null, null, List.of(seg1, seg2));
+        var past = new SquareClient.Booking("bk-0", "ACCEPTED", "2026-06-01T18:00:00Z", null, null,
+                "loc-1", "cust-1", null, null, List.of(seg1));
+        var cancelled = new SquareClient.Booking("bk-2", "CANCELLED_BY_CUSTOMER", "2026-07-25T18:00:00Z", null, null,
+                "loc-1", "cust-1", null, null, List.of(seg1));
+        when(square.bookingsForCustomer("cust-1")).thenReturn(List.of(future, past, cancelled));
+        when(square.catalogPrices(List.of("var-mani", "var-pedi")))
+                .thenReturn(Map.of("var-mani", new BigDecimal("50.00"), "var-pedi", new BigDecimal("70.00")));
+        when(square.catalogNames(List.of("var-mani", "var-pedi")))
+                .thenReturn(Map.of("var-mani", "Manicure", "var-pedi", "Pedicure"));
+        when(square.customerNames(java.util.Set.of("cust-1"))).thenReturn(Map.of("cust-1", "Jane Doe"));
+
+        MarketingAnalyticsDto dto = service.analytics(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31));
+
+        assertThat(dto.upcoming()).hasSize(1);
+        MarketingAnalyticsDto.UpcomingAppointment appt = dto.upcoming().get(0);
+        assertThat(appt.customerName()).isEqualTo("Jane Doe");
+        assertThat(appt.serviceName()).isEqualTo("Manicure + Pedicure");
+        assertThat(appt.price()).isEqualByComparingTo("120.00");
+        assertThat(appt.freshFromAds()).isTrue();
     }
 }

@@ -311,25 +311,52 @@ public class SquareClient {
         return i + " · " + v;
     }
 
-    // Square's bulk-retrieve-customers endpoint 404s on this account, so names are fetched one GET
-    // each — but cached process-wide (names rarely change) and the misses fetched in parallel, so a
-    // month's worth of customers only ever costs one round of lookups.
-    private final Map<String, String> customerNameCache = new java.util.concurrent.ConcurrentHashMap<>();
+    // Square's bulk-retrieve-customers endpoint 404s on this account, so customers are fetched one GET
+    // each — but cached process-wide (names/creation dates never change) and the misses fetched in
+    // parallel, so a month's worth of customers only ever costs one round of lookups. A sentinel
+    // "not found" Customer (all-null fields) is cached too, so a bad id isn't refetched forever.
+    private static final Customer NOT_FOUND = new Customer(null, null, null, null);
+    private final Map<String, Customer> customerCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** Display names for the given customer ids. Best-effort, cached; blanks for any we can't resolve. */
     public Map<String, String> customerNames(Collection<String> customerIds) {
-        List<String> ids = customerIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
-        List<String> missing = ids.stream().filter(id -> !customerNameCache.containsKey(id)).toList();
-        if (!missing.isEmpty()) {
-            // Empty string is cached for "looked up, no name" so we don't refetch it.
-            missing.parallelStream().forEach(id -> customerNameCache.put(id, fetchCustomerName(id)));
-        }
         Map<String, String> names = new HashMap<>();
-        for (String id : ids) {
-            String n = customerNameCache.get(id);
-            if (n != null && !n.isEmpty()) names.put(id, n);
+        for (var e : fetchCustomers(customerIds).entrySet()) {
+            String n = e.getValue().fullName();
+            if (!n.isEmpty()) names.put(e.getKey(), n);
         }
         return names;
+    }
+
+    /** When each customer's Square record was created. Best-effort, cached; missing for any we can't
+     * resolve — used to tell a brand-new-to-Square customer from one who already existed before
+     * coming back through an ad.
+     */
+    public Map<String, Instant> customerCreatedAts(Collection<String> customerIds) {
+        Map<String, Instant> createdAts = new HashMap<>();
+        for (var e : fetchCustomers(customerIds).entrySet()) {
+            if (e.getValue().createdAt() == null) continue;
+            try {
+                createdAts.put(e.getKey(), Instant.parse(e.getValue().createdAt()));
+            } catch (java.time.format.DateTimeParseException ignored) {
+                // unparseable — leave this customer out rather than guess
+            }
+        }
+        return createdAts;
+    }
+
+    private Map<String, Customer> fetchCustomers(Collection<String> customerIds) {
+        List<String> ids = customerIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
+        List<String> missing = ids.stream().filter(id -> !customerCache.containsKey(id)).toList();
+        if (!missing.isEmpty()) {
+            missing.parallelStream().forEach(id -> customerCache.put(id, fetchCustomer(id).orElse(NOT_FOUND)));
+        }
+        Map<String, Customer> out = new HashMap<>();
+        for (String id : ids) {
+            Customer c = customerCache.get(id);
+            if (c != null && c != NOT_FOUND) out.put(id, c);
+        }
+        return out;
     }
 
     /**
@@ -386,17 +413,13 @@ public class SquareClient {
         return resp == null || resp.invoices() == null ? List.of() : resp.invoices();
     }
 
-    private String fetchCustomerName(String id) {
+    private java.util.Optional<Customer> fetchCustomer(String id) {
         try {
             CustomerResponse resp = http.get().uri("/v2/customers/{id}", id).retrieve().body(CustomerResponse.class);
-            if (resp != null && resp.customer() != null) {
-                return ((resp.customer().givenName() == null ? "" : resp.customer().givenName()) + " "
-                        + (resp.customer().familyName() == null ? "" : resp.customer().familyName())).trim();
-            }
+            return java.util.Optional.ofNullable(resp == null ? null : resp.customer());
         } catch (RuntimeException ignored) {
-            // unresolvable — fall through to empty
+            return java.util.Optional.empty(); // unresolvable
         }
-        return "";
     }
 
     /** Convert Square minor units (cents) to dollars; null money is treated as zero. */
@@ -455,7 +478,7 @@ public class SquareClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record Customer(String id, String givenName, String familyName) {
+    public record Customer(String id, String givenName, String familyName, String createdAt) {
         public String fullName() {
             return ((givenName == null ? "" : givenName) + " " + (familyName == null ? "" : familyName)).trim();
         }
