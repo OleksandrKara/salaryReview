@@ -33,6 +33,14 @@ public class SopVersion {
     @Column(name = "body_ru", columnDefinition = "text")
     private String bodyRu;
 
+    /** What changed vs. the previous version, in the author's words; null/blank shows no notice. */
+    @Column(name = "change_note", columnDefinition = "text")
+    private String changeNote;
+
+    /** Russian translation of {@link #changeNote}; null falls back to {@link #changeNote}. */
+    @Column(name = "change_note_ru", columnDefinition = "text")
+    private String changeNoteRu;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     @Builder.Default

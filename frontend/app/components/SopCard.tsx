@@ -34,6 +34,14 @@ export default function SopCard({
   const [viewLang, setViewLang] = useState<Language>(lang === 'RU' && hasRu ? 'RU' : 'EN');
   const body = viewLang === 'RU' && hasRu ? sop.currentVersion!.bodyRu! : sop.currentVersion?.body || '';
 
+  // "What changed" notice — only from v2 on (a v1 has nothing to compare against), and only when the
+  // author actually wrote one; blank shows nothing. Falls back to English like the body does.
+  const hasChangeNote = !!(sop.currentVersion?.changeNote?.trim() || sop.currentVersion?.changeNoteRu?.trim());
+  const showChangeNote = (sop.currentVersion?.versionNumber ?? 0) >= 2 && hasChangeNote;
+  const changeNote = viewLang === 'RU' && sop.currentVersion?.changeNoteRu?.trim()
+    ? sop.currentVersion.changeNoteRu
+    : sop.currentVersion?.changeNote;
+
   // Enable confirm once the reader reaches the end (the card remounts per SOP via key, so this resets).
   function checkScrolled() {
     const el = scrollRef.current;
@@ -87,6 +95,17 @@ export default function SopCard({
           {sop.category} · v{sop.currentVersion?.versionNumber} · {t(lang, 'sopAckIntro')}
         </p>
       </div>
+
+      {/* What changed — shown up front, before the full body, so a returning reader can spot what's
+          new without re-reading everything. */}
+      {showChangeNote ? (
+        <div className="shrink-0 border-b border-[var(--line)] bg-[var(--accent-soft)] px-5 py-3">
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--accent-ink)]">
+            {t(lang, 'sopWhatChanged')}
+          </p>
+          <div className="text-sm text-[var(--ink)]" style={{ whiteSpace: 'pre-wrap' }}>{changeNote}</div>
+        </div>
+      ) : null}
 
       {/* Scrollable content */}
       <div

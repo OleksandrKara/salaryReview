@@ -31,9 +31,19 @@ public class KbAiDraftService {
 
     private static final long MAX_TRANSLATE_NOTE_TOKENS = 500L;
     private static final String TRANSLATE_NOTE_SYSTEM_PROMPT = """
-            Translate this short internal note from English into natural, fluent Russian. The note \
-            is context a manager is attaching to a knowledge-base gap report, for a Russian-speaking \
-            owner to read. Return only the translated text — no preamble, no quotes, no explanation.""";
+            Translate this short internal note from English into natural, fluent Russian, for a \
+            Russian-speaking staff member to read (e.g. context on a knowledge-base gap report, or a \
+            short summary of what changed in a policy document). Return only the translated text — \
+            no preamble, no quotes, no explanation.""";
+
+    private static final long MAX_CHANGE_SUMMARY_TOKENS = 300L;
+    private static final String CHANGE_SUMMARY_SYSTEM_PROMPT = """
+            Compare the OLD and NEW versions of an internal SOP (standard operating procedure) for a \
+            nail salon and describe, in 1-3 short bullet points, only what meaningfully changed for \
+            staff reading it — new or changed policy, pricing, steps, or wording that alters meaning. \
+            Ignore purely cosmetic changes (formatting, typos, reordering) unless nothing else changed \
+            — in that case say so in one short line. Be concise: a manager should read it in a few \
+            seconds. Return only the bullet points as Markdown ("- point"), no preamble, no heading.""";
 
     private static final String TRANSLATE_SYSTEM_PROMPT = """
             You translate a nail salon's internal knowledge-base articles from English into Russian for \
@@ -171,6 +181,47 @@ public class KbAiDraftService {
                     .trim();
             if (trace != null) trace.complete(Map.of("length", translated.length()), null, null);
             return translated;
+        } catch (RuntimeException e) {
+            if (trace != null) trace.complete(null, null, e.toString());
+            throw e;
+        }
+    }
+
+    /**
+     * Draft a short "what changed" note (English) by comparing a SOP's previous body to its new one.
+     * {@code oldBody} is null/blank for a brand-new SOP's first version.
+     *
+     * @throws IllegalStateException when no AI feature is enabled (no Anthropic bean / key)
+     */
+    public String summarizeSopChange(String oldBody, String newBody) {
+        AnthropicClient client = anthropicClientProvider.getIfAvailable();
+        if (client == null) {
+            throw new IllegalStateException(
+                    "AI drafting is unavailable — enable an AI feature (RAG or triage) and set ANTHROPIC_API_KEY.");
+        }
+
+        LangSmithTracer tracer = tracerProvider.getIfAvailable();
+        LangSmithTracer.Trace trace = (tracer == null) ? null : tracer.startTrace("sop-change-summary",
+                Map.of("model", MODEL), Map.of("newChars", String.valueOf(newBody.length())));
+
+        String prompt = "OLD:\n" + (oldBody == null || oldBody.isBlank() ? "(none — this is the first version)" : oldBody)
+                + "\n\nNEW:\n" + newBody;
+
+        try {
+            MessageCreateParams params = MessageCreateParams.builder()
+                    .model(MODEL)
+                    .maxTokens(MAX_CHANGE_SUMMARY_TOKENS)
+                    .system(CHANGE_SUMMARY_SYSTEM_PROMPT)
+                    .addUserMessage(prompt)
+                    .build();
+
+            String summary = client.messages().create(params).content().stream()
+                    .flatMap(cb -> cb.text().stream())
+                    .map(t -> t.text())
+                    .collect(Collectors.joining())
+                    .trim();
+            if (trace != null) trace.complete(Map.of("length", summary.length()), null, null);
+            return summary;
         } catch (RuntimeException e) {
             if (trace != null) trace.complete(null, null, e.toString());
             throw e;
