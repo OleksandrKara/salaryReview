@@ -46,6 +46,8 @@ const STRINGS = {
   },
   sopAckRemaining: { EN: 'to confirm', RU: 'к подтверждению' },
   sopWhatChanged: { EN: "What's changed in this version", RU: 'Что изменилось в этой версии' },
+  sopNewVersionBadge: { EN: 'New version', RU: 'Новая версия' },
+  sopContinueToRead: { EN: 'Continue to the full SOP →', RU: 'Перейти к полному регламенту →' },
 
   // Manager home (/manager)
   mgrTitle: { EN: 'Manager', RU: 'Менеджер' },
