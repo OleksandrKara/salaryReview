@@ -49,6 +49,30 @@ const STRINGS = {
   sopNewVersionBadge: { EN: 'New version', RU: 'Новая версия' },
   sopContinueToRead: { EN: 'Continue to the full SOP →', RU: 'Перейти к полному регламенту →' },
 
+  // First-sign-in "before you get started" explainer, shown once right after choosing a language.
+  sopIntroTitle: { EN: 'Before you get started', RU: 'Прежде чем начать' },
+  sopIntroBody1: {
+    EN: 'We have SOPs (standard operating procedures) that we expect you to read and follow.',
+    RU: 'У нас есть регламенты (SOPs), которые мы просим вас прочитать и соблюдать.',
+  },
+  sopIntroBody2: {
+    EN: "So before getting started with the platform, we need you to read and acknowledge each one first.",
+    RU: 'Поэтому прежде чем начать работу с платформой, нужно прочитать и подтвердить каждый из них.',
+  },
+  sopIntroBody3: {
+    EN: "You'll also be able to revisit them later anytime, from the menu.",
+    RU: 'Вы всегда сможете вернуться к ним позже — через меню.',
+  },
+  sopIntroBody4: {
+    EN: "Each SOP has a version — once it's updated, we'll tell you what changed and ask you to review and acknowledge it again.",
+    RU: 'У каждого регламента есть версия — когда она обновится, мы покажем, что изменилось, и попросим подтвердить снова.',
+  },
+  sopIntroFooter: {
+    EN: 'Thank you! The next screen will have your first SOP to review.',
+    RU: 'Спасибо! На следующем экране — первый регламент для проверки.',
+  },
+  sopIntroButton: { EN: "Let's get started →", RU: 'Начнём →' },
+
   // Manager home (/manager)
   mgrTitle: { EN: 'Manager', RU: 'Менеджер' },
   mgrSubtitle: {
