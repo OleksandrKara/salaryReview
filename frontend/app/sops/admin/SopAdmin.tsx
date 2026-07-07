@@ -138,6 +138,8 @@ function SopDetail({ sop, onChanged }: { sop: Sop; onChanged: (s: Sop) => void }
   const [priority, setPriority] = useState(String(sop.priority));
   const [newDraft, setNewDraft] = useState<string | null>(null);
   const [newDraftRu, setNewDraftRu] = useState('');
+  const [changeNote, setChangeNote] = useState('');
+  const [changeNoteRu, setChangeNoteRu] = useState('');
   const [compare, setCompare] = useState<SopVersion | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -160,9 +162,14 @@ function SopDetail({ sop, onChanged }: { sop: Sop; onChanged: (s: Sop) => void }
     if (newDraft == null) return;
     setBusy(true);
     try {
-      await api.addSopVersion(sop.id, newDraft, newDraftRu.trim() ? newDraftRu : null);
+      await api.addSopVersion(
+        sop.id, newDraft, newDraftRu.trim() ? newDraftRu : null,
+        changeNote.trim() ? changeNote : null, changeNoteRu.trim() ? changeNoteRu : null,
+      );
       setNewDraft(null);
       setNewDraftRu('');
+      setChangeNote('');
+      setChangeNoteRu('');
       load();
     } finally { setBusy(false); }
   }
@@ -225,14 +232,25 @@ function SopDetail({ sop, onChanged }: { sop: Sop; onChanged: (s: Sop) => void }
         )}
         {newDraft == null ? (
           <button
-            onClick={() => { setNewDraft(currentBody); setNewDraftRu(sop.currentVersion?.bodyRu ?? ''); }}
+            onClick={() => {
+              setNewDraft(currentBody); setNewDraftRu(sop.currentVersion?.bodyRu ?? '');
+              setChangeNote(''); setChangeNoteRu('');
+            }}
             className="mt-2 rounded px-2 py-1 text-xs ring-1 ring-zinc-200"
           >
             New draft
           </button>
         ) : (
-          <div className="mt-2 space-y-2">
+          <div className="mt-2 space-y-3">
             <BilingualBody body={newDraft} bodyRu={newDraftRu} onBody={(v) => setNewDraft(v)} onBodyRu={setNewDraftRu} height={260} />
+            <ChangeNoteEditor
+              changeNote={changeNote}
+              changeNoteRu={changeNoteRu}
+              onChangeNote={setChangeNote}
+              onChangeNoteRu={setChangeNoteRu}
+              oldBody={currentBody}
+              newBody={newDraft}
+            />
             <div className="flex gap-2">
               <button onClick={addDraft} disabled={busy} className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">Save draft</button>
               <button onClick={() => setNewDraft(null)} className="rounded-lg px-3 py-1.5 text-xs ring-1 ring-zinc-200">Cancel</button>
@@ -245,6 +263,12 @@ function SopDetail({ sop, onChanged }: { sop: Sop; onChanged: (s: Sop) => void }
       {compare ? (
         <div className="space-y-2 rounded-lg bg-zinc-50 p-3">
           <h3 className="text-xs font-semibold">Publish v{compare.versionNumber} — compare</h3>
+          {compare.changeNote ? (
+            <div className="rounded bg-amber-50 p-2 text-xs text-amber-800">
+              <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">What changed (shown to staff)</div>
+              {compare.changeNote}
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div>
               <div className="mb-1 text-[10px] uppercase text-zinc-400">Current live{sop.currentVersion ? ` (v${sop.currentVersion.versionNumber})` : ' (none)'}</div>
@@ -354,6 +378,114 @@ function BilingualBody({
       </div>
       {error ? <p className="mt-1 text-xs text-red-600">{error}</p> : null}
       {lang === 'RU' ? <p className="mt-1 text-[10px] text-zinc-400">Readers see English when this is empty.</p> : null}
+    </div>
+  );
+}
+
+// "What changed" note for a new draft — shown to staff reviewing v2+ before the full body, so they
+// can spot what's new without re-reading everything. Optional; left blank shows nothing. AI can draft
+// the English summary by diffing the old/new body, then translate it to Russian in one click.
+function ChangeNoteEditor({
+  changeNote,
+  changeNoteRu,
+  onChangeNote,
+  onChangeNoteRu,
+  oldBody,
+  newBody,
+}: {
+  changeNote: string;
+  changeNoteRu: string;
+  onChangeNote: (v: string) => void;
+  onChangeNoteRu: (v: string) => void;
+  oldBody: string;
+  newBody: string;
+}) {
+  const [lang, setLang] = useState<'EN' | 'RU'>('EN');
+  const [summarizing, setSummarizing] = useState(false);
+  const [translating, setTranslating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function summarize() {
+    setSummarizing(true);
+    setError(null);
+    try {
+      const { markdown } = await api.aiSummarizeSopChange(oldBody, newBody);
+      onChangeNote(markdown);
+    } catch {
+      setError('AI summary is unavailable right now.');
+    } finally {
+      setSummarizing(false);
+    }
+  }
+
+  async function translate() {
+    if (!changeNote.trim()) {
+      setError('Add or generate the English note first, then translate.');
+      return;
+    }
+    setTranslating(true);
+    setError(null);
+    try {
+      const { markdown } = await api.aiTranslateSopNote(changeNote);
+      onChangeNoteRu(markdown);
+    } catch {
+      setError('AI translation is unavailable right now.');
+    } finally {
+      setTranslating(false);
+    }
+  }
+
+  const tab = (l: 'EN' | 'RU') =>
+    `rounded px-2 py-1 text-xs ${lang === l ? 'bg-zinc-900 text-white' : 'ring-1 ring-zinc-200 text-zinc-600'}`;
+
+  return (
+    <div className="rounded-lg bg-zinc-50 p-2.5">
+      <p className="mb-2 text-xs font-medium text-zinc-600">
+        What changed? <span className="font-normal text-zinc-400">Optional — shown to staff reviewing v2+.</span>
+      </p>
+      <div className="mb-2 flex items-center gap-2">
+        <button type="button" onClick={() => setLang('EN')} className={tab('EN')}>English</button>
+        <button type="button" onClick={() => setLang('RU')} className={tab('RU')}>Русский</button>
+        {lang === 'EN' ? (
+          <button
+            type="button"
+            onClick={summarize}
+            disabled={summarizing || !newBody.trim()}
+            className="ml-auto inline-flex items-center gap-1.5 rounded bg-zinc-100 px-3 py-1 text-xs disabled:opacity-50"
+          >
+            {summarizing ? <Spinner className="h-3.5 w-3.5 text-zinc-400" /> : null}
+            Ask AI to summarize
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={translate}
+            disabled={translating || !changeNote.trim()}
+            className="ml-auto inline-flex items-center gap-1.5 rounded bg-zinc-100 px-3 py-1 text-xs disabled:opacity-50"
+          >
+            {translating ? <Spinner className="h-3.5 w-3.5 text-zinc-400" /> : null}
+            Translate from English
+          </button>
+        )}
+      </div>
+      {lang === 'EN' ? (
+        <textarea
+          value={changeNote}
+          onChange={(e) => onChangeNote(e.target.value)}
+          placeholder="e.g. Added late-arrival policy; updated Gel-X removal price to $40"
+          rows={3}
+          className="w-full resize-none rounded bg-white px-2 py-1.5 text-sm ring-1 ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-400"
+        />
+      ) : (
+        <textarea
+          value={changeNoteRu}
+          onChange={(e) => onChangeNoteRu(e.target.value)}
+          placeholder="То же самое на русском"
+          rows={3}
+          className="w-full resize-none rounded bg-white px-2 py-1.5 text-sm ring-1 ring-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-400"
+        />
+      )}
+      {error ? <p className="mt-1 text-xs text-red-600">{error}</p> : null}
     </div>
   );
 }

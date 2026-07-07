@@ -107,13 +107,27 @@ class SopServiceTest {
         when(versions.findTopBySopIdOrderByVersionNumberDesc(1L)).thenReturn(Optional.of(
                 SopVersion.builder().id(100L).sopId(1L).versionNumber(2).status(SopVersionStatus.PUBLISHED).build()));
 
-        service.addVersion(1L, "v3 body", null, "owner");
+        service.addVersion(1L, "v3 body", null, null, null, "owner");
 
         ArgumentCaptor<SopVersion> cap = ArgumentCaptor.forClass(SopVersion.class);
         verify(versions).save(cap.capture());
         assertThat(cap.getValue().getVersionNumber()).isEqualTo(3);
         assertThat(cap.getValue().getStatus()).isEqualTo(SopVersionStatus.DRAFT);
         verify(sops, never()).save(any()); // current unchanged
+    }
+
+    @Test
+    @DisplayName("addVersion persists the change note, blanking an empty one to null")
+    void addVersionChangeNote() {
+        when(sops.findById(1L)).thenReturn(Optional.of(sop(SopAudience.PROVIDER, SopStatus.ACTIVE, 100L)));
+        when(versions.findTopBySopIdOrderByVersionNumberDesc(1L)).thenReturn(Optional.empty());
+
+        service.addVersion(1L, "v1 body", null, "Added late-arrival policy", "  ", "owner");
+
+        ArgumentCaptor<SopVersion> cap = ArgumentCaptor.forClass(SopVersion.class);
+        verify(versions).save(cap.capture());
+        assertThat(cap.getValue().getChangeNote()).isEqualTo("Added late-arrival policy");
+        assertThat(cap.getValue().getChangeNoteRu()).isNull();
     }
 
     @Test

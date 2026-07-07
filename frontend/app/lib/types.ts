@@ -926,6 +926,8 @@ export interface SopVersion {
   versionNumber: number;
   body: string;
   bodyRu: string | null;
+  changeNote: string | null;
+  changeNoteRu: string | null;
   status: SopVersionStatus;
   createdBy: string;
   createdAt: string;

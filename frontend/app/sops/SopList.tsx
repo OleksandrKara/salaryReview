@@ -110,6 +110,12 @@ function ReaderBody({ version, defaultLang }: { version: SopVersion | null; defa
   const pill = (l: Language) =>
     `text-xs ${lang === l ? 'font-semibold text-zinc-700' : 'text-zinc-400 hover:text-zinc-600'}`;
 
+  // "What changed" — only from v2 on, and only when the author actually wrote one; blank shows
+  // nothing. Falls back to English like the body does.
+  const hasChangeNote = !!(version?.changeNote?.trim() || version?.changeNoteRu?.trim());
+  const showChangeNote = (version?.versionNumber ?? 0) >= 2 && hasChangeNote;
+  const changeNote = lang === 'RU' && version?.changeNoteRu?.trim() ? version.changeNoteRu : version?.changeNote;
+
   return (
     <div data-color-mode="light">
       {hasRu ? (
@@ -117,6 +123,12 @@ function ReaderBody({ version, defaultLang }: { version: SopVersion | null; defa
           <button type="button" onClick={() => setLang('EN')} className={pill('EN')}>EN</button>
           <span className="text-zinc-300">/</span>
           <button type="button" onClick={() => setLang('RU')} className={pill('RU')}>RU</button>
+        </div>
+      ) : null}
+      {showChangeNote ? (
+        <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">What's changed in this version</p>
+          <div style={{ whiteSpace: 'pre-wrap' }}>{changeNote}</div>
         </div>
       ) : null}
       <div className="text-sm">

@@ -45,6 +45,7 @@ const STRINGS = {
     RU: 'Я прочитал(а) и согласен(на) соблюдать этот регламент',
   },
   sopAckRemaining: { EN: 'to confirm', RU: 'к подтверждению' },
+  sopWhatChanged: { EN: "What's changed in this version", RU: 'Что изменилось в этой версии' },
 
   // Manager home (/manager)
   mgrTitle: { EN: 'Manager', RU: 'Менеджер' },

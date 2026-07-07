@@ -79,7 +79,8 @@ public class SopController {
     @PostMapping("/{id}/versions")
     public ResponseEntity<SopVersionDto> addVersion(@PathVariable Long id, @RequestBody VersionRequest body,
                                                     @AuthenticationPrincipal AppUserPrincipal me) {
-        return sops.addVersion(id, body.body(), body.bodyRu(), me.getUsername())
+        return sops.addVersion(id, body.body(), body.bodyRu(), body.changeNote(), body.changeNoteRu(),
+                        me.getUsername())
                 .map(v -> ResponseEntity.ok(toVersionDto(v)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -90,6 +91,28 @@ public class SopController {
         if (isBlank(body.body())) return ResponseEntity.badRequest().build();
         try {
             return ResponseEntity.ok(new AiTranslateResponse(aiDraft.translateToRussian(body.body())));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
+    }
+
+    /** Draft a short "what changed" note (English) by comparing the previous body to the new one. */
+    @PostMapping("/ai-summarize-change")
+    public ResponseEntity<AiTranslateResponse> aiSummarizeChange(@RequestBody AiChangeSummaryRequest body) {
+        if (isBlank(body.newBody())) return ResponseEntity.badRequest().build();
+        try {
+            return ResponseEntity.ok(new AiTranslateResponse(aiDraft.summarizeSopChange(body.oldBody(), body.newBody())));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
+    }
+
+    /** Translate a short change note into Russian (not a full article — no customer-script handling). */
+    @PostMapping("/ai-translate-note")
+    public ResponseEntity<AiTranslateResponse> aiTranslateNote(@RequestBody AiTranslateRequest body) {
+        if (isBlank(body.body())) return ResponseEntity.badRequest().build();
+        try {
+            return ResponseEntity.ok(new AiTranslateResponse(aiDraft.translateNoteToRussian(body.body())));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         }
@@ -153,14 +176,15 @@ public class SopController {
 
     private static SopVersionDto toVersionDto(SopVersion v) {
         return new SopVersionDto(v.getId(), v.getVersionNumber(), v.getBody(), v.getBodyRu(),
-                v.getStatus().name(), v.getCreatedBy(), v.getCreatedAt());
+                v.getChangeNote(), v.getChangeNoteRu(), v.getStatus().name(), v.getCreatedBy(), v.getCreatedAt());
     }
 
     public record SopDto(Long id, String title, String category, String audience, String status, int priority,
                          SopVersionDto currentVersion, boolean acknowledged, Instant acknowledgedAt,
                          String createdBy, Instant createdAt, Instant updatedAt) {}
 
-    public record SopVersionDto(Long id, Integer versionNumber, String body, String bodyRu, String status,
+    public record SopVersionDto(Long id, Integer versionNumber, String body, String bodyRu,
+                                String changeNote, String changeNoteRu, String status,
                                 String createdBy, Instant createdAt) {}
 
     public record RosterDto(Long userId, String username, String role, boolean acknowledged,
@@ -171,9 +195,11 @@ public class SopController {
 
     public record UpdateRequest(String title, String category, SopAudience audience, Integer priority) {}
 
-    public record VersionRequest(String body, String bodyRu) {}
+    public record VersionRequest(String body, String bodyRu, String changeNote, String changeNoteRu) {}
 
     public record AiTranslateRequest(String body) {}
+
+    public record AiChangeSummaryRequest(String oldBody, String newBody) {}
 
     public record AiTranslateResponse(String markdown) {}
 }

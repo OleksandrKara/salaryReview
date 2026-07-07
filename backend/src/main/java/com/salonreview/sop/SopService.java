@@ -75,14 +75,20 @@ public class SopService {
         });
     }
 
-    /** Add a new draft version (max + 1). Does not change the live version. */
+    /**
+     * Add a new draft version (max + 1). Does not change the live version. changeNote/changeNoteRu
+     * describe what's different from the previous version — shown to staff reviewing v2+ as a short
+     * notice; blank means no notice.
+     */
     @Transactional
-    public Optional<SopVersion> addVersion(Long id, String body, String bodyRu, String by) {
+    public Optional<SopVersion> addVersion(Long id, String body, String bodyRu,
+                                           String changeNote, String changeNoteRu, String by) {
         if (sops.findById(id).isEmpty()) return Optional.empty();
         int next = versions.findTopBySopIdOrderByVersionNumberDesc(id)
                 .map(v -> v.getVersionNumber() + 1).orElse(1);
         return Optional.of(versions.save(SopVersion.builder()
                 .sopId(id).versionNumber(next).body(body == null ? "" : body).bodyRu(blankToNull(bodyRu))
+                .changeNote(blankToNull(changeNote)).changeNoteRu(blankToNull(changeNoteRu))
                 .status(SopVersionStatus.DRAFT).createdBy(by).build()));
     }
 
