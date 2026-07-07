@@ -118,7 +118,12 @@ public class MarketingAnalyticsService {
                 collectServices(adsCustomers.keySet(), today.withDayOfMonth(1), today, cutoff);
         Segment currentMonthToDate = segment(monthToDate, id -> true);
 
-        List<UpcomingAppointment> upcoming = upcomingAppointments(adsCustomers.keySet(), freshCustomerIds);
+        // Already-paid bookings are excluded from "upcoming" below — this month's aggregation already
+        // tags each paid service with the booking that produced it, so this is free (no extra Square call).
+        Set<String> paidBookingIds = monthToDate.stream()
+                .map(AttributedService::bookingId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        List<UpcomingAppointment> upcoming =
+                upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today);
 
         return new MarketingAnalyticsDto(from, to, all, fresh, returning, upcoming, currentMonthToDate, adSpend);
     }
@@ -217,18 +222,25 @@ public class MarketingAnalyticsService {
         return new Segment(customerCount, matched.size(), gross);
     }
 
-    /** Every still-future, non-cancelled appointment for an ads-attributed customer, regardless of the
-     * requested [from, to] range. One row per booking; a multi-service visit's segments are joined into
-     * one service name and one summed (menu list price) total, since "an upcoming visit" — not "a line
-     * item" — is what the owner wants to see in a forward-looking list.
+    /** Every non-cancelled, not-yet-paid appointment for an ads-attributed customer dated today or
+     * later, regardless of the requested [from, to] range. "Today or later" (by date, not exact
+     * instant) rather than strictly still-in-the-future — an appointment scheduled for later today
+     * whose start time has already ticked past is still unpaid and still exactly what this section is
+     * for; excluding it the moment the clock passes its start time would drop it into a gap between
+     * "upcoming" and "counted revenue" until someone rings it up, hours or a day later. Already-paid
+     * bookings (paidBookingIds, from this month's aggregation) are excluded so a since-checked-out visit
+     * doesn't double up here and in the revenue segments above. One row per booking; a multi-service
+     * visit's segments are joined into one service name and one summed (menu list price) total, since
+     * "an upcoming visit" — not "a line item" — is what the owner wants to see in this list.
      */
-    private List<UpcomingAppointment> upcomingAppointments(Set<String> adsCustomerIds, Set<String> freshCustomerIds) {
-        Instant now = Instant.now();
+    private List<UpcomingAppointment> upcomingAppointments(
+            Set<String> adsCustomerIds, Set<String> freshCustomerIds, Set<String> paidBookingIds, LocalDate today) {
         record FutureBooking(String customerId, SquareClient.Booking booking) {}
         List<FutureBooking> future = adsCustomerIds.parallelStream()
                 .flatMap(id -> square.bookingsForCustomer(id).stream()
                         .filter(MarketingAnalyticsService::didHappen)
-                        .filter(b -> isFuture(b.startAt(), now))
+                        .filter(b -> b.id() == null || !paidBookingIds.contains(b.id()))
+                        .filter(b -> isTodayOrLater(b.startAt(), today))
                         .map(b -> new FutureBooking(id, b)))
                 .toList();
         if (future.isEmpty()) return List.of();
@@ -276,10 +288,11 @@ public class MarketingAnalyticsService {
         };
     }
 
-    private static boolean isFuture(String startAt, Instant now) {
+    private static boolean isTodayOrLater(String startAt, LocalDate today) {
         if (startAt == null || startAt.isBlank()) return false;
         try {
-            return Instant.parse(startAt).isAfter(now);
+            LocalDate day = Instant.parse(startAt).atZone(java.time.ZoneOffset.UTC).toLocalDate();
+            return !day.isBefore(today);
         } catch (DateTimeParseException e) {
             return false;
         }
