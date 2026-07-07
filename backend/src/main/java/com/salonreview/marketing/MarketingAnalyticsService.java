@@ -1,6 +1,8 @@
 package com.salonreview.marketing;
 
+import com.salonreview.domain.AdSpend;
 import com.salonreview.domain.SalonConfig;
+import com.salonreview.repo.AdSpendRepository;
 import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareMonthAggregator;
@@ -8,7 +10,9 @@ import com.salonreview.square.SquareMonthAggregator.AttributedService;
 import com.salonreview.web.dto.MarketingAnalyticsDto;
 import com.salonreview.web.dto.MarketingAnalyticsDto.Segment;
 import com.salonreview.web.dto.MarketingAnalyticsDto.UpcomingAppointment;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -20,6 +24,8 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -30,8 +36,13 @@ import java.util.stream.Stream;
 @Service
 public class MarketingAnalyticsService {
 
+    /** Ad platforms this app currently recognizes — matches classify_traffic_source() (salonLandings),
+     * which only ever labels a paid click "Meta Ads" or "Google Ads". */
+    public static final Set<String> ALL_SOURCES = Set.of("META", "GOOGLE");
+
     private static final Segment EMPTY_SEGMENT =
             new Segment(0, 0, BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+    private static final BigDecimal ZERO_MONEY = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
 
     // A genuinely new customer's Square record can only be created at/after the moment the ad funnel
     // first captured them; a small grace window absorbs clock/event-ordering slack rather than
@@ -42,54 +53,126 @@ public class MarketingAnalyticsService {
     private final SquareMonthAggregator aggregator;
     private final SquareClient square;
     private final SalonConfigRepository salonConfig;
+    private final AdSpendRepository adSpendRepository;
+    private final java.time.Clock clock;
 
+    @Autowired
     public MarketingAnalyticsService(
             MarketingContactsRepository contactsRepository,
             SquareMonthAggregator aggregator,
             SquareClient square,
-            SalonConfigRepository salonConfig
+            SalonConfigRepository salonConfig,
+            AdSpendRepository adSpendRepository
+    ) {
+        this(contactsRepository, aggregator, square, salonConfig, adSpendRepository, java.time.Clock.systemUTC());
+    }
+
+    /** Test-only constructor — lets tests fix "today" instead of racing the real clock for the
+     * current-month-to-date segment and ad spend lookup. */
+    MarketingAnalyticsService(
+            MarketingContactsRepository contactsRepository,
+            SquareMonthAggregator aggregator,
+            SquareClient square,
+            SalonConfigRepository salonConfig,
+            AdSpendRepository adSpendRepository,
+            java.time.Clock clock
     ) {
         this.contactsRepository = contactsRepository;
         this.aggregator = aggregator;
         this.square = square;
         this.salonConfig = salonConfig;
+        this.clock = clock;
+        this.adSpendRepository = adSpendRepository;
     }
 
-    /** Gross revenue, customer count, and service count for ads-attributed customers with a service
-     * rendered in [from, to] inclusive, split into all / fresh-to-Square / already-existing segments —
-     * plus every still-upcoming appointment for an ads-attributed customer (not bound to [from, to];
-     * "what's coming" is inherently forward-looking). Aggregates one calendar month at a time (the
-     * only granularity SquareMonthAggregator offers) and concatenates, since a custom range can span
-     * more than one month.
+    /** A resolved ads-attributed Square customer id: the earliest moment our own ad funnel captured
+     * this person, and which platform. Several Square customer ids can map back to the same contact
+     * (see resolveAdsCustomers) — each still carries this contact's firstTouch/platform.
      */
-    public MarketingAnalyticsDto analytics(LocalDate from, LocalDate to) {
-        Map<String, Instant> firstTouchByCustomer = contactsRepository.findAdsAttributedCustomersWithFirstTouch();
-        if (firstTouchByCustomer.isEmpty()) {
-            return new MarketingAnalyticsDto(from, to, EMPTY_SEGMENT, EMPTY_SEGMENT, EMPTY_SEGMENT, List.of());
+    private record AdsCustomer(Instant firstTouch, String platform) {}
+
+    /** Gross revenue, customer count, and service count for ads-attributed customers with a service
+     * rendered in [from, to] inclusive, split into all / fresh-to-Square / already-existing segments
+     * — plus every still-upcoming appointment for an ads-attributed customer (not bound to [from, to];
+     * "what's coming" is inherently forward-looking) and the current month's ad spend/ROI inputs
+     * (always the current calendar month, independent of [from, to]).
+     */
+    public MarketingAnalyticsDto analytics(LocalDate from, LocalDate to, Set<String> sources) {
+        Map<String, AdsCustomer> adsCustomers = resolveAdsCustomers(sources);
+        BigDecimal adSpend = currentAdSpend();
+        if (adsCustomers.isEmpty()) {
+            return new MarketingAnalyticsDto(
+                    from, to, EMPTY_SEGMENT, EMPTY_SEGMENT, EMPTY_SEGMENT, List.of(), EMPTY_SEGMENT, adSpend);
         }
 
-        Set<String> freshCustomerIds = freshCustomerIds(firstTouchByCustomer);
-
+        Set<String> freshCustomerIds = freshCustomerIds(adsCustomers);
         BigDecimal cutoff = priceCutoff();
-        List<AttributedService> inRange = new ArrayList<>();
-        for (YearMonth ym = YearMonth.from(from); !ym.isAfter(YearMonth.from(to)); ym = ym.plusMonths(1)) {
-            SquareMonthAggregator.MonthAggregation agg = aggregator.aggregate(ym.getYear(), ym.getMonthValue(), cutoff);
-            for (AttributedService s : agg.services()) {
-                if (!firstTouchByCustomer.containsKey(s.customerId())) continue;
-                LocalDate day = parseIso(s.date());
-                if (day == null || day.isBefore(from) || day.isAfter(to)) continue;
-                inRange.add(s);
-            }
-        }
 
+        List<AttributedService> inRange = collectServices(adsCustomers.keySet(), from, to, cutoff);
         Segment all = segment(inRange, id -> true);
         Segment fresh = segment(inRange, freshCustomerIds::contains);
         Segment returning = segment(inRange, id -> !freshCustomerIds.contains(id));
 
-        List<UpcomingAppointment> upcoming =
-                upcomingAppointments(firstTouchByCustomer.keySet(), freshCustomerIds);
+        LocalDate today = LocalDate.now(clock);
+        List<AttributedService> monthToDate =
+                collectServices(adsCustomers.keySet(), today.withDayOfMonth(1), today, cutoff);
+        Segment currentMonthToDate = segment(monthToDate, id -> true);
 
-        return new MarketingAnalyticsDto(from, to, all, fresh, returning, upcoming);
+        List<UpcomingAppointment> upcoming = upcomingAppointments(adsCustomers.keySet(), freshCustomerIds);
+
+        return new MarketingAnalyticsDto(from, to, all, fresh, returning, upcoming, currentMonthToDate, adSpend);
+    }
+
+    /** Save (upsert) this month's ad spend figure. */
+    @Transactional
+    public BigDecimal saveAdSpend(int year, int month, BigDecimal amount, String updatedBy) {
+        AdSpend row = adSpendRepository.findByYearAndMonth(year, month)
+                .orElseGet(() -> AdSpend.builder().year(year).month(month).build());
+        row.setAmountSpent(amount.setScale(2, RoundingMode.HALF_UP));
+        row.setUpdatedBy(updatedBy);
+        adSpendRepository.save(row);
+        return row.getAmountSpent();
+    }
+
+    private BigDecimal currentAdSpend() {
+        LocalDate today = LocalDate.now(clock);
+        return adSpendRepository.findByYearAndMonth(today.getYear(), today.getMonthValue())
+                .map(AdSpend::getAmountSpent)
+                .orElse(ZERO_MONEY);
+    }
+
+    /** Every Square customer id an ads-attributed contact resolves to, each tagged with that
+     * contact's first ad touch and platform. A contact's originally-linked square_customer_id can go
+     * stale (e.g. a follow-up appointment booked by phone gets matched or created against a
+     * *different* Square profile for the same person), so every contact is also looked up by phone —
+     * the union of both is what "belongs" to that contact. On the rare id collision between two
+     * different contacts, the earlier firstTouch wins (the more conservative "first touch" reading).
+     */
+    private Map<String, AdsCustomer> resolveAdsCustomers(Set<String> sources) {
+        List<MarketingContactsRepository.AdsAttributedContact> contacts =
+                contactsRepository.findAdsAttributedContacts().stream()
+                        .filter(c -> c.platform() != null && sources.contains(c.platform()))
+                        .toList();
+
+        record Resolved(String customerId, AdsCustomer meta) {}
+        List<Resolved> resolved = contacts.parallelStream()
+                .flatMap(c -> {
+                    Set<String> candidateIds = new LinkedHashSet<>();
+                    if (c.squareCustomerId() != null && !c.squareCustomerId().isBlank()) {
+                        candidateIds.add(c.squareCustomerId());
+                    }
+                    candidateIds.addAll(square.customerIdsForPhone(c.phoneNumber()));
+                    AdsCustomer meta = new AdsCustomer(c.firstTouch(), c.platform());
+                    return candidateIds.stream().map(id -> new Resolved(id, meta));
+                })
+                .toList();
+
+        Map<String, AdsCustomer> byCustomerId = new LinkedHashMap<>();
+        for (Resolved r : resolved) {
+            byCustomerId.merge(r.customerId(), r.meta(),
+                    (existing, incoming) -> existing.firstTouch().isBefore(incoming.firstTouch()) ? existing : incoming);
+        }
+        return byCustomerId;
     }
 
     /** A customer is "fresh" when their Square record was created at/after the first moment the ad
@@ -98,16 +181,31 @@ public class MarketingAnalyticsService {
      * one. Unknown creation dates (lookup failure) are treated conservatively as "returning", since we'd
      * rather undercount a fresh win than overclaim one we can't actually verify.
      */
-    private Set<String> freshCustomerIds(Map<String, Instant> firstTouchByCustomer) {
-        Map<String, Instant> createdAtByCustomer = square.customerCreatedAts(firstTouchByCustomer.keySet());
+    private Set<String> freshCustomerIds(Map<String, AdsCustomer> adsCustomers) {
+        Map<String, Instant> createdAtByCustomer = square.customerCreatedAts(adsCustomers.keySet());
         Set<String> fresh = new HashSet<>();
-        for (var e : firstTouchByCustomer.entrySet()) {
+        for (var e : adsCustomers.entrySet()) {
             Instant createdAt = createdAtByCustomer.get(e.getKey());
-            if (createdAt != null && !createdAt.isBefore(e.getValue().minus(FRESHNESS_GRACE))) {
+            if (createdAt != null && !createdAt.isBefore(e.getValue().firstTouch().minus(FRESHNESS_GRACE))) {
                 fresh.add(e.getKey());
             }
         }
         return fresh;
+    }
+
+    private List<AttributedService> collectServices(
+            Set<String> customerIds, LocalDate from, LocalDate to, BigDecimal cutoff) {
+        List<AttributedService> inRange = new ArrayList<>();
+        for (YearMonth ym = YearMonth.from(from); !ym.isAfter(YearMonth.from(to)); ym = ym.plusMonths(1)) {
+            SquareMonthAggregator.MonthAggregation agg = aggregator.aggregate(ym.getYear(), ym.getMonthValue(), cutoff);
+            for (AttributedService s : agg.services()) {
+                if (!customerIds.contains(s.customerId())) continue;
+                LocalDate day = parseIso(s.date());
+                if (day == null || day.isBefore(from) || day.isAfter(to)) continue;
+                inRange.add(s);
+            }
+        }
+        return inRange;
     }
 
     private static Segment segment(List<AttributedService> services, Predicate<String> customerFilter) {

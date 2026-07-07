@@ -107,32 +107,47 @@ public class MarketingContactsRepository {
         return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact);
     }
 
-    /** Square customer ids for contacts whose first- or latest-touch traffic source is a paid ad
-     * click, each with the earliest moment we ever captured that contact through an ad — used to
-     * tell a customer whose Square record was created fresh off this ad touch from one who already
-     * existed in Square and simply came back through one. classify_traffic_source() (salonLandings)
-     * always starts a paid-click label with "Meta Ads" or "Google Ads" — either the bare "Meta Ads
-     * (click)" fallback, or, when the click also carried UTM params (the common case for a real Meta
-     * ad — fbclid AND a full UTM set arrive together), the richer "Meta Ads (ig / Instagram_Stories /
-     * <campaign>)" form. A prefix match catches both; an exact match (an earlier version of this
-     * query) missed every UTM-tagged ad click entirely, since fbclid/gclid only produces the bare
-     * fallback when no UTM is present. Only contacts with a known Square customer id are useful here
-     * — one is required to later match against SquareMonthAggregator's AttributedService.customerId().
+    /** One ads-attributed contact — phone_number is the stable match key (contacts is unique on it),
+     * squareCustomerId the customer profile we happened to link at the time (nullable: none captured
+     * yet), platform which ad network the click classifies as. The linked square_customer_id can go
+     * stale — e.g. a follow-up appointment booked by phone gets matched or created against a
+     * *different* Square profile for the same person — so callers should also resolve by phone
+     * (SquareClient.customerIdsForPhone) rather than trust this id alone.
      */
-    public Map<String, Instant> findAdsAttributedCustomersWithFirstTouch() {
+    public record AdsAttributedContact(
+            String phoneNumber, String squareCustomerId, Instant firstTouch, String platform) {}
+
+    /** Every contact whose first- or latest-touch traffic source is a paid ad click, each with the
+     * earliest moment we ever captured them through an ad — used to tell a customer whose Square
+     * record was created fresh off this ad touch from one who already existed in Square and simply
+     * came back through one. classify_traffic_source() (salonLandings) always starts a paid-click
+     * label with "Meta Ads" or "Google Ads" — either the bare "Meta Ads (click)" fallback, or, when
+     * the click also carried UTM params (the common case for a real Meta ad — fbclid AND a full UTM
+     * set arrive together), the richer "Meta Ads (ig / Instagram_Stories / <campaign>)" form. A
+     * prefix match catches both; an exact match (an earlier version of this query) missed every
+     * UTM-tagged ad click entirely, since fbclid/gclid only produces the bare fallback when no UTM is
+     * present. contacts is unique on phone_number, so this is naturally one row per contact — no
+     * grouping/aggregation needed.
+     */
+    public List<AdsAttributedContact> findAdsAttributedContacts() {
         String sql = """
-                SELECT square_customer_id, MIN(created_at) AS first_touch
+                SELECT phone_number, square_customer_id, created_at,
+                       CASE
+                           WHEN original_traffic_source LIKE 'Meta Ads%' OR marketing_traffic_source LIKE 'Meta Ads%'
+                               THEN 'META'
+                           WHEN original_traffic_source LIKE 'Google Ads%' OR marketing_traffic_source LIKE 'Google Ads%'
+                               THEN 'GOOGLE'
+                       END AS platform
                 FROM marketing.contacts
-                WHERE square_customer_id IS NOT NULL
-                  AND (original_traffic_source LIKE 'Meta Ads%' OR original_traffic_source LIKE 'Google Ads%'
-                       OR marketing_traffic_source LIKE 'Meta Ads%' OR marketing_traffic_source LIKE 'Google Ads%')
-                GROUP BY square_customer_id
+                WHERE original_traffic_source LIKE 'Meta Ads%' OR original_traffic_source LIKE 'Google Ads%'
+                   OR marketing_traffic_source LIKE 'Meta Ads%' OR marketing_traffic_source LIKE 'Google Ads%'
                 """;
-        Map<String, Instant> out = new java.util.LinkedHashMap<>();
-        jdbcTemplate.query(sql, rs -> {
-            out.put(rs.getString("square_customer_id"), toInstant(rs.getTimestamp("first_touch")));
-        });
-        return out;
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new AdsAttributedContact(
+                rs.getString("phone_number"),
+                rs.getString("square_customer_id"),
+                toInstant(rs.getTimestamp("created_at")),
+                rs.getString("platform")
+        ));
     }
 
     /** Every submission this phone number ever made, most recent first. Phone is the sole match

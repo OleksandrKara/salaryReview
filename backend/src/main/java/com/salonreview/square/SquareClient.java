@@ -396,6 +396,39 @@ public class SquareClient {
         return matches;
     }
 
+    /**
+     * Customer ids Square has on file for a phone number, via an exact-match search. A contact's
+     * originally-linked square_customer_id can go stale — e.g. a follow-up appointment booked by
+     * phone gets matched or created against a *different* Square profile for the same person — so
+     * this is how the marketing analytics fresh/upcoming logic finds appointments under a profile
+     * other than the one first captured, without re-scanning the whole customer directory.
+     * Short-TTL cached like the rest of this client's reads.
+     */
+    public List<String> customerIdsForPhone(String phoneNumber) {
+        String normalized = normalizePhone(phoneNumber);
+        if (normalized == null) return List.of();
+        return cached("customerIdsForPhone:" + normalized, Duration.ofMinutes(5), () -> {
+            Map<String, Object> body = Map.of(
+                    "query", Map.of("filter", Map.of("phone_number", Map.of("exact", normalized))));
+            CustomersSearchResponse resp = http.post()
+                    .uri("/v2/customers/search")
+                    .body(body)
+                    .retrieve()
+                    .body(CustomersSearchResponse.class);
+            if (resp == null || resp.customers() == null) return List.<String>of();
+            return resp.customers().stream().map(Customer::id).toList();
+        });
+    }
+
+    /** Best-effort US phone normalization to Square's expected E.164 form; null if unrecognizable. */
+    private static String normalizePhone(String raw) {
+        if (raw == null) return null;
+        String digits = raw.replaceAll("[^0-9]", "");
+        if (digits.length() == 10) return "+1" + digits;
+        if (digits.length() == 11 && digits.startsWith("1")) return "+" + digits;
+        return null;
+    }
+
     /** Invoices issued to a customer (most recent first), for picking the prepaid invoice. */
     public List<Invoice> invoicesForCustomer(String customerId) {
         if (customerId == null || customerId.isBlank()) return List.of();
@@ -487,6 +520,10 @@ public class SquareClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record CustomersListResponse(List<Customer> customers, String cursor) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record CustomersSearchResponse(List<Customer> customers, String cursor) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
