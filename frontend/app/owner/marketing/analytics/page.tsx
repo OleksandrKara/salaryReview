@@ -7,7 +7,7 @@ import MarketingTabs from '../MarketingTabs';
 export default async function MarketingAnalyticsPage() {
   const [me, data] = await Promise.all([serverApi.getMe(), serverApi.getMarketingAnalytics()]);
 
-  if (me?.role !== 'OWNER') redirect('/reports');
+  if (me?.role !== 'OWNER' && me?.role !== 'ADS_MANAGER') redirect('/reports');
 
   return (
     <main className="mx-auto max-w-3xl p-4 sm:p-8">

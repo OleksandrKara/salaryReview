@@ -17,10 +17,12 @@ export default function MarketingManager({
   slug,
   initialVariants,
   initialStatsSince,
+  readOnly = false,
 }: {
   slug: string;
   initialVariants: MarketingVariantStat[];
   initialStatsSince: string | null;
+  readOnly?: boolean;
 }) {
   const [variants, setVariants] = useState(initialVariants);
   const [statsSince, setStatsSince] = useState(initialStatsSince);
@@ -114,33 +116,39 @@ export default function MarketingManager({
     <div>
       {error && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
 
-      <div className="mb-6 flex flex-wrap items-end gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
-        <label className="text-sm">
-          <span className="mb-1 block text-xs font-medium text-zinc-500">Hide stats before</span>
-          <input
-            type="datetime-local"
-            value={cutoffInput}
-            onChange={(e) => setCutoffInput(e.target.value)}
-            className="rounded border border-zinc-300 px-2 py-1 text-sm"
-          />
-        </label>
-        <button
-          type="button"
-          disabled={cutoffBusy || !cutoffInput}
-          onClick={saveCutoff}
-          className="rounded bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-        >
-          Save cutoff
-        </button>
-        {statsSince && (
-          <button type="button" disabled={cutoffBusy} onClick={clearCutoff} className="rounded px-3 py-1.5 text-sm font-medium text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-50">
-            Clear
+      {readOnly ? (
+        <p className="mb-6 rounded-lg p-4 text-xs text-zinc-500 ring-1 ring-zinc-200">
+          {statsSince ? `Showing stats since ${new Date(statsSince).toLocaleString()} — earlier activity (e.g. test traffic) is excluded from the numbers below.` : 'No cutoff set — showing all-time stats.'}
+        </p>
+      ) : (
+        <div className="mb-6 flex flex-wrap items-end gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
+          <label className="text-sm">
+            <span className="mb-1 block text-xs font-medium text-zinc-500">Hide stats before</span>
+            <input
+              type="datetime-local"
+              value={cutoffInput}
+              onChange={(e) => setCutoffInput(e.target.value)}
+              className="rounded border border-zinc-300 px-2 py-1 text-sm"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={cutoffBusy || !cutoffInput}
+            onClick={saveCutoff}
+            className="rounded bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+          >
+            Save cutoff
           </button>
-        )}
-        <span className="text-xs text-zinc-500">
-          {statsSince ? `Showing stats since ${new Date(statsSince).toLocaleString()} — earlier activity (e.g. your own test traffic) is excluded from the numbers below.` : 'No cutoff set — showing all-time stats.'}
-        </span>
-      </div>
+          {statsSince && (
+            <button type="button" disabled={cutoffBusy} onClick={clearCutoff} className="rounded px-3 py-1.5 text-sm font-medium text-zinc-600 ring-1 ring-zinc-200 hover:bg-zinc-50">
+              Clear
+            </button>
+          )}
+          <span className="text-xs text-zinc-500">
+            {statsSince ? `Showing stats since ${new Date(statsSince).toLocaleString()} — earlier activity (e.g. your own test traffic) is excluded from the numbers below.` : 'No cutoff set — showing all-time stats.'}
+          </span>
+        </div>
+      )}
 
       <VariantTable
         variants={variants}
@@ -150,6 +158,7 @@ export default function MarketingManager({
         onDuplicate={onDuplicate}
         onDelete={onDelete}
         busyVariantId={busyVariantId}
+        readOnly={readOnly}
       />
     </div>
   );

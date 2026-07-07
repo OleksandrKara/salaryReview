@@ -6,7 +6,7 @@ import { api } from '../../lib/api';
 import { Spinner } from '../../components/Spinner';
 import type { AppUser, Provider, Role, SquareRosterEntry } from '../../lib/types';
 
-const ROLES: Role[] = ['OWNER', 'MANAGER', 'PROVIDER'];
+const ROLES: Role[] = ['OWNER', 'MANAGER', 'PROVIDER', 'ADS_MANAGER'];
 
 export default function UsersManager({
   initialUsers,

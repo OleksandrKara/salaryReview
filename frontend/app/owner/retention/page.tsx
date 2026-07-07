@@ -20,6 +20,7 @@ export default async function RetentionPage({
 }) {
   const me = await serverApi.getMe();
   if (me.role === 'PROVIDER') redirect('/me');
+  if (me.role === 'ADS_MANAGER') redirect('/owner/marketing');
 
   const sp = await searchParams;
   const now = new Date();

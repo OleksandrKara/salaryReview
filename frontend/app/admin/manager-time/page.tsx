@@ -17,7 +17,9 @@ export default async function ManagerTimeAdminPage({
   searchParams: Promise<{ year?: string; month?: string }>;
 }) {
   const me = await serverApi.getMe();
-  if (me.role !== 'OWNER') redirect(me.role === 'PROVIDER' ? '/me' : '/manager/time');
+  if (me.role !== 'OWNER') {
+    redirect(me.role === 'PROVIDER' ? '/me' : me.role === 'ADS_MANAGER' ? '/owner/marketing' : '/manager/time');
+  }
 
   const sp = await searchParams;
   const now = new Date();

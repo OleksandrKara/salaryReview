@@ -7,7 +7,7 @@ import SopAdmin from './SopAdmin';
 // Owner SOP management. Non-owners are bounced to the staff view (the API also enforces this).
 export default async function SopAdminPage() {
   const me = await serverApi.getMe();
-  if (me.role !== 'OWNER') redirect('/sops');
+  if (me.role !== 'OWNER') redirect(me.role === 'ADS_MANAGER' ? '/owner/marketing' : '/sops');
   const sops = await serverApi.listSops();
   const lang = me.preferredLanguage;
 

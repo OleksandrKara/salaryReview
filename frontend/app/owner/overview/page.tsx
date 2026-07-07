@@ -32,7 +32,7 @@ export default async function OwnerOverviewPage({
     serverApi.getOwnerOverview(fromYear, fromMonth, toYear, toMonth),
   ]);
 
-  if (me?.role !== 'OWNER') redirect('/reports');
+  if (me?.role !== 'OWNER') redirect(me?.role === 'ADS_MANAGER' ? '/owner/marketing' : '/reports');
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">

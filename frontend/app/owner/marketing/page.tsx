@@ -13,7 +13,7 @@ export default async function MarketingDashboardPage() {
     serverApi.getAbuseBlocks(),
   ]);
 
-  if (me?.role !== 'OWNER') redirect('/reports');
+  if (me?.role !== 'OWNER' && me?.role !== 'ADS_MANAGER') redirect('/reports');
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
@@ -34,7 +34,12 @@ export default async function MarketingDashboardPage() {
 
           <div className="mt-6">
             <h2 className="mb-2 text-sm font-medium text-zinc-500">Variant performance</h2>
-            <MarketingManager slug={data.landingPageSlug} initialVariants={data.variants} initialStatsSince={data.statsSince} />
+            <MarketingManager
+              slug={data.landingPageSlug}
+              initialVariants={data.variants}
+              initialStatsSince={data.statsSince}
+              readOnly={me.role !== 'OWNER'}
+            />
           </div>
 
           <AbuseBlocksPanel data={abuseBlocks} />
