@@ -129,6 +129,7 @@ const STRINGS = {
   timeHours: { EN: 'Hours', RU: 'Часы' },
   timeClockedInNow: { EN: 'On the clock now', RU: 'Сейчас на смене' },
   timeSetRatePlaceholder: { EN: 'Set rate', RU: 'Ставка' },
+  timeAllManagersTotal: { EN: 'All managers, this month', RU: 'Все менеджеры, за месяц' },
   timeNoManagers: { EN: 'No managers yet.', RU: 'Пока нет менеджеров.' },
 
   // Provider pay (/me)
