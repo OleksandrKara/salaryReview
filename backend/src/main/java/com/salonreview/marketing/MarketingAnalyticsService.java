@@ -180,22 +180,58 @@ public class MarketingAnalyticsService {
         return byCustomerId;
     }
 
-    /** A customer is "fresh" when their Square record was created at/after the first moment the ad
-     * funnel captured them (minus a small grace window) — i.e. Square has no history of them predating
-     * this ad touch, so the ad brought in a genuinely new customer rather than winning back an existing
-     * one. Unknown creation dates (lookup failure) are treated conservatively as "returning", since we'd
-     * rather undercount a fresh win than overclaim one we can't actually verify.
+    /** A customer is "fresh" when nothing in Square shows them existing before the first moment the ad
+     * funnel captured them (minus a small grace window) — the ad brought in a genuinely new customer
+     * rather than winning back an existing one.
+     *
+     * <p>The primary signal is their earliest known booking (bookingsForCustomer returns full history,
+     * not just this month) — not Square's own {@code created_at}, which a merge can silently rewrite to
+     * an earlier date than when this specific customer relationship actually began. A real case: a
+     * customer's contact was captured by an ad, but Square later merged her profile with a second,
+     * separately-created one for the same person (e.g. from a front-desk phone booking) — the surviving
+     * record's created_at ended up predating her actual first ad touch, even though she had never been a
+     * Square customer before that touch. Her booking history has no such artifact: her earliest
+     * appointment is still exactly when it happened. created_at is used only as a fallback when there's
+     * no booking history at all to check (rare for anyone who shows up in analytics in the first place).
+     * Genuinely unresolvable cases (no bookings, no creation date) are treated conservatively as
+     * "returning" — we'd rather undercount a fresh win than overclaim one we can't verify.
      */
     private Set<String> freshCustomerIds(Map<String, AdsCustomer> adsCustomers) {
         Map<String, Instant> createdAtByCustomer = square.customerCreatedAts(adsCustomers.keySet());
-        Set<String> fresh = new HashSet<>();
-        for (var e : adsCustomers.entrySet()) {
-            Instant createdAt = createdAtByCustomer.get(e.getKey());
-            if (createdAt != null && !createdAt.isBefore(e.getValue().firstTouch().minus(FRESHNESS_GRACE))) {
-                fresh.add(e.getKey());
-            }
+        return adsCustomers.entrySet().parallelStream()
+                .filter(e -> isFresh(e.getKey(), e.getValue().firstTouch(), createdAtByCustomer))
+                .map(Map.Entry::getKey)
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
+    private boolean isFresh(String customerId, Instant firstTouch, Map<String, Instant> createdAtByCustomer) {
+        Instant cutoff = firstTouch.minus(FRESHNESS_GRACE);
+        Instant earliestBooking = earliestBookingStart(customerId);
+        if (earliestBooking != null) return !earliestBooking.isBefore(cutoff);
+        Instant createdAt = createdAtByCustomer.get(customerId);
+        return createdAt != null && !createdAt.isBefore(cutoff);
+    }
+
+    /** The start of this customer's earliest known booking (any status, past or future) — bookings
+     * carry real transaction/appointment history unaffected by a later profile merge, unlike Square's
+     * own created_at. Null if they have no bookings at all.
+     */
+    private Instant earliestBookingStart(String customerId) {
+        return square.bookingsForCustomer(customerId).stream()
+                .map(SquareClient.Booking::startAt)
+                .map(MarketingAnalyticsService::parseInstantOrNull)
+                .filter(Objects::nonNull)
+                .min(Comparator.naturalOrder())
+                .orElse(null);
+    }
+
+    private static Instant parseInstantOrNull(String iso) {
+        if (iso == null || iso.isBlank()) return null;
+        try {
+            return Instant.parse(iso);
+        } catch (DateTimeParseException e) {
+            return null;
         }
-        return fresh;
     }
 
     private List<AttributedService> collectServices(

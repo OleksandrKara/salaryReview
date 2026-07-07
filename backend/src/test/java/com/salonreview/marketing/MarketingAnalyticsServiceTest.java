@@ -189,6 +189,52 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
+    @DisplayName("treats a customer as fresh when their earliest booking is at/after the ad touch, even if Square's own created_at predates it (a merge artifact)")
+    void treatsBookingHistoryAsAuthoritativeOverStaleCreatedAt() {
+        // Mirrors a real case: Square merged this customer's profile with a second, separately-created
+        // one for the same person, and the surviving record's created_at ended up predating her actual
+        // first ad touch — even though her only real booking (and only real history) is from that touch.
+        when(contactsRepository.findAdsAttributedContacts()).thenReturn(List.of(
+                contact("+16195550001", "cust-merged", Instant.parse("2026-07-07T01:00:00Z"), "META")));
+        when(square.customerCreatedAts(Set.of("cust-merged")))
+                .thenReturn(Map.of("cust-merged", Instant.parse("2026-07-03T00:00:00Z"))); // predates the ad touch
+        var onlyBooking = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
+                "loc-1", "cust-merged", null, null, List.of());
+        when(square.bookingsForCustomer("cust-merged")).thenReturn(List.of(onlyBooking));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
+                svc("2026-07-07", "cust-merged", "110.00")
+        )));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), MarketingAnalyticsService.ALL_SOURCES);
+
+        assertThat(dto.fresh().customerCount()).isEqualTo(1);
+        assertThat(dto.fresh().grossRevenue()).isEqualByComparingTo("110.00");
+        assertThat(dto.returning().customerCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("still treats a customer as returning when their earliest booking predates the ad touch")
+    void bookingHistoryBeforeAdTouchIsStillReturning() {
+        when(contactsRepository.findAdsAttributedContacts()).thenReturn(List.of(
+                contact("+16195550001", "cust-old", Instant.parse("2026-07-05T12:00:00Z"), "META")));
+        when(square.customerCreatedAts(Set.of("cust-old")))
+                .thenReturn(Map.of("cust-old", Instant.parse("2026-07-05T12:05:00Z"))); // looks fresh...
+        var oldBooking = new SquareClient.Booking("bk-0", "ACCEPTED", "2025-01-01T18:00:00Z", null, null,
+                "loc-1", "cust-old", null, null, List.of()); // ...but real history predates the ad touch
+        when(square.bookingsForCustomer("cust-old")).thenReturn(List.of(oldBooking));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
+                svc("2026-07-10", "cust-old", "60.00")
+        )));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), MarketingAnalyticsService.ALL_SOURCES);
+
+        assertThat(dto.returning().customerCount()).isEqualTo(1);
+        assertThat(dto.fresh().customerCount()).isZero();
+    }
+
+    @Test
     @DisplayName("filters out a platform not in the requested sources")
     void filtersByRequestedSources() {
         when(contactsRepository.findAdsAttributedContacts()).thenReturn(List.of(
