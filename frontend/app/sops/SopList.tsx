@@ -152,7 +152,9 @@ function ReaderBody({ version, defaultLang }: { version: SopVersion | null; defa
           <p className="mb-1 flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-amber-700">
             <NewBadgeIcon className="h-3 w-3" /> {t(lang, 'sopWhatChanged')}
           </p>
-          <div style={{ whiteSpace: 'pre-wrap' }}>{changeNote}</div>
+          <div data-color-mode="light">
+            <Markdown source={changeNote || ''} style={{ background: 'transparent', fontSize: '0.875rem' }} />
+          </div>
         </div>
       ) : null}
       <div className="text-sm">

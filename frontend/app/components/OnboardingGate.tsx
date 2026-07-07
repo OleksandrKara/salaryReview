@@ -10,15 +10,22 @@ import type { Language, Me, Sop } from '../lib/types';
 
 // The mandatory onboarding gate, seeded with server-fetched state so it fills the screen in the very
 // first paint — a blocked manager/provider never sees the app behind it (the root layout renders this
-// instead of the page). Two steps, in order:
+// instead of the page). Up to three steps, in order:
 //   1. Choose a language, if not chosen yet.
-//   2. Read + confirm every unaccepted SOP, one at a time.
-// When both are satisfied it refreshes so the layout re-runs and reveals the app.
+//   2. First time only (preferredLanguage was null when this mounted — a returning user gated again
+//      later for a new/updated SOP skips straight to step 3): a one-time explainer that SOPs exist,
+//      why they're mandatory, and that they'll be asked again after future version updates.
+//   3. Read + confirm every unaccepted SOP, one at a time.
+// When all are satisfied it refreshes so the layout re-runs and reveals the app.
 export default function OnboardingGate({ me, pending }: { me: Me; pending: Sop[] }) {
   const router = useRouter();
   const [lang, setLang] = useState<Language | null>(me.preferredLanguage);
   const [queue, setQueue] = useState<Sop[]>(pending);
   const [busy, setBusy] = useState(false);
+  // Captured once at mount, before chooseLanguage can change `lang` — reflects whether this was truly
+  // the user's first sign-in, not just re-derived from `lang` (which flips as soon as step 1 finishes).
+  const [isFirstTime] = useState(() => me.preferredLanguage === null);
+  const [introSeen, setIntroSeen] = useState(false);
 
   async function chooseLanguage(l: Language) {
     setBusy(true);
@@ -67,8 +74,36 @@ export default function OnboardingGate({ me, pending }: { me: Me; pending: Sop[]
         </div>
       </div>
     );
+  } else if (isFirstTime && !introSeen && queue.length > 0) {
+    // Step 2 (first sign-in only): explain why SOPs are mandatory before showing the first one.
+    content = (
+      <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 sm:items-center sm:p-4">
+        <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--paper)] shadow-2xl sm:h-auto sm:max-w-md sm:rounded-2xl">
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 overflow-y-auto px-6 py-10 text-center sm:flex-none">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-br from-[var(--accent)] to-[var(--accent-ink)] px-3.5 py-1.5 text-xs font-bold uppercase tracking-wide text-[var(--paper)] shadow-sm">
+              {t(lang, 'sopIntroTitle')}
+            </span>
+            <div className="space-y-3 text-left text-sm text-[var(--ink)]">
+              <p>{t(lang, 'sopIntroBody1')}</p>
+              <p>{t(lang, 'sopIntroBody2')}</p>
+              <p className="text-[var(--muted)]">{t(lang, 'sopIntroBody3')}</p>
+              <p className="text-[var(--muted)]">{t(lang, 'sopIntroBody4')}</p>
+            </div>
+            <p className="text-sm font-medium text-[var(--accent-ink)]">{t(lang, 'sopIntroFooter')}</p>
+          </div>
+          <div className="shrink-0 border-t border-[var(--line)] px-5 py-3">
+            <button
+              onClick={() => setIntroSeen(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-ink)] px-4 py-3 text-sm font-semibold text-[var(--paper)] shadow-sm transition"
+            >
+              {t(lang, 'sopIntroButton')}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   } else if (queue.length > 0) {
-    // Step 2: SOPs.
+    // Step 3: SOPs.
     const sop = queue[0];
     content = (
       <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 sm:items-center sm:p-4">

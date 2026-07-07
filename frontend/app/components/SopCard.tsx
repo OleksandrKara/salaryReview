@@ -100,7 +100,9 @@ export default function SopCard({
             <p className="mb-1.5 flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-[var(--accent-ink)]">
               {t(lang, 'sopWhatChanged')}
             </p>
-            <div className="text-sm text-[var(--ink)]" style={{ whiteSpace: 'pre-wrap' }}>{changeNote}</div>
+            <div data-color-mode="light" className="text-sm text-[var(--ink)]">
+              <Markdown source={changeNote || ''} style={{ background: 'transparent', fontSize: '0.875rem' }} />
+            </div>
           </div>
         </div>
         <div className="shrink-0 border-t border-[var(--line)] bg-[var(--paper)] px-5 py-3">
@@ -153,7 +155,9 @@ export default function SopCard({
           <p className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-[var(--accent-ink)]">
             <NewBadgeIcon className="h-3 w-3" /> {t(lang, 'sopWhatChanged')}
           </p>
-          <div className="text-sm text-[var(--ink)]" style={{ whiteSpace: 'pre-wrap' }}>{changeNote}</div>
+          <div data-color-mode="light" className="text-sm text-[var(--ink)]">
+            <Markdown source={changeNote || ''} style={{ background: 'transparent', fontSize: '0.875rem' }} />
+          </div>
         </div>
       ) : null}
 
