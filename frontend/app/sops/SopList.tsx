@@ -15,6 +15,21 @@ const Markdown = dynamic(
 const fmt = (iso: string | null, language: Language | null) =>
   iso ? new Date(iso).toLocaleDateString(language === 'RU' ? 'ru-RU' : 'en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
 
+// v2+ with an author-written note is "a change worth flagging" — same rule SopCard uses for its gate.
+function hasUnreadChange(s: Sop): boolean {
+  const v = s.currentVersion;
+  if (!v || v.versionNumber < 2) return false;
+  return !!(v.changeNote?.trim() || v.changeNoteRu?.trim());
+}
+
+function NewBadgeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4z" />
+    </svg>
+  );
+}
+
 // Shared read + acknowledge list for managers/providers (owners view it read-only). The acknowledge
 // button arms only after the SOP's content has been opened this session — a light UX gate.
 export default function SopList({
@@ -66,8 +81,15 @@ export default function SopList({
                 {i + 1}
               </span>
               <span>
-                <span className="text-sm font-medium text-zinc-800">{s.title}</span>
-                <span className="ml-2 text-xs text-zinc-400">
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-sm font-medium text-zinc-800">{s.title}</span>
+                  {!s.acknowledged && hasUnreadChange(s) ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                      <NewBadgeIcon className="h-2.5 w-2.5" /> {t(language, 'sopNewVersionBadge')}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="text-xs text-zinc-400">
                   {s.category} · v{s.currentVersion?.versionNumber ?? '—'}
                 </span>
               </span>
@@ -126,8 +148,10 @@ function ReaderBody({ version, defaultLang }: { version: SopVersion | null; defa
         </div>
       ) : null}
       {showChangeNote ? (
-        <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">What's changed in this version</p>
+        <div className="mb-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900 ring-2 ring-amber-300">
+          <p className="mb-1 flex items-center gap-1 text-xs font-bold uppercase tracking-wide text-amber-700">
+            <NewBadgeIcon className="h-3 w-3" /> {t(lang, 'sopWhatChanged')}
+          </p>
           <div style={{ whiteSpace: 'pre-wrap' }}>{changeNote}</div>
         </div>
       ) : null}
