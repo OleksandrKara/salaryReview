@@ -51,6 +51,8 @@ export default function ManagerTimeAdmin({
   }
 
   const totalMinutes = rows.reduce((sum, r) => sum + r.monthMinutes, 0);
+  const totalPay = rows.reduce((sum, r) => sum + (r.monthPay ?? 0), 0);
+  const missingRateCount = rows.filter((r) => r.usdPerHour == null).length;
 
   const RateEditor = ({ r }: { r: AdminTimesheetRow }) => (
     <div className="flex items-center gap-1">
@@ -95,9 +97,17 @@ export default function ManagerTimeAdmin({
     <div>
       {error && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
 
-      <div className="mb-4 flex items-baseline justify-between rounded-lg bg-zinc-50 px-4 py-3 ring-1 ring-zinc-200">
-        <span className="text-sm text-zinc-500">{t(language, 'timeAllManagersTotal')}</span>
-        <span className="text-lg font-semibold tabular-nums text-zinc-900">{fmtHM(totalMinutes)}</span>
+      <div className="mb-4 rounded-lg bg-zinc-50 px-4 py-3 ring-1 ring-zinc-200">
+        <div className="flex items-baseline justify-between">
+          <span className="text-sm text-zinc-500">{t(language, 'timeAllManagersTotal')}</span>
+          <span className="flex items-baseline gap-3">
+            <span className="text-lg font-semibold tabular-nums text-zinc-900">{fmtHM(totalMinutes)}</span>
+            <span className="text-lg font-semibold tabular-nums text-emerald-700">{usd(totalPay)}</span>
+          </span>
+        </div>
+        {missingRateCount > 0 ? (
+          <p className="mt-1 text-right text-xs text-zinc-400">{t(language, 'timeMissingRateNote')}</p>
+        ) : null}
       </div>
 
       {/* Mobile cards */}

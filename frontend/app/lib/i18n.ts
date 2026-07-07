@@ -156,6 +156,10 @@ const STRINGS = {
   timeClockedInNow: { EN: 'On the clock now', RU: 'Сейчас на смене' },
   timeSetRatePlaceholder: { EN: 'Set rate', RU: 'Ставка' },
   timeAllManagersTotal: { EN: 'All managers, this month', RU: 'Все менеджеры, за месяц' },
+  timeMissingRateNote: {
+    EN: "doesn't include managers without a rate set",
+    RU: 'без учёта менеджеров без установленной ставки',
+  },
   timeNoManagers: { EN: 'No managers yet.', RU: 'Пока нет менеджеров.' },
 
   // Provider pay (/me)
