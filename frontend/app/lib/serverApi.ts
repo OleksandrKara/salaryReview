@@ -156,11 +156,15 @@ export const serverApi = {
 
   getAbuseBlocks: () => serverFetch<AbuseBlocksData>('/api/owner/marketing/abuse-blocks'),
 
-  /** from/to are ISO dates (yyyy-MM-dd); omitting both defaults to month-to-date on the backend. */
-  getMarketingAnalytics: (from?: string, to?: string) => {
+  /** from/to are ISO dates (yyyy-MM-dd); omitting both defaults to month-to-date on the backend.
+   * sources omitted defaults to every recognized ad platform on the backend; pass ['ALL'] for
+   * every contact regardless of traffic source. slug omitted pools every landing page together. */
+  getMarketingAnalytics: (from?: string, to?: string, sources?: string[], slug?: string) => {
     const params = new URLSearchParams();
     if (from) params.set('from', from);
     if (to) params.set('to', to);
+    if (sources) params.set('sources', sources.join(','));
+    if (slug) params.set('slug', slug);
     const qs = params.toString();
     return serverFetch<MarketingAnalyticsData>(`/api/owner/marketing/analytics${qs ? `?${qs}` : ''}`);
   },

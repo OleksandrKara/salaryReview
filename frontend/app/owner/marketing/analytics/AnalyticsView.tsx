@@ -48,22 +48,25 @@ const SOURCE_LABELS: Record<MarketingAdSource, string> = { META: 'Meta Ads', GOO
 
 type PresetKey = 'mtd' | '7d' | '30d' | 'custom';
 type SegmentKey = 'all' | 'fresh' | 'returning';
+type TrafficMode = 'ads' | 'all';
 
-export default function AnalyticsView({ initialData }: { initialData: MarketingAnalyticsData }) {
+export default function AnalyticsView({ initialData, slug }: { initialData: MarketingAnalyticsData; slug?: string }) {
   const [data, setData] = useState(initialData);
   const [preset, setPreset] = useState<PresetKey>('mtd');
   const [segment, setSegment] = useState<SegmentKey>('all');
+  const [trafficMode, setTrafficMode] = useState<TrafficMode>('ads');
   const [sources, setSources] = useState<Set<MarketingAdSource>>(new Set(ALL_SOURCES));
   const [from, setFrom] = useState(initialData.from);
   const [to, setTo] = useState(initialData.to);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  async function load(nextFrom: string, nextTo: string, nextSources: Set<MarketingAdSource>) {
+  async function load(nextFrom: string, nextTo: string, nextSources: Set<MarketingAdSource>, nextMode: TrafficMode) {
     setLoading(true);
     setError('');
     try {
-      const result = await api.getMarketingAnalytics(nextFrom, nextTo, Array.from(nextSources));
+      const sourcesParam: (MarketingAdSource | 'ALL')[] = nextMode === 'all' ? ['ALL'] : Array.from(nextSources);
+      const result = await api.getMarketingAnalytics(nextFrom, nextTo, sourcesParam, slug);
       setData(result);
       setFrom(result.from);
       setTo(result.to);
@@ -77,19 +80,24 @@ export default function AnalyticsView({ initialData }: { initialData: MarketingA
   function selectPreset(key: PresetKey) {
     setPreset(key);
     const range = key === 'mtd' ? monthToDateRange() : key === '7d' ? lastNDaysRange(7) : lastNDaysRange(30);
-    void load(range.from, range.to, sources);
+    void load(range.from, range.to, sources, trafficMode);
   }
 
   function applyCustomRange() {
     setPreset('custom');
-    void load(from, to, sources);
+    void load(from, to, sources, trafficMode);
   }
 
   function toggleSource(source: MarketingAdSource) {
     const next = new Set(sources);
     if (next.has(source)) next.delete(source); else next.add(source);
     setSources(next);
-    void load(from, to, next);
+    void load(from, to, next, trafficMode);
+  }
+
+  function changeTrafficMode(mode: TrafficMode) {
+    setTrafficMode(mode);
+    void load(from, to, sources, mode);
   }
 
   const activeSegment: MarketingAnalyticsSegment = data[segment];
@@ -104,7 +112,9 @@ export default function AnalyticsView({ initialData }: { initialData: MarketingA
 
   return (
     <div>
-      <SourceFilter sources={sources} onToggle={toggleSource} />
+      <TrafficModeToggle mode={trafficMode} onChange={changeTrafficMode} />
+
+      {trafficMode === 'ads' && <SourceFilter sources={sources} onToggle={toggleSource} />}
 
       <div className="mt-4 flex flex-wrap gap-2">
         <PresetButton label="Month to date" active={preset === 'mtd'} onClick={() => selectPreset('mtd')} />
@@ -186,6 +196,39 @@ export default function AnalyticsView({ initialData }: { initialData: MarketingA
 
 function segmentLabel(key: SegmentKey): string {
   return key === 'fresh' ? 'new customers' : key === 'returning' ? 'returning customers' : 'ads customers';
+}
+
+function TrafficModeToggle({ mode, onChange }: { mode: TrafficMode; onChange: (m: TrafficMode) => void }) {
+  return (
+    <div className="rounded-lg p-3 ring-1 ring-zinc-200">
+      <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">Traffic</span>
+      <div className="mt-2 inline-flex w-full flex-wrap gap-1 rounded-lg bg-zinc-100 p-1 sm:w-auto">
+        <button
+          type="button"
+          onClick={() => onChange('ads')}
+          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:flex-none ${
+            mode === 'ads' ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200' : 'text-zinc-500 hover:text-zinc-700'
+          }`}
+        >
+          Ads only
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange('all')}
+          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:flex-none ${
+            mode === 'all' ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200' : 'text-zinc-500 hover:text-zinc-700'
+          }`}
+        >
+          All traffic
+        </button>
+      </div>
+      <p className="mt-1 text-xs text-zinc-400">
+        {mode === 'ads'
+          ? 'Only counting customers whose first or latest touch was a paid ad click — the default, since mani runs ads.'
+          : 'Counting every customer regardless of traffic source, including organic and direct visits.'}
+      </p>
+    </div>
+  );
 }
 
 function SourceFilter({

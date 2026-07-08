@@ -40,6 +40,12 @@ public class MarketingAnalyticsService {
      * which only ever labels a paid click "Meta Ads" or "Google Ads". */
     public static final Set<String> ALL_SOURCES = Set.of("META", "GOOGLE");
 
+    /** Sentinel recognized inside the `sources` parameter alongside META/GOOGLE — means "every
+     * contact regardless of traffic source," not just ads-attributed ones. Kept as a value inside
+     * the existing Set<String> parameter (rather than a separate flag) so every existing caller
+     * passing {META, GOOGLE} is completely unaffected. */
+    public static final String ALL_TRAFFIC = "ALL";
+
     private static final Segment EMPTY_SEGMENT =
             new Segment(0, 0, BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
     private static final BigDecimal ZERO_MONEY = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
@@ -98,7 +104,13 @@ public class MarketingAnalyticsService {
      * (always the current calendar month, independent of [from, to]).
      */
     public MarketingAnalyticsDto analytics(LocalDate from, LocalDate to, Set<String> sources) {
-        Map<String, AdsCustomer> adsCustomers = resolveAdsCustomers(sources);
+        return analytics(from, to, sources, null);
+    }
+
+    /** Same as the 3-arg overload, optionally scoped to a single landing page slug (e.g. "home") —
+     * {@code slug == null} pools every page together, identical to the original behavior. */
+    public MarketingAnalyticsDto analytics(LocalDate from, LocalDate to, Set<String> sources, String slug) {
+        Map<String, AdsCustomer> adsCustomers = resolveAdsCustomers(sources, slug);
         BigDecimal adSpend = currentAdSpend();
         if (adsCustomers.isEmpty()) {
             return new MarketingAnalyticsDto(
@@ -153,9 +165,13 @@ public class MarketingAnalyticsService {
      * the union of both is what "belongs" to that contact. On the rare id collision between two
      * different contacts, the earlier firstTouch wins (the more conservative "first touch" reading).
      */
-    private Map<String, AdsCustomer> resolveAdsCustomers(Set<String> sources) {
-        List<MarketingContactsRepository.AdsAttributedContact> contacts =
-                contactsRepository.findAdsAttributedContacts().stream()
+    private Map<String, AdsCustomer> resolveAdsCustomers(Set<String> sources, String slug) {
+        List<MarketingContactsRepository.AdsAttributedContact> contacts = sources.contains(ALL_TRAFFIC)
+                ? contactsRepository.findAllAttributedContacts(slug)
+                // slug == null calls the exact no-arg overload (not findAdsAttributedContacts(null))
+                // so the unscoped default path is untouched, including at the test-mock level.
+                : (slug == null ? contactsRepository.findAdsAttributedContacts() : contactsRepository.findAdsAttributedContacts(slug))
+                        .stream()
                         .filter(c -> c.platform() != null && sources.contains(c.platform()))
                         .toList();
 

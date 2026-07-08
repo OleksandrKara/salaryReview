@@ -392,4 +392,69 @@ class MarketingAnalyticsServiceTest {
                         && a.getAmountSpent().compareTo(new BigDecimal("200.00")) == 0
                         && "owner1".equals(a.getUpdatedBy())));
     }
+
+    @Test
+    @DisplayName("default (no slug) call still uses the exact no-arg contacts query — regression guard for byte-identical default behavior")
+    void defaultCallUsesNoArgContactsQuery() {
+        when(contactsRepository.findAdsAttributedContacts()).thenReturn(List.of(
+                contact("+16195550001", "cust-ads-1", Instant.parse("2026-07-01T00:00:00Z"), "META")));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
+                svc("2026-07-05", "cust-ads-1", "93.00"))));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), MarketingAnalyticsService.ALL_SOURCES);
+
+        assertThat(dto.all().grossRevenue()).isEqualByComparingTo("93.00");
+        org.mockito.Mockito.verify(contactsRepository).findAdsAttributedContacts();
+        org.mockito.Mockito.verify(contactsRepository, org.mockito.Mockito.never()).findAdsAttributedContacts(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("a slug is passed straight through to the ads-attributed-contacts query")
+    void slugIsPassedToAdsQuery() {
+        when(contactsRepository.findAdsAttributedContacts("home")).thenReturn(List.of(
+                contact("+16195550001", "cust-home-1", Instant.parse("2026-07-01T00:00:00Z"), "META")));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
+                svc("2026-07-05", "cust-home-1", "50.00"))));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), MarketingAnalyticsService.ALL_SOURCES, "home");
+
+        assertThat(dto.all().grossRevenue()).isEqualByComparingTo("50.00");
+        org.mockito.Mockito.verify(contactsRepository).findAdsAttributedContacts("home");
+    }
+
+    @Test
+    @DisplayName("ALL traffic mode includes organic/direct contacts a plain ads query would exclude")
+    void allTrafficModeIncludesOrganicContacts() {
+        when(contactsRepository.findAllAttributedContacts(null)).thenReturn(List.of(
+                contact("+16195550001", "cust-ads-1", Instant.parse("2026-07-01T00:00:00Z"), "META"),
+                contact("+16195550002", "cust-organic-1", Instant.parse("2026-07-01T00:00:00Z"), null)));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
+                svc("2026-07-05", "cust-ads-1", "93.00"),
+                svc("2026-07-06", "cust-organic-1", "40.00"))));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), Set.of(MarketingAnalyticsService.ALL_TRAFFIC));
+
+        assertThat(dto.all().customerCount()).isEqualTo(2);
+        assertThat(dto.all().grossRevenue()).isEqualByComparingTo("133.00");
+        org.mockito.Mockito.verify(contactsRepository, org.mockito.Mockito.never()).findAdsAttributedContacts();
+        org.mockito.Mockito.verify(contactsRepository, org.mockito.Mockito.never()).findAdsAttributedContacts(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("ALL traffic mode combined with a slug scopes to that landing page")
+    void allTrafficModeWithSlugScopesToPage() {
+        when(contactsRepository.findAllAttributedContacts("home")).thenReturn(List.of(
+                contact("+16195550002", "cust-organic-1", Instant.parse("2026-07-01T00:00:00Z"), null)));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
+                svc("2026-07-06", "cust-organic-1", "40.00"))));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), Set.of(MarketingAnalyticsService.ALL_TRAFFIC), "home");
+
+        assertThat(dto.all().grossRevenue()).isEqualByComparingTo("40.00");
+        org.mockito.Mockito.verify(contactsRepository).findAllAttributedContacts("home");
+    }
 }

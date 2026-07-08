@@ -12,8 +12,11 @@ const SUBMISSION_TYPE_LABELS: Record<string, string> = {
 
 const ALL = '__all__';
 
+type TrafficMode = 'ads' | 'all';
+
 interface Filters {
   search: string;
+  trafficMode: TrafficMode;
   trafficSource: string;
   utmSource: string;
   utmMedium: string;
@@ -29,6 +32,7 @@ interface Filters {
 
 const EMPTY_FILTERS: Filters = {
   search: '',
+  trafficMode: 'ads',
   trafficSource: ALL,
   utmSource: ALL,
   utmMedium: ALL,
@@ -41,6 +45,22 @@ const EMPTY_FILTERS: Filters = {
   modifiedFrom: '',
   modifiedTo: '',
 };
+
+/** Matches the backend's own "Meta Ads"/"Google Ads" prefix convention
+ * (MarketingContactsRepository's findAdsAttributedContacts) — a paid click's traffic-source label
+ * always starts with one of these two, everything else (organic, direct, referral) doesn't. */
+function isAdsSource(value: string | null): boolean {
+  return value != null && (value.startsWith('Meta Ads') || value.startsWith('Google Ads'));
+}
+
+/** "Ads" (the default) mirrors what mani's dashboard has always effectively shown, since mani only
+ * runs paid traffic — "All traffic" additionally surfaces organic/direct contacts, which mostly
+ * matter for pages like the homepage that aren't ad-funded. */
+function matchesTrafficMode(c: MarketingContact, mode: TrafficMode): boolean {
+  if (mode === 'all') return true;
+  if (isAdsSource(c.originalTrafficSource) || isAdsSource(c.marketingTrafficSource)) return true;
+  return c.submissions.some((s) => isAdsSource(s.trafficSource));
+}
 
 /** Distinct, sorted, non-empty values pulled from both the contact's own field and every one
  * of their submissions' matching field — so a facet like "Instagram (organic)" is selectable
@@ -91,6 +111,7 @@ function applyFilters(contacts: MarketingContact[], f: Filters): MarketingContac
       const haystack = `${c.givenName ?? ''} ${c.phoneNumber} ${c.emailAddress ?? ''}`.toLowerCase();
       if (!haystack.includes(search)) return false;
     }
+    if (!matchesTrafficMode(c, f.trafficMode)) return false;
     if (!matchesTrafficSource(c, f.trafficSource)) return false;
     if (!matchesField(c, f.utmSource, (x) => x.utmSource, (s) => s.utmSource)) return false;
     if (!matchesField(c, f.utmMedium, (x) => x.utmMedium, (s) => s.utmMedium)) return false;
@@ -124,8 +145,17 @@ function Select({ label, value, options, onChange }: { label: string; value: str
   );
 }
 
-export default function ContactsFilterBar({ contacts }: { contacts: MarketingContact[] }) {
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+export default function ContactsFilterBar({
+  contacts, initialLandingPage,
+}: { contacts: MarketingContact[]; initialLandingPage?: string }) {
+  // Pre-populates the "Landing page" facet from the shared page selector's ?slug= when explicitly
+  // present (e.g. arriving from "Home Page") — left at "All" (today's default) otherwise, since an
+  // absent slug is indistinguishable from "the default page was never touched" and forcing a
+  // specific-page filter in that case would be a real behavior change, not just a convenience.
+  const [filters, setFilters] = useState<Filters>(() => ({
+    ...EMPTY_FILTERS,
+    landingPage: initialLandingPage ?? ALL,
+  }));
 
   const trafficSources = useMemo(() => {
     const values = new Set<string>();
@@ -155,6 +185,7 @@ export default function ContactsFilterBar({ contacts }: { contacts: MarketingCon
 
   const hasActiveFilters =
     filters.search ||
+    filters.trafficMode !== 'ads' ||
     filters.trafficSource !== ALL ||
     filters.utmSource !== ALL ||
     filters.utmMedium !== ALL ||
@@ -181,6 +212,26 @@ export default function ContactsFilterBar({ contacts }: { contacts: MarketingCon
               Clear all
             </button>
           ) : null}
+        </div>
+
+        <div className="mt-3 flex items-center gap-3">
+          <span className="text-xs font-medium text-zinc-500">Traffic</span>
+          <div className="inline-flex rounded-lg bg-zinc-100 p-1">
+            {(['ads', 'all'] as TrafficMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setFilters((f) => ({ ...f, trafficMode: mode }))}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  filters.trafficMode === mode
+                    ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200'
+                    : 'text-zinc-500 hover:text-zinc-700'
+                }`}
+              >
+                {mode === 'ads' ? 'Ads only' : 'All traffic'}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="mt-3">
