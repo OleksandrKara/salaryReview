@@ -762,6 +762,12 @@ export interface MarketingDashboardData {
   statsSince: string | null;
 }
 
+/** One row of marketing.landing_pages — feeds the Overview tab's page selector. */
+export interface MarketingLandingPage {
+  slug: string;
+  name: string;
+}
+
 // --- Marketing analytics (com.salonreview.web.MarketingAnalyticsController) ---
 
 export interface MarketingAnalyticsSegment {

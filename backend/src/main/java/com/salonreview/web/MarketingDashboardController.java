@@ -1,5 +1,6 @@
 package com.salonreview.web;
 
+import com.salonreview.marketing.MarketingDashboardRepository.LandingPageSummary;
 import com.salonreview.marketing.MarketingDashboardService;
 import com.salonreview.web.dto.MarketingDashboardDto;
 import org.springframework.http.HttpStatus;
@@ -8,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -23,6 +25,14 @@ public class MarketingDashboardController {
     @GetMapping("/marketing")
     public MarketingDashboardDto marketing(@RequestParam(defaultValue = "mani") String slug) {
         return service.dashboard(slug);
+    }
+
+    /** Feeds the dashboard's page selector (Overview tab) — every landing page currently in the
+     * marketing schema, so a newly-added one (see akluxnails-home) shows up with no frontend change.
+     */
+    @GetMapping("/marketing/pages")
+    public List<LandingPageSummary> pages() {
+        return service.listLandingPages();
     }
 
     @PatchMapping("/marketing/variants/{variantId}")

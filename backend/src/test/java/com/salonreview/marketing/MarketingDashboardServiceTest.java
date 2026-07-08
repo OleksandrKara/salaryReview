@@ -39,7 +39,7 @@ class MarketingDashboardServiceTest {
     void setUp() {
         repository = mock(MarketingDashboardRepository.class);
         MarketingLandingProperties landingProperties = new MarketingLandingProperties();
-        landingProperties.setLandingBaseUrl("https://mani.akluxnails.com");
+        landingProperties.setLandingBaseUrls(java.util.Map.of("mani", "https://mani.akluxnails.com"));
         service = new MarketingDashboardService(repository, landingProperties);
     }
 
