@@ -33,6 +33,7 @@ import type {
   MarketingAdSource,
   MarketingAnalyticsData,
   MarketingDashboardData,
+  MarketingLandingPage,
   RagCitation,
   RagDocumentSummary,
   StarterSuggestions,
@@ -343,6 +344,8 @@ export const api = {
   // stats cutoff. All owner-only, enforced server-side.
   getMarketingDashboard: (slug: string) =>
     proxyGet<MarketingDashboardData>(`/api/owner/marketing?slug=${encodeURIComponent(slug)}`),
+
+  getMarketingPages: () => proxyGet<MarketingLandingPage[]>('/api/owner/marketing/pages'),
 
   renameMarketingVariant: (variantId: string, name: string) =>
     proxyVoid(`/api/owner/marketing/variants/${variantId}`, 'PATCH', { name }),

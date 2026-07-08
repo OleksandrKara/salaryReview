@@ -6,10 +6,15 @@ import ExperimentStatusBadge from './ExperimentStatusBadge';
 import MarketingManager from './MarketingManager';
 import MarketingTabs from './MarketingTabs';
 
-export default async function MarketingDashboardPage() {
+export default async function MarketingDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ slug?: string }>;
+}) {
+  const { slug } = await searchParams;
   const [me, data, abuseBlocks] = await Promise.all([
     serverApi.getMe(),
-    serverApi.getMarketingDashboard(),
+    serverApi.getMarketingDashboard(slug),
     serverApi.getAbuseBlocks(),
   ]);
 
@@ -42,7 +47,11 @@ export default async function MarketingDashboardPage() {
             />
           </div>
 
-          <AbuseBlocksPanel data={abuseBlocks} />
+          {/* Blocked booking attempts are only meaningful for pages with their own booking form
+              (abuse_blocks isn't scoped per landing page in the backend yet, and a page like the
+              akluxnails.com homepage has no booking form of its own — "Book Now" links out to
+              mani's, so showing this here would misleadingly look like attempts on this page). */}
+          {data.landingPageSlug === 'mani' && <AbuseBlocksPanel data={abuseBlocks} />}
         </>
       )}
     </main>

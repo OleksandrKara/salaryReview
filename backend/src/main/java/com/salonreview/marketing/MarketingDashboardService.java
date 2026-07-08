@@ -48,13 +48,25 @@ public class MarketingDashboardService {
             String experimentStatus = repository.findExperimentStatus(landingPageId.get()).orElse("none");
             Instant statsSince = repository.findStatsSince(landingPageId.get()).orElse(null);
             List<VariantStat> variants = repository.findVariantStats(landingPageId.get(), slug, statsSince).stream()
-                    .map(this::toVariantStat)
+                    .map(raw -> toVariantStat(raw, slug))
                     .collect(Collectors.toList());
 
             return new MarketingDashboardDto(true, slug, experimentStatus, variants, statsSince == null ? null : statsSince.toString());
         } catch (DataAccessException ex) {
             log.warn("Marketing schema unavailable while building dashboard for slug={}", slug, ex);
             return MarketingDashboardDto.unavailable(slug);
+        }
+    }
+
+    /** Every landing page for the dashboard's page selector; empty (not an error) if the marketing
+     * schema isn't reachable — same "never throws" guarantee as dashboard().
+     */
+    public List<MarketingDashboardRepository.LandingPageSummary> listLandingPages() {
+        try {
+            return repository.listLandingPages();
+        } catch (DataAccessException ex) {
+            log.warn("Marketing schema unavailable while listing landing pages", ex);
+            return List.of();
         }
     }
 
@@ -124,15 +136,15 @@ public class MarketingDashboardService {
         repository.updateStatsSince(landingPageId, statsSince);
     }
 
-    private VariantStat toVariantStat(MarketingDashboardRepository.RawVariantStat raw) {
+    private VariantStat toVariantStat(MarketingDashboardRepository.RawVariantStat raw, String slug) {
         double conversionRate = raw.pageViews() == 0 ? 0.0 : (double) raw.bookingsCompleted() / raw.pageViews();
-        String deepLinkUrl = raw.key() == null ? null : buildDeepLinkUrl(raw.key());
+        String deepLinkUrl = raw.key() == null ? null : buildDeepLinkUrl(raw.key(), slug);
         return new VariantStat(raw.variantId(), raw.name(), raw.weight(), raw.active(),
                 raw.pageViews(), raw.bookingsCompleted(), raw.contactsCreated(), conversionRate, deepLinkUrl, raw.description());
     }
 
-    private String buildDeepLinkUrl(String key) {
+    private String buildDeepLinkUrl(String key, String slug) {
         String encodedKey = URLEncoder.encode(key, StandardCharsets.UTF_8);
-        return landingProperties.getLandingBaseUrl() + "/?v=" + encodedKey;
+        return landingProperties.baseUrlFor(slug) + "/?v=" + encodedKey;
     }
 }

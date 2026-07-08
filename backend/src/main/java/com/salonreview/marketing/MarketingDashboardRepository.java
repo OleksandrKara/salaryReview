@@ -47,6 +47,17 @@ public class MarketingDashboardRepository {
         return ids.stream().findFirst();
     }
 
+    public record LandingPageSummary(String slug, String name) {}
+
+    /** Every landing page this schema knows about, oldest first — feeds the owner dashboard's
+     * page selector so a newly-added page (see akluxnails-home) shows up with no frontend change.
+     */
+    public List<LandingPageSummary> listLandingPages() {
+        return jdbcTemplate.query(
+                "SELECT slug, name FROM marketing.landing_pages ORDER BY created_at ASC",
+                (rs, rowNum) -> new LandingPageSummary(rs.getString("slug"), rs.getString("name")));
+    }
+
     /** The single active experiment's status for this page, or empty when none is running. */
     public Optional<String> findExperimentStatus(UUID landingPageId) {
         List<String> statuses = jdbcTemplate.query(
