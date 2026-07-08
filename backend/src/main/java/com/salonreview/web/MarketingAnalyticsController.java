@@ -25,17 +25,22 @@ public class MarketingAnalyticsController {
      * omitted — the view the owner checks most often, per their own description of how they use
      * this page. sources defaults to every recognized ad platform (Meta + Google) when omitted —
      * that default is echoed nowhere in the response, so the frontend is the single source of truth
-     * for "what's currently selected", same as it already is for the date range.
+     * for "what's currently selected", same as it already is for the date range. sources may also
+     * be "ALL" (MarketingAnalyticsService.ALL_TRAFFIC) to include every contact regardless of
+     * traffic source, not just ads-attributed ones. slug optionally scopes to one landing page
+     * (e.g. "home" vs "mani"); omitted means every page pooled together, same as before this param
+     * existed.
      */
     @GetMapping
     public MarketingAnalyticsDto analytics(
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to,
-            @RequestParam(required = false) String sources) {
+            @RequestParam(required = false) String sources,
+            @RequestParam(required = false) String slug) {
         LocalDate today = LocalDate.now();
         LocalDate start = from != null ? LocalDate.parse(from) : today.withDayOfMonth(1);
         LocalDate end = to != null ? LocalDate.parse(to) : today;
-        return service.analytics(start, end, parseSources(sources));
+        return service.analytics(start, end, parseSources(sources), slug);
     }
 
     /** Ad spend has no read-only carve-out beyond the GET above (already OWNER+ADS_MANAGER) — this
@@ -53,7 +58,9 @@ public class MarketingAnalyticsController {
         Set<String> out = new HashSet<>();
         for (String s : raw.split(",")) {
             String upper = s.trim().toUpperCase();
-            if (MarketingAnalyticsService.ALL_SOURCES.contains(upper)) out.add(upper);
+            if (MarketingAnalyticsService.ALL_SOURCES.contains(upper) || upper.equals(MarketingAnalyticsService.ALL_TRAFFIC)) {
+                out.add(upper);
+            }
         }
         return out.isEmpty() ? MarketingAnalyticsService.ALL_SOURCES : out;
     }

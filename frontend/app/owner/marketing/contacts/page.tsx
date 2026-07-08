@@ -4,8 +4,12 @@ import PageHeader from '../../../components/PageHeader';
 import ContactsFilterBar from './ContactsFilterBar';
 import MarketingTabs from '../MarketingTabs';
 
-export default async function MarketingContactsPage() {
-  const [me, data] = await Promise.all([serverApi.getMe(), serverApi.getMarketingContacts()]);
+export default async function MarketingContactsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ slug?: string }>;
+}) {
+  const [{ slug }, me, data] = await Promise.all([searchParams, serverApi.getMe(), serverApi.getMarketingContacts()]);
 
   if (me?.role !== 'OWNER' && me?.role !== 'ADS_MANAGER') redirect('/reports');
 
@@ -28,7 +32,10 @@ export default async function MarketingContactsPage() {
           <p className="mb-3 text-xs text-zinc-500">
             A lead is captured the moment someone submits their name and phone number, before they finish booking.
           </p>
-          <ContactsFilterBar contacts={data.contacts} />
+          {/* Keyed by slug so switching pages via the shared selector — a client-side navigation
+              that wouldn't otherwise remount this component — actually re-applies the "Landing
+              page" facet default instead of leaving it at whatever it was already set to. */}
+          <ContactsFilterBar key={slug ?? 'default'} contacts={data.contacts} initialLandingPage={slug} />
         </div>
       )}
     </main>

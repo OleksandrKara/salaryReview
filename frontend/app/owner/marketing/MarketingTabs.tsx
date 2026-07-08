@@ -16,10 +16,11 @@ const DEFAULT_SLUG = 'mani';
 
 // A second, in-page way to switch between Marketing's views — the main nav menu only ever links
 // to /owner/marketing itself, so without this Contacts/Analytics are reachable only by URL. Also
-// hosts the landing-page selector once more than one page exists (see marketing.landing_pages) —
-// only the Overview tab is slug-aware today (Contacts/Analytics always show every page's data
-// pooled together — a known, tracked gap, not a bug), so the selector only appears there and
-// isn't carried onto the other two tabs' links.
+// hosts the landing-page selector once more than one page exists (see marketing.landing_pages),
+// shown on all three tabs and carrying ?slug= along whichever tab is currently active. Overview
+// and Analytics both read ?slug= server-side to scope their data; Contacts pools every page's
+// data client-side regardless (see ContactsFilterBar) — there, the selector just pre-populates
+// its own "Landing page" facet rather than changing what's fetched.
 export default function MarketingTabs() {
   const pathname = usePathname();
   const router = useRouter();
@@ -33,10 +34,9 @@ export default function MarketingTabs() {
   }, []);
 
   const currentSlug = searchParams.get('slug') ?? DEFAULT_SLUG;
-  const isOverview = pathname === '/owner/marketing';
 
   function selectPage(slug: string) {
-    router.push(slug === DEFAULT_SLUG ? '/owner/marketing' : `/owner/marketing?slug=${encodeURIComponent(slug)}`);
+    router.push(slug === DEFAULT_SLUG ? pathname : `${pathname}?slug=${encodeURIComponent(slug)}`);
   }
 
   return (
@@ -44,9 +44,7 @@ export default function MarketingTabs() {
       <div className="flex gap-1">
         {TABS.map((tab) => {
           const active = pathname === tab.href;
-          const href = tab.href === '/owner/marketing' && currentSlug !== DEFAULT_SLUG
-            ? `${tab.href}?slug=${encodeURIComponent(currentSlug)}`
-            : tab.href;
+          const href = currentSlug !== DEFAULT_SLUG ? `${tab.href}?slug=${encodeURIComponent(currentSlug)}` : tab.href;
           return (
             <Link
               key={tab.href}
@@ -62,7 +60,7 @@ export default function MarketingTabs() {
           );
         })}
       </div>
-      {isOverview && pages.length > 1 && (
+      {pages.length > 1 && (
         <label className="mb-1.5 flex items-center gap-2 text-xs text-zinc-500">
           Page
           <select

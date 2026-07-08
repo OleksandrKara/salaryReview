@@ -129,25 +129,53 @@ public class MarketingContactsRepository {
      * present. contacts is unique on phone_number, so this is naturally one row per contact — no
      * grouping/aggregation needed.
      */
+    private static final String PLATFORM_CASE = """
+            CASE
+                WHEN original_traffic_source LIKE 'Meta Ads%' OR marketing_traffic_source LIKE 'Meta Ads%'
+                    THEN 'META'
+                WHEN original_traffic_source LIKE 'Google Ads%' OR marketing_traffic_source LIKE 'Google Ads%'
+                    THEN 'GOOGLE'
+            END AS platform
+            """;
+
     public List<AdsAttributedContact> findAdsAttributedContacts() {
-        String sql = """
-                SELECT phone_number, square_customer_id, created_at,
-                       CASE
-                           WHEN original_traffic_source LIKE 'Meta Ads%' OR marketing_traffic_source LIKE 'Meta Ads%'
-                               THEN 'META'
-                           WHEN original_traffic_source LIKE 'Google Ads%' OR marketing_traffic_source LIKE 'Google Ads%'
-                               THEN 'GOOGLE'
-                       END AS platform
+        return findAdsAttributedContacts(null);
+    }
+
+    /** Same as the no-arg overload, optionally scoped to one landing page (e.g. "home" vs "mani") —
+     * {@code landingPageSlug == null} preserves the original pooled-across-all-pages behavior. */
+    public List<AdsAttributedContact> findAdsAttributedContacts(String landingPageSlug) {
+        String sql = "SELECT phone_number, square_customer_id, created_at, " + PLATFORM_CASE + """
                 FROM marketing.contacts
-                WHERE original_traffic_source LIKE 'Meta Ads%' OR original_traffic_source LIKE 'Google Ads%'
-                   OR marketing_traffic_source LIKE 'Meta Ads%' OR marketing_traffic_source LIKE 'Google Ads%'
-                """;
+                WHERE (original_traffic_source LIKE 'Meta Ads%' OR original_traffic_source LIKE 'Google Ads%'
+                   OR marketing_traffic_source LIKE 'Meta Ads%' OR marketing_traffic_source LIKE 'Google Ads%')
+                """ + (landingPageSlug != null ? " AND landing_page_slug = ?" : "");
+        Object[] params = landingPageSlug != null ? new Object[]{landingPageSlug} : new Object[0];
         return jdbcTemplate.query(sql, (rs, rowNum) -> new AdsAttributedContact(
                 rs.getString("phone_number"),
                 rs.getString("square_customer_id"),
                 toInstant(rs.getTimestamp("created_at")),
                 rs.getString("platform")
-        ));
+        ), params);
+    }
+
+    /** Every contact regardless of traffic source (ads, organic, direct, referral) — the "All
+     * traffic" counterpart to findAdsAttributedContacts, for pages like the homepage where paid
+     * clicks aren't the only (or even the main) source of visitors. {@code platform} is null for
+     * anything that isn't a recognized paid-ad click; downstream code in "all traffic" mode never
+     * filters on it. {@code landingPageSlug == null} pools every page, same convention as above.
+     */
+    public List<AdsAttributedContact> findAllAttributedContacts(String landingPageSlug) {
+        String sql = "SELECT phone_number, square_customer_id, created_at, " + PLATFORM_CASE + """
+                FROM marketing.contacts
+                """ + (landingPageSlug != null ? "WHERE landing_page_slug = ?" : "");
+        Object[] params = landingPageSlug != null ? new Object[]{landingPageSlug} : new Object[0];
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new AdsAttributedContact(
+                rs.getString("phone_number"),
+                rs.getString("square_customer_id"),
+                toInstant(rs.getTimestamp("created_at")),
+                rs.getString("platform")
+        ), params);
     }
 
     /** Every submission this phone number ever made, most recent first. Phone is the sole match
