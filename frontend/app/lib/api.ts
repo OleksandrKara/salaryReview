@@ -30,6 +30,8 @@ import type {
   KbRequest,
   KbRequestStatus,
   KbRequestTarget,
+  FunnelAnalysisResult,
+  FunnelDashboardData,
   MarketingAdSource,
   MarketingAnalyticsData,
   MarketingDashboardData,
@@ -346,6 +348,21 @@ export const api = {
     proxyGet<MarketingDashboardData>(`/api/owner/marketing?slug=${encodeURIComponent(slug)}`),
 
   getMarketingPages: () => proxyGet<MarketingLandingPage[]>('/api/owner/marketing/pages'),
+
+  // Client-side (not just serverApi) since Compare mode fetches every other landing page's
+  // funnel on demand, after the initial page load.
+  getMarketingFunnel: (slug: string) =>
+    proxyGet<FunnelDashboardData[]>(`/api/owner/marketing/funnel?slug=${encodeURIComponent(slug)}`),
+
+  // "Analyze Funnel" — owner-only (see the route handler); 404s if ai.funnel-analysis.enabled is
+  // off on the backend. Cached server-side by the exact funnel numbers, so a repeat click with
+  // unchanged data is free.
+  analyzeFunnel: (slug: string, flowKey: string) =>
+    proxyJson<FunnelAnalysisResult>(
+      `/api/owner/marketing/funnel/analyze?slug=${encodeURIComponent(slug)}&flowKey=${encodeURIComponent(flowKey)}`,
+      'POST',
+      {},
+    ),
 
   renameMarketingVariant: (variantId: string, name: string) =>
     proxyVoid(`/api/owner/marketing/variants/${variantId}`, 'PATCH', { name }),

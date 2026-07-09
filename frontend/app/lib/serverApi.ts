@@ -9,6 +9,7 @@ import type {
   ManualCredit,
   Me,
   Sop,
+  FunnelDashboardData,
   MarketingAnalyticsData,
   MarketingContactsData,
   MarketingDashboardData,
@@ -151,6 +152,9 @@ export const serverApi = {
     serverFetch<MarketingDashboardData>(`/api/owner/marketing${slug ? `?slug=${encodeURIComponent(slug)}` : ''}`),
 
   getMarketingPages: () => serverFetch<MarketingLandingPage[]>('/api/owner/marketing/pages'),
+
+  getMarketingFunnel: (slug?: string) =>
+    serverFetch<FunnelDashboardData[]>(`/api/owner/marketing/funnel${slug ? `?slug=${encodeURIComponent(slug)}` : ''}`),
 
   getMarketingContacts: () => serverFetch<MarketingContactsData>('/api/owner/marketing/contacts'),
 
