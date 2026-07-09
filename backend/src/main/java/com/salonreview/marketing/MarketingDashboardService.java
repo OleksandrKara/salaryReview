@@ -36,22 +36,22 @@ public class MarketingDashboardService {
      * Never throws: any DataAccessException (e.g. the marketing schema/tables don't exist yet,
      * because the separate salonLandings service hasn't run its migrations) yields an
      * "unavailable" DTO instead of a 500 — this app's own health must never depend on that
-     * other service's schema.
+     * other service's schema. adsOnly mirrors the same "Ads only"/"All traffic" convention already
+     * used on the Contacts/Analytics tabs — see MarketingDashboardRepository.findVariantStats.
      */
-    public MarketingDashboardDto dashboard(String slug) {
+    public MarketingDashboardDto dashboard(String slug, boolean adsOnly) {
         try {
             Optional<UUID> landingPageId = repository.findLandingPageId(slug);
             if (landingPageId.isEmpty()) {
                 return MarketingDashboardDto.unavailable(slug);
             }
 
-            String experimentStatus = repository.findExperimentStatus(landingPageId.get()).orElse("none");
             Instant statsSince = repository.findStatsSince(landingPageId.get()).orElse(null);
-            List<VariantStat> variants = repository.findVariantStats(landingPageId.get(), slug, statsSince).stream()
+            List<VariantStat> variants = repository.findVariantStats(landingPageId.get(), slug, statsSince, adsOnly).stream()
                     .map(raw -> toVariantStat(raw, slug))
                     .collect(Collectors.toList());
 
-            return new MarketingDashboardDto(true, slug, experimentStatus, variants, statsSince == null ? null : statsSince.toString());
+            return new MarketingDashboardDto(true, slug, variants, statsSince == null ? null : statsSince.toString());
         } catch (DataAccessException ex) {
             log.warn("Marketing schema unavailable while building dashboard for slug={}", slug, ex);
             return MarketingDashboardDto.unavailable(slug);

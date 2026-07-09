@@ -19,9 +19,12 @@ public class FunnelAnalyticsController {
         this.service = service;
     }
 
-    /** One entry per flow_key this landing page has recorded — almost always exactly one. */
+    /** One entry per flow_key this landing page has recorded — almost always exactly one. mode
+     * defaults to "ads", same convention/default as the Overview tab; anything other than exactly
+     * "all" is treated as "ads". */
     @GetMapping("/marketing/funnel")
-    public List<FunnelDashboardDto> funnel(@RequestParam(defaultValue = "mani") String slug) {
-        return service.funnel(slug);
+    public List<FunnelDashboardDto> funnel(@RequestParam(defaultValue = "mani") String slug,
+                                            @RequestParam(defaultValue = "ads") String mode) {
+        return service.funnel(slug, !"all".equalsIgnoreCase(mode));
     }
 }

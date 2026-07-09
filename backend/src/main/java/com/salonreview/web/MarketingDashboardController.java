@@ -22,9 +22,12 @@ public class MarketingDashboardController {
         this.service = service;
     }
 
+    /** mode defaults to "ads" (only paid-click traffic) — same default as the Contacts/Analytics
+     * tabs, since mani runs ads. Anything other than exactly "all" is treated as "ads". */
     @GetMapping("/marketing")
-    public MarketingDashboardDto marketing(@RequestParam(defaultValue = "mani") String slug) {
-        return service.dashboard(slug);
+    public MarketingDashboardDto marketing(@RequestParam(defaultValue = "mani") String slug,
+                                            @RequestParam(defaultValue = "ads") String mode) {
+        return service.dashboard(slug, !"all".equalsIgnoreCase(mode));
     }
 
     /** Feeds the dashboard's page selector (Overview tab) — every landing page currently in the

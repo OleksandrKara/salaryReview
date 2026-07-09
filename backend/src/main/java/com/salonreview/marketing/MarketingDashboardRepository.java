@@ -62,15 +62,6 @@ public class MarketingDashboardRepository {
                 (rs, rowNum) -> new LandingPageSummary(rs.getString("slug"), rs.getString("name")));
     }
 
-    /** The single active experiment's status for this page, or empty when none is running. */
-    public Optional<String> findExperimentStatus(UUID landingPageId) {
-        List<String> statuses = jdbcTemplate.query(
-                "SELECT status FROM marketing.experiments WHERE landing_page_id = ? AND status = 'active'",
-                (rs, rowNum) -> rs.getString("status"),
-                landingPageId);
-        return statuses.stream().findFirst();
-    }
-
     public Optional<Instant> findStatsSince(UUID landingPageId) {
         List<Timestamp> rows = jdbcTemplate.query(
                 "SELECT stats_since FROM marketing.landing_pages WHERE id = ?",
@@ -100,8 +91,18 @@ public class MarketingDashboardRepository {
      * variant was called at capture time (see salonLandings; a later rename doesn't change past
      * rows), the same tradeoff already accepted for that column. Also scoped by landing page slug
      * so two different landing pages can't have their variant-name contact counts collide.
+     *
+     * <p>adsOnly=false ("All traffic") runs byte-for-byte the same query as before this filter
+     * existed — every {@code (? OR ...)} guard short-circuits on the bound false and adds no
+     * filtering. adsOnly=true additionally requires: for page views/book-now clicks, a joined
+     * marketing.visits row with fbclid/gclid set; for contacts, the classified traffic-source
+     * columns; for bookings, a LEFT JOIN from marketing.attribution to marketing.contacts by
+     * booking_id (attribution has no session_id of its own to check against visits directly) —
+     * in the current data only ~57% of attribution rows have a matching contacts row, so
+     * "Ads only" bookings is a best-effort floor, not a guaranteed-exact count. All-traffic mode
+     * is unaffected and remains exact.
      */
-    public List<RawVariantStat> findVariantStats(UUID landingPageId, String landingPageSlug, Instant statsSince) {
+    public List<RawVariantStat> findVariantStats(UUID landingPageId, String landingPageSlug, Instant statsSince, boolean adsOnly) {
         String sql = """
                 SELECT v.id AS variant_id, v.name AS name, v.weight AS weight, v.active AS active,
                        v.key AS key, v.description AS description,
@@ -111,33 +112,44 @@ public class MarketingDashboardRepository {
                        COALESCE(bc.book_now_clicks, 0) AS book_now_clicks
                 FROM marketing.landing_variants v
                 LEFT JOIN (
-                    SELECT variant_id, COUNT(*) AS page_views
-                    FROM marketing.events
-                    WHERE event_type = 'page_view' AND (?::timestamptz IS NULL OR created_at >= ?)
-                    GROUP BY variant_id
+                    SELECT e.variant_id, COUNT(*) AS page_views
+                    FROM marketing.events e
+                    WHERE e.event_type = 'page_view' AND (?::timestamptz IS NULL OR e.created_at >= ?)
+                      AND (?::boolean = false OR %1$s)
+                    GROUP BY e.variant_id
                 ) pv ON pv.variant_id = v.id
                 LEFT JOIN (
-                    SELECT variant_id, COUNT(*) AS bookings_completed
-                    FROM marketing.attribution
-                    WHERE (?::timestamptz IS NULL OR created_at >= ?)
-                    GROUP BY variant_id
+                    SELECT a.variant_id, COUNT(*) AS bookings_completed
+                    FROM marketing.attribution a
+                    WHERE (?::timestamptz IS NULL OR a.created_at >= ?)
+                      AND (?::boolean = false OR EXISTS (
+                          SELECT 1 FROM marketing.contacts c2
+                          WHERE c2.square_booking_id = a.booking_id AND %2$s
+                      ))
+                    GROUP BY a.variant_id
                 ) bk ON bk.variant_id = v.id
                 LEFT JOIN (
-                    SELECT variant_name, COUNT(*) AS contacts_created
-                    FROM marketing.contacts
-                    WHERE landing_page_slug = ? AND (?::timestamptz IS NULL OR created_at >= ?)
-                    GROUP BY variant_name
+                    SELECT c.variant_name, COUNT(*) AS contacts_created
+                    FROM marketing.contacts c
+                    WHERE c.landing_page_slug = ? AND (?::timestamptz IS NULL OR c.created_at >= ?)
+                      AND (?::boolean = false OR %3$s)
+                    GROUP BY c.variant_name
                 ) ct ON ct.variant_name = v.name
                 LEFT JOIN (
-                    SELECT variant_id, COUNT(*) AS book_now_clicks
-                    FROM marketing.events
-                    WHERE event_type = 'click' AND metadata->>'target' = 'book_now'
-                      AND (?::timestamptz IS NULL OR created_at >= ?)
-                    GROUP BY variant_id
+                    SELECT e.variant_id, COUNT(*) AS book_now_clicks
+                    FROM marketing.events e
+                    WHERE e.event_type = 'click' AND e.metadata->>'target' = 'book_now'
+                      AND (?::timestamptz IS NULL OR e.created_at >= ?)
+                      AND (?::boolean = false OR %4$s)
+                    GROUP BY e.variant_id
                 ) bc ON bc.variant_id = v.id
                 WHERE v.landing_page_id = ?
                 ORDER BY v.created_at ASC
-                """;
+                """.formatted(
+                        AdsTrafficSql.VISIT_EXISTS.formatted("e.session_id"),
+                        AdsTrafficSql.CONTACT_CONDITION.formatted("c2"),
+                        AdsTrafficSql.CONTACT_CONDITION.formatted("c"),
+                        AdsTrafficSql.VISIT_EXISTS.formatted("e.session_id"));
         Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
         return jdbcTemplate.query(sql, (rs, rowNum) -> new RawVariantStat(
                 rs.getObject("variant_id", UUID.class).toString(),
@@ -150,7 +162,11 @@ public class MarketingDashboardRepository {
                 rs.getLong("book_now_clicks"),
                 rs.getString("key"),
                 rs.getString("description")
-        ), cutoff, cutoff, cutoff, cutoff, landingPageSlug, cutoff, cutoff, cutoff, cutoff, landingPageId);
+        ), cutoff, cutoff, adsOnly,
+           cutoff, cutoff, adsOnly,
+           landingPageSlug, cutoff, cutoff, adsOnly,
+           cutoff, cutoff, adsOnly,
+           landingPageId);
     }
 
     public Optional<UUID> findVariantLandingPageId(UUID variantId) {

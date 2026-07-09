@@ -56,17 +56,19 @@ public class FunnelAnalysisService {
     /**
      * Analyze one landing page's funnel for a specific flow_key (a page normally has exactly
      * one). Recomputes the funnel itself (rather than trusting client-supplied numbers) so the
-     * analysis is always grounded in the same data the dashboard just showed. Returns
-     * {@link Optional#empty()} when the feature is off, or when the slug/flowKey combination has
-     * no funnel data (→ 404 in the controller).
+     * analysis is always grounded in the same data the dashboard just showed — including whichever
+     * Ads only/All traffic mode the owner currently has selected. Returns {@link Optional#empty()}
+     * when the feature is off, or when the slug/flowKey combination has no funnel data (→ 404 in
+     * the controller). No separate cache key for adsOnly is needed: the two modes' underlying
+     * numbers differ, so the snapshot fingerprint below already disambiguates them.
      */
     @Transactional
-    public Optional<FunnelAnalysisResult> analyze(String slug, String flowKey) {
+    public Optional<FunnelAnalysisResult> analyze(String slug, String flowKey, boolean adsOnly) {
         if (!props.isEnabled()) return Optional.empty();
         AnthropicClient client = anthropicClientProvider.getIfAvailable();
         if (client == null) return Optional.empty();
 
-        List<FunnelDashboardDto> funnels = funnelAnalyticsService.funnel(slug);
+        List<FunnelDashboardDto> funnels = funnelAnalyticsService.funnel(slug, adsOnly);
         FunnelDashboardDto funnel = funnels.stream()
                 .filter(f -> f.flowKey().equals(flowKey))
                 .findFirst()

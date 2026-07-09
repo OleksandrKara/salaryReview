@@ -7,8 +7,10 @@ export const POST = (req: Request) => {
   const sp = new URL(req.url).searchParams;
   const slug = sp.get('slug');
   const flowKey = sp.get('flowKey');
+  const mode = sp.get('mode');
   const query = new URLSearchParams();
   if (slug) query.set('slug', slug);
   if (flowKey) query.set('flowKey', flowKey);
+  if (mode) query.set('mode', mode);
   return forwardToBackend(`/api/owner/marketing/funnel/analyze?${query.toString()}`, 'POST', '{}');
 };

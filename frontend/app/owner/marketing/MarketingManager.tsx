@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { api } from '../../lib/api';
 import type { MarketingVariantStat } from '../../lib/types';
+import TrafficModeToggle, { type TrafficMode } from './TrafficModeToggle';
 import VariantTable from './VariantTable';
 
 // datetime-local inputs use the browser's local timezone with no offset in the string;
@@ -30,11 +31,17 @@ export default function MarketingManager({
   const [error, setError] = useState('');
   const [busyVariantId, setBusyVariantId] = useState<string | null>(null);
   const [cutoffBusy, setCutoffBusy] = useState(false);
+  const [trafficMode, setTrafficMode] = useState<TrafficMode>('ads');
 
-  async function refresh() {
-    const data = await api.getMarketingDashboard(slug);
+  async function refresh(mode: TrafficMode = trafficMode) {
+    const data = await api.getMarketingDashboard(slug, mode);
     setVariants(data.variants);
     setStatsSince(data.statsSince);
+  }
+
+  function changeTrafficMode(mode: TrafficMode) {
+    setTrafficMode(mode);
+    void refresh(mode);
   }
 
   async function withVariantBusy(v: MarketingVariantStat, action: () => Promise<void>) {
@@ -115,6 +122,15 @@ export default function MarketingManager({
   return (
     <div>
       {error && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
+
+      <div className="mb-4">
+        <TrafficModeToggle
+          mode={trafficMode}
+          onChange={changeTrafficMode}
+          adsDescription="Only counting page views, clicks, contacts, and bookings attributed to a paid Meta/Google ad click — the default, since mani runs ads. Bookings under Ads only are matched via contact-capture data and may slightly undercount."
+          allDescription="Counting every page view, click, contact, and booking regardless of traffic source, including organic and direct visits."
+        />
+      </div>
 
       {readOnly ? (
         <p className="mb-6 rounded-lg p-4 text-xs text-zinc-500 ring-1 ring-zinc-200">

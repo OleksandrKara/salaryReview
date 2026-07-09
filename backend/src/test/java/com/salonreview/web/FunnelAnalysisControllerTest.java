@@ -75,7 +75,7 @@ class FunnelAnalysisControllerTest {
                 "Default add-ons to skip and require an explicit opt-in instead.",
                 "v1",
                 "claude-sonnet-5");
-        when(service.analyze("home", "homepage_booking_v1")).thenReturn(Optional.of(r));
+        when(service.analyze("home", "homepage_booking_v1", true)).thenReturn(Optional.of(r));
 
         mvc.perform(post("/api/owner/marketing/funnel/analyze")
                         .param("slug", "home")
@@ -92,7 +92,7 @@ class FunnelAnalysisControllerTest {
     @DisplayName("no funnel data for slug/flowKey → 404")
     void noFunnelDataReturns404() throws Exception {
         when(props.isEnabled()).thenReturn(true);
-        when(service.analyze("home", "unknown_flow")).thenReturn(Optional.empty());
+        when(service.analyze("home", "unknown_flow", true)).thenReturn(Optional.empty());
 
         mvc.perform(post("/api/owner/marketing/funnel/analyze")
                         .param("slug", "home")
