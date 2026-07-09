@@ -29,6 +29,10 @@ public class MarketingDashboardRepository {
             long pageViews,
             long bookingsCompleted,
             long contactsCreated,
+            /** Clicks on anything that opens the booking form (step 1) — event_type='click',
+             * metadata->>'target'='book_now'. Both akluxnails-home and mani fire this same
+             * target string from their one shared "open the booking modal" call site. */
+            long bookNowClicks,
             String key,
             String description
     ) {}
@@ -103,7 +107,8 @@ public class MarketingDashboardRepository {
                        v.key AS key, v.description AS description,
                        COALESCE(pv.page_views, 0) AS page_views,
                        COALESCE(bk.bookings_completed, 0) AS bookings_completed,
-                       COALESCE(ct.contacts_created, 0) AS contacts_created
+                       COALESCE(ct.contacts_created, 0) AS contacts_created,
+                       COALESCE(bc.book_now_clicks, 0) AS book_now_clicks
                 FROM marketing.landing_variants v
                 LEFT JOIN (
                     SELECT variant_id, COUNT(*) AS page_views
@@ -123,6 +128,13 @@ public class MarketingDashboardRepository {
                     WHERE landing_page_slug = ? AND (?::timestamptz IS NULL OR created_at >= ?)
                     GROUP BY variant_name
                 ) ct ON ct.variant_name = v.name
+                LEFT JOIN (
+                    SELECT variant_id, COUNT(*) AS book_now_clicks
+                    FROM marketing.events
+                    WHERE event_type = 'click' AND metadata->>'target' = 'book_now'
+                      AND (?::timestamptz IS NULL OR created_at >= ?)
+                    GROUP BY variant_id
+                ) bc ON bc.variant_id = v.id
                 WHERE v.landing_page_id = ?
                 ORDER BY v.created_at ASC
                 """;
@@ -135,9 +147,10 @@ public class MarketingDashboardRepository {
                 rs.getLong("page_views"),
                 rs.getLong("bookings_completed"),
                 rs.getLong("contacts_created"),
+                rs.getLong("book_now_clicks"),
                 rs.getString("key"),
                 rs.getString("description")
-        ), cutoff, cutoff, cutoff, cutoff, landingPageSlug, cutoff, cutoff, landingPageId);
+        ), cutoff, cutoff, cutoff, cutoff, landingPageSlug, cutoff, cutoff, cutoff, cutoff, landingPageId);
     }
 
     public Optional<UUID> findVariantLandingPageId(UUID variantId) {
