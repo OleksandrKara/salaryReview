@@ -10,6 +10,7 @@ const TABS = [
   { href: '/owner/marketing', label: 'Overview' },
   { href: '/owner/marketing/contacts', label: 'Contacts' },
   { href: '/owner/marketing/analytics', label: 'Analytics' },
+  { href: '/owner/marketing/funnel', label: 'Funnel' },
 ];
 
 const DEFAULT_SLUG = 'mani';

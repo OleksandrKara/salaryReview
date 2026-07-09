@@ -51,6 +51,10 @@ ai:
     anthropic-api-key: ${ANTHROPIC_API_KEY:}
     langsmith-api-key: ${LANGSMITH_API_KEY:}
     langsmith-project: ${LANGSMITH_PROJECT:salary-review-suspicious-triage}
+  # AI funnel analysis ("Analyze Funnel" button). Feature flag is off by default; shares
+  # ANTHROPIC_API_KEY with triage above. See AiFunnelAnalysisProperties.java.
+  funnel-analysis:
+    enabled: ${AI_FUNNEL_ANALYSIS_ENABLED:false}
 
 # RAG knowledge assistant. Feature flag is off by default; turn on per environment only after
 # ANTHROPIC_API_KEY (answers, shared with triage) and VOYAGE_API_KEY (embeddings) are set.

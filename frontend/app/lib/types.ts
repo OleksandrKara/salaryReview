@@ -765,6 +765,62 @@ export interface MarketingDashboardData {
   statsSince: string | null;
 }
 
+// --- Booking-funnel dashboard (com.salonreview.web.FunnelAnalyticsController) ---
+// Read-only view of marketing.funnel_events, written by both mani and akluxnails-home's own
+// backends. A landing page normally has exactly one flowKey; the endpoint returns an array so a
+// flow redesign (a new flowKey) shows as its own funnel instead of a nonsensical merge.
+
+export interface FunnelStepStat {
+  stepKey: string;
+  stepIndex: number;
+  stepCountTotal: number;
+  reachedCount: number;
+  /** reachedCount / totalStarted, 0 when totalStarted is 0. */
+  reachedPctOfStarted: number;
+  /** How many sessions reached the previous step (or totalStarted, for the first step) but not this one. */
+  dropOffCount: number;
+  /** dropOffCount / the previous step's reachedCount (or totalStarted for the first step). */
+  dropOffPct: number;
+}
+
+export interface FunnelDashboardData {
+  landingPageSlug: string;
+  flowKey: string;
+  /** Same page_view count the Overview tab shows — the two never disagree on "how many people saw this page". */
+  totalVisitors: number;
+  /** Distinct sessions reaching this flow's first step. */
+  totalStarted: number;
+  steps: FunnelStepStat[];
+  /** Sourced from marketing.attribution (Square-reconciled) — same as Overview's "Bookings" column. */
+  totalCompleted: number;
+  /** totalCompleted / totalVisitors, 0 when totalVisitors is 0. */
+  finalConversionRate: number;
+}
+
+// --- AI funnel analysis (com.salonreview.web.FunnelAnalysisController) — owner-only ---
+// "Analyze Funnel" button on the Funnel tab. Mirrors the AI triage feature's shape: feature-
+// flagged (404 when ai.funnel-analysis.enabled=false), structured Claude output, cached by a
+// snapshot of the exact funnel numbers analyzed so a repeat click with unchanged data is free.
+
+export type ImpactLevel = 'HIGH' | 'MEDIUM' | 'LOW';
+
+export interface PrioritizedRecommendation {
+  title: string;
+  rationale: string;
+  expectedImpact: ImpactLevel;
+}
+
+export interface FunnelAnalysisResult {
+  biggestBottleneckStep: string;
+  bottleneckExplanation: string;
+  recommendations: PrioritizedRecommendation[];
+  suspiciousPatterns: string[];
+  suggestedAbTests: string[];
+  topPriorityAction: string;
+  promptVersion: string;
+  model: string;
+}
+
 /** One row of marketing.landing_pages — feeds the Overview tab's page selector. */
 export interface MarketingLandingPage {
   slug: string;
