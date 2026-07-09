@@ -744,6 +744,9 @@ export interface MarketingVariantStat {
   /** Contacts (leads) captured under this variant, matched by name — a later rename won't
    * reattach older contacts to the new name (see the backend DTO's field doc). */
   contactsCreated: number;
+  /** Clicks on anything that opens the booking form (step 1) — mani and akluxnails-home both
+   * fire this from their one shared "open the booking modal" call site. */
+  bookNowClicks: number;
   conversionRate: number;
   /** Direct ?v=<key> link to view this exact variant, or null if it has no key yet. */
   deepLinkUrl: string | null;

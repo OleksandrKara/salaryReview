@@ -22,6 +22,9 @@ public record MarketingDashboardDto(
              * marketing.contacts.variant_name is a denormalized snapshot at capture time, not a
              * foreign key; a later rename won't reattach older contacts to the new name. */
             long contactsCreated,
+            /** Clicks on anything that opens the booking form (step 1) — see
+             * MarketingDashboardRepository.RawVariantStat.bookNowClicks for the query. */
+            long bookNowClicks,
             double conversionRate,
             /** Direct ?v=<key> link to view this exact variant, or null if it has no key yet. */
             String deepLinkUrl,

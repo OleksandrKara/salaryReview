@@ -68,10 +68,11 @@ function totalsFor(variants: MarketingVariantStat[]) {
   const totalPageViews = variants.reduce((sum, v) => sum + v.pageViews, 0);
   const totalContacts = variants.reduce((sum, v) => sum + v.contactsCreated, 0);
   const totalBookings = variants.reduce((sum, v) => sum + v.bookingsCompleted, 0);
+  const totalBookNowClicks = variants.reduce((sum, v) => sum + v.bookNowClicks, 0);
   // The aggregate rate, not an average of the per-variant rates — a variant with 10 views at 50%
   // shouldn't count as much as one with 10,000 views at 2% when rolled up.
   const conversionRate = totalPageViews === 0 ? 0 : totalBookings / totalPageViews;
-  return { totalWeight, activeCount, totalPageViews, totalContacts, totalBookings, conversionRate };
+  return { totalWeight, activeCount, totalPageViews, totalContacts, totalBookings, totalBookNowClicks, conversionRate };
 }
 
 export default function VariantTable({ variants, ...actions }: { variants: MarketingVariantStat[] } & VariantActions) {
@@ -93,10 +94,14 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
             <div className="mt-1">
               <Description v={v} />
             </div>
-            <dl className="mt-3 grid grid-cols-4 gap-2 text-sm">
+            <dl className="mt-3 grid grid-cols-3 gap-2 text-sm sm:grid-cols-5">
               <div>
                 <dt className="text-xs text-zinc-500">Page Views</dt>
                 <dd className="tabular-nums">{v.pageViews.toLocaleString('en-US')}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-zinc-500">Book Clicks</dt>
+                <dd className="tabular-nums">{v.bookNowClicks.toLocaleString('en-US')}</dd>
               </div>
               <div>
                 <dt className="text-xs text-zinc-500">Contacts</dt>
@@ -128,10 +133,14 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
             <span className="font-semibold">Total</span>
             <span className="text-xs text-zinc-500">{totals.activeCount} of {variants.length} active</span>
           </div>
-          <dl className="mt-3 grid grid-cols-4 gap-2 text-sm">
+          <dl className="mt-3 grid grid-cols-3 gap-2 text-sm sm:grid-cols-5">
             <div>
               <dt className="text-xs text-zinc-500">Page Views</dt>
               <dd className="font-semibold tabular-nums">{totals.totalPageViews.toLocaleString('en-US')}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-zinc-500">Book Clicks</dt>
+              <dd className="font-semibold tabular-nums">{totals.totalBookNowClicks.toLocaleString('en-US')}</dd>
             </div>
             <div>
               <dt className="text-xs text-zinc-500">Contacts</dt>
@@ -158,6 +167,7 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
               <th className="px-3 py-2 text-right">Weight</th>
               <th className="px-3 py-2 text-center">Active</th>
               <th className="px-3 py-2 text-right">Page Views</th>
+              <th className="px-3 py-2 text-right">Book Clicks</th>
               <th className="px-3 py-2 text-right">Contacts</th>
               <th className="px-3 py-2 text-right">Bookings</th>
               <th className="px-3 py-2 text-right">Conversion %</th>
@@ -177,6 +187,7 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
                   <ActiveToggle v={v} onToggleActive={actions.onToggleActive} busy={actions.busyVariantId === v.variantId} readOnly={actions.readOnly} />
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{v.pageViews.toLocaleString('en-US')}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{v.bookNowClicks.toLocaleString('en-US')}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{v.contactsCreated.toLocaleString('en-US')}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{v.bookingsCompleted.toLocaleString('en-US')}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{pct(v.conversionRate)}</td>
@@ -199,6 +210,7 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
                 {totals.activeCount} of {variants.length} active
               </td>
               <td className="px-3 py-2 text-right tabular-nums">{totals.totalPageViews.toLocaleString('en-US')}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{totals.totalBookNowClicks.toLocaleString('en-US')}</td>
               <td className="px-3 py-2 text-right tabular-nums">{totals.totalContacts.toLocaleString('en-US')}</td>
               <td className="px-3 py-2 text-right tabular-nums">{totals.totalBookings.toLocaleString('en-US')}</td>
               <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{pct(totals.conversionRate)}</td>

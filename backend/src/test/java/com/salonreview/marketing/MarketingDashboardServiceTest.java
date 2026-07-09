@@ -49,7 +49,7 @@ class MarketingDashboardServiceTest {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findExperimentStatus(LANDING_PAGE_ID)).thenReturn(Optional.of("active"));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull())).thenReturn(List.of(
-                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 25, 40, "control", "Baseline, no changes")
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 25, 40, 60, "control", "Baseline, no changes")
         ));
 
         MarketingDashboardDto dashboard = service.dashboard("mani");
@@ -60,6 +60,7 @@ class MarketingDashboardServiceTest {
         assertThat(variant.pageViews()).isEqualTo(100);
         assertThat(variant.bookingsCompleted()).isEqualTo(25);
         assertThat(variant.contactsCreated()).isEqualTo(40);
+        assertThat(variant.bookNowClicks()).isEqualTo(60);
         assertThat(variant.conversionRate()).isEqualTo(0.25);
         assertThat(variant.deepLinkUrl()).isEqualTo("https://mani.akluxnails.com/?v=control");
         assertThat(variant.description()).isEqualTo("Baseline, no changes");
@@ -87,7 +88,7 @@ class MarketingDashboardServiceTest {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findExperimentStatus(LANDING_PAGE_ID)).thenReturn(Optional.of("active"));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull())).thenReturn(List.of(
-                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 25, 40, null, null)
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 25, 40, 60, null, null)
         ));
 
         MarketingDashboardDto dashboard = service.dashboard("mani");
@@ -101,7 +102,7 @@ class MarketingDashboardServiceTest {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findExperimentStatus(LANDING_PAGE_ID)).thenReturn(Optional.empty());
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull())).thenReturn(List.of(
-                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 0, 0, 0, "control", null)
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 0, 0, 0, 0, "control", null)
         ));
 
         MarketingDashboardDto dashboard = service.dashboard("mani");

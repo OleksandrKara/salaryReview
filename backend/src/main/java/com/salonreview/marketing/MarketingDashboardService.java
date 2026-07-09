@@ -140,7 +140,8 @@ public class MarketingDashboardService {
         double conversionRate = raw.pageViews() == 0 ? 0.0 : (double) raw.bookingsCompleted() / raw.pageViews();
         String deepLinkUrl = raw.key() == null ? null : buildDeepLinkUrl(raw.key(), slug);
         return new VariantStat(raw.variantId(), raw.name(), raw.weight(), raw.active(),
-                raw.pageViews(), raw.bookingsCompleted(), raw.contactsCreated(), conversionRate, deepLinkUrl, raw.description());
+                raw.pageViews(), raw.bookingsCompleted(), raw.contactsCreated(), raw.bookNowClicks(),
+                conversionRate, deepLinkUrl, raw.description());
     }
 
     private String buildDeepLinkUrl(String key, String slug) {
