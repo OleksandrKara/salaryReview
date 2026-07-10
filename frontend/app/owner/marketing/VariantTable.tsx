@@ -20,8 +20,8 @@ function Description({ v }: { v: MarketingVariantStat }) {
   return <p className="text-xs text-zinc-500">{v.description}</p>;
 }
 
-// A bare colored dot didn't read as clickable — a labeled pill (matching ExperimentStatusBadge's
-// visual language elsewhere on this page) makes it obvious this is a toggle, not just a status icon.
+// A bare colored dot didn't read as clickable — a labeled pill makes it obvious this is a
+// toggle, not just a status icon.
 function ActiveToggle({
   v, onToggleActive, busy, readOnly,
 }: { v: MarketingVariantStat; onToggleActive: (v: MarketingVariantStat) => void; busy: boolean; readOnly?: boolean }) {

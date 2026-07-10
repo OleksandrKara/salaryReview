@@ -148,13 +148,21 @@ export const serverApi = {
       `/api/owner/overview?fromYear=${fromYear}&fromMonth=${fromMonth}&toYear=${toYear}&toMonth=${toMonth}`
     ),
 
-  getMarketingDashboard: (slug?: string) =>
-    serverFetch<MarketingDashboardData>(`/api/owner/marketing${slug ? `?slug=${encodeURIComponent(slug)}` : ''}`),
+  getMarketingDashboard: (slug?: string, mode: 'ads' | 'all' = 'ads') => {
+    const query = new URLSearchParams();
+    if (slug) query.set('slug', slug);
+    query.set('mode', mode);
+    return serverFetch<MarketingDashboardData>(`/api/owner/marketing?${query.toString()}`);
+  },
 
   getMarketingPages: () => serverFetch<MarketingLandingPage[]>('/api/owner/marketing/pages'),
 
-  getMarketingFunnel: (slug?: string) =>
-    serverFetch<FunnelDashboardData[]>(`/api/owner/marketing/funnel${slug ? `?slug=${encodeURIComponent(slug)}` : ''}`),
+  getMarketingFunnel: (slug?: string, mode: 'ads' | 'all' = 'ads') => {
+    const query = new URLSearchParams();
+    if (slug) query.set('slug', slug);
+    query.set('mode', mode);
+    return serverFetch<FunnelDashboardData[]>(`/api/owner/marketing/funnel?${query.toString()}`);
+  },
 
   getMarketingContacts: () => serverFetch<MarketingContactsData>('/api/owner/marketing/contacts'),
 

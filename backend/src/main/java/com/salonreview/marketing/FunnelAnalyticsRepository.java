@@ -39,16 +39,21 @@ public class FunnelAnalyticsRepository {
      */
     public record RawFunnelStep(String flowKey, String stepKey, int stepIndex, int stepCountTotal, long reachedCount) {}
 
-    public List<RawFunnelStep> findFunnelSteps(UUID landingPageId, Instant statsSince) {
+    /** adsOnly=false ("All traffic") runs the exact same query as before this filter existed —
+     * see MarketingDashboardRepository.findVariantStats for the full rationale (same guard
+     * pattern, same fbclid/gclid-via-marketing.visits join, shared via {@link AdsTrafficSql}).
+     */
+    public List<RawFunnelStep> findFunnelSteps(UUID landingPageId, Instant statsSince, boolean adsOnly) {
         String sql = """
                 SELECT flow_key, step_key, step_index,
                        MAX(step_count_total) AS step_count_total,
                        COUNT(DISTINCT session_id) AS reached_count
-                FROM marketing.funnel_events
-                WHERE landing_page_id = ? AND (?::timestamptz IS NULL OR created_at >= ?)
+                FROM marketing.funnel_events fe
+                WHERE fe.landing_page_id = ? AND (?::timestamptz IS NULL OR fe.created_at >= ?)
+                  AND (?::boolean = false OR %s)
                 GROUP BY flow_key, step_key, step_index
                 ORDER BY flow_key, step_index
-                """;
+                """.formatted(AdsTrafficSql.VISIT_EXISTS.formatted("fe.session_id"));
         Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
         return jdbcTemplate.query(sql, (rs, rowNum) -> new RawFunnelStep(
                 rs.getString("flow_key"),
@@ -56,36 +61,43 @@ public class FunnelAnalyticsRepository {
                 rs.getInt("step_index"),
                 rs.getInt("step_count_total"),
                 rs.getLong("reached_count")
-        ), landingPageId, cutoff, cutoff);
+        ), landingPageId, cutoff, cutoff, adsOnly);
     }
 
     /** Top-of-funnel denominator — same page_view count the main marketing dashboard shows, so
      * the two dashboards never disagree on "how many people saw this page".
      */
-    public long countPageViews(UUID landingPageId, Instant statsSince) {
+    public long countPageViews(UUID landingPageId, Instant statsSince, boolean adsOnly) {
         Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
         Long count = jdbcTemplate.queryForObject(
                 """
-                SELECT COUNT(*) FROM marketing.events
-                WHERE landing_page_id = ? AND event_type = 'page_view'
-                  AND (?::timestamptz IS NULL OR created_at >= ?)
-                """,
-                Long.class, landingPageId, cutoff, cutoff);
+                SELECT COUNT(*) FROM marketing.events e
+                WHERE e.landing_page_id = ? AND e.event_type = 'page_view'
+                  AND (?::timestamptz IS NULL OR e.created_at >= ?)
+                  AND (?::boolean = false OR %s)
+                """.formatted(AdsTrafficSql.VISIT_EXISTS.formatted("e.session_id")),
+                Long.class, landingPageId, cutoff, cutoff, adsOnly);
         return count == null ? 0 : count;
     }
 
     /** Bottom-of-funnel signal — sourced from marketing.attribution (reconciled via Square sync),
      * the same authoritative source the main marketing dashboard's "Bookings" column uses, not a
-     * best-effort client-side "done" beacon.
+     * best-effort client-side "done" beacon. Same attribution-has-no-session_id caveat as
+     * MarketingDashboardRepository.findVariantStats: adsOnly here is a best-effort floor via a
+     * LEFT JOIN to marketing.contacts by booking_id, not a guaranteed-exact count.
      */
-    public long countBookingsCompleted(UUID landingPageId, Instant statsSince) {
+    public long countBookingsCompleted(UUID landingPageId, Instant statsSince, boolean adsOnly) {
         Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
         Long count = jdbcTemplate.queryForObject(
                 """
-                SELECT COUNT(*) FROM marketing.attribution
-                WHERE landing_page_id = ? AND (?::timestamptz IS NULL OR created_at >= ?)
-                """,
-                Long.class, landingPageId, cutoff, cutoff);
+                SELECT COUNT(*) FROM marketing.attribution a
+                WHERE a.landing_page_id = ? AND (?::timestamptz IS NULL OR a.created_at >= ?)
+                  AND (?::boolean = false OR EXISTS (
+                      SELECT 1 FROM marketing.contacts c2
+                      WHERE c2.square_booking_id = a.booking_id AND %s
+                  ))
+                """.formatted(AdsTrafficSql.CONTACT_CONDITION.formatted("c2")),
+                Long.class, landingPageId, cutoff, cutoff, adsOnly);
         return count == null ? 0 : count;
     }
 }

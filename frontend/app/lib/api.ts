@@ -344,22 +344,23 @@ export const api = {
 
   // Owner marketing dashboard: variant management + the "hide test data before this date"
   // stats cutoff. All owner-only, enforced server-side.
-  getMarketingDashboard: (slug: string) =>
-    proxyGet<MarketingDashboardData>(`/api/owner/marketing?slug=${encodeURIComponent(slug)}`),
+  getMarketingDashboard: (slug: string, mode: 'ads' | 'all' = 'ads') =>
+    proxyGet<MarketingDashboardData>(`/api/owner/marketing?slug=${encodeURIComponent(slug)}&mode=${mode}`),
 
   getMarketingPages: () => proxyGet<MarketingLandingPage[]>('/api/owner/marketing/pages'),
 
   // Client-side (not just serverApi) since Compare mode fetches every other landing page's
   // funnel on demand, after the initial page load.
-  getMarketingFunnel: (slug: string) =>
-    proxyGet<FunnelDashboardData[]>(`/api/owner/marketing/funnel?slug=${encodeURIComponent(slug)}`),
+  getMarketingFunnel: (slug: string, mode: 'ads' | 'all' = 'ads') =>
+    proxyGet<FunnelDashboardData[]>(`/api/owner/marketing/funnel?slug=${encodeURIComponent(slug)}&mode=${mode}`),
 
   // "Analyze Funnel" — owner-only (see the route handler); 404s if ai.funnel-analysis.enabled is
-  // off on the backend. Cached server-side by the exact funnel numbers, so a repeat click with
+  // off on the backend. Cached server-side by the exact funnel numbers (which differ between
+  // ads/all traffic, so the two modes never share a stale cached result), so a repeat click with
   // unchanged data is free.
-  analyzeFunnel: (slug: string, flowKey: string) =>
+  analyzeFunnel: (slug: string, flowKey: string, mode: 'ads' | 'all' = 'ads') =>
     proxyJson<FunnelAnalysisResult>(
-      `/api/owner/marketing/funnel/analyze?slug=${encodeURIComponent(slug)}&flowKey=${encodeURIComponent(flowKey)}`,
+      `/api/owner/marketing/funnel/analyze?slug=${encodeURIComponent(slug)}&flowKey=${encodeURIComponent(flowKey)}&mode=${mode}`,
       'POST',
       {},
     ),

@@ -25,10 +25,13 @@ public class FunnelAnalysisController {
         this.props = props;
     }
 
+    /** mode defaults to "ads", same convention as the dashboard endpoints; anything other than
+     * exactly "all" is treated as "ads". */
     @PostMapping("/api/owner/marketing/funnel/analyze")
-    public ResponseEntity<FunnelAnalysisResult> analyze(@RequestParam String slug, @RequestParam String flowKey) {
+    public ResponseEntity<FunnelAnalysisResult> analyze(@RequestParam String slug, @RequestParam String flowKey,
+                                                         @RequestParam(defaultValue = "ads") String mode) {
         if (!props.isEnabled()) return ResponseEntity.notFound().build();
-        return service.analyze(slug, flowKey)
+        return service.analyze(slug, flowKey, !"all".equalsIgnoreCase(mode))
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }

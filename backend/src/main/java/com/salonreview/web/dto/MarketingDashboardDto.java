@@ -5,7 +5,6 @@ import java.util.List;
 public record MarketingDashboardDto(
         boolean available,
         String landingPageSlug,
-        String experimentStatus,
         List<VariantStat> variants,
         /** ISO-8601 instant, or null if no cutoff is set — stats below reflect activity from
          * this point forward only (see MarketingDashboardService.updateStatsSince). */
@@ -35,6 +34,6 @@ public record MarketingDashboardDto(
 
     /** Rendered when the marketing schema/tables aren't reachable yet, or the slug is unknown. */
     public static MarketingDashboardDto unavailable(String slug) {
-        return new MarketingDashboardDto(false, slug, "none", List.of(), null);
+        return new MarketingDashboardDto(false, slug, List.of(), null);
     }
 }

@@ -2,7 +2,6 @@ import { redirect } from 'next/navigation';
 import { serverApi } from '../../lib/serverApi';
 import PageHeader from '../../components/PageHeader';
 import AbuseBlocksPanel from './AbuseBlocksPanel';
-import ExperimentStatusBadge from './ExperimentStatusBadge';
 import MarketingManager from './MarketingManager';
 import MarketingTabs from './MarketingTabs';
 
@@ -34,12 +33,16 @@ export default async function MarketingDashboardPage({
         <>
           <div className="mt-4 flex items-center gap-2">
             <span className="text-sm text-zinc-500">Landing page: {data.landingPageSlug}</span>
-            <ExperimentStatusBadge status={data.experimentStatus} />
           </div>
 
           <div className="mt-6">
             <h2 className="mb-2 text-sm font-medium text-zinc-500">Variant performance</h2>
+            {/* Keyed by slug so switching pages via the shared selector (a client-side navigation
+                that doesn't otherwise remount this component) forces a fresh mount — otherwise the
+                already-mounted instance keeps showing whatever it last fetched, ignoring the new
+                initialVariants. Same fix already applied to AnalyticsView and FunnelView. */}
             <MarketingManager
+              key={data.landingPageSlug}
               slug={data.landingPageSlug}
               initialVariants={data.variants}
               initialStatsSince={data.statsSince}

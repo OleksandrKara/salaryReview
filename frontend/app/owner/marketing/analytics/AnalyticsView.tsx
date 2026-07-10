@@ -8,6 +8,7 @@ import type {
   MarketingAnalyticsSegment,
   MarketingUpcomingAppointment,
 } from '../../../lib/types';
+import TrafficModeToggle, { type TrafficMode } from '../TrafficModeToggle';
 
 const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -48,7 +49,6 @@ const SOURCE_LABELS: Record<MarketingAdSource, string> = { META: 'Meta Ads', GOO
 
 type PresetKey = 'mtd' | '7d' | '30d' | 'custom';
 type SegmentKey = 'all' | 'fresh' | 'returning';
-type TrafficMode = 'ads' | 'all';
 
 export default function AnalyticsView({ initialData, slug }: { initialData: MarketingAnalyticsData; slug?: string }) {
   const [data, setData] = useState(initialData);
@@ -112,7 +112,12 @@ export default function AnalyticsView({ initialData, slug }: { initialData: Mark
 
   return (
     <div>
-      <TrafficModeToggle mode={trafficMode} onChange={changeTrafficMode} />
+      <TrafficModeToggle
+        mode={trafficMode}
+        onChange={changeTrafficMode}
+        adsDescription="Only counting customers whose first or latest touch was a paid ad click — the default, since mani runs ads."
+        allDescription="Counting every customer regardless of traffic source, including organic and direct visits."
+      />
 
       {trafficMode === 'ads' && <SourceFilter sources={sources} onToggle={toggleSource} />}
 
@@ -196,39 +201,6 @@ export default function AnalyticsView({ initialData, slug }: { initialData: Mark
 
 function segmentLabel(key: SegmentKey): string {
   return key === 'fresh' ? 'new customers' : key === 'returning' ? 'returning customers' : 'ads customers';
-}
-
-function TrafficModeToggle({ mode, onChange }: { mode: TrafficMode; onChange: (m: TrafficMode) => void }) {
-  return (
-    <div className="rounded-lg p-3 ring-1 ring-zinc-200">
-      <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">Traffic</span>
-      <div className="mt-2 inline-flex w-full flex-wrap gap-1 rounded-lg bg-zinc-100 p-1 sm:w-auto">
-        <button
-          type="button"
-          onClick={() => onChange('ads')}
-          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:flex-none ${
-            mode === 'ads' ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200' : 'text-zinc-500 hover:text-zinc-700'
-          }`}
-        >
-          Ads only
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange('all')}
-          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:flex-none ${
-            mode === 'all' ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200' : 'text-zinc-500 hover:text-zinc-700'
-          }`}
-        >
-          All traffic
-        </button>
-      </div>
-      <p className="mt-1 text-xs text-zinc-400">
-        {mode === 'ads'
-          ? 'Only counting customers whose first or latest touch was a paid ad click — the default, since mani runs ads.'
-          : 'Counting every customer regardless of traffic source, including organic and direct visits.'}
-      </p>
-    </div>
-  );
 }
 
 function SourceFilter({

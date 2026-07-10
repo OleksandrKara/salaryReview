@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { api } from '../../../lib/api';
 import type { FunnelAnalysisResult, FunnelDashboardData, MarketingLandingPage, Role } from '../../../lib/types';
+import TrafficModeToggle, { type TrafficMode } from '../TrafficModeToggle';
 
 const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 
@@ -79,11 +80,13 @@ function FunnelPanel({
   slug,
   data,
   canAnalyze,
+  trafficMode,
 }: {
   label: string;
   slug: string;
   data: FunnelDashboardData;
   canAnalyze: boolean;
+  trafficMode: TrafficMode;
 }) {
   const [analysis, setAnalysis] = useState<FunnelAnalysisResult | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -93,7 +96,7 @@ function FunnelPanel({
     setAnalyzing(true);
     setError(null);
     try {
-      const result = await api.analyzeFunnel(slug, data.flowKey);
+      const result = await api.analyzeFunnel(slug, data.flowKey, trafficMode);
       setAnalysis(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Analysis failed.');
@@ -183,9 +186,12 @@ export default function FunnelView({
   pages: MarketingLandingPage[];
   role: Role;
 }) {
+  const [data, setData] = useState(initialData);
+  const [trafficMode, setTrafficMode] = useState<TrafficMode>('ads');
   const [compareMode, setCompareMode] = useState(false);
   const [compareData, setCompareData] = useState<Record<string, FunnelDashboardData[]>>({});
   const [loadingCompare, setLoadingCompare] = useState(false);
+  const [loadingMode, setLoadingMode] = useState(false);
 
   const currentName = pages.find((p) => p.slug === slug)?.name ?? slug;
   const otherPages = pages.filter((p) => p.slug !== slug);
@@ -194,39 +200,77 @@ export default function FunnelView({
   // and having every click 403/404.
   const canAnalyze = role === 'OWNER';
 
+  async function loadCompareData(mode: TrafficMode) {
+    if (otherPages.length === 0) return;
+    setLoadingCompare(true);
+    try {
+      const results = await Promise.all(otherPages.map((p) => api.getMarketingFunnel(p.slug, mode)));
+      const next: Record<string, FunnelDashboardData[]> = {};
+      otherPages.forEach((p, i) => {
+        next[p.slug] = results[i];
+      });
+      setCompareData(next);
+    } finally {
+      setLoadingCompare(false);
+    }
+  }
+
   async function toggleCompare() {
-    if (!compareMode && otherPages.length > 0 && Object.keys(compareData).length === 0) {
-      setLoadingCompare(true);
-      try {
-        const results = await Promise.all(otherPages.map((p) => api.getMarketingFunnel(p.slug)));
-        const next: Record<string, FunnelDashboardData[]> = {};
-        otherPages.forEach((p, i) => {
-          next[p.slug] = results[i];
-        });
-        setCompareData(next);
-      } finally {
-        setLoadingCompare(false);
-      }
+    if (!compareMode && Object.keys(compareData).length === 0) {
+      await loadCompareData(trafficMode);
     }
     setCompareMode((v) => !v);
   }
 
-  if (initialData.length === 0) {
+  async function changeTrafficMode(mode: TrafficMode) {
+    setTrafficMode(mode);
+    setLoadingMode(true);
+    try {
+      const fresh = await api.getMarketingFunnel(slug, mode);
+      setData(fresh);
+      // Compare data was fetched for the old mode — invalidate and refetch if already showing.
+      if (compareMode) {
+        await loadCompareData(mode);
+      } else {
+        setCompareData({});
+      }
+    } finally {
+      setLoadingMode(false);
+    }
+  }
+
+  if (data.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">
-        No booking-funnel data recorded yet for this landing page.
+      <div>
+        <div className="mb-4">
+          <TrafficModeToggle
+            mode={trafficMode}
+            onChange={changeTrafficMode}
+            adsDescription="Only counting visitors, funnel steps, and bookings attributed to a paid Meta/Google ad click — the default, since mani runs ads."
+            allDescription="Counting every visitor, funnel step, and booking regardless of traffic source, including organic and direct visits."
+          />
+        </div>
+        <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">
+          No booking-funnel data recorded yet for this landing page{trafficMode === 'ads' ? ' under Ads only — try All traffic' : ''}.
+        </div>
       </div>
     );
   }
 
   return (
     <div>
-      {otherPages.length > 0 && (
-        <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <TrafficModeToggle
+          mode={trafficMode}
+          onChange={changeTrafficMode}
+          adsDescription="Only counting visitors, funnel steps, and bookings attributed to a paid Meta/Google ad click — the default, since mani runs ads. Bookings under Ads only are matched via contact-capture data and may slightly undercount."
+          allDescription="Counting every visitor, funnel step, and booking regardless of traffic source, including organic and direct visits."
+        />
+        {otherPages.length > 0 && (
           <button
             type="button"
             onClick={toggleCompare}
-            disabled={loadingCompare}
+            disabled={loadingCompare || loadingMode}
             className="rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
           >
             {loadingCompare
@@ -235,17 +279,31 @@ export default function FunnelView({
                 ? 'Hide comparison'
                 : `Compare with ${otherPages.map((p) => p.name).join(', ')}`}
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className={compareMode ? 'grid gap-4 lg:grid-cols-2' : 'space-y-4'}>
-        {initialData.map((funnel) => (
-          <FunnelPanel key={`${slug}-${funnel.flowKey}`} label={currentName} slug={slug} data={funnel} canAnalyze={canAnalyze} />
+        {data.map((funnel) => (
+          <FunnelPanel
+            key={`${slug}-${funnel.flowKey}-${trafficMode}`}
+            label={currentName}
+            slug={slug}
+            data={funnel}
+            canAnalyze={canAnalyze}
+            trafficMode={trafficMode}
+          />
         ))}
         {compareMode &&
           otherPages.flatMap((p) =>
             (compareData[p.slug] ?? []).map((funnel) => (
-              <FunnelPanel key={`${p.slug}-${funnel.flowKey}`} label={p.name} slug={p.slug} data={funnel} canAnalyze={canAnalyze} />
+              <FunnelPanel
+                key={`${p.slug}-${funnel.flowKey}-${trafficMode}`}
+                label={p.name}
+                slug={p.slug}
+                data={funnel}
+                canAnalyze={canAnalyze}
+                trafficMode={trafficMode}
+              />
             )),
           )}
       </div>

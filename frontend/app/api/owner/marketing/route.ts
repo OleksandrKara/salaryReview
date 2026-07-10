@@ -3,5 +3,10 @@ import { forwardToBackend } from '../../../lib/proxyBackend';
 export const GET = (req: Request) => {
   const sp = new URL(req.url).searchParams;
   const slug = sp.get('slug');
-  return forwardToBackend(`/api/owner/marketing${slug ? `?slug=${encodeURIComponent(slug)}` : ''}`, 'GET');
+  const mode = sp.get('mode');
+  const query = new URLSearchParams();
+  if (slug) query.set('slug', slug);
+  if (mode) query.set('mode', mode);
+  const qs = query.toString();
+  return forwardToBackend(`/api/owner/marketing${qs ? `?${qs}` : ''}`, 'GET');
 };

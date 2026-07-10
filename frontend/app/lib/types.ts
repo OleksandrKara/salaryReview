@@ -758,7 +758,6 @@ export interface MarketingVariantStat {
 export interface MarketingDashboardData {
   available: boolean;
   landingPageSlug: string;
-  experimentStatus: 'active' | 'paused' | 'none';
   variants: MarketingVariantStat[];
   /** ISO-8601 instant, or null if no cutoff is set — stats reflect activity from this point
    * forward only, letting an owner exclude their own test traffic from ad-evaluation numbers. */
