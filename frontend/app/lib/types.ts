@@ -871,7 +871,8 @@ export interface MarketingAnalyticsData {
   adSpendThisMonth: number;
 }
 
-export type MarketingAdSource = 'META' | 'GOOGLE';
+// Shared across the Overview, Contacts, Analytics, and Funnel tabs — see backend TrafficSourceSql.
+export type TrafficSourceKey = 'meta_ads' | 'google_ads' | 'instagram_organic' | 'google_organic' | 'direct';
 
 // --- Abuse blocks (com.salonreview.web.AbuseBlocksController) ---
 
@@ -899,6 +900,11 @@ export interface MarketingContact {
   emailAddress: string | null;
   originalTrafficSource: string | null;
   marketingTrafficSource: string | null;
+  /** One of the five TrafficSourceKey buckets, computed server-side — null for the rare edge
+   * case that fits none of them. Prefer this over originalTrafficSource/marketingTrafficSource
+   * for filtering: those are salonLandings' own labels, which can mislabel an organic Instagram
+   * bio-link/post click as "Meta Ads" (see backend TrafficSourceSql). */
+  channel: TrafficSourceKey | null;
   /** Latest touch's raw UTM — like marketingTrafficSource, overwritten on every capture event,
    * not preserved as first-touch. */
   utmSource: string | null;

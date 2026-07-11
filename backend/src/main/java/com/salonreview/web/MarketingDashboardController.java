@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.salonreview.marketing.MarketingDashboardRepository.LandingPageSummary;
 import com.salonreview.marketing.MarketingDashboardService;
+import com.salonreview.marketing.TrafficSourceParam;
 import com.salonreview.web.dto.MarketingDashboardDto;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,12 +23,14 @@ public class MarketingDashboardController {
         this.service = service;
     }
 
-    /** mode defaults to "ads" (only paid-click traffic) — same default as the Contacts/Analytics
-     * tabs, since mani runs ads. Anything other than exactly "all" is treated as "ads". */
+    /** sources is a comma-separated list of traffic-source buckets (meta_ads, google_ads,
+     * instagram_organic, google_organic, direct), or "all" — see TrafficSourceParam. Defaults to
+     * "Ads only" (meta_ads + google_ads) when omitted, same default as the Contacts/Analytics tabs,
+     * since mani runs ads. */
     @GetMapping("/marketing")
     public MarketingDashboardDto marketing(@RequestParam(defaultValue = "mani") String slug,
-                                            @RequestParam(defaultValue = "ads") String mode) {
-        return service.dashboard(slug, !"all".equalsIgnoreCase(mode));
+                                            @RequestParam(required = false) String sources) {
+        return service.dashboard(slug, TrafficSourceParam.parse(sources));
     }
 
     /** Feeds the dashboard's page selector (Overview tab) — every landing page currently in the

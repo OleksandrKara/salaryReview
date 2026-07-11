@@ -32,7 +32,6 @@ import type {
   KbRequestTarget,
   FunnelAnalysisResult,
   FunnelDashboardData,
-  MarketingAdSource,
   MarketingAnalyticsData,
   MarketingDashboardData,
   MarketingLandingPage,
@@ -43,9 +42,11 @@ import type {
   TriageResult,
   TimeEntry,
   TimeEntryInput,
+  TrafficSourceKey,
   UserCreateRequest,
   UserUpdateRequest,
 } from './types';
+import { sourcesParam } from '../owner/marketing/TrafficSourceFilter';
 
 export const api = {
   // Manager time tracking. Self actions (clock in/out, own entries) act on the authenticated caller;
@@ -344,20 +345,23 @@ export const api = {
 
   // Owner marketing dashboard: variant management + the "hide test data before this date"
   // stats cutoff. All owner-only, enforced server-side.
-  getMarketingDashboard: (slug: string, mode: 'ads' | 'all' = 'ads') =>
-    proxyGet<MarketingDashboardData>(`/api/owner/marketing?slug=${encodeURIComponent(slug)}&mode=${mode}`),
+  getMarketingDashboard: (slug: string, sources: Set<TrafficSourceKey>) =>
+    proxyGet<MarketingDashboardData>(`/api/owner/marketing?slug=${encodeURIComponent(slug)}&sources=${sourcesParam(sources)}`),
 
   getMarketingPages: () => proxyGet<MarketingLandingPage[]>('/api/owner/marketing/pages'),
 
   // Client-side (not just serverApi) since Compare mode fetches every other landing page's
   // funnel on demand, after the initial page load.
-  getMarketingFunnel: (slug: string, mode: 'ads' | 'all' = 'ads') =>
-    proxyGet<FunnelDashboardData[]>(`/api/owner/marketing/funnel?slug=${encodeURIComponent(slug)}&mode=${mode}`),
+  getMarketingFunnel: (slug: string, sources: Set<TrafficSourceKey>) =>
+    proxyGet<FunnelDashboardData[]>(`/api/owner/marketing/funnel?slug=${encodeURIComponent(slug)}&sources=${sourcesParam(sources)}`),
 
   // "Analyze Funnel" — owner-only (see the route handler); 404s if ai.funnel-analysis.enabled is
   // off on the backend. Cached server-side by the exact funnel numbers (which differ between
   // ads/all traffic, so the two modes never share a stale cached result), so a repeat click with
-  // unchanged data is free. force=true bypasses that cache — the "run again anyway" action.
+  // unchanged data is free. force=true bypasses that cache — the "run again anyway" action. mode
+  // stays a plain 'ads'|'all' binary (the AI feature's own, separate contract, not the 5-way
+  // TrafficSourceFilter) — callers map their current selection down to whichever of the two is
+  // the closer match.
   analyzeFunnel: (slug: string, flowKey: string, mode: 'ads' | 'all' = 'ads', force = false) =>
     proxyJson<FunnelAnalysisResult>(
       `/api/owner/marketing/funnel/analyze?slug=${encodeURIComponent(slug)}&flowKey=${encodeURIComponent(flowKey)}&mode=${mode}${force ? '&force=true' : ''}`,
@@ -392,13 +396,14 @@ export const api = {
     proxyVoid(`/api/owner/marketing/stats-since?slug=${encodeURIComponent(slug)}`, 'PUT', { value }),
 
   // from/to are ISO dates (yyyy-MM-dd); omitting both defaults to month-to-date on the backend.
-  // sources omitted defaults to every recognized ad platform (Meta + Google) on the backend; pass
-  // ['ALL'] for every contact regardless of traffic source. slug omitted pools every landing page.
-  getMarketingAnalytics: (from?: string, to?: string, sources?: (MarketingAdSource | 'ALL')[], slug?: string) => {
+  // sources omitted defaults to "Ads only" on the backend; the full 5-bucket set (or omitting
+  // this param on a call site that always wants everything) counts every contact regardless of
+  // channel. slug omitted pools every landing page.
+  getMarketingAnalytics: (from?: string, to?: string, sources?: Set<TrafficSourceKey>, slug?: string) => {
     const params = new URLSearchParams();
     if (from) params.set('from', from);
     if (to) params.set('to', to);
-    if (sources) params.set('sources', sources.join(','));
+    if (sources) params.set('sources', sourcesParam(sources));
     if (slug) params.set('slug', slug);
     const qs = params.toString();
     return proxyGet<MarketingAnalyticsData>(`/api/owner/marketing/analytics${qs ? `?${qs}` : ''}`);

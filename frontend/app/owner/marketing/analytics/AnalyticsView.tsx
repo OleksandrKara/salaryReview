@@ -3,12 +3,12 @@
 import { useMemo, useState } from 'react';
 import { api } from '../../../lib/api';
 import type {
-  MarketingAdSource,
   MarketingAnalyticsData,
   MarketingAnalyticsSegment,
   MarketingUpcomingAppointment,
+  TrafficSourceKey,
 } from '../../../lib/types';
-import TrafficModeToggle, { type TrafficMode } from '../TrafficModeToggle';
+import TrafficSourceFilter, { ADS_ONLY_SOURCES } from '../TrafficSourceFilter';
 
 const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -44,9 +44,6 @@ function fmtAppointment(iso: string): string {
   return `${day} · ${time}`;
 }
 
-const ALL_SOURCES: MarketingAdSource[] = ['META', 'GOOGLE'];
-const SOURCE_LABELS: Record<MarketingAdSource, string> = { META: 'Meta Ads', GOOGLE: 'Google Ads' };
-
 type PresetKey = 'mtd' | '7d' | '30d' | 'custom';
 type SegmentKey = 'all' | 'fresh' | 'returning';
 
@@ -54,19 +51,17 @@ export default function AnalyticsView({ initialData, slug }: { initialData: Mark
   const [data, setData] = useState(initialData);
   const [preset, setPreset] = useState<PresetKey>('mtd');
   const [segment, setSegment] = useState<SegmentKey>('all');
-  const [trafficMode, setTrafficMode] = useState<TrafficMode>('ads');
-  const [sources, setSources] = useState<Set<MarketingAdSource>>(new Set(ALL_SOURCES));
+  const [sources, setSources] = useState<Set<TrafficSourceKey>>(() => new Set(ADS_ONLY_SOURCES));
   const [from, setFrom] = useState(initialData.from);
   const [to, setTo] = useState(initialData.to);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  async function load(nextFrom: string, nextTo: string, nextSources: Set<MarketingAdSource>, nextMode: TrafficMode) {
+  async function load(nextFrom: string, nextTo: string, nextSources: Set<TrafficSourceKey>) {
     setLoading(true);
     setError('');
     try {
-      const sourcesParam: (MarketingAdSource | 'ALL')[] = nextMode === 'all' ? ['ALL'] : Array.from(nextSources);
-      const result = await api.getMarketingAnalytics(nextFrom, nextTo, sourcesParam, slug);
+      const result = await api.getMarketingAnalytics(nextFrom, nextTo, nextSources, slug);
       setData(result);
       setFrom(result.from);
       setTo(result.to);
@@ -80,24 +75,17 @@ export default function AnalyticsView({ initialData, slug }: { initialData: Mark
   function selectPreset(key: PresetKey) {
     setPreset(key);
     const range = key === 'mtd' ? monthToDateRange() : key === '7d' ? lastNDaysRange(7) : lastNDaysRange(30);
-    void load(range.from, range.to, sources, trafficMode);
+    void load(range.from, range.to, sources);
   }
 
   function applyCustomRange() {
     setPreset('custom');
-    void load(from, to, sources, trafficMode);
+    void load(from, to, sources);
   }
 
-  function toggleSource(source: MarketingAdSource) {
-    const next = new Set(sources);
-    if (next.has(source)) next.delete(source); else next.add(source);
+  function changeSources(next: Set<TrafficSourceKey>) {
     setSources(next);
-    void load(from, to, next, trafficMode);
-  }
-
-  function changeTrafficMode(mode: TrafficMode) {
-    setTrafficMode(mode);
-    void load(from, to, sources, mode);
+    void load(from, to, next);
   }
 
   const activeSegment: MarketingAnalyticsSegment = data[segment];
@@ -112,14 +100,11 @@ export default function AnalyticsView({ initialData, slug }: { initialData: Mark
 
   return (
     <div>
-      <TrafficModeToggle
-        mode={trafficMode}
-        onChange={changeTrafficMode}
-        adsDescription="Only counting customers whose first or latest touch was a paid ad click — the default, since mani runs ads."
-        allDescription="Counting every customer regardless of traffic source, including organic and direct visits."
+      <TrafficSourceFilter
+        selected={sources}
+        onChange={changeSources}
+        description="Counts customers whose first or latest touch matches the selected source(s)."
       />
-
-      {trafficMode === 'ads' && <SourceFilter sources={sources} onToggle={toggleSource} />}
 
       <div className="mt-4 flex flex-wrap gap-2">
         <PresetButton label="Month to date" active={preset === 'mtd'} onClick={() => selectPreset('mtd')} />
@@ -201,35 +186,6 @@ export default function AnalyticsView({ initialData, slug }: { initialData: Mark
 
 function segmentLabel(key: SegmentKey): string {
   return key === 'fresh' ? 'new customers' : key === 'returning' ? 'returning customers' : 'ads customers';
-}
-
-function SourceFilter({
-  sources, onToggle,
-}: { sources: Set<MarketingAdSource>; onToggle: (s: MarketingAdSource) => void }) {
-  return (
-    <div className="rounded-lg p-3 ring-1 ring-zinc-200">
-      <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-        Counting customers from
-      </span>
-      <div className="mt-2 flex flex-wrap gap-4">
-        {ALL_SOURCES.map((s) => (
-          <label key={s} className="flex items-center gap-2 text-sm text-zinc-700">
-            <input
-              type="checkbox"
-              checked={sources.has(s)}
-              onChange={() => onToggle(s)}
-              className="h-4 w-4 rounded border-zinc-300"
-            />
-            {SOURCE_LABELS[s]}
-          </label>
-        ))}
-      </div>
-      <p className="mt-1 text-xs text-zinc-400">
-        Both are selected by default — everything below only ever counts customers whose first or latest
-        touch was one of the checked sources, never organic or direct traffic.
-      </p>
-    </div>
-  );
 }
 
 function SegmentTabs({ segment, onChange }: { segment: SegmentKey; onChange: (s: SegmentKey) => void }) {

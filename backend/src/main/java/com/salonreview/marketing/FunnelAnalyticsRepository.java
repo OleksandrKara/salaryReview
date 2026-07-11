@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -39,21 +40,22 @@ public class FunnelAnalyticsRepository {
      */
     public record RawFunnelStep(String flowKey, String stepKey, int stepIndex, int stepCountTotal, long reachedCount) {}
 
-    /** adsOnly=false ("All traffic") runs the exact same query as before this filter existed —
-     * see MarketingDashboardRepository.findVariantStats for the full rationale (same guard
-     * pattern, same fbclid/gclid-via-marketing.visits join, shared via {@link AdsTrafficSql}).
+    /** sources == {@link TrafficSourceSql#ALL} ("All traffic") runs the exact same query as
+     * before this filter existed — see MarketingDashboardRepository.findVariantStats for the full
+     * rationale (same classification, shared via {@link TrafficSourceSql}).
      */
-    public List<RawFunnelStep> findFunnelSteps(UUID landingPageId, Instant statsSince, boolean adsOnly) {
+    public List<RawFunnelStep> findFunnelSteps(UUID landingPageId, Instant statsSince, Set<String> sources) {
+        boolean all = sources.equals(TrafficSourceSql.ALL);
         String sql = """
                 SELECT flow_key, step_key, step_index,
                        MAX(step_count_total) AS step_count_total,
                        COUNT(DISTINCT session_id) AS reached_count
                 FROM marketing.funnel_events fe
                 WHERE fe.landing_page_id = ? AND (?::timestamptz IS NULL OR fe.created_at >= ?)
-                  AND (?::boolean = false OR %s)
+                  AND %s
                 GROUP BY flow_key, step_key, step_index
                 ORDER BY flow_key, step_index
-                """.formatted(AdsTrafficSql.VISIT_EXISTS.formatted("fe.session_id"));
+                """.formatted(all ? "TRUE" : TrafficSourceSql.visitInSources("fe.session_id", sources));
         Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
         return jdbcTemplate.query(sql, (rs, rowNum) -> new RawFunnelStep(
                 rs.getString("flow_key"),
@@ -61,43 +63,45 @@ public class FunnelAnalyticsRepository {
                 rs.getInt("step_index"),
                 rs.getInt("step_count_total"),
                 rs.getLong("reached_count")
-        ), landingPageId, cutoff, cutoff, adsOnly);
+        ), landingPageId, cutoff, cutoff);
     }
 
     /** Top-of-funnel denominator — same page_view count the main marketing dashboard shows, so
      * the two dashboards never disagree on "how many people saw this page".
      */
-    public long countPageViews(UUID landingPageId, Instant statsSince, boolean adsOnly) {
+    public long countPageViews(UUID landingPageId, Instant statsSince, Set<String> sources) {
+        boolean all = sources.equals(TrafficSourceSql.ALL);
         Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
         Long count = jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*) FROM marketing.events e
                 WHERE e.landing_page_id = ? AND e.event_type = 'page_view'
                   AND (?::timestamptz IS NULL OR e.created_at >= ?)
-                  AND (?::boolean = false OR %s)
-                """.formatted(AdsTrafficSql.VISIT_EXISTS.formatted("e.session_id")),
-                Long.class, landingPageId, cutoff, cutoff, adsOnly);
+                  AND %s
+                """.formatted(all ? "TRUE" : TrafficSourceSql.visitInSources("e.session_id", sources)),
+                Long.class, landingPageId, cutoff, cutoff);
         return count == null ? 0 : count;
     }
 
     /** Bottom-of-funnel signal — sourced from marketing.attribution (reconciled via Square sync),
      * the same authoritative source the main marketing dashboard's "Bookings" column uses, not a
      * best-effort client-side "done" beacon. Same attribution-has-no-session_id caveat as
-     * MarketingDashboardRepository.findVariantStats: adsOnly here is a best-effort floor via a
-     * LEFT JOIN to marketing.contacts by booking_id, not a guaranteed-exact count.
+     * MarketingDashboardRepository.findVariantStats: a filtered-sources count here is a
+     * best-effort floor via a LEFT JOIN to marketing.contacts by booking_id, not a
+     * guaranteed-exact count.
      */
-    public long countBookingsCompleted(UUID landingPageId, Instant statsSince, boolean adsOnly) {
+    public long countBookingsCompleted(UUID landingPageId, Instant statsSince, Set<String> sources) {
+        boolean all = sources.equals(TrafficSourceSql.ALL);
+        String filter = all ? "TRUE" : "EXISTS (SELECT 1 FROM marketing.contacts c2 WHERE c2.square_booking_id = a.booking_id AND %s)"
+                .formatted(TrafficSourceSql.contactInSources("c2", sources));
         Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
         Long count = jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*) FROM marketing.attribution a
                 WHERE a.landing_page_id = ? AND (?::timestamptz IS NULL OR a.created_at >= ?)
-                  AND (?::boolean = false OR EXISTS (
-                      SELECT 1 FROM marketing.contacts c2
-                      WHERE c2.square_booking_id = a.booking_id AND %s
-                  ))
-                """.formatted(AdsTrafficSql.CONTACT_CONDITION.formatted("c2")),
-                Long.class, landingPageId, cutoff, cutoff, adsOnly);
+                  AND %s
+                """.formatted(filter),
+                Long.class, landingPageId, cutoff, cutoff);
         return count == null ? 0 : count;
     }
 }

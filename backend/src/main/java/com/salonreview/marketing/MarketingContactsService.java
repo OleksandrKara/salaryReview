@@ -75,6 +75,7 @@ public class MarketingContactsService {
                 raw.emailAddress(),
                 raw.originalTrafficSource(),
                 raw.marketingTrafficSource(),
+                raw.channel(),
                 raw.utmSource(),
                 raw.utmMedium(),
                 raw.utmCampaign(),

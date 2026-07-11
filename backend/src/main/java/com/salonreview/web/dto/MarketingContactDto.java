@@ -15,6 +15,13 @@ public record MarketingContactDto(
             String emailAddress,
             String originalTrafficSource,
             String marketingTrafficSource,
+            /** One of the five TrafficSourceSql buckets (meta_ads, google_ads, instagram_organic,
+             * google_organic, direct), computed server-side from this contact's own utm/referrer
+             * columns — null for the rare edge case that fits none of them. Prefer this over
+             * originalTrafficSource/marketingTrafficSource for filtering: those are salonLandings'
+             * own classify_traffic_source() labels, which (as of this field's addition) can
+             * mislabel an organic Instagram bio-link/post click as "Meta Ads" — see TrafficSourceSql. */
+            String channel,
             /** Latest touch's raw UTM — like marketingTrafficSource, overwritten on every
              * capture event, not preserved as first-touch. */
             String utmSource,

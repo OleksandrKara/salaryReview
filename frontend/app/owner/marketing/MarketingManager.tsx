@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { api } from '../../lib/api';
-import type { MarketingVariantStat } from '../../lib/types';
-import TrafficModeToggle, { type TrafficMode } from './TrafficModeToggle';
+import type { MarketingVariantStat, TrafficSourceKey } from '../../lib/types';
+import TrafficSourceFilter, { ADS_ONLY_SOURCES } from './TrafficSourceFilter';
 import VariantTable from './VariantTable';
 
 // datetime-local inputs use the browser's local timezone with no offset in the string;
@@ -31,17 +31,17 @@ export default function MarketingManager({
   const [error, setError] = useState('');
   const [busyVariantId, setBusyVariantId] = useState<string | null>(null);
   const [cutoffBusy, setCutoffBusy] = useState(false);
-  const [trafficMode, setTrafficMode] = useState<TrafficMode>('ads');
+  const [sources, setSources] = useState<Set<TrafficSourceKey>>(() => new Set(ADS_ONLY_SOURCES));
 
-  async function refresh(mode: TrafficMode = trafficMode) {
-    const data = await api.getMarketingDashboard(slug, mode);
+  async function refresh(nextSources: Set<TrafficSourceKey> = sources) {
+    const data = await api.getMarketingDashboard(slug, nextSources);
     setVariants(data.variants);
     setStatsSince(data.statsSince);
   }
 
-  function changeTrafficMode(mode: TrafficMode) {
-    setTrafficMode(mode);
-    void refresh(mode);
+  function changeSources(next: Set<TrafficSourceKey>) {
+    setSources(next);
+    void refresh(next);
   }
 
   async function withVariantBusy(v: MarketingVariantStat, action: () => Promise<void>) {
@@ -124,11 +124,10 @@ export default function MarketingManager({
       {error && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">{error}</p>}
 
       <div className="mb-4">
-        <TrafficModeToggle
-          mode={trafficMode}
-          onChange={changeTrafficMode}
-          adsDescription="Only counting page views, clicks, contacts, and bookings attributed to a paid Meta/Google ad click — the default, since mani runs ads. Bookings under Ads only are matched via contact-capture data and may slightly undercount."
-          allDescription="Counting every page view, click, contact, and booking regardless of traffic source, including organic and direct visits."
+        <TrafficSourceFilter
+          selected={sources}
+          onChange={changeSources}
+          description="Counts page views, clicks, contacts, and bookings for the selected source(s) only. Bookings are matched via contact-capture data and may slightly undercount."
         />
       </div>
 

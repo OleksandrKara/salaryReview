@@ -44,6 +44,7 @@ class MarketingContactsServiceTest {
         return new RawContact(
                 id, "(858) 555-0100", "Jane", "jane@example.com",
                 "instagram / paid / promo", "google / cpc / retargeting",
+                "google_ads",
                 "google", "cpc", "retargeting",
                 "mani", "Version_1",
                 "mobile", "iOS", "17.5", "Mobile Safari", "17.5",
@@ -69,6 +70,7 @@ class MarketingContactsServiceTest {
         assertThat(c.squareProfileUrl()).isEqualTo("https://app.squareup.com/dashboard/customers/directory/customer/SQCUST123");
         assertThat(c.originalTrafficSource()).isEqualTo("instagram / paid / promo");
         assertThat(c.marketingTrafficSource()).isEqualTo("google / cpc / retargeting");
+        assertThat(c.channel()).isEqualTo("google_ads");
         assertThat(c.landingPageSlug()).isEqualTo("mani");
         assertThat(c.variantName()).isEqualTo("Version_1");
         assertThat(c.deviceType()).isEqualTo("mobile");

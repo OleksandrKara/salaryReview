@@ -8,6 +8,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -27,6 +28,9 @@ public class MarketingContactsRepository {
             String emailAddress,
             String originalTrafficSource,
             String marketingTrafficSource,
+            /** One of the five TrafficSourceSql buckets, computed server-side — see
+             * MarketingContactDto.Contact#channel. */
+            String channel,
             /** Latest touch's raw UTM — like marketingTrafficSource, overwritten on every
              * capture event, not preserved as first-touch. */
             String utmSource,
@@ -103,78 +107,63 @@ public class MarketingContactsRepository {
     }
 
     public List<RawContact> listAll() {
-        String sql = "SELECT " + CONTACT_COLUMNS + " FROM marketing.contacts ORDER BY created_at DESC";
+        String sql = "SELECT " + CONTACT_COLUMNS + ", " + TrafficSourceSql.contactChannelCase("c") + " AS channel"
+                + " FROM marketing.contacts c ORDER BY c.created_at DESC";
         return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact);
     }
 
-    /** One ads-attributed contact — phone_number is the stable match key (contacts is unique on it),
-     * squareCustomerId the customer profile we happened to link at the time (nullable: none captured
-     * yet), platform which ad network the click classifies as. The linked square_customer_id can go
-     * stale — e.g. a follow-up appointment booked by phone gets matched or created against a
-     * *different* Square profile for the same person — so callers should also resolve by phone
-     * (SquareClient.customerIdsForPhone) rather than trust this id alone.
+    /** One channel-attributed contact — phone_number is the stable match key (contacts is unique on
+     * it), squareCustomerId the customer profile we happened to link at the time (nullable: none
+     * captured yet), channel which {@link TrafficSourceSql} bucket the contact's own utm/referrer
+     * columns classify as (null for the rare edge case that fits none of the five). The linked
+     * square_customer_id can go stale — e.g. a follow-up appointment booked by phone gets matched or
+     * created against a *different* Square profile for the same person — so callers should also
+     * resolve by phone (SquareClient.customerIdsForPhone) rather than trust this id alone.
      */
     public record AdsAttributedContact(
-            String phoneNumber, String squareCustomerId, Instant firstTouch, String platform) {}
+            String phoneNumber, String squareCustomerId, Instant firstTouch, String channel) {}
 
-    /** Every contact whose first- or latest-touch traffic source is a paid ad click, each with the
-     * earliest moment we ever captured them through an ad — used to tell a customer whose Square
-     * record was created fresh off this ad touch from one who already existed in Square and simply
-     * came back through one. classify_traffic_source() (salonLandings) always starts a paid-click
-     * label with "Meta Ads" or "Google Ads" — either the bare "Meta Ads (click)" fallback, or, when
-     * the click also carried UTM params (the common case for a real Meta ad — fbclid AND a full UTM
-     * set arrive together), the richer "Meta Ads (ig / Instagram_Stories / <campaign>)" form. A
-     * prefix match catches both; an exact match (an earlier version of this query) missed every
-     * UTM-tagged ad click entirely, since fbclid/gclid only produces the bare fallback when no UTM is
-     * present. contacts is unique on phone_number, so this is naturally one row per contact — no
+    /** Every contact whose channel classifies into one of the given sources, each with the earliest
+     * moment we ever captured them — used to tell a customer whose Square record was created fresh
+     * off this touch from one who already existed in Square and simply came back through one.
+     * contacts is unique on phone_number, so this is naturally one row per contact — no
      * grouping/aggregation needed.
      */
-    private static final String PLATFORM_CASE = """
-            CASE
-                WHEN original_traffic_source LIKE 'Meta Ads%' OR marketing_traffic_source LIKE 'Meta Ads%'
-                    THEN 'META'
-                WHEN original_traffic_source LIKE 'Google Ads%' OR marketing_traffic_source LIKE 'Google Ads%'
-                    THEN 'GOOGLE'
-            END AS platform
-            """;
-
-    public List<AdsAttributedContact> findAdsAttributedContacts() {
-        return findAdsAttributedContacts(null);
+    public List<AdsAttributedContact> findAdsAttributedContacts(Set<String> sources) {
+        return findAdsAttributedContacts(sources, null);
     }
 
-    /** Same as the no-arg overload, optionally scoped to one landing page (e.g. "home" vs "mani") —
+    /** Same as the one-arg overload, optionally scoped to one landing page (e.g. "home" vs "mani") —
      * {@code landingPageSlug == null} preserves the original pooled-across-all-pages behavior. */
-    public List<AdsAttributedContact> findAdsAttributedContacts(String landingPageSlug) {
-        String sql = "SELECT phone_number, square_customer_id, created_at, " + PLATFORM_CASE + """
-                FROM marketing.contacts
-                WHERE (original_traffic_source LIKE 'Meta Ads%' OR original_traffic_source LIKE 'Google Ads%'
-                   OR marketing_traffic_source LIKE 'Meta Ads%' OR marketing_traffic_source LIKE 'Google Ads%')
-                """ + (landingPageSlug != null ? " AND landing_page_slug = ?" : "");
+    public List<AdsAttributedContact> findAdsAttributedContacts(Set<String> sources, String landingPageSlug) {
+        String sql = "SELECT phone_number, square_customer_id, created_at, " + TrafficSourceSql.contactChannelCase("c") + " AS channel"
+                + " FROM marketing.contacts c WHERE " + TrafficSourceSql.contactInSources("c", sources)
+                + (landingPageSlug != null ? " AND c.landing_page_slug = ?" : "");
         Object[] params = landingPageSlug != null ? new Object[]{landingPageSlug} : new Object[0];
         return jdbcTemplate.query(sql, (rs, rowNum) -> new AdsAttributedContact(
                 rs.getString("phone_number"),
                 rs.getString("square_customer_id"),
                 toInstant(rs.getTimestamp("created_at")),
-                rs.getString("platform")
+                rs.getString("channel")
         ), params);
     }
 
-    /** Every contact regardless of traffic source (ads, organic, direct, referral) — the "All
-     * traffic" counterpart to findAdsAttributedContacts, for pages like the homepage where paid
-     * clicks aren't the only (or even the main) source of visitors. {@code platform} is null for
-     * anything that isn't a recognized paid-ad click; downstream code in "all traffic" mode never
-     * filters on it. {@code landingPageSlug == null} pools every page, same convention as above.
+    /** Every contact regardless of channel (ads, organic, direct, referral) — the "All traffic"
+     * counterpart to findAdsAttributedContacts, for pages like the homepage where paid clicks
+     * aren't the only (or even the main) source of visitors. {@code channel} is null for anything
+     * that isn't a recognized bucket; downstream code in "all traffic" mode never filters on it.
+     * {@code landingPageSlug == null} pools every page, same convention as above.
      */
     public List<AdsAttributedContact> findAllAttributedContacts(String landingPageSlug) {
-        String sql = "SELECT phone_number, square_customer_id, created_at, " + PLATFORM_CASE + """
-                FROM marketing.contacts
-                """ + (landingPageSlug != null ? "WHERE landing_page_slug = ?" : "");
+        String sql = "SELECT phone_number, square_customer_id, created_at, " + TrafficSourceSql.contactChannelCase("c") + " AS channel"
+                + " FROM marketing.contacts c"
+                + (landingPageSlug != null ? " WHERE c.landing_page_slug = ?" : "");
         Object[] params = landingPageSlug != null ? new Object[]{landingPageSlug} : new Object[0];
         return jdbcTemplate.query(sql, (rs, rowNum) -> new AdsAttributedContact(
                 rs.getString("phone_number"),
                 rs.getString("square_customer_id"),
                 toInstant(rs.getTimestamp("created_at")),
-                rs.getString("platform")
+                rs.getString("channel")
         ), params);
     }
 
@@ -240,6 +229,7 @@ public class MarketingContactsRepository {
                 rs.getString("email_address"),
                 rs.getString("original_traffic_source"),
                 rs.getString("marketing_traffic_source"),
+                rs.getString("channel"),
                 rs.getString("utm_source"),
                 rs.getString("utm_medium"),
                 rs.getString("utm_campaign"),

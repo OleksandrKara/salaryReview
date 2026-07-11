@@ -36,15 +36,10 @@ import java.util.stream.Stream;
 @Service
 public class MarketingAnalyticsService {
 
-    /** Ad platforms this app currently recognizes — matches classify_traffic_source() (salonLandings),
-     * which only ever labels a paid click "Meta Ads" or "Google Ads". */
-    public static final Set<String> ALL_SOURCES = Set.of("META", "GOOGLE");
-
-    /** Sentinel recognized inside the `sources` parameter alongside META/GOOGLE — means "every
-     * contact regardless of traffic source," not just ads-attributed ones. Kept as a value inside
-     * the existing Set<String> parameter (rather than a separate flag) so every existing caller
-     * passing {META, GOOGLE} is completely unaffected. */
-    public static final String ALL_TRAFFIC = "ALL";
+    /** Every recognized traffic-source bucket — see {@link TrafficSourceSql}. Selecting exactly
+     * this set ("All traffic") is what makes {@link #resolveAdsCustomers} pull every contact
+     * unfiltered, rather than a SQL-level classification check. */
+    public static final Set<String> ALL_SOURCES = TrafficSourceSql.ALL;
 
     private static final Segment EMPTY_SEGMENT =
             new Segment(0, 0, BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
@@ -92,10 +87,10 @@ public class MarketingAnalyticsService {
     }
 
     /** A resolved ads-attributed Square customer id: the earliest moment our own ad funnel captured
-     * this person, and which platform. Several Square customer ids can map back to the same contact
-     * (see resolveAdsCustomers) — each still carries this contact's firstTouch/platform.
+     * this person, and which channel. Several Square customer ids can map back to the same contact
+     * (see resolveAdsCustomers) — each still carries this contact's firstTouch/channel.
      */
-    private record AdsCustomer(Instant firstTouch, String platform) {}
+    private record AdsCustomer(Instant firstTouch, String channel) {}
 
     /** Gross revenue, customer count, and service count for ads-attributed customers with a service
      * rendered in [from, to] inclusive, split into all / fresh-to-Square / already-existing segments
@@ -158,22 +153,26 @@ public class MarketingAnalyticsService {
                 .orElse(ZERO_MONEY);
     }
 
-    /** Every Square customer id an ads-attributed contact resolves to, each tagged with that
-     * contact's first ad touch and platform. A contact's originally-linked square_customer_id can go
+    /** Every Square customer id a channel-attributed contact resolves to, each tagged with that
+     * contact's first touch and channel. A contact's originally-linked square_customer_id can go
      * stale (e.g. a follow-up appointment booked by phone gets matched or created against a
      * *different* Square profile for the same person), so every contact is also looked up by phone —
      * the union of both is what "belongs" to that contact. On the rare id collision between two
      * different contacts, the earlier firstTouch wins (the more conservative "first touch" reading).
+     *
+     * <p>sources equal to the full {@link #ALL_SOURCES} set ("All traffic") pulls every contact
+     * unfiltered — including the rare edge case whose channel classifies to none of the five
+     * buckets — via findAllAttributedContacts, the same "byte-for-byte the pre-filter query"
+     * guarantee used by the Overview/Funnel repositories. Any narrower selection filters in SQL via
+     * findAdsAttributedContacts(sources, slug), which only ever returns contacts already known to
+     * classify into one of the requested buckets.
      */
     private Map<String, AdsCustomer> resolveAdsCustomers(Set<String> sources, String slug) {
-        List<MarketingContactsRepository.AdsAttributedContact> contacts = sources.contains(ALL_TRAFFIC)
+        List<MarketingContactsRepository.AdsAttributedContact> contacts = sources.equals(ALL_SOURCES)
                 ? contactsRepository.findAllAttributedContacts(slug)
-                // slug == null calls the exact no-arg overload (not findAdsAttributedContacts(null))
+                // slug == null calls the exact one-arg overload (not findAdsAttributedContacts(sources, null))
                 // so the unscoped default path is untouched, including at the test-mock level.
-                : (slug == null ? contactsRepository.findAdsAttributedContacts() : contactsRepository.findAdsAttributedContacts(slug))
-                        .stream()
-                        .filter(c -> c.platform() != null && sources.contains(c.platform()))
-                        .toList();
+                : (slug == null ? contactsRepository.findAdsAttributedContacts(sources) : contactsRepository.findAdsAttributedContacts(sources, slug));
 
         record Resolved(String customerId, AdsCustomer meta) {}
         List<Resolved> resolved = contacts.parallelStream()
@@ -183,7 +182,7 @@ public class MarketingAnalyticsService {
                         candidateIds.add(c.squareCustomerId());
                     }
                     candidateIds.addAll(square.customerIdsForPhone(c.phoneNumber()));
-                    AdsCustomer meta = new AdsCustomer(c.firstTouch(), c.platform());
+                    AdsCustomer meta = new AdsCustomer(c.firstTouch(), c.channel());
                     return candidateIds.stream().map(id -> new Resolved(id, meta));
                 })
                 .toList();

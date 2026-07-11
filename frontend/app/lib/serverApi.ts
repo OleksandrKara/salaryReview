@@ -148,19 +148,23 @@ export const serverApi = {
       `/api/owner/overview?fromYear=${fromYear}&fromMonth=${fromMonth}&toYear=${toYear}&toMonth=${toMonth}`
     ),
 
-  getMarketingDashboard: (slug?: string, mode: 'ads' | 'all' = 'ads') => {
+  // sources is the same comma-separated traffic-source list the client-side api.ts sends (see
+  // TrafficSourceFilter) — omitted here on every current call site, so the backend's own "Ads
+  // only" default applies to the initial server-rendered load; kept as a plain string (rather
+  // than importing the client component's types) since this module is server-only.
+  getMarketingDashboard: (slug?: string, sources?: string) => {
     const query = new URLSearchParams();
     if (slug) query.set('slug', slug);
-    query.set('mode', mode);
+    if (sources) query.set('sources', sources);
     return serverFetch<MarketingDashboardData>(`/api/owner/marketing?${query.toString()}`);
   },
 
   getMarketingPages: () => serverFetch<MarketingLandingPage[]>('/api/owner/marketing/pages'),
 
-  getMarketingFunnel: (slug?: string, mode: 'ads' | 'all' = 'ads') => {
+  getMarketingFunnel: (slug?: string, sources?: string) => {
     const query = new URLSearchParams();
     if (slug) query.set('slug', slug);
-    query.set('mode', mode);
+    if (sources) query.set('sources', sources);
     return serverFetch<FunnelDashboardData[]>(`/api/owner/marketing/funnel?${query.toString()}`);
   },
 
@@ -169,8 +173,8 @@ export const serverApi = {
   getAbuseBlocks: () => serverFetch<AbuseBlocksData>('/api/owner/marketing/abuse-blocks'),
 
   /** from/to are ISO dates (yyyy-MM-dd); omitting both defaults to month-to-date on the backend.
-   * sources omitted defaults to every recognized ad platform on the backend; pass ['ALL'] for
-   * every contact regardless of traffic source. slug omitted pools every landing page together. */
+   * sources omitted defaults to "Ads only" on the backend; pass every TrafficSourceKey token for
+   * every contact regardless of channel. slug omitted pools every landing page together. */
   getMarketingAnalytics: (from?: string, to?: string, sources?: string[], slug?: string) => {
     const params = new URLSearchParams();
     if (from) params.set('from', from);
