@@ -82,6 +82,22 @@ class SopControllerTest {
     }
 
     @Test
+    @DisplayName("get returns 200 with the mapped SOP — the shareable-link detail page's request")
+    void getSucceeds() throws Exception {
+        when(sops.getVisible(1L, Role.OWNER, 1L)).thenReturn(java.util.Optional.of(item()));
+        mvc.perform(get("/api/sops/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Cleaning"));
+    }
+
+    @Test
+    @DisplayName("get 404s when the SOP doesn't exist or isn't visible to the caller's role")
+    void getNotFound() throws Exception {
+        when(sops.getVisible(1L, Role.OWNER, 1L)).thenReturn(java.util.Optional.empty());
+        mvc.perform(get("/api/sops/1")).andExpect(status().isNotFound());
+    }
+
+    @Test
     @DisplayName("create with blank title → 400")
     void createBlank() throws Exception {
         mvc.perform(post("/api/sops").contentType("application/json")

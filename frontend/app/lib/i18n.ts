@@ -16,6 +16,10 @@ const STRINGS = {
     RU: ' Редактируйте здесь; синхронизация с ассистентом — на странице администрирования RAG.',
   },
   kbDescReadOnly: { EN: ' Read-only.', RU: ' Только для чтения.' },
+  kbArticleNotFound: {
+    EN: "This article doesn't exist, or you don't have access to it.",
+    RU: 'Эта статья не существует, или у вас нет к ней доступа.',
+  },
 
   // SOPs (/sops)
   sopTitle: { EN: 'Standard operating procedures', RU: 'Стандартные операционные процедуры' },
@@ -247,6 +251,10 @@ const STRINGS = {
 
   // SOP list (read + acknowledge)
   sopNone: { EN: 'No SOPs yet.', RU: 'Пока нет регламентов.' },
+  sopArticleNotFound: {
+    EN: "This SOP doesn't exist, or you don't have access to it.",
+    RU: 'Этот регламент не существует, или у вас нет к нему доступа.',
+  },
   sopAcknowledged: { EN: 'Acknowledged', RU: 'Подтверждено' },
   sopOpenFirst: { EN: 'Open the SOP first', RU: 'Сначала откройте регламент' },
 

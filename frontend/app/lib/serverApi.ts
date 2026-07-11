@@ -54,6 +54,21 @@ async function serverFetch<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+// Same as serverFetch, but a 404 resolves to null instead of throwing — for single-item lookups
+// (a shareable-link detail page) where "doesn't exist" or "not visible to you" is an expected,
+// renderable state rather than an error.
+async function serverFetchOrNull<T>(path: string): Promise<T | null> {
+  const sid = (await cookies()).get('sid')?.value;
+  const res = await fetch(`${BACKEND}${path}`, {
+    cache: 'no-store',
+    headers: sid ? { Cookie: `JSESSIONID=${sid}` } : {},
+  });
+  if (res.status === 401) redirect('/');
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${await res.text()}`);
+  return (await res.json()) as T;
+}
+
 export const serverApi = {
   getMe: () => serverFetch<Me>(`/api/me`),
 
@@ -73,8 +88,15 @@ export const serverApi = {
   // KB articles, role-filtered by the backend using the session.
   listKbArticles: () => serverFetch<KbArticle[]>(`/api/kb-articles`),
 
+  // One KB article, for the shareable-link detail page — null when it doesn't exist or isn't
+  // visible to the caller's role, so the page can render a friendly message instead of a 500.
+  getKbArticle: (id: number) => serverFetchOrNull<KbArticle>(`/api/kb-articles/${id}`),
+
   // SOPs, audience-filtered by the backend using the session.
   listSops: () => serverFetch<Sop[]>(`/api/sops`),
+
+  // One SOP, for the shareable-link detail page — same null-on-404 convention as getKbArticle.
+  getSop: (id: number) => serverFetchOrNull<Sop>(`/api/sops/${id}`),
 
   // Provider retention analytics (owner + manager, view-only for the latter).
   getRetention: (year: number, month: number) =>

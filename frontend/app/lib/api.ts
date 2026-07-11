@@ -217,6 +217,9 @@ export const api = {
   // is MANAGER/PROVIDER (and the backend checks the caller is in the SOP's audience).
   listSops: () => proxyGet<Sop[]>(`/api/sops`),
 
+  // One SOP, for the shareable-link detail page — same audience rule as listSops.
+  getSop: (id: number) => proxyGet<Sop>(`/api/sops/${id}`),
+
   createSop: (body: SopCreateRequest) => proxyJson<Sop>(`/api/sops`, 'POST', body),
 
   updateSop: (id: number, body: SopUpdateRequest) => proxyJson<Sop>(`/api/sops/${id}`, 'PUT', body),

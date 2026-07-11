@@ -4,14 +4,13 @@ import dynamic from 'next/dynamic';
 import { useState } from 'react';
 import { api } from '../lib/api';
 import { Spinner } from '../components/Spinner';
+import ShareLinkButton from '../components/ShareLinkButton';
+import KbArticleBody from './KbArticleBody';
+import { SyncBadge } from './KbSyncBadge';
 import type { KbArticle, Language, Role } from '../lib/types';
 
 // @uiw/react-md-editor touches `window`, so load it client-only.
 const MDEditor = dynamic(() => import('@uiw/react-md-editor'), { ssr: false });
-const Markdown = dynamic(
-  () => import('@uiw/react-md-editor').then((m) => ({ default: m.default.Markdown })),
-  { ssr: false },
-);
 
 type Draft = {
   id: number | null;
@@ -106,47 +105,25 @@ export default function KbManager({
                     ))}
                   </div>
                 </button>
-                {isAdmin ? (
-                  <div className="flex shrink-0 gap-2">
-                    <button onClick={() => startEdit(a)} className="rounded px-2 py-1 text-xs ring-1 ring-zinc-200">Edit</button>
-                    <button onClick={() => remove(a)} className="rounded px-2 py-1 text-xs text-red-600 ring-1 ring-red-200">Delete</button>
-                  </div>
-                ) : null}
+                <div className="flex shrink-0 gap-2">
+                  <ShareLinkButton path={`/kb/${a.id}`} title={a.title} />
+                  {isAdmin ? (
+                    <>
+                      <button onClick={() => startEdit(a)} className="rounded px-2 py-1 text-xs ring-1 ring-zinc-200">Edit</button>
+                      <button onClick={() => remove(a)} className="rounded px-2 py-1 text-xs text-red-600 ring-1 ring-red-200">Delete</button>
+                    </>
+                  ) : null}
+                </div>
               </div>
               {viewing?.id === a.id ? (
                 <div className="mt-3 border-t border-zinc-100 pt-3">
-                  <ReaderBody article={a} defaultLang={language ?? 'EN'} />
+                  <KbArticleBody article={a} defaultLang={language ?? 'EN'} />
                 </div>
               ) : null}
             </li>
           ))}
         </ul>
       )}
-    </div>
-  );
-}
-
-// Read view with a per-article EN/RU toggle. Defaults to the reader's preferred language, falling
-// back to English when there's no Russian; the toggle only appears when a translation exists.
-function ReaderBody({ article, defaultLang }: { article: KbArticle; defaultLang: Language }) {
-  const hasRu = !!(article.bodyRu && article.bodyRu.trim());
-  const [lang, setLang] = useState<Language>(defaultLang === 'RU' && hasRu ? 'RU' : 'EN');
-  const content = lang === 'RU' && hasRu ? article.bodyRu! : article.body;
-  const pill = (l: Language) =>
-    `text-xs ${lang === l ? 'font-semibold text-zinc-700' : 'text-zinc-400 hover:text-zinc-600'}`;
-
-  return (
-    <div data-color-mode="light">
-      {hasRu ? (
-        <div className="mb-2 flex items-center gap-1">
-          <button type="button" onClick={() => setLang('EN')} className={pill('EN')}>EN</button>
-          <span className="text-zinc-300">/</span>
-          <button type="button" onClick={() => setLang('RU')} className={pill('RU')}>RU</button>
-        </div>
-      ) : null}
-      <div className="text-sm">
-        <Markdown source={content || '_(empty)_'} />
-      </div>
     </div>
   );
 }
@@ -305,15 +282,4 @@ function Editor({
       </div>
     </div>
   );
-}
-
-export function SyncBadge({ status }: { status: KbArticle['syncStatus'] }) {
-  const map: Record<KbArticle['syncStatus'], [string, string]> = {
-    NOT_SYNCED: ['Not synced', 'bg-zinc-100 text-zinc-600'],
-    SYNCED: ['Synced', 'bg-green-50 text-green-700'],
-    CHANGED: ['Update available', 'bg-amber-50 text-amber-700'],
-    ERROR: ['Error', 'bg-red-50 text-red-700'],
-  };
-  const [label, cls] = map[status];
-  return <span className={`rounded px-1.5 py-0.5 text-[10px] ${cls}`}>{label}</span>;
 }
