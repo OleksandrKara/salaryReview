@@ -11,12 +11,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -74,8 +76,9 @@ class FunnelAnalysisControllerTest {
                 List.of("Move contact info collection to the end of the flow"),
                 "Default add-ons to skip and require an explicit opt-in instead.",
                 "v1",
-                "claude-sonnet-5");
-        when(service.analyze("home", "homepage_booking_v1", true)).thenReturn(Optional.of(r));
+                "claude-sonnet-5",
+                Instant.parse("2026-07-11T00:00:00Z"));
+        when(service.analyze("home", "homepage_booking_v1", true, false)).thenReturn(Optional.of(r));
 
         mvc.perform(post("/api/owner/marketing/funnel/analyze")
                         .param("slug", "home")
@@ -85,18 +88,69 @@ class FunnelAnalysisControllerTest {
                 .andExpect(jsonPath("$.recommendations[0].title").value("Default the add-ons step to \"no add-on\""))
                 .andExpect(jsonPath("$.recommendations[0].expectedImpact").value("HIGH"))
                 .andExpect(jsonPath("$.promptVersion").value("v1"))
-                .andExpect(jsonPath("$.model").value("claude-sonnet-5"));
+                .andExpect(jsonPath("$.model").value("claude-sonnet-5"))
+                .andExpect(jsonPath("$.createdAt").exists());
+    }
+
+    @Test
+    @DisplayName("force=true passes through to the service, bypassing the cache")
+    void forceParamPassesThrough() throws Exception {
+        when(props.isEnabled()).thenReturn(true);
+        FunnelAnalysisResult r = new FunnelAnalysisResult(
+                "addons", "Explanation.", List.of(), List.of(), List.of(), "Do this first.",
+                "v1", "claude-sonnet-5", Instant.now());
+        when(service.analyze("home", "homepage_booking_v1", true, true)).thenReturn(Optional.of(r));
+
+        mvc.perform(post("/api/owner/marketing/funnel/analyze")
+                        .param("slug", "home")
+                        .param("flowKey", "homepage_booking_v1")
+                        .param("force", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.biggestBottleneckStep").value("addons"));
     }
 
     @Test
     @DisplayName("no funnel data for slug/flowKey → 404")
     void noFunnelDataReturns404() throws Exception {
         when(props.isEnabled()).thenReturn(true);
-        when(service.analyze("home", "unknown_flow", true)).thenReturn(Optional.empty());
+        when(service.analyze("home", "unknown_flow", true, false)).thenReturn(Optional.empty());
 
         mvc.perform(post("/api/owner/marketing/funnel/analyze")
                         .param("slug", "home")
                         .param("flowKey", "unknown_flow"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("history: flag off → 404 without invoking the service")
+    void historyFlagOffReturns404() throws Exception {
+        when(props.isEnabled()).thenReturn(false);
+
+        mvc.perform(get("/api/owner/marketing/funnel/analyze/history")
+                        .param("slug", "home")
+                        .param("flowKey", "homepage_booking_v1"))
+                .andExpect(status().isNotFound());
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    @DisplayName("history returns 200 with a list of past analyses, newest first")
+    void historySucceeds() throws Exception {
+        when(props.isEnabled()).thenReturn(true);
+        FunnelAnalysisResult newer = new FunnelAnalysisResult(
+                "addons", "Explanation A.", List.of(), List.of(), List.of(), "Do A.",
+                "v1", "claude-sonnet-5", Instant.parse("2026-07-11T00:00:00Z"));
+        FunnelAnalysisResult older = new FunnelAnalysisResult(
+                "contact", "Explanation B.", List.of(), List.of(), List.of(), "Do B.",
+                "v1", "claude-sonnet-5", Instant.parse("2026-07-10T00:00:00Z"));
+        when(service.history("home", "homepage_booking_v1")).thenReturn(List.of(newer, older));
+
+        mvc.perform(get("/api/owner/marketing/funnel/analyze/history")
+                        .param("slug", "home")
+                        .param("flowKey", "homepage_booking_v1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].biggestBottleneckStep").value("addons"))
+                .andExpect(jsonPath("$[1].biggestBottleneckStep").value("contact"));
     }
 }

@@ -36,7 +36,11 @@ public class FunnelAnalysisService {
      * task where reasoning quality matters more than the marginal cost/latency difference. */
     static final String MODEL = "claude-sonnet-5";
 
-    private static final long MAX_OUTPUT_TOKENS = 1536L;
+    // Was 1536 — too tight for the full schema (bottleneck explanation + up to 5 recommendations
+    // + suspicious patterns + A/B tests + top priority action), so Claude's JSON was getting cut
+    // off mid-string on funnels with enough content to say. 4096 gives real headroom; this is a
+    // low-frequency, owner-triggered call, so the extra token ceiling costs nothing in practice.
+    private static final long MAX_OUTPUT_TOKENS = 4096L;
 
     private final ObjectProvider<AnthropicClient> anthropicClientProvider;
     private final AiFunnelAnalysisProperties props;
@@ -61,9 +65,13 @@ public class FunnelAnalysisService {
      * when the feature is off, or when the slug/flowKey combination has no funnel data (→ 404 in
      * the controller). No separate cache key for adsOnly is needed: the two modes' underlying
      * numbers differ, so the snapshot fingerprint below already disambiguates them.
+     *
+     * @param force when true, skips the cache lookup and always calls Claude fresh, persisting a
+     *              new history row even if the underlying funnel numbers haven't changed since
+     *              the last analysis — the owner-facing "run again anyway" action.
      */
     @Transactional
-    public Optional<FunnelAnalysisResult> analyze(String slug, String flowKey, boolean adsOnly) {
+    public Optional<FunnelAnalysisResult> analyze(String slug, String flowKey, boolean adsOnly, boolean force) {
         if (!props.isEnabled()) return Optional.empty();
         AnthropicClient client = anthropicClientProvider.getIfAvailable();
         if (client == null) return Optional.empty();
@@ -77,11 +85,13 @@ public class FunnelAnalysisService {
 
         String fingerprint = fingerprint(funnel);
 
-        Optional<FunnelAnalysis> cached = analyses
-                .findFirstByLandingPageSlugAndFlowKeyAndPromptVersionAndSnapshotFingerprintOrderByCreatedAtDesc(
-                        slug, flowKey, FunnelAnalysisPrompts.PROMPT_VERSION, fingerprint);
-        if (cached.isPresent()) {
-            return Optional.of(FunnelAnalysisResult.fromEntity(cached.get()));
+        if (!force) {
+            Optional<FunnelAnalysis> cached = analyses
+                    .findFirstByLandingPageSlugAndFlowKeyAndPromptVersionAndSnapshotFingerprintOrderByCreatedAtDesc(
+                            slug, flowKey, FunnelAnalysisPrompts.PROMPT_VERSION, fingerprint);
+            if (cached.isPresent()) {
+                return Optional.of(FunnelAnalysisResult.fromEntity(cached.get()));
+            }
         }
 
         String userMessage = buildUserMessage(slug, funnel);
@@ -98,6 +108,16 @@ public class FunnelAnalysisService {
 
         FunnelAnalysis saved = persist(slug, flowKey, fingerprint, result);
         return Optional.of(FunnelAnalysisResult.fromEntity(saved));
+    }
+
+    /** Past analyses for this landing page/flow, newest first, for the owner-facing history list.
+     * Empty (not 404) when the feature is disabled or nothing's been analyzed yet — the caller
+     * distinguishes "feature off" via {@link AiFunnelAnalysisProperties#isEnabled()} directly. */
+    public List<FunnelAnalysisResult> history(String slug, String flowKey) {
+        if (!props.isEnabled()) return List.of();
+        return analyses.findTop20ByLandingPageSlugAndFlowKeyOrderByCreatedAtDesc(slug, flowKey).stream()
+                .map(FunnelAnalysisResult::fromEntity)
+                .toList();
     }
 
     /** Deterministic string built from exactly the numbers the LLM sees — an exact match means
@@ -161,6 +181,8 @@ public class FunnelAnalysisService {
                 .orElseThrow(() -> new AnalysisFailedException("Claude response had no text block", null));
 
         FunnelAnalysisResult parsed = firstTyped.text();
+        // createdAt is a placeholder here — the caller always re-wraps the persisted entity via
+        // fromEntity(saved) before returning to the controller, which fills in the real timestamp.
         return new FunnelAnalysisResult(
                 parsed.biggestBottleneckStep(),
                 parsed.bottleneckExplanation(),
@@ -169,7 +191,8 @@ public class FunnelAnalysisService {
                 parsed.suggestedAbTests(),
                 parsed.topPriorityAction(),
                 FunnelAnalysisPrompts.PROMPT_VERSION,
-                MODEL);
+                MODEL,
+                null);
     }
 
     private FunnelAnalysisResult refusalFallback(String category) {
@@ -181,7 +204,8 @@ public class FunnelAnalysisService {
                 List.of(),
                 "Review the funnel numbers manually.",
                 FunnelAnalysisPrompts.PROMPT_VERSION,
-                MODEL);
+                MODEL,
+                null);
     }
 
     private FunnelAnalysis persist(String slug, String flowKey, String fingerprint, FunnelAnalysisResult result) {

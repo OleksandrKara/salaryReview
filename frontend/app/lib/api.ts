@@ -357,12 +357,19 @@ export const api = {
   // "Analyze Funnel" — owner-only (see the route handler); 404s if ai.funnel-analysis.enabled is
   // off on the backend. Cached server-side by the exact funnel numbers (which differ between
   // ads/all traffic, so the two modes never share a stale cached result), so a repeat click with
-  // unchanged data is free.
-  analyzeFunnel: (slug: string, flowKey: string, mode: 'ads' | 'all' = 'ads') =>
+  // unchanged data is free. force=true bypasses that cache — the "run again anyway" action.
+  analyzeFunnel: (slug: string, flowKey: string, mode: 'ads' | 'all' = 'ads', force = false) =>
     proxyJson<FunnelAnalysisResult>(
-      `/api/owner/marketing/funnel/analyze?slug=${encodeURIComponent(slug)}&flowKey=${encodeURIComponent(flowKey)}&mode=${mode}`,
+      `/api/owner/marketing/funnel/analyze?slug=${encodeURIComponent(slug)}&flowKey=${encodeURIComponent(flowKey)}&mode=${mode}${force ? '&force=true' : ''}`,
       'POST',
       {},
+    ),
+
+  // Past analyses for this landing page/flow, newest first — powers the history list under the
+  // Analyze Funnel button so a prior result stays visible (with its timestamp) without a re-run.
+  getFunnelAnalysisHistory: (slug: string, flowKey: string) =>
+    proxyGet<FunnelAnalysisResult[]>(
+      `/api/owner/marketing/funnel/analyze/history?slug=${encodeURIComponent(slug)}&flowKey=${encodeURIComponent(flowKey)}`,
     ),
 
   renameMarketingVariant: (variantId: string, name: string) =>

@@ -47,6 +47,9 @@ services:
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-salary-review-suspicious-triage}
       AI_TRIAGE_ENABLED: ${AI_TRIAGE_ENABLED:-false}
+      # AI funnel analysis ("Analyze Funnel" button). Feature flag is off by default — set
+      # AI_FUNNEL_ANALYSIS_ENABLED=true to expose it. Shares ANTHROPIC_API_KEY with triage above.
+      AI_FUNNEL_ANALYSIS_ENABLED: ${AI_FUNNEL_ANALYSIS_ENABLED:-false}
       # RAG knowledge assistant. Feature flag is off by default — set RAG_ENABLED=true (and a
       # VOYAGE_API_KEY for embeddings) to expose the /api/rag endpoints and the chat/admin UI.
       VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}

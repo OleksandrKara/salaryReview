@@ -818,6 +818,8 @@ export interface FunnelAnalysisResult {
   topPriorityAction: string;
   promptVersion: string;
   model: string;
+  /** ISO instant string — when this analysis was generated. */
+  createdAt: string;
 }
 
 /** One row of marketing.landing_pages — feeds the Overview tab's page selector. */

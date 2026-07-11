@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import com.salonreview.domain.FunnelAnalysis;
 import com.salonreview.domain.ImpactLevel;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -59,7 +60,11 @@ public record FunnelAnalysisResult(
 
         @JsonPropertyDescription(
                 "Model identifier (e.g. claude-sonnet-5) that produced this analysis; populated by the service after the LLM call, not by the model.")
-        String model
+        String model,
+
+        @JsonPropertyDescription(
+                "When this analysis was generated; populated by the service after persisting, not by the model.")
+        Instant createdAt
 ) {
     public record PrioritizedRecommendation(
 
@@ -86,6 +91,7 @@ public record FunnelAnalysisResult(
                 a.getSuggestedAbTests(),
                 a.getTopPriorityAction(),
                 a.getPromptVersion(),
-                a.getModel());
+                a.getModel(),
+                a.getCreatedAt());
     }
 }

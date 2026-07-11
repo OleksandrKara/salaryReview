@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../../../lib/api';
 import type { FunnelAnalysisResult, FunnelDashboardData, MarketingLandingPage, Role } from '../../../lib/types';
 import TrafficModeToggle, { type TrafficMode } from '../TrafficModeToggle';
@@ -13,11 +13,30 @@ const IMPACT_STYLES: Record<string, string> = {
   LOW: 'bg-zinc-100 text-zinc-600 ring-zinc-200',
 };
 
+/** "3 hours ago" style — falls back to a plain date past a week so old history entries don't
+ * show an awkward "12 days ago". Full timestamp is always still available via the title attr. */
+function relativeTime(iso: string): string {
+  const diffSec = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} minute${diffMin === 1 ? '' : 's'} ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} hour${diffHr === 1 ? '' : 's'} ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 7) return `${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 function AnalysisResultView({ result }: { result: FunnelAnalysisResult }) {
   return (
     <div className="mt-4 space-y-4 rounded-lg border border-indigo-100 bg-indigo-50/40 p-4">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Biggest bottleneck: {result.biggestBottleneckStep}</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Biggest bottleneck: {result.biggestBottleneckStep}</p>
+          <span className="shrink-0 text-xs text-zinc-400" title={new Date(result.createdAt).toLocaleString('en-US')}>
+            Analyzed {relativeTime(result.createdAt)}
+          </span>
+        </div>
         <p className="mt-1 text-sm text-zinc-700">{result.bottleneckExplanation}</p>
       </div>
 
@@ -88,22 +107,69 @@ function FunnelPanel({
   canAnalyze: boolean;
   trafficMode: TrafficMode;
 }) {
-  const [analysis, setAnalysis] = useState<FunnelAnalysisResult | null>(null);
-  const [analyzing, setAnalyzing] = useState(false);
+  // history[0] (if present) is "the" current analysis shown; history[1:] is the collapsed past-
+  // analyses list. null means "not fetched yet", [] means "fetched, nothing analyzed before".
+  const [history, setHistory] = useState<FunnelAnalysisResult[] | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(canAnalyze);
+  // Which action is in flight, so the two buttons can show distinct labels/disable together
+  // without a second boolean to keep in sync.
+  const [runningAction, setRunningAction] = useState<'normal' | 'force' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [expandedHistory, setExpandedHistory] = useState<Set<number>>(new Set());
 
-  async function analyze() {
-    setAnalyzing(true);
+  useEffect(() => {
+    // canAnalyze/slug/data.flowKey are effectively constant for this component's lifetime — the
+    // parent remounts the whole panel (via its `key`) whenever trafficMode changes, so this only
+    // ever needs to run once per mount. loadingHistory already starts as `canAnalyze` (see
+    // useState above), so there's no separate setState-to-true call needed here.
+    if (!canAnalyze) return;
+    let cancelled = false;
+    api
+      .getFunnelAnalysisHistory(slug, data.flowKey)
+      .then((h) => {
+        if (!cancelled) setHistory(h);
+      })
+      .catch(() => {
+        // Soft-fail: history is a nice-to-have on load, not worth an error banner before the
+        // owner has even clicked anything. The Analyze button still works if this fails.
+        if (!cancelled) setHistory([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingHistory(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function runAnalysis(force: boolean) {
+    setRunningAction(force ? 'force' : 'normal');
     setError(null);
     try {
-      const result = await api.analyzeFunnel(slug, data.flowKey, trafficMode);
-      setAnalysis(result);
+      await api.analyzeFunnel(slug, data.flowKey, trafficMode, force);
+      // Re-fetch rather than splice the new result in locally — a non-forced call may have just
+      // returned the existing cached entry, and re-fetching sidesteps having to guess which.
+      const fresh = await api.getFunnelAnalysisHistory(slug, data.flowKey);
+      setHistory(fresh);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Analysis failed.');
     } finally {
-      setAnalyzing(false);
+      setRunningAction(null);
     }
   }
+
+  function toggleHistoryRow(idx: number) {
+    setExpandedHistory((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  }
+
+  const latest = history?.[0] ?? null;
+  const older = history?.slice(1) ?? [];
 
   return (
     <div className="rounded-lg border border-zinc-200 p-4">
@@ -159,16 +225,66 @@ function FunnelPanel({
 
       {canAnalyze && (
         <div className="mt-4 border-t border-zinc-100 pt-3">
-          <button
-            type="button"
-            onClick={analyze}
-            disabled={analyzing}
-            className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
-          >
-            {analyzing ? 'Analyzing…' : analysis ? 'Re-analyze Funnel' : 'Analyze Funnel'}
-          </button>
+          {loadingHistory ? (
+            <p className="text-xs text-zinc-400">Checking for a previous analysis…</p>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => runAnalysis(false)}
+                disabled={runningAction !== null}
+                className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+              >
+                {runningAction === 'normal' ? 'Analyzing…' : latest ? 'Re-analyze Funnel' : 'Analyze Funnel'}
+              </button>
+              {latest && (
+                <button
+                  type="button"
+                  onClick={() => runAnalysis(true)}
+                  disabled={runningAction !== null}
+                  title="Runs the AI again from scratch even though the underlying numbers haven't changed since the last analysis."
+                  className="text-xs font-medium text-zinc-500 underline decoration-dotted hover:text-zinc-700 disabled:opacity-50"
+                >
+                  {runningAction === 'force' ? 'Running fresh analysis…' : 'Run fresh analysis anyway'}
+                </button>
+              )}
+            </div>
+          )}
           {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-          {analysis && <AnalysisResultView result={analysis} />}
+          {latest && <AnalysisResultView result={latest} />}
+
+          {older.length > 0 && (
+            <details className="mt-4">
+              <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-700">
+                Past analyses ({older.length})
+              </summary>
+              <ul className="mt-2 space-y-2">
+                {older.map((entry, idx) => {
+                  const expanded = expandedHistory.has(idx);
+                  return (
+                    <li key={entry.createdAt} className="rounded border border-zinc-200">
+                      <button
+                        type="button"
+                        onClick={() => toggleHistoryRow(idx)}
+                        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs hover:bg-zinc-50"
+                      >
+                        <span className="text-zinc-500" title={new Date(entry.createdAt).toLocaleString('en-US')}>
+                          {relativeTime(entry.createdAt)}
+                        </span>
+                        <span className="truncate text-zinc-700">{entry.topPriorityAction}</span>
+                        <span className="shrink-0 text-zinc-400">{expanded ? '▲' : '▼'}</span>
+                      </button>
+                      {expanded && (
+                        <div className="px-3 pb-3">
+                          <AnalysisResultView result={entry} />
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </details>
+          )}
         </div>
       )}
     </div>
