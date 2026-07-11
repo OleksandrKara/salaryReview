@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -42,19 +43,19 @@ public class FunnelAnalyticsService {
      * one). Never throws: any {@link DataAccessException} (schema not reachable, same guarantee
      * as {@link MarketingDashboardService#dashboard}) yields an empty list instead of a 500.
      */
-    public List<FunnelDashboardDto> funnel(String slug, boolean adsOnly) {
+    public List<FunnelDashboardDto> funnel(String slug, Set<String> sources) {
         try {
             Optional<UUID> landingPageId = landingPageRepository.findLandingPageId(slug);
             if (landingPageId.isEmpty()) return List.of();
 
             Instant statsSince = landingPageRepository.findStatsSince(landingPageId.get()).orElse(null);
-            List<RawFunnelStep> rawSteps = repository.findFunnelSteps(landingPageId.get(), statsSince, adsOnly);
+            List<RawFunnelStep> rawSteps = repository.findFunnelSteps(landingPageId.get(), statsSince, sources);
             if (rawSteps.isEmpty()) return List.of();
 
-            long totalVisitors = repository.countPageViews(landingPageId.get(), statsSince, adsOnly);
+            long totalVisitors = repository.countPageViews(landingPageId.get(), statsSince, sources);
             // Shared across every flow_key this page has — in practice a page has exactly one
             // active flow at a time, so this is never actually split across multiple funnels.
-            long totalCompleted = repository.countBookingsCompleted(landingPageId.get(), statsSince, adsOnly);
+            long totalCompleted = repository.countBookingsCompleted(landingPageId.get(), statsSince, sources);
 
             Map<String, List<RawFunnelStep>> byFlow = new LinkedHashMap<>();
             for (RawFunnelStep step : rawSteps) {

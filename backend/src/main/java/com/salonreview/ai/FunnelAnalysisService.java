@@ -8,6 +8,7 @@ import com.anthropic.models.messages.TextBlockParam;
 import com.salonreview.config.AiFunnelAnalysisProperties;
 import com.salonreview.domain.FunnelAnalysis;
 import com.salonreview.marketing.FunnelAnalyticsService;
+import com.salonreview.marketing.TrafficSourceParam;
 import com.salonreview.repo.FunnelAnalysisRepository;
 import com.salonreview.web.dto.FunnelDashboardDto;
 import com.salonreview.web.dto.FunnelDashboardDto.FunnelStepStat;
@@ -76,7 +77,7 @@ public class FunnelAnalysisService {
         AnthropicClient client = anthropicClientProvider.getIfAvailable();
         if (client == null) return Optional.empty();
 
-        List<FunnelDashboardDto> funnels = funnelAnalyticsService.funnel(slug, adsOnly);
+        List<FunnelDashboardDto> funnels = funnelAnalyticsService.funnel(slug, TrafficSourceParam.parse(adsOnly ? null : "all"));
         FunnelDashboardDto funnel = funnels.stream()
                 .filter(f -> f.flowKey().equals(flowKey))
                 .findFirst()

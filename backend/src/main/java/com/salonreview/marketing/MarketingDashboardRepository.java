@@ -7,6 +7,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -92,17 +93,20 @@ public class MarketingDashboardRepository {
      * rows), the same tradeoff already accepted for that column. Also scoped by landing page slug
      * so two different landing pages can't have their variant-name contact counts collide.
      *
-     * <p>adsOnly=false ("All traffic") runs byte-for-byte the same query as before this filter
-     * existed — every {@code (? OR ...)} guard short-circuits on the bound false and adds no
-     * filtering. adsOnly=true additionally requires: for page views/book-now clicks, a joined
-     * marketing.visits row with fbclid/gclid set; for contacts, the classified traffic-source
+     * <p>sources == {@link TrafficSourceSql#ALL} ("All traffic") runs byte-for-byte the same query
+     * as before this filter existed. Otherwise: for page views/book-now clicks, requires a joined
+     * marketing.visits row whose classification (see {@link TrafficSourceSql}) is one of the
+     * selected sources; for contacts, the same classification applied to the contact's own
      * columns; for bookings, a LEFT JOIN from marketing.attribution to marketing.contacts by
      * booking_id (attribution has no session_id of its own to check against visits directly) —
-     * in the current data only ~57% of attribution rows have a matching contacts row, so
-     * "Ads only" bookings is a best-effort floor, not a guaranteed-exact count. All-traffic mode
-     * is unaffected and remains exact.
+     * in the current data only ~57% of attribution rows have a matching contacts row, so a
+     * filtered-sources "Bookings" count is a best-effort floor, not a guaranteed-exact count.
+     * All-traffic mode is unaffected and remains exact.
      */
-    public List<RawVariantStat> findVariantStats(UUID landingPageId, String landingPageSlug, Instant statsSince, boolean adsOnly) {
+    public List<RawVariantStat> findVariantStats(UUID landingPageId, String landingPageSlug, Instant statsSince, Set<String> sources) {
+        String pageViewFilter = sourceFilter(() -> TrafficSourceSql.visitInSources("e.session_id", sources), sources);
+        String contactFilterC2 = sourceFilter(() -> TrafficSourceSql.contactInSources("c2", sources), sources);
+        String contactFilterC = sourceFilter(() -> TrafficSourceSql.contactInSources("c", sources), sources);
         String sql = """
                 SELECT v.id AS variant_id, v.name AS name, v.weight AS weight, v.active AS active,
                        v.key AS key, v.description AS description,
@@ -115,24 +119,24 @@ public class MarketingDashboardRepository {
                     SELECT e.variant_id, COUNT(*) AS page_views
                     FROM marketing.events e
                     WHERE e.event_type = 'page_view' AND (?::timestamptz IS NULL OR e.created_at >= ?)
-                      AND (?::boolean = false OR %1$s)
+                      AND %1$s
                     GROUP BY e.variant_id
                 ) pv ON pv.variant_id = v.id
                 LEFT JOIN (
                     SELECT a.variant_id, COUNT(*) AS bookings_completed
                     FROM marketing.attribution a
                     WHERE (?::timestamptz IS NULL OR a.created_at >= ?)
-                      AND (?::boolean = false OR EXISTS (
+                      AND EXISTS (
                           SELECT 1 FROM marketing.contacts c2
                           WHERE c2.square_booking_id = a.booking_id AND %2$s
-                      ))
+                      )
                     GROUP BY a.variant_id
                 ) bk ON bk.variant_id = v.id
                 LEFT JOIN (
                     SELECT c.variant_name, COUNT(*) AS contacts_created
                     FROM marketing.contacts c
                     WHERE c.landing_page_slug = ? AND (?::timestamptz IS NULL OR c.created_at >= ?)
-                      AND (?::boolean = false OR %3$s)
+                      AND %3$s
                     GROUP BY c.variant_name
                 ) ct ON ct.variant_name = v.name
                 LEFT JOIN (
@@ -140,16 +144,12 @@ public class MarketingDashboardRepository {
                     FROM marketing.events e
                     WHERE e.event_type = 'click' AND e.metadata->>'target' = 'book_now'
                       AND (?::timestamptz IS NULL OR e.created_at >= ?)
-                      AND (?::boolean = false OR %4$s)
+                      AND %1$s
                     GROUP BY e.variant_id
                 ) bc ON bc.variant_id = v.id
                 WHERE v.landing_page_id = ?
                 ORDER BY v.created_at ASC
-                """.formatted(
-                        AdsTrafficSql.VISIT_EXISTS.formatted("e.session_id"),
-                        AdsTrafficSql.CONTACT_CONDITION.formatted("c2"),
-                        AdsTrafficSql.CONTACT_CONDITION.formatted("c"),
-                        AdsTrafficSql.VISIT_EXISTS.formatted("e.session_id"));
+                """.formatted(pageViewFilter, contactFilterC2, contactFilterC);
         Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
         return jdbcTemplate.query(sql, (rs, rowNum) -> new RawVariantStat(
                 rs.getObject("variant_id", UUID.class).toString(),
@@ -162,11 +162,18 @@ public class MarketingDashboardRepository {
                 rs.getLong("book_now_clicks"),
                 rs.getString("key"),
                 rs.getString("description")
-        ), cutoff, cutoff, adsOnly,
-           cutoff, cutoff, adsOnly,
-           landingPageSlug, cutoff, cutoff, adsOnly,
-           cutoff, cutoff, adsOnly,
+        ), cutoff, cutoff,
+           cutoff, cutoff,
+           landingPageSlug, cutoff, cutoff,
+           cutoff, cutoff,
            landingPageId);
+    }
+
+    /** "All traffic" short-circuits to a literal TRUE (byte-for-byte the pre-filter query);
+     * otherwise builds the real classification check. Kept as a tiny helper so each of the four
+     * subqueries above reads the same way regardless of which case applies. */
+    private static String sourceFilter(java.util.function.Supplier<String> classifiedCheck, Set<String> sources) {
+        return sources.equals(TrafficSourceSql.ALL) ? "TRUE" : classifiedCheck.get();
     }
 
     public Optional<UUID> findVariantLandingPageId(UUID variantId) {

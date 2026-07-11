@@ -1,7 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import type { MarketingContact } from '../../../lib/types';
+import type { MarketingContact, TrafficSourceKey } from '../../../lib/types';
+import TrafficSourceFilter, { ADS_ONLY_SOURCES, ALL_TRAFFIC_SOURCES } from '../TrafficSourceFilter';
 import ContactsTable from './ContactsTable';
 
 const SUBMISSION_TYPE_LABELS: Record<string, string> = {
@@ -12,11 +13,9 @@ const SUBMISSION_TYPE_LABELS: Record<string, string> = {
 
 const ALL = '__all__';
 
-type TrafficMode = 'ads' | 'all';
-
 interface Filters {
   search: string;
-  trafficMode: TrafficMode;
+  sources: Set<TrafficSourceKey>;
   trafficSource: string;
   utmSource: string;
   utmMedium: string;
@@ -30,36 +29,33 @@ interface Filters {
   modifiedTo: string;
 }
 
-const EMPTY_FILTERS: Filters = {
-  search: '',
-  trafficMode: 'ads',
-  trafficSource: ALL,
-  utmSource: ALL,
-  utmMedium: ALL,
-  utmCampaign: ALL,
-  landingPage: ALL,
-  variant: ALL,
-  submissionTypes: new Set(),
-  createdFrom: '',
-  createdTo: '',
-  modifiedFrom: '',
-  modifiedTo: '',
-};
-
-/** Matches the backend's own "Meta Ads"/"Google Ads" prefix convention
- * (MarketingContactsRepository's findAdsAttributedContacts) — a paid click's traffic-source label
- * always starts with one of these two, everything else (organic, direct, referral) doesn't. */
-function isAdsSource(value: string | null): boolean {
-  return value != null && (value.startsWith('Meta Ads') || value.startsWith('Google Ads'));
+function emptyFilters(): Filters {
+  return {
+    search: '',
+    sources: new Set(ADS_ONLY_SOURCES),
+    trafficSource: ALL,
+    utmSource: ALL,
+    utmMedium: ALL,
+    utmCampaign: ALL,
+    landingPage: ALL,
+    variant: ALL,
+    submissionTypes: new Set(),
+    createdFrom: '',
+    createdTo: '',
+    modifiedFrom: '',
+    modifiedTo: '',
+  };
 }
 
-/** "Ads" (the default) mirrors what mani's dashboard has always effectively shown, since mani only
- * runs paid traffic — "All traffic" additionally surfaces organic/direct contacts, which mostly
- * matter for pages like the homepage that aren't ad-funded. */
-function matchesTrafficMode(c: MarketingContact, mode: TrafficMode): boolean {
-  if (mode === 'all') return true;
-  if (isAdsSource(c.originalTrafficSource) || isAdsSource(c.marketingTrafficSource)) return true;
-  return c.submissions.some((s) => isAdsSource(s.trafficSource));
+/** "Ads only" (the default) mirrors what mani's dashboard has always effectively shown, since mani
+ * only runs paid traffic — selecting every bucket ("All traffic") additionally surfaces organic/
+ * direct contacts, which mostly matter for pages like the homepage that aren't ad-funded. Channel
+ * is computed server-side (see MarketingContactDto.Contact#channel) — more reliable than the raw
+ * originalTrafficSource/marketingTrafficSource labels, which can mislabel an organic Instagram
+ * bio-link click as "Meta Ads". */
+function matchesSources(c: MarketingContact, sources: Set<TrafficSourceKey>): boolean {
+  if (sources.size === ALL_TRAFFIC_SOURCES.length) return true;
+  return c.channel !== null && sources.has(c.channel);
 }
 
 /** Distinct, sorted, non-empty values pulled from both the contact's own field and every one
@@ -111,7 +107,7 @@ function applyFilters(contacts: MarketingContact[], f: Filters): MarketingContac
       const haystack = `${c.givenName ?? ''} ${c.phoneNumber} ${c.emailAddress ?? ''}`.toLowerCase();
       if (!haystack.includes(search)) return false;
     }
-    if (!matchesTrafficMode(c, f.trafficMode)) return false;
+    if (!matchesSources(c, f.sources)) return false;
     if (!matchesTrafficSource(c, f.trafficSource)) return false;
     if (!matchesField(c, f.utmSource, (x) => x.utmSource, (s) => s.utmSource)) return false;
     if (!matchesField(c, f.utmMedium, (x) => x.utmMedium, (s) => s.utmMedium)) return false;
@@ -153,7 +149,7 @@ export default function ContactsFilterBar({
   // absent slug is indistinguishable from "the default page was never touched" and forcing a
   // specific-page filter in that case would be a real behavior change, not just a convenience.
   const [filters, setFilters] = useState<Filters>(() => ({
-    ...EMPTY_FILTERS,
+    ...emptyFilters(),
     landingPage: initialLandingPage ?? ALL,
   }));
 
@@ -183,9 +179,10 @@ export default function ContactsFilterBar({
     });
   }
 
+  const isDefaultSources = filters.sources.size === ADS_ONLY_SOURCES.length && ADS_ONLY_SOURCES.every((s) => filters.sources.has(s));
   const hasActiveFilters =
     filters.search ||
-    filters.trafficMode !== 'ads' ||
+    !isDefaultSources ||
     filters.trafficSource !== ALL ||
     filters.utmSource !== ALL ||
     filters.utmMedium !== ALL ||
@@ -206,7 +203,7 @@ export default function ContactsFilterBar({
           {hasActiveFilters ? (
             <button
               type="button"
-              onClick={() => setFilters(EMPTY_FILTERS)}
+              onClick={() => setFilters(emptyFilters())}
               className="text-xs font-medium text-blue-600 hover:underline"
             >
               Clear all
@@ -214,24 +211,12 @@ export default function ContactsFilterBar({
           ) : null}
         </div>
 
-        <div className="mt-3 flex items-center gap-3">
-          <span className="text-xs font-medium text-zinc-500">Traffic</span>
-          <div className="inline-flex rounded-lg bg-zinc-100 p-1">
-            {(['ads', 'all'] as TrafficMode[]).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setFilters((f) => ({ ...f, trafficMode: mode }))}
-                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                  filters.trafficMode === mode
-                    ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200'
-                    : 'text-zinc-500 hover:text-zinc-700'
-                }`}
-              >
-                {mode === 'ads' ? 'Ads only' : 'All traffic'}
-              </button>
-            ))}
-          </div>
+        <div className="mt-3">
+          <TrafficSourceFilter
+            selected={filters.sources}
+            onChange={(next) => setFilters((f) => ({ ...f, sources: next }))}
+            description="Filters contacts by channel — computed from each contact's own tracking data (see the 'Traffic source' facet below for the raw label)."
+          />
         </div>
 
         <div className="mt-3">

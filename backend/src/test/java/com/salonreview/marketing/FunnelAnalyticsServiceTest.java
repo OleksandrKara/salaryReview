@@ -13,7 +13,6 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
@@ -39,16 +38,16 @@ class FunnelAnalyticsServiceTest {
     void computesDropOffMath() {
         when(landingPageRepository.findLandingPageId("home")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(landingPageRepository.findStatsSince(LANDING_PAGE_ID)).thenReturn(Optional.empty());
-        when(repository.findFunnelSteps(eq(LANDING_PAGE_ID), isNull(), eq(true))).thenReturn(List.of(
+        when(repository.findFunnelSteps(eq(LANDING_PAGE_ID), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
                 new RawFunnelStep("homepage_booking_v1", "services", 0, 4, 100),
                 new RawFunnelStep("homepage_booking_v1", "addons", 1, 4, 80),
                 new RawFunnelStep("homepage_booking_v1", "datetime", 2, 4, 50),
                 new RawFunnelStep("homepage_booking_v1", "details", 3, 4, 30)
         ));
-        when(repository.countPageViews(LANDING_PAGE_ID, null, true)).thenReturn(1000L);
-        when(repository.countBookingsCompleted(LANDING_PAGE_ID, null, true)).thenReturn(25L);
+        when(repository.countPageViews(LANDING_PAGE_ID, null, TrafficSourceSql.ADS_ONLY)).thenReturn(1000L);
+        when(repository.countBookingsCompleted(LANDING_PAGE_ID, null, TrafficSourceSql.ADS_ONLY)).thenReturn(25L);
 
-        List<FunnelDashboardDto> result = service.funnel("home", true);
+        List<FunnelDashboardDto> result = service.funnel("home", TrafficSourceSql.ADS_ONLY);
 
         assertThat(result).hasSize(1);
         FunnelDashboardDto dto = result.get(0);
@@ -85,13 +84,13 @@ class FunnelAnalyticsServiceTest {
     void zeroDenominatorsYieldZeroRatesNotCrash() {
         when(landingPageRepository.findLandingPageId("home")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(landingPageRepository.findStatsSince(LANDING_PAGE_ID)).thenReturn(Optional.empty());
-        when(repository.findFunnelSteps(eq(LANDING_PAGE_ID), isNull(), eq(true))).thenReturn(List.of(
+        when(repository.findFunnelSteps(eq(LANDING_PAGE_ID), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
                 new RawFunnelStep("homepage_booking_v1", "services", 0, 4, 0)
         ));
-        when(repository.countPageViews(LANDING_PAGE_ID, null, true)).thenReturn(0L);
-        when(repository.countBookingsCompleted(LANDING_PAGE_ID, null, true)).thenReturn(0L);
+        when(repository.countPageViews(LANDING_PAGE_ID, null, TrafficSourceSql.ADS_ONLY)).thenReturn(0L);
+        when(repository.countBookingsCompleted(LANDING_PAGE_ID, null, TrafficSourceSql.ADS_ONLY)).thenReturn(0L);
 
-        List<FunnelDashboardDto> result = service.funnel("home", true);
+        List<FunnelDashboardDto> result = service.funnel("home", TrafficSourceSql.ADS_ONLY);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).finalConversionRate()).isEqualTo(0.0);
@@ -104,7 +103,7 @@ class FunnelAnalyticsServiceTest {
     void emptyWhenSlugNotFound() {
         when(landingPageRepository.findLandingPageId("unknown-slug")).thenReturn(Optional.empty());
 
-        assertThat(service.funnel("unknown-slug", true)).isEmpty();
+        assertThat(service.funnel("unknown-slug", TrafficSourceSql.ADS_ONLY)).isEmpty();
     }
 
     @Test
@@ -112,9 +111,9 @@ class FunnelAnalyticsServiceTest {
     void emptyWhenNoFunnelEvents() {
         when(landingPageRepository.findLandingPageId("home")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(landingPageRepository.findStatsSince(LANDING_PAGE_ID)).thenReturn(Optional.empty());
-        when(repository.findFunnelSteps(eq(LANDING_PAGE_ID), isNull(), eq(true))).thenReturn(List.of());
+        when(repository.findFunnelSteps(eq(LANDING_PAGE_ID), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of());
 
-        assertThat(service.funnel("home", true)).isEmpty();
+        assertThat(service.funnel("home", TrafficSourceSql.ADS_ONLY)).isEmpty();
     }
 
     @Test
@@ -123,7 +122,7 @@ class FunnelAnalyticsServiceTest {
         when(landingPageRepository.findLandingPageId("home"))
                 .thenThrow(new DataAccessResourceFailureException("relation \"marketing.landing_pages\" does not exist"));
 
-        assertThat(service.funnel("home", true)).isEmpty();
+        assertThat(service.funnel("home", TrafficSourceSql.ADS_ONLY)).isEmpty();
     }
 
     @Test
@@ -131,14 +130,14 @@ class FunnelAnalyticsServiceTest {
     void groupsMultipleFlowKeysSeparately() {
         when(landingPageRepository.findLandingPageId("home")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(landingPageRepository.findStatsSince(LANDING_PAGE_ID)).thenReturn(Optional.empty());
-        when(repository.findFunnelSteps(eq(LANDING_PAGE_ID), isNull(), eq(true))).thenReturn(List.of(
+        when(repository.findFunnelSteps(eq(LANDING_PAGE_ID), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
                 new RawFunnelStep("homepage_booking_v1", "services", 0, 4, 100),
                 new RawFunnelStep("homepage_booking_v2", "services", 0, 3, 40)
         ));
-        when(repository.countPageViews(any(), any(), anyBoolean())).thenReturn(500L);
-        when(repository.countBookingsCompleted(any(), any(), anyBoolean())).thenReturn(10L);
+        when(repository.countPageViews(any(), any(), any())).thenReturn(500L);
+        when(repository.countBookingsCompleted(any(), any(), any())).thenReturn(10L);
 
-        List<FunnelDashboardDto> result = service.funnel("home", true);
+        List<FunnelDashboardDto> result = service.funnel("home", TrafficSourceSql.ADS_ONLY);
 
         assertThat(result).hasSize(2);
         assertThat(result).extracting(FunnelDashboardDto::flowKey)

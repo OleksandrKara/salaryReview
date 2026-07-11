@@ -2,14 +2,13 @@ package com.salonreview.web;
 
 import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.marketing.MarketingAnalyticsService;
+import com.salonreview.marketing.TrafficSourceParam;
 import com.salonreview.web.dto.MarketingAnalyticsDto;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.HashSet;
-import java.util.Set;
 
 @RestController
 @RequestMapping("/api/owner/marketing/analytics")
@@ -23,13 +22,12 @@ public class MarketingAnalyticsController {
 
     /** Defaults to month-to-date (the 1st of the current month through today) when from/to are
      * omitted — the view the owner checks most often, per their own description of how they use
-     * this page. sources defaults to every recognized ad platform (Meta + Google) when omitted —
-     * that default is echoed nowhere in the response, so the frontend is the single source of truth
-     * for "what's currently selected", same as it already is for the date range. sources may also
-     * be "ALL" (MarketingAnalyticsService.ALL_TRAFFIC) to include every contact regardless of
-     * traffic source, not just ads-attributed ones. slug optionally scopes to one landing page
-     * (e.g. "home" vs "mani"); omitted means every page pooled together, same as before this param
-     * existed.
+     * this page. sources is the same comma-separated traffic-source list as the Overview/Funnel
+     * tabs (see TrafficSourceParam) — defaults to "Ads only" when omitted; that default is echoed
+     * nowhere in the response, so the frontend is the single source of truth for "what's currently
+     * selected", same as it already is for the date range. "all" includes every contact regardless
+     * of channel, not just ads-attributed ones. slug optionally scopes to one landing page (e.g.
+     * "home" vs "mani"); omitted means every page pooled together, same as before this param existed.
      */
     @GetMapping
     public MarketingAnalyticsDto analytics(
@@ -40,7 +38,7 @@ public class MarketingAnalyticsController {
         LocalDate today = LocalDate.now();
         LocalDate start = from != null ? LocalDate.parse(from) : today.withDayOfMonth(1);
         LocalDate end = to != null ? LocalDate.parse(to) : today;
-        return service.analytics(start, end, parseSources(sources), slug);
+        return service.analytics(start, end, TrafficSourceParam.parse(sources), slug);
     }
 
     /** Ad spend has no read-only carve-out beyond the GET above (already OWNER+ADS_MANAGER) — this
@@ -51,18 +49,6 @@ public class MarketingAnalyticsController {
     public AdSpendResponse setAdSpend(@RequestBody AdSpendRequest req, @AuthenticationPrincipal AppUserPrincipal me) {
         BigDecimal saved = service.saveAdSpend(req.year(), req.month(), req.amount(), me.getUsername());
         return new AdSpendResponse(req.year(), req.month(), saved);
-    }
-
-    private static Set<String> parseSources(String raw) {
-        if (raw == null || raw.isBlank()) return MarketingAnalyticsService.ALL_SOURCES;
-        Set<String> out = new HashSet<>();
-        for (String s : raw.split(",")) {
-            String upper = s.trim().toUpperCase();
-            if (MarketingAnalyticsService.ALL_SOURCES.contains(upper) || upper.equals(MarketingAnalyticsService.ALL_TRAFFIC)) {
-                out.add(upper);
-            }
-        }
-        return out.isEmpty() ? MarketingAnalyticsService.ALL_SOURCES : out;
     }
 
     public record AdSpendRequest(int year, int month, BigDecimal amount) {}

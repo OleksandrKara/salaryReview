@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -36,10 +37,10 @@ public class MarketingDashboardService {
      * Never throws: any DataAccessException (e.g. the marketing schema/tables don't exist yet,
      * because the separate salonLandings service hasn't run its migrations) yields an
      * "unavailable" DTO instead of a 500 — this app's own health must never depend on that
-     * other service's schema. adsOnly mirrors the same "Ads only"/"All traffic" convention already
-     * used on the Contacts/Analytics tabs — see MarketingDashboardRepository.findVariantStats.
+     * other service's schema. sources is the set of {@link TrafficSourceSql} buckets to count —
+     * see MarketingDashboardRepository.findVariantStats.
      */
-    public MarketingDashboardDto dashboard(String slug, boolean adsOnly) {
+    public MarketingDashboardDto dashboard(String slug, Set<String> sources) {
         try {
             Optional<UUID> landingPageId = repository.findLandingPageId(slug);
             if (landingPageId.isEmpty()) {
@@ -47,7 +48,7 @@ public class MarketingDashboardService {
             }
 
             Instant statsSince = repository.findStatsSince(landingPageId.get()).orElse(null);
-            List<VariantStat> variants = repository.findVariantStats(landingPageId.get(), slug, statsSince, adsOnly).stream()
+            List<VariantStat> variants = repository.findVariantStats(landingPageId.get(), slug, statsSince, sources).stream()
                     .map(raw -> toVariantStat(raw, slug))
                     .collect(Collectors.toList());
 
