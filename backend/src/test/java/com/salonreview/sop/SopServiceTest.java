@@ -188,6 +188,38 @@ class SopServiceTest {
     }
 
     @Test
+    @DisplayName("getVisible: owner sees a draft-only SOP that a manager/provider would not")
+    void getVisibleOwnerSeesEverything() {
+        Sop draftOnly = sop(SopAudience.PROVIDER, SopStatus.ACTIVE, null);
+        when(sops.findById(1L)).thenReturn(Optional.of(draftOnly));
+
+        assertThat(service.getVisible(1L, Role.OWNER, 7L)).isPresent();
+        assertThat(service.getVisible(1L, Role.PROVIDER, 7L)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("getVisible: manager/provider only see an ACTIVE, published SOP whose audience includes their role")
+    void getVisibleAudienceGated() {
+        Sop providerSop = sop(SopAudience.PROVIDER, SopStatus.ACTIVE, 100L);
+        Sop managerOnly = Sop.builder().id(2L).title("m").category("c").audience(SopAudience.MANAGER)
+                .status(SopStatus.ACTIVE).currentVersionId(200L).createdBy("o").build();
+        Sop archived = Sop.builder().id(3L).title("a").category("c").audience(SopAudience.PROVIDER)
+                .status(SopStatus.ARCHIVED).currentVersionId(300L).createdBy("o").build();
+        when(sops.findById(1L)).thenReturn(Optional.of(providerSop));
+        when(sops.findById(2L)).thenReturn(Optional.of(managerOnly));
+        when(sops.findById(3L)).thenReturn(Optional.of(archived));
+        when(sops.findById(99L)).thenReturn(Optional.empty());
+        when(versions.findById(100L)).thenReturn(Optional.of(
+                SopVersion.builder().id(100L).sopId(1L).versionNumber(1).body("x").status(SopVersionStatus.PUBLISHED).build()));
+        when(acks.findBySopVersionIdAndUserId(100L, 7L)).thenReturn(Optional.empty());
+
+        assertThat(service.getVisible(1L, Role.PROVIDER, 7L)).isPresent();
+        assertThat(service.getVisible(2L, Role.PROVIDER, 7L)).isEmpty(); // wrong audience
+        assertThat(service.getVisible(3L, Role.PROVIDER, 7L)).isEmpty(); // archived
+        assertThat(service.getVisible(99L, Role.PROVIDER, 7L)).isEmpty(); // doesn't exist
+    }
+
+    @Test
     @DisplayName("roster lists the audience's active users with correct ack flags")
     void roster() {
         when(sops.findById(1L)).thenReturn(Optional.of(sop(SopAudience.BOTH, SopStatus.ACTIVE, 100L)));

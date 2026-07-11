@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { Spinner } from '../../components/Spinner';
-import { SyncBadge } from '../../kb/KbManager';
+import { SyncBadge } from '../../kb/KbSyncBadge';
 import LangIndexBadge from './LangIndexBadge';
 import type { SopSyncItem } from '../../lib/types';
 

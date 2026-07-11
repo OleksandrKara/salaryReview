@@ -149,6 +149,24 @@ public class SopService {
         return out;
     }
 
+    /**
+     * A single SOP for the shareable-link detail page, subject to the exact same visibility rule
+     * as {@link #list}: owner sees anything; managers/providers only an ACTIVE SOP with a
+     * published version whose audience includes their role. Empty for "doesn't exist" and "exists
+     * but not visible to you" alike — the detail page shows one generic message either way, same
+     * as {@link com.salonreview.web.KbArticleController#get} does for KB articles.
+     */
+    public Optional<SopListItem> getVisible(Long id, Role role, Long userId) {
+        Optional<Sop> sopOpt = sops.findById(id);
+        if (sopOpt.isEmpty()) return Optional.empty();
+        Sop s = sopOpt.get();
+        if (role == Role.OWNER) return Optional.of(item(s, null));
+        if (s.getCurrentVersionId() == null || s.getStatus() != SopStatus.ACTIVE || !s.getAudience().includes(role)) {
+            return Optional.empty();
+        }
+        return Optional.of(item(s, userId));
+    }
+
     public SopListItem item(Sop s, Long userIdOrNull) {
         SopVersion current = s.getCurrentVersionId() == null ? null
                 : versions.findById(s.getCurrentVersionId()).orElse(null);

@@ -40,6 +40,14 @@ public class SopController {
         return sops.list(me.getRole(), me.getUserId()).stream().map(SopController::toDto).toList();
     }
 
+    /** One SOP, for the shareable-link detail page — same audience rule as {@link #list}. */
+    @GetMapping("/{id}")
+    public ResponseEntity<SopDto> get(@PathVariable Long id, @AuthenticationPrincipal AppUserPrincipal me) {
+        return sops.getVisible(id, me.getRole(), me.getUserId())
+                .map(item -> ResponseEntity.ok(toDto(item)))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
     @GetMapping("/{id}/versions")
     public List<SopVersionDto> versions(@PathVariable Long id) {
         return sops.versionHistory(id).stream().map(SopController::toVersionDto).toList();
