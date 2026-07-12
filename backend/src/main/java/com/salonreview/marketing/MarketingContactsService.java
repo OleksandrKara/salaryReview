@@ -96,13 +96,50 @@ public class MarketingContactsService {
         return contacts();
     }
 
-    private Contact toContact(MarketingContactsRepository.RawContact raw) {
-        // Falls back to a phone-resolved link (see syncSquareLinks) when this lead never completed
-        // the tracked booking flow itself — a manager who booked them by phone, or a return visit
-        // through some other channel, still shows up here once a sync has found the match.
-        String effectiveSquareCustomerId = raw.squareCustomerId() != null
+    /**
+     * For the Overview dashboard's "bookings incl. manager follow-up" total: counts, per variant
+     * name (matching how the dashboard already groups contactsCreated), contacts under this
+     * landing page whose current real (non-cancelled) Square appointments include at least one
+     * booking_id that {@code attributedBookingIds} (marketing.attribution for this page) doesn't
+     * know about. That covers two real cases: a lead who never completed the tracked flow at all
+     * but a manager booked them by phone (found via the Sync-cached link), and a lead whose
+     * original tracked request was later cancelled and replaced by a different booking a manager
+     * created directly in Square (their contacts row still has a square_customer_id, but that
+     * particular new booking never went through our attribution recording).
+     */
+    public Map<String, Long> countFollowUpBookingsByVariant(String landingPageSlug, Instant statsSince, java.util.Set<String> attributedBookingIds) {
+        return repository.listAll().stream()
+                .filter(r -> landingPageSlug.equals(r.landingPageSlug()))
+                .filter(r -> statsSince == null || !r.createdAt().isBefore(statsSince))
+                .filter(r -> hasUncountedRealAppointment(r, attributedBookingIds))
+                .collect(Collectors.groupingBy(
+                        r -> r.variantName() == null ? "" : r.variantName(),
+                        Collectors.counting()));
+    }
+
+    private boolean hasUncountedRealAppointment(MarketingContactsRepository.RawContact raw, java.util.Set<String> attributedBookingIds) {
+        String customerId = resolveSquareCustomerId(raw);
+        if (customerId == null) return false;
+        return fetchAppointments(customerId, raw.createdAt()).stream()
+                .filter(a -> !isCancelled(a.status()))
+                .anyMatch(a -> !attributedBookingIds.contains(a.bookingId()));
+    }
+
+    private static boolean isCancelled(String status) {
+        return status != null && status.startsWith("CANCELLED");
+    }
+
+    // Falls back to a phone-resolved link (see syncSquareLinks) when this lead never completed
+    // the tracked booking flow itself — a manager who booked them by phone, or a return visit
+    // through some other channel, still resolves here once a sync has found the match.
+    private String resolveSquareCustomerId(MarketingContactsRepository.RawContact raw) {
+        return raw.squareCustomerId() != null
                 ? raw.squareCustomerId()
                 : squareLinks.findByPhoneNumber(raw.phoneNumber()).map(MarketingContactSquareLink::getSquareCustomerId).orElse(null);
+    }
+
+    private Contact toContact(MarketingContactsRepository.RawContact raw) {
+        String effectiveSquareCustomerId = resolveSquareCustomerId(raw);
 
         String squareProfileUrl = effectiveSquareCustomerId == null
                 ? null

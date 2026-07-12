@@ -748,6 +748,14 @@ export interface MarketingVariantStat {
    * fire this from their one shared "open the booking modal" call site. */
   bookNowClicks: number;
   conversionRate: number;
+  /** Real appointments Square knows about that bookingsCompleted doesn't — a manager followed up
+   * on a lead and booked them by phone, or the lead's original tracked request was cancelled and
+   * a different booking replaced it. Zero unless a manager follow-up has actually been found via
+   * the same phone-resolution "Sync" mechanism as the Contacts tab. */
+  followUpBookings: number;
+  /** (bookingsCompleted + followUpBookings) / pageViews. Equal to conversionRate when
+   * followUpBookings is zero. */
+  adjustedConversionRate: number;
   /** Direct ?v=<key> link to view this exact variant, or null if it has no key yet. */
   deepLinkUrl: string | null;
   /** What this variant is testing and why, e.g. "urgency-focused headline + green accent vs.

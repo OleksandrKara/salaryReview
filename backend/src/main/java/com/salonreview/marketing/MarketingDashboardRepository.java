@@ -176,6 +176,21 @@ public class MarketingDashboardRepository {
         return sources.equals(TrafficSourceSql.ALL) ? "TRUE" : classifiedCheck.get();
     }
 
+    /** Every booking_id already reflected in marketing.attribution for this landing page (same
+     * statsSince cutoff as findVariantStats' bookings_completed subquery) — used to tell whether a
+     * contact's currently-real Square appointment is one the tracked flow already counted, or one
+     * only Square knows about (e.g. a manager follow-up booked directly, or the tracked request got
+     * cancelled and a different booking replaced it).
+     */
+    public Set<String> findAttributedBookingIds(UUID landingPageId, Instant statsSince) {
+        Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
+        List<String> ids = jdbcTemplate.query(
+                "SELECT booking_id FROM marketing.attribution WHERE landing_page_id = ? AND (?::timestamptz IS NULL OR created_at >= ?)",
+                (rs, rowNum) -> rs.getString("booking_id"),
+                landingPageId, cutoff, cutoff);
+        return new java.util.HashSet<>(ids);
+    }
+
     public Optional<UUID> findVariantLandingPageId(UUID variantId) {
         List<UUID> ids = jdbcTemplate.query(
                 "SELECT landing_page_id FROM marketing.landing_variants WHERE id = ?",

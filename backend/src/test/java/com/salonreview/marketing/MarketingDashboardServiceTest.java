@@ -14,7 +14,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,6 +32,7 @@ import static org.mockito.Mockito.when;
 class MarketingDashboardServiceTest {
 
     private MarketingDashboardRepository repository;
+    private MarketingContactsService contactsService;
     private MarketingDashboardService service;
 
     private static final UUID LANDING_PAGE_ID = UUID.randomUUID();
@@ -38,9 +41,12 @@ class MarketingDashboardServiceTest {
     @BeforeEach
     void setUp() {
         repository = mock(MarketingDashboardRepository.class);
+        contactsService = mock(MarketingContactsService.class);
+        when(repository.findAttributedBookingIds(any(), any())).thenReturn(Set.of());
+        when(contactsService.countFollowUpBookingsByVariant(any(), any(), any())).thenReturn(Map.of());
         MarketingLandingProperties landingProperties = new MarketingLandingProperties();
         landingProperties.setLandingBaseUrls(java.util.Map.of("mani", "https://mani.akluxnails.com"));
-        service = new MarketingDashboardService(repository, landingProperties);
+        service = new MarketingDashboardService(repository, contactsService, landingProperties);
     }
 
     @Test
@@ -60,9 +66,30 @@ class MarketingDashboardServiceTest {
         assertThat(variant.contactsCreated()).isEqualTo(40);
         assertThat(variant.bookNowClicks()).isEqualTo(60);
         assertThat(variant.conversionRate()).isEqualTo(0.25);
+        assertThat(variant.followUpBookings()).isEqualTo(0);
+        assertThat(variant.adjustedConversionRate()).isEqualTo(0.25);
         assertThat(variant.deepLinkUrl()).isEqualTo("https://mani.akluxnails.com/?v=control");
         assertThat(variant.description()).isEqualTo("Baseline, no changes");
         assertThat(dashboard.statsSince()).isNull();
+    }
+
+    @Test
+    @DisplayName("adjusted conversion rate folds in manager follow-up bookings found via Square, on top of the tracked count")
+    void adjustedConversionRateIncludesFollowUpBookings() {
+        when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 6, 40, 60, "control", null)
+        ));
+        when(contactsService.countFollowUpBookingsByVariant(eq("mani"), isNull(), any()))
+                .thenReturn(Map.of("Control", 2L));
+
+        MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY);
+
+        VariantStat variant = dashboard.variants().get(0);
+        assertThat(variant.bookingsCompleted()).isEqualTo(6);
+        assertThat(variant.followUpBookings()).isEqualTo(2);
+        assertThat(variant.conversionRate()).isEqualTo(0.06);
+        assertThat(variant.adjustedConversionRate()).isEqualTo(0.08);
     }
 
     @Test

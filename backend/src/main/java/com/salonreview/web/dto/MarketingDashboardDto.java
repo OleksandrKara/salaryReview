@@ -25,6 +25,16 @@ public record MarketingDashboardDto(
              * MarketingDashboardRepository.RawVariantStat.bookNowClicks for the query. */
             long bookNowClicks,
             double conversionRate,
+            /** Real appointments Square knows about that bookingsCompleted doesn't — a manager
+             * followed up on a lead and booked them by phone, or the lead's original tracked
+             * request was cancelled and a different booking replaced it — found via the same
+             * phone-resolution "Sync" mechanism as the Contacts tab. Zero unless a manager
+             * follow-up has actually been found. See MarketingContactsService.countFollowUpBookingsByVariant. */
+            long followUpBookings,
+            /** (bookingsCompleted + followUpBookings) / pageViews — the conversion rate if
+             * manager follow-ups are counted too. Equal to conversionRate when followUpBookings
+             * is zero. */
+            double adjustedConversionRate,
             /** Direct ?v=<key> link to view this exact variant, or null if it has no key yet. */
             String deepLinkUrl,
             /** What this variant is testing and why, e.g. "urgency-focused headline + green
