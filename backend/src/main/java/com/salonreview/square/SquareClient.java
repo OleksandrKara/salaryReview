@@ -183,15 +183,27 @@ public class SquareClient {
         Instant end = Instant.now().plus(FUTURE_BOOKING_HORIZON);
         Instant start = since.isAfter(end) ? end : since;
         return cached("bookingsForCustomer:" + customerId + ":" + start, Duration.ofMinutes(2), () -> {
-            Map<String, Booking> byId = new LinkedHashMap<>();
+            List<Instant> windowStarts = new ArrayList<>();
             Instant windowStart = start;
             while (windowStart.isBefore(end)) {
-                Instant windowEnd = windowStart.plus(Duration.ofDays(30));
-                if (windowEnd.isAfter(end)) windowEnd = end;
-                for (Booking b : bookingsForCustomerWindow(customerId, windowStart, windowEnd)) {
-                    byId.putIfAbsent(b.id(), b);
+                windowStarts.add(windowStart);
+                windowStart = windowStart.plus(Duration.ofDays(30));
+            }
+            // Each window is its own blocking Square HTTP call, and a customer whose lead is a
+            // few months old can need a dozen-plus of them (see the class doc above) — fanning
+            // them out on virtual threads instead of one at a time is what keeps the Contacts/
+            // Analytics/Overview pages from taking many seconds to load per contact.
+            Map<String, Booking> byId = new LinkedHashMap<>();
+            try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+                List<java.util.concurrent.Future<List<Booking>>> futures = windowStarts.stream()
+                        .map(ws -> executor.submit(() -> {
+                            Instant we = ws.plus(Duration.ofDays(30));
+                            return bookingsForCustomerWindow(customerId, ws, we.isAfter(end) ? end : we);
+                        }))
+                        .toList();
+                for (var future : futures) {
+                    for (Booking b : awaitBookings(future)) byId.putIfAbsent(b.id(), b);
                 }
-                windowStart = windowEnd;
             }
             List<Booking> all = new ArrayList<>(byId.values());
             all.sort((a, b) -> {
@@ -201,6 +213,17 @@ public class SquareClient {
             });
             return all;
         });
+    }
+
+    private static List<Booking> awaitBookings(java.util.concurrent.Future<List<Booking>> future) {
+        try {
+            return future.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(e);
+        } catch (java.util.concurrent.ExecutionException e) {
+            throw e.getCause() instanceof RuntimeException re ? re : new RuntimeException(e.getCause());
+        }
     }
 
     private List<Booking> bookingsForCustomerWindow(String customerId, Instant start, Instant end) {
