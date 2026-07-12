@@ -14,7 +14,6 @@ public record MarketingDashboardDto(
             String variantId,
             String name,
             int weight,
-            boolean active,
             long pageViews,
             long bookingsCompleted,
             /** Contacts (leads) captured under this variant — matched by variant name, since

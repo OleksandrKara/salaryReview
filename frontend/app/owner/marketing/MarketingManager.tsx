@@ -57,10 +57,6 @@ export default function MarketingManager({
     }
   }
 
-  function onToggleActive(v: MarketingVariantStat) {
-    return withVariantBusy(v, () => api.setMarketingVariantActive(v.variantId, !v.active));
-  }
-
   function onRename(v: MarketingVariantStat) {
     const name = prompt('New name for this variant:', v.name);
     if (!name || !name.trim() || name.trim() === v.name) return;
@@ -167,7 +163,6 @@ export default function MarketingManager({
 
       <VariantTable
         variants={variants}
-        onToggleActive={onToggleActive}
         onRename={onRename}
         onEditDescription={onEditDescription}
         onDuplicate={onDuplicate}

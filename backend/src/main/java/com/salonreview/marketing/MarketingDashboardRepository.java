@@ -26,7 +26,6 @@ public class MarketingDashboardRepository {
             String variantId,
             String name,
             int weight,
-            boolean active,
             long pageViews,
             long bookingsCompleted,
             long contactsCreated,
@@ -108,7 +107,7 @@ public class MarketingDashboardRepository {
         String contactFilterC2 = sourceFilter(() -> TrafficSourceSql.contactInSources("c2", sources), sources);
         String contactFilterC = sourceFilter(() -> TrafficSourceSql.contactInSources("c", sources), sources);
         String sql = """
-                SELECT v.id AS variant_id, v.name AS name, v.weight AS weight, v.active AS active,
+                SELECT v.id AS variant_id, v.name AS name, v.weight AS weight,
                        v.key AS key, v.description AS description,
                        COALESCE(pv.page_views, 0) AS page_views,
                        COALESCE(bk.bookings_completed, 0) AS bookings_completed,
@@ -155,7 +154,6 @@ public class MarketingDashboardRepository {
                 rs.getObject("variant_id", UUID.class).toString(),
                 rs.getString("name"),
                 rs.getInt("weight"),
-                rs.getBoolean("active"),
                 rs.getLong("page_views"),
                 rs.getLong("bookings_completed"),
                 rs.getLong("contacts_created"),
@@ -203,10 +201,6 @@ public class MarketingDashboardRepository {
         jdbcTemplate.update(
                 "UPDATE marketing.landing_variants SET name = ?, key = ? WHERE id = ?",
                 newName, newKey, variantId);
-    }
-
-    public void setVariantActive(UUID variantId, boolean active) {
-        jdbcTemplate.update("UPDATE marketing.landing_variants SET active = ? WHERE id = ?", active, variantId);
     }
 
     public void updateVariantDescription(UUID variantId, String description) {

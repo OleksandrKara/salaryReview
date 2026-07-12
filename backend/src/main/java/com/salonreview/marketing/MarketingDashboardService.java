@@ -92,10 +92,6 @@ public class MarketingDashboardService {
         }
     }
 
-    public void setVariantActive(UUID variantId, boolean active) {
-        repository.setVariantActive(variantId, active);
-    }
-
     public void updateVariantDescription(UUID variantId, String description) {
         repository.updateVariantDescription(variantId, description == null || description.isBlank() ? null : description.trim());
     }
@@ -109,11 +105,13 @@ public class MarketingDashboardService {
             repository.deleteVariant(variantId);
         } catch (DataIntegrityViolationException ex) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Can't delete — this variant has recorded page views or bookings. Deactivate it instead.");
+                    "Can't delete — this variant has recorded page views or bookings. Set its weight to 0 instead to pull it out of rotation.");
         }
     }
 
     /** Copies weight/content from the source variant; the new variant always starts active
+     * (required for it to ever be reachable by mani/akluxnails-home's own variant picker — this
+     * app no longer exposes a way to toggle that back off, see the Overview tab's variant table)
      * with a key auto-generated from its name, same convention as the CLI's `add` command.
      */
     public UUID duplicateVariant(UUID sourceVariantId, String newName) {
@@ -150,7 +148,7 @@ public class MarketingDashboardService {
                 ? 0.0
                 : (double) (raw.bookingsCompleted() + followUpBookings) / raw.pageViews();
         String deepLinkUrl = raw.key() == null ? null : buildDeepLinkUrl(raw.key(), slug);
-        return new VariantStat(raw.variantId(), raw.name(), raw.weight(), raw.active(),
+        return new VariantStat(raw.variantId(), raw.name(), raw.weight(),
                 raw.pageViews(), raw.bookingsCompleted(), raw.contactsCreated(), raw.bookNowClicks(),
                 conversionRate, followUpBookings, adjustedConversionRate, deepLinkUrl, raw.description());
     }

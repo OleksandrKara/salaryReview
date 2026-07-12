@@ -388,9 +388,6 @@ export const api = {
   renameMarketingVariant: (variantId: string, name: string) =>
     proxyVoid(`/api/owner/marketing/variants/${variantId}`, 'PATCH', { name }),
 
-  setMarketingVariantActive: (variantId: string, active: boolean) =>
-    proxyVoid(`/api/owner/marketing/variants/${variantId}`, 'PATCH', { active }),
-
   // description: '' clears it; the backend only leaves it untouched when the field is absent
   // entirely, which this always-present-key call never does.
   setMarketingVariantDescription: (variantId: string, description: string) =>
