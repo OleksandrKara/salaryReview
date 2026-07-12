@@ -1,8 +1,10 @@
 package com.salonreview.marketing;
 
+import com.salonreview.domain.MarketingContactSquareLink;
 import com.salonreview.marketing.MarketingContactsRepository.RawAppointmentSubmission;
 import com.salonreview.marketing.MarketingContactsRepository.RawContact;
 import com.salonreview.marketing.MarketingContactsRepository.RawSubmission;
+import com.salonreview.repo.MarketingContactSquareLinkRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClient.AppointmentSegment;
 import com.salonreview.square.SquareClient.Booking;
@@ -18,26 +20,32 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MarketingContactsServiceTest {
 
     private MarketingContactsRepository repository;
+    private MarketingContactSquareLinkRepository squareLinks;
     private SquareClient square;
     private MarketingContactsService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(MarketingContactsRepository.class);
+        squareLinks = mock(MarketingContactSquareLinkRepository.class);
         square = mock(SquareClient.class);
-        service = new MarketingContactsService(repository, square);
+        service = new MarketingContactsService(repository, squareLinks, square);
         when(repository.findSubmissionHistory(any())).thenReturn(List.of());
         when(repository.findSubmissionsByBookingIds(any())).thenReturn(Map.of());
+        when(squareLinks.findByPhoneNumber(any())).thenReturn(Optional.empty());
     }
 
     private static RawContact rawContact(UUID id, String squareCustomerId) {
@@ -189,5 +197,62 @@ class MarketingContactsServiceTest {
 
         assertThat(dto.available()).isTrue();
         assertThat(dto.contacts().get(0).appointments()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a lead with no stored Square id, but a previously-cached phone link, shows appointments through it")
+    void usesCachedLinkAsFallback() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, null)));
+        when(squareLinks.findByPhoneNumber("(858) 555-0100")).thenReturn(Optional.of(
+                MarketingContactSquareLink.builder().phoneNumber("(858) 555-0100").squareCustomerId("SQCUST999")
+                        .lastSyncedAt(Instant.now()).build()));
+        when(square.bookingsForCustomer("SQCUST999")).thenReturn(List.of());
+
+        MarketingContactDto dto = service.contacts();
+
+        Contact c = dto.contacts().get(0);
+        assertThat(c.squareProfileUrl()).isEqualTo("https://app.squareup.com/dashboard/customers/directory/customer/SQCUST999");
+    }
+
+    @Test
+    @DisplayName("sync resolves an unlinked lead's Square customer by phone and caches it")
+    void syncResolvesUnlinkedLeadByPhone() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, null)));
+        when(square.customerIdsForPhone("(858) 555-0100")).thenReturn(List.of("SQCUST777"));
+        when(square.bookingsForCustomer("SQCUST777")).thenReturn(List.of());
+
+        service.syncSquareLinks();
+
+        var captor = org.mockito.ArgumentCaptor.forClass(MarketingContactSquareLink.class);
+        verify(squareLinks).save(captor.capture());
+        assertThat(captor.getValue().getPhoneNumber()).isEqualTo("(858) 555-0100");
+        assertThat(captor.getValue().getSquareCustomerId()).isEqualTo("SQCUST777");
+    }
+
+    @Test
+    @DisplayName("sync skips a contact that already has a stored Square id or an already-cached link, and busts the Square cache first")
+    void syncSkipsAlreadyLinkedContacts() {
+        UUID linkedId = UUID.randomUUID();
+        UUID cachedId = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(
+                rawContact(linkedId, "SQCUST_STORED"),
+                new RawContact(cachedId, "(858) 555-0200", "Ann", null,
+                        "google_ads", "google_ads", "google_ads", "google", "cpc", "promo",
+                        "mani", "Version_1", "mobile", "iOS", "17.5", "Mobile Safari", "17.5",
+                        true, true, null, null, null, null, null, null, null,
+                        Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-02T00:00:00Z"))
+        ));
+        when(square.bookingsForCustomer(any())).thenReturn(List.of());
+        when(squareLinks.findByPhoneNumber("(858) 555-0200")).thenReturn(Optional.of(
+                MarketingContactSquareLink.builder().phoneNumber("(858) 555-0200").squareCustomerId("SQCUST_CACHED")
+                        .lastSyncedAt(Instant.now()).build()));
+
+        service.syncSquareLinks();
+
+        verify(square, never()).customerIdsForPhone(any());
+        verify(squareLinks, never()).save(any());
+        verify(square).invalidate();
     }
 }

@@ -33,6 +33,7 @@ import type {
   FunnelAnalysisResult,
   FunnelDashboardData,
   MarketingAnalyticsData,
+  MarketingContactsData,
   MarketingDashboardData,
   MarketingLandingPage,
   RagCitation,
@@ -180,6 +181,11 @@ export const api = {
 
   updateRagConfig: (body: Omit<RagAgentConfigDto, 'version'>) =>
     proxyJson<RagAgentConfigDto>(`/api/rag/admin/config`, 'POST', body),
+
+  // Marketing contacts: resolves any lead that never linked to a Square customer through the
+  // tracked booking flow (a manager followed up and booked them by phone, or they came back
+  // through some other channel) and returns the refreshed list — owner-only.
+  syncMarketingContacts: () => proxyJson<MarketingContactsData>(`/api/owner/marketing/contacts/sync`, 'POST', {}),
 
   // Knowledge Base articles. Reads are role-filtered by the backend; writes/sync are OWNER+MANAGER.
   listKbArticles: () => proxyGet<KbArticle[]>(`/api/kb-articles`),
