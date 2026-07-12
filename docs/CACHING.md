@@ -41,6 +41,35 @@ behind Square; the next load after the TTL lapses pulls fresh — and **Sync** m
 Also: within the aggregator and the no‑show scan, the independent **bookings + orders** fetches run
 **concurrently** (`CompletableFuture`), which roughly halves cold latency.
 
+## Outbound concurrency limit
+
+Several call sites intentionally fan work out in parallel to stay fast: `bookingsForCustomer` splits a
+wide lookback into ≤30‑day windows fetched concurrently on virtual threads, and
+`MarketingAnalyticsService`/`MarketingContactsService` run their per‑contact/per‑customer loops via
+`.parallelStream()`. For one contact with a long history that's easily ~20 simultaneous Square calls; for
+a page load touching many contacts at once, the burst can pass 100 simultaneous requests — which is
+enough to trip Square's real per‑merchant rate limit (`429`, `RATE_LIMIT_ERROR`), and did in production
+(uncaught, this crashed the Analytics tab with a 500).
+
+`SquareClient` now gates **every** outbound HTTP call — not just `bookingsForCustomer`'s — through a
+single fair `Semaphore(SquareClient.MAX_CONCURRENT_SQUARE_CALLS = 6)` (see the `throttled(...)` helper).
+6 keeps most of the parallel‑fetch speedup (a 20‑window fan‑out finishes in ~4 batches instead of 20
+sequential round trips or being fully serialized) while staying far below the real rate limit even with
+several tabs/contacts active at once. It's a plain constant for now; promote it to a `SquareProperties`
+setting if it ever needs prod tuning without a redeploy.
+
+Because a single failed window can no longer be treated as fatal to the whole account, two additional
+layers of graceful degradation exist below the throttle:
+- `bookingsForCustomer`'s internal window fan-out returns partial results — one window failing (e.g. it
+  still hits a 429 despite the throttle) logs a warning and contributes no bookings for that window,
+  rather than discarding every other window's results for that customer.
+- `MarketingAnalyticsService` wraps every remaining Square call it makes directly (phone‑based customer
+  lookup, customer creation dates, per‑customer booking history for the fresh/upcoming checks) in
+  try/catch, degrading to "exclude this one customer" or an existing conservative fallback (e.g. treating
+  an unresolvable customer as "returning," matching how a customer with genuinely no data is already
+  handled) rather than failing the entire `/api/owner/marketing/analytics` response. This mirrors the
+  same try/catch‑and‑degrade pattern `MarketingContactsService.fetchAppointments` already used.
+
 ### Measured effect
 | Path | Before | After |
 |------|--------|-------|
