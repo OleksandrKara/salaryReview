@@ -5,6 +5,7 @@ import { api } from '../../../lib/api';
 import type {
   MarketingAnalyticsData,
   MarketingAnalyticsSegment,
+  MarketingCompletedAppointment,
   MarketingUpcomingAppointment,
   TrafficSourceKey,
 } from '../../../lib/types';
@@ -31,6 +32,12 @@ function lastNDaysRange(n: number): { from: string; to: string } {
   const from = new Date(now);
   from.setDate(from.getDate() - (n - 1));
   return { from: isoDate(from), to: isoDate(now) };
+}
+
+function fmtDay(isoDate: string): string {
+  // isoDate is a plain yyyy-MM-dd date (no time/zone) — parse as local, not UTC-shifted.
+  const [y, m, d] = isoDate.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
 function fmtAppointment(iso: string): string {
@@ -98,6 +105,18 @@ export default function AnalyticsView({ initialData, slug }: { initialData: Mark
     return { appointments: filtered, total };
   }, [data.upcoming, segment]);
 
+  const completedForSegment = useMemo(() => {
+    const filtered = segment === 'all'
+      ? data.completed
+      : data.completed.filter((a) => (segment === 'fresh' ? a.freshFromAds : !a.freshFromAds));
+    const total = filtered.reduce((sum, a) => sum + a.collected, 0);
+    const byChannel = filtered.reduce<Record<string, number>>((acc, a) => {
+      acc[a.paymentChannel] = (acc[a.paymentChannel] ?? 0) + a.collected;
+      return acc;
+    }, {});
+    return { appointments: filtered, total, byChannel };
+  }, [data.completed, segment]);
+
   return (
     <div>
       <TrafficSourceFilter
@@ -156,6 +175,32 @@ export default function AnalyticsView({ initialData, slug }: { initialData: Mark
         <StatCard label="Customers" value={activeSegment.customerCount.toLocaleString()} />
         <StatCard label="Services" value={activeSegment.serviceCount.toLocaleString()} />
         <StatCard label="Gross revenue" value={usd(activeSegment.grossRevenue)} />
+      </div>
+
+      <div className="mt-8">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-medium text-zinc-500">Completed appointments &amp; collected revenue</h2>
+          <span className="text-xs text-zinc-400">already rung up — cash, card, or a provider&apos;s cash note</span>
+        </div>
+
+        {completedForSegment.appointments.length === 0 ? (
+          <div className="mt-3 rounded-lg border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">
+            No completed, paid appointments for {segmentLabel(segment).toLowerCase()} in this range.
+          </div>
+        ) : (
+          <>
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <StatCard label="Completed appointments" value={completedForSegment.appointments.length.toLocaleString()} />
+              <StatCard label="Total collected" value={usd(completedForSegment.total)} />
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {Object.entries(completedForSegment.byChannel).map(([channel, amount]) => (
+                <ChannelBreakdownBadge key={channel} channel={channel} amount={amount} />
+              ))}
+            </div>
+            <CompletedList appointments={completedForSegment.appointments} />
+          </>
+        )}
       </div>
 
       <div className="mt-8">
@@ -226,6 +271,86 @@ function FreshBadge({ fresh }: { fresh: boolean }) {
     >
       {fresh ? 'New to Square' : 'Returning'}
     </span>
+  );
+}
+
+const PAYMENT_CHANNEL_LABELS: Record<string, string> = {
+  CASH: 'Cash',
+  CARD: 'Card',
+  'CASH-NOTE': 'Cash (noted)',
+};
+
+function PaymentChannelBadge({ channel }: { channel: string }) {
+  const cls =
+    channel === 'CASH-NOTE'
+      ? 'bg-amber-50 text-amber-700 ring-amber-200'
+      : 'bg-blue-50 text-blue-700 ring-blue-200';
+  return (
+    <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${cls}`}>
+      {PAYMENT_CHANNEL_LABELS[channel] ?? channel}
+    </span>
+  );
+}
+
+function ChannelBreakdownBadge({ channel, amount }: { channel: string; amount: number }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 ring-1 ring-inset ring-zinc-200">
+      {PAYMENT_CHANNEL_LABELS[channel] ?? channel}: {usdExact(amount)}
+    </span>
+  );
+}
+
+function CompletedList({ appointments }: { appointments: MarketingCompletedAppointment[] }) {
+  return (
+    <>
+      {/* Mobile cards */}
+      <div className="mt-3 flex flex-col gap-2 sm:hidden">
+        {appointments.map((a) => (
+          <div key={a.customerId + a.date + a.serviceName} className="rounded-lg p-3 ring-1 ring-zinc-200">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium">{a.customerName}</span>
+              <FreshBadge fresh={a.freshFromAds} />
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-2 text-sm text-zinc-600">
+              <span>{a.serviceName}</span>
+              <span className="font-medium tabular-nums">{usdExact(a.collected)}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-2">
+              <span className="text-xs text-zinc-400">{fmtDay(a.date)}</span>
+              <PaymentChannelBadge channel={a.paymentChannel} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop table */}
+      <div className="mt-3 hidden overflow-x-auto rounded-lg ring-1 ring-zinc-200 sm:block">
+        <table className="w-full text-sm">
+          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+            <tr>
+              <th className="px-3 py-2">Customer</th>
+              <th className="px-3 py-2">Service</th>
+              <th className="px-3 py-2">Date</th>
+              <th className="px-3 py-2 text-right">Collected</th>
+              <th className="px-3 py-2">Payment</th>
+              <th className="px-3 py-2">Source</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-100">
+            {appointments.map((a) => (
+              <tr key={a.customerId + a.date + a.serviceName} className="hover:bg-zinc-50">
+                <td className="px-3 py-2 font-medium">{a.customerName}</td>
+                <td className="px-3 py-2 text-zinc-600">{a.serviceName}</td>
+                <td className="px-3 py-2 text-zinc-600">{fmtDay(a.date)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{usdExact(a.collected)}</td>
+                <td className="px-3 py-2"><PaymentChannelBadge channel={a.paymentChannel} /></td>
+                <td className="px-3 py-2"><FreshBadge fresh={a.freshFromAds} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

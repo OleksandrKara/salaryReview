@@ -82,6 +82,17 @@ public record MarketingContactDto(
              * actually charged, so this is a best-effort estimate, not a payroll figure. */
             BigDecimal price,
             String artistName,
+            /** How this appointment was actually paid — "CASH" (checked out as cash in Square),
+             * "CARD", or "CASH-NOTE" (a provider's cash note, no Square checkout) — the same
+             * classification SquareMonthAggregator uses for payroll. Null if this appointment
+             * isn't tied to a matched payment: still upcoming, cancelled/no-show/declined, or a
+             * past visit with no matching order or cash note found. */
+            String paymentChannel,
+            /** What was actually collected for this appointment (after any discount), from the
+             * same matched order/cash-note SquareMonthAggregator uses for payroll — unlike price
+             * above, this is the real amount, not a catalog estimate. Null under the same
+             * conditions as paymentChannel. */
+            BigDecimal collectedAmount,
             /** The rest of these come from the marketing.submissions row that actually created
              * this booking (matched by square_booking_id) — all null if this appointment didn't
              * originate through our own booking funnel (e.g. booked in person, or through Square

@@ -703,6 +703,30 @@ public class SquareMonthAggregator {
     public record UnmatchedLine(String date, String service, BigDecimal gross, String channel,
                                 String customerId, String customerName) {}
 
+    /** What was actually collected for one booking, and how — CASH (checked out as cash in
+     * Square), CARD, or CASH-NOTE (a provider's note, no Square checkout); COMP bookings are
+     * excluded by {@link #paymentsByBookingId} since nothing was actually collected for them. */
+    public record BookingPayment(String channel, BigDecimal collected, BigDecimal gross) {}
+
+    /** Collapses a month's matched {@link AttributedService} lines to one payment summary per
+     * booking — a multi-service appointment (e.g. mani + pedi on one ticket) is several lines here
+     * but one booking, and the marketing Contacts/Analytics tabs want "what did this appointment
+     * collect", not a per-line breakdown. All lines for a booking share the same channel (they come
+     * from the same order or the same cash note), so the first line's channel is used.
+     */
+    public static Map<String, BookingPayment> paymentsByBookingId(List<AttributedService> services) {
+        Map<String, List<AttributedService>> byBooking = services.stream()
+                .filter(s -> s.bookingId() != null && !"COMP".equals(s.channel()))
+                .collect(java.util.stream.Collectors.groupingBy(AttributedService::bookingId));
+        Map<String, BookingPayment> out = new HashMap<>();
+        for (var e : byBooking.entrySet()) {
+            BigDecimal collected = e.getValue().stream().map(AttributedService::net).reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal gross = e.getValue().stream().map(AttributedService::gross).reduce(BigDecimal.ZERO, BigDecimal::add);
+            out.put(e.getKey(), new BookingPayment(e.getValue().get(0).channel(), collected, gross));
+        }
+        return out;
+    }
+
     public record ProviderMonth(String providerId, String name, HalfInput firstHalf, HalfInput secondHalf) {
         ProviderMonth withFirst(HalfInput h) { return new ProviderMonth(providerId, name, h, secondHalf); }
         ProviderMonth withSecond(HalfInput h) { return new ProviderMonth(providerId, name, firstHalf, h); }

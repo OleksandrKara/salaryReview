@@ -22,6 +22,12 @@ public record MarketingAnalyticsDto(
         Segment fresh,
         Segment returning,
         List<UpcomingAppointment> upcoming,
+        /** Every ads-attributed appointment within [from, to] that actually collected money —
+         * one row per booking, sourced from the same matched payroll lines the segments above
+         * are summed from, so it's a real collected amount (not a catalog estimate) with the
+         * real payment channel. Owner/family comps are excluded (nothing was collected).
+         */
+        List<CompletedAppointment> completed,
         /** Gross revenue for every ads customer, fixed to [1st of the current month, today] —
          * independent of the requested [from, to] — so the ROI card always means "this month",
          * matching the ad-spend figure below.
@@ -48,6 +54,21 @@ public record MarketingAnalyticsDto(
             String serviceName,
             Instant startAt,
             BigDecimal price,
+            boolean freshFromAds
+    ) {}
+
+    /** One already-completed, actually-paid appointment for an ads-attributed customer — one row
+     * per booking (a multi-service visit's lines are summed into one), most recent first.
+     * paymentChannel is "CASH" (checked out as cash in Square), "CARD", or "CASH-NOTE" (a
+     * provider's note, no Square checkout) — the same classification used for payroll.
+     */
+    public record CompletedAppointment(
+            String customerId,
+            String customerName,
+            String serviceName,
+            LocalDate date,
+            BigDecimal collected,
+            String paymentChannel,
             boolean freshFromAds
     ) {}
 }

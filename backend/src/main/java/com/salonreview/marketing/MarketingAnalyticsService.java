@@ -8,6 +8,7 @@ import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareMonthAggregator;
 import com.salonreview.square.SquareMonthAggregator.AttributedService;
 import com.salonreview.web.dto.MarketingAnalyticsDto;
+import com.salonreview.web.dto.MarketingAnalyticsDto.CompletedAppointment;
 import com.salonreview.web.dto.MarketingAnalyticsDto.Segment;
 import com.salonreview.web.dto.MarketingAnalyticsDto.UpcomingAppointment;
 import org.slf4j.Logger;
@@ -122,7 +123,7 @@ public class MarketingAnalyticsService {
         BigDecimal adSpend = currentAdSpend();
         if (adsCustomers.isEmpty()) {
             return new MarketingAnalyticsDto(
-                    from, to, EMPTY_SEGMENT, EMPTY_SEGMENT, EMPTY_SEGMENT, List.of(), EMPTY_SEGMENT, adSpend);
+                    from, to, EMPTY_SEGMENT, EMPTY_SEGMENT, EMPTY_SEGMENT, List.of(), List.of(), EMPTY_SEGMENT, adSpend);
         }
 
         Set<String> freshCustomerIds = freshCustomerIds(adsCustomers);
@@ -132,6 +133,7 @@ public class MarketingAnalyticsService {
         Segment all = segment(inRange, id -> true);
         Segment fresh = segment(inRange, freshCustomerIds::contains);
         Segment returning = segment(inRange, id -> !freshCustomerIds.contains(id));
+        List<CompletedAppointment> completed = buildCompletedAppointments(inRange, freshCustomerIds);
 
         LocalDate today = LocalDate.now(clock);
         List<AttributedService> monthToDate =
@@ -145,7 +147,47 @@ public class MarketingAnalyticsService {
         List<UpcomingAppointment> upcoming =
                 upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today);
 
-        return new MarketingAnalyticsDto(from, to, all, fresh, returning, upcoming, currentMonthToDate, adSpend);
+        return new MarketingAnalyticsDto(from, to, all, fresh, returning, upcoming, completed, currentMonthToDate, adSpend);
+    }
+
+    /** Collapses [from, to]'s matched payroll lines (inRange — the same list the segments above are
+     * summed from) to one row per booking, for appointments that actually collected money. Owner/family
+     * comps are excluded: nothing was collected for them, so they don't belong in a "what was collected"
+     * list. Requires no extra Square calls — inRange is already fetched for the segment totals.
+     */
+    private List<CompletedAppointment> buildCompletedAppointments(
+            List<AttributedService> inRange, Set<String> freshCustomerIds) {
+        Map<String, List<AttributedService>> byBooking = inRange.stream()
+                .filter(s -> s.bookingId() != null && !"COMP".equals(s.channel()))
+                .collect(java.util.stream.Collectors.groupingBy(AttributedService::bookingId, LinkedHashMap::new,
+                        java.util.stream.Collectors.toList()));
+        if (byBooking.isEmpty()) return List.of();
+
+        Set<String> customerIds = byBooking.values().stream()
+                .map(group -> group.get(0).customerId()).filter(Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        Map<String, String> customerNames = square.customerNames(customerIds);
+
+        List<CompletedAppointment> result = new ArrayList<>();
+        for (List<AttributedService> group : byBooking.values()) {
+            AttributedService first = group.get(0);
+            BigDecimal collected = group.stream().map(AttributedService::net)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+            String serviceName = group.stream().map(AttributedService::service)
+                    .filter(n -> n != null && !n.isBlank()).distinct()
+                    .collect(java.util.stream.Collectors.joining(" + "));
+            result.add(new CompletedAppointment(
+                    first.customerId(),
+                    customerNames.getOrDefault(first.customerId(), "Customer"),
+                    serviceName.isBlank() ? "Service" : serviceName,
+                    parseIso(first.date()),
+                    collected,
+                    first.channel(),
+                    freshCustomerIds.contains(first.customerId())
+            ));
+        }
+        result.sort(Comparator.comparing(CompletedAppointment::date).reversed());
+        return result;
     }
 
     /** Save (upsert) this month's ad spend figure. */
