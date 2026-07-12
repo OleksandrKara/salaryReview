@@ -62,25 +62,75 @@ function ActionButtons({ v, actions }: { v: MarketingVariantStat; actions: Varia
   );
 }
 
+// Bookings/Conversion always show the tracked-only number first (bold, primary) — the
+// follow-up line only renders when there's actually something to add, so a variant/page with no
+// manager follow-ups looks exactly like it did before this feature existed.
+function BookingsValue({ tracked, followUp, size = 'sm' }: { tracked: number; followUp: number; size?: 'sm' | 'base' }) {
+  const primaryClass = size === 'base' ? 'font-semibold tabular-nums' : 'tabular-nums';
+  return (
+    <>
+      <div className={primaryClass}>{tracked.toLocaleString('en-US')}</div>
+      {followUp > 0 && (
+        <div className="whitespace-nowrap text-xs font-medium text-amber-700">
+          +{followUp.toLocaleString('en-US')} follow-up &rarr; {(tracked + followUp).toLocaleString('en-US')}
+        </div>
+      )}
+    </>
+  );
+}
+
+function ConversionValue({ rate, adjustedRate, followUp }: { rate: number; adjustedRate: number; followUp: number }) {
+  return (
+    <>
+      <div className="tabular-nums">{pct(rate)}</div>
+      {followUp > 0 && (
+        <div className="whitespace-nowrap text-xs font-medium text-amber-700">&rarr; {pct(adjustedRate)} incl. follow-up</div>
+      )}
+    </>
+  );
+}
+
+// Only shown at all when at least one variant actually has a follow-up booking — otherwise this
+// whole feature stays invisible, exactly like before it existed.
+function FollowUpExplainer() {
+  return (
+    <div className="mb-3 rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-900 ring-1 ring-amber-200">
+      <span className="font-semibold">Some clients book after a manager follow-up call</span>, not through our
+      online flow — they leave their info, don&apos;t book right away, and a manager later books them directly
+      in Square. Our automatic tracking misses those, so we find them separately (the same way the Contacts tab&apos;s
+      &quot;Sync appointments&quot; does). Numbers marked <span className="font-semibold text-amber-700">+N follow-up</span> below
+      include them on top of the regular tracked count.
+    </div>
+  );
+}
+
 function totalsFor(variants: MarketingVariantStat[]) {
   const totalWeight = variants.reduce((sum, v) => sum + v.weight, 0);
   const activeCount = variants.filter((v) => v.active).length;
   const totalPageViews = variants.reduce((sum, v) => sum + v.pageViews, 0);
   const totalContacts = variants.reduce((sum, v) => sum + v.contactsCreated, 0);
   const totalBookings = variants.reduce((sum, v) => sum + v.bookingsCompleted, 0);
+  const totalFollowUpBookings = variants.reduce((sum, v) => sum + v.followUpBookings, 0);
   const totalBookNowClicks = variants.reduce((sum, v) => sum + v.bookNowClicks, 0);
   // The aggregate rate, not an average of the per-variant rates — a variant with 10 views at 50%
   // shouldn't count as much as one with 10,000 views at 2% when rolled up.
   const conversionRate = totalPageViews === 0 ? 0 : totalBookings / totalPageViews;
-  return { totalWeight, activeCount, totalPageViews, totalContacts, totalBookings, totalBookNowClicks, conversionRate };
+  const adjustedConversionRate = totalPageViews === 0 ? 0 : (totalBookings + totalFollowUpBookings) / totalPageViews;
+  return {
+    totalWeight, activeCount, totalPageViews, totalContacts, totalBookings,
+    totalFollowUpBookings, totalBookNowClicks, conversionRate, adjustedConversionRate,
+  };
 }
 
 export default function VariantTable({ variants, ...actions }: { variants: MarketingVariantStat[] } & VariantActions) {
   if (variants.length === 0) return null;
   const totals = totalsFor(variants);
+  const anyFollowUp = totals.totalFollowUpBookings > 0;
 
   return (
     <>
+      {anyFollowUp && <FollowUpExplainer />}
+
       {/* Mobile cards */}
       <div className="flex flex-col gap-3 sm:hidden">
         {variants.map((v) => (
@@ -109,11 +159,13 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
               </div>
               <div>
                 <dt className="text-xs text-zinc-500">Bookings</dt>
-                <dd className="tabular-nums">{v.bookingsCompleted.toLocaleString('en-US')}</dd>
+                <dd><BookingsValue tracked={v.bookingsCompleted} followUp={v.followUpBookings} /></dd>
               </div>
               <div>
                 <dt className="text-xs text-zinc-500">Conversion</dt>
-                <dd className="tabular-nums text-zinc-500">{pct(v.conversionRate)}</dd>
+                <dd className="text-zinc-500">
+                  <ConversionValue rate={v.conversionRate} adjustedRate={v.adjustedConversionRate} followUp={v.followUpBookings} />
+                </dd>
               </div>
             </dl>
             {v.deepLinkUrl && (
@@ -148,11 +200,13 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
             </div>
             <div>
               <dt className="text-xs text-zinc-500">Bookings</dt>
-              <dd className="font-semibold tabular-nums">{totals.totalBookings.toLocaleString('en-US')}</dd>
+              <dd><BookingsValue tracked={totals.totalBookings} followUp={totals.totalFollowUpBookings} size="base" /></dd>
             </div>
             <div>
               <dt className="text-xs text-zinc-500">Conversion</dt>
-              <dd className="font-semibold tabular-nums text-zinc-600">{pct(totals.conversionRate)}</dd>
+              <dd className="font-semibold text-zinc-600">
+                <ConversionValue rate={totals.conversionRate} adjustedRate={totals.adjustedConversionRate} followUp={totals.totalFollowUpBookings} />
+              </dd>
             </div>
           </dl>
         </div>
@@ -189,8 +243,10 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
                 <td className="px-3 py-2 text-right tabular-nums">{v.pageViews.toLocaleString('en-US')}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{v.bookNowClicks.toLocaleString('en-US')}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{v.contactsCreated.toLocaleString('en-US')}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{v.bookingsCompleted.toLocaleString('en-US')}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{pct(v.conversionRate)}</td>
+                <td className="px-3 py-2 text-right"><BookingsValue tracked={v.bookingsCompleted} followUp={v.followUpBookings} /></td>
+                <td className="px-3 py-2 text-right text-zinc-500">
+                  <ConversionValue rate={v.conversionRate} adjustedRate={v.adjustedConversionRate} followUp={v.followUpBookings} />
+                </td>
                 <td className="px-3 py-2">
                   {v.deepLinkUrl ? <VariantLinkButton url={v.deepLinkUrl} /> : <span className="text-zinc-300">—</span>}
                 </td>
@@ -212,8 +268,10 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
               <td className="px-3 py-2 text-right tabular-nums">{totals.totalPageViews.toLocaleString('en-US')}</td>
               <td className="px-3 py-2 text-right tabular-nums">{totals.totalBookNowClicks.toLocaleString('en-US')}</td>
               <td className="px-3 py-2 text-right tabular-nums">{totals.totalContacts.toLocaleString('en-US')}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{totals.totalBookings.toLocaleString('en-US')}</td>
-              <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{pct(totals.conversionRate)}</td>
+              <td className="px-3 py-2 text-right"><BookingsValue tracked={totals.totalBookings} followUp={totals.totalFollowUpBookings} size="base" /></td>
+              <td className="px-3 py-2 text-right text-zinc-600">
+                <ConversionValue rate={totals.conversionRate} adjustedRate={totals.adjustedConversionRate} followUp={totals.totalFollowUpBookings} />
+              </td>
               <td className="px-3 py-2" />
               {!actions.readOnly && <td className="px-3 py-2" />}
             </tr>

@@ -256,4 +256,89 @@ class MarketingContactsServiceTest {
         verify(squareLinks, never()).save(any());
         verify(square).invalidate();
     }
+
+    @Test
+    @DisplayName("counts a contact's real appointment as a follow-up booking when its booking_id isn't in the attributed set")
+    void followUpCountsRealAppointmentNotInAttribution() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        Booking accepted = new Booking("NEWBOOK", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
+                "LOC1", "SQCUST123", null, null, List.of());
+        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
+
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, java.util.Set.of("OTHERBOOK"));
+
+        assertThat(byVariant).containsEntry("Version_1", 1L);
+    }
+
+    @Test
+    @DisplayName("does not count a booking that's already in the attributed set")
+    void followUpSkipsAlreadyAttributedBooking() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        Booking accepted = new Booking("TRACKEDBOOK", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
+                "LOC1", "SQCUST123", null, null, List.of());
+        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
+
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, java.util.Set.of("TRACKEDBOOK"));
+
+        assertThat(byVariant).isEmpty();
+    }
+
+    @Test
+    @DisplayName("does not count a cancelled booking as a follow-up conversion")
+    void followUpIgnoresCancelledBookings() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        Booking cancelled = new Booking("CANCELLEDBOOK", "CANCELLED_BY_SELLER", "2026-07-07T21:00:00Z", null, null,
+                "LOC1", "SQCUST123", null, null, List.of());
+        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(cancelled));
+
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, java.util.Set.of());
+
+        assertThat(byVariant).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a lead resolved only through the cached Sync link (never had a stored square_customer_id) also counts")
+    void followUpCountsLeadResolvedThroughSyncLink() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, null)));
+        when(squareLinks.findByPhoneNumber("(858) 555-0100")).thenReturn(Optional.of(
+                MarketingContactSquareLink.builder().phoneNumber("(858) 555-0100").squareCustomerId("SQCUST999")
+                        .lastSyncedAt(Instant.now()).build()));
+        Booking accepted = new Booking("PHONEBOOKED", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
+                "LOC1", "SQCUST999", null, null, List.of());
+        when(square.bookingsForCustomer(eq("SQCUST999"), any())).thenReturn(List.of(accepted));
+
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, java.util.Set.of());
+
+        assertThat(byVariant).containsEntry("Version_1", 1L);
+    }
+
+    @Test
+    @DisplayName("scopes follow-up counting to the requested landing page slug and statsSince cutoff")
+    void followUpRespectsSlugAndStatsSinceScope() {
+        UUID otherPageId = UUID.randomUUID();
+        UUID oldContactId = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(
+                new RawContact(otherPageId, "(858) 555-0300", "Other", null,
+                        "google_ads", "google_ads", "google_ads", "google", "cpc", "promo",
+                        "home", "Version_1", "mobile", "iOS", "17.5", "Mobile Safari", "17.5",
+                        true, true, "SQCUST_OTHERPAGE", null, null, null, null, null, null,
+                        Instant.parse("2026-07-05T00:00:00Z"), Instant.parse("2026-07-05T00:00:00Z")),
+                new RawContact(oldContactId, "(858) 555-0400", "Old", null,
+                        "google_ads", "google_ads", "google_ads", "google", "cpc", "promo",
+                        "mani", "Version_1", "mobile", "iOS", "17.5", "Mobile Safari", "17.5",
+                        true, true, "SQCUST_OLD", null, null, null, null, null, null,
+                        Instant.parse("2026-01-01T00:00:00Z"), Instant.parse("2026-01-01T00:00:00Z"))
+        ));
+
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant(
+                "mani", Instant.parse("2026-07-01T00:00:00Z"), java.util.Set.of());
+
+        assertThat(byVariant).isEmpty();
+        verify(square, never()).bookingsForCustomer(eq("SQCUST_OTHERPAGE"), any());
+        verify(square, never()).bookingsForCustomer(eq("SQCUST_OLD"), any());
+    }
 }

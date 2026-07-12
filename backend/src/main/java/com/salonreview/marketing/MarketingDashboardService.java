@@ -15,6 +15,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -26,10 +27,14 @@ public class MarketingDashboardService {
     private static final Logger log = LoggerFactory.getLogger(MarketingDashboardService.class);
 
     private final MarketingDashboardRepository repository;
+    private final MarketingContactsService contactsService;
     private final MarketingLandingProperties landingProperties;
 
-    public MarketingDashboardService(MarketingDashboardRepository repository, MarketingLandingProperties landingProperties) {
+    public MarketingDashboardService(MarketingDashboardRepository repository,
+                                      MarketingContactsService contactsService,
+                                      MarketingLandingProperties landingProperties) {
         this.repository = repository;
+        this.contactsService = contactsService;
         this.landingProperties = landingProperties;
     }
 
@@ -48,8 +53,10 @@ public class MarketingDashboardService {
             }
 
             Instant statsSince = repository.findStatsSince(landingPageId.get()).orElse(null);
+            Set<String> attributedBookingIds = repository.findAttributedBookingIds(landingPageId.get(), statsSince);
+            Map<String, Long> followUpByVariant = contactsService.countFollowUpBookingsByVariant(slug, statsSince, attributedBookingIds);
             List<VariantStat> variants = repository.findVariantStats(landingPageId.get(), slug, statsSince, sources).stream()
-                    .map(raw -> toVariantStat(raw, slug))
+                    .map(raw -> toVariantStat(raw, slug, followUpByVariant.getOrDefault(raw.name(), 0L)))
                     .collect(Collectors.toList());
 
             return new MarketingDashboardDto(true, slug, variants, statsSince == null ? null : statsSince.toString());
@@ -137,12 +144,15 @@ public class MarketingDashboardService {
         repository.updateStatsSince(landingPageId, statsSince);
     }
 
-    private VariantStat toVariantStat(MarketingDashboardRepository.RawVariantStat raw, String slug) {
+    private VariantStat toVariantStat(MarketingDashboardRepository.RawVariantStat raw, String slug, long followUpBookings) {
         double conversionRate = raw.pageViews() == 0 ? 0.0 : (double) raw.bookingsCompleted() / raw.pageViews();
+        double adjustedConversionRate = raw.pageViews() == 0
+                ? 0.0
+                : (double) (raw.bookingsCompleted() + followUpBookings) / raw.pageViews();
         String deepLinkUrl = raw.key() == null ? null : buildDeepLinkUrl(raw.key(), slug);
         return new VariantStat(raw.variantId(), raw.name(), raw.weight(), raw.active(),
                 raw.pageViews(), raw.bookingsCompleted(), raw.contactsCreated(), raw.bookNowClicks(),
-                conversionRate, deepLinkUrl, raw.description());
+                conversionRate, followUpBookings, adjustedConversionRate, deepLinkUrl, raw.description());
     }
 
     private String buildDeepLinkUrl(String key, String slug) {
