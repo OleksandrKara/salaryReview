@@ -7,6 +7,9 @@ import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.salonreview.config.SquareProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.converter.StringHttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.stereotype.Component;
@@ -33,11 +36,14 @@ import java.util.Map;
 @Component
 public class SquareClient {
 
+    private static final Logger log = LoggerFactory.getLogger(SquareClient.class);
+
     private static final int PAGE_LIMIT = 100;
 
     private final RestClient http;
     private final String locationId;
 
+    @Autowired
     public SquareClient(SquareProperties props) {
         // Square's JSON is snake_case. Use a mapper dedicated to this client so we don't change the
         // app's own camelCase REST contract (the frontend depends on it).
@@ -62,11 +68,45 @@ public class SquareClient {
         this.locationId = props.getLocationId();
     }
 
+    /** Test-only constructor — points this client at an arbitrary {@link RestClient} (e.g. a local
+     * fake server) instead of building one from real {@link SquareProperties}/credentials. */
+    SquareClient(RestClient http, String locationId) {
+        this.http = http;
+        this.locationId = locationId;
+    }
+
+    // Bounded concurrency for outbound Square calls — see docs/CACHING.md. bookingsForCustomer's
+    // per-window virtual-thread fan-out, and parallelStream() over contacts/customers in
+    // MarketingAnalyticsService/MarketingContactsService, deliberately issue many Square calls at
+    // once to keep page loads fast — but with no cap that fan-out can burst past 100 simultaneous
+    // requests for a single page load (N customers x ~20 booking-history windows each) and trip
+    // Square's real per-merchant RATE_LIMIT_ERROR. Every raw HTTP call in this client passes
+    // through this single gate, so every caller is protected uniformly without needing to
+    // coordinate limits themselves.
+    static final int MAX_CONCURRENT_SQUARE_CALLS = 6; // package-private: used by SquareClientConcurrencyTest
+    private final java.util.concurrent.Semaphore squareCallPermits =
+            new java.util.concurrent.Semaphore(MAX_CONCURRENT_SQUARE_CALLS, /* fair */ true);
+
+    private <T> T throttled(java.util.function.Supplier<T> call) {
+        boolean acquired = false;
+        try {
+            squareCallPermits.acquire();
+            acquired = true;
+            return call.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted waiting for a Square call permit", e);
+        } finally {
+            if (acquired) squareCallPermits.release();
+        }
+    }
+
     // Short-TTL cache of read-only Square data. A single settlement render pulls the same windows several
     // times over (the month aggregator, the no-show detection, and the no-show panel all hit overlapping
     // bookings/orders/team-members), and switching months re-pulls everything; without this each is a
     // fresh round of paginated HTTP. Brief staleness is fine — the UI shows a "synced" timestamp and a
-    // Sync button. TTLs, the sync endpoint and the freshness model are documented in docs/CACHING.md.
+    // Sync button. TTLs, the sync endpoint, the freshness model, and the outbound concurrency limit
+    // (below) are documented in docs/CACHING.md.
     private record Cached<T>(T value, long expiresAtNanos) {}
     private final Map<String, Cached<?>> cache = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile Instant lastFetchAt = Instant.now();
@@ -100,21 +140,21 @@ public class SquareClient {
     }
 
     private List<TeamMember> searchTeamMembers(Object body) {
-        TeamMemberSearchResponse resp = http.post()
+        TeamMemberSearchResponse resp = throttled(() -> http.post()
                 .uri("/v2/team-members/search")
                 .body(body)
                 .retrieve()
-                .body(TeamMemberSearchResponse.class);
+                .body(TeamMemberSearchResponse.class));
         return resp == null || resp.teamMembers() == null ? List.of() : resp.teamMembers();
     }
 
     /** IANA timezone of the configured location (e.g. "America/Los_Angeles"), for local-day bucketing. */
     public String locationTimeZone() {
         return cached("locationTimeZone", Duration.ofHours(1), () -> {
-            LocationResponse resp = http.get()
+            LocationResponse resp = throttled(() -> http.get()
                     .uri("/v2/locations/{id}", locationId)
                     .retrieve()
-                    .body(LocationResponse.class);
+                    .body(LocationResponse.class));
             return resp == null || resp.location() == null ? null : resp.location().timezone();
         });
     }
@@ -142,7 +182,7 @@ public class SquareClient {
         String cursor = null;
         do {
             final String c = cursor;
-            BookingsListResponse resp = http.get()
+            BookingsListResponse resp = throttled(() -> http.get()
                     .uri(b -> {
                         b.path("/v2/bookings")
                                 .queryParam("location_id", locationId)
@@ -153,7 +193,7 @@ public class SquareClient {
                         return b.build();
                     })
                     .retrieve()
-                    .body(BookingsListResponse.class);
+                    .body(BookingsListResponse.class));
             if (resp != null && resp.bookings() != null) all.addAll(resp.bookings());
             cursor = resp == null ? null : resp.cursor();
         } while (cursor != null && !cursor.isBlank());
@@ -202,7 +242,7 @@ public class SquareClient {
                         }))
                         .toList();
                 for (var future : futures) {
-                    for (Booking b : awaitBookings(future)) byId.putIfAbsent(b.id(), b);
+                    for (Booking b : awaitBookingsOrEmpty(customerId, future)) byId.putIfAbsent(b.id(), b);
                 }
             }
             List<Booking> all = new ArrayList<>(byId.values());
@@ -215,14 +255,25 @@ public class SquareClient {
         });
     }
 
-    private static List<Booking> awaitBookings(java.util.concurrent.Future<List<Booking>> future) {
+    /** Waits for one booking-history window's fetch. A window that fails outright (e.g. a Square
+     * rate-limit error that survives the {@link #throttled} gate) degrades to "no bookings from
+     * this window" rather than failing the customer's entire booking history — the other windows'
+     * results are still returned. Trade-off: if the *oldest* window happens to be the one that
+     * fails, a customer's true earliest booking could be missed, which could misclassify them as
+     * fresher than they really are in {@code MarketingAnalyticsService.isFresh}. That's judged an
+     * acceptable, rare, non-systematic risk against the alternative — one failed window taking down
+     * the whole response for every customer on the page. Interruption (shutdown, not a Square
+     * error) still fails fast.
+     */
+    private static List<Booking> awaitBookingsOrEmpty(String customerId, java.util.concurrent.Future<List<Booking>> future) {
         try {
             return future.get();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException(e);
         } catch (java.util.concurrent.ExecutionException e) {
-            throw e.getCause() instanceof RuntimeException re ? re : new RuntimeException(e.getCause());
+            log.warn("Failed to fetch one booking-history window for customer {}; returning partial history", customerId, e.getCause());
+            return List.of();
         }
     }
 
@@ -231,7 +282,7 @@ public class SquareClient {
         String cursor = null;
         do {
             final String c = cursor;
-            BookingsListResponse resp = http.get()
+            BookingsListResponse resp = throttled(() -> http.get()
                     .uri(b -> {
                         b.path("/v2/bookings")
                                 .queryParam("location_id", locationId)
@@ -243,7 +294,7 @@ public class SquareClient {
                         return b.build();
                     })
                     .retrieve()
-                    .body(BookingsListResponse.class);
+                    .body(BookingsListResponse.class));
             if (resp != null && resp.bookings() != null) all.addAll(resp.bookings());
             cursor = resp == null ? null : resp.cursor();
         } while (cursor != null && !cursor.isBlank());
@@ -270,11 +321,11 @@ public class SquareClient {
                             "state_filter", Map.of("states", List.of("COMPLETED"))),
                     "sort", Map.of("sort_field", "CLOSED_AT", "sort_order", "ASC")));
 
-            OrderSearchResponse resp = http.post()
+            OrderSearchResponse resp = throttled(() -> http.post()
                     .uri("/v2/orders/search")
                     .body(body)
                     .retrieve()
-                    .body(OrderSearchResponse.class);
+                    .body(OrderSearchResponse.class));
             if (resp != null && resp.orders() != null) all.addAll(resp.orders());
             cursor = resp == null ? null : resp.cursor();
         } while (cursor != null && !cursor.isBlank());
@@ -287,11 +338,11 @@ public class SquareClient {
         if (ids.isEmpty()) return new HashMap<>();
         return cached("catalogPrices:" + ids, Duration.ofMinutes(10), () -> {
             Map<String, BigDecimal> prices = new HashMap<>();
-            CatalogBatchRetrieveResponse resp = http.post()
+            CatalogBatchRetrieveResponse resp = throttled(() -> http.post()
                     .uri("/v2/catalog/batch-retrieve")
                     .body(Map.of("object_ids", ids))
                     .retrieve()
-                    .body(CatalogBatchRetrieveResponse.class);
+                    .body(CatalogBatchRetrieveResponse.class));
             if (resp == null || resp.objects() == null) return prices;
             for (CatalogObject obj : resp.objects()) {
                 if (obj.itemVariationData() != null && obj.itemVariationData().priceMoney() != null) {
@@ -313,13 +364,13 @@ public class SquareClient {
         if (ids.isEmpty()) return new HashMap<>();
         return cached("catalogNames:" + ids, Duration.ofMinutes(10), () -> {
             Map<String, String> names = new HashMap<>();
-            CatalogBatchRetrieveResponse resp = http.post()
+            CatalogBatchRetrieveResponse resp = throttled(() -> http.post()
                     .uri("/v2/catalog/batch-retrieve")
                     // include_related_objects=true returns the parent items alongside the requested
                     // variations in `related_objects` — one HTTP call instead of two.
                     .body(Map.of("object_ids", ids, "include_related_objects", true))
                     .retrieve()
-                    .body(CatalogBatchRetrieveResponse.class);
+                    .body(CatalogBatchRetrieveResponse.class));
             if (resp == null || resp.objects() == null) return names;
 
             // Build itemId → item name map from related_objects.
@@ -427,14 +478,14 @@ public class SquareClient {
         int pages = 0;
         do {
             final String c = cursor;
-            CustomersListResponse resp = http.get()
+            CustomersListResponse resp = throttled(() -> http.get()
                     .uri(b -> {
                         b.path("/v2/customers").queryParam("limit", 100);
                         if (c != null) b.queryParam("cursor", c);
                         return b.build();
                     })
                     .retrieve()
-                    .body(CustomersListResponse.class);
+                    .body(CustomersListResponse.class));
             if (resp != null && resp.customers() != null) {
                 for (Customer cust : resp.customers()) {
                     String name = ((cust.givenName() == null ? "" : cust.givenName()) + " "
@@ -465,11 +516,11 @@ public class SquareClient {
         return cached("customerIdsForPhone:" + normalized, Duration.ofMinutes(5), () -> {
             Map<String, Object> body = Map.of(
                     "query", Map.of("filter", Map.of("phone_number", Map.of("exact", normalized))));
-            CustomersSearchResponse resp = http.post()
+            CustomersSearchResponse resp = throttled(() -> http.post()
                     .uri("/v2/customers/search")
                     .body(body)
                     .retrieve()
-                    .body(CustomersSearchResponse.class);
+                    .body(CustomersSearchResponse.class));
             if (resp == null || resp.customers() == null) return List.<String>of();
             return resp.customers().stream().map(Customer::id).toList();
         });
@@ -493,17 +544,18 @@ public class SquareClient {
                                 "customer_ids", List.of(customerId)),
                         "sort", Map.of("field", "INVOICE_SORT_DATE", "order", "DESC")),
                 "limit", 100);
-        InvoiceSearchResponse resp = http.post()
+        InvoiceSearchResponse resp = throttled(() -> http.post()
                 .uri("/v2/invoices/search")
                 .body(body)
                 .retrieve()
-                .body(InvoiceSearchResponse.class);
+                .body(InvoiceSearchResponse.class));
         return resp == null || resp.invoices() == null ? List.of() : resp.invoices();
     }
 
     private java.util.Optional<Customer> fetchCustomer(String id) {
         try {
-            CustomerResponse resp = http.get().uri("/v2/customers/{id}", id).retrieve().body(CustomerResponse.class);
+            CustomerResponse resp = throttled(() ->
+                    http.get().uri("/v2/customers/{id}", id).retrieve().body(CustomerResponse.class));
             return java.util.Optional.ofNullable(resp == null ? null : resp.customer());
         } catch (RuntimeException ignored) {
             return java.util.Optional.empty(); // unresolvable
