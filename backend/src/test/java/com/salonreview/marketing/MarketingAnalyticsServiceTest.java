@@ -25,7 +25,9 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -200,7 +202,7 @@ class MarketingAnalyticsServiceTest {
                 .thenReturn(Map.of("cust-merged", Instant.parse("2026-07-03T00:00:00Z"))); // predates the ad touch
         var onlyBooking = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
                 "loc-1", "cust-merged", null, null, List.of());
-        when(square.bookingsForCustomer("cust-merged")).thenReturn(List.of(onlyBooking));
+        when(square.bookingsForCustomer(eq("cust-merged"), any())).thenReturn(List.of(onlyBooking));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
                 svc("2026-07-07", "cust-merged", "110.00")
         )));
@@ -222,7 +224,7 @@ class MarketingAnalyticsServiceTest {
                 .thenReturn(Map.of("cust-old", Instant.parse("2026-07-05T12:05:00Z"))); // looks fresh...
         var oldBooking = new SquareClient.Booking("bk-0", "ACCEPTED", "2025-01-01T18:00:00Z", null, null,
                 "loc-1", "cust-old", null, null, List.of()); // ...but real history predates the ad touch
-        when(square.bookingsForCustomer("cust-old")).thenReturn(List.of(oldBooking));
+        when(square.bookingsForCustomer(eq("cust-old"), any())).thenReturn(List.of(oldBooking));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
                 svc("2026-07-10", "cust-old", "60.00")
         )));
@@ -287,7 +289,7 @@ class MarketingAnalyticsServiceTest {
                 "loc-1", "cust-1", null, null, List.of(seg1));
         var cancelled = new SquareClient.Booking("bk-2", "CANCELLED_BY_CUSTOMER", "2026-07-25T18:00:00Z", null, null,
                 "loc-1", "cust-1", null, null, List.of(seg1));
-        when(square.bookingsForCustomer("cust-1")).thenReturn(List.of(future, past, cancelled));
+        when(square.bookingsForCustomer(eq("cust-1"), any())).thenReturn(List.of(future, past, cancelled));
         when(square.catalogPrices(List.of("var-mani", "var-pedi")))
                 .thenReturn(Map.of("var-mani", new BigDecimal("50.00"), "var-pedi", new BigDecimal("70.00")));
         when(square.catalogNames(List.of("var-mani", "var-pedi")))
@@ -316,7 +318,7 @@ class MarketingAnalyticsServiceTest {
         var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
         var earlierToday = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-07T02:00:00Z", null, null,
                 "loc-1", "cust-1", null, null, List.of(seg));
-        when(square.bookingsForCustomer("cust-1")).thenReturn(List.of(earlierToday));
+        when(square.bookingsForCustomer(eq("cust-1"), any())).thenReturn(List.of(earlierToday));
         when(square.catalogPrices(List.of("var-mani"))).thenReturn(Map.of("var-mani", new BigDecimal("50.00")));
         when(square.catalogNames(List.of("var-mani"))).thenReturn(Map.of("var-mani", "Manicure"));
         when(square.customerNames(Set.of("cust-1"))).thenReturn(Map.of("cust-1", "Fowsiyo"));
@@ -343,7 +345,7 @@ class MarketingAnalyticsServiceTest {
         var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
         var paidToday = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-07T02:00:00Z", null, null,
                 "loc-1", "cust-1", null, null, List.of(seg));
-        when(square.bookingsForCustomer("cust-1")).thenReturn(List.of(paidToday));
+        when(square.bookingsForCustomer(eq("cust-1"), any())).thenReturn(List.of(paidToday));
 
         MarketingAnalyticsDto dto = service.analytics(
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY);

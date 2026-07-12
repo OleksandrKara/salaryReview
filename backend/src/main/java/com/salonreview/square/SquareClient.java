@@ -160,32 +160,40 @@ public class SquareClient {
         return all;
     }
 
-    /** Every booking (past and upcoming) for one Square customer, most recent first — no date
-     * bound, since this backs an on-demand "appointment history" view rather than a payroll
-     * window. Short TTL: called lazily per-contact from the marketing Contacts page, not in a
-     * hot path, but still worth not re-fetching on every render while that page is open.
+    /** How far past "now" to keep looking for a customer's upcoming bookings — a nail salon's
+     * scheduling horizon rarely runs longer than this. */
+    private static final Duration FUTURE_BOOKING_HORIZON = Duration.ofDays(180);
+
+    /** Every booking (past and upcoming) for one Square customer, most recent first, from
+     * {@code since} through {@link #FUTURE_BOOKING_HORIZON} past now.
+     *
+     * <p>{@code since} is required, not optional: Square's {@code GET /v2/bookings} silently
+     * defaults to "now onward" when {@code start_at_min}/{@code start_at_max} are omitted — it
+     * does NOT return full history. (Confirmed directly against Square's production API: a
+     * customer_id-filtered query with no date bound returned zero bookings for a customer who, in
+     * fact, had two — both already in the past.) Passing an explicit bound, chunked into
+     * &le;30-day windows the same way {@link #bookings(Instant, Instant)} already does for the
+     * location-wide query, is the only way to actually see completed/cancelled/no-show history.
+     *
+     * <p>Short TTL: called lazily per-contact from the marketing Contacts page, not in a hot path,
+     * but still worth not re-fetching on every render while that page is open.
      */
-    public List<Booking> bookingsForCustomer(String customerId) {
+    public List<Booking> bookingsForCustomer(String customerId, Instant since) {
         if (customerId == null || customerId.isBlank()) return List.of();
-        return cached("bookingsForCustomer:" + customerId, Duration.ofMinutes(2), () -> {
-            List<Booking> all = new ArrayList<>();
-            String cursor = null;
-            do {
-                final String c = cursor;
-                BookingsListResponse resp = http.get()
-                        .uri(b -> {
-                            b.path("/v2/bookings")
-                                    .queryParam("location_id", locationId)
-                                    .queryParam("customer_id", customerId)
-                                    .queryParam("limit", PAGE_LIMIT);
-                            if (c != null) b.queryParam("cursor", c);
-                            return b.build();
-                        })
-                        .retrieve()
-                        .body(BookingsListResponse.class);
-                if (resp != null && resp.bookings() != null) all.addAll(resp.bookings());
-                cursor = resp == null ? null : resp.cursor();
-            } while (cursor != null && !cursor.isBlank());
+        Instant end = Instant.now().plus(FUTURE_BOOKING_HORIZON);
+        Instant start = since.isAfter(end) ? end : since;
+        return cached("bookingsForCustomer:" + customerId + ":" + start, Duration.ofMinutes(2), () -> {
+            Map<String, Booking> byId = new LinkedHashMap<>();
+            Instant windowStart = start;
+            while (windowStart.isBefore(end)) {
+                Instant windowEnd = windowStart.plus(Duration.ofDays(30));
+                if (windowEnd.isAfter(end)) windowEnd = end;
+                for (Booking b : bookingsForCustomerWindow(customerId, windowStart, windowEnd)) {
+                    byId.putIfAbsent(b.id(), b);
+                }
+                windowStart = windowEnd;
+            }
+            List<Booking> all = new ArrayList<>(byId.values());
             all.sort((a, b) -> {
                 if (a.startAt() == null) return 1;
                 if (b.startAt() == null) return -1;
@@ -193,6 +201,30 @@ public class SquareClient {
             });
             return all;
         });
+    }
+
+    private List<Booking> bookingsForCustomerWindow(String customerId, Instant start, Instant end) {
+        List<Booking> all = new ArrayList<>();
+        String cursor = null;
+        do {
+            final String c = cursor;
+            BookingsListResponse resp = http.get()
+                    .uri(b -> {
+                        b.path("/v2/bookings")
+                                .queryParam("location_id", locationId)
+                                .queryParam("customer_id", customerId)
+                                .queryParam("start_at_min", start.toString())
+                                .queryParam("start_at_max", end.toString())
+                                .queryParam("limit", PAGE_LIMIT);
+                        if (c != null) b.queryParam("cursor", c);
+                        return b.build();
+                    })
+                    .retrieve()
+                    .body(BookingsListResponse.class);
+            if (resp != null && resp.bookings() != null) all.addAll(resp.bookings());
+            cursor = resp == null ? null : resp.cursor();
+        } while (cursor != null && !cursor.isBlank());
+        return all;
     }
 
     /** Completed orders closed in [start, end) for the configured location, following pagination. */

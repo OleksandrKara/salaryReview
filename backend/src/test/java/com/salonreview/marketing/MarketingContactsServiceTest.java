@@ -25,6 +25,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -69,7 +70,7 @@ class MarketingContactsServiceTest {
     void contactWithSquareCustomerHasProfileLink() {
         UUID id = UUID.randomUUID();
         when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
-        when(square.bookingsForCustomer("SQCUST123")).thenReturn(List.of());
+        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of());
 
         MarketingContactDto dto = service.contacts();
 
@@ -141,7 +142,7 @@ class MarketingContactsServiceTest {
         Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2026-07-31T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null,
                 List.of(new AppointmentSegment("TM1", "VAR1", 60)));
-        when(square.bookingsForCustomer("SQCUST123")).thenReturn(List.of(booking));
+        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(booking));
         when(square.allTeamMembers()).thenReturn(List.of(new TeamMember("TM1", "Susan", "A.", "ACTIVE", false, null, null)));
         when(square.catalogNames(List.of("VAR1"))).thenReturn(Map.of("VAR1", "Manicure"));
         when(square.catalogPrices(List.of("VAR1"))).thenReturn(Map.of("VAR1", new BigDecimal("85.00")));
@@ -168,7 +169,7 @@ class MarketingContactsServiceTest {
         Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2026-07-31T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null,
                 List.of(new AppointmentSegment("TM1", "VAR1", 60)));
-        when(square.bookingsForCustomer("SQCUST123")).thenReturn(List.of(booking));
+        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(booking));
         when(square.allTeamMembers()).thenReturn(List.of());
         when(square.catalogNames(List.of("VAR1"))).thenReturn(Map.of());
         when(square.catalogPrices(List.of("VAR1"))).thenReturn(Map.of());
@@ -191,7 +192,7 @@ class MarketingContactsServiceTest {
     void toleratesSquareFailure() {
         UUID id = UUID.randomUUID();
         when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
-        when(square.bookingsForCustomer("SQCUST123")).thenThrow(new RuntimeException("Square unreachable"));
+        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenThrow(new RuntimeException("Square unreachable"));
 
         MarketingContactDto dto = service.contacts();
 
@@ -207,7 +208,7 @@ class MarketingContactsServiceTest {
         when(squareLinks.findByPhoneNumber("(858) 555-0100")).thenReturn(Optional.of(
                 MarketingContactSquareLink.builder().phoneNumber("(858) 555-0100").squareCustomerId("SQCUST999")
                         .lastSyncedAt(Instant.now()).build()));
-        when(square.bookingsForCustomer("SQCUST999")).thenReturn(List.of());
+        when(square.bookingsForCustomer(eq("SQCUST999"), any())).thenReturn(List.of());
 
         MarketingContactDto dto = service.contacts();
 
@@ -221,7 +222,7 @@ class MarketingContactsServiceTest {
         UUID id = UUID.randomUUID();
         when(repository.listAll()).thenReturn(List.of(rawContact(id, null)));
         when(square.customerIdsForPhone("(858) 555-0100")).thenReturn(List.of("SQCUST777"));
-        when(square.bookingsForCustomer("SQCUST777")).thenReturn(List.of());
+        when(square.bookingsForCustomer(eq("SQCUST777"), any())).thenReturn(List.of());
 
         service.syncSquareLinks();
 
@@ -244,7 +245,7 @@ class MarketingContactsServiceTest {
                         true, true, null, null, null, null, null, null, null,
                         Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-02T00:00:00Z"))
         ));
-        when(square.bookingsForCustomer(any())).thenReturn(List.of());
+        when(square.bookingsForCustomer(any(), any())).thenReturn(List.of());
         when(squareLinks.findByPhoneNumber("(858) 555-0200")).thenReturn(Optional.of(
                 MarketingContactSquareLink.builder().phoneNumber("(858) 555-0200").squareCustomerId("SQCUST_CACHED")
                         .lastSyncedAt(Instant.now()).build()));

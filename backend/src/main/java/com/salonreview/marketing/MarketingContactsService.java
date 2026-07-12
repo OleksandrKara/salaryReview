@@ -113,7 +113,9 @@ public class MarketingContactsService {
                 .map(MarketingContactsService::toSubmission)
                 .collect(Collectors.toList());
 
-        List<Appointment> appointments = effectiveSquareCustomerId == null ? List.of() : fetchAppointments(effectiveSquareCustomerId);
+        List<Appointment> appointments = effectiveSquareCustomerId == null
+                ? List.of()
+                : fetchAppointments(effectiveSquareCustomerId, raw.createdAt());
 
         return new Contact(
                 raw.id().toString(),
@@ -144,11 +146,14 @@ public class MarketingContactsService {
     }
 
     /** Best-effort: if Square is unreachable, the contact's own data still renders with an
-     * empty appointments list rather than breaking the whole page.
+     * empty appointments list rather than breaking the whole page. {@code since} bounds how far
+     * back to look for this customer's booking history — a real appointment can't predate the
+     * moment this lead first appeared in our own funnel, so the contact's own createdAt is used
+     * (see SquareClient#bookingsForCustomer for why an explicit bound is required at all).
      */
-    private List<Appointment> fetchAppointments(String squareCustomerId) {
+    private List<Appointment> fetchAppointments(String squareCustomerId, Instant since) {
         try {
-            List<Booking> bookings = square.bookingsForCustomer(squareCustomerId);
+            List<Booking> bookings = square.bookingsForCustomer(squareCustomerId, since);
             if (bookings.isEmpty()) return List.of();
 
             Map<String, String> memberNames = new HashMap<>();
