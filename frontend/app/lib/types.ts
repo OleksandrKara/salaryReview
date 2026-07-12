@@ -738,7 +738,6 @@ export interface MarketingVariantStat {
   variantId: string;
   name: string;
   weight: number;
-  active: boolean;
   pageViews: number;
   bookingsCompleted: number;
   /** Contacts (leads) captured under this variant, matched by name — a later rename won't

@@ -54,7 +54,7 @@ class MarketingDashboardServiceTest {
     void computesConversionRate() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
-                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 25, 40, 60, "control", "Baseline, no changes")
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 25, 40, 60, "control", "Baseline, no changes")
         ));
 
         MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY);
@@ -78,7 +78,7 @@ class MarketingDashboardServiceTest {
     void adjustedConversionRateIncludesFollowUpBookings() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
-                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 6, 40, 60, "control", null)
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 6, 40, 60, "control", null)
         ));
         when(contactsService.countFollowUpBookingsByVariant(eq("mani"), isNull(), any()))
                 .thenReturn(Map.of("Control", 2L));
@@ -111,7 +111,7 @@ class MarketingDashboardServiceTest {
     void deepLinkIsNullWithoutKey() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
-                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 100, 25, 40, 60, null, null)
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 25, 40, 60, null, null)
         ));
 
         MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY);
@@ -124,7 +124,7 @@ class MarketingDashboardServiceTest {
     void zeroPageViewsYieldsZeroConversionRate() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
-                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, true, 0, 0, 0, 0, "control", null)
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 0, 0, 0, 0, "control", null)
         ));
 
         MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY);

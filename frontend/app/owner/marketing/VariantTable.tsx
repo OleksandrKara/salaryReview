@@ -6,7 +6,6 @@ const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 const actionButtonClass = 'rounded px-2 py-0.5 text-xs font-medium ring-1 hover:bg-zinc-50';
 
 interface VariantActions {
-  onToggleActive: (v: MarketingVariantStat) => void;
   onRename: (v: MarketingVariantStat) => void;
   onEditDescription: (v: MarketingVariantStat) => void;
   onDuplicate: (v: MarketingVariantStat) => void;
@@ -18,28 +17,6 @@ interface VariantActions {
 function Description({ v }: { v: MarketingVariantStat }) {
   if (!v.description) return <span className="text-xs italic text-zinc-400">No description</span>;
   return <p className="text-xs text-zinc-500">{v.description}</p>;
-}
-
-// A bare colored dot didn't read as clickable — a labeled pill makes it obvious this is a
-// toggle, not just a status icon.
-function ActiveToggle({
-  v, onToggleActive, busy, readOnly,
-}: { v: MarketingVariantStat; onToggleActive: (v: MarketingVariantStat) => void; busy: boolean; readOnly?: boolean }) {
-  const pillClass = `rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
-    v.active ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-zinc-100 text-zinc-500 ring-zinc-200'
-  }`;
-  if (readOnly) return <span className={pillClass}>{v.active ? 'Active' : 'Inactive'}</span>;
-  return (
-    <button
-      type="button"
-      onClick={() => onToggleActive(v)}
-      disabled={busy}
-      title={v.active ? 'Active — click to turn off' : 'Inactive — click to turn on'}
-      className={`${pillClass} disabled:opacity-50 ${v.active ? 'hover:bg-emerald-100' : 'hover:bg-zinc-200'}`}
-    >
-      {v.active ? 'Active' : 'Inactive'}
-    </button>
-  );
 }
 
 function ActionButtons({ v, actions }: { v: MarketingVariantStat; actions: VariantActions }) {
@@ -106,7 +83,6 @@ function FollowUpExplainer() {
 
 function totalsFor(variants: MarketingVariantStat[]) {
   const totalWeight = variants.reduce((sum, v) => sum + v.weight, 0);
-  const activeCount = variants.filter((v) => v.active).length;
   const totalPageViews = variants.reduce((sum, v) => sum + v.pageViews, 0);
   const totalContacts = variants.reduce((sum, v) => sum + v.contactsCreated, 0);
   const totalBookings = variants.reduce((sum, v) => sum + v.bookingsCompleted, 0);
@@ -117,9 +93,101 @@ function totalsFor(variants: MarketingVariantStat[]) {
   const conversionRate = totalPageViews === 0 ? 0 : totalBookings / totalPageViews;
   const adjustedConversionRate = totalPageViews === 0 ? 0 : (totalBookings + totalFollowUpBookings) / totalPageViews;
   return {
-    totalWeight, activeCount, totalPageViews, totalContacts, totalBookings,
+    totalWeight, totalPageViews, totalContacts, totalBookings,
     totalFollowUpBookings, totalBookNowClicks, conversionRate, adjustedConversionRate,
   };
+}
+
+function MobileCard({ v, actions }: { v: MarketingVariantStat; actions: VariantActions }) {
+  return (
+    <div className="rounded-lg p-4 ring-1 ring-zinc-200">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium">{v.name}</span>
+        <span className="text-xs text-zinc-500">weight {v.weight}</span>
+      </div>
+      <div className="mt-1">
+        <Description v={v} />
+      </div>
+      <dl className="mt-3 grid grid-cols-3 gap-2 text-sm sm:grid-cols-5">
+        <div>
+          <dt className="text-xs text-zinc-500">Page Views</dt>
+          <dd className="tabular-nums">{v.pageViews.toLocaleString('en-US')}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-zinc-500">Book Clicks</dt>
+          <dd className="tabular-nums">{v.bookNowClicks.toLocaleString('en-US')}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-zinc-500">Contacts</dt>
+          <dd className="tabular-nums">{v.contactsCreated.toLocaleString('en-US')}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-zinc-500">Bookings</dt>
+          <dd><BookingsValue tracked={v.bookingsCompleted} followUp={v.followUpBookings} /></dd>
+        </div>
+        <div>
+          <dt className="text-xs text-zinc-500">Conversion</dt>
+          <dd className="text-zinc-500">
+            <ConversionValue rate={v.conversionRate} adjustedRate={v.adjustedConversionRate} followUp={v.followUpBookings} />
+          </dd>
+        </div>
+      </dl>
+      {v.deepLinkUrl && (
+        <div className="mt-3 border-t border-zinc-100 pt-3">
+          <VariantLinkButton url={v.deepLinkUrl} />
+        </div>
+      )}
+      {!actions.readOnly && (
+        <div className="mt-3 border-t border-zinc-100 pt-3">
+          <ActionButtons v={v} actions={actions} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DesktopRow({ v, actions }: { v: MarketingVariantStat; actions: VariantActions }) {
+  return (
+    <tr className="hover:bg-zinc-50">
+      <td className="px-3 py-2">
+        <div className="font-medium">{v.name}</div>
+        <Description v={v} />
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums">{v.weight}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{v.pageViews.toLocaleString('en-US')}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{v.bookNowClicks.toLocaleString('en-US')}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{v.contactsCreated.toLocaleString('en-US')}</td>
+      <td className="px-3 py-2 text-right"><BookingsValue tracked={v.bookingsCompleted} followUp={v.followUpBookings} /></td>
+      <td className="px-3 py-2 text-right text-zinc-500">
+        <ConversionValue rate={v.conversionRate} adjustedRate={v.adjustedConversionRate} followUp={v.followUpBookings} />
+      </td>
+      <td className="px-3 py-2">
+        {v.deepLinkUrl ? <VariantLinkButton url={v.deepLinkUrl} /> : <span className="text-zinc-300">—</span>}
+      </td>
+      {!actions.readOnly && (
+        <td className="px-3 py-2">
+          <ActionButtons v={v} actions={actions} />
+        </td>
+      )}
+    </tr>
+  );
+}
+
+// A weight-0 variant never enters the random A/B pool a new visitor is assigned into — it's only
+// still reachable through its own deep link (see VariantLinkButton) or a returning visitor's
+// existing cookie. Grouping it away from the in-rotation variants makes that distinction obvious
+// at a glance, instead of a "0" quietly sitting in the same list as variants actually being tested.
+function GroupHeading({ label, colSpan }: { label: string; colSpan?: number }) {
+  if (colSpan) {
+    return (
+      <tr>
+        <td colSpan={colSpan} className="bg-zinc-50 px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-zinc-500">
+          {label}
+        </td>
+      </tr>
+    );
+  }
+  return <p className="mb-2 mt-1 text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</p>;
 }
 
 export default function VariantTable({ variants, ...actions }: { variants: MarketingVariantStat[] } & VariantActions) {
@@ -127,63 +195,27 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
   const totals = totalsFor(variants);
   const anyFollowUp = totals.totalFollowUpBookings > 0;
 
+  const inRotation = variants.filter((v) => v.weight > 0);
+  const noWeight = variants.filter((v) => v.weight === 0);
+  // Only worth labeling the two groups when both actually exist — a page with every variant in (or
+  // out of) rotation should look exactly like it did before this grouping existed.
+  const showGroups = inRotation.length > 0 && noWeight.length > 0;
+  const colCount = 8 + (actions.readOnly ? 0 : 1);
+
   return (
     <>
       {anyFollowUp && <FollowUpExplainer />}
 
       {/* Mobile cards */}
       <div className="flex flex-col gap-3 sm:hidden">
-        {variants.map((v) => (
-          <div key={v.variantId} className="rounded-lg p-4 ring-1 ring-zinc-200">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-medium">{v.name}</span>
-              <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-                <ActiveToggle v={v} onToggleActive={actions.onToggleActive} busy={actions.busyVariantId === v.variantId} readOnly={actions.readOnly} /> weight {v.weight}
-              </span>
-            </div>
-            <div className="mt-1">
-              <Description v={v} />
-            </div>
-            <dl className="mt-3 grid grid-cols-3 gap-2 text-sm sm:grid-cols-5">
-              <div>
-                <dt className="text-xs text-zinc-500">Page Views</dt>
-                <dd className="tabular-nums">{v.pageViews.toLocaleString('en-US')}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-zinc-500">Book Clicks</dt>
-                <dd className="tabular-nums">{v.bookNowClicks.toLocaleString('en-US')}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-zinc-500">Contacts</dt>
-                <dd className="tabular-nums">{v.contactsCreated.toLocaleString('en-US')}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-zinc-500">Bookings</dt>
-                <dd><BookingsValue tracked={v.bookingsCompleted} followUp={v.followUpBookings} /></dd>
-              </div>
-              <div>
-                <dt className="text-xs text-zinc-500">Conversion</dt>
-                <dd className="text-zinc-500">
-                  <ConversionValue rate={v.conversionRate} adjustedRate={v.adjustedConversionRate} followUp={v.followUpBookings} />
-                </dd>
-              </div>
-            </dl>
-            {v.deepLinkUrl && (
-              <div className="mt-3 border-t border-zinc-100 pt-3">
-                <VariantLinkButton url={v.deepLinkUrl} />
-              </div>
-            )}
-            {!actions.readOnly && (
-              <div className="mt-3 border-t border-zinc-100 pt-3">
-                <ActionButtons v={v} actions={actions} />
-              </div>
-            )}
-          </div>
-        ))}
+        {showGroups && <GroupHeading label="In rotation" />}
+        {inRotation.map((v) => <MobileCard key={v.variantId} v={v} actions={actions} />)}
+        {showGroups && <GroupHeading label="Not in rotation (weight 0)" />}
+        {noWeight.map((v) => <MobileCard key={v.variantId} v={v} actions={actions} />)}
         <div className="rounded-lg bg-zinc-50 p-4 ring-1 ring-zinc-200">
           <div className="flex items-center justify-between gap-2">
             <span className="font-semibold">Total</span>
-            <span className="text-xs text-zinc-500">{totals.activeCount} of {variants.length} active</span>
+            <span className="text-xs text-zinc-500">{variants.length} variant{variants.length === 1 ? '' : 's'}</span>
           </div>
           <dl className="mt-3 grid grid-cols-3 gap-2 text-sm sm:grid-cols-5">
             <div>
@@ -219,7 +251,6 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
             <tr>
               <th className="px-3 py-2">Variant</th>
               <th className="px-3 py-2 text-right">Weight</th>
-              <th className="px-3 py-2 text-center">Active</th>
               <th className="px-3 py-2 text-right">Page Views</th>
               <th className="px-3 py-2 text-right">Book Clicks</th>
               <th className="px-3 py-2 text-right">Contacts</th>
@@ -230,41 +261,15 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
-            {variants.map((v) => (
-              <tr key={v.variantId} className="hover:bg-zinc-50">
-                <td className="px-3 py-2">
-                  <div className="font-medium">{v.name}</div>
-                  <Description v={v} />
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">{v.weight}</td>
-                <td className="px-3 py-2 text-center">
-                  <ActiveToggle v={v} onToggleActive={actions.onToggleActive} busy={actions.busyVariantId === v.variantId} readOnly={actions.readOnly} />
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">{v.pageViews.toLocaleString('en-US')}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{v.bookNowClicks.toLocaleString('en-US')}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{v.contactsCreated.toLocaleString('en-US')}</td>
-                <td className="px-3 py-2 text-right"><BookingsValue tracked={v.bookingsCompleted} followUp={v.followUpBookings} /></td>
-                <td className="px-3 py-2 text-right text-zinc-500">
-                  <ConversionValue rate={v.conversionRate} adjustedRate={v.adjustedConversionRate} followUp={v.followUpBookings} />
-                </td>
-                <td className="px-3 py-2">
-                  {v.deepLinkUrl ? <VariantLinkButton url={v.deepLinkUrl} /> : <span className="text-zinc-300">—</span>}
-                </td>
-                {!actions.readOnly && (
-                  <td className="px-3 py-2">
-                    <ActionButtons v={v} actions={actions} />
-                  </td>
-                )}
-              </tr>
-            ))}
+            {showGroups && <GroupHeading label="In rotation" colSpan={colCount} />}
+            {inRotation.map((v) => <DesktopRow key={v.variantId} v={v} actions={actions} />)}
+            {showGroups && <GroupHeading label="Not in rotation (weight 0)" colSpan={colCount} />}
+            {noWeight.map((v) => <DesktopRow key={v.variantId} v={v} actions={actions} />)}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-zinc-200 bg-zinc-50 font-semibold">
               <td className="px-3 py-2">Total</td>
               <td className="px-3 py-2 text-right tabular-nums">{totals.totalWeight}</td>
-              <td className="px-3 py-2 text-center text-xs font-normal text-zinc-500">
-                {totals.activeCount} of {variants.length} active
-              </td>
               <td className="px-3 py-2 text-right tabular-nums">{totals.totalPageViews.toLocaleString('en-US')}</td>
               <td className="px-3 py-2 text-right tabular-nums">{totals.totalBookNowClicks.toLocaleString('en-US')}</td>
               <td className="px-3 py-2 text-right tabular-nums">{totals.totalContacts.toLocaleString('en-US')}</td>
