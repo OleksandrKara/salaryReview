@@ -54,7 +54,12 @@ public class MarketingContactsService {
      */
     public MarketingContactDto contacts() {
         try {
-            List<Contact> contacts = repository.listAll().stream()
+            // Each contact with a known Square customer needs its own round trip(s) to Square
+            // (toContact -> fetchAppointments) — parallelizing across contacts, on top of the
+            // per-customer window fan-out inside SquareClient.bookingsForCustomer, is what keeps
+            // this page from taking many seconds to load once there are more than a couple of
+            // Square-linked contacts.
+            List<Contact> contacts = repository.listAll().parallelStream()
                     .map(this::toContact)
                     .collect(Collectors.toList());
             return new MarketingContactDto(true, contacts);
@@ -108,7 +113,9 @@ public class MarketingContactsService {
      * particular new booking never went through our attribution recording).
      */
     public Map<String, Long> countFollowUpBookingsByVariant(String landingPageSlug, Instant statsSince, java.util.Set<String> attributedBookingIds) {
-        return repository.listAll().stream()
+        // hasUncountedRealAppointment is a Square round trip per candidate contact — same
+        // parallelization reasoning as contacts() above.
+        return repository.listAll().parallelStream()
                 .filter(r -> landingPageSlug.equals(r.landingPageSlug()))
                 .filter(r -> statsSince == null || !r.createdAt().isBefore(statsSince))
                 .filter(r -> hasUncountedRealAppointment(r, attributedBookingIds))

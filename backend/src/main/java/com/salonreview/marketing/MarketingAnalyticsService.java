@@ -241,7 +241,14 @@ public class MarketingAnalyticsService {
      * own created_at. Null if they have no bookings at all.
      */
     private Instant earliestBookingStart(String customerId) {
-        return square.bookingsForCustomer(customerId, clock.instant().minus(BOOKING_HISTORY_LOOKBACK)).stream()
+        // Truncated to the day: SquareClient caches bookingsForCustomer by (customerId, since), so
+        // a "since" that carries millisecond precision (clock.instant() called fresh every time)
+        // is a different cache key on literally every call — the 2-minute cache never actually
+        // hits, and repeat navigation between tabs pays the full multi-second Square round trip
+        // every single time. Day-level granularity is more than precise enough for a 400-day
+        // lookback anyway.
+        Instant since = clock.instant().truncatedTo(java.time.temporal.ChronoUnit.DAYS).minus(BOOKING_HISTORY_LOOKBACK);
+        return square.bookingsForCustomer(customerId, since).stream()
                 .map(SquareClient.Booking::startAt)
                 .map(MarketingAnalyticsService::parseInstantOrNull)
                 .filter(Objects::nonNull)
@@ -298,7 +305,11 @@ public class MarketingAnalyticsService {
         record FutureBooking(String customerId, SquareClient.Booking booking) {}
         // A day of slack behind "today" is enough here (isTodayOrLater does the exact date
         // filtering below); no need for the wider BOOKING_HISTORY_LOOKBACK this call doesn't need.
-        Instant sinceYesterday = clock.instant().minus(Duration.ofDays(1));
+        // Derived from the already-day-granular `today` (not a fresh clock.instant() call) so this
+        // is a stable cache key for SquareClient.bookingsForCustomer's (customerId, since) cache —
+        // a millisecond-precise "since" would be a different key on every single call, permanently
+        // defeating that cache and re-paying the full Square round trip on every request.
+        Instant sinceYesterday = today.minusDays(1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
         List<FutureBooking> future = adsCustomerIds.parallelStream()
                 .flatMap(id -> square.bookingsForCustomer(id, sinceYesterday).stream()
                         .filter(MarketingAnalyticsService::didHappen)
