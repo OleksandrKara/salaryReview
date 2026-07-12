@@ -50,6 +50,15 @@ public class MarketingAnalyticsService {
     // requiring an exact instant-for-instant comparison.
     private static final Duration FRESHNESS_GRACE = Duration.ofDays(1);
 
+    // How far back to search Square for a customer's prior bookings when deciding fresh vs.
+    // returning. SquareClient#bookingsForCustomer requires an explicit lower bound (Square's API
+    // silently excludes everything before it), so an unbounded "their whole history" lookup isn't
+    // free — this caps it at a generous window rather than scanning years back on every check. A
+    // customer whose last visit predates this window is treated the same as one with no prior
+    // booking at all (falls back to created_at) — an acceptable trade-off since a return visit
+    // that far back reasonably counts as a fresh re-acquisition anyway.
+    private static final Duration BOOKING_HISTORY_LOOKBACK = Duration.ofDays(400);
+
     private final MarketingContactsRepository contactsRepository;
     private final SquareMonthAggregator aggregator;
     private final SquareClient square;
@@ -232,7 +241,7 @@ public class MarketingAnalyticsService {
      * own created_at. Null if they have no bookings at all.
      */
     private Instant earliestBookingStart(String customerId) {
-        return square.bookingsForCustomer(customerId).stream()
+        return square.bookingsForCustomer(customerId, clock.instant().minus(BOOKING_HISTORY_LOOKBACK)).stream()
                 .map(SquareClient.Booking::startAt)
                 .map(MarketingAnalyticsService::parseInstantOrNull)
                 .filter(Objects::nonNull)
@@ -287,8 +296,11 @@ public class MarketingAnalyticsService {
     private List<UpcomingAppointment> upcomingAppointments(
             Set<String> adsCustomerIds, Set<String> freshCustomerIds, Set<String> paidBookingIds, LocalDate today) {
         record FutureBooking(String customerId, SquareClient.Booking booking) {}
+        // A day of slack behind "today" is enough here (isTodayOrLater does the exact date
+        // filtering below); no need for the wider BOOKING_HISTORY_LOOKBACK this call doesn't need.
+        Instant sinceYesterday = clock.instant().minus(Duration.ofDays(1));
         List<FutureBooking> future = adsCustomerIds.parallelStream()
-                .flatMap(id -> square.bookingsForCustomer(id).stream()
+                .flatMap(id -> square.bookingsForCustomer(id, sinceYesterday).stream()
                         .filter(MarketingAnalyticsService::didHappen)
                         .filter(b -> b.id() == null || !paidBookingIds.contains(b.id()))
                         .filter(b -> isTodayOrLater(b.startAt(), today))
