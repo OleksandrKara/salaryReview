@@ -1,5 +1,7 @@
 package com.salonreview.marketing;
 
+import com.salonreview.domain.MarketingContactSquareLink;
+import com.salonreview.repo.MarketingContactSquareLinkRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClient.AppointmentSegment;
 import com.salonreview.square.SquareClient.Booking;
@@ -12,8 +14,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,10 +35,14 @@ public class MarketingContactsService {
     private static final String SQUARE_CUSTOMER_PROFILE_URL = "https://app.squareup.com/dashboard/customers/directory/customer/%s";
 
     private final MarketingContactsRepository repository;
+    private final MarketingContactSquareLinkRepository squareLinks;
     private final SquareClient square;
 
-    public MarketingContactsService(MarketingContactsRepository repository, SquareClient square) {
+    public MarketingContactsService(MarketingContactsRepository repository,
+                                     MarketingContactSquareLinkRepository squareLinks,
+                                     SquareClient square) {
         this.repository = repository;
+        this.squareLinks = squareLinks;
         this.square = square;
     }
 
@@ -56,17 +64,56 @@ public class MarketingContactsService {
         }
     }
 
+    /**
+     * "Sync appointments": for every lead that never got a square_customer_id through the tracked
+     * booking flow (contacts.square_customer_id is null — no completed booking, or four-hand
+     * request, went through the website), tries to resolve one anyway by phone number — the case
+     * a manager followed up and booked them directly in Square, or the client eventually came back
+     * and booked through some other channel entirely. A match is cached in
+     * marketing_contact_square_link (this app's own table — marketing.contacts itself is never
+     * written) so every ordinary page load keeps showing that lead's appointment/no-show/cancelled
+     * history afterward, not just right after this runs.
+     *
+     * <p>Also busts the Square read cache first, so already-linked contacts' appointment statuses
+     * (a booking that's since become NO_SHOW or CANCELLED) are refreshed too, not just up to
+     * whatever the normal cache TTL happens to allow.
+     */
+    @Transactional
+    public MarketingContactDto syncSquareLinks() {
+        square.invalidate();
+        List<MarketingContactsRepository.RawContact> raw = repository.listAll();
+        for (MarketingContactsRepository.RawContact r : raw) {
+            if (r.squareCustomerId() != null) continue; // already linked via the tracked flow
+            if (squareLinks.findByPhoneNumber(r.phoneNumber()).isPresent()) continue; // resolved by an earlier sync
+            List<String> candidates = square.customerIdsForPhone(r.phoneNumber());
+            if (candidates.isEmpty()) continue;
+            squareLinks.save(MarketingContactSquareLink.builder()
+                    .phoneNumber(r.phoneNumber())
+                    .squareCustomerId(candidates.get(0))
+                    .lastSyncedAt(Instant.now())
+                    .build());
+        }
+        return contacts();
+    }
+
     private Contact toContact(MarketingContactsRepository.RawContact raw) {
-        String squareProfileUrl = raw.squareCustomerId() == null
+        // Falls back to a phone-resolved link (see syncSquareLinks) when this lead never completed
+        // the tracked booking flow itself — a manager who booked them by phone, or a return visit
+        // through some other channel, still shows up here once a sync has found the match.
+        String effectiveSquareCustomerId = raw.squareCustomerId() != null
+                ? raw.squareCustomerId()
+                : squareLinks.findByPhoneNumber(raw.phoneNumber()).map(MarketingContactSquareLink::getSquareCustomerId).orElse(null);
+
+        String squareProfileUrl = effectiveSquareCustomerId == null
                 ? null
-                : String.format(SQUARE_CUSTOMER_PROFILE_URL, raw.squareCustomerId());
+                : String.format(SQUARE_CUSTOMER_PROFILE_URL, effectiveSquareCustomerId);
 
         List<Submission> submissions = repository.findSubmissionHistory(raw.phoneNumber())
                 .stream()
                 .map(MarketingContactsService::toSubmission)
                 .collect(Collectors.toList());
 
-        List<Appointment> appointments = raw.squareCustomerId() == null ? List.of() : fetchAppointments(raw.squareCustomerId());
+        List<Appointment> appointments = effectiveSquareCustomerId == null ? List.of() : fetchAppointments(effectiveSquareCustomerId);
 
         return new Contact(
                 raw.id().toString(),
