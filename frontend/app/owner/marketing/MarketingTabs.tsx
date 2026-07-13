@@ -12,6 +12,7 @@ const TABS = [
   { href: '/owner/marketing/contacts', label: 'Contacts' },
   { href: '/owner/marketing/analytics', label: 'Analytics' },
   { href: '/owner/marketing/funnel', label: 'Funnel' },
+  { href: '/owner/marketing/ads-report', label: 'Ads Report' },
 ];
 
 const DEFAULT_SLUG = 'mani';
@@ -60,7 +61,10 @@ export default function MarketingTabs() {
 
   return (
     <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200">
-      <div className="flex gap-1">
+      {/* overflow-x-auto (not flex-wrap): now 5 tabs, this row no longer reliably fits a narrow
+          phone screen — a horizontally-scrollable tab strip is the standard mobile pattern here,
+          rather than wrapping tabs onto a second line. */}
+      <div className="flex min-w-0 gap-1 overflow-x-auto">
         {TABS.map((tab) => {
           const active = pathname === tab.href;
           const href = currentSlug !== DEFAULT_SLUG ? `${tab.href}?slug=${encodeURIComponent(currentSlug)}` : tab.href;
@@ -70,7 +74,7 @@ export default function MarketingTabs() {
               href={href}
               prefetch={false}
               aria-current={active ? 'page' : undefined}
-              className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+              className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
                 active ? 'border-zinc-900 text-zinc-900' : 'border-transparent text-zinc-500 hover:text-zinc-700'
               }`}
             >

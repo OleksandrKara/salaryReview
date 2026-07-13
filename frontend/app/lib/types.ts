@@ -896,6 +896,39 @@ export interface MarketingAnalyticsData {
   adSpendThisMonth: number;
 }
 
+// --- Marketing Ads Report (com.salonreview.web.MarketingAdsReportController) ---
+
+export interface MarketingAdsReportPeriod {
+  /** ISO-8601 dates (yyyy-MM-dd), inclusive on both ends. */
+  periodStart: string;
+  periodEnd: string;
+  /** Real, manually-entered figure for a MONTH row; a prorated estimate for a WEEK row (see
+   * adSpendEstimated) — ad spend is only ever entered once per calendar month. */
+  adSpend: number;
+  /** True for every WEEK row (always estimated), false for every MONTH row (always real). */
+  adSpendEstimated: boolean;
+  /** What was actually collected (cash/card/cash-note) for ads-attributed appointments completed
+   * in this period — real, not a catalog estimate. Comps excluded (nothing collected). */
+  revenueCollected: number;
+  /** Catalog-price value of still-upcoming ads-attributed appointments scheduled in this period —
+   * zero for periods entirely in the past. */
+  anticipatedRevenue: number;
+  /** Ads-attributed customers whose Square record was created fresh off the ad touch, with a
+   * service rendered in this period. */
+  customersCreated: number;
+  /** Count of distinct completed, actually-paid appointments (not service line items) in this period. */
+  completedAppointments: number;
+}
+
+export interface MarketingAdsReportData {
+  /** "WEEK" or "MONTH" — which grain `periods` is bucketed into. */
+  periodType: 'WEEK' | 'MONTH';
+  /** One row per period, most recent first. */
+  periods: MarketingAdsReportPeriod[];
+  /** Sum across every row in `periods` — the report's grand-total row. */
+  totals: MarketingAdsReportPeriod;
+}
+
 // Shared across the Overview, Contacts, Analytics, and Funnel tabs — see backend TrafficSourceSql.
 export type TrafficSourceKey = 'meta_ads' | 'google_ads' | 'instagram_organic' | 'google_organic' | 'direct';
 

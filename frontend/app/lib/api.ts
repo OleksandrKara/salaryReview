@@ -32,6 +32,7 @@ import type {
   KbRequestTarget,
   FunnelAnalysisResult,
   FunnelDashboardData,
+  MarketingAdsReportData,
   MarketingAnalyticsData,
   MarketingContactsData,
   MarketingDashboardData,
@@ -418,6 +419,20 @@ export const api = {
   setAdSpend: (year: number, month: number, amount: number) =>
     proxyJson<{ year: number; month: number; amount: number }>(
       '/api/owner/marketing/analytics/ad-spend', 'PUT', { year, month, amount }),
+
+  // period is 'week' or 'month'; from/to/sources/slug follow the same conventions as
+  // getMarketingAnalytics above. Omitting from/to defaults to the last 8 weeks or last 6 months.
+  getMarketingAdsReport: (
+    period: 'week' | 'month', from?: string, to?: string, sources?: Set<TrafficSourceKey>, slug?: string,
+  ) => {
+    const params = new URLSearchParams();
+    params.set('period', period);
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (sources) params.set('sources', sourcesParam(sources));
+    if (slug) params.set('slug', slug);
+    return proxyGet<MarketingAdsReportData>(`/api/owner/marketing/ads-report?${params.toString()}`);
+  },
 };
 
 // The backend's default Spring error body is {"message": "...", "error": "...", "status": ...} —

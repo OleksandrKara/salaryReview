@@ -7,6 +7,8 @@ import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareMonthAggregator;
 import com.salonreview.square.SquareMonthAggregator.AttributedService;
+import com.salonreview.web.dto.MarketingAdsReportDto;
+import com.salonreview.web.dto.MarketingAdsReportDto.PeriodRow;
 import com.salonreview.web.dto.MarketingAnalyticsDto;
 import com.salonreview.web.dto.MarketingAnalyticsDto.CompletedAppointment;
 import com.salonreview.web.dto.MarketingAnalyticsDto.Segment;
@@ -19,12 +21,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -190,6 +194,129 @@ public class MarketingAnalyticsService {
         return result;
     }
 
+    /** Ad spend, ROI inputs, and volume metrics for the Ads Report tab, bucketed into one row per
+     * week or per month across [from, to] (inclusive), most recent first — see
+     * {@link MarketingAdsReportDto}. Reuses the exact same customer resolution, freshness check,
+     * and payroll matching {@link #analytics} does; the only new work here is bucketing those
+     * already-fetched results by period instead of summing them into one aggregate.
+     *
+     * <p>Period boundaries are computed first and the underlying Square data is fetched over the
+     * full aligned range (the first period's start through the last period's end) — not the raw
+     * from/to — since a week or month may extend a few days beyond whatever the caller asked for;
+     * fetching the narrower raw range would silently drop those edge days from their bucket.
+     */
+    public MarketingAdsReportDto adsReport(LocalDate from, LocalDate to, Set<String> sources, String slug, boolean weekly) {
+        String periodType = weekly ? "WEEK" : "MONTH";
+        List<LocalDate[]> periods = buildPeriods(from, to, weekly);
+        if (periods.isEmpty()) {
+            PeriodRow empty = new PeriodRow(from, to, ZERO_MONEY, weekly, ZERO_MONEY, ZERO_MONEY, 0, 0);
+            return new MarketingAdsReportDto(periodType, List.of(), empty);
+        }
+        LocalDate alignedFrom = periods.get(0)[0];
+        LocalDate alignedTo = periods.get(periods.size() - 1)[1];
+
+        Map<String, AdsCustomer> adsCustomers = resolveAdsCustomers(sources, slug);
+        Set<String> freshCustomerIds = adsCustomers.isEmpty() ? Set.of() : freshCustomerIds(adsCustomers);
+        List<AttributedService> inRange = adsCustomers.isEmpty()
+                ? List.of() : collectServices(adsCustomers.keySet(), alignedFrom, alignedTo, priceCutoff());
+        List<CompletedAppointment> completed = buildCompletedAppointments(inRange, freshCustomerIds);
+        Set<String> paidBookingIds = inRange.stream()
+                .map(AttributedService::bookingId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        List<UpcomingAppointment> upcoming = adsCustomers.isEmpty()
+                ? List.of()
+                : upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, LocalDate.now(clock));
+
+        List<PeriodRow> rows = new ArrayList<>();
+        for (LocalDate[] p : periods) {
+            rows.add(buildPeriodRow(p[0], p[1], weekly, inRange, completed, upcoming, freshCustomerIds));
+        }
+        PeriodRow totals = totalsRow(alignedFrom, alignedTo, weekly, rows);
+
+        List<PeriodRow> mostRecentFirst = new ArrayList<>(rows);
+        Collections.reverse(mostRecentFirst);
+        return new MarketingAdsReportDto(periodType, mostRecentFirst, totals);
+    }
+
+    private PeriodRow buildPeriodRow(
+            LocalDate periodStart, LocalDate periodEnd, boolean weekly,
+            List<AttributedService> inRange, List<CompletedAppointment> completed,
+            List<UpcomingAppointment> upcoming, Set<String> freshCustomerIds) {
+        List<AttributedService> bucket = inRange.stream()
+                .filter(s -> withinPeriod(parseIso(s.date()), periodStart, periodEnd))
+                .toList();
+        long customersCreated = segment(bucket, freshCustomerIds::contains).customerCount();
+
+        List<CompletedAppointment> bucketCompleted = completed.stream()
+                .filter(c -> withinPeriod(c.date(), periodStart, periodEnd))
+                .toList();
+        BigDecimal revenueCollected = bucketCompleted.stream().map(CompletedAppointment::collected)
+                .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal anticipatedRevenue = upcoming.stream()
+                .filter(u -> withinPeriod(u.startAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), periodStart, periodEnd))
+                .map(UpcomingAppointment::price)
+                .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal adSpend = weekly ? prorateWeeklySpend(periodStart, periodEnd) : adSpendFor(YearMonth.from(periodStart));
+
+        return new PeriodRow(periodStart, periodEnd, adSpend, weekly, revenueCollected, anticipatedRevenue,
+                customersCreated, bucketCompleted.size());
+    }
+
+    private static boolean withinPeriod(LocalDate date, LocalDate periodStart, LocalDate periodEnd) {
+        return date != null && !date.isBefore(periodStart) && !date.isAfter(periodEnd);
+    }
+
+    private PeriodRow totalsRow(LocalDate alignedFrom, LocalDate alignedTo, boolean weekly, List<PeriodRow> rows) {
+        BigDecimal adSpend = rows.stream().map(PeriodRow::adSpend).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal revenue = rows.stream().map(PeriodRow::revenueCollected).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal anticipated = rows.stream().map(PeriodRow::anticipatedRevenue).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+        long customersCreated = rows.stream().mapToLong(PeriodRow::customersCreated).sum();
+        long completedAppointments = rows.stream().mapToLong(PeriodRow::completedAppointments).sum();
+        return new PeriodRow(alignedFrom, alignedTo, adSpend, weekly, revenue, anticipated, customersCreated, completedAppointments);
+    }
+
+    /** Splits [from, to] into whole calendar weeks (Monday–Sunday) or whole calendar months that
+     * together cover it — the returned periods may extend a little before {@code from} or after
+     * {@code to} to stay aligned to real week/month boundaries. Ascending order (oldest first);
+     * callers that want most-recent-first reverse the result themselves.
+     */
+    private static List<LocalDate[]> buildPeriods(LocalDate from, LocalDate to, boolean weekly) {
+        List<LocalDate[]> periods = new ArrayList<>();
+        if (from == null || to == null || to.isBefore(from)) return periods;
+        if (weekly) {
+            LocalDate cursor = from.with(java.time.temporal.TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+            while (!cursor.isAfter(to)) {
+                periods.add(new LocalDate[]{cursor, cursor.plusDays(6)});
+                cursor = cursor.plusWeeks(1);
+            }
+        } else {
+            YearMonth cursor = YearMonth.from(from);
+            YearMonth last = YearMonth.from(to);
+            while (!cursor.isAfter(last)) {
+                periods.add(new LocalDate[]{cursor.atDay(1), cursor.atEndOfMonth()});
+                cursor = cursor.plusMonths(1);
+            }
+        }
+        return periods;
+    }
+
+    /** A week's ad spend is never entered directly (see class doc) — it's estimated by splitting
+     * each day's containing month's real spend evenly across that month's days, then summing the
+     * days in [periodStart, periodEnd]. A week straddling a month boundary correctly blends each
+     * side's own monthly rate rather than crudely averaging the two months together.
+     */
+    private BigDecimal prorateWeeklySpend(LocalDate periodStart, LocalDate periodEnd) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (LocalDate day = periodStart; !day.isAfter(periodEnd); day = day.plusDays(1)) {
+            YearMonth ym = YearMonth.from(day);
+            BigDecimal monthSpend = adSpendFor(ym);
+            if (monthSpend.signum() == 0) continue;
+            total = total.add(monthSpend.divide(BigDecimal.valueOf(ym.lengthOfMonth()), 10, RoundingMode.HALF_UP));
+        }
+        return total.setScale(2, RoundingMode.HALF_UP);
+    }
+
     /** Save (upsert) this month's ad spend figure. */
     @Transactional
     public BigDecimal saveAdSpend(int year, int month, BigDecimal amount, String updatedBy) {
@@ -202,8 +329,12 @@ public class MarketingAnalyticsService {
     }
 
     private BigDecimal currentAdSpend() {
-        LocalDate today = LocalDate.now(clock);
-        return adSpendRepository.findByYearAndMonth(today.getYear(), today.getMonthValue())
+        return adSpendFor(YearMonth.from(LocalDate.now(clock)));
+    }
+
+    /** Real, manually-entered ad spend for any calendar month; zero if never entered. */
+    private BigDecimal adSpendFor(YearMonth ym) {
+        return adSpendRepository.findByYearAndMonth(ym.getYear(), ym.getMonthValue())
                 .map(AdSpend::getAmountSpent)
                 .orElse(ZERO_MONEY);
     }
