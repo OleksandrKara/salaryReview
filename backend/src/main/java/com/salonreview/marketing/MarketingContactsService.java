@@ -1,11 +1,15 @@
 package com.salonreview.marketing;
 
 import com.salonreview.domain.MarketingContactSquareLink;
+import com.salonreview.domain.SalonConfig;
 import com.salonreview.repo.MarketingContactSquareLinkRepository;
+import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClient.AppointmentSegment;
 import com.salonreview.square.SquareClient.Booking;
 import com.salonreview.square.SquareClient.TeamMember;
+import com.salonreview.square.SquareMonthAggregator;
+import com.salonreview.square.SquareMonthAggregator.BookingPayment;
 import com.salonreview.web.dto.MarketingContactDto;
 import com.salonreview.web.dto.MarketingContactDto.Appointment;
 import com.salonreview.web.dto.MarketingContactDto.Contact;
@@ -18,10 +22,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.YearMonth;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -37,13 +45,19 @@ public class MarketingContactsService {
     private final MarketingContactsRepository repository;
     private final MarketingContactSquareLinkRepository squareLinks;
     private final SquareClient square;
+    private final SquareMonthAggregator aggregator;
+    private final SalonConfigRepository salonConfig;
 
     public MarketingContactsService(MarketingContactsRepository repository,
                                      MarketingContactSquareLinkRepository squareLinks,
-                                     SquareClient square) {
+                                     SquareClient square,
+                                     SquareMonthAggregator aggregator,
+                                     SalonConfigRepository salonConfig) {
         this.repository = repository;
         this.squareLinks = squareLinks;
         this.square = square;
+        this.aggregator = aggregator;
+        this.salonConfig = salonConfig;
     }
 
     /** Never throws: same "this app's health must never depend on the other service's
@@ -216,8 +230,11 @@ public class MarketingContactsService {
             Map<String, MarketingContactsRepository.RawAppointmentSubmission> submissionsByBookingId =
                     repository.findSubmissionsByBookingIds(bookings.stream().map(Booking::id).toList());
 
+            Map<String, BookingPayment> payments = paymentsForBookings(bookings);
+
             return bookings.stream()
-                    .map(b -> toAppointment(b, memberNames, serviceNames, servicePrices, submissionsByBookingId.get(b.id())))
+                    .map(b -> toAppointment(b, memberNames, serviceNames, servicePrices,
+                            submissionsByBookingId.get(b.id()), payments.get(b.id())))
                     .toList();
         } catch (RuntimeException ex) {
             log.warn("Failed to fetch Square appointment history for customer {}", squareCustomerId, ex);
@@ -225,12 +242,61 @@ public class MarketingContactsService {
         }
     }
 
+    /** What was actually collected for this customer's already-past bookings, keyed by booking id
+     * — reuses the same month-based payroll matching SquareMonthAggregator does (order/cash-note
+     * matched to a booking by customer + service + date), so the Contacts tab shows the real
+     * collected amount, not the catalog-price estimate {@code toAppointment}'s price field is.
+     * Best-effort per month: a failure fetching one month's data (e.g. a transient Square error)
+     * just leaves that month's bookings without payment info, same "never break the page"
+     * philosophy as the rest of this service.
+     */
+    private Map<String, BookingPayment> paymentsForBookings(List<Booking> bookings) {
+        Instant now = Instant.now();
+        ZoneId zone = resolveZone();
+        Set<YearMonth> months = bookings.stream()
+                .map(Booking::startAt)
+                .filter(Objects::nonNull)
+                .map(Instant::parse)
+                .filter(i -> i.isBefore(now)) // only a past appointment can have been paid already
+                .map(i -> YearMonth.from(i.atZone(zone)))
+                .collect(Collectors.toSet());
+        if (months.isEmpty()) return Map.of();
+
+        BigDecimal cutoff = priceCutoff();
+        Map<String, BookingPayment> merged = new HashMap<>();
+        for (YearMonth ym : months) {
+            try {
+                var agg = aggregator.aggregate(ym.getYear(), ym.getMonthValue(), cutoff);
+                merged.putAll(SquareMonthAggregator.paymentsByBookingId(agg.services()));
+            } catch (RuntimeException ex) {
+                log.warn("Failed to fetch payment info for {}-{}", ym.getYear(), ym.getMonthValue(), ex);
+            }
+        }
+        return merged;
+    }
+
+    private ZoneId resolveZone() {
+        try {
+            String tz = square.locationTimeZone();
+            return tz != null && !tz.isBlank() ? ZoneId.of(tz) : ZoneOffset.UTC;
+        } catch (RuntimeException e) {
+            return ZoneOffset.UTC;
+        }
+    }
+
+    private BigDecimal priceCutoff() {
+        SalonConfig cfg = salonConfig.findById(1)
+                .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"));
+        return cfg.getServicePriceCutoff();
+    }
+
     private static Appointment toAppointment(
             Booking booking,
             Map<String, String> memberNames,
             Map<String, String> serviceNames,
             Map<String, BigDecimal> servicePrices,
-            MarketingContactsRepository.RawAppointmentSubmission submission
+            MarketingContactsRepository.RawAppointmentSubmission submission,
+            BookingPayment payment
     ) {
         List<AppointmentSegment> segments = booking.appointmentSegments() == null ? List.of() : booking.appointmentSegments();
         String serviceName = segments.stream()
@@ -253,6 +319,8 @@ public class MarketingContactsService {
                 serviceName.isBlank() ? null : serviceName,
                 price.signum() == 0 ? null : price,
                 artistName,
+                payment == null ? null : payment.channel(),
+                payment == null ? null : payment.collected(),
                 submission == null ? null : submission.trafficSource(),
                 submission == null ? null : submission.deviceType(),
                 submission == null ? null : submission.osName(),

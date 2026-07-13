@@ -544,6 +544,71 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
+    @DisplayName("lists completed appointments within range with real collected amount and payment channel")
+    void listsCompletedAppointmentsWithCollectedAmount() {
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+                contact("+16195550001", "cust-cash", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads"),
+                contact("+16195550002", "cust-card", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
+        when(square.customerNames(any())).thenReturn(Map.of("cust-cash", "Cash Customer", "cust-card", "Card Customer"));
+        var cashLine = new AttributedService("p1", "P", "2026-07-05", "FIRST", "Manicure",
+                new BigDecimal("50.00"), BigDecimal.ZERO, new BigDecimal("50.00"), BigDecimal.ZERO,
+                true, 1, 1, false, "CASH", null, "bk-cash", "cust-cash", null);
+        var cardLine = new AttributedService("p1", "P", "2026-07-10", "FIRST", "Pedicure",
+                new BigDecimal("60.00"), BigDecimal.ZERO, new BigDecimal("54.00"), BigDecimal.ZERO,
+                true, 1, 1, false, "CARD", null, "bk-card", "cust-card", null);
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(cashLine, cardLine)));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY);
+
+        assertThat(dto.completed()).hasSize(2);
+        var byBooking = dto.completed().stream()
+                .collect(java.util.stream.Collectors.toMap(MarketingAnalyticsDto.CompletedAppointment::customerName, c -> c));
+        assertThat(byBooking.get("Cash Customer").paymentChannel()).isEqualTo("CASH");
+        assertThat(byBooking.get("Cash Customer").collected()).isEqualByComparingTo("50.00");
+        assertThat(byBooking.get("Card Customer").paymentChannel()).isEqualTo("CARD");
+        assertThat(byBooking.get("Card Customer").collected()).isEqualByComparingTo("54.00");
+    }
+
+    @Test
+    @DisplayName("sums a multi-service booking's lines into one completed-appointment row")
+    void completedAppointmentsSumMultiServiceBooking() {
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
+        when(square.customerNames(any())).thenReturn(Map.of("cust-1", "Jane Doe"));
+        var maniLine = new AttributedService("p1", "P", "2026-07-05", "FIRST", "Manicure",
+                new BigDecimal("50.00"), BigDecimal.ZERO, new BigDecimal("50.00"), BigDecimal.ZERO,
+                true, 1, 1, false, "CARD", null, "bk-1", "cust-1", null);
+        var pediLine = new AttributedService("p1", "P", "2026-07-05", "FIRST", "Pedicure",
+                new BigDecimal("70.00"), BigDecimal.ZERO, new BigDecimal("63.00"), BigDecimal.ZERO,
+                true, 1, 1, false, "CARD", null, "bk-1", "cust-1", null);
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(maniLine, pediLine)));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY);
+
+        assertThat(dto.completed()).hasSize(1);
+        assertThat(dto.completed().get(0).serviceName()).isEqualTo("Manicure + Pedicure");
+        assertThat(dto.completed().get(0).collected()).isEqualByComparingTo("113.00");
+    }
+
+    @Test
+    @DisplayName("excludes owner/family comps from the completed-appointments list")
+    void completedAppointmentsExcludeComps() {
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
+        var compLine = new AttributedService("p1", "P", "2026-07-05", "FIRST", "owner comp",
+                new BigDecimal("50.00"), BigDecimal.ZERO, new BigDecimal("50.00"), BigDecimal.ZERO,
+                true, 1, 1, false, "COMP", null, "bk-comp", "cust-1", null);
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(compLine)));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY);
+
+        assertThat(dto.completed()).isEmpty();
+    }
+
+    @Test
     @DisplayName("ALL traffic mode combined with a slug scopes to that landing page")
     void allTrafficModeWithSlugScopesToPage() {
         when(contactsRepository.findAllAttributedContacts("home")).thenReturn(List.of(

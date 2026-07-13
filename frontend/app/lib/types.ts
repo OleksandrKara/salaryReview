@@ -859,6 +859,21 @@ export interface MarketingUpcomingAppointment {
   freshFromAds: boolean;
 }
 
+export interface MarketingCompletedAppointment {
+  customerId: string;
+  customerName: string;
+  /** Multi-service visits are joined with " + ", e.g. "Manicure + Pedicure". */
+  serviceName: string;
+  /** ISO-8601 date (yyyy-MM-dd). */
+  date: string;
+  /** What was actually collected (after any discount) — a real amount, not a catalog estimate. */
+  collected: number;
+  /** "CASH" (checked out as cash in Square), "CARD", or "CASH-NOTE" (a provider's note, no Square
+   * checkout) — the same classification used for payroll. */
+  paymentChannel: 'CASH' | 'CARD' | 'CASH-NOTE';
+  freshFromAds: boolean;
+}
+
 export interface MarketingAnalyticsData {
   /** ISO-8601 date (yyyy-MM-dd), inclusive on both ends. */
   from: string;
@@ -871,6 +886,9 @@ export interface MarketingAnalyticsData {
   returning: MarketingAnalyticsSegment;
   /** Every still-upcoming appointment for an ads-attributed customer, regardless of [from, to]. */
   upcoming: MarketingUpcomingAppointment[];
+  /** Every already-completed, actually-paid appointment within [from, to] — one row per booking,
+   * with the real collected amount and payment channel. Comps are excluded (nothing collected). */
+  completed: MarketingCompletedAppointment[];
   /** Gross revenue for every ads customer, fixed to [1st of the current month, today] — independent
    * of [from, to], so the ROI card always means "this month". */
   currentMonthToDate: MarketingAnalyticsSegment;
@@ -974,6 +992,14 @@ export interface MarketingContactAppointment {
    * best-effort estimate, not a payroll figure. */
   price: number | null;
   artistName: string | null;
+  /** How this appointment was actually paid — "CASH" (checked out as cash in Square), "CARD", or
+   * "CASH-NOTE" (a provider's cash note, no Square checkout). Null if this appointment isn't tied
+   * to a matched payment: still upcoming, cancelled/no-show/declined, or a past visit with no
+   * matching order or cash note found. */
+  paymentChannel: 'CASH' | 'CARD' | 'CASH-NOTE' | null;
+  /** What was actually collected for this appointment (after any discount) — unlike price above,
+   * this is the real amount, not a catalog estimate. Null under the same conditions as paymentChannel. */
+  collectedAmount: number | null;
   /** From the marketing.submissions row that actually created this booking (matched by
    * square_booking_id) — all null if this appointment didn't originate through our own booking
    * funnel (e.g. booked in person, or through Square directly, before we ever tracked them). */

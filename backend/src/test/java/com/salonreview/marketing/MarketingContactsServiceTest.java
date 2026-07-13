@@ -1,14 +1,17 @@
 package com.salonreview.marketing;
 
 import com.salonreview.domain.MarketingContactSquareLink;
+import com.salonreview.domain.SalonConfig;
 import com.salonreview.marketing.MarketingContactsRepository.RawAppointmentSubmission;
 import com.salonreview.marketing.MarketingContactsRepository.RawContact;
 import com.salonreview.marketing.MarketingContactsRepository.RawSubmission;
 import com.salonreview.repo.MarketingContactSquareLinkRepository;
+import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClient.AppointmentSegment;
 import com.salonreview.square.SquareClient.Booking;
 import com.salonreview.square.SquareClient.TeamMember;
+import com.salonreview.square.SquareMonthAggregator;
 import com.salonreview.web.dto.MarketingContactDto;
 import com.salonreview.web.dto.MarketingContactDto.Contact;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,6 +28,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -36,6 +40,8 @@ class MarketingContactsServiceTest {
     private MarketingContactsRepository repository;
     private MarketingContactSquareLinkRepository squareLinks;
     private SquareClient square;
+    private SquareMonthAggregator aggregator;
+    private SalonConfigRepository salonConfig;
     private MarketingContactsService service;
 
     @BeforeEach
@@ -43,10 +49,14 @@ class MarketingContactsServiceTest {
         repository = mock(MarketingContactsRepository.class);
         squareLinks = mock(MarketingContactSquareLinkRepository.class);
         square = mock(SquareClient.class);
-        service = new MarketingContactsService(repository, squareLinks, square);
+        aggregator = mock(SquareMonthAggregator.class);
+        salonConfig = mock(SalonConfigRepository.class);
+        service = new MarketingContactsService(repository, squareLinks, square, aggregator, salonConfig);
         when(repository.findSubmissionHistory(any())).thenReturn(List.of());
         when(repository.findSubmissionsByBookingIds(any())).thenReturn(Map.of());
         when(squareLinks.findByPhoneNumber(any())).thenReturn(Optional.empty());
+        when(salonConfig.findById(1)).thenReturn(Optional.of(SalonConfig.builder()
+                .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
     }
 
     private static RawContact rawContact(UUID id, String squareCustomerId) {
@@ -185,6 +195,64 @@ class MarketingContactsServiceTest {
         assertThat(appt.deviceType()).isEqualTo("mobile");
         assertThat(appt.osName()).isEqualTo("iOS");
         assertThat(appt.submissionOccurredAt()).isEqualTo(Instant.parse("2026-07-30T10:00:00Z"));
+    }
+
+    private static SquareMonthAggregator.MonthAggregation aggOf(int year, int month, List<SquareMonthAggregator.AttributedService> services) {
+        return new SquareMonthAggregator.MonthAggregation(year, month, "UTC", List.of(),
+                new SquareMonthAggregator.Diag(), services, List.of(), List.of());
+    }
+
+    @Test
+    @DisplayName("a past appointment shows the real collected amount and channel when a matching payroll line is found")
+    void appointmentShowsRealCollectedPayment() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2020-06-15T17:00:00Z", null, null,
+                "LOC1", "SQCUST123", null, null, List.of());
+        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(booking));
+        var line = new SquareMonthAggregator.AttributedService("p1", "P", "2020-06-15", "FIRST", "Manicure",
+                new BigDecimal("50.00"), BigDecimal.ZERO, new BigDecimal("50.00"), BigDecimal.ZERO,
+                true, 1, 1, false, "CASH", null, "SQBOOK1", "SQCUST123", null);
+        when(aggregator.aggregate(2020, 6, new BigDecimal("60.00"))).thenReturn(aggOf(2020, 6, List.of(line)));
+
+        MarketingContactDto dto = service.contacts();
+
+        var appt = dto.contacts().get(0).appointments().get(0);
+        assertThat(appt.paymentChannel()).isEqualTo("CASH");
+        assertThat(appt.collectedAmount()).isEqualByComparingTo("50.00");
+    }
+
+    @Test
+    @DisplayName("a past appointment with no matching payroll line shows no payment info, without throwing")
+    void appointmentWithNoMatchingPaymentShowsNull() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2020-06-15T17:00:00Z", null, null,
+                "LOC1", "SQCUST123", null, null, List.of());
+        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(booking));
+        when(aggregator.aggregate(2020, 6, new BigDecimal("60.00"))).thenReturn(aggOf(2020, 6, List.of()));
+
+        MarketingContactDto dto = service.contacts();
+
+        var appt = dto.contacts().get(0).appointments().get(0);
+        assertThat(appt.paymentChannel()).isNull();
+        assertThat(appt.collectedAmount()).isNull();
+    }
+
+    @Test
+    @DisplayName("an upcoming appointment never triggers a payroll lookup")
+    void upcomingAppointmentSkipsPaymentLookup() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        Booking future = new Booking("SQBOOK1", "ACCEPTED", "2099-01-01T17:00:00Z", null, null,
+                "LOC1", "SQCUST123", null, null, List.of());
+        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(future));
+
+        MarketingContactDto dto = service.contacts();
+
+        var appt = dto.contacts().get(0).appointments().get(0);
+        assertThat(appt.paymentChannel()).isNull();
+        verify(aggregator, never()).aggregate(anyInt(), anyInt(), any());
     }
 
     @Test

@@ -111,6 +111,26 @@ function AppointmentStatusBadge({ status }: { status: string }) {
   );
 }
 
+const PAYMENT_CHANNEL_LABELS: Record<string, string> = {
+  CASH: 'Cash',
+  CARD: 'Card',
+  'CASH-NOTE': 'Cash (noted)',
+};
+
+function PaymentChannelBadge({ channel }: { channel: string }) {
+  const cls =
+    channel === 'CASH-NOTE'
+      ? 'bg-amber-50 text-amber-700 ring-amber-200'
+      : 'bg-blue-50 text-blue-700 ring-blue-200';
+  return (
+    <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${cls}`}>
+      {PAYMENT_CHANNEL_LABELS[channel] ?? channel}
+    </span>
+  );
+}
+
+const CANCELLED_STATUSES = new Set(['CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SELLER', 'DECLINED', 'NO_SHOW']);
+
 function AppointmentHistoryList({ appointments }: { appointments: MarketingContactAppointment[] }) {
   const now = Date.now();
   return (
@@ -118,6 +138,8 @@ function AppointmentHistoryList({ appointments }: { appointments: MarketingConta
       {appointments.map((a) => {
         const upcoming = a.startAt != null && new Date(a.startAt).getTime() > now;
         const hasSubmission = a.submissionOccurredAt != null;
+        const cancelled = CANCELLED_STATUSES.has(a.status);
+        const noPaymentFound = !upcoming && !cancelled && a.paymentChannel == null;
         return (
           <li key={a.bookingId} className="flex items-start justify-between gap-3 rounded-md bg-white p-2 ring-1 ring-zinc-100">
             <div>
@@ -128,8 +150,15 @@ function AppointmentHistoryList({ appointments }: { appointments: MarketingConta
               <div className="text-xs text-zinc-500">
                 {a.serviceName ?? 'Service unknown'}
                 {a.artistName ? ` · ${a.artistName}` : ''}
-                {a.price != null ? ` · ~${usd(a.price)}` : ''}
+                {a.paymentChannel != null && a.collectedAmount != null
+                  ? ` · ${usd(a.collectedAmount)} collected`
+                  : a.price != null
+                    ? ` · ~${usd(a.price)}`
+                    : ''}
               </div>
+              {noPaymentFound && (
+                <div className="mt-1 text-xs font-medium text-amber-600">No payment on file</div>
+              )}
               {hasSubmission ? (
                 <div className="mt-1 text-xs text-zinc-400">
                   Booked {fmtDate(a.submissionOccurredAt as string)} · {a.trafficSource ?? '—'}
@@ -145,7 +174,10 @@ function AppointmentHistoryList({ appointments }: { appointments: MarketingConta
                 <div className="mt-1 text-xs text-zinc-300">Not booked through this landing page</div>
               )}
             </div>
-            <AppointmentStatusBadge status={a.status} />
+            <div className="flex flex-col items-end gap-1">
+              <AppointmentStatusBadge status={a.status} />
+              {a.paymentChannel != null && <PaymentChannelBadge channel={a.paymentChannel} />}
+            </div>
           </li>
         );
       })}
