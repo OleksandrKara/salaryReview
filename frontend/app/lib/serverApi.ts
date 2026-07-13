@@ -10,6 +10,7 @@ import type {
   Me,
   Sop,
   FunnelDashboardData,
+  MarketingAdsReportData,
   MarketingAnalyticsData,
   MarketingContactsData,
   MarketingDashboardData,
@@ -205,5 +206,17 @@ export const serverApi = {
     if (slug) params.set('slug', slug);
     const qs = params.toString();
     return serverFetch<MarketingAnalyticsData>(`/api/owner/marketing/analytics${qs ? `?${qs}` : ''}`);
+  },
+
+  /** period is 'week' or 'month'; from/to/sources/slug follow the same conventions as
+   * getMarketingAnalytics above. Omitting from/to defaults to the last 8 weeks or last 6 months. */
+  getMarketingAdsReport: (period: 'week' | 'month', from?: string, to?: string, sources?: string[], slug?: string) => {
+    const params = new URLSearchParams();
+    params.set('period', period);
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (sources) params.set('sources', sources.join(','));
+    if (slug) params.set('slug', slug);
+    return serverFetch<MarketingAdsReportData>(`/api/owner/marketing/ads-report?${params.toString()}`);
   },
 };
