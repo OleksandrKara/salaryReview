@@ -40,6 +40,13 @@ public class FunnelAnalysis {
     @Column(name = "snapshot_fingerprint", nullable = false, columnDefinition = "text")
     private String snapshotFingerprint;
 
+    /** Which language the LLM was instructed to write this analysis in — part of the cache lookup
+     * so an EN-preferring and RU-preferring owner never share a cached result for the same
+     * snapshot. */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 8)
+    private Language language;
+
     @Column(name = "biggest_bottleneck_step", nullable = false, length = 64)
     private String biggestBottleneckStep;
 

@@ -7,6 +7,7 @@ import com.anthropic.models.messages.StructuredMessageCreateParams;
 import com.anthropic.models.messages.TextBlockParam;
 import com.salonreview.config.AiFunnelAnalysisProperties;
 import com.salonreview.domain.FunnelAnalysis;
+import com.salonreview.domain.Language;
 import com.salonreview.marketing.FunnelAnalyticsService;
 import com.salonreview.marketing.TrafficSourceParam;
 import com.salonreview.repo.FunnelAnalysisRepository;
@@ -18,6 +19,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -70,9 +72,13 @@ public class FunnelAnalysisService {
      * @param force when true, skips the cache lookup and always calls Claude fresh, persisting a
      *              new history row even if the underlying funnel numbers haven't changed since
      *              the last analysis — the owner-facing "run again anyway" action.
+     * @param lang  which language to write the analysis in — EN or RU, resolved by the caller from
+     *              the requesting owner/ads-manager's preferred-language setting. Part of the
+     *              cache lookup, so switching a user's language never serves them a cached result
+     *              generated in the other language.
      */
     @Transactional
-    public Optional<FunnelAnalysisResult> analyze(String slug, String flowKey, boolean adsOnly, boolean force) {
+    public Optional<FunnelAnalysisResult> analyze(String slug, String flowKey, boolean adsOnly, boolean force, Language lang) {
         if (!props.isEnabled()) return Optional.empty();
         AnthropicClient client = anthropicClientProvider.getIfAvailable();
         if (client == null) return Optional.empty();
@@ -88,8 +94,8 @@ public class FunnelAnalysisService {
 
         if (!force) {
             Optional<FunnelAnalysis> cached = analyses
-                    .findFirstByLandingPageSlugAndFlowKeyAndPromptVersionAndSnapshotFingerprintOrderByCreatedAtDesc(
-                            slug, flowKey, FunnelAnalysisPrompts.PROMPT_VERSION, fingerprint);
+                    .findFirstByLandingPageSlugAndFlowKeyAndPromptVersionAndSnapshotFingerprintAndLanguageOrderByCreatedAtDesc(
+                            slug, flowKey, FunnelAnalysisPrompts.PROMPT_VERSION, fingerprint, lang);
             if (cached.isPresent()) {
                 return Optional.of(FunnelAnalysisResult.fromEntity(cached.get()));
             }
@@ -98,16 +104,16 @@ public class FunnelAnalysisService {
         String userMessage = buildUserMessage(slug, funnel);
         FunnelAnalysisResult result;
         try {
-            result = callClaude(client, userMessage);
+            result = callClaude(client, userMessage, lang);
         } catch (RefusalException re) {
             log.warn("Funnel analysis refused for slug={} flowKey={}: {}", slug, flowKey, re.category());
-            result = refusalFallback(re.category());
+            result = refusalFallback(re.category(), lang);
         } catch (Exception e) {
             log.error("Claude funnel analysis failed for slug={} flowKey={}: {}", slug, flowKey, e.toString());
             throw new AnalysisFailedException("LLM call failed", e);
         }
 
-        FunnelAnalysis saved = persist(slug, flowKey, fingerprint, result);
+        FunnelAnalysis saved = persist(slug, flowKey, fingerprint, result, lang);
         return Optional.of(FunnelAnalysisResult.fromEntity(saved));
     }
 
@@ -155,16 +161,25 @@ public class FunnelAnalysisService {
     }
 
     /** Single Claude call with structured-output enforcement — same mechanism as
-     * {@link SuspiciousBookingTriageService#callClaude}. Package-private so tests can override. */
-    FunnelAnalysisResult callClaude(AnthropicClient client, String userMessage) throws RefusalException {
+     * {@link SuspiciousBookingTriageService#callClaude}. The language directive (if any) rides in
+     * its own, uncached system block after the cached base prompt — same technique
+     * {@code RagAnswerService} uses — so English requests (the common case) keep a stable cached
+     * prefix. Package-private so tests can override. */
+    FunnelAnalysisResult callClaude(AnthropicClient client, String userMessage, Language lang) throws RefusalException {
+        List<TextBlockParam> system = new ArrayList<>();
+        system.add(TextBlockParam.builder()
+                .text(FunnelAnalysisPrompts.SYSTEM_PROMPT_V1)
+                .cacheControl(CacheControlEphemeral.builder().build())
+                .build());
+        String directive = FunnelAnalysisPrompts.languageDirective(lang);
+        if (directive != null) {
+            system.add(TextBlockParam.builder().text(directive).build());
+        }
+
         StructuredMessageCreateParams<FunnelAnalysisResult> params = MessageCreateParams.builder()
                 .model(MODEL)
                 .maxTokens(MAX_OUTPUT_TOKENS)
-                .systemOfTextBlockParams(List.of(
-                        TextBlockParam.builder()
-                                .text(FunnelAnalysisPrompts.SYSTEM_PROMPT_V1)
-                                .cacheControl(CacheControlEphemeral.builder().build())
-                                .build()))
+                .systemOfTextBlockParams(system)
                 .addUserMessage(userMessage)
                 .outputConfig(FunnelAnalysisResult.class)
                 .build();
@@ -196,25 +211,33 @@ public class FunnelAnalysisService {
                 null);
     }
 
-    private FunnelAnalysisResult refusalFallback(String category) {
+    private FunnelAnalysisResult refusalFallback(String category, Language lang) {
+        String explanation = lang == Language.RU
+                ? "Не удалось автоматически проанализировать эту воронку (" + category + "). "
+                        + "Пожалуйста, просмотрите цифры вручную."
+                : "This funnel couldn't be analyzed automatically (" + category + "). Please review the numbers manually.";
+        String topPriorityAction = lang == Language.RU
+                ? "Просмотрите цифры воронки вручную."
+                : "Review the funnel numbers manually.";
         return new FunnelAnalysisResult(
                 "unknown",
-                "This funnel couldn't be analyzed automatically (" + category + "). Please review the numbers manually.",
+                explanation,
                 List.of(),
                 List.of(),
                 List.of(),
-                "Review the funnel numbers manually.",
+                topPriorityAction,
                 FunnelAnalysisPrompts.PROMPT_VERSION,
                 MODEL,
                 null);
     }
 
-    private FunnelAnalysis persist(String slug, String flowKey, String fingerprint, FunnelAnalysisResult result) {
+    private FunnelAnalysis persist(String slug, String flowKey, String fingerprint, FunnelAnalysisResult result, Language lang) {
         FunnelAnalysis row = FunnelAnalysis.builder()
                 .landingPageSlug(slug)
                 .flowKey(flowKey)
                 .promptVersion(FunnelAnalysisPrompts.PROMPT_VERSION)
                 .snapshotFingerprint(fingerprint)
+                .language(lang)
                 .biggestBottleneckStep(result.biggestBottleneckStep())
                 .bottleneckExplanation(result.bottleneckExplanation())
                 .recommendations(result.recommendations())
