@@ -3,7 +3,12 @@ package com.salonreview.web;
 import com.salonreview.ai.FunnelAnalysisResult;
 import com.salonreview.ai.FunnelAnalysisService;
 import com.salonreview.config.AiFunnelAnalysisProperties;
+import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.domain.AppUser;
+import com.salonreview.domain.Language;
+import com.salonreview.repo.AppUserRepository;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -22,23 +27,37 @@ public class FunnelAnalysisController {
 
     private final FunnelAnalysisService service;
     private final AiFunnelAnalysisProperties props;
+    private final AppUserRepository users;
 
-    public FunnelAnalysisController(FunnelAnalysisService service, AiFunnelAnalysisProperties props) {
+    public FunnelAnalysisController(FunnelAnalysisService service, AiFunnelAnalysisProperties props, AppUserRepository users) {
         this.service = service;
         this.props = props;
+        this.users = users;
     }
 
     /** mode defaults to "ads", same convention as the dashboard endpoints; anything other than
      * exactly "all" is treated as "ads". force=true bypasses the cache and always calls Claude
-     * fresh — the owner-facing "run again anyway" action, distinct from a plain repeat click. */
+     * fresh — the owner-facing "run again anyway" action, distinct from a plain repeat click.
+     * Generates the analysis in the caller's preferred language (Russian owners/ads-managers get
+     * a Russian analysis) — resolved server-side, same as {@code RagController}. */
     @PostMapping("/api/owner/marketing/funnel/analyze")
     public ResponseEntity<FunnelAnalysisResult> analyze(@RequestParam String slug, @RequestParam String flowKey,
                                                          @RequestParam(defaultValue = "ads") String mode,
-                                                         @RequestParam(defaultValue = "false") boolean force) {
+                                                         @RequestParam(defaultValue = "false") boolean force,
+                                                         @AuthenticationPrincipal AppUserPrincipal me) {
         if (!props.isEnabled()) return ResponseEntity.notFound().build();
-        return service.analyze(slug, flowKey, !"all".equalsIgnoreCase(mode), force)
+        return service.analyze(slug, flowKey, !"all".equalsIgnoreCase(mode), force, language(me))
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /** The caller's preferred language, read fresh from the DB; English when unset — same helper
+     * as {@code RagController.language(me)}. */
+    private Language language(AppUserPrincipal me) {
+        if (me == null) return Language.EN;
+        return users.findById(me.getUserId())
+                .map(AppUser::getPreferredLanguage)
+                .orElse(Language.EN) == Language.RU ? Language.RU : Language.EN;
     }
 
     /** Past analyses for this landing page/flow, newest first — powers the owner-facing history

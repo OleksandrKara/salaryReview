@@ -5,6 +5,8 @@ import com.salonreview.ai.FunnelAnalysisResult.PrioritizedRecommendation;
 import com.salonreview.ai.FunnelAnalysisService;
 import com.salonreview.config.AiFunnelAnalysisProperties;
 import com.salonreview.domain.ImpactLevel;
+import com.salonreview.domain.Language;
+import com.salonreview.repo.AppUserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,24 +29,31 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * HTTP-edge tests for {@link FunnelAnalysisController} — same standalone MockMvc pattern as
  * {@link SuspiciousTriageControllerTest}. The service's actual Claude-calling logic is exercised
  * indirectly by mirroring {@link com.salonreview.ai.SuspiciousBookingTriageService}'s already-
- * proven-in-production shape, not re-verified here.
+ * proven-in-production shape, not re-verified here. No {@code @AuthenticationPrincipal} is wired
+ * in this standalone MockMvc setup, so {@code me} resolves to null in every request here — the
+ * controller's {@code language(me)} helper falls back to {@link Language#EN} in that case, hence
+ * every stub below expects {@code Language.EN}.
  */
 class FunnelAnalysisControllerTest {
 
     private FunnelAnalysisService service;
     private AiFunnelAnalysisProperties props;
+    private AppUserRepository users;
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
         service = mock(FunnelAnalysisService.class);
         props = mock(AiFunnelAnalysisProperties.class);
+        users = mock(AppUserRepository.class);
 
-        FunnelAnalysisController controller = new FunnelAnalysisController(service, props);
+        FunnelAnalysisController controller = new FunnelAnalysisController(service, props, users);
         TriageExceptionHandler advice = new TriageExceptionHandler();
 
         mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(advice)
+                .setCustomArgumentResolvers(
+                        new org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver())
                 .build();
     }
 
@@ -78,7 +87,7 @@ class FunnelAnalysisControllerTest {
                 "v1",
                 "claude-sonnet-5",
                 Instant.parse("2026-07-11T00:00:00Z"));
-        when(service.analyze("home", "homepage_booking_v1", true, false)).thenReturn(Optional.of(r));
+        when(service.analyze("home", "homepage_booking_v1", true, false, Language.EN)).thenReturn(Optional.of(r));
 
         mvc.perform(post("/api/owner/marketing/funnel/analyze")
                         .param("slug", "home")
@@ -99,7 +108,7 @@ class FunnelAnalysisControllerTest {
         FunnelAnalysisResult r = new FunnelAnalysisResult(
                 "addons", "Explanation.", List.of(), List.of(), List.of(), "Do this first.",
                 "v1", "claude-sonnet-5", Instant.now());
-        when(service.analyze("home", "homepage_booking_v1", true, true)).thenReturn(Optional.of(r));
+        when(service.analyze("home", "homepage_booking_v1", true, true, Language.EN)).thenReturn(Optional.of(r));
 
         mvc.perform(post("/api/owner/marketing/funnel/analyze")
                         .param("slug", "home")
@@ -113,7 +122,7 @@ class FunnelAnalysisControllerTest {
     @DisplayName("no funnel data for slug/flowKey → 404")
     void noFunnelDataReturns404() throws Exception {
         when(props.isEnabled()).thenReturn(true);
-        when(service.analyze("home", "unknown_flow", true, false)).thenReturn(Optional.empty());
+        when(service.analyze("home", "unknown_flow", true, false, Language.EN)).thenReturn(Optional.empty());
 
         mvc.perform(post("/api/owner/marketing/funnel/analyze")
                         .param("slug", "home")

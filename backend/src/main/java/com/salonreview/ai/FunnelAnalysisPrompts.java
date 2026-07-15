@@ -1,5 +1,7 @@
 package com.salonreview.ai;
 
+import com.salonreview.domain.Language;
+
 /**
  * Prompt templates for the AI funnel-analysis feature. Prompts are code — they version with the
  * codebase, ship via PR, and are searchable by version string. See {@link TriagePrompts} for the
@@ -67,4 +69,21 @@ public final class FunnelAnalysisPrompts {
             sessions), but still give your best, concrete read rather than refusing to conclude
             anything.
             """;
+
+    /** Extra, uncached system-block directive appended only for non-English output — keeps
+     * {@link #SYSTEM_PROMPT_V1}'s cached prefix stable for English requests (same technique as
+     * {@code RagAnswerService#languageDirective}). Null for English — the default, no directive
+     * needed.
+     */
+    public static String languageDirective(Language lang) {
+        if (lang == Language.RU) {
+            return "Respond in Russian (Русский) for every free-text field: bottleneckExplanation, "
+                    + "recommendations[].title, recommendations[].rationale, suspiciousPatterns, "
+                    + "suggestedAbTests, and topPriorityAction. Leave biggestBottleneckStep exactly as "
+                    + "the English step_key identifier given in the data — never translate or "
+                    + "transliterate it, since the frontend matches it against the funnel's real step "
+                    + "keys.";
+        }
+        return null;
+    }
 }
