@@ -205,29 +205,38 @@ function FunnelPanel({
       </dl>
 
       <div className="mt-4 space-y-3">
-        {data.steps.map((step) => (
-          <div key={step.stepKey}>
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-medium text-zinc-700">
-                Step {step.stepIndex + 1} of {step.stepCountTotal}: {step.stepKey}
-              </span>
-              <span className="text-zinc-500 tabular-nums">
-                {step.reachedCount.toLocaleString('en-US')} ({pct(step.reachedPctOfStarted)})
-              </span>
+        {data.steps.map((step, i) => {
+          // dropOffCount is people who completed the PREVIOUS step but never advanced into this
+          // one — the friction is whatever action separates the two (e.g. filling out and
+          // submitting a contact form), not something inherently wrong with this step's own
+          // content. Naming the previous step explicitly (rather than a bare "dropped off here")
+          // keeps that direction unambiguous — index 0 never has a nonzero dropOffCount (there's
+          // no earlier step to have abandoned), so prevStep is only read when it's safe to.
+          const prevStep = i > 0 ? data.steps[i - 1] : null;
+          return (
+            <div key={step.stepKey}>
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium text-zinc-700">
+                  Step {step.stepIndex + 1} of {step.stepCountTotal}: {step.stepKey}
+                </span>
+                <span className="text-zinc-500 tabular-nums">
+                  {step.reachedCount.toLocaleString('en-US')} ({pct(step.reachedPctOfStarted)})
+                </span>
+              </div>
+              <div className="mt-1 h-3 w-full overflow-hidden rounded-full bg-zinc-100">
+                <div
+                  className="h-full rounded-full bg-blue-500"
+                  style={{ width: `${Math.min(100, step.reachedPctOfStarted * 100)}%` }}
+                />
+              </div>
+              {step.dropOffCount > 0 && (
+                <p className="mt-0.5 text-xs text-red-600">
+                  −{step.dropOffCount.toLocaleString('en-US')} didn&apos;t complete{prevStep ? ` "${prevStep.stepKey}"` : ' the previous step'} ({pct(step.dropOffPct)})
+                </p>
+              )}
             </div>
-            <div className="mt-1 h-3 w-full overflow-hidden rounded-full bg-zinc-100">
-              <div
-                className="h-full rounded-full bg-blue-500"
-                style={{ width: `${Math.min(100, step.reachedPctOfStarted * 100)}%` }}
-              />
-            </div>
-            {step.dropOffCount > 0 && (
-              <p className="mt-0.5 text-xs text-red-600">
-                −{step.dropOffCount.toLocaleString('en-US')} dropped off here ({pct(step.dropOffPct)})
-              </p>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {canAnalyze && (
