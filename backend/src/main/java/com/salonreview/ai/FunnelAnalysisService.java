@@ -168,7 +168,7 @@ public class FunnelAnalysisService {
     FunnelAnalysisResult callClaude(AnthropicClient client, String userMessage, Language lang) throws RefusalException {
         List<TextBlockParam> system = new ArrayList<>();
         system.add(TextBlockParam.builder()
-                .text(FunnelAnalysisPrompts.SYSTEM_PROMPT_V1)
+                .text(FunnelAnalysisPrompts.SYSTEM_PROMPT_V2)
                 .cacheControl(CacheControlEphemeral.builder().build())
                 .build());
         String directive = FunnelAnalysisPrompts.languageDirective(lang);
