@@ -14,6 +14,25 @@ function sourcesToAnalyzeMode(sources: Set<TrafficSourceKey>): 'ads' | 'all' {
 
 const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 
+/** Friendly display names for flow_key — falls back to the raw key for anything unmapped (e.g.
+ * akluxnails-home's homepage flow, or a future flow not listed here yet). Needed once a single
+ * landing page can have more than one flow_key (mani's contact-first vs contact-last A/B test):
+ * without this, two panels for the same page would be distinguished only by a small raw string,
+ * reading as duplicate/confusing cards rather than two clearly-named experiments. */
+const FLOW_KEY_LABELS: Record<string, string> = {
+  mani_booking_v1: 'Contact info first',
+  mani_booking_v2: 'Contact info last',
+};
+
+/** Friendly display names for step_key — same vocabulary is reused across differently-ordered
+ * flows (only the order differs), so one map covers every flow. Falls back to the raw key. */
+const STEP_KEY_LABELS: Record<string, string> = {
+  contact: 'Contact info',
+  services: 'Services',
+  datetime: 'Date & time',
+  confirm: 'Confirm & book',
+};
+
 const IMPACT_STYLES: Record<string, string> = {
   HIGH: 'bg-red-50 text-red-700 ring-red-200',
   MEDIUM: 'bg-amber-50 text-amber-700 ring-amber-200',
@@ -107,12 +126,18 @@ function FunnelPanel({
   data,
   canAnalyze,
   sources,
+  completedSharedAcrossFlows,
 }: {
   label: string;
   slug: string;
   data: FunnelDashboardData;
   canAnalyze: boolean;
   sources: Set<TrafficSourceKey>;
+  /** True when this page has more than one flow_key — "Completed" is counted per landing page,
+   * not per flow (see marketing.attribution, which has no flow_key column), so every flow panel
+   * of a multi-flow page shows the same number. Surfaced as a tooltip rather than split per-flow,
+   * since splitting it accurately isn't possible without a schema change to a live table. */
+  completedSharedAcrossFlows: boolean;
 }) {
   // history[0] (if present) is "the" current analysis shown; history[1:] is the collapsed past-
   // analyses list. null means "not fetched yet", [] means "fetched, nothing analyzed before".
@@ -181,8 +206,12 @@ function FunnelPanel({
   return (
     <div className="rounded-lg border border-zinc-200 p-4">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="font-medium text-zinc-900">{label}</h3>
-        <span className="text-xs text-zinc-400">{data.flowKey}</span>
+        <div>
+          <h3 className="font-medium text-zinc-900">{label}</h3>
+          <p className="text-xs text-zinc-400" title={data.flowKey}>
+            {FLOW_KEY_LABELS[data.flowKey] ?? data.flowKey}
+          </p>
+        </div>
       </div>
 
       <dl className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
@@ -195,7 +224,9 @@ function FunnelPanel({
           <dd className="font-semibold tabular-nums">{data.totalStarted.toLocaleString('en-US')}</dd>
         </div>
         <div>
-          <dt className="text-xs text-zinc-500">Completed</dt>
+          <dt className="text-xs text-zinc-500" title={completedSharedAcrossFlows ? 'Counted per landing page, shared across every flow shown below' : undefined}>
+            Completed{completedSharedAcrossFlows ? ' (page total)' : ''}
+          </dt>
           <dd className="font-semibold tabular-nums">{data.totalCompleted.toLocaleString('en-US')}</dd>
         </div>
         <div>
@@ -216,8 +247,8 @@ function FunnelPanel({
           return (
             <div key={step.stepKey}>
               <div className="flex items-center justify-between text-xs">
-                <span className="font-medium text-zinc-700">
-                  Step {step.stepIndex + 1} of {step.stepCountTotal}: {step.stepKey}
+                <span className="font-medium text-zinc-700" title={step.stepKey}>
+                  Step {step.stepIndex + 1} of {step.stepCountTotal}: {STEP_KEY_LABELS[step.stepKey] ?? step.stepKey}
                 </span>
                 <span className="text-zinc-500 tabular-nums">
                   {step.reachedCount.toLocaleString('en-US')} ({pct(step.reachedPctOfStarted)})
@@ -231,7 +262,8 @@ function FunnelPanel({
               </div>
               {step.dropOffCount > 0 && (
                 <p className="mt-0.5 text-xs text-red-600">
-                  −{step.dropOffCount.toLocaleString('en-US')} didn&apos;t complete{prevStep ? ` "${prevStep.stepKey}"` : ' the previous step'} ({pct(step.dropOffPct)})
+                  −{step.dropOffCount.toLocaleString('en-US')} didn&apos;t complete
+                  {prevStep ? ` "${STEP_KEY_LABELS[prevStep.stepKey] ?? prevStep.stepKey}"` : ' the previous step'} ({pct(step.dropOffPct)})
                 </p>
               )}
             </div>
@@ -423,11 +455,13 @@ export default function FunnelView({
             data={funnel}
             canAnalyze={canAnalyze}
             sources={sources}
+            completedSharedAcrossFlows={data.length > 1}
           />
         ))}
         {compareMode &&
-          otherPages.flatMap((p) =>
-            (compareData[p.slug] ?? []).map((funnel) => (
+          otherPages.flatMap((p) => {
+            const pageFunnels = compareData[p.slug] ?? [];
+            return pageFunnels.map((funnel) => (
               <FunnelPanel
                 key={`${p.slug}-${funnel.flowKey}-${sourcesKey}`}
                 label={p.name}
@@ -435,9 +469,10 @@ export default function FunnelView({
                 data={funnel}
                 canAnalyze={canAnalyze}
                 sources={sources}
+                completedSharedAcrossFlows={pageFunnels.length > 1}
               />
-            )),
-          )}
+            ));
+          })}
       </div>
     </div>
   );
