@@ -46,6 +46,7 @@ function linksFor(role: Role): NavLink[] {
       { href: '/manager', key: 'navDashboard' },
       { href: '/manager/time', key: 'navMyTime' },
       { href: '/admin/redos', key: 'mgrRedos' },
+      { href: '/admin/manual-credits', key: 'navManualCredits' },
       ...COMMON,
     ];
   }
