@@ -115,6 +115,7 @@ const STRINGS = {
   navManualCredits: { EN: 'Manual credits', RU: 'Ручные начисления' },
   navUsers: { EN: 'Users', RU: 'Пользователи' },
   navTelegramSettings: { EN: 'Telegram Notifications', RU: 'Уведомления в Telegram' },
+  navSmsSettings: { EN: 'SMS Notifications', RU: 'Уведомления по SMS' },
   navDashboard: { EN: 'Dashboard', RU: 'Панель' },
   navMyPay: { EN: 'My pay', RU: 'Моя зарплата' },
   navMyTime: { EN: 'My time', RU: 'Моё время' },

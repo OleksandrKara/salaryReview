@@ -40,6 +40,7 @@ function linksFor(role: Role): NavLink[] {
       { href: '/sops/admin', key: 'sopAdminTitle' },
       { href: '/admin/users', key: 'navUsers' },
       { href: '/owner/settings/telegram', key: 'navTelegramSettings' },
+      { href: '/owner/settings/sms', key: 'navSmsSettings' },
     ];
   }
   if (role === 'MANAGER') {

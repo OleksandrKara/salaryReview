@@ -27,6 +27,8 @@ import type {
   RagAgentConfigDto,
   TelegramSettingsDto,
   TelegramSettingsUpdateRequest,
+  TwilioSmsSettingsDto,
+  TwilioSmsSettingsUpdateRequest,
   Me,
   RagAnswer,
   KbRequest,
@@ -190,6 +192,12 @@ export const api = {
 
   updateTelegramSettings: (body: TelegramSettingsUpdateRequest) =>
     proxyJson<TelegramSettingsDto>(`/api/owner/settings/telegram`, 'PUT', body),
+
+  // Twilio SMS alert settings (owner).
+  getTwilioSmsSettings: () => proxyGet<TwilioSmsSettingsDto>(`/api/owner/settings/sms`),
+
+  updateTwilioSmsSettings: (body: TwilioSmsSettingsUpdateRequest) =>
+    proxyJson<TwilioSmsSettingsDto>(`/api/owner/settings/sms`, 'PUT', body),
 
   // Marketing contacts: resolves any lead that never linked to a Square customer through the
   // tracked booking flow (a manager followed up and booked them by phone, or they came back
