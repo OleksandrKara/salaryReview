@@ -54,6 +54,27 @@ export interface TelegramSettingsUpdateRequest {
   chatId?: string | null;
 }
 
+export interface TwilioSmsSettingsDto {
+  accountSidMasked: string | null;
+  accountSidSet: boolean;
+  apiKeyMasked: string | null;
+  apiKeySet: boolean;
+  apiSecretMasked: string | null;
+  apiSecretSet: boolean;
+  fromPhoneNumber: string | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+// null field = leave unchanged; '' = clear. Never send masked accountSid/apiKey/apiSecret back —
+// only include a field when the owner actually typed a new value.
+export interface TwilioSmsSettingsUpdateRequest {
+  accountSid?: string | null;
+  apiKey?: string | null;
+  apiSecret?: string | null;
+  fromPhoneNumber?: string | null;
+}
+
 export interface Provider {
   id: number;
   name: string;

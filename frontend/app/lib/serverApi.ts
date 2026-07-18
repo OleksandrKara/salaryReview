@@ -10,6 +10,7 @@ import type {
   Me,
   Sop,
   TelegramSettingsDto,
+  TwilioSmsSettingsDto,
   FunnelDashboardData,
   MarketingAdsReportData,
   MarketingAnalyticsData,
@@ -122,6 +123,8 @@ export const serverApi = {
   listUsers: () => serverFetch<AppUser[]>(`/api/users`),
 
   getTelegramSettings: () => serverFetch<TelegramSettingsDto>(`/api/owner/settings/telegram`),
+
+  getTwilioSmsSettings: () => serverFetch<TwilioSmsSettingsDto>(`/api/owner/settings/sms`),
 
   listProviders: () => serverFetch<Provider[]>(`/api/providers?all=true`),
 

@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.config.InternalApiProperties;
+import com.salonreview.sms.TwilioSmsService;
 import com.salonreview.telegram.TelegramNotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -9,9 +10,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import java.util.Map;
-
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -30,6 +30,7 @@ class InternalNotificationControllerTest {
 
     private InternalApiProperties props;
     private TelegramNotificationService telegram;
+    private TwilioSmsService sms;
     private MockMvc mvc;
     private final ObjectMapper json = new ObjectMapper();
 
@@ -37,7 +38,8 @@ class InternalNotificationControllerTest {
     void setUp() {
         props = mock(InternalApiProperties.class);
         telegram = mock(TelegramNotificationService.class);
-        InternalNotificationController controller = new InternalNotificationController(props, telegram);
+        sms = mock(TwilioSmsService.class);
+        InternalNotificationController controller = new InternalNotificationController(props, telegram, sms);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -97,5 +99,46 @@ class InternalNotificationControllerTest {
                         .contentType("application/json").content(BODY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sent").value(false));
+    }
+
+    private static final String SMS_BODY = "{\"templateKey\":\"four_hand_request_received\","
+            + "\"phoneNumber\":\"+15551234567\",\"variables\":{\"name\":\"Jane\"}}";
+
+    @Test
+    @DisplayName("sms/send: missing key → 401")
+    void smsSendMissingKeyReturns401() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+
+        mvc.perform(post("/api/internal/notifications/sms/send")
+                        .contentType("application/json").content(SMS_BODY))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("sms/send: correct key + sent → 200 sent:true, reason:null")
+    void smsSendSentTrue() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        when(sms.sendTemplated(anyString(), anyString(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
+
+        mvc.perform(post("/api/internal/notifications/sms/send")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content(SMS_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sent").value(true))
+                .andExpect(jsonPath("$.reason").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("sms/send: correct key + blocked → 200 sent:false with reason, not an error")
+    void smsSendBlockedWithReason() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        when(sms.sendTemplated(anyString(), anyString(), any())).thenReturn(new TwilioSmsService.SmsSendResult(false, "no_consent"));
+
+        mvc.perform(post("/api/internal/notifications/sms/send")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content(SMS_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sent").value(false))
+                .andExpect(jsonPath("$.reason").value("no_consent"));
     }
 }
