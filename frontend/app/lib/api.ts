@@ -25,6 +25,8 @@ import type {
   SopSyncItem,
   SopVersion,
   RagAgentConfigDto,
+  TelegramSettingsDto,
+  TelegramSettingsUpdateRequest,
   Me,
   RagAnswer,
   KbRequest,
@@ -182,6 +184,12 @@ export const api = {
 
   updateRagConfig: (body: Omit<RagAgentConfigDto, 'version'>) =>
     proxyJson<RagAgentConfigDto>(`/api/rag/admin/config`, 'POST', body),
+
+  // Telegram 4-hand-request alert settings (owner).
+  getTelegramSettings: () => proxyGet<TelegramSettingsDto>(`/api/owner/settings/telegram`),
+
+  updateTelegramSettings: (body: TelegramSettingsUpdateRequest) =>
+    proxyJson<TelegramSettingsDto>(`/api/owner/settings/telegram`, 'PUT', body),
 
   // Marketing contacts: resolves any lead that never linked to a Square customer through the
   // tracked booking flow (a manager followed up and booked them by phone, or they came back
