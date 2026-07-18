@@ -41,4 +41,19 @@ class TelegramNotificationServiceTest {
 
         assertThat(service.sendFourHandRequestAlert(NOTIFICATION)).isFalse();
     }
+
+    @Test
+    @DisplayName("preferred time is converted from UTC to Pacific Time")
+    void formatsPreferredTimeInPacificTime() {
+        // 2026-08-01T18:00:00Z is 11:00 AM Pacific (PDT, UTC-7) in August.
+        assertThat(TelegramNotificationService.formatPreferredTime("2026-08-01T18:00:00Z"))
+                .isEqualTo("Sat, Aug 1, 2026 at 11:00 AM PDT");
+    }
+
+    @Test
+    @DisplayName("malformed timestamp falls back to the raw value rather than throwing")
+    void malformedTimestampFallsBackToRawValue() {
+        assertThat(TelegramNotificationService.formatPreferredTime("not-a-timestamp"))
+                .isEqualTo("not-a-timestamp");
+    }
 }

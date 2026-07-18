@@ -12,6 +12,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -27,6 +31,13 @@ import java.util.Map;
 public class TelegramNotificationService {
 
     private static final Logger log = LoggerFactory.getLogger(TelegramNotificationService.class);
+
+    // The salon (San Diego, CA) is Pacific Time — mani/akluxnails-home both send preferredStartAt
+    // as UTC ISO 8601 (see their DateTimeStep pickers, which are Pacific-labeled but query/submit
+    // in UTC), so it must be converted here rather than shown raw.
+    private static final DateTimeFormatter PACIFIC_TIME_FORMATTER = DateTimeFormatter
+            .ofPattern("EEE, MMM d, yyyy 'at' h:mm a zzz", Locale.US)
+            .withZone(ZoneId.of("America/Los_Angeles"));
 
     private final TelegramConfigService configService;
     private final ObjectMapper json = new ObjectMapper();
@@ -74,10 +85,20 @@ public class TelegramNotificationService {
         sb.append("Name: ").append(n.customerName()).append('\n');
         sb.append("Phone: ").append(n.phoneNumber()).append('\n');
         sb.append("Requested: ").append(n.requestedServices() == null ? "—" : n.requestedServices()).append('\n');
-        sb.append("Preferred time: ").append(n.preferredStartAt());
+        sb.append("Preferred time: ").append(formatPreferredTime(n.preferredStartAt()));
         if (n.note() != null && !n.note().isBlank()) {
             sb.append("\nNote: ").append(n.note());
         }
         return sb.toString();
+    }
+
+    /** Best-effort — falls back to the raw value rather than fail the whole alert over a
+     * malformed timestamp from a caller. Package-private for direct unit testing. */
+    static String formatPreferredTime(String isoStartAt) {
+        try {
+            return PACIFIC_TIME_FORMATTER.format(Instant.parse(isoStartAt));
+        } catch (Exception e) {
+            return isoStartAt;
+        }
     }
 }
