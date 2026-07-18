@@ -40,6 +40,11 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/info", "/api/login").permitAll()
+                        // Service-to-service calls from mani/akluxnails-home (Telegram 4-hand-request
+                        // relay) — no user session exists for these callers; auth is enforced by the
+                        // controller's own X-Internal-Api-Key check instead (see
+                        // InternalNotificationController).
+                        .requestMatchers("/api/internal/**").permitAll()
                         // Retention is read-only visibility for managers too (same data as owners, no
                         // other owner routes). Listed first so it wins over the owner-only catch-all.
                         .requestMatchers(HttpMethod.GET, "/api/owner/retention", "/api/owner/retention/**")

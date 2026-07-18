@@ -9,6 +9,7 @@ import type {
   ManualCredit,
   Me,
   Sop,
+  TelegramSettingsDto,
   FunnelDashboardData,
   MarketingAdsReportData,
   MarketingAnalyticsData,
@@ -119,6 +120,8 @@ export const serverApi = {
     serverFetch<ProviderDetail>(`/api/settlements/me/detail?year=${year}&month=${month}`),
 
   listUsers: () => serverFetch<AppUser[]>(`/api/users`),
+
+  getTelegramSettings: () => serverFetch<TelegramSettingsDto>(`/api/owner/settings/telegram`),
 
   listProviders: () => serverFetch<Provider[]>(`/api/providers?all=true`),
 

@@ -39,6 +39,21 @@ export interface RagAgentConfigDto {
   distanceThreshold: number;
 }
 
+export interface TelegramSettingsDto {
+  botTokenMasked: string | null;
+  botTokenSet: boolean;
+  chatId: string | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+// null field = leave unchanged; '' = clear. Never send the masked token back — only include
+// botToken when the owner actually typed a new one.
+export interface TelegramSettingsUpdateRequest {
+  botToken?: string | null;
+  chatId?: string | null;
+}
+
 export interface Provider {
   id: number;
   name: string;

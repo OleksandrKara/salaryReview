@@ -39,6 +39,7 @@ function linksFor(role: Role): NavLink[] {
       { href: '/admin/manager-time', key: 'navManagerTime' },
       { href: '/sops/admin', key: 'sopAdminTitle' },
       { href: '/admin/users', key: 'navUsers' },
+      { href: '/owner/settings/telegram', key: 'navTelegramSettings' },
     ];
   }
   if (role === 'MANAGER') {

@@ -114,6 +114,7 @@ const STRINGS = {
   navOwnerComps: { EN: 'Owner comps', RU: 'Услуги владельцу' },
   navManualCredits: { EN: 'Manual credits', RU: 'Ручные начисления' },
   navUsers: { EN: 'Users', RU: 'Пользователи' },
+  navTelegramSettings: { EN: 'Telegram Notifications', RU: 'Уведомления в Telegram' },
   navDashboard: { EN: 'Dashboard', RU: 'Панель' },
   navMyPay: { EN: 'My pay', RU: 'Моя зарплата' },
   navMyTime: { EN: 'My time', RU: 'Моё время' },
