@@ -56,6 +56,9 @@ services:
       RAG_ENABLED: ${RAG_ENABLED:-false}
       # Grounded starter prompts in the chat widget. On by default; set false to hide them.
       RAG_SUGGESTIONS_ENABLED: ${RAG_SUGGESTIONS_ENABLED:-true}
+      # Shared secret for service-to-service calls from mani/akluxnails-home (Telegram
+      # 4-hand-request relay) — blank means every internal call is rejected.
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
