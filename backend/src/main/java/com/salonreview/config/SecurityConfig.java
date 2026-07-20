@@ -58,7 +58,7 @@ public class SecurityConfig {
                         // is there to do, not a hole in its read-only scope).
                         .requestMatchers(HttpMethod.GET, "/api/owner/marketing", "/api/owner/marketing/**")
                                 .hasAnyRole("OWNER", "ADS_MANAGER")
-                        .requestMatchers(HttpMethod.PUT, "/api/owner/marketing/analytics/ad-spend")
+                        .requestMatchers(HttpMethod.POST, "/api/owner/marketing/ads-report/spend")
                                 .hasAnyRole("OWNER", "ADS_MANAGER")
                         .requestMatchers("/api/users/**", "/api/owner/**", "/api/rag/admin/**").hasRole("OWNER")
                         .requestMatchers("/api/settlements/me/**").hasRole("PROVIDER")

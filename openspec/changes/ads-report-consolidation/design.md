@@ -197,15 +197,25 @@ lists too, for consistency with the summary numbers above it.
 
 ### D7: Views — table, WhatsApp text, chart
 
-**Table**: extends today's `PeriodTable` with the new columns already implied by proposal.md
-(visits, book-now clicks, leads, immediate/follow-up/unbooked, revenue collected/anticipated,
-ROI/ROAS) and an ad-spend cell showing the resolved amount plus an "≈" marker when `estimated`.
+**Scope note (owner-confirmed after tasks 1–4 were built):** the manual report's visits/clicks/
+leads/unbooked figures come from `marketing.contacts`/`visits`/`events` (the Funnel capability),
+which today only returns one whole-range snapshot (`FunnelDashboardDto`), not a per-week/per-month
+breakdown — `adsReport`'s `PeriodRow` was never extended to carry them. Rather than block the
+frontend on new Funnel-bucketing backend work, the owner chose to ship Table/Text/Chart now using
+exactly what `PeriodRow` already returns (ad spend, revenue collected/anticipated, customers
+created/completed, follow-ups, ROI/ROAS derived client-side); visits/clicks/leads/unbooked are a
+tracked fast-follow, not part of this change.
 
-**WhatsApp text**: a `formatWhatsAppReport(...)` pure function producing exactly the block format
-used in this session's manual reports (visits → clicks → leads → immediate/follow-up/unbooked →
-money already-done/upcoming/total → ROI/ROAS → cost-per-lead/cost-per-customer), single-asterisk
-WhatsApp bold markers, no markdown tables. Rendered inside a `<pre>` with a "Copy" button
-(`navigator.clipboard.writeText`) — matches the copy-paste-ready ask exactly.
+**Table**: extends today's `PeriodTable` with an ad-spend cell showing the resolved amount plus an
+"≈" marker when `estimated`, plus a follow-up count next to customers created, and an "in progress"
+badge on a Full Month row still mid-month (`monthInProgress`).
+
+**WhatsApp text**: a `formatWhatsAppReport(...)` pure function producing the same block style used
+in this session's manual reports — money (already-collected / anticipated / total), ROI (realized
+vs. total ROAS/ROI%), customers created vs. follow-ups, cost-per-customer — single-asterisk
+WhatsApp bold markers, no markdown tables, no funnel section (see scope note above). Rendered
+inside a `<pre>` with a "Copy" button (`navigator.clipboard.writeText`) — matches the
+copy-paste-ready ask exactly for the data that's actually available.
 
 **Chart** (Recharts, Full Month period only): one line/bar combo chart — ad spend, revenue
 collected, and anticipated revenue per month, x-axis = month, so the owner can see trend

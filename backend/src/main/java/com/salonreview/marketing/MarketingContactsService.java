@@ -127,23 +127,50 @@ public class MarketingContactsService {
      * particular new booking never went through our attribution recording).
      */
     public Map<String, Long> countFollowUpBookingsByVariant(String landingPageSlug, Instant statsSince, java.util.Set<String> attributedBookingIds) {
-        // hasUncountedRealAppointment is a Square round trip per candidate contact — same
+        // uncountedAppointments is a Square round trip per candidate contact — same
         // parallelization reasoning as contacts() above.
         return repository.listAll().parallelStream()
                 .filter(r -> landingPageSlug.equals(r.landingPageSlug()))
                 .filter(r -> statsSince == null || !r.createdAt().isBefore(statsSince))
-                .filter(r -> hasUncountedRealAppointment(r, attributedBookingIds))
+                .filter(r -> !uncountedAppointments(r, attributedBookingIds).isEmpty())
                 .collect(Collectors.groupingBy(
                         r -> r.variantName() == null ? "" : r.variantName(),
                         Collectors.counting()));
     }
 
-    private boolean hasUncountedRealAppointment(MarketingContactsRepository.RawContact raw, java.util.Set<String> attributedBookingIds) {
+    /** Pairs a follow-up {@link Appointment} with the Square customer id it belongs to —
+     * {@code Appointment} itself carries no customer reference (it's normally nested inside one
+     * {@code Contact} already), but {@link MarketingAnalyticsService} needs the id to check
+     * freshness and resolve a display name, the same way it already does for tracked-flow
+     * bookings. */
+    public record FollowUpAppointment(String customerId, Appointment appointment) {}
+
+    /** Page-scoped sibling of {@link #countFollowUpBookingsByVariant} — same live Square
+     * resolution, but returns the full appointment records (not grouped by variant, not just a
+     * count) so Ads Report can fold their real/catalog price and date straight into the same
+     * revenueCollected/anticipatedRevenue figures the tracked-flow path already computes. A
+     * booking already in {@code attributedBookingIds} is never included here — it's already
+     * counted via that path, never double-counted as a follow-up too.
+     */
+    public List<FollowUpAppointment> followUpAppointments(String landingPageSlug, Instant statsSince, java.util.Set<String> attributedBookingIds) {
+        return repository.listAll().parallelStream()
+                .filter(r -> landingPageSlug.equals(r.landingPageSlug()))
+                .filter(r -> statsSince == null || !r.createdAt().isBefore(statsSince))
+                .flatMap(r -> {
+                    String customerId = resolveSquareCustomerId(r);
+                    return uncountedAppointments(r, attributedBookingIds).stream()
+                            .map(a -> new FollowUpAppointment(customerId, a));
+                })
+                .toList();
+    }
+
+    private List<Appointment> uncountedAppointments(MarketingContactsRepository.RawContact raw, java.util.Set<String> attributedBookingIds) {
         String customerId = resolveSquareCustomerId(raw);
-        if (customerId == null) return false;
+        if (customerId == null) return List.of();
         return fetchAppointments(customerId, raw.createdAt()).stream()
                 .filter(a -> !isCancelled(a.status()))
-                .anyMatch(a -> !attributedBookingIds.contains(a.bookingId()));
+                .filter(a -> !attributedBookingIds.contains(a.bookingId()))
+                .toList();
     }
 
     private static boolean isCancelled(String status) {

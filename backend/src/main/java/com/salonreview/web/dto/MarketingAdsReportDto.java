@@ -10,7 +10,9 @@ import java.util.List;
  * [from, to] range, this buckets the same underlying data into a row per period, most recent first.
  */
 public record MarketingAdsReportDto(
-        /** "WEEK" or "MONTH" — which grain {@code periods} is bucketed into. */
+        /** "WEEK", "MONTH", "MONTH_TO_DATE", or "CUSTOM" — which grain {@code periods} is
+         * bucketed into. WEEK/MONTH may return several historical rows (a trend); MONTH_TO_DATE
+         * and CUSTOM always return exactly one. */
         String periodType,
         /** One row per period, most recent first. */
         List<PeriodRow> periods,
@@ -21,25 +23,39 @@ public record MarketingAdsReportDto(
     public record PeriodRow(
             LocalDate periodStart,
             LocalDate periodEnd,
-            /** Ad spend attributed to this period. Real, manually-entered figures for MONTH rows;
-             * for WEEK rows, always {@link #adSpendEstimated} — the containing month's real figure
-             * prorated by calendar day, since spend is only ever entered once per month. */
+            /** Ad spend attributed to this period, resolved from the flexible per-page
+             * {@code ad_spend_entries} ledger (see AdSpendResolver) — prorated by calendar-day
+             * overlap when entries don't exactly tile the period. */
             BigDecimal adSpend,
-            /** True when adSpend is a prorated estimate rather than a real entered figure — always
-             * true for WEEK rows, always false for MONTH rows. */
+            /** True when adSpend needed any proration (a gap, an overlap, or a clipped entry) —
+             * false only when entries exactly, non-overlappingly tile the period. */
             boolean adSpendEstimated,
             /** What was actually collected (cash/card/cash-note) for ads-attributed appointments
              * completed in this period — the same real, matched-payroll figure the Analytics tab's
-             * "Completed appointments" list is built from, not a catalog estimate. */
+             * "Completed appointments" list is built from, not a catalog estimate — plus any
+             * manager-follow-up appointment (see MarketingContactsService#followUpAppointments)
+             * whose payment was matched the same way. */
             BigDecimal revenueCollected,
             /** Catalog-price value of still-upcoming ads-attributed appointments scheduled within
-             * this period — zero for periods entirely in the past. */
+             * this period — zero for periods entirely in the past — including manager-follow-up
+             * appointments not yet paid. */
             BigDecimal anticipatedRevenue,
             /** Ads-attributed customers whose Square record was created fresh off the ad touch
-             * (see MarketingAnalyticsService#isFresh), with a service rendered in this period. */
+             * (see MarketingAnalyticsService#isFresh), with a service rendered in this period —
+             * booked through the tracked flow itself, not a manager follow-up (see
+             * {@link #customersFollowedUp}). */
             long customersCreated,
             /** Count of distinct completed, actually-paid appointments (bookings, not service line
              * items) in this period — comps excluded, same as revenueCollected. */
-            long completedAppointments
+            long completedAppointments,
+            /** Real, non-cancelled Square appointments in this period for this page's
+             * ads-attributed contacts that the tracked flow never recorded — a lead a manager
+             * booked by phone after the on-site flow didn't complete. Already folded into
+             * revenueCollected/anticipatedRevenue above; this is just the headline count. */
+            long customersFollowedUp,
+            /** True when this row's periodEnd is still in the future relative to today — a Full
+             * Month report viewed before the month closes. Always false for WEEK/MONTH_TO_DATE/
+             * CUSTOM rows that don't extend past today. */
+            boolean monthInProgress
     ) {}
 }

@@ -36,6 +36,7 @@ import type {
   KbRequestTarget,
   FunnelAnalysisResult,
   FunnelDashboardData,
+  AdSpendEntry,
   MarketingAdsReportData,
   MarketingAnalyticsData,
   MarketingContactsData,
@@ -432,14 +433,11 @@ export const api = {
     return proxyGet<MarketingAnalyticsData>(`/api/owner/marketing/analytics${qs ? `?${qs}` : ''}`);
   },
 
-  setAdSpend: (year: number, month: number, amount: number) =>
-    proxyJson<{ year: number; month: number; amount: number }>(
-      '/api/owner/marketing/analytics/ad-spend', 'PUT', { year, month, amount }),
-
-  // period is 'week' or 'month'; from/to/sources/slug follow the same conventions as
-  // getMarketingAnalytics above. Omitting from/to defaults to the last 8 weeks or last 6 months.
+  // period is 'week'|'month'|'mtd'|'custom'; from/to/sources/slug follow the same conventions as
+  // getMarketingAnalytics above. 'mtd' ignores from/to (always [1st-of-month, today]); 'custom'
+  // requires both from and to. week/month default to the last 8 weeks/6 months when omitted.
   getMarketingAdsReport: (
-    period: 'week' | 'month', from?: string, to?: string, sources?: Set<TrafficSourceKey>, slug?: string,
+    period: 'week' | 'month' | 'mtd' | 'custom', from?: string, to?: string, sources?: Set<TrafficSourceKey>, slug?: string,
   ) => {
     const params = new URLSearchParams();
     params.set('period', period);
@@ -449,6 +447,15 @@ export const api = {
     if (slug) params.set('slug', slug);
     return proxyGet<MarketingAdsReportData>(`/api/owner/marketing/ads-report?${params.toString()}`);
   },
+
+  // Records a new ad-spend-entry row for one page and period — never upserts; a corrected
+  // re-entry is kept alongside the original so spend history stays auditable.
+  createAdSpendEntry: (landingPageSlug: string, periodStart: string, periodEnd: string, amount: number) =>
+    proxyJson<AdSpendEntry>('/api/owner/marketing/ads-report/spend', 'POST', { landingPageSlug, periodStart, periodEnd, amount }),
+
+  // Every entered spend row for one page, most recent period first.
+  listAdSpendEntries: (slug: string) =>
+    proxyGet<AdSpendEntry[]>(`/api/owner/marketing/ads-report/spend?slug=${encodeURIComponent(slug)}`),
 };
 
 // The backend's default Spring error body is {"message": "...", "error": "...", "status": ...} —
