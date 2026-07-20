@@ -68,6 +68,29 @@ function ConversionValue({ rate, adjustedRate, followUp }: { rate: number; adjus
   );
 }
 
+// Of all page views, what share clicked "Book now" / became a contact — the two rate metrics live
+// as a muted sub-line under the existing raw count (no new columns, so the table stays exactly as
+// wide as before). The leading in-rotation variant for each rate is picked out in green so which
+// variant is winning reads at a glance, without having to scan and compare numbers down a column.
+const bookClickRate = (v: MarketingVariantStat) => (v.pageViews === 0 ? 0 : v.bookNowClicks / v.pageViews);
+const contactRate = (v: MarketingVariantStat) => (v.pageViews === 0 ? 0 : v.contactsCreated / v.pageViews);
+
+// Only declares a leader when there are at least two comparable (in-rotation, view-having)
+// variants — with just one, "winning" is meaningless and no highlight should show.
+function bestVariantId(variants: MarketingVariantStat[], rate: (v: MarketingVariantStat) => number): string | null {
+  const candidates = variants.filter((v) => v.weight > 0 && v.pageViews > 0);
+  if (candidates.length < 2) return null;
+  return candidates.reduce((best, v) => (rate(v) > rate(best) ? v : best)).variantId;
+}
+
+function RateSubline({ rate, isLeader }: { rate: number; isLeader: boolean }) {
+  return (
+    <div className={`tabular-nums text-xs ${isLeader ? 'font-semibold text-emerald-600' : 'text-zinc-400'}`}>
+      {pct(rate)}
+    </div>
+  );
+}
+
 // Only shown at all when at least one variant actually has a follow-up booking — otherwise this
 // whole feature stays invisible, exactly like before it existed.
 function FollowUpExplainer() {
@@ -93,13 +116,26 @@ function totalsFor(variants: MarketingVariantStat[]) {
   // shouldn't count as much as one with 10,000 views at 2% when rolled up.
   const conversionRate = totalPageViews === 0 ? 0 : totalBookings / totalPageViews;
   const adjustedConversionRate = totalPageViews === 0 ? 0 : (totalBookings + totalFollowUpBookings) / totalPageViews;
+  const totalBookClickRate = totalPageViews === 0 ? 0 : totalBookNowClicks / totalPageViews;
+  const totalContactRate = totalPageViews === 0 ? 0 : totalContacts / totalPageViews;
   return {
     totalWeight, totalPageViews, totalContacts, totalBookings,
     totalFollowUpBookings, totalBookNowClicks, conversionRate, adjustedConversionRate,
+    totalBookClickRate, totalContactRate,
   };
 }
 
-function MobileCard({ v, actions }: { v: MarketingVariantStat; actions: VariantActions }) {
+function MobileCard({
+  v,
+  actions,
+  bestBookClickId,
+  bestContactId,
+}: {
+  v: MarketingVariantStat;
+  actions: VariantActions;
+  bestBookClickId: string | null;
+  bestContactId: string | null;
+}) {
   return (
     <div className="rounded-lg p-4 ring-1 ring-zinc-200">
       <div className="flex items-center justify-between gap-2">
@@ -117,10 +153,12 @@ function MobileCard({ v, actions }: { v: MarketingVariantStat; actions: VariantA
         <div>
           <dt className="text-xs text-zinc-500">Book Clicks</dt>
           <dd className="tabular-nums">{v.bookNowClicks.toLocaleString('en-US')}</dd>
+          {v.pageViews > 0 && <RateSubline rate={bookClickRate(v)} isLeader={v.variantId === bestBookClickId} />}
         </div>
         <div>
           <dt className="text-xs text-zinc-500">Contacts</dt>
           <dd className="tabular-nums">{v.contactsCreated.toLocaleString('en-US')}</dd>
+          {v.pageViews > 0 && <RateSubline rate={contactRate(v)} isLeader={v.variantId === bestContactId} />}
         </div>
         <div>
           <dt className="text-xs text-zinc-500">Bookings</dt>
@@ -147,7 +185,17 @@ function MobileCard({ v, actions }: { v: MarketingVariantStat; actions: VariantA
   );
 }
 
-function DesktopRow({ v, actions }: { v: MarketingVariantStat; actions: VariantActions }) {
+function DesktopRow({
+  v,
+  actions,
+  bestBookClickId,
+  bestContactId,
+}: {
+  v: MarketingVariantStat;
+  actions: VariantActions;
+  bestBookClickId: string | null;
+  bestContactId: string | null;
+}) {
   return (
     <tr className="hover:bg-zinc-50">
       <td className="px-3 py-2">
@@ -156,8 +204,14 @@ function DesktopRow({ v, actions }: { v: MarketingVariantStat; actions: VariantA
       </td>
       <td className="px-3 py-2 text-right tabular-nums">{v.weight}</td>
       <td className="px-3 py-2 text-right tabular-nums">{v.pageViews.toLocaleString('en-US')}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{v.bookNowClicks.toLocaleString('en-US')}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{v.contactsCreated.toLocaleString('en-US')}</td>
+      <td className="px-3 py-2 text-right tabular-nums">
+        {v.bookNowClicks.toLocaleString('en-US')}
+        {v.pageViews > 0 && <RateSubline rate={bookClickRate(v)} isLeader={v.variantId === bestBookClickId} />}
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums">
+        {v.contactsCreated.toLocaleString('en-US')}
+        {v.pageViews > 0 && <RateSubline rate={contactRate(v)} isLeader={v.variantId === bestContactId} />}
+      </td>
       <td className="px-3 py-2 text-right"><BookingsValue tracked={v.bookingsCompleted} followUp={v.followUpBookings} /></td>
       <td className="px-3 py-2 text-right text-zinc-500">
         <ConversionValue rate={v.conversionRate} adjustedRate={v.adjustedConversionRate} followUp={v.followUpBookings} />
@@ -206,6 +260,8 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
   const inRotation = variants.filter((v) => v.weight > 0);
   const noWeight = variants.filter((v) => v.weight === 0);
   const hasInactive = noWeight.length > 0;
+  const bestBookClickId = bestVariantId(variants, bookClickRate);
+  const bestContactId = bestVariantId(variants, contactRate);
   // Only worth labeling the two groups when both actually exist — a page with every variant in (or
   // out of) rotation should look exactly like it did before this grouping existed.
   const showGroups = inRotation.length > 0 && hasInactive;
@@ -218,9 +274,13 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
       {/* Mobile cards */}
       <div className="flex flex-col gap-3 sm:hidden">
         {showGroups && <GroupHeading label="In rotation" />}
-        {inRotation.map((v) => <MobileCard key={v.variantId} v={v} actions={actions} />)}
+        {inRotation.map((v) => (
+          <MobileCard key={v.variantId} v={v} actions={actions} bestBookClickId={bestBookClickId} bestContactId={bestContactId} />
+        ))}
         {showGroups && showInactive && <GroupHeading label="Not in rotation (weight 0)" />}
-        {showInactive && noWeight.map((v) => <MobileCard key={v.variantId} v={v} actions={actions} />)}
+        {showInactive && noWeight.map((v) => (
+          <MobileCard key={v.variantId} v={v} actions={actions} bestBookClickId={bestBookClickId} bestContactId={bestContactId} />
+        ))}
         <div className="rounded-lg bg-zinc-50 p-4 ring-1 ring-zinc-200">
           <div className="flex items-center justify-between gap-2">
             <span className="font-semibold">Total</span>
@@ -234,10 +294,12 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
             <div>
               <dt className="text-xs text-zinc-500">Book Clicks</dt>
               <dd className="font-semibold tabular-nums">{totals.totalBookNowClicks.toLocaleString('en-US')}</dd>
+              {totals.totalPageViews > 0 && <div className="tabular-nums text-xs text-zinc-400">{pct(totals.totalBookClickRate)}</div>}
             </div>
             <div>
               <dt className="text-xs text-zinc-500">Contacts</dt>
               <dd className="font-semibold tabular-nums">{totals.totalContacts.toLocaleString('en-US')}</dd>
+              {totals.totalPageViews > 0 && <div className="tabular-nums text-xs text-zinc-400">{pct(totals.totalContactRate)}</div>}
             </div>
             <div>
               <dt className="text-xs text-zinc-500">Bookings</dt>
@@ -271,17 +333,27 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
           </thead>
           <tbody className="divide-y divide-zinc-100">
             {showGroups && <GroupHeading label="In rotation" colSpan={colCount} />}
-            {inRotation.map((v) => <DesktopRow key={v.variantId} v={v} actions={actions} />)}
+            {inRotation.map((v) => (
+              <DesktopRow key={v.variantId} v={v} actions={actions} bestBookClickId={bestBookClickId} bestContactId={bestContactId} />
+            ))}
             {showGroups && showInactive && <GroupHeading label="Not in rotation (weight 0)" colSpan={colCount} />}
-            {showInactive && noWeight.map((v) => <DesktopRow key={v.variantId} v={v} actions={actions} />)}
+            {showInactive && noWeight.map((v) => (
+              <DesktopRow key={v.variantId} v={v} actions={actions} bestBookClickId={bestBookClickId} bestContactId={bestContactId} />
+            ))}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-zinc-200 bg-zinc-50 font-semibold">
               <td className="px-3 py-2">Total</td>
               <td className="px-3 py-2 text-right tabular-nums">{totals.totalWeight}</td>
               <td className="px-3 py-2 text-right tabular-nums">{totals.totalPageViews.toLocaleString('en-US')}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{totals.totalBookNowClicks.toLocaleString('en-US')}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{totals.totalContacts.toLocaleString('en-US')}</td>
+              <td className="px-3 py-2 text-right tabular-nums">
+                {totals.totalBookNowClicks.toLocaleString('en-US')}
+                {totals.totalPageViews > 0 && <div className="text-xs font-normal text-zinc-400">{pct(totals.totalBookClickRate)}</div>}
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums">
+                {totals.totalContacts.toLocaleString('en-US')}
+                {totals.totalPageViews > 0 && <div className="text-xs font-normal text-zinc-400">{pct(totals.totalContactRate)}</div>}
+              </td>
               <td className="px-3 py-2 text-right"><BookingsValue tracked={totals.totalBookings} followUp={totals.totalFollowUpBookings} size="base" /></td>
               <td className="px-3 py-2 text-right text-zinc-600">
                 <ConversionValue rate={totals.conversionRate} adjustedRate={totals.adjustedConversionRate} followUp={totals.totalFollowUpBookings} />
