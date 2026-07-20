@@ -81,13 +81,15 @@
 - [x] 7.2 `tsc`/`eslint` clean on both booking apps
 - [ ] 7.3 Once the owner provides real Twilio credentials: set them via `/owner/settings/sms`,
       submit one real 4-hand request against Square Sandbox on each booking app, confirm a real
-      SMS arrives, confirm no SMS attempt is made if credentials are cleared. **Blocked**:
-      credentials are set (real Account SID + API Key/Secret) and the account is type "Full" (not
-      trial, so the earlier magic-keyword trial workaround no longer applies) — but a real send
-      via `POST /api/internal/notifications/sms/send` failed with Twilio error 21660
-      ("Mismatch between the 'From' number +17372324091 and the account ...") because this
-      Twilio account currently owns **zero phone numbers**
-      (`GET /IncomingPhoneNumbers.json` returns an empty list). The configured `from_phone_number`
-      doesn't actually belong to this account. Needs the owner to buy/assign a real number on this
-      Twilio account (Console → Phone Numbers → Buy a number) and update
-      `/owner/settings/sms`'s From field to match before this can be re-tested.
+      SMS arrives, confirm no SMS attempt is made if credentials are cleared. **Still blocked, but
+      progressing**: bought a real San Diego number (+16193043056, same 92101 ZIP as the salon)
+      and set it as `from_phone_number` — the send/receive plumbing itself is confirmed correct
+      end to end (a real send via `/api/internal/notifications/sms/send` returned `sent: true`
+      and the message was accepted by Twilio), but delivery failed with error 30034
+      ("unregistered number" carrier filter) since A2P 10DLC Brand Registration wasn't done yet.
+      Submitted the real Brand Registration via API
+      (`POST /v1/a2p/BrandRegistrations`, sid `BN0eabe339cfd5c2ebce2e2d1e514e273e`, type
+      STANDARD) — both prerequisite bundles (Customer Profile + A2P Trust Product) were already
+      `twilio-approved`. Brand status is now `PENDING` (real TCR review, not mock). Once
+      `APPROVED`, a Campaign registration is still required before carrier filtering lifts —
+      re-test delivery after both are done.
