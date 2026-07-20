@@ -23,9 +23,13 @@ const input = 'w-full rounded border border-zinc-300 px-2 py-1.5 text-sm focus:b
 export default function ManualCreditManager({
   initialCredits,
   providers,
+  canEdit,
 }: {
   initialCredits: ManualCredit[];
   providers: Provider[];
+  /** Manager view is read-only — no add form, no delete action (server enforces this too; see
+   * SecurityConfig's manual-credits matchers). */
+  canEdit: boolean;
 }) {
   const router = useRouter();
   const [credits, setCredits] = useState(initialCredits);
@@ -82,7 +86,8 @@ export default function ManualCreditManager({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Form — stacks on mobile, wraps on desktop */}
+      {/* Form — stacks on mobile, wraps on desktop. Owner-only; managers get view-only below. */}
+      {canEdit && (
       <form onSubmit={create} data-testid="manual-credit-form" className="rounded-lg p-4 ring-1 ring-zinc-200">
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
           <Field label="Provider">
@@ -117,6 +122,7 @@ export default function ManualCreditManager({
         </div>
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </form>
+      )}
 
       {/* Mobile: cards */}
       <div data-testid="manual-credit-list" className="flex flex-col gap-3 sm:hidden">
@@ -142,11 +148,13 @@ export default function ManualCreditManager({
                 )}
               </div>
             </div>
+            {canEdit && (
             <div className="mt-3 border-t border-zinc-100 pt-3">
               <button data-testid={`manual-credit-delete-${c.id}`} onClick={() => remove(c)} className="text-xs text-red-500 hover:text-red-700">
                 Delete
               </button>
             </div>
+            )}
           </div>
         ))}
       </div>
@@ -162,7 +170,7 @@ export default function ManualCreditManager({
               <th className="px-3 py-2 text-right">Discount</th>
               <th className="px-3 py-2 text-right">Tip</th>
               <th className="px-3 py-2">Service</th>
-              <th className="px-3 py-2"></th>
+              {canEdit && <th className="px-3 py-2"></th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
@@ -178,16 +186,18 @@ export default function ManualCreditManager({
                   {c.tip > 0 ? usd(c.tip) : '—'}
                 </td>
                 <td className="px-3 py-2 text-zinc-500">{c.serviceName ?? '—'}</td>
+                {canEdit && (
                 <td className="px-3 py-2 text-right">
                   <button data-testid={`manual-credit-delete-${c.id}`} onClick={() => remove(c)} className="text-xs text-red-500 hover:text-red-700">
                     Delete
                   </button>
                 </td>
+                )}
               </tr>
             ))}
             {credits.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-4 text-center text-zinc-400">
+                <td colSpan={canEdit ? 7 : 6} className="px-3 py-4 text-center text-zinc-400">
                   No manual credits.
                 </td>
               </tr>
