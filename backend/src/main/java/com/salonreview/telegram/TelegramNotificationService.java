@@ -79,17 +79,27 @@ public class TelegramNotificationService {
         }
     }
 
-    private String formatMessage(FourHandRequestNotification n) {
+    /** Package-private for direct unit testing, same convention as {@link #formatPreferredTime}. */
+    String formatMessage(FourHandRequestNotification n) {
         StringBuilder sb = new StringBuilder();
         sb.append("🙌 New 4-Hand request (").append(n.source()).append(")\n");
         sb.append("Name: ").append(n.customerName()).append('\n');
         sb.append("Phone: ").append(n.phoneNumber()).append('\n');
         sb.append("Requested: ").append(n.requestedServices() == null ? "—" : n.requestedServices()).append('\n');
         sb.append("Preferred time: ").append(formatPreferredTime(n.preferredStartAt()));
+        if (n.estimatedPrice() != null) {
+            sb.append("\nEstimated price: ").append(formatEstimatedPrice(n.estimatedPrice()));
+        }
         if (n.note() != null && !n.note().isBlank()) {
             sb.append("\nNote: ").append(n.note());
         }
         return sb.toString();
+    }
+
+    /** Whole-dollar display like the rest of the site's $299/$254 4-hand pricing — never has cents
+     * in practice, but formats them if a future caller ever sends a fractional value. */
+    private static String formatEstimatedPrice(double dollars) {
+        return dollars == Math.floor(dollars) ? String.format("$%.0f", dollars) : String.format("$%.2f", dollars);
     }
 
     /** Best-effort — falls back to the raw value rather than fail the whole alert over a
