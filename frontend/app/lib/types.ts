@@ -938,31 +938,59 @@ export interface MarketingAdsReportPeriod {
   /** ISO-8601 dates (yyyy-MM-dd), inclusive on both ends. */
   periodStart: string;
   periodEnd: string;
-  /** Real, manually-entered figure for a MONTH row; a prorated estimate for a WEEK row (see
-   * adSpendEstimated) — ad spend is only ever entered once per calendar month. */
+  /** Resolved from the flexible per-page `ad_spend_entries` ledger (see AdSpendResolver) —
+   * prorated by calendar-day overlap when entries don't exactly tile the period. */
   adSpend: number;
-  /** True for every WEEK row (always estimated), false for every MONTH row (always real). */
+  /** True when adSpend needed any proration (a gap, an overlap, or a clipped entry) — false only
+   * when entries exactly, non-overlappingly tile the period. */
   adSpendEstimated: boolean;
   /** What was actually collected (cash/card/cash-note) for ads-attributed appointments completed
-   * in this period — real, not a catalog estimate. Comps excluded (nothing collected). */
+   * in this period — real, not a catalog estimate. Comps excluded (nothing collected). Includes
+   * manager-follow-up appointments (see customersFollowedUp). */
   revenueCollected: number;
   /** Catalog-price value of still-upcoming ads-attributed appointments scheduled in this period —
-   * zero for periods entirely in the past. */
+   * zero for periods entirely in the past. Includes not-yet-paid follow-up appointments. */
   anticipatedRevenue: number;
   /** Ads-attributed customers whose Square record was created fresh off the ad touch, with a
-   * service rendered in this period. */
+   * service rendered in this period — booked through the tracked flow itself, not a manager
+   * follow-up (see customersFollowedUp). */
   customersCreated: number;
   /** Count of distinct completed, actually-paid appointments (not service line items) in this period. */
   completedAppointments: number;
+  /** Real, non-cancelled Square appointments in this period for this page's ads-attributed
+   * contacts that the tracked flow never recorded — a lead a manager booked by phone after the
+   * on-site flow didn't complete. Already folded into revenueCollected/anticipatedRevenue above;
+   * this is just the headline count. */
+  customersFollowedUp: number;
+  /** True when this row's periodEnd is still in the future relative to today — a Full Month
+   * report viewed before the month closes. Always false for WEEK/MONTH_TO_DATE/CUSTOM rows that
+   * don't extend past today. */
+  monthInProgress: boolean;
 }
 
 export interface MarketingAdsReportData {
-  /** "WEEK" or "MONTH" — which grain `periods` is bucketed into. */
-  periodType: 'WEEK' | 'MONTH';
+  /** Which grain `periods` is bucketed into. WEEK/MONTH may return several historical rows (a
+   * trend); MONTH_TO_DATE and CUSTOM always return exactly one. */
+  periodType: 'WEEK' | 'MONTH' | 'MONTH_TO_DATE' | 'CUSTOM';
   /** One row per period, most recent first. */
   periods: MarketingAdsReportPeriod[];
-  /** Sum across every row in `periods` — the report's grand-total row. */
+  /** Sum (or, for adSpendEstimated/monthInProgress, OR) across every row in `periods` — the
+   * report's grand-total row. */
   totals: MarketingAdsReportPeriod;
+}
+
+// --- Ad spend entries (com.salonreview.web.MarketingAdsReportController) ---
+
+export interface AdSpendEntry {
+  id: number;
+  landingPageSlug: string;
+  /** ISO-8601 dates (yyyy-MM-dd), inclusive on both ends. */
+  periodStart: string;
+  periodEnd: string;
+  amount: number;
+  enteredBy: string | null;
+  /** ISO-8601 instant. */
+  enteredAt: string;
 }
 
 // Shared across the Overview, Contacts, Analytics, and Funnel tabs — see backend TrafficSourceSql.

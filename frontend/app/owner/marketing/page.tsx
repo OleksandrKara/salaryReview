@@ -40,7 +40,7 @@ export default async function MarketingDashboardPage({
             {/* Keyed by slug so switching pages via the shared selector (a client-side navigation
                 that doesn't otherwise remount this component) forces a fresh mount — otherwise the
                 already-mounted instance keeps showing whatever it last fetched, ignoring the new
-                initialVariants. Same fix already applied to AnalyticsView and FunnelView. */}
+                initialVariants. Same fix already applied to AdsReportView and FunnelView. */}
             <MarketingManager
               key={data.landingPageSlug}
               slug={data.landingPageSlug}

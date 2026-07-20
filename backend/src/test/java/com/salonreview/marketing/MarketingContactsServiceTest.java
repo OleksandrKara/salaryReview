@@ -13,6 +13,7 @@ import com.salonreview.square.SquareClient.Booking;
 import com.salonreview.square.SquareClient.TeamMember;
 import com.salonreview.square.SquareMonthAggregator;
 import com.salonreview.web.dto.MarketingContactDto;
+import com.salonreview.web.dto.MarketingContactDto.Appointment;
 import com.salonreview.web.dto.MarketingContactDto.Contact;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -408,5 +409,52 @@ class MarketingContactsServiceTest {
         assertThat(byVariant).isEmpty();
         verify(square, never()).bookingsForCustomer(eq("SQCUST_OTHERPAGE"), any());
         verify(square, never()).bookingsForCustomer(eq("SQCUST_OLD"), any());
+    }
+
+    @Test
+    @DisplayName("followUpAppointments returns the real appointment record (plus its customer id), not just a count")
+    void followUpAppointmentsReturnsFullRecord() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        Booking accepted = new Booking("NEWBOOK", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
+                "LOC1", "SQCUST123", null, null, List.of());
+        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
+
+        List<MarketingContactsService.FollowUpAppointment> appointments =
+                service.followUpAppointments("mani", null, java.util.Set.of("OTHERBOOK"));
+
+        assertThat(appointments).hasSize(1);
+        assertThat(appointments.get(0).customerId()).isEqualTo("SQCUST123");
+        assertThat(appointments.get(0).appointment().bookingId()).isEqualTo("NEWBOOK");
+    }
+
+    @Test
+    @DisplayName("followUpAppointments never includes a booking already in the attributed set — no double-counting")
+    void followUpAppointmentsExcludesAlreadyAttributed() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        Booking tracked = new Booking("TRACKEDBOOK", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
+                "LOC1", "SQCUST123", null, null, List.of());
+        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(tracked));
+
+        List<MarketingContactsService.FollowUpAppointment> appointments =
+                service.followUpAppointments("mani", null, java.util.Set.of("TRACKEDBOOK"));
+
+        assertThat(appointments).isEmpty();
+    }
+
+    @Test
+    @DisplayName("followUpAppointments excludes cancelled bookings")
+    void followUpAppointmentsExcludesCancelled() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        Booking cancelled = new Booking("CANCELLEDBOOK", "CANCELLED_BY_SELLER", "2026-07-07T21:00:00Z", null, null,
+                "LOC1", "SQCUST123", null, null, List.of());
+        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(cancelled));
+
+        List<MarketingContactsService.FollowUpAppointment> appointments =
+                service.followUpAppointments("mani", null, java.util.Set.of());
+
+        assertThat(appointments).isEmpty();
     }
 }

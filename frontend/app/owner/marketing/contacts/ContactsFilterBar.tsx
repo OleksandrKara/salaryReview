@@ -1,8 +1,6 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { api } from '../../../lib/api';
-import { Spinner } from '../../../components/Spinner';
 import type { MarketingContact, TrafficSourceKey } from '../../../lib/types';
 import TrafficSourceFilter, { ADS_ONLY_SOURCES, ALL_TRAFFIC_SOURCES } from '../TrafficSourceFilter';
 import ContactsTable from './ContactsTable';
@@ -155,34 +153,15 @@ export default function ContactsFilterBar({
     landingPage: initialLandingPage ?? ALL,
   }));
   const [contacts, setContacts] = useState(initialContacts);
-  const [syncing, setSyncing] = useState(false);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
-
-  // "Sync appointments": resolves any lead that never linked to a Square customer through the
-  // tracked booking flow (a manager followed up and booked them by phone, or they came back
-  // through some other channel) and refreshes appointment/no-show/cancelled status for everyone
-  // else too — see MarketingContactsService.syncSquareLinks. Swaps the fresh list straight into
-  // this component's own state so the table (and every count/facet derived from it) updates
-  // immediately, with no page reload.
-  async function syncAppointments() {
-    setSyncing(true);
-    setSyncMessage(null);
-    try {
-      const before = new Set(contacts.filter((c) => c.appointments.length > 0).map((c) => c.id));
-      const fresh = await api.syncMarketingContacts();
-      const newlyLinked = fresh.contacts.filter((c) => c.appointments.length > 0 && !before.has(c.id)).length;
-      setContacts(fresh.contacts);
-      setSyncMessage(
-        newlyLinked > 0
-          ? `✓ Synced — found appointment history for ${newlyLinked} contact${newlyLinked === 1 ? '' : 's'} that hadn't shown any before.`
-          : '✓ Synced — no new appointment matches this time.',
-      );
-    } catch (e) {
-      setSyncMessage(e instanceof Error ? `Sync failed: ${e.message}` : 'Sync failed. Please try again.');
-    } finally {
-      setSyncing(false);
-      setTimeout(() => setSyncMessage(null), 6000);
-    }
+  // "Sync appointments" now lives in MarketingTabs' shared header (visible on every marketing tab,
+  // not just this one) — it triggers a router.refresh() rather than updating this component
+  // directly, so this adjusts local state from the fresh server-fetched prop that produces
+  // instead. Doing this during render (not inside an effect) is React's own documented pattern
+  // for "reset state when a prop changes".
+  const [prevInitialContacts, setPrevInitialContacts] = useState(initialContacts);
+  if (initialContacts !== prevInitialContacts) {
+    setPrevInitialContacts(initialContacts);
+    setContacts(initialContacts);
   }
 
   const trafficSources = useMemo(() => {
@@ -229,34 +208,6 @@ export default function ContactsFilterBar({
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg p-3 ring-1 ring-zinc-200">
-        <button
-          type="button"
-          onClick={syncAppointments}
-          disabled={syncing}
-          title="Look up Square for any lead that booked without going through the tracked flow (a manager who followed up by phone, or a client who came back on their own), and refresh everyone's appointment/no-show/cancelled status"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-        >
-          {syncing ? (
-            <Spinner className="h-4 w-4 text-white" />
-          ) : (
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" />
-            </svg>
-          )}
-          {syncing ? 'Syncing appointments…' : 'Sync appointments'}
-        </button>
-        {syncMessage ? (
-          <span className={`text-sm ${syncMessage.startsWith('Sync failed') ? 'text-red-600' : 'text-zinc-600'}`}>
-            {syncMessage}
-          </span>
-        ) : (
-          <span className="text-xs text-zinc-400">
-            Finds bookings/no-shows/cancellations for leads who converted outside the online booking flow.
-          </span>
-        )}
-      </div>
-
       <div className="mb-4 rounded-lg p-4 ring-1 ring-zinc-200">
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Filters</h3>

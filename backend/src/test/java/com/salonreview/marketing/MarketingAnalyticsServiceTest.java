@@ -1,9 +1,9 @@
 package com.salonreview.marketing;
 
-import com.salonreview.domain.AdSpend;
+import com.salonreview.domain.AdSpendEntry;
 import com.salonreview.domain.SalonConfig;
 import com.salonreview.marketing.MarketingContactsRepository.AdsAttributedContact;
-import com.salonreview.repo.AdSpendRepository;
+import com.salonreview.repo.AdSpendEntryRepository;
 import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareMonthAggregator;
@@ -39,7 +39,9 @@ class MarketingAnalyticsServiceTest {
     private SquareMonthAggregator aggregator;
     private SquareClient square;
     private SalonConfigRepository salonConfig;
-    private AdSpendRepository adSpendRepository;
+    private AdSpendEntryRepository adSpendEntryRepository;
+    private MarketingContactsService contactsService;
+    private MarketingDashboardRepository dashboardRepository;
     private MarketingAnalyticsService service;
 
     /** Fixes "today" to 2026-07-07 (mid-range of every test's fixture data), so the
@@ -52,7 +54,9 @@ class MarketingAnalyticsServiceTest {
         aggregator = mock(SquareMonthAggregator.class);
         square = mock(SquareClient.class);
         salonConfig = mock(SalonConfigRepository.class);
-        adSpendRepository = mock(AdSpendRepository.class);
+        adSpendEntryRepository = mock(AdSpendEntryRepository.class);
+        contactsService = mock(MarketingContactsService.class);
+        dashboardRepository = mock(MarketingDashboardRepository.class);
         when(salonConfig.findById(1)).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
         // No square_customer_id ever collides with another contact's phone in these tests, so an
@@ -60,7 +64,8 @@ class MarketingAnalyticsServiceTest {
         // nothing extra beyond the stored square_customer_id.
         when(square.customerIdsForPhone(anyString())).thenReturn(List.of());
         service = new MarketingAnalyticsService(
-                contactsRepository, aggregator, square, salonConfig, adSpendRepository, FIXED_CLOCK);
+                contactsRepository, contactsService, dashboardRepository, aggregator, square, salonConfig,
+                adSpendEntryRepository, FIXED_CLOCK);
     }
 
     private static AttributedService svc(String date, String customerId, String gross) {
@@ -358,10 +363,9 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
-    @DisplayName("ad spend defaults to zero when nothing has been entered for the current month")
-    void adSpendDefaultsToZero() {
+    @DisplayName("ad spend is zero when no page (slug) is selected — pooled-pages view has nothing unambiguous to show")
+    void adSpendDefaultsToZeroWithNoSlug() {
         when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of());
-        when(adSpendRepository.findByYearAndMonth(2026, 7)).thenReturn(Optional.empty()); // FIXED_CLOCK's "today"
 
         MarketingAnalyticsDto dto = service.analytics(
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY);
@@ -370,30 +374,64 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
-    @DisplayName("ad spend reflects whatever was entered for the current month")
+    @DisplayName("ad spend reflects whatever was entered for the current month, for the selected page")
     void adSpendReflectsStoredValue() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of());
-        when(adSpendRepository.findByYearAndMonth(2026, 7)).thenReturn(Optional.of( // FIXED_CLOCK's "today"
-                AdSpend.builder().id(1L).year(2026).month(7).amountSpent(new BigDecimal("250.00")).build()));
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of());
+        when(adSpendEntryRepository.findOverlapping("mani", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 7)))
+                .thenReturn(List.of(AdSpendEntry.builder().id(1L).landingPageSlug("mani")
+                        .periodStart(LocalDate.of(2026, 7, 1)).periodEnd(LocalDate.of(2026, 7, 7))
+                        .amountSpent(new BigDecimal("250.00")).build()));
 
         MarketingAnalyticsDto dto = service.analytics(
-                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY);
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY, "mani");
 
         assertThat(dto.adSpendThisMonth()).isEqualByComparingTo("250.00");
     }
 
     @Test
-    @DisplayName("saveAdSpend upserts and rounds to two decimal places")
-    void saveAdSpendUpserts() {
-        when(adSpendRepository.findByYearAndMonth(2026, 7)).thenReturn(Optional.empty());
+    @DisplayName("createAdSpendEntry rounds to two decimal places and saves the entered-by owner")
+    void createAdSpendEntryRoundsAmount() {
+        when(adSpendEntryRepository.save(org.mockito.ArgumentMatchers.any(AdSpendEntry.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
 
-        BigDecimal saved = service.saveAdSpend(2026, 7, new BigDecimal("199.999"), "owner1");
+        AdSpendEntry saved = service.createAdSpendEntry(
+                "mani", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 7), new BigDecimal("199.999"), "owner1");
 
-        assertThat(saved).isEqualByComparingTo("200.00");
-        org.mockito.Mockito.verify(adSpendRepository).save(org.mockito.ArgumentMatchers.argThat(a ->
-                a.getYear() == 2026 && a.getMonth() == 7
-                        && a.getAmountSpent().compareTo(new BigDecimal("200.00")) == 0
-                        && "owner1".equals(a.getUpdatedBy())));
+        assertThat(saved.getAmountSpent()).isEqualByComparingTo("200.00");
+        org.mockito.Mockito.verify(adSpendEntryRepository).save(org.mockito.ArgumentMatchers.argThat(e ->
+                "mani".equals(e.getLandingPageSlug())
+                        && e.getPeriodStart().equals(LocalDate.of(2026, 7, 1))
+                        && e.getPeriodEnd().equals(LocalDate.of(2026, 7, 7))
+                        && e.getAmountSpent().compareTo(new BigDecimal("200.00")) == 0
+                        && "owner1".equals(e.getEnteredBy())));
+    }
+
+    @Test
+    @DisplayName("analytics() folds a manager-follow-up appointment into the completed list, same as adsReport (design.md D6)")
+    void analyticsMergesFollowUpIntoCompletedList() {
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
+        when(square.customerCreatedAts(Set.of("cust-1")))
+                .thenReturn(Map.of("cust-1", Instant.parse("2026-07-01T00:05:00Z")));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
+
+        java.util.UUID pageId = java.util.UUID.randomUUID();
+        when(dashboardRepository.findLandingPageId("mani")).thenReturn(java.util.Optional.of(pageId));
+        when(dashboardRepository.findAttributedBookingIds(pageId, null)).thenReturn(Set.of());
+        var followUpAppt = new com.salonreview.web.dto.MarketingContactDto.Appointment(
+                "bk-followup", "ACCEPTED", Instant.parse("2026-07-05T18:00:00Z"), "Manicure",
+                new BigDecimal("85.00"), null, "CARD", new BigDecimal("85.00"),
+                null, null, null, null, null, null);
+        when(contactsService.followUpAppointments("mani", null, Set.of())).thenReturn(List.of(
+                new MarketingContactsService.FollowUpAppointment("cust-1", followUpAppt)));
+        when(square.customerNames(Set.of("cust-1"))).thenReturn(Map.of("cust-1", "Jane Doe"));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY, "mani");
+
+        assertThat(dto.completed()).hasSize(1);
+        assertThat(dto.completed().get(0).collected()).isEqualByComparingTo("85.00");
+        assertThat(dto.completed().get(0).customerName()).isEqualTo("Jane Doe");
     }
 
     @Test
@@ -628,7 +666,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("adsReport (monthly): one row per calendar month, most recent first, with real (non-estimated) ad spend")
     void adsReportMonthlyBucketsByCalendarMonth() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
                 contact("+16195550001", "cust-june", Instant.parse("2026-06-01T00:00:00Z"), "meta_ads"),
                 contact("+16195550002", "cust-july", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(any())).thenReturn(Map.of(
@@ -642,13 +680,17 @@ class MarketingAnalyticsServiceTest {
                 true, 1, 1, false, "CARD", null, "booking-july", "cust-july", null);
         when(aggregator.aggregate(2026, 6, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 6, List.of(juneLine)));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(julyLine)));
-        when(adSpendRepository.findByYearAndMonth(2026, 6)).thenReturn(Optional.of(
-                AdSpend.builder().id(1L).year(2026).month(6).amountSpent(new BigDecimal("200.00")).build()));
-        when(adSpendRepository.findByYearAndMonth(2026, 7)).thenReturn(Optional.of(
-                AdSpend.builder().id(2L).year(2026).month(7).amountSpent(new BigDecimal("310.00")).build()));
+        when(adSpendEntryRepository.findOverlapping("mani", LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30)))
+                .thenReturn(List.of(AdSpendEntry.builder().id(1L).landingPageSlug("mani")
+                        .periodStart(LocalDate.of(2026, 6, 1)).periodEnd(LocalDate.of(2026, 6, 30))
+                        .amountSpent(new BigDecimal("200.00")).build()));
+        when(adSpendEntryRepository.findOverlapping("mani", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+                .thenReturn(List.of(AdSpendEntry.builder().id(2L).landingPageSlug("mani")
+                        .periodStart(LocalDate.of(2026, 7, 1)).periodEnd(LocalDate.of(2026, 7, 31))
+                        .amountSpent(new BigDecimal("310.00")).build()));
 
-        MarketingAdsReportDto dto = service.adsReport(
-                LocalDate.of(2026, 6, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY, null, false);
+        MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2026, 6, 1), LocalDate.of(2026, 7, 31),
+                TrafficSourceSql.ADS_ONLY, "mani", MarketingAnalyticsService.PeriodKind.MONTH);
 
         assertThat(dto.periodType()).isEqualTo("MONTH");
         assertThat(dto.periods()).hasSize(2);
@@ -672,16 +714,22 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("adsReport (weekly): a week straddling two months blends each month's own prorated daily rate")
     void adsReportWeeklyProratesAcrossMonthBoundary() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of());
-        when(adSpendRepository.findByYearAndMonth(2026, 7)).thenReturn(Optional.of(
-                AdSpend.builder().id(1L).year(2026).month(7).amountSpent(new BigDecimal("310.00")).build())); // 31 days -> $10.00/day
-        when(adSpendRepository.findByYearAndMonth(2026, 8)).thenReturn(Optional.of(
-                AdSpend.builder().id(2L).year(2026).month(8).amountSpent(new BigDecimal("124.00")).build())); // 31 days -> $4.00/day
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of());
+        when(adSpendEntryRepository.findOverlapping("mani", LocalDate.of(2026, 7, 27), LocalDate.of(2026, 8, 2)))
+                .thenReturn(List.of(
+                        // 31 days -> $10.00/day
+                        AdSpendEntry.builder().id(1L).landingPageSlug("mani")
+                                .periodStart(LocalDate.of(2026, 7, 1)).periodEnd(LocalDate.of(2026, 7, 31))
+                                .amountSpent(new BigDecimal("310.00")).build(),
+                        // 31 days -> $4.00/day
+                        AdSpendEntry.builder().id(2L).landingPageSlug("mani")
+                                .periodStart(LocalDate.of(2026, 8, 1)).periodEnd(LocalDate.of(2026, 8, 31))
+                                .amountSpent(new BigDecimal("124.00")).build()));
 
         // 2026-07-27 is a Monday and 2026-08-02 is a Sunday, so this is exactly one aligned week:
         // 5 July days ($10/day) + 2 August days ($4/day) = 58.00.
-        MarketingAdsReportDto dto = service.adsReport(
-                LocalDate.of(2026, 7, 27), LocalDate.of(2026, 8, 2), TrafficSourceSql.ADS_ONLY, null, true);
+        MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2026, 7, 27), LocalDate.of(2026, 8, 2),
+                TrafficSourceSql.ADS_ONLY, "mani", MarketingAnalyticsService.PeriodKind.WEEK);
 
         assertThat(dto.periodType()).isEqualTo("WEEK");
         assertThat(dto.periods()).hasSize(1);
@@ -695,12 +743,14 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("adsReport still shows ad spend for a period with zero ads-attributed customers")
     void adsReportShowsSpendEvenWithNoMatchedCustomers() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of());
-        when(adSpendRepository.findByYearAndMonth(2026, 7)).thenReturn(Optional.of(
-                AdSpend.builder().id(1L).year(2026).month(7).amountSpent(new BigDecimal("310.00")).build()));
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of());
+        when(adSpendEntryRepository.findOverlapping("mani", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+                .thenReturn(List.of(AdSpendEntry.builder().id(1L).landingPageSlug("mani")
+                        .periodStart(LocalDate.of(2026, 7, 1)).periodEnd(LocalDate.of(2026, 7, 31))
+                        .amountSpent(new BigDecimal("310.00")).build()));
 
-        MarketingAdsReportDto dto = service.adsReport(
-                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY, null, false);
+        MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
+                TrafficSourceSql.ADS_ONLY, "mani", MarketingAnalyticsService.PeriodKind.MONTH);
 
         assertThat(dto.periods()).hasSize(1);
         PeriodRow row = dto.periods().get(0);
@@ -711,6 +761,35 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
+    @DisplayName("adsReport (month-to-date): exactly one row for [1st-of-month, today] — a service dated after today doesn't leak in")
+    void adsReportMonthToDateDoesNotLeakPastToday() {
+        // FIXED_CLOCK's "today" is 2026-07-07.
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
+        when(square.customerCreatedAts(any()))
+                .thenReturn(Map.of("cust-1", Instant.parse("2026-07-01T00:05:00Z")));
+        var inMonthToDate = new AttributedService("p1", "P", "2026-07-05", "FIRST", "Manicure",
+                new BigDecimal("70.00"), BigDecimal.ZERO, new BigDecimal("70.00"), BigDecimal.ZERO,
+                true, 1, 1, false, "CARD", null, "booking-1", "cust-1", null);
+        var afterToday = new AttributedService("p1", "P", "2026-07-10", "FIRST", "Manicure",
+                new BigDecimal("90.00"), BigDecimal.ZERO, new BigDecimal("90.00"), BigDecimal.ZERO,
+                true, 1, 1, false, "CARD", null, "booking-2", "cust-1", null);
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00")))
+                .thenReturn(aggOf(2026, 7, List.of(inMonthToDate, afterToday)));
+
+        MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2020, 1, 1), LocalDate.of(2020, 1, 2),
+                TrafficSourceSql.ADS_ONLY, null, MarketingAnalyticsService.PeriodKind.MONTH_TO_DATE);
+
+        assertThat(dto.periodType()).isEqualTo("MONTH_TO_DATE");
+        assertThat(dto.periods()).hasSize(1);
+        PeriodRow row = dto.periods().get(0);
+        assertThat(row.periodStart()).isEqualTo(LocalDate.of(2026, 7, 1));
+        assertThat(row.periodEnd()).isEqualTo(LocalDate.of(2026, 7, 7));
+        assertThat(row.revenueCollected()).isEqualByComparingTo("70.00");
+        assertThat(row.completedAppointments()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("adsReport buckets a still-upcoming appointment's anticipated revenue into the period it's scheduled in")
     void adsReportBucketsAnticipatedRevenue() {
         when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
@@ -718,7 +797,6 @@ class MarketingAnalyticsServiceTest {
         when(square.customerCreatedAts(Set.of("cust-1")))
                 .thenReturn(Map.of("cust-1", Instant.parse("2026-01-01T00:00:00Z")));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
-        when(adSpendRepository.findByYearAndMonth(2026, 7)).thenReturn(Optional.empty());
 
         var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
         var future = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-20T18:00:00Z", null, null,
@@ -728,8 +806,8 @@ class MarketingAnalyticsServiceTest {
         when(square.catalogNames(List.of("var-mani"))).thenReturn(Map.of("var-mani", "Manicure"));
         when(square.customerNames(any())).thenReturn(Map.of("cust-1", "Jane Doe"));
 
-        MarketingAdsReportDto dto = service.adsReport(
-                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY, null, false);
+        MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
+                TrafficSourceSql.ADS_ONLY, null, MarketingAnalyticsService.PeriodKind.MONTH);
 
         assertThat(dto.periods()).hasSize(1);
         assertThat(dto.periods().get(0).anticipatedRevenue()).isEqualByComparingTo("85.00");

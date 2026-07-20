@@ -1,8 +1,9 @@
 package com.salonreview.marketing;
 
-import com.salonreview.domain.AdSpend;
+import com.salonreview.domain.AdSpendEntry;
 import com.salonreview.domain.SalonConfig;
-import com.salonreview.repo.AdSpendRepository;
+import com.salonreview.marketing.MarketingContactsService.FollowUpAppointment;
+import com.salonreview.repo.AdSpendEntryRepository;
 import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareMonthAggregator;
@@ -69,39 +70,48 @@ public class MarketingAnalyticsService {
     private static final Duration BOOKING_HISTORY_LOOKBACK = Duration.ofDays(400);
 
     private final MarketingContactsRepository contactsRepository;
+    private final MarketingContactsService contactsService;
+    private final MarketingDashboardRepository dashboardRepository;
     private final SquareMonthAggregator aggregator;
     private final SquareClient square;
     private final SalonConfigRepository salonConfig;
-    private final AdSpendRepository adSpendRepository;
+    private final AdSpendEntryRepository adSpendEntryRepository;
     private final java.time.Clock clock;
 
     @Autowired
     public MarketingAnalyticsService(
             MarketingContactsRepository contactsRepository,
+            MarketingContactsService contactsService,
+            MarketingDashboardRepository dashboardRepository,
             SquareMonthAggregator aggregator,
             SquareClient square,
             SalonConfigRepository salonConfig,
-            AdSpendRepository adSpendRepository
+            AdSpendEntryRepository adSpendEntryRepository
     ) {
-        this(contactsRepository, aggregator, square, salonConfig, adSpendRepository, java.time.Clock.systemUTC());
+        this(contactsRepository, contactsService, dashboardRepository, aggregator, square, salonConfig,
+                adSpendEntryRepository, java.time.Clock.systemUTC());
     }
 
     /** Test-only constructor — lets tests fix "today" instead of racing the real clock for the
      * current-month-to-date segment and ad spend lookup. */
     MarketingAnalyticsService(
             MarketingContactsRepository contactsRepository,
+            MarketingContactsService contactsService,
+            MarketingDashboardRepository dashboardRepository,
             SquareMonthAggregator aggregator,
             SquareClient square,
             SalonConfigRepository salonConfig,
-            AdSpendRepository adSpendRepository,
+            AdSpendEntryRepository adSpendEntryRepository,
             java.time.Clock clock
     ) {
         this.contactsRepository = contactsRepository;
+        this.contactsService = contactsService;
+        this.dashboardRepository = dashboardRepository;
         this.aggregator = aggregator;
         this.square = square;
         this.salonConfig = salonConfig;
         this.clock = clock;
-        this.adSpendRepository = adSpendRepository;
+        this.adSpendEntryRepository = adSpendEntryRepository;
     }
 
     /** A resolved ads-attributed Square customer id: the earliest moment our own ad funnel captured
@@ -124,7 +134,13 @@ public class MarketingAnalyticsService {
      * {@code slug == null} pools every page together, identical to the original behavior. */
     public MarketingAnalyticsDto analytics(LocalDate from, LocalDate to, Set<String> sources, String slug) {
         Map<String, AdsCustomer> adsCustomers = resolveAdsCustomers(sources, slug);
-        BigDecimal adSpend = currentAdSpend();
+        LocalDate today = LocalDate.now(clock);
+        // Ad spend is now tracked per landing page (see AdSpendEntry) — with no single page
+        // selected there's nothing unambiguous to show, so this pooled-pages case reports zero
+        // rather than guessing which page's spend to surface. Analytics itself is being retired
+        // in favor of Ads Report's page-scoped drill-down (see openspec/changes/
+        // ads-report-consolidation), where a slug is always present.
+        BigDecimal adSpend = slug == null ? ZERO_MONEY : resolveSpend(slug, today.withDayOfMonth(1), today).amount();
         if (adsCustomers.isEmpty()) {
             return new MarketingAnalyticsDto(
                     from, to, EMPTY_SEGMENT, EMPTY_SEGMENT, EMPTY_SEGMENT, List.of(), List.of(), EMPTY_SEGMENT, adSpend);
@@ -137,9 +153,8 @@ public class MarketingAnalyticsService {
         Segment all = segment(inRange, id -> true);
         Segment fresh = segment(inRange, freshCustomerIds::contains);
         Segment returning = segment(inRange, id -> !freshCustomerIds.contains(id));
-        List<CompletedAppointment> completed = buildCompletedAppointments(inRange, freshCustomerIds);
+        List<CompletedAppointment> completed = new ArrayList<>(buildCompletedAppointments(inRange, freshCustomerIds));
 
-        LocalDate today = LocalDate.now(clock);
         List<AttributedService> monthToDate =
                 collectServices(adsCustomers.keySet(), today.withDayOfMonth(1), today, cutoff);
         Segment currentMonthToDate = segment(monthToDate, id -> true);
@@ -148,8 +163,14 @@ public class MarketingAnalyticsService {
         // tags each paid service with the booking that produced it, so this is free (no extra Square call).
         Set<String> paidBookingIds = monthToDate.stream()
                 .map(AttributedService::bookingId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
-        List<UpcomingAppointment> upcoming =
-                upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today);
+        List<UpcomingAppointment> upcoming = new ArrayList<>(
+                upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today));
+
+        // Folds manager-follow-up appointments into the completed/upcoming lists (not into the
+        // all/fresh/returning segment stats above, which stay scoped to the tracked flow's own
+        // AttributedService rows) — see design.md D6, so Ads Report's drill-down agrees with the
+        // adsReport summary numbers above it rather than silently undercounting.
+        mergeFollowUpsInto(resolveFollowUps(slug), freshCustomerIds, today, completed, upcoming);
 
         return new MarketingAnalyticsDto(from, to, all, fresh, returning, upcoming, completed, currentMonthToDate, adSpend);
     }
@@ -194,22 +215,39 @@ public class MarketingAnalyticsService {
         return result;
     }
 
+    /** Which grain {@link #adsReport} buckets into — see
+     * openspec/changes/ads-report-consolidation/design.md D3. WEEK/MONTH may return several
+     * historical rows (a trend, e.g. for the Full Month chart); MONTH_TO_DATE and CUSTOM always
+     * return exactly one, unbucketed row for the exact range requested.
+     */
+    public enum PeriodKind { WEEK, MONTH, MONTH_TO_DATE, CUSTOM }
+
     /** Ad spend, ROI inputs, and volume metrics for the Ads Report tab, bucketed into one row per
-     * week or per month across [from, to] (inclusive), most recent first — see
-     * {@link MarketingAdsReportDto}. Reuses the exact same customer resolution, freshness check,
-     * and payroll matching {@link #analytics} does; the only new work here is bucketing those
-     * already-fetched results by period instead of summing them into one aggregate.
+     * week or per month (WEEK/MONTH) or a single row for the exact requested range
+     * (MONTH_TO_DATE/CUSTOM) — see {@link MarketingAdsReportDto}. Reuses the exact same customer
+     * resolution, freshness check, and payroll matching {@link #analytics} does; the only new
+     * work here is bucketing those already-fetched results by period instead of summing them into
+     * one aggregate, folding in manager-follow-up appointments (see
+     * MarketingContactsService#followUpAppointments), and resolving ad spend per page from the
+     * flexible {@code ad_spend_entries} ledger via {@link AdSpendResolver}.
      *
      * <p>Period boundaries are computed first and the underlying Square data is fetched over the
      * full aligned range (the first period's start through the last period's end) — not the raw
      * from/to — since a week or month may extend a few days beyond whatever the caller asked for;
      * fetching the narrower raw range would silently drop those edge days from their bucket.
      */
-    public MarketingAdsReportDto adsReport(LocalDate from, LocalDate to, Set<String> sources, String slug, boolean weekly) {
-        String periodType = weekly ? "WEEK" : "MONTH";
-        List<LocalDate[]> periods = buildPeriods(from, to, weekly);
+    public MarketingAdsReportDto adsReport(LocalDate from, LocalDate to, Set<String> sources, String slug, PeriodKind periodKind) {
+        String periodType = periodKind.name();
+        LocalDate today = LocalDate.now(clock);
+        List<LocalDate[]> periods = switch (periodKind) {
+            case WEEK -> buildPeriods(from, to, true);
+            case MONTH -> buildPeriods(from, to, false);
+            case MONTH_TO_DATE -> List.<LocalDate[]>of(new LocalDate[]{today.withDayOfMonth(1), today});
+            case CUSTOM -> (from == null || to == null || to.isBefore(from))
+                    ? List.<LocalDate[]>of() : List.<LocalDate[]>of(new LocalDate[]{from, to});
+        };
         if (periods.isEmpty()) {
-            PeriodRow empty = new PeriodRow(from, to, ZERO_MONEY, weekly, ZERO_MONEY, ZERO_MONEY, 0, 0);
+            PeriodRow empty = new PeriodRow(from, to, ZERO_MONEY, false, ZERO_MONEY, ZERO_MONEY, 0, 0, 0, false);
             return new MarketingAdsReportDto(periodType, List.of(), empty);
         }
         LocalDate alignedFrom = periods.get(0)[0];
@@ -219,28 +257,76 @@ public class MarketingAnalyticsService {
         Set<String> freshCustomerIds = adsCustomers.isEmpty() ? Set.of() : freshCustomerIds(adsCustomers);
         List<AttributedService> inRange = adsCustomers.isEmpty()
                 ? List.of() : collectServices(adsCustomers.keySet(), alignedFrom, alignedTo, priceCutoff());
-        List<CompletedAppointment> completed = buildCompletedAppointments(inRange, freshCustomerIds);
+        List<CompletedAppointment> completed = new ArrayList<>(buildCompletedAppointments(inRange, freshCustomerIds));
         Set<String> paidBookingIds = inRange.stream()
                 .map(AttributedService::bookingId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
-        List<UpcomingAppointment> upcoming = adsCustomers.isEmpty()
-                ? List.of()
-                : upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, LocalDate.now(clock));
+        List<UpcomingAppointment> upcoming = new ArrayList<>(adsCustomers.isEmpty()
+                ? List.<UpcomingAppointment>of()
+                : upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today));
+
+        List<FollowUpAppointment> followUps = resolveFollowUps(slug);
+        mergeFollowUpsInto(followUps, freshCustomerIds, today, completed, upcoming);
 
         List<PeriodRow> rows = new ArrayList<>();
         for (LocalDate[] p : periods) {
-            rows.add(buildPeriodRow(p[0], p[1], weekly, inRange, completed, upcoming, freshCustomerIds));
+            rows.add(buildPeriodRow(p[0], p[1], slug, inRange, completed, upcoming, freshCustomerIds, followUps, today));
         }
-        PeriodRow totals = totalsRow(alignedFrom, alignedTo, weekly, rows);
+        PeriodRow totals = totalsRow(alignedFrom, alignedTo, rows);
 
         List<PeriodRow> mostRecentFirst = new ArrayList<>(rows);
         Collections.reverse(mostRecentFirst);
         return new MarketingAdsReportDto(periodType, mostRecentFirst, totals);
     }
 
+    /** Every real, non-cancelled Square appointment for this page's ads-attributed contacts that
+     * {@code marketing.attribution} doesn't know about — empty (rather than an error) when no
+     * page is selected or the slug doesn't resolve to a real landing page, since follow-up
+     * detection is inherently page-scoped (see design.md D1/D4). */
+    private List<FollowUpAppointment> resolveFollowUps(String slug) {
+        if (slug == null) return List.of();
+        return dashboardRepository.findLandingPageId(slug)
+                .map(pageId -> contactsService.followUpAppointments(
+                        slug, null, dashboardRepository.findAttributedBookingIds(pageId, null)))
+                .orElse(List.of());
+    }
+
+    /** Classifies each follow-up appointment as completed (a real matched payment) or upcoming
+     * (not yet happened) using the exact same rule the tracked-flow path already applies, and
+     * appends it to the mutable lists in place — a follow-up appointment with neither (a past
+     * visit with no matched payment) is silently dropped, matching {@code
+     * buildCompletedAppointments}' own "no match, not shown" convention.
+     */
+    private void mergeFollowUpsInto(
+            List<FollowUpAppointment> followUps, Set<String> freshCustomerIds, LocalDate today,
+            List<CompletedAppointment> completed, List<UpcomingAppointment> upcoming) {
+        if (followUps.isEmpty()) return;
+        Set<String> customerIds = followUps.stream()
+                .map(FollowUpAppointment::customerId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        Map<String, String> customerNames = customerIds.isEmpty() ? Map.of() : square.customerNames(customerIds);
+
+        for (FollowUpAppointment f : followUps) {
+            var a = f.appointment();
+            if (a.startAt() == null) continue;
+            String customerId = f.customerId();
+            String customerName = customerNames.getOrDefault(customerId, "Customer");
+            String serviceName = a.serviceName() == null || a.serviceName().isBlank() ? "Service" : a.serviceName();
+            boolean fresh = customerId != null && freshCustomerIds.contains(customerId);
+            LocalDate date = a.startAt().atZone(java.time.ZoneOffset.UTC).toLocalDate();
+            if (a.collectedAmount() != null) {
+                completed.add(new CompletedAppointment(customerId, customerName, serviceName, date,
+                        a.collectedAmount().setScale(2, RoundingMode.HALF_UP), a.paymentChannel(), fresh));
+            } else if (!date.isBefore(today)) {
+                upcoming.add(new UpcomingAppointment(customerId, customerName, serviceName, a.startAt(),
+                        a.price() == null ? ZERO_MONEY : a.price().setScale(2, RoundingMode.HALF_UP), fresh));
+            }
+        }
+    }
+
     private PeriodRow buildPeriodRow(
-            LocalDate periodStart, LocalDate periodEnd, boolean weekly,
+            LocalDate periodStart, LocalDate periodEnd, String slug,
             List<AttributedService> inRange, List<CompletedAppointment> completed,
-            List<UpcomingAppointment> upcoming, Set<String> freshCustomerIds) {
+            List<UpcomingAppointment> upcoming, Set<String> freshCustomerIds,
+            List<FollowUpAppointment> followUps, LocalDate today) {
         List<AttributedService> bucket = inRange.stream()
                 .filter(s -> withinPeriod(parseIso(s.date()), periodStart, periodEnd))
                 .toList();
@@ -257,23 +343,39 @@ public class MarketingAnalyticsService {
                 .map(UpcomingAppointment::price)
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
 
-        BigDecimal adSpend = weekly ? prorateWeeklySpend(periodStart, periodEnd) : adSpendFor(YearMonth.from(periodStart));
+        long customersFollowedUp = followUps.stream()
+                .filter(f -> f.appointment().startAt() != null && withinPeriod(
+                        f.appointment().startAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), periodStart, periodEnd))
+                .map(FollowUpAppointment::customerId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .count();
 
-        return new PeriodRow(periodStart, periodEnd, adSpend, weekly, revenueCollected, anticipatedRevenue,
-                customersCreated, bucketCompleted.size());
+        AdSpendResolver.Resolved spend = slug == null
+                ? new AdSpendResolver.Resolved(ZERO_MONEY, false)
+                : resolveSpend(slug, periodStart, periodEnd);
+
+        boolean monthInProgress = periodEnd.isAfter(today);
+
+        return new PeriodRow(periodStart, periodEnd, spend.amount(), spend.estimated(), revenueCollected,
+                anticipatedRevenue, customersCreated, bucketCompleted.size(), customersFollowedUp, monthInProgress);
     }
 
     private static boolean withinPeriod(LocalDate date, LocalDate periodStart, LocalDate periodEnd) {
         return date != null && !date.isBefore(periodStart) && !date.isAfter(periodEnd);
     }
 
-    private PeriodRow totalsRow(LocalDate alignedFrom, LocalDate alignedTo, boolean weekly, List<PeriodRow> rows) {
+    private PeriodRow totalsRow(LocalDate alignedFrom, LocalDate alignedTo, List<PeriodRow> rows) {
         BigDecimal adSpend = rows.stream().map(PeriodRow::adSpend).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+        boolean adSpendEstimated = rows.stream().anyMatch(PeriodRow::adSpendEstimated);
         BigDecimal revenue = rows.stream().map(PeriodRow::revenueCollected).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
         BigDecimal anticipated = rows.stream().map(PeriodRow::anticipatedRevenue).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
         long customersCreated = rows.stream().mapToLong(PeriodRow::customersCreated).sum();
         long completedAppointments = rows.stream().mapToLong(PeriodRow::completedAppointments).sum();
-        return new PeriodRow(alignedFrom, alignedTo, adSpend, weekly, revenue, anticipated, customersCreated, completedAppointments);
+        long customersFollowedUp = rows.stream().mapToLong(PeriodRow::customersFollowedUp).sum();
+        boolean monthInProgress = rows.stream().anyMatch(PeriodRow::monthInProgress);
+        return new PeriodRow(alignedFrom, alignedTo, adSpend, adSpendEstimated, revenue, anticipated,
+                customersCreated, completedAppointments, customersFollowedUp, monthInProgress);
     }
 
     /** Splits [from, to] into whole calendar weeks (Monday–Sunday) or whole calendar months that
@@ -301,42 +403,32 @@ public class MarketingAnalyticsService {
         return periods;
     }
 
-    /** A week's ad spend is never entered directly (see class doc) — it's estimated by splitting
-     * each day's containing month's real spend evenly across that month's days, then summing the
-     * days in [periodStart, periodEnd]. A week straddling a month boundary correctly blends each
-     * side's own monthly rate rather than crudely averaging the two months together.
-     */
-    private BigDecimal prorateWeeklySpend(LocalDate periodStart, LocalDate periodEnd) {
-        BigDecimal total = BigDecimal.ZERO;
-        for (LocalDate day = periodStart; !day.isAfter(periodEnd); day = day.plusDays(1)) {
-            YearMonth ym = YearMonth.from(day);
-            BigDecimal monthSpend = adSpendFor(ym);
-            if (monthSpend.signum() == 0) continue;
-            total = total.add(monthSpend.divide(BigDecimal.valueOf(ym.lengthOfMonth()), 10, RoundingMode.HALF_UP));
-        }
-        return total.setScale(2, RoundingMode.HALF_UP);
+    /** Resolves ad spend for [from, to] on one landing page from the flexible {@code
+     * ad_spend_entries} ledger — see {@link AdSpendResolver}. */
+    private AdSpendResolver.Resolved resolveSpend(String slug, LocalDate from, LocalDate to) {
+        List<AdSpendEntry> entries = adSpendEntryRepository.findOverlapping(slug, from, to);
+        return AdSpendResolver.resolve(entries, from, to);
     }
 
-    /** Save (upsert) this month's ad spend figure. */
+    /** Records a new ad-spend-entry row for one page and period — never upserts; a corrected
+     * re-entry is kept alongside the original so spend history stays auditable (see
+     * {@link AdSpendResolver}'s handling of overlapping entries). */
     @Transactional
-    public BigDecimal saveAdSpend(int year, int month, BigDecimal amount, String updatedBy) {
-        AdSpend row = adSpendRepository.findByYearAndMonth(year, month)
-                .orElseGet(() -> AdSpend.builder().year(year).month(month).build());
-        row.setAmountSpent(amount.setScale(2, RoundingMode.HALF_UP));
-        row.setUpdatedBy(updatedBy);
-        adSpendRepository.save(row);
-        return row.getAmountSpent();
+    public AdSpendEntry createAdSpendEntry(String slug, LocalDate periodStart, LocalDate periodEnd, BigDecimal amount, String enteredBy) {
+        AdSpendEntry entry = AdSpendEntry.builder()
+                .landingPageSlug(slug)
+                .periodStart(periodStart)
+                .periodEnd(periodEnd)
+                .amountSpent(amount.setScale(2, RoundingMode.HALF_UP))
+                .enteredBy(enteredBy)
+                .build();
+        return adSpendEntryRepository.save(entry);
     }
 
-    private BigDecimal currentAdSpend() {
-        return adSpendFor(YearMonth.from(LocalDate.now(clock)));
-    }
-
-    /** Real, manually-entered ad spend for any calendar month; zero if never entered. */
-    private BigDecimal adSpendFor(YearMonth ym) {
-        return adSpendRepository.findByYearAndMonth(ym.getYear(), ym.getMonthValue())
-                .map(AdSpend::getAmountSpent)
-                .orElse(ZERO_MONEY);
+    /** Every entered spend row for one page, most recent period first — for the ad-spend-entry
+     * management UI (a simple list, not a report). */
+    public List<AdSpendEntry> listAdSpendEntries(String slug) {
+        return adSpendEntryRepository.findByLandingPageSlugOrderByPeriodStartDesc(slug);
     }
 
     /** Every Square customer id a channel-attributed contact resolves to, each tagged with that

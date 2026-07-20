@@ -214,9 +214,10 @@ export const serverApi = {
     return serverFetch<MarketingAnalyticsData>(`/api/owner/marketing/analytics${qs ? `?${qs}` : ''}`);
   },
 
-  /** period is 'week' or 'month'; from/to/sources/slug follow the same conventions as
-   * getMarketingAnalytics above. Omitting from/to defaults to the last 8 weeks or last 6 months. */
-  getMarketingAdsReport: (period: 'week' | 'month', from?: string, to?: string, sources?: string[], slug?: string) => {
+  /** period is 'week'|'month'|'mtd'|'custom'; from/to/sources/slug follow the same conventions as
+   * getMarketingAnalytics above. 'mtd' ignores from/to (always [1st-of-month, today]); 'custom'
+   * requires both from and to. week/month default to the last 8 weeks/6 months when omitted. */
+  getMarketingAdsReport: (period: 'week' | 'month' | 'mtd' | 'custom', from?: string, to?: string, sources?: string[], slug?: string) => {
     const params = new URLSearchParams();
     params.set('period', period);
     if (from) params.set('from', from);
