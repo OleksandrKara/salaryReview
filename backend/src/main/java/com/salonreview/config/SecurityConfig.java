@@ -84,8 +84,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/sops/**").authenticated()
                         .requestMatchers("/api/sops/**").hasRole("OWNER")
                         // Redos are a manager's only management task (owner + manager); the providers
-                        // list is needed to record one. Manual credits are also owner+manager (recording
-                        // a Square-messy service is routine payroll bookkeeping, not a salary decision).
+                        // list is needed to record one.
                         // Everything else below — salary settlements, Square sync, prepaid, owner comps,
                         // no-show fees, suspicious review — is owner-only (managers don't manage salaries).
                         // Manager time tracking: the payroll view + rate-setting are owner-only; the
@@ -93,7 +92,13 @@ public class SecurityConfig {
                         // though owners don't clock time). Specific /admin matcher first so it wins.
                         .requestMatchers("/api/time/admin/**").hasRole("OWNER")
                         .requestMatchers("/api/time/**").hasAnyRole("OWNER", "MANAGER")
-                        .requestMatchers("/api/redos/**", "/api/providers/**", "/api/manual-credits/**")
+                        // Manual credits: managers get read-only visibility (the routine payroll
+                        // bookkeeping context they already see via redos/time), but adding or deleting one
+                        // is owner-only — unlike redos below. GET matcher listed first so it wins.
+                        .requestMatchers(HttpMethod.GET, "/api/manual-credits", "/api/manual-credits/**")
+                                .hasAnyRole("OWNER", "MANAGER")
+                        .requestMatchers("/api/manual-credits", "/api/manual-credits/**").hasRole("OWNER")
+                        .requestMatchers("/api/redos/**", "/api/providers/**")
                                 .hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers("/api/settlements/**", "/api/square/**", "/api/pay-periods/**",
                                 "/api/prepaid/**", "/api/owner-customers/**",

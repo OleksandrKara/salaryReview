@@ -2,13 +2,17 @@ import { serverApi } from '../../lib/serverApi';
 import PageHeader from '../../components/PageHeader';
 import ManualCreditManager from './ManualCreditManager';
 
-// Owner/manager: manual service credits — a deliberate exception for a service Square recorded too
-// messily to auto-attribute (e.g. a card-machine payment with no service line, or the wrong date).
+// Owner: full access. Manager: read-only (recording/removing a credit is an owner-only payroll
+// decision; managers just need visibility into what's been credited) — a deliberate exception for
+// a service Square recorded too messily to auto-attribute (e.g. a card-machine payment with no
+// service line, or the wrong date).
 export default async function ManualCreditsPage() {
-  const [credits, providers] = await Promise.all([
+  const [me, credits, providers] = await Promise.all([
+    serverApi.getMe(),
     serverApi.listManualCredits(),
     serverApi.listProviders(),
   ]);
+  const canEdit = me.role === 'OWNER';
 
   return (
     <main className="mx-auto max-w-4xl p-4 sm:p-8">
@@ -21,7 +25,7 @@ export default async function ManualCreditsPage() {
         pays out exactly like a card service (shown as a <span className="font-medium text-sky-700">MANUAL</span>{' '}
         line) — it never touches Square or charges the customer.
       </p>
-      <ManualCreditManager initialCredits={credits} providers={providers.filter((p) => p.active)} />
+      <ManualCreditManager initialCredits={credits} providers={providers.filter((p) => p.active)} canEdit={canEdit} />
     </main>
   );
 }
