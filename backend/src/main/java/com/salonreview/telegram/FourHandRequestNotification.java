@@ -7,6 +7,7 @@ public record FourHandRequestNotification(
         String phoneNumber,
         String requestedServices,   // nullable
         String preferredStartAt,    // ISO 8601, as picked in the slot UI
-        String note                 // nullable
+        String note,                // nullable
+        Double estimatedPrice       // nullable — marketing display estimate in dollars, not a real Square price
 ) {
 }

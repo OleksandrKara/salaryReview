@@ -18,7 +18,7 @@ import static org.mockito.Mockito.when;
 class TelegramNotificationServiceTest {
 
     private static final FourHandRequestNotification NOTIFICATION = new FourHandRequestNotification(
-            "mani", "Jane Doe", "+15551234567", "manicure + pedicure", "2026-08-01T18:00:00Z", null);
+            "mani", "Jane Doe", "+15551234567", "manicure + pedicure", "2026-08-01T18:00:00Z", null, 254.0);
 
     @Test
     @DisplayName("blank bot token → false, no exception")
@@ -55,5 +55,23 @@ class TelegramNotificationServiceTest {
     void malformedTimestampFallsBackToRawValue() {
         assertThat(TelegramNotificationService.formatPreferredTime("not-a-timestamp"))
                 .isEqualTo("not-a-timestamp");
+    }
+
+    @Test
+    @DisplayName("message includes the estimated price when present")
+    void formatMessageIncludesEstimatedPrice() {
+        TelegramNotificationService service = new TelegramNotificationService(mock(TelegramConfigService.class));
+
+        assertThat(service.formatMessage(NOTIFICATION)).contains("Estimated price: $254");
+    }
+
+    @Test
+    @DisplayName("message omits the estimated price line when null")
+    void formatMessageOmitsEstimatedPriceWhenAbsent() {
+        TelegramNotificationService service = new TelegramNotificationService(mock(TelegramConfigService.class));
+        FourHandRequestNotification withoutPrice = new FourHandRequestNotification(
+                "mani", "Jane Doe", "+15551234567", "manicure + pedicure", "2026-08-01T18:00:00Z", null, null);
+
+        assertThat(service.formatMessage(withoutPrice)).doesNotContain("Estimated price");
     }
 }
