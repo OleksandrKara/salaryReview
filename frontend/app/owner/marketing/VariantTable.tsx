@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { MarketingVariantStat } from '../../lib/types';
 import VariantLinkButton from './VariantLinkButton';
 
@@ -191,15 +192,23 @@ function GroupHeading({ label, colSpan }: { label: string; colSpan?: number }) {
 }
 
 export default function VariantTable({ variants, ...actions }: { variants: MarketingVariantStat[] } & VariantActions) {
+  // Collapsed by default: a variant at weight 0 is out of rotation (often permanently — an old
+  // test that's done, or one only kept alive for its own deep link), so there's usually nothing
+  // actionable about it day to day. Hiding these rows unless asked for also means they're not
+  // rendered at all by default — real savings once a page has accumulated a dozen retired
+  // variants, not just a visual collapse.
+  const [showInactive, setShowInactive] = useState(false);
+
   if (variants.length === 0) return null;
   const totals = totalsFor(variants);
   const anyFollowUp = totals.totalFollowUpBookings > 0;
 
   const inRotation = variants.filter((v) => v.weight > 0);
   const noWeight = variants.filter((v) => v.weight === 0);
+  const hasInactive = noWeight.length > 0;
   // Only worth labeling the two groups when both actually exist — a page with every variant in (or
   // out of) rotation should look exactly like it did before this grouping existed.
-  const showGroups = inRotation.length > 0 && noWeight.length > 0;
+  const showGroups = inRotation.length > 0 && hasInactive;
   const colCount = 8 + (actions.readOnly ? 0 : 1);
 
   return (
@@ -210,8 +219,8 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
       <div className="flex flex-col gap-3 sm:hidden">
         {showGroups && <GroupHeading label="In rotation" />}
         {inRotation.map((v) => <MobileCard key={v.variantId} v={v} actions={actions} />)}
-        {showGroups && <GroupHeading label="Not in rotation (weight 0)" />}
-        {noWeight.map((v) => <MobileCard key={v.variantId} v={v} actions={actions} />)}
+        {showGroups && showInactive && <GroupHeading label="Not in rotation (weight 0)" />}
+        {showInactive && noWeight.map((v) => <MobileCard key={v.variantId} v={v} actions={actions} />)}
         <div className="rounded-lg bg-zinc-50 p-4 ring-1 ring-zinc-200">
           <div className="flex items-center justify-between gap-2">
             <span className="font-semibold">Total</span>
@@ -263,8 +272,8 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
           <tbody className="divide-y divide-zinc-100">
             {showGroups && <GroupHeading label="In rotation" colSpan={colCount} />}
             {inRotation.map((v) => <DesktopRow key={v.variantId} v={v} actions={actions} />)}
-            {showGroups && <GroupHeading label="Not in rotation (weight 0)" colSpan={colCount} />}
-            {noWeight.map((v) => <DesktopRow key={v.variantId} v={v} actions={actions} />)}
+            {showGroups && showInactive && <GroupHeading label="Not in rotation (weight 0)" colSpan={colCount} />}
+            {showInactive && noWeight.map((v) => <DesktopRow key={v.variantId} v={v} actions={actions} />)}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-zinc-200 bg-zinc-50 font-semibold">
@@ -283,6 +292,19 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
           </tfoot>
         </table>
       </div>
+
+      {hasInactive && (
+        <button
+          type="button"
+          onClick={() => setShowInactive((v) => !v)}
+          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium text-zinc-500 ring-1 ring-zinc-200 hover:bg-zinc-50 hover:text-zinc-700"
+        >
+          {showInactive
+            ? 'Hide inactive variants'
+            : `Show ${noWeight.length} inactive variant${noWeight.length === 1 ? '' : 's'} (weight 0)`}
+          <span aria-hidden>{showInactive ? '▴' : '▾'}</span>
+        </button>
+      )}
     </>
   );
 }
