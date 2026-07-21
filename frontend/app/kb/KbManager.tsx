@@ -25,6 +25,14 @@ type Draft = {
 
 const emptyDraft = (): Draft => ({ id: null, title: '', titleRu: '', category: '', body: '', bodyRu: '', providerVisible: false });
 
+// Owner-only grouping (see SopList for the same idea on SOPs) — visibleRoles always includes
+// OWNER+MANAGER (see KbArticleService#normalizeRoles), so "shared with providers or not" is the
+// one real audience distinction for KB articles.
+const VISIBILITY_GROUPS: { forProvider: boolean; label: string }[] = [
+  { forProvider: false, label: 'Manager only' },
+  { forProvider: true, label: 'Manager & Service Provider' },
+];
+
 export default function KbManager({
   role,
   language,
@@ -90,44 +98,79 @@ export default function KbManager({
 
       {articles.length === 0 ? (
         <p className="rounded-lg px-4 py-3 text-sm text-zinc-400 ring-1 ring-zinc-200">No articles yet.</p>
+      ) : role === 'OWNER' ? (
+        <div className="space-y-6">
+          {VISIBILITY_GROUPS.map(({ forProvider, label }) => {
+            const group = articles.filter((a) => a.visibleRoles.includes('PROVIDER') === forProvider);
+            if (group.length === 0) return null;
+            return (
+              <div key={label}>
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  {label} <span className="font-normal normal-case text-zinc-400">({group.length})</span>
+                </h3>
+                <ul className="space-y-2">
+                  {group.map((a) => (
+                    <ArticleRow key={a.id} a={a} language={language} isAdmin={isAdmin} viewing={viewing} setViewing={setViewing} startEdit={startEdit} remove={remove} />
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
       ) : (
         <ul className="space-y-2">
           {articles.map((a) => (
-            <li key={a.id} className="rounded-lg p-3 ring-1 ring-zinc-200">
-              <div className="flex items-start justify-between gap-3">
-                <button className="text-left" onClick={() => setViewing(viewing?.id === a.id ? null : a)}>
-                  <span className="text-sm font-medium text-zinc-800">{localized(language, a.title, a.titleRu)}</span>
-                  <span className="ml-2 text-xs text-zinc-400">{a.category}</span>
-                  <div className="mt-1 flex items-center gap-1.5">
-                    <SyncBadge status={a.syncStatus} />
-                    {a.bodyRu ? (
-                      <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] text-indigo-700">RU</span>
-                    ) : null}
-                    {a.visibleRoles.map((r) => (
-                      <span key={r} className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500">{r}</span>
-                    ))}
-                  </div>
-                </button>
-                <div className="flex shrink-0 gap-2">
-                  <ShareLinkButton path={`/kb/${a.id}`} title={localized(language, a.title, a.titleRu)} />
-                  {isAdmin ? (
-                    <>
-                      <button onClick={() => startEdit(a)} className="rounded px-2 py-1 text-xs ring-1 ring-zinc-200">Edit</button>
-                      <button onClick={() => remove(a)} className="rounded px-2 py-1 text-xs text-red-600 ring-1 ring-red-200">Delete</button>
-                    </>
-                  ) : null}
-                </div>
-              </div>
-              {viewing?.id === a.id ? (
-                <div className="mt-3 border-t border-zinc-100 pt-3">
-                  <KbArticleBody article={a} defaultLang={language ?? 'EN'} />
-                </div>
-              ) : null}
-            </li>
+            <ArticleRow key={a.id} a={a} language={language} isAdmin={isAdmin} viewing={viewing} setViewing={setViewing} startEdit={startEdit} remove={remove} />
           ))}
         </ul>
       )}
     </div>
+  );
+}
+
+function ArticleRow({
+  a, language, isAdmin, viewing, setViewing, startEdit, remove,
+}: {
+  a: KbArticle;
+  language: Language | null;
+  isAdmin: boolean;
+  viewing: KbArticle | null;
+  setViewing: (a: KbArticle | null) => void;
+  startEdit: (a: KbArticle) => void;
+  remove: (a: KbArticle) => void;
+}) {
+  return (
+    <li className="rounded-lg p-3 ring-1 ring-zinc-200">
+      <div className="flex items-start justify-between gap-3">
+        <button className="text-left" onClick={() => setViewing(viewing?.id === a.id ? null : a)}>
+          <span className="text-sm font-medium text-zinc-800">{localized(language, a.title, a.titleRu)}</span>
+          <span className="ml-2 text-xs text-zinc-400">{a.category}</span>
+          <div className="mt-1 flex items-center gap-1.5">
+            <SyncBadge status={a.syncStatus} />
+            {a.bodyRu ? (
+              <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] text-indigo-700">RU</span>
+            ) : null}
+            {a.visibleRoles.map((r) => (
+              <span key={r} className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500">{r}</span>
+            ))}
+          </div>
+        </button>
+        <div className="flex shrink-0 gap-2">
+          <ShareLinkButton path={`/kb/${a.id}`} title={localized(language, a.title, a.titleRu)} />
+          {isAdmin ? (
+            <>
+              <button onClick={() => startEdit(a)} className="rounded px-2 py-1 text-xs ring-1 ring-zinc-200">Edit</button>
+              <button onClick={() => remove(a)} className="rounded px-2 py-1 text-xs text-red-600 ring-1 ring-red-200">Delete</button>
+            </>
+          ) : null}
+        </div>
+      </div>
+      {viewing?.id === a.id ? (
+        <div className="mt-3 border-t border-zinc-100 pt-3">
+          <KbArticleBody article={a} defaultLang={language ?? 'EN'} />
+        </div>
+      ) : null}
+    </li>
   );
 }
 
