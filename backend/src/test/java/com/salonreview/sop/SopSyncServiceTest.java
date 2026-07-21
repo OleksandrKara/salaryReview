@@ -44,8 +44,11 @@ class SopSyncServiceTest {
         service = new SopSyncService(sops, versions, ragProvider, ragChunks);
     }
 
+    // BOTH (not PROVIDER) — provider-only SOPs are deliberately excluded from sync (see
+    // providerOnlyNeverSynced below), so the general-behavior tests need an audience that stays
+    // syncable.
     private Sop activeSop(Long currentVersionId) {
-        return Sop.builder().id(1L).title("Cleaning").category("Hygiene").audience(SopAudience.PROVIDER)
+        return Sop.builder().id(1L).title("Cleaning").category("Hygiene").audience(SopAudience.BOTH)
                 .status(SopStatus.ACTIVE).currentVersionId(currentVersionId).createdBy("owner")
                 .syncStatus(SyncStatus.NOT_SYNCED).build();
     }
@@ -146,5 +149,50 @@ class SopSyncServiceTest {
         sop.setSyncedVersionId(100L); // but 100 was synced
 
         assertThat(service.effectiveStatus(sop)).isEqualTo(SyncStatus.CHANGED);
+    }
+
+    @Test
+    @DisplayName("provider-only SOP is never synced, even if active with a published version")
+    void providerOnlyNeverSynced() {
+        Sop sop = Sop.builder().id(1L).title("Clock-in steps").category("c").audience(SopAudience.PROVIDER)
+                .status(SopStatus.ACTIVE).currentVersionId(100L).createdBy("owner")
+                .syncStatus(SyncStatus.NOT_SYNCED).build();
+        when(sops.findById(1L)).thenReturn(Optional.of(sop));
+
+        Sop out = service.syncOne(1L, "owner").orElseThrow();
+
+        assertThat(out.getSyncStatus()).isEqualTo(SyncStatus.NOT_SYNCED);
+        assertThat(out.getLastSyncError()).contains("Provider-only");
+        verify(rag, never()).upload(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("a provider-only SOP that was previously synced (e.g. audience narrowed after the fact) gets retired")
+    void providerOnlyRetiresExistingSync() {
+        Sop sop = Sop.builder().id(1L).title("Clock-in steps").category("c").audience(SopAudience.PROVIDER)
+                .status(SopStatus.ACTIVE).currentVersionId(100L).createdBy("owner")
+                .ragDocId(55L).syncedVersionId(100L).syncStatus(SyncStatus.SYNCED).build();
+        when(sops.findById(1L)).thenReturn(Optional.of(sop));
+
+        Sop out = service.syncOne(1L, "owner").orElseThrow();
+
+        verify(rag).delete(55L, "owner");
+        assertThat(out.getRagDocId()).isNull();
+        assertThat(out.getSyncStatus()).isEqualTo(SyncStatus.NOT_SYNCED);
+    }
+
+    @Test
+    @DisplayName("list() excludes provider-only SOPs from the admin page entirely")
+    void listExcludesProviderOnly() {
+        Sop managerSop = Sop.builder().id(1L).title("Manager thing").category("c").audience(SopAudience.MANAGER)
+                .status(SopStatus.ACTIVE).createdBy("owner").build();
+        Sop bothSop = Sop.builder().id(2L).title("Both thing").category("c").audience(SopAudience.BOTH)
+                .status(SopStatus.ACTIVE).createdBy("owner").build();
+        Sop providerSop = Sop.builder().id(3L).title("Provider thing").category("c").audience(SopAudience.PROVIDER)
+                .status(SopStatus.ACTIVE).createdBy("owner").build();
+        when(sops.findByStatusOrderByPriorityAscCategoryAscTitleAsc(SopStatus.ACTIVE))
+                .thenReturn(java.util.List.of(managerSop, bothSop, providerSop));
+
+        assertThat(service.list()).extracting(Sop::getId).containsExactly(1L, 2L);
     }
 }

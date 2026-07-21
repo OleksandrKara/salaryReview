@@ -3,6 +3,7 @@ package com.salonreview.sop;
 import com.salonreview.domain.RagChunkStatus;
 import com.salonreview.domain.RagDocument;
 import com.salonreview.domain.Sop;
+import com.salonreview.domain.SopAudience;
 import com.salonreview.domain.SopStatus;
 import com.salonreview.domain.SopVersion;
 import com.salonreview.domain.SyncStatus;
@@ -54,9 +55,15 @@ public class SopSyncService {
         this.ragChunks = ragChunks;
     }
 
-    /** The syncable corpus: ACTIVE SOPs (newest categories first), for the admin section. */
+    /** The syncable corpus: ACTIVE SOPs (newest categories first), for the admin section.
+     * Provider-only SOPs are excluded entirely — the assistant is OWNER/MANAGER-only (see
+     * SecurityConfig), so a provider-audience SOP has no reader who could ever ask about it;
+     * listing it here would just be clutter with nothing to actually sync it for.
+     */
     public List<Sop> list() {
-        return sops.findByStatusOrderByPriorityAscCategoryAscTitleAsc(SopStatus.ACTIVE);
+        return sops.findByStatusOrderByPriorityAscCategoryAscTitleAsc(SopStatus.ACTIVE).stream()
+                .filter(s -> s.getAudience() != SopAudience.PROVIDER)
+                .toList();
     }
 
     /** Sync one SOP. Returns the updated SOP (possibly ERROR); empty when it doesn't exist. */
@@ -104,9 +111,12 @@ public class SopSyncService {
     // ---------------------------------------------------------------- internals
 
     private Sop doSync(Sop sop, String by) {
-        boolean syncable = sop.getStatus() == SopStatus.ACTIVE && sop.getCurrentVersionId() != null;
+        boolean isProviderOnly = sop.getAudience() == SopAudience.PROVIDER;
+        boolean syncable = sop.getStatus() == SopStatus.ACTIVE && sop.getCurrentVersionId() != null && !isProviderOnly;
 
-        // Archived or never-published: retire any prior doc so retired policy isn't answerable.
+        // Archived, never-published, or provider-only: retire any prior doc so retired/irrelevant
+        // policy isn't answerable — the assistant is OWNER/MANAGER-only, so a provider-audience
+        // SOP has no reader who could ever ask about it (see SecurityConfig).
         if (!syncable) {
             if (sop.getRagDocId() != null) {
                 RagIngestionService rag = ragIngestionProvider.getIfAvailable();
@@ -115,7 +125,9 @@ public class SopSyncService {
             sop.setRagDocId(null);
             sop.setSyncedVersionId(null);
             sop.setSyncStatus(SyncStatus.NOT_SYNCED);
-            sop.setLastSyncError(sop.getStatus() != SopStatus.ACTIVE
+            sop.setLastSyncError(isProviderOnly
+                    ? "Provider-only — the assistant isn't used by providers, so this isn't synced."
+                    : sop.getStatus() != SopStatus.ACTIVE
                     ? "Archived — removed from the assistant."
                     : "No published version to sync yet.");
             return sops.save(sop);
