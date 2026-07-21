@@ -29,6 +29,10 @@
 	<properties>
 		<java.version>21</java.version>
 		<testcontainers.version>1.21.3</testcontainers.version>
+		<!-- Coverage ratchet floor — see docs/COVERAGE.md. `mvn verify` fails if real coverage
+			 drops below these; bump them upward (never down) in the same PR that raises coverage. -->
+		<jacoco.instruction.minimum>0.53</jacoco.instruction.minimum>
+		<jacoco.branch.minimum>0.42</jacoco.branch.minimum>
 	</properties>
 
 	<dependencyManagement>
@@ -188,6 +192,55 @@
 									<artifactId>lombok</artifactId>
 								</path>
 							</annotationProcessorPaths>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<!-- Coverage ratchet — see docs/COVERAGE.md. prepare-agent instruments `test`
+					 (negligible overhead, no extra test run); check runs on `verify` and fails the
+					 build if whole-codebase coverage drops below the floor above. -->
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>0.8.12</version>
+				<executions>
+					<execution>
+						<id>jacoco-prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>jacoco-report</id>
+						<phase>test</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>jacoco-check</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>check</goal>
+						</goals>
+						<configuration>
+							<rules>
+								<rule>
+									<element>BUNDLE</element>
+									<limits>
+										<limit>
+											<counter>INSTRUCTION</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>${jacoco.instruction.minimum}</minimum>
+										</limit>
+										<limit>
+											<counter>BRANCH</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>${jacoco.branch.minimum}</minimum>
+										</limit>
+									</limits>
+								</rule>
+							</rules>
 						</configuration>
 					</execution>
 				</executions>
