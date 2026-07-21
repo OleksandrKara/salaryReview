@@ -39,13 +39,14 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Backend tests (incl. Flyway migrations against Postgres)
+      - name: Backend tests + coverage gate (incl. Flyway migrations against Postgres)
         working-directory: backend
         env:
           SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/salonreview
           SPRING_DATASOURCE_USERNAME: salon
           SPRING_DATASOURCE_PASSWORD: salon
-        run: ./mvnw -B -ntp test
+        # verify (not test) so jacoco:check runs — see docs/COVERAGE.md.
+        run: ./mvnw -B -ntp verify
 
       - name: Set up Node 22
         uses: actions/setup-node@v4
