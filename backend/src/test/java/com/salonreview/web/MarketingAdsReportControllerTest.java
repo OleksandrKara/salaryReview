@@ -2,8 +2,11 @@ package com.salonreview.web;
 
 import com.salonreview.marketing.MarketingAnalyticsService;
 import com.salonreview.marketing.MarketingAnalyticsService.PeriodKind;
+import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.web.dto.MarketingAdsReportDto;
 import com.salonreview.web.dto.MarketingAdsReportDto.PeriodRow;
+import com.salonreview.web.dto.MarketingContactDto.Contact;
+import com.salonreview.web.dto.MarketingCustomerHistoryDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,6 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class MarketingAdsReportControllerTest {
 
     private MarketingAnalyticsService service;
+    private MarketingContactsService contactsService;
     private MockMvc mvc;
 
     private static final PeriodRow EMPTY_ROW = new PeriodRow(
@@ -44,8 +48,9 @@ class MarketingAdsReportControllerTest {
     @BeforeEach
     void setUp() {
         service = mock(MarketingAnalyticsService.class);
+        contactsService = mock(MarketingContactsService.class);
         when(service.adsReport(any(), any(), any(), any(), any())).thenReturn(EMPTY_DTO);
-        MarketingAdsReportController controller = new MarketingAdsReportController(service);
+        MarketingAdsReportController controller = new MarketingAdsReportController(service, contactsService);
         mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -111,5 +116,52 @@ class MarketingAdsReportControllerTest {
                 .andExpect(status().isOk());
 
         verify(service).adsReport(any(), any(), eq(Set.of("meta_ads", "google_ads")), isNull(), eq(PeriodKind.WEEK));
+    }
+
+    @Test
+    @DisplayName("GET /customer-history returns that customer's submissions and appointments when a contact resolves")
+    void customerHistoryReturnsResolvedContact() throws Exception {
+        Contact contact = new Contact(
+                "contact-1",     // id
+                "Jane",          // givenName
+                "+16195550001",  // phoneNumber
+                null,            // emailAddress
+                null,            // originalTrafficSource
+                null,            // marketingTrafficSource
+                null,            // channel
+                null,            // utmSource
+                null,            // utmMedium
+                null,            // utmCampaign
+                "mani",          // landingPageSlug
+                null,            // variantName
+                null,            // deviceType
+                null,            // osName
+                null,            // osVersion
+                null,            // browserName
+                null,            // browserVersion
+                null,            // smsMarketingConsent
+                null,            // emailMarketingConsent
+                null,            // squareProfileUrl
+                List.of(),       // submissions
+                List.of(),       // appointments
+                null,            // createdAt
+                null);           // updatedAt
+        when(contactsService.contactByCustomerId("cust-1")).thenReturn(java.util.Optional.of(contact));
+
+        mvc.perform(get("/api/owner/marketing/ads-report/customer-history").param("customerId", "cust-1"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.submissions").isArray())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.appointments").isArray());
+    }
+
+    @Test
+    @DisplayName("GET /customer-history returns empty lists (not an error) when no contact resolves to this customer")
+    void customerHistoryReturnsEmptyWhenUnresolved() throws Exception {
+        when(contactsService.contactByCustomerId("cust-unknown")).thenReturn(java.util.Optional.empty());
+
+        mvc.perform(get("/api/owner/marketing/ads-report/customer-history").param("customerId", "cust-unknown"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.submissions").isEmpty())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.appointments").isEmpty());
     }
 }

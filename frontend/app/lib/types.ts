@@ -979,6 +979,15 @@ export interface MarketingAdsReportData {
   totals: MarketingAdsReportPeriod;
 }
 
+/** One Square customer's submission + appointment history, fetched lazily when a row on the Ads
+ * Report breakdown drill-down is expanded (see MarketingAdsReportController#customerHistory) —
+ * same shape as MarketingContact's own fields, just reachable by Square customer id instead of by
+ * contact row. */
+export interface MarketingCustomerHistory {
+  submissions: MarketingContactSubmission[];
+  appointments: MarketingContactAppointment[];
+}
+
 // --- Ad spend entries (com.salonreview.web.MarketingAdsReportController) ---
 
 export interface AdSpendEntry {
