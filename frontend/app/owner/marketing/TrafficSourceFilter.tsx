@@ -37,12 +37,18 @@ export default function TrafficSourceFilter({
   selected,
   onChange,
   description,
+  disabled,
 }: {
   selected: Set<TrafficSourceKey>;
   onChange: (next: Set<TrafficSourceKey>) => void;
   /** Static, tab-specific hint about what this filters (e.g. "page views, clicks, contacts, and
    * bookings") — shown under the chips regardless of the current selection. */
   description: string;
+  /** Disables every chip/preset while a change from this filter is still loading — without this,
+   * a slow request (this data is often Square-backed and can take several seconds) leaves the
+   * chips clickable, so a second or third click before the first request lands looks like nothing
+   * happened and just queues up more redundant fetches. */
+  disabled?: boolean;
 }) {
   const isAdsOnly = selected.size === ADS_ONLY_SOURCES.length && ADS_ONLY_SOURCES.every((s) => selected.has(s));
   const isAll = selected.size === ALL_TRAFFIC_SOURCES.length;
@@ -59,15 +65,15 @@ export default function TrafficSourceFilter({
   }
 
   return (
-    <div className="rounded-lg p-3 ring-1 ring-zinc-200">
+    <div className={`rounded-lg p-3 ring-1 ring-zinc-200 ${disabled ? 'opacity-60' : ''}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">Traffic source</span>
         <div className="flex items-center gap-2 text-xs">
           <button
             type="button"
             onClick={() => onChange(new Set(ADS_ONLY_SOURCES))}
-            disabled={isAdsOnly}
-            className={isAdsOnly ? 'font-medium text-zinc-300' : 'font-medium text-blue-600 hover:underline'}
+            disabled={isAdsOnly || disabled}
+            className={isAdsOnly ? 'font-medium text-zinc-300' : 'font-medium text-blue-600 hover:underline disabled:pointer-events-none disabled:no-underline disabled:text-zinc-300'}
           >
             Ads only
           </button>
@@ -75,8 +81,8 @@ export default function TrafficSourceFilter({
           <button
             type="button"
             onClick={() => onChange(new Set(ALL_TRAFFIC_SOURCES))}
-            disabled={isAll}
-            className={isAll ? 'font-medium text-zinc-300' : 'font-medium text-blue-600 hover:underline'}
+            disabled={isAll || disabled}
+            className={isAll ? 'font-medium text-zinc-300' : 'font-medium text-blue-600 hover:underline disabled:pointer-events-none disabled:no-underline disabled:text-zinc-300'}
           >
             All traffic
           </button>
@@ -90,8 +96,9 @@ export default function TrafficSourceFilter({
               key={key}
               type="button"
               onClick={() => toggle(key)}
+              disabled={disabled}
               aria-pressed={active}
-              className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition-colors ${
+              className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition-colors disabled:pointer-events-none ${
                 active
                   ? 'bg-zinc-900 text-white ring-zinc-900'
                   : 'bg-white text-zinc-600 ring-zinc-300 hover:bg-zinc-50'
