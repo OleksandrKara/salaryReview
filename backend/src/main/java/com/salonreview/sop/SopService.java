@@ -50,10 +50,10 @@ public class SopService {
 
     /** Create a SOP and its first draft version (version 1). */
     @Transactional
-    public Sop create(String title, String category, SopAudience audience, Integer priority,
+    public Sop create(String title, String titleRu, String category, SopAudience audience, Integer priority,
                       String body, String bodyRu, String by) {
         Sop.SopBuilder builder = Sop.builder()
-                .title(title).category(category).audience(audience)
+                .title(title).titleRu(blankToNull(titleRu)).category(category).audience(audience)
                 .status(SopStatus.ACTIVE).createdBy(by);
         if (priority != null) builder.priority(priority);
         Sop sop = sops.save(builder.build());
@@ -65,9 +65,10 @@ public class SopService {
 
     /** Update title/category/audience/priority on the SOP itself (not content). Applies immediately. */
     @Transactional
-    public Optional<Sop> updateMeta(Long id, String title, String category, SopAudience audience, Integer priority) {
+    public Optional<Sop> updateMeta(Long id, String title, String titleRu, String category, SopAudience audience, Integer priority) {
         return sops.findById(id).map(s -> {
             s.setTitle(title);
+            s.setTitleRu(blankToNull(titleRu));
             s.setCategory(category);
             s.setAudience(audience);
             if (priority != null) s.setPriority(priority);

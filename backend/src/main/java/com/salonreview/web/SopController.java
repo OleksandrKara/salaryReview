@@ -69,7 +69,7 @@ public class SopController {
         if (isBlank(body.title()) || isBlank(body.category()) || body.audience() == null) {
             return ResponseEntity.badRequest().build();
         }
-        Sop sop = sops.create(body.title(), body.category(), body.audience(), body.priority(),
+        Sop sop = sops.create(body.title(), body.titleRu(), body.category(), body.audience(), body.priority(),
                 body.body(), body.bodyRu(), me.getUsername());
         return ResponseEntity.ok(toDto(sops.item(sop, null)));
     }
@@ -79,7 +79,7 @@ public class SopController {
         if (isBlank(body.title()) || isBlank(body.category()) || body.audience() == null) {
             return ResponseEntity.badRequest().build();
         }
-        return sops.updateMeta(id, body.title(), body.category(), body.audience(), body.priority())
+        return sops.updateMeta(id, body.title(), body.titleRu(), body.category(), body.audience(), body.priority())
                 .map(s -> ResponseEntity.ok(toDto(sops.item(s, null))))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -175,7 +175,7 @@ public class SopController {
 
     private static SopDto toDto(SopService.SopListItem it) {
         Sop s = it.sop();
-        return new SopDto(s.getId(), s.getTitle(), s.getCategory(), s.getAudience().name(),
+        return new SopDto(s.getId(), s.getTitle(), s.getTitleRu(), s.getCategory(), s.getAudience().name(),
                 s.getStatus().name(), s.getPriority(),
                 it.currentVersion() == null ? null : toVersionDto(it.currentVersion()),
                 it.acknowledged(), it.acknowledgedAt(),
@@ -187,7 +187,7 @@ public class SopController {
                 v.getChangeNote(), v.getChangeNoteRu(), v.getStatus().name(), v.getCreatedBy(), v.getCreatedAt());
     }
 
-    public record SopDto(Long id, String title, String category, String audience, String status, int priority,
+    public record SopDto(Long id, String title, String titleRu, String category, String audience, String status, int priority,
                          SopVersionDto currentVersion, boolean acknowledged, Instant acknowledgedAt,
                          String createdBy, Instant createdAt, Instant updatedAt) {}
 
@@ -198,10 +198,10 @@ public class SopController {
     public record RosterDto(Long userId, String username, String role, boolean acknowledged,
                             Instant acknowledgedAt) {}
 
-    public record CreateRequest(String title, String category, SopAudience audience, Integer priority,
+    public record CreateRequest(String title, String titleRu, String category, SopAudience audience, Integer priority,
                                 String body, String bodyRu) {}
 
-    public record UpdateRequest(String title, String category, SopAudience audience, Integer priority) {}
+    public record UpdateRequest(String title, String titleRu, String category, SopAudience audience, Integer priority) {}
 
     public record VersionRequest(String body, String bodyRu, String changeNote, String changeNoteRu) {}
 

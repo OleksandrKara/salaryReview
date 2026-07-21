@@ -48,7 +48,7 @@ class KbArticleServiceTest {
     @Test
     @DisplayName("create defaults visible_roles to {OWNER,MANAGER}, status NOT_SYNCED, hash set")
     void createDefaults() {
-        KbArticle a = service.create("FAQ", "FAQ", "body text", null, null, "owner");
+        KbArticle a = service.create("FAQ", null, "FAQ", "body text", null, null, "owner");
         assertThat(a.getVisibleRoles()).containsExactlyInAnyOrder(Role.OWNER, Role.MANAGER);
         assertThat(a.getSyncStatus()).isEqualTo(SyncStatus.NOT_SYNCED);
         assertThat(a.getContentHash()).isNotBlank();
@@ -57,7 +57,7 @@ class KbArticleServiceTest {
     @Test
     @DisplayName("assigning PROVIDER keeps the admin roles and adds PROVIDER")
     void assignProviderKeepsAdmins() {
-        KbArticle a = service.create("Menu", "Services", "x", null, List.of(Role.PROVIDER), "owner");
+        KbArticle a = service.create("Menu", null, "Services", "x", null, List.of(Role.PROVIDER), "owner");
         assertThat(a.getVisibleRoles()).containsExactlyInAnyOrder(Role.OWNER, Role.MANAGER, Role.PROVIDER);
     }
 
@@ -69,7 +69,7 @@ class KbArticleServiceTest {
                 .ragDocId(99L).syncStatus(SyncStatus.SYNCED).createdBy("owner").build();
         when(repo.findById(7L)).thenReturn(Optional.of(existing));
 
-        KbArticle updated = service.update(7L, "t", "c", "new body", null, null).orElseThrow();
+        KbArticle updated = service.update(7L, "t", null, "c", "new body", null, null).orElseThrow();
 
         assertThat(updated.getSyncStatus()).isEqualTo(SyncStatus.CHANGED);
         verify(rag, never()).upload(any(), any(), any()); // save never embeds
@@ -83,7 +83,7 @@ class KbArticleServiceTest {
                 .ragDocId(99L).syncStatus(SyncStatus.SYNCED).createdBy("owner").build();
         when(repo.findById(7L)).thenReturn(Optional.of(existing));
 
-        KbArticle updated = service.update(7L, "t2", "c2", "same", null, null).orElseThrow();
+        KbArticle updated = service.update(7L, "t2", null, "c2", "same", null, null).orElseThrow();
 
         assertThat(updated.getSyncStatus()).isEqualTo(SyncStatus.SYNCED);
     }
@@ -97,7 +97,7 @@ class KbArticleServiceTest {
         when(repo.findById(7L)).thenReturn(Optional.of(existing));
 
         // English unchanged, but a Russian body is added → the combined hash moves → CHANGED.
-        KbArticle updated = service.update(7L, "t", "c", "same", "перевод", null).orElseThrow();
+        KbArticle updated = service.update(7L, "t", null, "c", "same", "перевод", null).orElseThrow();
 
         assertThat(updated.getBodyRu()).isEqualTo("перевод");
         assertThat(updated.getSyncStatus()).isEqualTo(SyncStatus.CHANGED);
@@ -111,7 +111,7 @@ class KbArticleServiceTest {
                 .ragDocId(null).syncStatus(SyncStatus.NOT_SYNCED).createdBy("owner").build();
         when(repo.findById(7L)).thenReturn(Optional.of(existing));
 
-        KbArticle updated = service.update(7L, "t", "c", "changed", null, null).orElseThrow();
+        KbArticle updated = service.update(7L, "t", null, "c", "changed", null, null).orElseThrow();
 
         assertThat(updated.getSyncStatus()).isEqualTo(SyncStatus.NOT_SYNCED);
     }

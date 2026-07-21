@@ -31,6 +31,10 @@ public class KbArticle {
     @Column(nullable = false, length = 512)
     private String title;
 
+    /** Russian translation of {@link #title}; null falls back to {@link #title}. */
+    @Column(name = "title_ru", length = 512)
+    private String titleRu;
+
     @Column(nullable = false, length = 128)
     private String category;
 

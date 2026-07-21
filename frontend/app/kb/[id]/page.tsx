@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { serverApi } from '../../lib/serverApi';
-import { t } from '../../lib/i18n';
+import { localized, t } from '../../lib/i18n';
 import PageHeader from '../../components/PageHeader';
 import ShareLinkButton from '../../components/ShareLinkButton';
 import KbArticleBody from '../KbArticleBody';
@@ -20,7 +20,7 @@ export default async function KbArticlePage({ params }: { params: Promise<{ id: 
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
-      <PageHeader title={article?.title ?? t(lang, 'kbTitle')} role={me.role} language={lang} />
+      <PageHeader title={article ? localized(lang, article.title, article.titleRu) : t(lang, 'kbTitle')} role={me.role} language={lang} />
       <Link href="/kb" className="text-sm text-zinc-500 underline hover:text-zinc-700">
         {t(lang, 'back')}
       </Link>
@@ -41,7 +41,7 @@ export default async function KbArticlePage({ params }: { params: Promise<{ id: 
                 ) : null}
               </div>
             </div>
-            <ShareLinkButton path={`/kb/${article.id}`} title={article.title} />
+            <ShareLinkButton path={`/kb/${article.id}`} title={localized(lang, article.title, article.titleRu)} />
           </div>
           <div className="mt-4 border-t border-zinc-100 pt-4">
             <KbArticleBody article={article} defaultLang={lang ?? 'EN'} />

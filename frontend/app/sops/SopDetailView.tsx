@@ -5,7 +5,7 @@ import { api } from '../lib/api';
 import { Spinner } from '../components/Spinner';
 import ShareLinkButton from '../components/ShareLinkButton';
 import { hasUnreadChange, NewBadgeIcon, SopArticleBody } from './SopArticleBody';
-import { t } from '../lib/i18n';
+import { localized, t } from '../lib/i18n';
 import type { Language, Role, Sop } from '../lib/types';
 
 const fmt = (iso: string | null, language: Language | null) =>
@@ -53,7 +53,7 @@ export default function SopDetailView({
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <ShareLinkButton path={`/sops/${sop.id}`} title={sop.title} />
+          <ShareLinkButton path={`/sops/${sop.id}`} title={localized(language, sop.title, sop.titleRu)} />
           {sop.acknowledged ? (
             <span className="rounded bg-green-50 px-2 py-1 text-xs text-green-700">
               ✅ {t(language, 'sopAcknowledged')} {fmt(sop.acknowledgedAt, language)}

@@ -90,6 +90,7 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
     try {
       onCreated(await api.createSop({
         title: title.trim(),
+        titleRu: null, // set from the SOP's own detail view once created, alongside its content
         category: category.trim(),
         audience,
         priority: priority.trim() ? Number(priority) : undefined,
@@ -136,6 +137,9 @@ function SopDetail({ sop, onChanged }: { sop: Sop; onChanged: (s: Sop) => void }
   const [roster, setRoster] = useState<SopRosterEntry[] | null>(null);
   const [audience, setAudience] = useState<SopAudience>(sop.audience);
   const [priority, setPriority] = useState(String(sop.priority));
+  const [title, setTitle] = useState(sop.title);
+  const [titleRu, setTitleRu] = useState(sop.titleRu ?? '');
+  const [translatingTitle, setTranslatingTitle] = useState(false);
   const [newDraft, setNewDraft] = useState<string | null>(null);
   const [newDraftRu, setNewDraftRu] = useState('');
   const [changeNote, setChangeNote] = useState('');
@@ -150,13 +154,22 @@ function SopDetail({ sop, onChanged }: { sop: Sop; onChanged: (s: Sop) => void }
   useEffect(() => { load(); }, [load]);
 
   async function saveMeta() {
+    if (!title.trim()) return;
     setBusy(true);
     try {
       onChanged(await api.updateSop(sop.id, {
-        title: sop.title, category: sop.category, audience,
+        title: title.trim(), titleRu: titleRu.trim() ? titleRu : null, category: sop.category, audience,
         priority: priority.trim() ? Number(priority) : sop.priority,
       }));
     } finally { setBusy(false); }
+  }
+  async function translateTitle() {
+    if (!title.trim()) return;
+    setTranslatingTitle(true);
+    try {
+      const { markdown } = await api.aiTranslateSopNote(title);
+      setTitleRu(markdown);
+    } finally { setTranslatingTitle(false); }
   }
   async function addDraft() {
     if (newDraft == null) return;
@@ -187,8 +200,39 @@ function SopDetail({ sop, onChanged }: { sop: Sop; onChanged: (s: Sop) => void }
   const currentBody = sop.currentVersion?.body ?? '';
   const widening = (audience === 'BOTH' && sop.audience !== 'BOTH');
 
+  const titleChanged = title.trim() !== sop.title || titleRu !== (sop.titleRu ?? '');
+
   return (
     <div className="space-y-5 border-t border-zinc-100 p-4">
+      {/* title (rename) */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <label className="block text-xs font-medium text-zinc-600">
+          Title
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="mt-1 w-full rounded px-2 py-1 text-sm ring-1 ring-zinc-200"
+          />
+        </label>
+        <div className="flex items-end gap-2">
+          <label className="block flex-1 text-xs font-medium text-zinc-600">
+            Title (Russian) — staff whose app language is Russian see this instead
+            <input
+              value={titleRu}
+              onChange={(e) => setTitleRu(e.target.value)}
+              className="mt-1 w-full rounded px-2 py-1 text-sm ring-1 ring-zinc-200"
+            />
+          </label>
+          <button onClick={translateTitle} disabled={translatingTitle || !title.trim()} className="inline-flex shrink-0 items-center gap-1.5 rounded px-2 py-1.5 text-xs ring-1 ring-zinc-200 disabled:opacity-50">
+            {translatingTitle ? <Spinner className="h-3.5 w-3.5 text-zinc-400" /> : null}
+            Translate
+          </button>
+        </div>
+      </div>
+      {titleChanged ? (
+        <button onClick={saveMeta} disabled={busy || !title.trim()} className="rounded px-2 py-1 text-xs ring-1 ring-zinc-200">Save title</button>
+      ) : null}
+
       {/* audience + archive */}
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-xs font-medium text-zinc-600">
