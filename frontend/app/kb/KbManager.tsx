@@ -7,6 +7,7 @@ import { Spinner } from '../components/Spinner';
 import ShareLinkButton from '../components/ShareLinkButton';
 import KbArticleBody from './KbArticleBody';
 import { SyncBadge } from './KbSyncBadge';
+import { localized } from '../lib/i18n';
 import type { KbArticle, Language, Role } from '../lib/types';
 
 // @uiw/react-md-editor touches `window`, so load it client-only.
@@ -15,13 +16,14 @@ const MDEditor = dynamic(() => import('@uiw/react-md-editor'), { ssr: false });
 type Draft = {
   id: number | null;
   title: string;
+  titleRu: string;
   category: string;
   body: string;
   bodyRu: string;
   providerVisible: boolean;
 };
 
-const emptyDraft = (): Draft => ({ id: null, title: '', category: '', body: '', bodyRu: '', providerVisible: false });
+const emptyDraft = (): Draft => ({ id: null, title: '', titleRu: '', category: '', body: '', bodyRu: '', providerVisible: false });
 
 export default function KbManager({
   role,
@@ -46,6 +48,7 @@ export default function KbManager({
     setDraft({
       id: a.id,
       title: a.title,
+      titleRu: a.titleRu ?? '',
       category: a.category,
       body: a.body,
       bodyRu: a.bodyRu ?? '',
@@ -54,7 +57,7 @@ export default function KbManager({
   }
 
   async function remove(a: KbArticle) {
-    if (!confirm(`Delete “${a.title}”? Its synced copy in the assistant will also be removed.`)) return;
+    if (!confirm(`Delete “${localized(language, a.title, a.titleRu)}”? Its synced copy in the assistant will also be removed.`)) return;
     await api.deleteKbArticle(a.id);
     setArticles((xs) => xs.filter((x) => x.id !== a.id));
   }
@@ -93,7 +96,7 @@ export default function KbManager({
             <li key={a.id} className="rounded-lg p-3 ring-1 ring-zinc-200">
               <div className="flex items-start justify-between gap-3">
                 <button className="text-left" onClick={() => setViewing(viewing?.id === a.id ? null : a)}>
-                  <span className="text-sm font-medium text-zinc-800">{a.title}</span>
+                  <span className="text-sm font-medium text-zinc-800">{localized(language, a.title, a.titleRu)}</span>
                   <span className="ml-2 text-xs text-zinc-400">{a.category}</span>
                   <div className="mt-1 flex items-center gap-1.5">
                     <SyncBadge status={a.syncStatus} />
@@ -106,7 +109,7 @@ export default function KbManager({
                   </div>
                 </button>
                 <div className="flex shrink-0 gap-2">
-                  <ShareLinkButton path={`/kb/${a.id}`} title={a.title} />
+                  <ShareLinkButton path={`/kb/${a.id}`} title={localized(language, a.title, a.titleRu)} />
                   {isAdmin ? (
                     <>
                       <button onClick={() => startEdit(a)} className="rounded px-2 py-1 text-xs ring-1 ring-zinc-200">Edit</button>
@@ -138,13 +141,14 @@ function Editor({
   onSaved: (a: KbArticle) => void;
 }) {
   const [title, setTitle] = useState(draft.title);
+  const [titleRu, setTitleRu] = useState(draft.titleRu);
   const [category, setCategory] = useState(draft.category);
   const [body, setBody] = useState(draft.body);
   const [bodyRu, setBodyRu] = useState(draft.bodyRu);
   const [editLang, setEditLang] = useState<Language>('EN');
   const [providerVisible, setProviderVisible] = useState(draft.providerVisible);
   const [aiPrompt, setAiPrompt] = useState('');
-  const [busy, setBusy] = useState<'save' | 'ai' | 'translate' | null>(null);
+  const [busy, setBusy] = useState<'save' | 'ai' | 'translate' | 'translate-title' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function visibleRoles(): Role[] {
@@ -161,6 +165,7 @@ function Editor({
     try {
       const payload = {
         title: title.trim(),
+        titleRu: titleRu.trim() ? titleRu : null,
         category: category.trim(),
         body,
         bodyRu: bodyRu.trim() ? bodyRu : null,
@@ -201,6 +206,23 @@ function Editor({
     try {
       const { markdown } = await api.aiTranslateKbArticle(body);
       setBodyRu(markdown);
+    } catch {
+      setError('AI translation is unavailable right now.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function translateTitle() {
+    if (!title.trim()) {
+      setError('Add an English title first, then translate.');
+      return;
+    }
+    setBusy('translate-title');
+    setError(null);
+    try {
+      const { markdown } = await api.aiTranslateKbNote(title);
+      setTitleRu(markdown);
     } catch {
       setError('AI translation is unavailable right now.');
     } finally {
@@ -252,6 +274,20 @@ function Editor({
           </>
         ) : (
           <>
+            <div className="mb-3 flex items-end gap-2">
+              <label className="block flex-1 text-xs font-medium text-zinc-600">
+                Title (Russian) — readers see the English title when this is empty
+                <input
+                  value={titleRu}
+                  onChange={(e) => setTitleRu(e.target.value)}
+                  className="mt-1 w-full rounded px-2 py-1 text-sm ring-1 ring-zinc-200"
+                />
+              </label>
+              <button onClick={translateTitle} disabled={busy !== null || !title.trim()} className="inline-flex shrink-0 items-center gap-1.5 rounded bg-zinc-100 px-3 py-1.5 text-xs disabled:opacity-50">
+                {busy === 'translate-title' ? <Spinner className="h-3.5 w-3.5 text-zinc-400" /> : null}
+                Translate title
+              </button>
+            </div>
             <div className="mb-2 flex items-center justify-between gap-2">
               <span className="text-xs text-zinc-400">Russian translation — readers see English when this is empty.</span>
               <button onClick={translate} disabled={busy !== null || !body.trim()} className="inline-flex items-center gap-1.5 rounded bg-zinc-100 px-3 py-1 text-xs disabled:opacity-50">

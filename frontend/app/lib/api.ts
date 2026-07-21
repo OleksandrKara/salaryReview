@@ -238,6 +238,10 @@ export const api = {
   aiTranslateKbArticle: (body: string) =>
     proxyJson<{ markdown: string }>(`/api/kb-articles/ai-translate`, 'POST', { body }),
 
+  // Translate a short title to Russian (not a full article).
+  aiTranslateKbNote: (body: string) =>
+    proxyJson<{ markdown: string }>(`/api/kb-articles/ai-translate-note`, 'POST', { body }),
+
   // SOPs. Reads are audience-filtered by the backend; writes/publish/archive are OWNER; acknowledge
   // is MANAGER/PROVIDER (and the backend checks the caller is in the SOP's audience).
   listSops: () => proxyGet<Sop[]>(`/api/sops`),

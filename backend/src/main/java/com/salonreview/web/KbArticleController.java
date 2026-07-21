@@ -75,7 +75,7 @@ public class KbArticleController {
     public ResponseEntity<KbArticleDto> create(@RequestBody WriteRequest body,
                                                @AuthenticationPrincipal AppUserPrincipal me) {
         if (isBlank(body.title()) || isBlank(body.category())) return ResponseEntity.badRequest().build();
-        KbArticle a = articles.create(body.title(), body.category(), body.body(), body.bodyRu(),
+        KbArticle a = articles.create(body.title(), body.titleRu(), body.category(), body.body(), body.bodyRu(),
                 body.visibleRoles(), me.getUsername());
         return ResponseEntity.ok(toDto(a));
     }
@@ -83,7 +83,7 @@ public class KbArticleController {
     @PutMapping("/{id}")
     public ResponseEntity<KbArticleDto> update(@PathVariable Long id, @RequestBody WriteRequest body) {
         if (isBlank(body.title()) || isBlank(body.category())) return ResponseEntity.badRequest().build();
-        return articles.update(id, body.title(), body.category(), body.body(), body.bodyRu(), body.visibleRoles())
+        return articles.update(id, body.title(), body.titleRu(), body.category(), body.body(), body.bodyRu(), body.visibleRoles())
                 .map(a -> ResponseEntity.ok(toDto(a)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -137,23 +137,35 @@ public class KbArticleController {
         }
     }
 
+    /** Translate a short title into Russian (not a full article — no Markdown handling), same
+     * helper SopController uses for its own titles/change-notes. */
+    @PostMapping("/ai-translate-note")
+    public ResponseEntity<AiDraftResponse> aiTranslateNote(@RequestBody AiTranslateRequest body) {
+        if (isBlank(body.body())) return ResponseEntity.badRequest().build();
+        try {
+            return ResponseEntity.ok(new AiDraftResponse(aiDraft.translateNoteToRussian(body.body())));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
+    }
+
     private static boolean isBlank(String s) {
         return s == null || s.isBlank();
     }
 
     private static KbArticleDto toDto(KbArticle a) {
-        return new KbArticleDto(a.getId(), a.getTitle(), a.getCategory(), a.getBody(), a.getBodyRu(),
+        return new KbArticleDto(a.getId(), a.getTitle(), a.getTitleRu(), a.getCategory(), a.getBody(), a.getBodyRu(),
                 a.getVisibleRoles(), a.getSyncStatus().name(), a.getRagDocId(),
                 a.getLastSyncedAt(), a.getLastSyncedBy(), a.getLastSyncError(),
                 a.getCreatedBy(), a.getCreatedAt(), a.getUpdatedAt());
     }
 
-    public record KbArticleDto(Long id, String title, String category, String body, String bodyRu,
+    public record KbArticleDto(Long id, String title, String titleRu, String category, String body, String bodyRu,
                                List<Role> visibleRoles, String syncStatus, Long ragDocId,
                                Instant lastSyncedAt, String lastSyncedBy, String lastSyncError,
                                String createdBy, Instant createdAt, Instant updatedAt) {}
 
-    public record WriteRequest(String title, String category, String body, String bodyRu,
+    public record WriteRequest(String title, String titleRu, String category, String body, String bodyRu,
                                List<Role> visibleRoles) {}
 
     public record AiDraftRequest(String prompt, String currentBody) {}

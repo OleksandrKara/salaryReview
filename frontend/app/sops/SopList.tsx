@@ -5,7 +5,7 @@ import { api } from '../lib/api';
 import { Spinner } from '../components/Spinner';
 import ShareLinkButton from '../components/ShareLinkButton';
 import { hasUnreadChange, NewBadgeIcon, SopArticleBody } from './SopArticleBody';
-import { t } from '../lib/i18n';
+import { localized, t } from '../lib/i18n';
 import type { Language, Role, Sop } from '../lib/types';
 
 const fmt = (iso: string | null, language: Language | null) =>
@@ -63,7 +63,7 @@ export default function SopList({
               </span>
               <span>
                 <span className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-sm font-medium text-zinc-800">{s.title}</span>
+                  <span className="text-sm font-medium text-zinc-800">{localized(language, s.title, s.titleRu)}</span>
                   {!s.acknowledged && hasUnreadChange(s) ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
                       <NewBadgeIcon className="h-2.5 w-2.5" /> {t(language, 'sopNewVersionBadge')}
@@ -76,7 +76,7 @@ export default function SopList({
               </span>
             </button>
             <div className="flex shrink-0 items-center gap-2">
-              <ShareLinkButton path={`/sops/${s.id}`} title={s.title} />
+              <ShareLinkButton path={`/sops/${s.id}`} title={localized(language, s.title, s.titleRu)} />
               {s.acknowledged ? (
                 <span className="rounded bg-green-50 px-2 py-1 text-xs text-green-700">
                   ✅ {t(language, 'sopAcknowledged')} {fmt(s.acknowledgedAt, language)}

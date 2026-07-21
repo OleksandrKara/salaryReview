@@ -1135,6 +1135,8 @@ export interface SopSyncItem {
 export interface KbArticle {
   id: number;
   title: string;
+  /** Russian translation of title; null falls back to title. */
+  titleRu: string | null;
   category: string;
   body: string;
   bodyRu: string | null;
@@ -1151,6 +1153,7 @@ export interface KbArticle {
 
 export interface KbWriteRequest {
   title: string;
+  titleRu: string | null;
   category: string;
   body: string;
   bodyRu: string | null;
@@ -1178,6 +1181,8 @@ export interface SopVersion {
 export interface Sop {
   id: number;
   title: string;
+  /** Russian translation of title; null falls back to title. */
+  titleRu: string | null;
   category: string;
   audience: SopAudience;
   status: SopStatus;
@@ -1200,6 +1205,7 @@ export interface SopRosterEntry {
 
 export interface SopCreateRequest {
   title: string;
+  titleRu: string | null;
   category: string;
   audience: SopAudience;
   priority?: number;
@@ -1209,6 +1215,7 @@ export interface SopCreateRequest {
 
 export interface SopUpdateRequest {
   title: string;
+  titleRu: string | null;
   category: string;
   audience: SopAudience;
   priority?: number;

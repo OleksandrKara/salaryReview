@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
-import { t } from '../lib/i18n';
+import { localized, t } from '../lib/i18n';
 import { Spinner } from './Spinner';
 import type { Language, Sop } from '../lib/types';
 
@@ -38,6 +38,9 @@ export default function SopCard({
   // actually wrote one; blank shows nothing. Falls back to English like the body does. Gated behind
   // its own full-screen step (not just a banner above the body) so it can't be skimmed past — a plain
   // colored banner blended in with the rest of the page and was easy to miss.
+  // Follows the same in-card EN/RU toggle as the body/change-note below, not just the account-level
+  // preference — flipping to "RU" mid-read should localize everything on the card together.
+  const title = localized(viewLang, sop.title, sop.titleRu);
   const hasChangeNote = !!(sop.currentVersion?.changeNote?.trim() || sop.currentVersion?.changeNoteRu?.trim());
   const showChangeNote = (sop.currentVersion?.versionNumber ?? 0) >= 2 && hasChangeNote;
   const changeNote = viewLang === 'RU' && sop.currentVersion?.changeNoteRu?.trim()
@@ -81,7 +84,7 @@ export default function SopCard({
             {t(lang, 'sopNewVersionBadge')} · v{sop.currentVersion?.versionNumber}
           </span>
           <h2 className="text-2xl font-bold leading-tight" style={{ fontFamily: 'var(--serif)' }}>
-            {sop.title}
+            {title}
           </h2>
           {hasRu ? (
             <span className="-mt-2 flex items-center gap-1 text-xs">
@@ -141,7 +144,7 @@ export default function SopCard({
           ) : null}
         </div>
         <h2 className="mt-1 text-lg font-semibold leading-tight" style={{ fontFamily: 'var(--serif)' }}>
-          {sop.title}
+          {title}
         </h2>
         <p className="text-xs text-[var(--paper)]/60">
           {sop.category} · v{sop.currentVersion?.versionNumber} · {t(lang, 'sopAckIntro')}

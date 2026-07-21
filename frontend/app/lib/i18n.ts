@@ -331,3 +331,11 @@ export function monthName(lang: Language | null, idx0: number): string {
 export function monthShort(lang: Language | null, idx0: number): string {
   return MONTHS_ABBR[lang ?? 'EN'][((idx0 % 12) + 12) % 12];
 }
+
+/** Picks the Russian variant of a user-authored bilingual field (SOP/KB title, body, etc.) when
+ * the viewer's language is Russian and a translation was actually entered; falls back to the
+ * English variant otherwise — the same "null/blank falls back to English" rule those fields
+ * already use for body/changeNote (see SopArticleBody, KbArticleBody). */
+export function localized(lang: Language | null, en: string, ru: string | null): string {
+  return lang === 'RU' && ru && ru.trim() ? ru : en;
+}

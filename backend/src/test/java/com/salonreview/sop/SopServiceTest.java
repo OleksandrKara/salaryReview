@@ -67,7 +67,7 @@ class SopServiceTest {
     @Test
     @DisplayName("create makes a SOP plus a version-1 draft")
     void createMakesV1Draft() {
-        service.create("Cleaning", "Hygiene", SopAudience.PROVIDER, null, "wash hands", null, "owner");
+        service.create("Cleaning", null, "Hygiene", SopAudience.PROVIDER, null, "wash hands", null, "owner");
         ArgumentCaptor<SopVersion> cap = ArgumentCaptor.forClass(SopVersion.class);
         verify(versions).save(cap.capture());
         assertThat(cap.getValue().getVersionNumber()).isEqualTo(1);
