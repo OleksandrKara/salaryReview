@@ -246,14 +246,15 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
         selected={sources}
         onChange={changeSources}
         description="Ad spend, revenue, and volume for the selected source(s) — defaults to Meta & Google ad clicks."
+        disabled={loading}
       />
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex flex-wrap gap-1 rounded-lg bg-zinc-100 p-1">
-          <PeriodTypeButton label="Weekly" active={periodType === 'week'} onClick={() => selectPeriodType('week')} />
-          <PeriodTypeButton label="Monthly" active={periodType === 'month'} onClick={() => selectPeriodType('month')} />
-          <PeriodTypeButton label="Month to date" active={periodType === 'mtd'} onClick={() => selectPeriodType('mtd')} />
-          <PeriodTypeButton label="Custom" active={periodType === 'custom'} onClick={() => selectPeriodType('custom')} />
+          <PeriodTypeButton label="Weekly" active={periodType === 'week'} disabled={loading} onClick={() => selectPeriodType('week')} />
+          <PeriodTypeButton label="Monthly" active={periodType === 'month'} disabled={loading} onClick={() => selectPeriodType('month')} />
+          <PeriodTypeButton label="Month to date" active={periodType === 'mtd'} disabled={loading} onClick={() => selectPeriodType('mtd')} />
+          <PeriodTypeButton label="Custom" active={periodType === 'custom'} disabled={loading} onClick={() => selectPeriodType('custom')} />
         </div>
         {(periodType === 'week' || periodType === 'month') && (
           <div className="flex flex-wrap gap-2">
@@ -262,6 +263,7 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
                 key={n}
                 label={periodType === 'week' ? `Last ${n} weeks` : `Last ${n} months`}
                 active={rangeCount === n}
+                disabled={loading}
                 onClick={() => selectRangePreset(n)}
               />
             ))}
@@ -277,8 +279,9 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
               type="date"
               value={customFrom}
               max={customTo || undefined}
+              disabled={loading}
               onChange={(e) => setCustomFrom(e.target.value)}
-              className="rounded border border-zinc-300 px-2 py-1.5 text-xs"
+              className="rounded border border-zinc-300 px-2 py-1.5 text-xs disabled:opacity-50"
             />
           </label>
           <label className="flex flex-col gap-1 text-xs">
@@ -288,14 +291,15 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
               value={customTo}
               min={customFrom || undefined}
               max={isoDate(new Date())}
+              disabled={loading}
               onChange={(e) => setCustomTo(e.target.value)}
-              className="rounded border border-zinc-300 px-2 py-1.5 text-xs"
+              className="rounded border border-zinc-300 px-2 py-1.5 text-xs disabled:opacity-50"
             />
           </label>
           <button
             type="button"
             onClick={applyCustomRange}
-            disabled={!customFrom || !customTo}
+            disabled={!customFrom || !customTo || loading}
             className="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
             Apply
@@ -305,12 +309,18 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
 
       {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
 
+      {loading && (
+        <div className="mt-4 flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 ring-1 ring-blue-100">
+          <Spinner className="h-4 w-4" />
+          Updating report — this can take a few seconds, especially with no page selected above…
+        </div>
+      )}
+
       <p className="mt-4 text-xs text-zinc-500">
         {data.periods.length > 0 ? fmtDateRange(totals.periodStart, totals.periodEnd) : ''}
-        {loading ? ' · loading…' : ''}
       </p>
 
-      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+      <div className={`mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7 transition-opacity ${loading ? 'opacity-50' : ''}`}>
         <StatCard label="Ad spend" value={usd(totals.adSpend)} hint={totals.adSpendEstimated ? 'estimated' : undefined} />
         <StatCard label="Collected" value={usd(totals.revenueCollected)} />
         <StatCard label="ROI" value={roiLabel(totalRoi)} />
@@ -451,12 +461,13 @@ function TrendChart({ periods }: { periods: MarketingAdsReportPeriod[] }) {
   );
 }
 
-function PeriodTypeButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function PeriodTypeButton({ label, active, onClick, disabled }: { label: string; active: boolean; onClick: () => void; disabled?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+      disabled={disabled}
+      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
         active ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200' : 'text-zinc-500 hover:text-zinc-700'
       }`}
     >
@@ -465,15 +476,17 @@ function PeriodTypeButton({ label, active, onClick }: { label: string; active: b
   );
 }
 
-function PresetButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function PresetButton({ label, active, onClick, disabled }: { label: string; active: boolean; onClick: () => void; disabled?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className={
-        active
+        (active
           ? 'rounded-full bg-blue-600 px-3 py-1.5 text-xs font-medium text-white'
-          : 'rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-200'
+          : 'rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-200') +
+        ' disabled:cursor-not-allowed disabled:opacity-50'
       }
     >
       {label}

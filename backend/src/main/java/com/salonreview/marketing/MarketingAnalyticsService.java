@@ -146,7 +146,8 @@ public class MarketingAnalyticsService {
                     from, to, EMPTY_SEGMENT, EMPTY_SEGMENT, EMPTY_SEGMENT, List.of(), List.of(), EMPTY_SEGMENT, adSpend);
         }
 
-        Set<String> freshCustomerIds = freshCustomerIds(adsCustomers);
+        Map<String, List<SquareClient.Booking>> bookingHistory = bookingHistoryByCustomer(adsCustomers.keySet());
+        Set<String> freshCustomerIds = freshCustomerIds(adsCustomers, bookingHistory);
         BigDecimal cutoff = priceCutoff();
 
         List<AttributedService> inRange = collectServices(adsCustomers.keySet(), from, to, cutoff);
@@ -164,7 +165,7 @@ public class MarketingAnalyticsService {
         Set<String> paidBookingIds = monthToDate.stream()
                 .map(AttributedService::bookingId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
         List<UpcomingAppointment> upcoming = new ArrayList<>(
-                upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today));
+                upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today, bookingHistory));
 
         // Folds manager-follow-up appointments into the completed/upcoming lists (not into the
         // all/fresh/returning segment stats above, which stay scoped to the tracked flow's own
@@ -254,7 +255,9 @@ public class MarketingAnalyticsService {
         LocalDate alignedTo = periods.get(periods.size() - 1)[1];
 
         Map<String, AdsCustomer> adsCustomers = resolveAdsCustomers(sources, slug);
-        Set<String> freshCustomerIds = adsCustomers.isEmpty() ? Set.of() : freshCustomerIds(adsCustomers);
+        Map<String, List<SquareClient.Booking>> bookingHistory =
+                adsCustomers.isEmpty() ? Map.of() : bookingHistoryByCustomer(adsCustomers.keySet());
+        Set<String> freshCustomerIds = adsCustomers.isEmpty() ? Set.of() : freshCustomerIds(adsCustomers, bookingHistory);
         List<AttributedService> inRange = adsCustomers.isEmpty()
                 ? List.of() : collectServices(adsCustomers.keySet(), alignedFrom, alignedTo, priceCutoff());
         List<CompletedAppointment> completed = new ArrayList<>(buildCompletedAppointments(inRange, freshCustomerIds));
@@ -262,7 +265,7 @@ public class MarketingAnalyticsService {
                 .map(AttributedService::bookingId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
         List<UpcomingAppointment> upcoming = new ArrayList<>(adsCustomers.isEmpty()
                 ? List.<UpcomingAppointment>of()
-                : upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today));
+                : upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today, bookingHistory));
 
         List<FollowUpAppointment> followUps = resolveFollowUps(slug);
         mergeFollowUpsInto(followUps, freshCustomerIds, today, completed, upcoming);
@@ -495,10 +498,31 @@ public class MarketingAnalyticsService {
      * "returning" — we'd rather undercount a fresh win than overclaim one we can't verify. A failed
      * Square lookup (e.g. a rate-limit error) is handled identically to "no data available."
      */
-    private Set<String> freshCustomerIds(Map<String, AdsCustomer> adsCustomers) {
+    /** Every ads-attributed customer's full booking history (any status, past or future), fetched
+     * once per customer and shared by both {@link #freshCustomerIds} and {@link #upcomingAppointments}
+     * — they used to each fetch it separately with a different {@code since} (400-day lookback vs.
+     * "yesterday"), which are different {@code SquareClient} cache keys, so every report load paid
+     * two full live-Square sweeps across every ads customer instead of one. The 400-day lookback
+     * window is a superset of what "upcoming" needs (it only cares about today-or-later, filtered
+     * downstream), so one fetch now serves both.
+     */
+    private Map<String, List<SquareClient.Booking>> bookingHistoryByCustomer(Set<String> customerIds) {
+        // Truncated to the day: SquareClient caches bookingsForCustomer by (customerId, since), so
+        // a "since" that carries millisecond precision (clock.instant() called fresh every time)
+        // is a different cache key on literally every call — the 2-minute cache never actually
+        // hits, and repeat navigation between tabs pays the full multi-second Square round trip
+        // every single time. Day-level granularity is more than precise enough for a 400-day
+        // lookback anyway.
+        Instant since = clock.instant().truncatedTo(java.time.temporal.ChronoUnit.DAYS).minus(BOOKING_HISTORY_LOOKBACK);
+        return customerIds.parallelStream()
+                .collect(java.util.stream.Collectors.toMap(id -> id, id -> bookingsOrEmpty(id, since)));
+    }
+
+    private Set<String> freshCustomerIds(Map<String, AdsCustomer> adsCustomers,
+            Map<String, List<SquareClient.Booking>> bookingHistory) {
         final Map<String, Instant> createdAtByCustomer = fetchCustomerCreatedAtsOrEmpty(adsCustomers.keySet());
         return adsCustomers.entrySet().parallelStream()
-                .filter(e -> isFresh(e.getKey(), e.getValue().firstTouch(), createdAtByCustomer))
+                .filter(e -> isFresh(e.getKey(), e.getValue().firstTouch(), createdAtByCustomer, bookingHistory))
                 .map(Map.Entry::getKey)
                 .collect(java.util.stream.Collectors.toSet());
     }
@@ -513,9 +537,10 @@ public class MarketingAnalyticsService {
         }
     }
 
-    private boolean isFresh(String customerId, Instant firstTouch, Map<String, Instant> createdAtByCustomer) {
+    private boolean isFresh(String customerId, Instant firstTouch, Map<String, Instant> createdAtByCustomer,
+            Map<String, List<SquareClient.Booking>> bookingHistory) {
         Instant cutoff = firstTouch.minus(FRESHNESS_GRACE);
-        Instant earliestBooking = earliestBookingStart(customerId);
+        Instant earliestBooking = earliestBookingStart(customerId, bookingHistory);
         if (earliestBooking != null) return !earliestBooking.isBefore(cutoff);
         Instant createdAt = createdAtByCustomer.get(customerId);
         return createdAt != null && !createdAt.isBefore(cutoff);
@@ -523,28 +548,15 @@ public class MarketingAnalyticsService {
 
     /** The start of this customer's earliest known booking (any status, past or future) — bookings
      * carry real transaction/appointment history unaffected by a later profile merge, unlike Square's
-     * own created_at. Null if they have no bookings at all, or if the Square lookup fails.
+     * own created_at. Null if they have no bookings at all.
      */
-    private Instant earliestBookingStart(String customerId) {
-        // Truncated to the day: SquareClient caches bookingsForCustomer by (customerId, since), so
-        // a "since" that carries millisecond precision (clock.instant() called fresh every time)
-        // is a different cache key on literally every call — the 2-minute cache never actually
-        // hits, and repeat navigation between tabs pays the full multi-second Square round trip
-        // every single time. Day-level granularity is more than precise enough for a 400-day
-        // lookback anyway.
-        Instant since = clock.instant().truncatedTo(java.time.temporal.ChronoUnit.DAYS).minus(BOOKING_HISTORY_LOOKBACK);
-        try {
-            return square.bookingsForCustomer(customerId, since).stream()
-                    .map(SquareClient.Booking::startAt)
-                    .map(MarketingAnalyticsService::parseInstantOrNull)
-                    .filter(Objects::nonNull)
-                    .min(Comparator.naturalOrder())
-                    .orElse(null);
-        } catch (RuntimeException ex) {
-            log.warn("Failed to fetch booking history for customer {} while checking fresh/returning status",
-                    customerId, ex);
-            return null;
-        }
+    private Instant earliestBookingStart(String customerId, Map<String, List<SquareClient.Booking>> bookingHistory) {
+        return bookingHistory.getOrDefault(customerId, List.of()).stream()
+                .map(SquareClient.Booking::startAt)
+                .map(MarketingAnalyticsService::parseInstantOrNull)
+                .filter(Objects::nonNull)
+                .min(Comparator.naturalOrder())
+                .orElse(null);
     }
 
     private static Instant parseInstantOrNull(String iso) {
@@ -592,17 +604,15 @@ public class MarketingAnalyticsService {
      * "an upcoming visit" — not "a line item" — is what the owner wants to see in this list.
      */
     private List<UpcomingAppointment> upcomingAppointments(
-            Set<String> adsCustomerIds, Set<String> freshCustomerIds, Set<String> paidBookingIds, LocalDate today) {
+            Set<String> adsCustomerIds, Set<String> freshCustomerIds, Set<String> paidBookingIds, LocalDate today,
+            Map<String, List<SquareClient.Booking>> bookingHistory) {
         record FutureBooking(String customerId, SquareClient.Booking booking) {}
-        // A day of slack behind "today" is enough here (isTodayOrLater does the exact date
-        // filtering below); no need for the wider BOOKING_HISTORY_LOOKBACK this call doesn't need.
-        // Derived from the already-day-granular `today` (not a fresh clock.instant() call) so this
-        // is a stable cache key for SquareClient.bookingsForCustomer's (customerId, since) cache —
-        // a millisecond-precise "since" would be a different key on every single call, permanently
-        // defeating that cache and re-paying the full Square round trip on every request.
-        Instant sinceYesterday = today.minusDays(1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+        // Filters the same booking history freshCustomerIds already fetched (400-day lookback,
+        // which already extends through Square's FUTURE_BOOKING_HORIZON regardless of since) —
+        // this used to be a second live Square sweep per customer with its own "since=yesterday"
+        // cache key, doubling every report's Square round trips for no reason.
         List<FutureBooking> future = adsCustomerIds.parallelStream()
-                .flatMap(id -> bookingsOrEmpty(id, sinceYesterday).stream()
+                .flatMap(id -> bookingHistory.getOrDefault(id, List.of()).stream()
                         .filter(MarketingAnalyticsService::didHappen)
                         .filter(b -> b.id() == null || !paidBookingIds.contains(b.id()))
                         .filter(b -> isTodayOrLater(b.startAt(), today))

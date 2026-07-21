@@ -14,7 +14,11 @@ const TABS = [
   { href: '/owner/marketing/ads-report', label: 'Ads Report' },
 ];
 
-const DEFAULT_SLUG = 'mani';
+// Also the default landing page every marketing page.tsx server component should scope its own
+// data fetch to when ?slug= is absent — mani is the only page with real ad spend/history (see
+// openspec/changes/ads-report-consolidation/design.md), and this selector already visually shows
+// it pre-selected in that case, so the fetched data has to actually match what's shown as selected.
+export const DEFAULT_SLUG = 'mani';
 
 // Rendered as a child of each tab's <Link> — useLinkStatus only works inside a Link's own subtree.
 // Needed specifically because these links set prefetch={false} (hovering a tab would otherwise
