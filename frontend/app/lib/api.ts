@@ -39,6 +39,7 @@ import type {
   AdSpendEntry,
   MarketingAdsReportData,
   MarketingAnalyticsData,
+  MarketingCustomerHistory,
   MarketingContactsData,
   MarketingDashboardData,
   MarketingLandingPage,
@@ -456,6 +457,11 @@ export const api = {
   // Every entered spend row for one page, most recent period first.
   listAdSpendEntries: (slug: string) =>
     proxyGet<AdSpendEntry[]>(`/api/owner/marketing/ads-report/spend?slug=${encodeURIComponent(slug)}`),
+
+  // One Square customer's submission + appointment history — fetched lazily, only when a row on
+  // the Ads Report breakdown's Completed/Anticipated lists is expanded.
+  getMarketingCustomerHistory: (customerId: string) =>
+    proxyGet<MarketingCustomerHistory>(`/api/owner/marketing/ads-report/customer-history?customerId=${encodeURIComponent(customerId)}`),
 };
 
 // The backend's default Spring error body is {"message": "...", "error": "...", "status": ...} —

@@ -29,6 +29,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -58,6 +59,25 @@ public class MarketingContactsService {
         this.square = square;
         this.aggregator = aggregator;
         this.salonConfig = salonConfig;
+    }
+
+    /** One customer's submission + appointment history, resolved by Square customer id rather
+     * than by contact row — for the Ads Report breakdown drill-down's per-row "expand" (see
+     * MarketingAdsReportController), which only knows a completed/upcoming row's customerId, not
+     * which marketing.contacts row it came from. Fetched lazily, one customer at a time, on the
+     * owner's own click — see design.md's "fetch on click" decision for that capability. Empty
+     * (not an error) if the schema is unreachable or no contact resolves to this customer id.
+     */
+    public Optional<Contact> contactByCustomerId(String squareCustomerId) {
+        try {
+            return repository.listAll().stream()
+                    .filter(r -> squareCustomerId.equals(resolveSquareCustomerId(r)))
+                    .findFirst()
+                    .map(this::toContact);
+        } catch (DataAccessException ex) {
+            log.warn("Marketing schema unavailable while resolving contact for customer {}", squareCustomerId, ex);
+            return Optional.empty();
+        }
     }
 
     /** Never throws: same "this app's health must never depend on the other service's

@@ -4,8 +4,10 @@ import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.domain.AdSpendEntry;
 import com.salonreview.marketing.MarketingAnalyticsService;
 import com.salonreview.marketing.MarketingAnalyticsService.PeriodKind;
+import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.marketing.TrafficSourceParam;
 import com.salonreview.web.dto.MarketingAdsReportDto;
+import com.salonreview.web.dto.MarketingCustomerHistoryDto;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,9 +20,11 @@ import java.util.List;
 public class MarketingAdsReportController {
 
     private final MarketingAnalyticsService service;
+    private final MarketingContactsService contactsService;
 
-    public MarketingAdsReportController(MarketingAnalyticsService service) {
+    public MarketingAdsReportController(MarketingAnalyticsService service, MarketingContactsService contactsService) {
         this.service = service;
+        this.contactsService = contactsService;
     }
 
     /** period is "week" (default), "month", "mtd" (month-to-date), or "custom" — which grain to
@@ -78,6 +82,17 @@ public class MarketingAdsReportController {
     @GetMapping("/spend")
     public List<AdSpendEntryDto> listSpendEntries(@RequestParam String slug) {
         return service.listAdSpendEntries(slug).stream().map(MarketingAdsReportController::toDto).toList();
+    }
+
+    /** One customer's submission + appointment history, fetched lazily when the owner expands a
+     * row on the breakdown drill-down's Completed/Anticipated lists — not bundled into the
+     * breakdown's own response, so that stays fast regardless of how many customers are in range.
+     */
+    @GetMapping("/customer-history")
+    public MarketingCustomerHistoryDto customerHistory(@RequestParam String customerId) {
+        return contactsService.contactByCustomerId(customerId)
+                .map(c -> new MarketingCustomerHistoryDto(c.submissions(), c.appointments()))
+                .orElse(MarketingCustomerHistoryDto.empty());
     }
 
     private static AdSpendEntryDto toDto(AdSpendEntry e) {

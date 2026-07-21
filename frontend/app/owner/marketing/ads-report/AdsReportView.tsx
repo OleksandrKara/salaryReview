@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   Bar,
   CartesianGrid,
@@ -20,12 +20,14 @@ import type {
   MarketingAnalyticsData,
   MarketingAnalyticsSegment,
   MarketingCompletedAppointment,
+  MarketingCustomerHistory,
   MarketingLandingPage,
   MarketingUpcomingAppointment,
   TrafficSourceKey,
 } from '../../../lib/types';
 import { Spinner } from '../../../components/Spinner';
 import TrafficSourceFilter, { ADS_ONLY_SOURCES } from '../TrafficSourceFilter';
+import { AppointmentHistoryList, HistoryToggle, PAYMENT_CHANNEL_LABELS, PaymentChannelBadge, SubmissionHistoryList } from '../ContactHistory';
 
 const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -335,7 +337,11 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
           No data for this range yet.
         </div>
       ) : (
-        <>
+        // Dimmed (not just the stat cards above) while a fetch is in flight — otherwise the Text
+        // view in particular looks fully current while it's actually about to be replaced, and a
+        // copy-paste mid-fetch silently grabs the stale numbers. Pointer-events disabled too, so
+        // a click on a now-stale Copy button (or a table row) can't fire against data about to change.
+        <div className={`transition-opacity ${loading ? 'pointer-events-none opacity-50' : ''}`}>
           <div className="mt-6 flex items-center justify-between gap-3">
             <ViewSwitcher view={view} onChange={setView} showChart={periodType === 'month'} />
           </div>
@@ -343,7 +349,7 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
           {view === 'table' && <PeriodTable periods={data.periods} periodType={data.periodType} />}
           {view === 'text' && <WhatsAppTextView row={totals} periodType={data.periodType} slug={slug} />}
           {view === 'chart' && periodType === 'month' && <TrendChart periods={data.periods} />}
-        </>
+        </div>
       )}
 
       <div className="mt-8 border-t border-zinc-100 pt-6">
@@ -788,6 +794,111 @@ function AdSpendEntryForm({ slug }: { slug?: string }) {
 
 type SegmentKey = 'all' | 'fresh' | 'returning';
 
+/** Per-customer "expand to see appointments/submissions" state shared by CompletedList and
+ * UpcomingList below — the same Square customer can appear in both, and expanding it in one
+ * should show it already-expanded (and already-fetched, not re-fetched) in the other. Fetched
+ * lazily, one customer at a time, only on the owner's own click (design.md's "fetch on click"
+ * decision) — the breakdown's own load stays fast regardless of how many customers are in range.
+ */
+interface HistoryExpandState {
+  isAppointmentsOpen(customerId: string): boolean;
+  isSubmissionsOpen(customerId: string): boolean;
+  isLoading(customerId: string): boolean;
+  history(customerId: string): MarketingCustomerHistory | undefined;
+  toggleAppointments(customerId: string): void;
+  toggleSubmissions(customerId: string): void;
+}
+
+function useCustomerHistoryExpand(): HistoryExpandState {
+  const [expandedAppointments, setExpandedAppointments] = useState<Set<string>>(new Set());
+  const [expandedSubmissions, setExpandedSubmissions] = useState<Set<string>>(new Set());
+  const [historyByCustomer, setHistoryByCustomer] = useState<Map<string, MarketingCustomerHistory>>(new Map());
+  const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
+
+  function ensureLoaded(customerId: string) {
+    if (historyByCustomer.has(customerId) || loadingIds.has(customerId)) return;
+    setLoadingIds((prev) => new Set(prev).add(customerId));
+    api.getMarketingCustomerHistory(customerId)
+      .then((result) => setHistoryByCustomer((prev) => new Map(prev).set(customerId, result)))
+      // Best-effort: an empty history lets the toggle settle into "No appointments/submissions"
+      // rather than spinning forever if this one lookup fails.
+      .catch(() => setHistoryByCustomer((prev) => new Map(prev).set(customerId, { submissions: [], appointments: [] })))
+      .finally(() => setLoadingIds((prev) => { const next = new Set(prev); next.delete(customerId); return next; }));
+  }
+
+  function toggle(set: Set<string>, setSet: (updater: (s: Set<string>) => Set<string>) => void, customerId: string) {
+    const opening = !set.has(customerId);
+    setSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(customerId)) next.delete(customerId);
+      else next.add(customerId);
+      return next;
+    });
+    if (opening) ensureLoaded(customerId);
+  }
+
+  return {
+    isAppointmentsOpen: (id) => expandedAppointments.has(id),
+    isSubmissionsOpen: (id) => expandedSubmissions.has(id),
+    isLoading: (id) => loadingIds.has(id),
+    history: (id) => historyByCustomer.get(id),
+    toggleAppointments: (id) => toggle(expandedAppointments, setExpandedAppointments, id),
+    toggleSubmissions: (id) => toggle(expandedSubmissions, setExpandedSubmissions, id),
+  };
+}
+
+/** The expand affordance itself — shown under a completed/upcoming row. Three states: not yet
+ * clicked (plain links, count unknown), loading (spinner), loaded (real HistoryToggle counts,
+ * matching ContactsTable's exact convention including its "no history" plain-text fallback). */
+function CustomerHistoryExpand({ customerId, expand }: { customerId: string; expand: HistoryExpandState }) {
+  const appointmentsOpen = expand.isAppointmentsOpen(customerId);
+  const submissionsOpen = expand.isSubmissionsOpen(customerId);
+  const hist = expand.history(customerId);
+  const loading = expand.isLoading(customerId);
+
+  return (
+    <div className="mt-2 flex flex-col gap-2 border-t border-zinc-100 pt-2">
+      <div className="flex flex-wrap items-center gap-3">
+        {hist ? (
+          <>
+            <HistoryToggle label="Appointments" count={hist.appointments.length} open={appointmentsOpen} onClick={() => expand.toggleAppointments(customerId)} />
+            <HistoryToggle label="Submissions" count={hist.submissions.length} open={submissionsOpen} onClick={() => expand.toggleSubmissions(customerId)} />
+          </>
+        ) : loading ? (
+          <span className="inline-flex items-center gap-1.5 text-xs text-zinc-400">
+            <Spinner className="h-3 w-3" /> Loading history…
+          </span>
+        ) : (
+          <>
+            <button type="button" onClick={() => expand.toggleAppointments(customerId)} className="text-xs font-medium text-blue-600 hover:underline">
+              Appointments
+            </button>
+            <button type="button" onClick={() => expand.toggleSubmissions(customerId)} className="text-xs font-medium text-blue-600 hover:underline">
+              Submissions
+            </button>
+          </>
+        )}
+      </div>
+      {hist && (appointmentsOpen || submissionsOpen) && (
+        <div className="flex flex-col gap-3">
+          {appointmentsOpen && (
+            <div>
+              <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Appointment History</h4>
+              <AppointmentHistoryList appointments={hist.appointments} />
+            </div>
+          )}
+          {submissionsOpen && (
+            <div>
+              <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Submission History</h4>
+              <SubmissionHistoryList submissions={hist.submissions} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BreakdownDrilldown({
   from, to, sources, slug,
 }: { from: string; to: string; sources: Set<TrafficSourceKey>; slug?: string }) {
@@ -795,6 +906,7 @@ function BreakdownDrilldown({
   const [segment, setSegment] = useState<SegmentKey>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const historyExpand = useCustomerHistoryExpand();
 
   useEffect(() => {
     let cancelled = false;
@@ -855,7 +967,7 @@ function BreakdownDrilldown({
                 <ChannelBreakdownBadge key={channel} channel={channel} amount={amount} />
               ))}
             </div>
-            <CompletedList appointments={completedForSegment} />
+            <CompletedList appointments={completedForSegment} historyExpand={historyExpand} />
           </>
         )}
       </div>
@@ -875,7 +987,7 @@ function BreakdownDrilldown({
               <StatCard label="Upcoming appointments" value={upcomingForSegment.length.toLocaleString()} />
               <StatCard label="Anticipated revenue" value={usd(upcomingTotal)} />
             </div>
-            <UpcomingList appointments={upcomingForSegment} />
+            <UpcomingList appointments={upcomingForSegment} historyExpand={historyExpand} />
           </>
         )}
       </div>
@@ -924,21 +1036,6 @@ function FreshBadge({ fresh }: { fresh: boolean }) {
   );
 }
 
-const PAYMENT_CHANNEL_LABELS: Record<string, string> = {
-  CASH: 'Cash',
-  CARD: 'Card',
-  'CASH-NOTE': 'Cash (noted)',
-};
-
-function PaymentChannelBadge({ channel }: { channel: string }) {
-  const cls = channel === 'CASH-NOTE' ? 'bg-amber-50 text-amber-700 ring-amber-200' : 'bg-blue-50 text-blue-700 ring-blue-200';
-  return (
-    <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${cls}`}>
-      {PAYMENT_CHANNEL_LABELS[channel] ?? channel}
-    </span>
-  );
-}
-
 function ChannelBreakdownBadge({ channel, amount }: { channel: string; amount: number }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 ring-1 ring-inset ring-zinc-200">
@@ -947,7 +1044,7 @@ function ChannelBreakdownBadge({ channel, amount }: { channel: string; amount: n
   );
 }
 
-function CompletedList({ appointments }: { appointments: MarketingCompletedAppointment[] }) {
+function CompletedList({ appointments, historyExpand }: { appointments: MarketingCompletedAppointment[]; historyExpand: HistoryExpandState }) {
   return (
     <>
       <div className="mt-3 flex flex-col gap-2 sm:hidden">
@@ -965,6 +1062,7 @@ function CompletedList({ appointments }: { appointments: MarketingCompletedAppoi
               <span className="text-xs text-zinc-400">{fmtDay(a.date)}</span>
               <PaymentChannelBadge channel={a.paymentChannel} />
             </div>
+            <CustomerHistoryExpand customerId={a.customerId} expand={historyExpand} />
           </div>
         ))}
       </div>
@@ -983,14 +1081,21 @@ function CompletedList({ appointments }: { appointments: MarketingCompletedAppoi
           </thead>
           <tbody className="divide-y divide-zinc-100">
             {appointments.map((a) => (
-              <tr key={a.customerId + a.date + a.serviceName} className="hover:bg-zinc-50">
-                <td className="px-3 py-2 font-medium">{a.customerName}</td>
-                <td className="px-3 py-2 text-zinc-600">{a.serviceName}</td>
-                <td className="px-3 py-2 text-zinc-600">{fmtDay(a.date)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{usdExact(a.collected)}</td>
-                <td className="px-3 py-2"><PaymentChannelBadge channel={a.paymentChannel} /></td>
-                <td className="px-3 py-2"><FreshBadge fresh={a.freshFromAds} /></td>
-              </tr>
+              <Fragment key={a.customerId + a.date + a.serviceName}>
+                <tr className="hover:bg-zinc-50">
+                  <td className="px-3 py-2 font-medium">{a.customerName}</td>
+                  <td className="px-3 py-2 text-zinc-600">{a.serviceName}</td>
+                  <td className="px-3 py-2 text-zinc-600">{fmtDay(a.date)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{usdExact(a.collected)}</td>
+                  <td className="px-3 py-2"><PaymentChannelBadge channel={a.paymentChannel} /></td>
+                  <td className="px-3 py-2"><FreshBadge fresh={a.freshFromAds} /></td>
+                </tr>
+                <tr className="bg-zinc-50/50">
+                  <td colSpan={6} className="px-3 pb-2">
+                    <CustomerHistoryExpand customerId={a.customerId} expand={historyExpand} />
+                  </td>
+                </tr>
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -999,7 +1104,7 @@ function CompletedList({ appointments }: { appointments: MarketingCompletedAppoi
   );
 }
 
-function UpcomingList({ appointments }: { appointments: MarketingUpcomingAppointment[] }) {
+function UpcomingList({ appointments, historyExpand }: { appointments: MarketingUpcomingAppointment[]; historyExpand: HistoryExpandState }) {
   return (
     <>
       <div className="mt-3 flex flex-col gap-2 sm:hidden">
@@ -1014,6 +1119,7 @@ function UpcomingList({ appointments }: { appointments: MarketingUpcomingAppoint
               <span className="font-medium tabular-nums">{usdExact(a.price)}</span>
             </div>
             <div className="mt-1 text-xs text-zinc-400">{fmtAppointment(a.startAt)}</div>
+            <CustomerHistoryExpand customerId={a.customerId} expand={historyExpand} />
           </div>
         ))}
       </div>
@@ -1031,13 +1137,20 @@ function UpcomingList({ appointments }: { appointments: MarketingUpcomingAppoint
           </thead>
           <tbody className="divide-y divide-zinc-100">
             {appointments.map((a) => (
-              <tr key={a.customerId + a.startAt} className="hover:bg-zinc-50">
-                <td className="px-3 py-2 font-medium">{a.customerName}</td>
-                <td className="px-3 py-2 text-zinc-600">{a.serviceName}</td>
-                <td className="px-3 py-2 text-zinc-600">{fmtAppointment(a.startAt)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{usdExact(a.price)}</td>
-                <td className="px-3 py-2"><FreshBadge fresh={a.freshFromAds} /></td>
-              </tr>
+              <Fragment key={a.customerId + a.startAt}>
+                <tr className="hover:bg-zinc-50">
+                  <td className="px-3 py-2 font-medium">{a.customerName}</td>
+                  <td className="px-3 py-2 text-zinc-600">{a.serviceName}</td>
+                  <td className="px-3 py-2 text-zinc-600">{fmtAppointment(a.startAt)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{usdExact(a.price)}</td>
+                  <td className="px-3 py-2"><FreshBadge fresh={a.freshFromAds} /></td>
+                </tr>
+                <tr className="bg-zinc-50/50">
+                  <td colSpan={5} className="px-3 pb-2">
+                    <CustomerHistoryExpand customerId={a.customerId} expand={historyExpand} />
+                  </td>
+                </tr>
+              </Fragment>
             ))}
           </tbody>
         </table>
