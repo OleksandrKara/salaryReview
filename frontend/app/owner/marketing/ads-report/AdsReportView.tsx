@@ -203,6 +203,18 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
     }
   }
 
+  // Always re-fetches on mount, for whatever the initial filter is (Month to date, by default) —
+  // the server-rendered initialData above is already correct, but a guaranteed fresh client fetch
+  // (with the loading banner visibly shown) means the owner never has to wonder whether what
+  // they're looking at is current, and it self-heals any staleness in initialData (a cached page,
+  // a slow-to-update session) without needing a manual filter click first.
+  useEffect(() => {
+    // Deferred a microtask out (rather than calling load() directly) so its setLoading(true)
+    // doesn't run synchronously inside the effect body itself.
+    void Promise.resolve().then(() => load(periodType, sources));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function selectPeriodType(pt: PeriodType) {
     setPeriodType(pt);
     if (view === 'chart' && pt !== 'month') setView('table');
