@@ -435,6 +435,44 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
+    @DisplayName("a follow-up appointment already counted by the tracked flow (no marketing.attribution row, "
+            + "but already surfaced via collectServices) is not re-added — regression guard for the "
+            + "same-customer-appears-twice breakdown bug")
+    void analyticsDoesNotDoubleCountFollowUpAlreadyInTrackedFlow() {
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
+        when(square.customerCreatedAts(Set.of("cust-1")))
+                .thenReturn(Map.of("cust-1", Instant.parse("2026-07-01T00:05:00Z")));
+        // The tracked flow already found this booking via SquareMonthAggregator/payroll matching —
+        // it never depends on marketing.attribution having a row for it.
+        AttributedService trackedService = new AttributedService("p1", "P", "2026-07-05", "FIRST", "Manicure",
+                new BigDecimal("85.00"), BigDecimal.ZERO, new BigDecimal("85.00"), BigDecimal.ZERO, true, 1, 1,
+                false, "CARD", null, "bk-shared", "cust-1", "Customer");
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00")))
+                .thenReturn(aggOf(2026, 7, List.of(trackedService)));
+        when(square.customerNames(Set.of("cust-1"))).thenReturn(Map.of("cust-1", "Jane Doe"));
+
+        java.util.UUID pageId = java.util.UUID.randomUUID();
+        when(dashboardRepository.findLandingPageId("mani")).thenReturn(java.util.Optional.of(pageId));
+        // marketing.attribution has no row for this booking (e.g. attribution capture missed it) —
+        // by that check alone, follow-up detection would treat it as "uncounted".
+        when(dashboardRepository.findAttributedBookingIds(pageId, null)).thenReturn(Set.of());
+        var sameBooking = new com.salonreview.web.dto.MarketingContactDto.Appointment(
+                "bk-shared", "ACCEPTED", Instant.parse("2026-07-05T18:00:00Z"), "Manicure",
+                new BigDecimal("85.00"), null, "CARD", new BigDecimal("85.00"),
+                null, null, null, null, null, null);
+        when(contactsService.followUpAppointments("mani", null, Set.of())).thenReturn(List.of(
+                new MarketingContactsService.FollowUpAppointment("cust-1", sameBooking)));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY, "mani");
+
+        assertThat(dto.completed()).hasSize(1);
+        assertThat(dto.completed().get(0).collected()).isEqualByComparingTo("85.00");
+        assertThat(dto.completed().get(0).customerName()).isEqualTo("Jane Doe");
+    }
+
+    @Test
     @DisplayName("default (no slug) call still uses the exact no-arg contacts query — regression guard for byte-identical default behavior")
     void defaultCallUsesNoArgContactsQuery() {
         when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
@@ -808,6 +846,42 @@ class MarketingAnalyticsServiceTest {
 
         MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
                 TrafficSourceSql.ADS_ONLY, null, MarketingAnalyticsService.PeriodKind.MONTH);
+
+        assertThat(dto.periods()).hasSize(1);
+        assertThat(dto.periods().get(0).anticipatedRevenue()).isEqualByComparingTo("85.00");
+    }
+
+    @Test
+    @DisplayName("adsReport() does not double-count a follow-up appointment already found by the "
+            + "upcoming-appointments scan — regression guard for the same-customer-twice-in-Upcoming bug")
+    void adsReportDoesNotDoubleCountFollowUpAlreadyUpcoming() {
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads")));
+        when(square.customerCreatedAts(Set.of("cust-1")))
+                .thenReturn(Map.of("cust-1", Instant.parse("2026-01-01T00:00:00Z")));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
+
+        var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
+        var future = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-20T18:00:00Z", null, null,
+                "loc-1", "cust-1", null, null, List.of(seg));
+        when(square.bookingsForCustomer(eq("cust-1"), any())).thenReturn(List.of(future));
+        when(square.catalogPrices(List.of("var-mani"))).thenReturn(Map.of("var-mani", new BigDecimal("85.00")));
+        when(square.catalogNames(List.of("var-mani"))).thenReturn(Map.of("var-mani", "Manicure"));
+        when(square.customerNames(any())).thenReturn(Map.of("cust-1", "Jane Doe"));
+
+        java.util.UUID pageId = java.util.UUID.randomUUID();
+        when(dashboardRepository.findLandingPageId("mani")).thenReturn(java.util.Optional.of(pageId));
+        // marketing.attribution has no row for this booking, same gap as the completed-side bug —
+        // by that check alone, follow-up detection would treat "bk-1" as undiscovered.
+        when(dashboardRepository.findAttributedBookingIds(pageId, null)).thenReturn(Set.of());
+        var sameBooking = new com.salonreview.web.dto.MarketingContactDto.Appointment(
+                "bk-1", "ACCEPTED", Instant.parse("2026-07-20T18:00:00Z"), "Manicure",
+                new BigDecimal("85.00"), null, null, null, null, null, null, null, null, null);
+        when(contactsService.followUpAppointments("mani", null, Set.of())).thenReturn(List.of(
+                new MarketingContactsService.FollowUpAppointment("cust-1", sameBooking)));
+
+        MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
+                TrafficSourceSql.ADS_ONLY, "mani", MarketingAnalyticsService.PeriodKind.MONTH);
 
         assertThat(dto.periods()).hasSize(1);
         assertThat(dto.periods().get(0).anticipatedRevenue()).isEqualByComparingTo("85.00");
