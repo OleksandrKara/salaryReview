@@ -296,6 +296,24 @@ const STRINGS = {
   redoErrCreateFallback: { EN: 'Failed to create', RU: 'Не удалось создать' },
   redoErrDelete: { EN: 'Could not delete.', RU: 'Не удалось удалить.' },
   redoConfirmDelete: { EN: 'Delete this redo ({from} → {to})?', RU: 'Удалить эту переделку ({from} → {to})?' },
+
+  // Ads report (owner/marketing/ads-report) — block titles + info tooltips
+  adsRevenueTitle: { EN: 'Revenue', RU: 'Выручка' },
+  adsRevenueInfo: {
+    EN: 'Money from ads-driven customers: already collected, plus what they still have booked — split into this period and later.',
+    RU: 'Деньги от клиентов, привлечённых рекламой: уже собранные, плюс то, что у них ещё запланировано — с разбивкой на этот период и на будущее.',
+  },
+  adsRoiTitle: { EN: 'ROI', RU: 'ROI' },
+  adsRoiInfo: {
+    EN: 'Return on ad spend: Realized ROAS uses only money already collected; Total ROAS and ROI% also count what these customers still have booked.',
+    RU: 'Окупаемость расходов на рекламу: Realized ROAS учитывает только уже полученные деньги; Total ROAS и ROI % также учитывают то, что эти клиенты ещё забронировали.',
+  },
+  adsAdSpend: { EN: 'Ad spend', RU: 'Расходы на рекламу' },
+  adsBookingsTitle: { EN: 'Bookings', RU: 'Записи' },
+  adsBookingsInfo: {
+    EN: 'What happened to every appointment dated in this period for these ads-driven customers: completed, cancelled/no-show, or still upcoming — split into this period and later.',
+    RU: 'Что произошло с каждой записью на этот период у клиентов, привлечённых рекламой: завершена, отменена/неявка, или ещё предстоит — с разбивкой на этот период и на будущее.',
+  },
 } satisfies Record<string, Record<Language, string>>;
 
 /** Translate a UI key to the given language; English when the language is unset. */
