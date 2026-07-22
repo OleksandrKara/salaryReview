@@ -125,6 +125,27 @@ function totalRevenueOf(row: MarketingAdsReportPeriod): number {
   return row.revenueCollected + row.anticipatedRevenue + row.anticipatedRevenueOutsidePeriod;
 }
 
+function roiPercentLabel(pct: number | null): string {
+  return pct === null ? '—' : `${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%`;
+}
+
+// Realized ROAS (spend vs. what's actually been collected), Total ROAS (spend vs. the full
+// Collected+Anticipated Total above), and ROI% (profit over spend, using that same Total) — the
+// three figures the WhatsApp text export already shows together under "*Ad spend & ROI*", reused
+// here so the table view and top summary say exactly the same thing in the same terms.
+function roiMetricsOf(row: MarketingAdsReportPeriod): {
+  realizedRoas: number | null;
+  totalRoas: number | null;
+  roiPercent: number | null;
+} {
+  const totalRevenue = totalRevenueOf(row);
+  return {
+    realizedRoas: roiMultiple(row.adSpend, row.revenueCollected),
+    totalRoas: roiMultiple(row.adSpend, totalRevenue),
+    roiPercent: row.adSpend > 0 ? ((totalRevenue - row.adSpend) / row.adSpend) * 100 : null,
+  };
+}
+
 // Money (collected/anticipated/total), ROI (realized vs total ROAS/ROI%), and customers created
 // vs. follow-ups — everything MarketingAdsReportDto.PeriodRow actually carries today. Visits/
 // clicks/leads/unbooked (the Funnel-sourced part of the manual reports this mirrors) aren't wired
@@ -132,9 +153,7 @@ function totalRevenueOf(row: MarketingAdsReportPeriod): number {
 // so they're left out here rather than faked.
 function formatWhatsAppReport(row: MarketingAdsReportPeriod, periodType: MarketingAdsReportData['periodType'], slug?: string): string {
   const totalRevenue = totalRevenueOf(row);
-  const realizedRoas = roiMultiple(row.adSpend, row.revenueCollected);
-  const totalRoas = roiMultiple(row.adSpend, totalRevenue);
-  const roiPercent = row.adSpend > 0 ? ((totalRevenue - row.adSpend) / row.adSpend) * 100 : null;
+  const { realizedRoas, totalRoas, roiPercent } = roiMetricsOf(row);
   const totalCustomers = row.customersCreated + row.customersFollowedUp;
   const costPerCustomer = totalCustomers > 0 && row.adSpend > 0 ? row.adSpend / totalCustomers : null;
 
@@ -152,7 +171,7 @@ function formatWhatsAppReport(row: MarketingAdsReportPeriod, periodType: Marketi
   lines.push(`Spend: ${row.adSpendEstimated ? '~' : ''}${usdExact(row.adSpend)}`);
   lines.push(`Realized ROAS: ${roiLabel(realizedRoas)}`);
   lines.push(`Total ROAS: ${roiLabel(totalRoas)}`);
-  if (roiPercent !== null) lines.push(`ROI: ${roiPercent >= 0 ? '+' : ''}${roiPercent.toFixed(0)}%`);
+  if (roiPercent !== null) lines.push(`ROI: ${roiPercentLabel(roiPercent)}`);
   lines.push('');
   lines.push('*Customers*');
   lines.push(`New: ${row.customersCreated}`);
@@ -259,7 +278,6 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
   }
 
   const totals = data.totals;
-  const totalRoi = roiMultiple(totals.adSpend, totals.revenueCollected);
 
   return (
     <div>
@@ -343,10 +361,12 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
 
       <div className={`transition-opacity ${loading ? 'opacity-50' : ''}`}>
         <MoneyBreakdown row={totals} layout="horizontal" />
+        <div className="mt-2">
+          <ROIBreakdown row={totals} layout="horizontal" />
+        </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           <StatCard label="Ad spend" value={usd(totals.adSpend)} hint={totals.adSpendEstimated ? 'estimated' : undefined} />
-          <StatCard label="ROI" value={roiLabel(totalRoi)} />
           <StatCard label="Customers created" value={totals.customersCreated.toLocaleString()} />
           <StatCard label="Follow-up bookings" value={totals.customersFollowedUp.toLocaleString()} />
           <StatCard label="Completed appts" value={totals.completedAppointments.toLocaleString()} />
@@ -572,16 +592,56 @@ function MoneyBreakdown({ row, layout }: { row: MarketingAdsReportPeriod; layout
       <MoneyOperator symbol="+" />
       <MoneyTerm label="Anticipated (outside period)" value={usd(row.anticipatedRevenueOutsidePeriod)} />
       <MoneyOperator symbol="=" />
-      <MoneyTerm label="Total" value={usd(total)} emphasize />
+      <MoneyTerm label="Total" value={usd(total)} tone="positive" />
     </div>
   );
 }
 
-function MoneyTerm({ label, value, emphasize }: { label: string; value: string; emphasize?: boolean }) {
+/** Realized ROAS + Total ROAS + ROI% — the same three figures the WhatsApp text export already
+ * groups under "*Ad spend & ROI*", laid out the same way MoneyBreakdown lays out the money terms,
+ * so a reader who's used one reads the other the same way. ROI% is colored green/red by sign,
+ * since (unlike the two ROAS multiples) it's the one figure here that's meaningfully good or bad. */
+function ROIBreakdown({ row, layout }: { row: MarketingAdsReportPeriod; layout: 'horizontal' | 'stacked' }) {
+  const { realizedRoas, totalRoas, roiPercent } = roiMetricsOf(row);
+  const roiTone: 'positive' | 'negative' | undefined =
+    roiPercent === null ? undefined : roiPercent >= 0 ? 'positive' : 'negative';
+  const roiTextClass = roiTone === 'negative' ? 'text-rose-700' : 'text-emerald-700';
+  if (layout === 'stacked') {
+    return (
+      <div className="rounded-lg bg-zinc-50 p-2.5 text-xs ring-1 ring-zinc-200">
+        <div className="flex items-center justify-between">
+          <span className="text-zinc-500">Realized ROAS</span>
+          <span className="tabular-nums font-medium text-zinc-900">{roiLabel(realizedRoas)}</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between">
+          <span className="text-zinc-400">Total ROAS</span>
+          <span className="tabular-nums text-zinc-600">{roiLabel(totalRoas)}</span>
+        </div>
+        <div className="mt-1.5 flex items-center justify-between border-t border-zinc-300 pt-1.5">
+          <span className={`font-semibold ${roiTextClass}`}>ROI</span>
+          <span className={`tabular-nums font-semibold ${roiTextClass}`}>{roiPercentLabel(roiPercent)}</span>
+        </div>
+      </div>
+    );
+  }
   return (
-    <div className={`rounded-lg p-3 ring-1 sm:p-4 ${emphasize ? 'bg-emerald-50 ring-emerald-200' : 'ring-zinc-200'}`}>
+    <div className="flex flex-wrap items-stretch gap-1.5">
+      <MoneyTerm label="Realized ROAS" value={roiLabel(realizedRoas)} />
+      <MoneyTerm label="Total ROAS" value={roiLabel(totalRoas)} />
+      <MoneyTerm label="ROI" value={roiPercentLabel(roiPercent)} tone={roiTone} />
+    </div>
+  );
+}
+
+function MoneyTerm({ label, value, tone }: { label: string; value: string; tone?: 'positive' | 'negative' }) {
+  const boxClass = tone === 'positive' ? 'bg-emerald-50 ring-emerald-200'
+    : tone === 'negative' ? 'bg-rose-50 ring-rose-200'
+      : 'ring-zinc-200';
+  const textClass = tone === 'positive' ? 'text-emerald-700' : tone === 'negative' ? 'text-rose-700' : 'text-zinc-900';
+  return (
+    <div className={`rounded-lg p-3 ring-1 sm:p-4 ${boxClass}`}>
       <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-500 sm:text-xs">{label}</div>
-      <div className={`mt-1 text-lg font-semibold sm:text-2xl ${emphasize ? 'text-emerald-700' : 'text-zinc-900'}`}>{value}</div>
+      <div className={`mt-1 text-lg font-semibold sm:text-2xl ${textClass}`}>{value}</div>
     </div>
   );
 }
@@ -624,7 +684,6 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
       <div className="mt-4 flex flex-col gap-2 sm:hidden">
         {periods.map((row) => {
           const current = isCurrentPeriod(row);
-          const roi = roiMultiple(row.adSpend, row.revenueCollected);
           return (
             <div
               key={row.periodStart}
@@ -640,11 +699,12 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
               <div className="mt-2">
                 <MoneyBreakdown row={row} layout="stacked" />
               </div>
+              <div className="mt-2">
+                <ROIBreakdown row={row} layout="stacked" />
+              </div>
               <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
                 <div className="text-zinc-500">Ad spend</div>
                 <div className="text-right tabular-nums"><AdSpendCell row={row} /></div>
-                <div className="text-zinc-500">ROI</div>
-                <div className="text-right tabular-nums font-medium">{roiLabel(roi)}</div>
                 <div className="text-zinc-500">Customers created</div>
                 <div className="text-right tabular-nums">{row.customersCreated}</div>
                 <div className="text-zinc-500">Follow-up bookings</div>
@@ -664,9 +724,9 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
             <tr>
               <th className="px-3 py-2" rowSpan={2}>Period</th>
               <th className="px-3 py-2 text-right" rowSpan={2}>Ad spend</th>
-              <th className="px-3 py-2 text-right" rowSpan={2}>ROI</th>
               <th className="border-l border-zinc-200 px-3 py-1.5 text-center" colSpan={4}>Money</th>
-              <th className="px-3 py-2 text-right" rowSpan={2}>Customers created</th>
+              <th className="border-l border-zinc-200 px-3 py-1.5 text-center" colSpan={3}>ROI</th>
+              <th className="border-l border-zinc-200 px-3 py-2 text-right" rowSpan={2}>Customers created</th>
               <th className="px-3 py-2 text-right" rowSpan={2}>Follow-up</th>
               <th className="px-3 py-2 text-right" rowSpan={2}>Completed appts</th>
             </tr>
@@ -687,12 +747,22 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
               <th className="bg-emerald-50 px-3 py-2 text-right font-semibold normal-case text-emerald-700">
                 = Total
               </th>
+              <th className="border-l border-zinc-200 px-3 py-2 text-right font-normal normal-case" title="Ad spend against what's actually been collected.">
+                Realized ROAS
+              </th>
+              <th className="px-3 py-2 text-right font-normal normal-case" title="Ad spend against the Total column (Collected + both Anticipated figures).">
+                Total ROAS
+              </th>
+              <th className="px-3 py-2 text-right font-normal normal-case" title="Profit over ad spend, using that same Total.">
+                ROI %
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
             {periods.map((row) => {
               const current = isCurrentPeriod(row);
-              const roi = roiMultiple(row.adSpend, row.revenueCollected);
+              const { realizedRoas, totalRoas, roiPercent } = roiMetricsOf(row);
+              const roiTextClass = roiPercent === null ? 'text-zinc-600' : roiPercent >= 0 ? 'text-emerald-700' : 'text-rose-700';
               return (
                 <tr key={row.periodStart} className={current ? 'bg-blue-50' : 'hover:bg-zinc-50'}>
                   <td className="px-3 py-2 font-medium">
@@ -703,14 +773,16 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
                     </div>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600"><AdSpendCell row={row} /></td>
-                  <td className="px-3 py-2 text-right tabular-nums font-medium">{roiLabel(roi)}</td>
                   <td className="border-l border-zinc-100 px-3 py-2 text-right tabular-nums text-zinc-600">{usdExact(row.revenueCollected)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usdExact(row.anticipatedRevenue)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usdExact(row.anticipatedRevenueOutsidePeriod)}</td>
                   <td className={`px-3 py-2 text-right tabular-nums font-semibold text-emerald-700 ${current ? 'bg-emerald-50/60' : 'bg-emerald-50/40'}`}>
                     {usdExact(totalRevenueOf(row))}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{row.customersCreated}</td>
+                  <td className="border-l border-zinc-100 px-3 py-2 text-right tabular-nums text-zinc-600">{roiLabel(realizedRoas)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{roiLabel(totalRoas)}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums font-semibold ${roiTextClass}`}>{roiPercentLabel(roiPercent)}</td>
+                  <td className="border-l border-zinc-100 px-3 py-2 text-right tabular-nums text-zinc-600">{row.customersCreated}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{row.customersFollowedUp}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{row.completedAppointments}</td>
                 </tr>
@@ -1181,9 +1253,9 @@ function BreakdownDrilldown({
           <span className="text-xs text-zinc-400">not counted above — nothing&apos;s been rung up yet; includes follow-ups</span>
         </div>
         <p className="mt-1 text-xs text-zinc-400">
-          Every future appointment for these customers, any date — not limited to the range selected
-          above. That&apos;s why this total can be larger than the &quot;Anticipated&quot; figure shown
-          per period further up: that one only counts appointments starting within that specific period.
+          Only contacts first captured by ads within the range selected above — but every future
+          appointment they&apos;ve booked, any date, not just ones inside that range. Change the
+          period up top and this section updates too, since it&apos;s a different contact list.
         </p>
         {upcomingForSegment.length === 0 ? (
           <div className="mt-3 rounded-lg border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">

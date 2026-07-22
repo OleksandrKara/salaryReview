@@ -164,8 +164,17 @@ public class MarketingAnalyticsService {
         // tags each paid service with the booking that produced it, so this is free (no extra Square call).
         Set<String> paidBookingIds = monthToDate.stream()
                 .map(AttributedService::bookingId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        // "Anticipated from upcoming appointments" is scoped to contacts actually captured within
+        // [from, to] (firstTouch) — unlike Completed above (any ads customer's payment landing in
+        // [from, to]), a long-standing customer's unrelated future booking shouldn't inflate this
+        // section just because they're also ads-attributed; the owner is looking at what this
+        // specific window's leads have booked ahead, not the whole account's forward pipeline.
+        Set<String> customersCapturedInRange = adsCustomers.entrySet().stream()
+                .filter(e -> withinPeriod(e.getValue().firstTouch().atZone(java.time.ZoneOffset.UTC).toLocalDate(), from, to))
+                .map(Map.Entry::getKey)
+                .collect(java.util.stream.Collectors.toSet());
         UpcomingResult upcomingResult =
-                upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today, bookingHistory);
+                upcomingAppointments(customersCapturedInRange, freshCustomerIds, paidBookingIds, today, bookingHistory);
         List<UpcomingAppointment> upcoming = new ArrayList<>(upcomingResult.appointments());
 
         // Folds manager-follow-up appointments into the completed/upcoming lists (not into the
@@ -173,9 +182,11 @@ public class MarketingAnalyticsService {
         // AttributedService rows) — see design.md D6, so Ads Report's drill-down agrees with the
         // adsReport summary numbers above it rather than silently undercounting. alreadyCountedBookingIds
         // (every booking the tracked flow already surfaced, completed or upcoming) keeps a follow-up
-        // from re-adding the same visit a second time under the same customer.
+        // from re-adding the same visit a second time under the same customer. The upcoming side is
+        // further restricted to customersCapturedInRange, same reasoning as above.
         Set<String> alreadyCountedBookingIds = bookingIdsOf(inRange, upcomingResult.bookingIds());
-        mergeFollowUpsInto(resolveFollowUps(slug), freshCustomerIds, today, completed, upcoming, alreadyCountedBookingIds);
+        mergeFollowUpsInto(resolveFollowUps(slug), freshCustomerIds, today, completed, upcoming,
+                alreadyCountedBookingIds, customersCapturedInRange);
 
         return new MarketingAnalyticsDto(from, to, all, fresh, returning, upcoming, completed, currentMonthToDate, adSpend);
     }
@@ -274,7 +285,7 @@ public class MarketingAnalyticsService {
 
         List<FollowUpAppointment> followUps = resolveFollowUps(slug);
         Set<String> alreadyCountedBookingIds = bookingIdsOf(inRange, upcomingResult.bookingIds());
-        mergeFollowUpsInto(followUps, freshCustomerIds, today, completed, upcoming, alreadyCountedBookingIds);
+        mergeFollowUpsInto(followUps, freshCustomerIds, today, completed, upcoming, alreadyCountedBookingIds, null);
 
         List<PeriodRow> rows = new ArrayList<>();
         for (LocalDate[] p : periods) {
@@ -332,7 +343,7 @@ public class MarketingAnalyticsService {
     private void mergeFollowUpsInto(
             List<FollowUpAppointment> followUps, Set<String> freshCustomerIds, LocalDate today,
             List<CompletedAppointment> completed, List<UpcomingAppointment> upcoming,
-            Set<String> alreadyCountedBookingIds) {
+            Set<String> alreadyCountedBookingIds, Set<String> upcomingAllowedCustomerIds) {
         if (followUps.isEmpty()) return;
         Set<String> customerIds = followUps.stream()
                 .map(FollowUpAppointment::customerId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
@@ -351,6 +362,9 @@ public class MarketingAnalyticsService {
                 completed.add(new CompletedAppointment(customerId, customerName, serviceName, date,
                         a.collectedAmount().setScale(2, RoundingMode.HALF_UP), a.paymentChannel(), fresh));
             } else if (!date.isBefore(today)) {
+                // upcomingAllowedCustomerIds == null means "no restriction" (adsReport()'s own call,
+                // which splits by appointment date, not by when the contact was captured).
+                if (upcomingAllowedCustomerIds != null && !upcomingAllowedCustomerIds.contains(customerId)) continue;
                 upcoming.add(new UpcomingAppointment(customerId, customerName, serviceName, a.startAt(),
                         a.price() == null ? ZERO_MONEY : a.price().setScale(2, RoundingMode.HALF_UP), fresh));
             }

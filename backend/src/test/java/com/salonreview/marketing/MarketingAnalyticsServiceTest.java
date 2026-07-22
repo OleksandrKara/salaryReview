@@ -283,16 +283,16 @@ class MarketingAnalyticsServiceTest {
     @DisplayName("lists upcoming ads-attributed appointments, one row per booking with segments summed, tagged fresh/returning")
     void listsUpcomingAppointments() {
         when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
-                contact("+16195550001", "cust-1", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads")));
+                contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-1")))
-                .thenReturn(Map.of("cust-1", Instant.parse("2026-01-01T00:00:00Z")));
+                .thenReturn(Map.of("cust-1", Instant.parse("2026-07-01T00:00:00Z")));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
 
         var seg1 = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
         var seg2 = new SquareClient.AppointmentSegment("team-1", "var-pedi", 60);
         var future = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-20T18:00:00Z", null, null,
                 "loc-1", "cust-1", null, null, List.of(seg1, seg2));
-        var past = new SquareClient.Booking("bk-0", "ACCEPTED", "2026-06-01T18:00:00Z", null, null,
+        var past = new SquareClient.Booking("bk-0", "ACCEPTED", "2026-07-03T18:00:00Z", null, null,
                 "loc-1", "cust-1", null, null, List.of(seg1));
         var cancelled = new SquareClient.Booking("bk-2", "CANCELLED_BY_CUSTOMER", "2026-07-25T18:00:00Z", null, null,
                 "loc-1", "cust-1", null, null, List.of(seg1));
@@ -319,7 +319,7 @@ class MarketingAnalyticsServiceTest {
     void showsSameDayAppointmentEvenIfStartTimeAlreadyPassed() {
         // FIXED_CLOCK is 2026-07-07T12:00:00Z (noon) — this booking started at 2am the same day.
         when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
-                contact("+16195550001", "cust-1", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads")));
+                contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
 
         var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
@@ -652,8 +652,8 @@ class MarketingAnalyticsServiceTest {
     @DisplayName("an upcoming-appointments lookup failure for one customer excludes just that customer, not the whole list")
     void upcomingAppointmentsFailureIsPerCustomer() {
         when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
-                contact("+16195550001", "cust-broken", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads"),
-                contact("+16195550002", "cust-ok", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads")));
+                contact("+16195550001", "cust-broken", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads"),
+                contact("+16195550002", "cust-ok", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
 
         var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
@@ -670,6 +670,39 @@ class MarketingAnalyticsServiceTest {
 
         assertThat(dto.upcoming()).hasSize(1);
         assertThat(dto.upcoming().get(0).customerName()).isEqualTo("Jane Doe");
+    }
+
+    @Test
+    @DisplayName("upcoming is scoped to contacts captured within [from, to] — a long-standing ads "
+            + "customer's future booking doesn't inflate a narrow window's breakdown just because "
+            + "they're also ads-attributed (regression guard for the 'always shows the same total "
+            + "regardless of the selected period' bug)")
+    void upcomingExcludesCustomersCapturedOutsideRange() {
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+                // Captured back in January — outside the July window below.
+                contact("+16195550001", "cust-old", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads"),
+                // Captured within the July window below.
+                contact("+16195550002", "cust-new", Instant.parse("2026-07-05T00:00:00Z"), "meta_ads")));
+        when(square.customerCreatedAts(any())).thenReturn(Map.of(
+                "cust-old", Instant.parse("2026-01-01T00:00:00Z"), "cust-new", Instant.parse("2026-07-05T00:00:00Z")));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
+
+        var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
+        when(square.bookingsForCustomer(eq("cust-old"), any())).thenReturn(List.of(
+                new SquareClient.Booking("bk-old", "ACCEPTED", "2026-07-20T18:00:00Z", null, null,
+                        "loc-1", "cust-old", null, null, List.of(seg))));
+        when(square.bookingsForCustomer(eq("cust-new"), any())).thenReturn(List.of(
+                new SquareClient.Booking("bk-new", "ACCEPTED", "2026-07-25T18:00:00Z", null, null,
+                        "loc-1", "cust-new", null, null, List.of(seg))));
+        when(square.catalogPrices(List.of("var-mani"))).thenReturn(Map.of("var-mani", new BigDecimal("85.00")));
+        when(square.catalogNames(List.of("var-mani"))).thenReturn(Map.of("var-mani", "Manicure"));
+        when(square.customerNames(any())).thenReturn(Map.of("cust-old", "Old Customer", "cust-new", "New Customer"));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY);
+
+        assertThat(dto.upcoming()).hasSize(1);
+        assertThat(dto.upcoming().get(0).customerName()).isEqualTo("New Customer");
     }
 
     @Test
