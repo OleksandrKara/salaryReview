@@ -119,13 +119,19 @@ function roiLabel(roi: number | null): string {
   return roi === null ? '—' : `${roi.toFixed(1)}x`;
 }
 
+// Collected + everything still to come, in or out of this period — the same sum the WhatsApp
+// text export calls "Total", reused so the table view's Total column matches it exactly.
+function totalRevenueOf(row: MarketingAdsReportPeriod): number {
+  return row.revenueCollected + row.anticipatedRevenue + row.anticipatedRevenueOutsidePeriod;
+}
+
 // Money (collected/anticipated/total), ROI (realized vs total ROAS/ROI%), and customers created
 // vs. follow-ups — everything MarketingAdsReportDto.PeriodRow actually carries today. Visits/
 // clicks/leads/unbooked (the Funnel-sourced part of the manual reports this mirrors) aren't wired
 // up per-period yet — see openspec/changes/ads-report-consolidation/design.md D7's scope note —
 // so they're left out here rather than faked.
 function formatWhatsAppReport(row: MarketingAdsReportPeriod, periodType: MarketingAdsReportData['periodType'], slug?: string): string {
-  const totalRevenue = row.revenueCollected + row.anticipatedRevenue;
+  const totalRevenue = totalRevenueOf(row);
   const realizedRoas = roiMultiple(row.adSpend, row.revenueCollected);
   const totalRoas = roiMultiple(row.adSpend, totalRevenue);
   const roiPercent = row.adSpend > 0 ? ((totalRevenue - row.adSpend) / row.adSpend) * 100 : null;
@@ -139,7 +145,7 @@ function formatWhatsAppReport(row: MarketingAdsReportPeriod, periodType: Marketi
   lines.push('*Money*');
   lines.push(`Collected: ${usdExact(row.revenueCollected)}`);
   lines.push(`Anticipated (this period only): ${usdExact(row.anticipatedRevenue)}`);
-  lines.push(`Anticipated revenue (all future dates): ${usdExact(row.anticipatedRevenueAllDates)}`);
+  lines.push(`Anticipated (future dates outside of period): ${usdExact(row.anticipatedRevenueOutsidePeriod)}`);
   lines.push(`Total: ${usdExact(totalRevenue)}`);
   lines.push('');
   lines.push('*Ad spend & ROI*');
@@ -335,23 +341,16 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
         {data.periods.length > 0 ? fmtDateRange(totals.periodStart, totals.periodEnd) : ''}
       </p>
 
-      <div className={`mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-8 transition-opacity ${loading ? 'opacity-50' : ''}`}>
-        <StatCard label="Ad spend" value={usd(totals.adSpend)} hint={totals.adSpendEstimated ? 'estimated' : undefined} />
-        <StatCard label="Collected" value={usd(totals.revenueCollected)} />
-        <StatCard label="ROI" value={roiLabel(totalRoi)} />
-        <StatCard
-          label="Anticipated"
-          value={usd(totals.anticipatedRevenue)}
-          hint="within this period"
-        />
-        <StatCard
-          label="Anticipated revenue (all future dates)"
-          value={usd(totals.anticipatedRevenueAllDates)}
-          hint="every ads customer, any date"
-        />
-        <StatCard label="Customers created" value={totals.customersCreated.toLocaleString()} />
-        <StatCard label="Follow-up bookings" value={totals.customersFollowedUp.toLocaleString()} />
-        <StatCard label="Completed appts" value={totals.completedAppointments.toLocaleString()} />
+      <div className={`transition-opacity ${loading ? 'opacity-50' : ''}`}>
+        <MoneyBreakdown row={totals} layout="horizontal" />
+
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <StatCard label="Ad spend" value={usd(totals.adSpend)} hint={totals.adSpendEstimated ? 'estimated' : undefined} />
+          <StatCard label="ROI" value={roiLabel(totalRoi)} />
+          <StatCard label="Customers created" value={totals.customersCreated.toLocaleString()} />
+          <StatCard label="Follow-up bookings" value={totals.customersFollowedUp.toLocaleString()} />
+          <StatCard label="Completed appts" value={totals.completedAppointments.toLocaleString()} />
+        </div>
       </div>
 
       {data.periods.length === 0 ? (
@@ -536,6 +535,61 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
   );
 }
 
+/** Collected + Anticipated (this period) + Anticipated (outside period) = Total, laid out as a
+ * literal equation so the relationship between the four money figures is obvious at a glance,
+ * rather than four same-looking numbers scattered among unrelated stats. "horizontal" (the top
+ * summary) reads left to right with +/= connectors; "stacked" (a single table row/mobile card)
+ * reads top to bottom, since there's no room for four side-by-side cards there. */
+function MoneyBreakdown({ row, layout }: { row: MarketingAdsReportPeriod; layout: 'horizontal' | 'stacked' }) {
+  const total = totalRevenueOf(row);
+  if (layout === 'stacked') {
+    return (
+      <div className="rounded-lg bg-zinc-50 p-2.5 text-xs ring-1 ring-zinc-200">
+        <div className="flex items-center justify-between">
+          <span className="text-zinc-500">Collected</span>
+          <span className="tabular-nums font-medium text-zinc-900">{usdExact(row.revenueCollected)}</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between">
+          <span className="text-zinc-400">+ Anticipated (this period)</span>
+          <span className="tabular-nums text-zinc-600">{usdExact(row.anticipatedRevenue)}</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between">
+          <span className="text-zinc-400">+ Anticipated (outside period)</span>
+          <span className="tabular-nums text-zinc-600">{usdExact(row.anticipatedRevenueOutsidePeriod)}</span>
+        </div>
+        <div className="mt-1.5 flex items-center justify-between border-t border-zinc-300 pt-1.5">
+          <span className="font-semibold text-emerald-700">= Total</span>
+          <span className="tabular-nums font-semibold text-emerald-700">{usdExact(total)}</span>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-stretch gap-1.5">
+      <MoneyTerm label="Collected" value={usd(row.revenueCollected)} />
+      <MoneyOperator symbol="+" />
+      <MoneyTerm label="Anticipated (this period)" value={usd(row.anticipatedRevenue)} />
+      <MoneyOperator symbol="+" />
+      <MoneyTerm label="Anticipated (outside period)" value={usd(row.anticipatedRevenueOutsidePeriod)} />
+      <MoneyOperator symbol="=" />
+      <MoneyTerm label="Total" value={usd(total)} emphasize />
+    </div>
+  );
+}
+
+function MoneyTerm({ label, value, emphasize }: { label: string; value: string; emphasize?: boolean }) {
+  return (
+    <div className={`rounded-lg p-3 ring-1 sm:p-4 ${emphasize ? 'bg-emerald-50 ring-emerald-200' : 'ring-zinc-200'}`}>
+      <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-500 sm:text-xs">{label}</div>
+      <div className={`mt-1 text-lg font-semibold sm:text-2xl ${emphasize ? 'text-emerald-700' : 'text-zinc-900'}`}>{value}</div>
+    </div>
+  );
+}
+
+function MoneyOperator({ symbol }: { symbol: string }) {
+  return <span className="self-center px-0.5 text-xl font-light text-zinc-300" aria-hidden="true">{symbol}</span>;
+}
+
 function AdSpendCell({ row }: { row: MarketingAdsReportPeriod }) {
   if (row.adSpendEstimated) {
     return (
@@ -583,22 +637,14 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
                   {current && !row.monthInProgress && <CurrentBadge />}
                 </div>
               </div>
+              <div className="mt-2">
+                <MoneyBreakdown row={row} layout="stacked" />
+              </div>
               <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
                 <div className="text-zinc-500">Ad spend</div>
                 <div className="text-right tabular-nums"><AdSpendCell row={row} /></div>
-                <div className="text-zinc-500">Collected</div>
-                <div className="text-right tabular-nums">{usdExact(row.revenueCollected)}</div>
                 <div className="text-zinc-500">ROI</div>
                 <div className="text-right tabular-nums font-medium">{roiLabel(roi)}</div>
-                <div className="text-zinc-500" title="Upcoming appointments starting within this period only — the row below can show a larger total, since it includes upcoming appointments in later periods too.">Anticipated</div>
-                <div className="text-right tabular-nums">{usdExact(row.anticipatedRevenue)}</div>
-                <div
-                  className="text-zinc-500"
-                  title="Every ads-attributed customer's still-upcoming appointments, any future date — not limited to this period, and the same figure on every row."
-                >
-                  Anticipated revenue (all future dates)
-                </div>
-                <div className="text-right tabular-nums">{usdExact(row.anticipatedRevenueAllDates)}</div>
                 <div className="text-zinc-500">Customers created</div>
                 <div className="text-right tabular-nums">{row.customersCreated}</div>
                 <div className="text-zinc-500">Follow-up bookings</div>
@@ -616,25 +662,31 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
         <table className="w-full text-sm">
           <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
             <tr>
-              <th className="px-3 py-2">Period</th>
-              <th className="px-3 py-2 text-right">Ad spend</th>
-              <th className="px-3 py-2 text-right">Collected</th>
-              <th className="px-3 py-2 text-right">ROI</th>
+              <th className="px-3 py-2" rowSpan={2}>Period</th>
+              <th className="px-3 py-2 text-right" rowSpan={2}>Ad spend</th>
+              <th className="px-3 py-2 text-right" rowSpan={2}>ROI</th>
+              <th className="border-l border-zinc-200 px-3 py-1.5 text-center" colSpan={4}>Money</th>
+              <th className="px-3 py-2 text-right" rowSpan={2}>Customers created</th>
+              <th className="px-3 py-2 text-right" rowSpan={2}>Follow-up</th>
+              <th className="px-3 py-2 text-right" rowSpan={2}>Completed appts</th>
+            </tr>
+            <tr>
+              <th className="border-l border-zinc-200 px-3 py-2 text-right font-normal normal-case">Collected</th>
               <th
-                className="px-3 py-2 text-right"
-                title="Upcoming appointments starting within this period only — the row below can show a larger total, since it includes upcoming appointments in later periods too."
+                className="px-3 py-2 text-right font-normal normal-case"
+                title="Upcoming appointments starting within this period only."
               >
-                Anticipated
+                Anticipated (period)
               </th>
               <th
-                className="px-3 py-2 text-right"
-                title="Every ads-attributed customer's still-upcoming appointments, any future date — not limited to this period, and the same figure on every row."
+                className="px-3 py-2 text-right font-normal normal-case"
+                title="Every ads-attributed customer's still-upcoming appointments dated outside this period — the complement of the column to the left."
               >
-                Anticipated revenue (all future dates)
+                Anticipated (outside period)
               </th>
-              <th className="px-3 py-2 text-right">Customers created</th>
-              <th className="px-3 py-2 text-right">Follow-up</th>
-              <th className="px-3 py-2 text-right">Completed appts</th>
+              <th className="bg-emerald-50 px-3 py-2 text-right font-semibold normal-case text-emerald-700">
+                = Total
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
@@ -651,10 +703,13 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
                     </div>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600"><AdSpendCell row={row} /></td>
-                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usdExact(row.revenueCollected)}</td>
                   <td className="px-3 py-2 text-right tabular-nums font-medium">{roiLabel(roi)}</td>
+                  <td className="border-l border-zinc-100 px-3 py-2 text-right tabular-nums text-zinc-600">{usdExact(row.revenueCollected)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usdExact(row.anticipatedRevenue)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usdExact(row.anticipatedRevenueAllDates)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usdExact(row.anticipatedRevenueOutsidePeriod)}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums font-semibold text-emerald-700 ${current ? 'bg-emerald-50/60' : 'bg-emerald-50/40'}`}>
+                    {usdExact(totalRevenueOf(row))}
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{row.customersCreated}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{row.customersFollowedUp}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{row.completedAppointments}</td>
