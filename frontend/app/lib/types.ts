@@ -969,8 +969,14 @@ export interface MarketingAdsReportPeriod {
    * anticipatedAppointments is the full bookings breakdown for this period. */
   cancelledBookings: number;
   /** Count of still-upcoming appointments scheduled within this period — the same appointments
-   * anticipatedRevenue above sums the price of, just the headline count. */
+   * anticipatedRevenue above sums the price of, just the headline count.
+   * completedAppointments + cancelledBookings + anticipatedAppointments +
+   * anticipatedAppointmentsOutsidePeriod is the full bookings breakdown for this period. */
   anticipatedAppointments: number;
+  /** Count of still-upcoming appointments dated outside this row's own period, booked by exactly
+   * the customers captured (firstTouch) within that same window — the headline count for
+   * anticipatedRevenueOutsidePeriod, same scoping and same reasoning. */
+  anticipatedAppointmentsOutsidePeriod: number;
   /** Real, non-cancelled Square appointments in this period for this page's ads-attributed
    * contacts that the tracked flow never recorded — a lead a manager booked by phone after the
    * on-site flow didn't complete. Already folded into revenueCollected/anticipatedRevenue above;

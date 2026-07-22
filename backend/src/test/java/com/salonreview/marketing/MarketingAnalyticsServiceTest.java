@@ -1003,15 +1003,18 @@ class MarketingAnalyticsServiceTest {
 
         // June's own cohort is just cust-june — their July booking is outside June's own period.
         assertThat(june.anticipatedRevenueOutsidePeriod()).isEqualByComparingTo("150.00");
+        assertThat(june.anticipatedAppointmentsOutsidePeriod()).isEqualTo(1);
 
         // July's own cohort is just cust-july — cust-june's July booking doesn't count here even
         // though it's a real upcoming appointment, because cust-june wasn't captured in July.
         assertThat(july.anticipatedRevenueOutsidePeriod()).isEqualByComparingTo("200.00");
+        assertThat(july.anticipatedAppointmentsOutsidePeriod()).isEqualTo(1);
 
         // Totals (aligned June 1 - July 31): both customers were captured somewhere in the aligned
         // span, but cust-june's July booking is INSIDE that span, so only cust-july's September
         // booking counts — 200.00, not a naive 150+200=350 sum of the two rows above.
         assertThat(dto.totals().anticipatedRevenueOutsidePeriod()).isEqualByComparingTo("200.00");
+        assertThat(dto.totals().anticipatedAppointmentsOutsidePeriod()).isEqualTo(1);
     }
 
     @Test

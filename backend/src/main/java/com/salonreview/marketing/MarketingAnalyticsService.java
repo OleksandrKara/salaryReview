@@ -263,7 +263,7 @@ public class MarketingAnalyticsService {
                     ? List.<LocalDate[]>of() : List.<LocalDate[]>of(new LocalDate[]{from, to});
         };
         if (periods.isEmpty()) {
-            PeriodRow empty = new PeriodRow(from, to, ZERO_MONEY, false, ZERO_MONEY, ZERO_MONEY, 0, ZERO_MONEY, 0, 0, 0, 0, false);
+            PeriodRow empty = new PeriodRow(from, to, ZERO_MONEY, false, ZERO_MONEY, ZERO_MONEY, 0, ZERO_MONEY, 0, 0, 0, 0, 0, false);
             return new MarketingAdsReportDto(periodType, List.of(), empty);
         }
         LocalDate alignedFrom = periods.get(0)[0];
@@ -295,9 +295,9 @@ public class MarketingAnalyticsService {
         // Same formula as each row above, just against the full aligned span rather than one row's
         // own period — "outside the whole displayed window", not a sum of each row's own figure
         // (which would double-count appointments outside one row's period but inside another's).
-        BigDecimal totalsAnticipatedOutsidePeriod =
+        OutsidePeriodAnticipated totalsOutsidePeriod =
                 anticipatedOutsidePeriodForCustomersCapturedIn(adsCustomers, upcoming, alignedFrom, alignedTo);
-        PeriodRow totals = totalsRow(alignedFrom, alignedTo, rows, totalsAnticipatedOutsidePeriod);
+        PeriodRow totals = totalsRow(alignedFrom, alignedTo, rows, totalsOutsidePeriod);
 
         List<PeriodRow> mostRecentFirst = new ArrayList<>(rows);
         Collections.reverse(mostRecentFirst);
@@ -395,7 +395,7 @@ public class MarketingAnalyticsService {
                 .toList();
         BigDecimal anticipatedRevenue = bucketUpcoming.stream().map(UpcomingAppointment::price)
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal anticipatedRevenueOutsidePeriod =
+        OutsidePeriodAnticipated outsidePeriod =
                 anticipatedOutsidePeriodForCustomersCapturedIn(adsCustomers, upcoming, periodStart, periodEnd);
 
         long cancelledBookings = cancelledBookingsIn(bookingHistory, periodStart, periodEnd);
@@ -415,8 +415,9 @@ public class MarketingAnalyticsService {
         boolean monthInProgress = periodEnd.isAfter(today);
 
         return new PeriodRow(periodStart, periodEnd, spend.amount(), spend.estimated(), revenueCollected,
-                anticipatedRevenue, customersCreated, anticipatedRevenueOutsidePeriod, bucketCompleted.size(),
-                cancelledBookings, bucketUpcoming.size(), customersFollowedUp, monthInProgress);
+                anticipatedRevenue, customersCreated, outsidePeriod.revenue(), bucketCompleted.size(),
+                cancelledBookings, bucketUpcoming.size(), outsidePeriod.appointments(), customersFollowedUp,
+                monthInProgress);
     }
 
     private static boolean withinPeriod(LocalDate date, LocalDate periodStart, LocalDate periodEnd) {
@@ -443,15 +444,21 @@ public class MarketingAnalyticsService {
      * which past week/month you're looking at. Restricting to this window's own new customers
      * makes it actually vary per period, answering "of the leads this specific window brought in,
      * what have they booked beyond it" rather than a report-wide constant. */
-    private static BigDecimal anticipatedOutsidePeriodForCustomersCapturedIn(
+    /** revenue: catalog-price sum; appointments: headline count — of the exact same outside-period,
+     * captured-in-this-window set, computed together since they always share the same filter. */
+    private record OutsidePeriodAnticipated(BigDecimal revenue, long appointments) {}
+
+    private static OutsidePeriodAnticipated anticipatedOutsidePeriodForCustomersCapturedIn(
             Map<String, AdsCustomer> adsCustomers, List<UpcomingAppointment> upcoming,
             LocalDate periodStart, LocalDate periodEnd) {
         Set<String> customerIds = customersCapturedIn(adsCustomers, periodStart, periodEnd);
-        return upcoming.stream()
+        List<UpcomingAppointment> outside = upcoming.stream()
                 .filter(u -> customerIds.contains(u.customerId()))
                 .filter(u -> !withinPeriod(u.startAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), periodStart, periodEnd))
-                .map(UpcomingAppointment::price)
+                .toList();
+        BigDecimal revenue = outside.stream().map(UpcomingAppointment::price)
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+        return new OutsidePeriodAnticipated(revenue, outside.size());
     }
 
     /** Real Square bookings for ads-attributed customers, any status that didn't happen (cancelled,
@@ -481,7 +488,7 @@ public class MarketingAnalyticsService {
 
 
     private PeriodRow totalsRow(LocalDate alignedFrom, LocalDate alignedTo, List<PeriodRow> rows,
-            BigDecimal anticipatedRevenueOutsidePeriod) {
+            OutsidePeriodAnticipated outsidePeriod) {
         BigDecimal adSpend = rows.stream().map(PeriodRow::adSpend).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
         boolean adSpendEstimated = rows.stream().anyMatch(PeriodRow::adSpendEstimated);
         BigDecimal revenue = rows.stream().map(PeriodRow::revenueCollected).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
@@ -499,8 +506,8 @@ public class MarketingAnalyticsService {
         // the full aligned span instead (see anticipatedOutsidePeriodForCustomersCapturedIn), passed
         // straight through here.
         return new PeriodRow(alignedFrom, alignedTo, adSpend, adSpendEstimated, revenue, anticipated,
-                customersCreated, anticipatedRevenueOutsidePeriod, completedAppointments, cancelledBookings,
-                anticipatedAppointments, customersFollowedUp, monthInProgress);
+                customersCreated, outsidePeriod.revenue(), completedAppointments, cancelledBookings,
+                anticipatedAppointments, outsidePeriod.appointments(), customersFollowedUp, monthInProgress);
     }
 
     /** Splits [from, to] into whole calendar weeks (Monday–Sunday) or whole calendar months that

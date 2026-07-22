@@ -155,13 +155,18 @@ function bookingsBreakdownOf(row: MarketingAdsReportPeriod): {
   completed: number;
   cancelled: number;
   anticipated: number;
+  anticipatedOutsidePeriod: number;
   cancelledPercent: number | null;
 } {
   const completed = row.completedAppointments;
   const cancelled = row.cancelledBookings;
   const anticipated = row.anticipatedAppointments;
-  const total = completed + cancelled + anticipated;
-  return { total, completed, cancelled, anticipated, cancelledPercent: total > 0 ? (cancelled / total) * 100 : null };
+  const anticipatedOutsidePeriod = row.anticipatedAppointmentsOutsidePeriod;
+  const total = completed + cancelled + anticipated + anticipatedOutsidePeriod;
+  return {
+    total, completed, cancelled, anticipated, anticipatedOutsidePeriod,
+    cancelledPercent: total > 0 ? (cancelled / total) * 100 : null,
+  };
 }
 
 // Money (collected/anticipated/total), ROI (realized vs total ROAS/ROI%), and customers created
@@ -195,7 +200,8 @@ function formatWhatsAppReport(row: MarketingAdsReportPeriod, periodType: Marketi
   lines.push('*Bookings*');
   lines.push(`Completed: ${bookings.completed}`);
   lines.push(`Cancelled: ${bookings.cancelled}${bookings.cancelledPercent !== null ? ` (${bookings.cancelledPercent.toFixed(0)}%)` : ''}`);
-  lines.push(`Anticipated: ${bookings.anticipated}`);
+  lines.push(`Anticipated (this period): ${bookings.anticipated}`);
+  lines.push(`Anticipated (outside period): ${bookings.anticipatedOutsidePeriod}`);
   lines.push(`Total: ${bookings.total}`);
   lines.push('');
   lines.push('*Customers*');
@@ -679,8 +685,12 @@ function BookingsBreakdown({ row, layout }: { row: MarketingAdsReportPeriod; lay
           <span className={`tabular-nums ${b.cancelled > 0 ? 'text-rose-600' : 'text-zinc-600'}`}>{cancelledLabel}</span>
         </div>
         <div className="mt-1 flex items-center justify-between">
-          <span className="text-zinc-400">Anticipated</span>
+          <span className="text-zinc-400">+ Anticipated (this period)</span>
           <span className="tabular-nums text-zinc-600">{b.anticipated}</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between">
+          <span className="text-zinc-400">+ Anticipated (outside period)</span>
+          <span className="tabular-nums text-zinc-600">{b.anticipatedOutsidePeriod}</span>
         </div>
         <div className="mt-1.5 flex items-center justify-between border-t border-zinc-300 pt-1.5">
           <span className="font-semibold text-zinc-700">= Total bookings</span>
@@ -695,7 +705,9 @@ function BookingsBreakdown({ row, layout }: { row: MarketingAdsReportPeriod; lay
       <MoneyOperator symbol="+" />
       <MoneyTerm label="Cancelled" value={cancelledLabel} tone={cancelledTone} />
       <MoneyOperator symbol="+" />
-      <MoneyTerm label="Anticipated" value={String(b.anticipated)} />
+      <MoneyTerm label="Anticipated (period)" value={String(b.anticipated)} />
+      <MoneyOperator symbol="+" />
+      <MoneyTerm label="Anticipated (outside period)" value={String(b.anticipatedOutsidePeriod)} />
       <MoneyOperator symbol="=" />
       <MoneyTerm label="Total bookings" value={String(b.total)} />
     </div>
@@ -796,7 +808,7 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
               <th className="px-3 py-2 text-right" rowSpan={2}>Ad spend</th>
               <th className="border-l border-zinc-200 px-3 py-1.5 text-center" colSpan={4}>Money</th>
               <th className="border-l border-zinc-200 px-3 py-1.5 text-center" colSpan={3}>ROI</th>
-              <th className="border-l border-zinc-200 px-3 py-1.5 text-center" colSpan={4}>Bookings</th>
+              <th className="border-l border-zinc-200 px-3 py-1.5 text-center" colSpan={5}>Bookings</th>
               <th className="border-l border-zinc-200 px-3 py-2 text-right" rowSpan={2}>Customers created</th>
               <th className="px-3 py-2 text-right" rowSpan={2}>Follow-up</th>
             </tr>
@@ -830,7 +842,15 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
               <th className="px-3 py-2 text-right font-normal normal-case" title="Cancelled by either side, declined, or no-show.">
                 Cancelled
               </th>
-              <th className="px-3 py-2 text-right font-normal normal-case">Anticipated</th>
+              <th className="px-3 py-2 text-right font-normal normal-case" title="Upcoming appointments starting within this period only.">
+                Anticipated (period)
+              </th>
+              <th
+                className="px-3 py-2 text-right font-normal normal-case"
+                title="Upcoming appointments dated outside this period, booked by exactly the customers first captured by ads within this same period."
+              >
+                Anticipated (outside period)
+              </th>
               <th className="bg-zinc-100 px-3 py-2 text-right font-semibold normal-case text-zinc-700">
                 = Total
               </th>
@@ -865,6 +885,7 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
                   <td className="border-l border-zinc-100 px-3 py-2 text-right tabular-nums text-zinc-600">{bookings.completed}</td>
                   <td className={`px-3 py-2 text-right tabular-nums ${bookings.cancelled > 0 ? 'text-rose-600' : 'text-zinc-600'}`}>{cancelledLabel}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{bookings.anticipated}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{bookings.anticipatedOutsidePeriod}</td>
                   <td className={`px-3 py-2 text-right tabular-nums font-semibold text-zinc-700 ${current ? 'bg-zinc-100' : 'bg-zinc-50'}`}>
                     {bookings.total}
                   </td>
