@@ -40,6 +40,7 @@ import type {
   MarketingAdsReportData,
   MarketingAnalyticsData,
   MarketingCustomerHistory,
+  StaffDocument,
   MarketingContactsData,
   MarketingDashboardData,
   MarketingLandingPage,
@@ -466,6 +467,34 @@ export const api = {
   // the Ads Report breakdown's Completed/Anticipated lists is expanded.
   getMarketingCustomerHistory: (customerId: string) =>
     proxyGet<MarketingCustomerHistory>(`/api/owner/marketing/ads-report/customer-history?customerId=${encodeURIComponent(customerId)}`),
+
+  // Staff documents (owner-only): contracts/licenses/NDAs per provider or manager, each with a
+  // required expiration date. Upload is multipart, same reason as uploadRagDocument above.
+  listStaffDocuments: () => proxyGet<StaffDocument[]>(`/api/owner/staff-documents`),
+
+  createStaffDocument: async (params: {
+    file: File;
+    providerId?: number;
+    appUserId?: number;
+    documentType: string;
+    label?: string;
+    expirationDate: string;
+  }): Promise<StaffDocument> => {
+    const form = new FormData();
+    form.append('file', params.file);
+    if (params.providerId != null) form.append('providerId', String(params.providerId));
+    if (params.appUserId != null) form.append('appUserId', String(params.appUserId));
+    form.append('documentType', params.documentType);
+    if (params.label) form.append('label', params.label);
+    form.append('expirationDate', params.expirationDate);
+    const res = await fetch(`/api/owner/staff-documents`, { method: 'POST', body: form });
+    if (!res.ok) throw new Error(await extractErrorMessage(res));
+    return (await res.json()) as StaffDocument;
+  },
+
+  staffDocumentDownloadUrl: (id: number) => `/api/owner/staff-documents/${id}/download`,
+
+  deleteStaffDocument: (id: number) => proxyVoid(`/api/owner/staff-documents/${id}`, 'DELETE'),
 };
 
 // The backend's default Spring error body is {"message": "...", "error": "...", "status": ...} —

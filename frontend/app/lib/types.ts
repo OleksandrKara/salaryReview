@@ -1220,3 +1220,26 @@ export interface SopUpdateRequest {
   audience: SopAudience;
   priority?: number;
 }
+
+// --- Staff documents (com.salonreview.web.StaffDocumentController) ---
+
+export type StaffDocumentExpirationStatus = 'OK' | 'EXPIRING_SOON' | 'EXPIRED';
+
+export interface StaffDocument {
+  id: number;
+  /** "PROVIDER" or "MANAGER" — service providers and managers only; owners aren't covered. */
+  personType: 'PROVIDER' | 'MANAGER';
+  /** providers.id for a provider, app_user.id for a manager. */
+  personId: number;
+  personName: string;
+  /** Freeform (e.g. "Contract", "License", "NDA") — not a fixed set. */
+  documentType: string;
+  label: string | null;
+  fileName: string;
+  /** ISO-8601 date (yyyy-MM-dd). */
+  expirationDate: string;
+  status: StaffDocumentExpirationStatus;
+  createdBy: string;
+  /** ISO-8601 instant. */
+  createdAt: string;
+}
