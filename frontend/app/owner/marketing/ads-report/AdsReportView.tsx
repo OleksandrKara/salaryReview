@@ -138,7 +138,7 @@ function formatWhatsAppReport(row: MarketingAdsReportPeriod, periodType: Marketi
   lines.push('');
   lines.push('*Money*');
   lines.push(`Collected: ${usdExact(row.revenueCollected)}`);
-  lines.push(`Anticipated: ${usdExact(row.anticipatedRevenue)}`);
+  lines.push(`Anticipated (this period only): ${usdExact(row.anticipatedRevenue)}`);
   lines.push(`Total: ${usdExact(totalRevenue)}`);
   lines.push('');
   lines.push('*Ad spend & ROI*');
@@ -326,7 +326,11 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
         <StatCard label="Ad spend" value={usd(totals.adSpend)} hint={totals.adSpendEstimated ? 'estimated' : undefined} />
         <StatCard label="Collected" value={usd(totals.revenueCollected)} />
         <StatCard label="ROI" value={roiLabel(totalRoi)} />
-        <StatCard label="Anticipated" value={usd(totals.anticipatedRevenue)} />
+        <StatCard
+          label="Anticipated"
+          value={usd(totals.anticipatedRevenue)}
+          hint="within this period"
+        />
         <StatCard label="Customers created" value={totals.customersCreated.toLocaleString()} />
         <StatCard label="Follow-up bookings" value={totals.customersFollowedUp.toLocaleString()} />
         <StatCard label="Completed appts" value={totals.completedAppointments.toLocaleString()} />
@@ -455,7 +459,7 @@ function TrendChart({ periods }: { periods: MarketingAdsReportPeriod[] }) {
             <Line
               type="monotone"
               dataKey="anticipatedRevenue"
-              name="Anticipated"
+              name="Anticipated (this period)"
               stroke={CHART_COLORS.anticipated}
               strokeWidth={2}
               dot={{ r: 3 }}
@@ -463,6 +467,10 @@ function TrendChart({ periods }: { periods: MarketingAdsReportPeriod[] }) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      <p className="mt-2 text-xs text-zinc-400">
+        Anticipated only counts upcoming appointments starting within each bar&apos;s own period — the
+        breakdown below can show a larger total, since it includes upcoming appointments in later periods too.
+      </p>
     </div>
   );
 }
@@ -564,7 +572,7 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
                 <div className="text-right tabular-nums">{usdExact(row.revenueCollected)}</div>
                 <div className="text-zinc-500">ROI</div>
                 <div className="text-right tabular-nums font-medium">{roiLabel(roi)}</div>
-                <div className="text-zinc-500">Anticipated</div>
+                <div className="text-zinc-500" title="Upcoming appointments starting within this period only — the breakdown below can show a larger total, since it includes upcoming appointments in later periods too.">Anticipated</div>
                 <div className="text-right tabular-nums">{usdExact(row.anticipatedRevenue)}</div>
                 <div className="text-zinc-500">Customers created</div>
                 <div className="text-right tabular-nums">{row.customersCreated}</div>
@@ -587,7 +595,12 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
               <th className="px-3 py-2 text-right">Ad spend</th>
               <th className="px-3 py-2 text-right">Collected</th>
               <th className="px-3 py-2 text-right">ROI</th>
-              <th className="px-3 py-2 text-right">Anticipated</th>
+              <th
+                className="px-3 py-2 text-right"
+                title="Upcoming appointments starting within this period only — the breakdown below can show a larger total, since it includes upcoming appointments in later periods too."
+              >
+                Anticipated
+              </th>
               <th className="px-3 py-2 text-right">Customers created</th>
               <th className="px-3 py-2 text-right">Follow-up</th>
               <th className="px-3 py-2 text-right">Completed appts</th>
@@ -977,6 +990,11 @@ function BreakdownDrilldown({
           <h3 className="text-sm font-medium text-zinc-500">Anticipated from upcoming appointments</h3>
           <span className="text-xs text-zinc-400">not counted above — nothing&apos;s been rung up yet; includes follow-ups</span>
         </div>
+        <p className="mt-1 text-xs text-zinc-400">
+          Every future appointment for these customers, any date — not limited to the range selected
+          above. That&apos;s why this total can be larger than the &quot;Anticipated&quot; figure shown
+          per period further up: that one only counts appointments starting within that specific period.
+        </p>
         {upcomingForSegment.length === 0 ? (
           <div className="mt-3 rounded-lg border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">
             No upcoming appointments for {segmentLabel(segment).toLowerCase()} right now.
@@ -985,7 +1003,7 @@ function BreakdownDrilldown({
           <>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <StatCard label="Upcoming appointments" value={upcomingForSegment.length.toLocaleString()} />
-              <StatCard label="Anticipated revenue" value={usd(upcomingTotal)} />
+              <StatCard label="Anticipated revenue (all future dates)" value={usd(upcomingTotal)} />
             </div>
             <UpcomingList appointments={upcomingForSegment} historyExpand={historyExpand} />
           </>
