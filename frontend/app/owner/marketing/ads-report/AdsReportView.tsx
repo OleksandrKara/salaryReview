@@ -146,6 +146,24 @@ function roiMetricsOf(row: MarketingAdsReportPeriod): {
   };
 }
 
+// What happened to every booking dated in this period, for these ads-attributed customers: it
+// either already got rung up (Completed), never happened (Cancelled — cancelled by either side,
+// declined, or no-show), or hasn't happened yet (Anticipated). The three always add up to Total,
+// so nothing about "what happened to these bookings" is left unaccounted for.
+function bookingsBreakdownOf(row: MarketingAdsReportPeriod): {
+  total: number;
+  completed: number;
+  cancelled: number;
+  anticipated: number;
+  cancelledPercent: number | null;
+} {
+  const completed = row.completedAppointments;
+  const cancelled = row.cancelledBookings;
+  const anticipated = row.anticipatedAppointments;
+  const total = completed + cancelled + anticipated;
+  return { total, completed, cancelled, anticipated, cancelledPercent: total > 0 ? (cancelled / total) * 100 : null };
+}
+
 // Money (collected/anticipated/total), ROI (realized vs total ROAS/ROI%), and customers created
 // vs. follow-ups — everything MarketingAdsReportDto.PeriodRow actually carries today. Visits/
 // clicks/leads/unbooked (the Funnel-sourced part of the manual reports this mirrors) aren't wired
@@ -154,6 +172,7 @@ function roiMetricsOf(row: MarketingAdsReportPeriod): {
 function formatWhatsAppReport(row: MarketingAdsReportPeriod, periodType: MarketingAdsReportData['periodType'], slug?: string): string {
   const totalRevenue = totalRevenueOf(row);
   const { realizedRoas, totalRoas, roiPercent } = roiMetricsOf(row);
+  const bookings = bookingsBreakdownOf(row);
   const totalCustomers = row.customersCreated + row.customersFollowedUp;
   const costPerCustomer = totalCustomers > 0 && row.adSpend > 0 ? row.adSpend / totalCustomers : null;
 
@@ -173,10 +192,15 @@ function formatWhatsAppReport(row: MarketingAdsReportPeriod, periodType: Marketi
   lines.push(`Total ROAS: ${roiLabel(totalRoas)}`);
   if (roiPercent !== null) lines.push(`ROI: ${roiPercentLabel(roiPercent)}`);
   lines.push('');
+  lines.push('*Bookings*');
+  lines.push(`Completed: ${bookings.completed}`);
+  lines.push(`Cancelled: ${bookings.cancelled}${bookings.cancelledPercent !== null ? ` (${bookings.cancelledPercent.toFixed(0)}%)` : ''}`);
+  lines.push(`Anticipated: ${bookings.anticipated}`);
+  lines.push(`Total: ${bookings.total}`);
+  lines.push('');
   lines.push('*Customers*');
   lines.push(`New: ${row.customersCreated}`);
   lines.push(`Follow-up (booked by manager): ${row.customersFollowedUp}`);
-  lines.push(`Completed appts: ${row.completedAppointments}`);
   if (costPerCustomer !== null) lines.push(`Cost per customer: ${usdExact(costPerCustomer)}`);
   return lines.join('\n');
 }
@@ -364,12 +388,14 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
         <div className="mt-2">
           <ROIBreakdown row={totals} layout="horizontal" />
         </div>
+        <div className="mt-2">
+          <BookingsBreakdown row={totals} layout="horizontal" />
+        </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <StatCard label="Ad spend" value={usd(totals.adSpend)} hint={totals.adSpendEstimated ? 'estimated' : undefined} />
           <StatCard label="Customers created" value={totals.customersCreated.toLocaleString()} />
           <StatCard label="Follow-up bookings" value={totals.customersFollowedUp.toLocaleString()} />
-          <StatCard label="Completed appts" value={totals.completedAppointments.toLocaleString()} />
         </div>
       </div>
 
@@ -633,6 +659,49 @@ function ROIBreakdown({ row, layout }: { row: MarketingAdsReportPeriod; layout: 
   );
 }
 
+/** Completed + Cancelled + Anticipated = Total bookings — what actually happened to every booking
+ * dated in this period, laid out the same equation-style way as MoneyBreakdown/ROIBreakdown so a
+ * reader who's used those reads this one the same way. Cancelled is tinted rose once it's
+ * non-zero, the one figure here that's meaningfully bad news rather than neutral bookkeeping. */
+function BookingsBreakdown({ row, layout }: { row: MarketingAdsReportPeriod; layout: 'horizontal' | 'stacked' }) {
+  const b = bookingsBreakdownOf(row);
+  const cancelledLabel = `${b.cancelled}${b.cancelledPercent !== null ? ` (${b.cancelledPercent.toFixed(0)}%)` : ''}`;
+  const cancelledTone: 'negative' | undefined = b.cancelled > 0 ? 'negative' : undefined;
+  if (layout === 'stacked') {
+    return (
+      <div className="rounded-lg bg-zinc-50 p-2.5 text-xs ring-1 ring-zinc-200">
+        <div className="flex items-center justify-between">
+          <span className="text-zinc-500">Completed</span>
+          <span className="tabular-nums font-medium text-zinc-900">{b.completed}</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between">
+          <span className="text-zinc-400">Cancelled</span>
+          <span className={`tabular-nums ${b.cancelled > 0 ? 'text-rose-600' : 'text-zinc-600'}`}>{cancelledLabel}</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between">
+          <span className="text-zinc-400">Anticipated</span>
+          <span className="tabular-nums text-zinc-600">{b.anticipated}</span>
+        </div>
+        <div className="mt-1.5 flex items-center justify-between border-t border-zinc-300 pt-1.5">
+          <span className="font-semibold text-zinc-700">= Total bookings</span>
+          <span className="tabular-nums font-semibold text-zinc-900">{b.total}</span>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-stretch gap-1.5">
+      <MoneyTerm label="Completed" value={String(b.completed)} />
+      <MoneyOperator symbol="+" />
+      <MoneyTerm label="Cancelled" value={cancelledLabel} tone={cancelledTone} />
+      <MoneyOperator symbol="+" />
+      <MoneyTerm label="Anticipated" value={String(b.anticipated)} />
+      <MoneyOperator symbol="=" />
+      <MoneyTerm label="Total bookings" value={String(b.total)} />
+    </div>
+  );
+}
+
 function MoneyTerm({ label, value, tone }: { label: string; value: string; tone?: 'positive' | 'negative' }) {
   const boxClass = tone === 'positive' ? 'bg-emerald-50 ring-emerald-200'
     : tone === 'negative' ? 'bg-rose-50 ring-rose-200'
@@ -702,6 +771,9 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
               <div className="mt-2">
                 <ROIBreakdown row={row} layout="stacked" />
               </div>
+              <div className="mt-2">
+                <BookingsBreakdown row={row} layout="stacked" />
+              </div>
               <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
                 <div className="text-zinc-500">Ad spend</div>
                 <div className="text-right tabular-nums"><AdSpendCell row={row} /></div>
@@ -709,8 +781,6 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
                 <div className="text-right tabular-nums">{row.customersCreated}</div>
                 <div className="text-zinc-500">Follow-up bookings</div>
                 <div className="text-right tabular-nums">{row.customersFollowedUp}</div>
-                <div className="text-zinc-500">Completed appts</div>
-                <div className="text-right tabular-nums">{row.completedAppointments}</div>
               </div>
             </div>
           );
@@ -726,9 +796,9 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
               <th className="px-3 py-2 text-right" rowSpan={2}>Ad spend</th>
               <th className="border-l border-zinc-200 px-3 py-1.5 text-center" colSpan={4}>Money</th>
               <th className="border-l border-zinc-200 px-3 py-1.5 text-center" colSpan={3}>ROI</th>
+              <th className="border-l border-zinc-200 px-3 py-1.5 text-center" colSpan={4}>Bookings</th>
               <th className="border-l border-zinc-200 px-3 py-2 text-right" rowSpan={2}>Customers created</th>
               <th className="px-3 py-2 text-right" rowSpan={2}>Follow-up</th>
-              <th className="px-3 py-2 text-right" rowSpan={2}>Completed appts</th>
             </tr>
             <tr>
               <th className="border-l border-zinc-200 px-3 py-2 text-right font-normal normal-case">Collected</th>
@@ -740,7 +810,7 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
               </th>
               <th
                 className="px-3 py-2 text-right font-normal normal-case"
-                title="Every ads-attributed customer's still-upcoming appointments dated outside this period — the complement of the column to the left."
+                title="Upcoming appointments dated outside this period, booked by exactly the customers first captured by ads within this same period."
               >
                 Anticipated (outside period)
               </th>
@@ -756,6 +826,14 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
               <th className="px-3 py-2 text-right font-normal normal-case" title="Profit over ad spend, using that same Total.">
                 ROI %
               </th>
+              <th className="border-l border-zinc-200 px-3 py-2 text-right font-normal normal-case">Completed</th>
+              <th className="px-3 py-2 text-right font-normal normal-case" title="Cancelled by either side, declined, or no-show.">
+                Cancelled
+              </th>
+              <th className="px-3 py-2 text-right font-normal normal-case">Anticipated</th>
+              <th className="bg-zinc-100 px-3 py-2 text-right font-semibold normal-case text-zinc-700">
+                = Total
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
@@ -763,6 +841,8 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
               const current = isCurrentPeriod(row);
               const { realizedRoas, totalRoas, roiPercent } = roiMetricsOf(row);
               const roiTextClass = roiPercent === null ? 'text-zinc-600' : roiPercent >= 0 ? 'text-emerald-700' : 'text-rose-700';
+              const bookings = bookingsBreakdownOf(row);
+              const cancelledLabel = `${bookings.cancelled}${bookings.cancelledPercent !== null ? ` (${bookings.cancelledPercent.toFixed(0)}%)` : ''}`;
               return (
                 <tr key={row.periodStart} className={current ? 'bg-blue-50' : 'hover:bg-zinc-50'}>
                   <td className="px-3 py-2 font-medium">
@@ -782,9 +862,14 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
                   <td className="border-l border-zinc-100 px-3 py-2 text-right tabular-nums text-zinc-600">{roiLabel(realizedRoas)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{roiLabel(totalRoas)}</td>
                   <td className={`px-3 py-2 text-right tabular-nums font-semibold ${roiTextClass}`}>{roiPercentLabel(roiPercent)}</td>
+                  <td className="border-l border-zinc-100 px-3 py-2 text-right tabular-nums text-zinc-600">{bookings.completed}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums ${bookings.cancelled > 0 ? 'text-rose-600' : 'text-zinc-600'}`}>{cancelledLabel}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{bookings.anticipated}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums font-semibold text-zinc-700 ${current ? 'bg-zinc-100' : 'bg-zinc-50'}`}>
+                    {bookings.total}
+                  </td>
                   <td className="border-l border-zinc-100 px-3 py-2 text-right tabular-nums text-zinc-600">{row.customersCreated}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{row.customersFollowedUp}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{row.completedAppointments}</td>
                 </tr>
               );
             })}
