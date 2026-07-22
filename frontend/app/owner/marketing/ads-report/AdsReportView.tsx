@@ -677,6 +677,9 @@ function AdSpendEntryForm({ slug }: { slug?: string }) {
   const [error, setError] = useState('');
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [entries, setEntries] = useState<AdSpendEntry[]>([]);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [rowBusyId, setRowBusyId] = useState<number | null>(null);
+  const [rowError, setRowError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -729,11 +732,40 @@ function AdSpendEntryForm({ slug }: { slug?: string }) {
     }
   }
 
+  async function saveEdit(id: number, editFrom: string, editTo: string, editAmount: number) {
+    setRowBusyId(id);
+    setRowError('');
+    try {
+      await api.updateAdSpendEntry(id, editFrom, editTo, editAmount);
+      setEditingId(null);
+      void loadEntries(page);
+    } catch (e) {
+      setRowError(e instanceof Error ? e.message : 'Failed to save changes.');
+    } finally {
+      setRowBusyId(null);
+    }
+  }
+
+  async function deleteEntry(id: number) {
+    if (!window.confirm('Delete this ad spend entry? This can\'t be undone.')) return;
+    setRowBusyId(id);
+    setRowError('');
+    try {
+      await api.deleteAdSpendEntry(id);
+      void loadEntries(page);
+    } catch (e) {
+      setRowError(e instanceof Error ? e.message : 'Failed to delete entry.');
+    } finally {
+      setRowBusyId(null);
+    }
+  }
+
   return (
     <div className="mt-8 border-t border-zinc-100 pt-8">
       <h2 className="text-sm font-medium text-zinc-500">Enter ad spend</h2>
       <p className="mt-1 text-xs text-zinc-400">
-        A correction is entered as a new row rather than overwriting the old one, so spend history stays auditable.
+        Fixing an outright mistake? Edit or delete the entry below instead — save a new row here only
+        for a genuine revision you want kept in the history.
       </p>
 
       <div className="mt-3 flex flex-wrap items-end gap-3 rounded-lg p-3 ring-1 ring-zinc-200">
@@ -809,16 +841,87 @@ function AdSpendEntryForm({ slug }: { slug?: string }) {
       {entries.length > 0 && (
         <div className="mt-4">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Recent entries — {page}</h3>
+          {rowError ? <p className="mt-1 text-xs text-red-600">{rowError}</p> : null}
           <div className="mt-2 flex flex-col gap-1 text-xs text-zinc-600">
             {entries.slice(0, 8).map((e) => (
-              <div key={e.id} className="flex items-center justify-between gap-2 rounded px-2 py-1 ring-1 ring-zinc-100">
-                <span>{fmtDateRange(e.periodStart, e.periodEnd)}</span>
-                <span className="font-medium tabular-nums">{usdExact(e.amount)}</span>
-              </div>
+              <EntryRow
+                key={e.id}
+                entry={e}
+                editing={editingId === e.id}
+                busy={rowBusyId === e.id}
+                onEdit={() => { setEditingId(e.id); setRowError(''); }}
+                onCancelEdit={() => setEditingId(null)}
+                onSaveEdit={(f, t, amt) => saveEdit(e.id, f, t, amt)}
+                onDelete={() => deleteEntry(e.id)}
+              />
             ))}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** One "Recent entries" row — a read-only line by default, switching to an inline edit form (period
+ * + amount, same fields as the create form above) when its Edit button is clicked. */
+function EntryRow({
+  entry, editing, busy, onEdit, onCancelEdit, onSaveEdit, onDelete,
+}: {
+  entry: AdSpendEntry;
+  editing: boolean;
+  busy: boolean;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onSaveEdit: (from: string, to: string, amount: number) => void;
+  onDelete: () => void;
+}) {
+  const [editFrom, setEditFrom] = useState(entry.periodStart);
+  const [editTo, setEditTo] = useState(entry.periodEnd);
+  const [editAmount, setEditAmount] = useState(String(entry.amount));
+
+  if (!editing) {
+    return (
+      <div className="flex items-center justify-between gap-2 rounded px-2 py-1 ring-1 ring-zinc-100">
+        <span>{fmtDateRange(entry.periodStart, entry.periodEnd)}</span>
+        <div className="flex items-center gap-2">
+          <span className="font-medium tabular-nums">{usdExact(entry.amount)}</span>
+          <button type="button" onClick={onEdit} className="text-blue-600 hover:underline">Edit</button>
+          <button type="button" onClick={onDelete} disabled={busy} className="text-red-600 hover:underline disabled:opacity-50">
+            Delete
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-end gap-2 rounded px-2 py-1.5 ring-1 ring-blue-200">
+      <label className="flex flex-col gap-0.5">
+        <span className="text-zinc-500">From</span>
+        <input type="date" value={editFrom} max={editTo} onChange={(e) => setEditFrom(e.target.value)}
+          className="rounded border border-zinc-300 px-1.5 py-1" />
+      </label>
+      <label className="flex flex-col gap-0.5">
+        <span className="text-zinc-500">To</span>
+        <input type="date" value={editTo} min={editFrom} onChange={(e) => setEditTo(e.target.value)}
+          className="rounded border border-zinc-300 px-1.5 py-1" />
+      </label>
+      <label className="flex flex-col gap-0.5">
+        <span className="text-zinc-500">Amount</span>
+        <input type="number" min="0" step="0.01" inputMode="decimal" value={editAmount}
+          onChange={(e) => setEditAmount(e.target.value)} className="w-24 rounded border border-zinc-300 px-1.5 py-1" />
+      </label>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => onSaveEdit(editFrom, editTo, Number(editAmount))}
+        className="rounded bg-zinc-800 px-2 py-1 font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+      >
+        {busy ? 'Saving…' : 'Save'}
+      </button>
+      <button type="button" disabled={busy} onClick={onCancelEdit} className="text-zinc-500 hover:underline disabled:opacity-50">
+        Cancel
+      </button>
     </div>
   );
 }

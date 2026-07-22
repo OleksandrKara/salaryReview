@@ -407,6 +407,57 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
+    @DisplayName("updateAdSpendEntry edits an existing entry in place and rounds the new amount")
+    void updateAdSpendEntryEditsInPlace() {
+        AdSpendEntry existing = AdSpendEntry.builder().id(5L).landingPageSlug("mani")
+                .periodStart(LocalDate.of(2026, 7, 1)).periodEnd(LocalDate.of(2026, 7, 7))
+                .amountSpent(new BigDecimal("100.00")).enteredBy("owner1").build();
+        when(adSpendEntryRepository.findById(5L)).thenReturn(java.util.Optional.of(existing));
+        when(adSpendEntryRepository.save(org.mockito.ArgumentMatchers.any(AdSpendEntry.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        java.util.Optional<AdSpendEntry> result = service.updateAdSpendEntry(
+                5L, LocalDate.of(2026, 7, 8), LocalDate.of(2026, 7, 14), new BigDecimal("249.999"));
+
+        assertThat(result).isPresent();
+        assertThat(result.get().getPeriodStart()).isEqualTo(LocalDate.of(2026, 7, 8));
+        assertThat(result.get().getPeriodEnd()).isEqualTo(LocalDate.of(2026, 7, 14));
+        assertThat(result.get().getAmountSpent()).isEqualByComparingTo("250.00");
+        // landingPageSlug/enteredBy are untouched by an edit.
+        assertThat(result.get().getLandingPageSlug()).isEqualTo("mani");
+        assertThat(result.get().getEnteredBy()).isEqualTo("owner1");
+    }
+
+    @Test
+    @DisplayName("updateAdSpendEntry returns empty for a non-existent id, doesn't call save")
+    void updateAdSpendEntryMissingReturnsEmpty() {
+        when(adSpendEntryRepository.findById(99L)).thenReturn(java.util.Optional.empty());
+
+        assertThat(service.updateAdSpendEntry(99L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 7),
+                new BigDecimal("10.00"))).isEmpty();
+        org.mockito.Mockito.verify(adSpendEntryRepository, org.mockito.Mockito.never())
+                .save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("deleteAdSpendEntry deletes an existing entry and returns true")
+    void deleteAdSpendEntryDeletesExisting() {
+        when(adSpendEntryRepository.existsById(5L)).thenReturn(true);
+
+        assertThat(service.deleteAdSpendEntry(5L)).isTrue();
+        org.mockito.Mockito.verify(adSpendEntryRepository).deleteById(5L);
+    }
+
+    @Test
+    @DisplayName("deleteAdSpendEntry returns false for a non-existent id, doesn't call deleteById")
+    void deleteAdSpendEntryMissingReturnsFalse() {
+        when(adSpendEntryRepository.existsById(99L)).thenReturn(false);
+
+        assertThat(service.deleteAdSpendEntry(99L)).isFalse();
+        org.mockito.Mockito.verify(adSpendEntryRepository, org.mockito.Mockito.never()).deleteById(org.mockito.ArgumentMatchers.anyLong());
+    }
+
+    @Test
     @DisplayName("analytics() folds a manager-follow-up appointment into the completed list, same as adsReport (design.md D6)")
     void analyticsMergesFollowUpIntoCompletedList() {
         when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(

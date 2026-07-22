@@ -477,6 +477,34 @@ public class MarketingAnalyticsService {
         return adSpendEntryRepository.findByLandingPageSlugOrderByPeriodStartDesc(slug);
     }
 
+    /** Edits an existing entry in place (landingPageSlug is fixed — the management UI is always
+     * scoped to one page, and re-pointing an entry at a different page has no real use case). Unlike
+     * {@link #createAdSpendEntry}'s "never overwrite" append-only default, this is for fixing an
+     * outright mistake (wrong amount/dates) without leaving a confusing extra row behind — enter a
+     * new row instead if the intent is a genuine, auditable revision to a period that already
+     * reported correctly. Empty (not thrown) if the id doesn't exist, mirroring
+     * {@link #deleteAdSpendEntry}'s not-found handling.
+     */
+    @Transactional
+    public java.util.Optional<AdSpendEntry> updateAdSpendEntry(
+            Long id, LocalDate periodStart, LocalDate periodEnd, BigDecimal amount) {
+        return adSpendEntryRepository.findById(id).map(entry -> {
+            entry.setPeriodStart(periodStart);
+            entry.setPeriodEnd(periodEnd);
+            entry.setAmountSpent(amount.setScale(2, RoundingMode.HALF_UP));
+            return adSpendEntryRepository.save(entry);
+        });
+    }
+
+    /** Removes an outright mistaken entry (duplicate, wrong page/amount typed in) — false if the id
+     * doesn't exist, so the controller can 404 rather than silently no-op. */
+    @Transactional
+    public boolean deleteAdSpendEntry(Long id) {
+        if (!adSpendEntryRepository.existsById(id)) return false;
+        adSpendEntryRepository.deleteById(id);
+        return true;
+    }
+
     /** Every Square customer id a channel-attributed contact resolves to, each tagged with that
      * contact's first touch and channel. A contact's originally-linked square_customer_id can go
      * stale (e.g. a follow-up appointment booked by phone gets matched or created against a
