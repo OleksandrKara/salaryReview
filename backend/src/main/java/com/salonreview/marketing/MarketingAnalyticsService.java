@@ -252,7 +252,7 @@ public class MarketingAnalyticsService {
                     ? List.<LocalDate[]>of() : List.<LocalDate[]>of(new LocalDate[]{from, to});
         };
         if (periods.isEmpty()) {
-            PeriodRow empty = new PeriodRow(from, to, ZERO_MONEY, false, ZERO_MONEY, ZERO_MONEY, 0, 0, 0, false);
+            PeriodRow empty = new PeriodRow(from, to, ZERO_MONEY, false, ZERO_MONEY, ZERO_MONEY, 0, ZERO_MONEY, 0, 0, false);
             return new MarketingAdsReportDto(periodType, List.of(), empty);
         }
         LocalDate alignedFrom = periods.get(0)[0];
@@ -363,6 +363,18 @@ public class MarketingAnalyticsService {
                 .toList();
         long customersCreated = segment(bucket, freshCustomerIds::contains).customerCount();
 
+        // Exactly the customersCreated cohort above (fresh, tracked-flow, with a service in this
+        // period) — not bounded to this period's date range, since a second visit landing in a
+        // later period is still value this period's acquisition produced.
+        Set<String> newCustomerIds = bucket.stream()
+                .map(AttributedService::customerId)
+                .filter(freshCustomerIds::contains)
+                .collect(java.util.stream.Collectors.toSet());
+        BigDecimal newCustomerBookedAhead = upcoming.stream()
+                .filter(u -> newCustomerIds.contains(u.customerId()))
+                .map(UpcomingAppointment::price)
+                .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+
         List<CompletedAppointment> bucketCompleted = completed.stream()
                 .filter(c -> withinPeriod(c.date(), periodStart, periodEnd))
                 .toList();
@@ -389,7 +401,8 @@ public class MarketingAnalyticsService {
         boolean monthInProgress = periodEnd.isAfter(today);
 
         return new PeriodRow(periodStart, periodEnd, spend.amount(), spend.estimated(), revenueCollected,
-                anticipatedRevenue, customersCreated, bucketCompleted.size(), customersFollowedUp, monthInProgress);
+                anticipatedRevenue, customersCreated, newCustomerBookedAhead, bucketCompleted.size(),
+                customersFollowedUp, monthInProgress);
     }
 
     private static boolean withinPeriod(LocalDate date, LocalDate periodStart, LocalDate periodEnd) {
@@ -402,11 +415,13 @@ public class MarketingAnalyticsService {
         BigDecimal revenue = rows.stream().map(PeriodRow::revenueCollected).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
         BigDecimal anticipated = rows.stream().map(PeriodRow::anticipatedRevenue).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
         long customersCreated = rows.stream().mapToLong(PeriodRow::customersCreated).sum();
+        BigDecimal newCustomerBookedAhead = rows.stream().map(PeriodRow::newCustomerBookedAhead)
+                .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
         long completedAppointments = rows.stream().mapToLong(PeriodRow::completedAppointments).sum();
         long customersFollowedUp = rows.stream().mapToLong(PeriodRow::customersFollowedUp).sum();
         boolean monthInProgress = rows.stream().anyMatch(PeriodRow::monthInProgress);
         return new PeriodRow(alignedFrom, alignedTo, adSpend, adSpendEstimated, revenue, anticipated,
-                customersCreated, completedAppointments, customersFollowedUp, monthInProgress);
+                customersCreated, newCustomerBookedAhead, completedAppointments, customersFollowedUp, monthInProgress);
     }
 
     /** Splits [from, to] into whole calendar weeks (Monday–Sunday) or whole calendar months that

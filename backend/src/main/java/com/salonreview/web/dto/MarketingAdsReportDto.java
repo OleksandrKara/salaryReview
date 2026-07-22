@@ -45,6 +45,13 @@ public record MarketingAdsReportDto(
              * booked through the tracked flow itself, not a manager follow-up (see
              * {@link #customersFollowedUp}). */
             long customersCreated,
+            /** Catalog-price value of every still-upcoming appointment (any future date, not just
+             * this period) already booked by exactly the {@link #customersCreated} cohort above —
+             * "of the new customers this ad spend brought in this period, how much more have they
+             * already booked ahead." Unlike {@link #anticipatedRevenue}, this is deliberately not
+             * bounded to this period's date range, since a new customer's second visit landing in
+             * a later period is still value this period's acquisition produced. */
+            BigDecimal newCustomerBookedAhead,
             /** Count of distinct completed, actually-paid appointments (bookings, not service line
              * items) in this period — comps excluded, same as revenueCollected. */
             long completedAppointments,

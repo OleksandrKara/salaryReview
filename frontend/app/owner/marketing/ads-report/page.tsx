@@ -18,7 +18,7 @@ export default async function MarketingAdsReportPage({
   const slug = rawSlug ?? DEFAULT_SLUG;
   const [me, data] = await Promise.all([
     serverApi.getMe(),
-    serverApi.getMarketingAdsReport('week', undefined, undefined, undefined, slug),
+    serverApi.getMarketingAdsReport('mtd', undefined, undefined, undefined, slug),
   ]);
 
   if (me?.role !== 'OWNER' && me?.role !== 'ADS_MANAGER') redirect('/reports');

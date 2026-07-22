@@ -149,6 +149,7 @@ function formatWhatsAppReport(row: MarketingAdsReportPeriod, periodType: Marketi
   lines.push('');
   lines.push('*Customers*');
   lines.push(`New: ${row.customersCreated}`);
+  lines.push(`Booked ahead by new customers (any future date): ${usdExact(row.newCustomerBookedAhead)}`);
   lines.push(`Follow-up (booked by manager): ${row.customersFollowedUp}`);
   lines.push(`Completed appts: ${row.completedAppointments}`);
   if (costPerCustomer !== null) lines.push(`Cost per customer: ${usdExact(costPerCustomer)}`);
@@ -175,7 +176,7 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
     setData(initialData);
   }
 
-  const [periodType, setPeriodType] = useState<PeriodType>('week');
+  const [periodType, setPeriodType] = useState<PeriodType>('mtd');
   const [rangeCount, setRangeCount] = useState(8);
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -312,7 +313,7 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
       {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
 
       {loading && (
-        <div className="mt-4 flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 ring-1 ring-blue-100">
+        <div className="sticky top-2 z-20 mt-4 flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 shadow-md ring-1 ring-blue-200">
           <Spinner className="h-4 w-4" />
           Updating report — this can take a few seconds, especially with no page selected above…
         </div>
@@ -322,7 +323,7 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
         {data.periods.length > 0 ? fmtDateRange(totals.periodStart, totals.periodEnd) : ''}
       </p>
 
-      <div className={`mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7 transition-opacity ${loading ? 'opacity-50' : ''}`}>
+      <div className={`mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-8 transition-opacity ${loading ? 'opacity-50' : ''}`}>
         <StatCard label="Ad spend" value={usd(totals.adSpend)} hint={totals.adSpendEstimated ? 'estimated' : undefined} />
         <StatCard label="Collected" value={usd(totals.revenueCollected)} />
         <StatCard label="ROI" value={roiLabel(totalRoi)} />
@@ -332,6 +333,11 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
           hint="within this period"
         />
         <StatCard label="Customers created" value={totals.customersCreated.toLocaleString()} />
+        <StatCard
+          label="Booked ahead (new)"
+          value={usd(totals.newCustomerBookedAhead)}
+          hint="new customers, any future date"
+        />
         <StatCard label="Follow-up bookings" value={totals.customersFollowedUp.toLocaleString()} />
         <StatCard label="Completed appts" value={totals.completedAppointments.toLocaleString()} />
       </div>
@@ -576,6 +582,13 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
                 <div className="text-right tabular-nums">{usdExact(row.anticipatedRevenue)}</div>
                 <div className="text-zinc-500">Customers created</div>
                 <div className="text-right tabular-nums">{row.customersCreated}</div>
+                <div
+                  className="text-zinc-500"
+                  title="What this period's new customers (Customers created, above) have already booked ahead, any future date — not limited to this period."
+                >
+                  Booked ahead (new)
+                </div>
+                <div className="text-right tabular-nums">{usdExact(row.newCustomerBookedAhead)}</div>
                 <div className="text-zinc-500">Follow-up bookings</div>
                 <div className="text-right tabular-nums">{row.customersFollowedUp}</div>
                 <div className="text-zinc-500">Completed appts</div>
@@ -602,6 +615,12 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
                 Anticipated
               </th>
               <th className="px-3 py-2 text-right">Customers created</th>
+              <th
+                className="px-3 py-2 text-right"
+                title="What this period's new customers (Customers created) have already booked ahead, any future date — not limited to this period."
+              >
+                Booked ahead (new)
+              </th>
               <th className="px-3 py-2 text-right">Follow-up</th>
               <th className="px-3 py-2 text-right">Completed appts</th>
             </tr>
@@ -624,6 +643,7 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
                   <td className="px-3 py-2 text-right tabular-nums font-medium">{roiLabel(roi)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usdExact(row.anticipatedRevenue)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{row.customersCreated}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usdExact(row.newCustomerBookedAhead)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{row.customersFollowedUp}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{row.completedAppointments}</td>
                 </tr>

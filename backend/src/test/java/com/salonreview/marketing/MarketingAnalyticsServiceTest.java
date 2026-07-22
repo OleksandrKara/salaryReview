@@ -852,6 +852,42 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
+    @DisplayName("newCustomerBookedAhead sums a period's new-customer cohort's future bookings, "
+            + "even when those bookings fall in a later period than anticipatedRevenue counts")
+    void adsReportComputesNewCustomerBookedAheadAcrossPeriods() {
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
+        when(square.customerCreatedAts(Set.of("cust-1")))
+                .thenReturn(Map.of("cust-1", Instant.parse("2026-07-01T00:05:00Z")));
+        // cust-1's first (fresh, tracked-flow) visit lands in July — this is exactly the
+        // customersCreated cohort newCustomerBookedAhead is scoped to.
+        var julyLine = new AttributedService("p1", "P", "2026-07-10", "FIRST", "Manicure",
+                new BigDecimal("80.00"), BigDecimal.ZERO, new BigDecimal("80.00"), BigDecimal.ZERO,
+                true, 1, 1, false, "CARD", null, "booking-july", "cust-1", null);
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(julyLine)));
+
+        // Their only upcoming appointment is in August — outside July's own date range, so it
+        // contributes nothing to July's anticipatedRevenue, but it's still this cohort's booked-ahead value.
+        var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
+        var augustBooking = new SquareClient.Booking("bk-august", "ACCEPTED", "2026-08-05T18:00:00Z", null, null,
+                "loc-1", "cust-1", null, null, List.of(seg));
+        when(square.bookingsForCustomer(eq("cust-1"), any())).thenReturn(List.of(augustBooking));
+        when(square.catalogPrices(List.of("var-mani"))).thenReturn(Map.of("var-mani", new BigDecimal("150.00")));
+        when(square.catalogNames(List.of("var-mani"))).thenReturn(Map.of("var-mani", "Manicure"));
+        when(square.customerNames(any())).thenReturn(Map.of("cust-1", "Jane Doe"));
+
+        MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
+                TrafficSourceSql.ADS_ONLY, "mani", MarketingAnalyticsService.PeriodKind.MONTH);
+
+        assertThat(dto.periods()).hasSize(1);
+        PeriodRow july = dto.periods().get(0);
+        assertThat(july.customersCreated()).isEqualTo(1);
+        assertThat(july.anticipatedRevenue()).isEqualByComparingTo("0.00");
+        assertThat(july.newCustomerBookedAhead()).isEqualByComparingTo("150.00");
+        assertThat(dto.totals().newCustomerBookedAhead()).isEqualByComparingTo("150.00");
+    }
+
+    @Test
     @DisplayName("adsReport() does not double-count a follow-up appointment already found by the "
             + "upcoming-appointments scan — regression guard for the same-customer-twice-in-Upcoming bug")
     void adsReportDoesNotDoubleCountFollowUpAlreadyUpcoming() {
