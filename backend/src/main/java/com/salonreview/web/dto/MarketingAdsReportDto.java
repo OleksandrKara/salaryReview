@@ -45,16 +45,28 @@ public record MarketingAdsReportDto(
              * booked through the tracked flow itself, not a manager follow-up (see
              * {@link #customersFollowedUp}). */
             long customersCreated,
-            /** Catalog-price value of every still-upcoming appointment whose date falls outside this
-             * row's own [periodStart, periodEnd] — the complement of {@link #anticipatedRevenue},
-             * so the two never double-count the same appointment. {@code revenueCollected +
-             * anticipatedRevenue + anticipatedRevenueOutsidePeriod} is the full forward-booked
-             * pipeline for this period's cohort plus everything else still on the books, cancellations
-             * notwithstanding — what the WhatsApp text export calls "Total". */
+            /** Catalog-price value of every still-upcoming appointment dated outside this row's own
+             * [periodStart, periodEnd], booked by exactly the ads-attributed customers whose own
+             * firstTouch falls within that same window — "of the leads this specific period brought
+             * in, what have they got booked beyond it". Deliberately scoped to this window's own new
+             * customers rather than every ads-attributed customer ever: the latter would make this
+             * figure identical for every past period, since a past period's own dates can never
+             * contain a future appointment regardless of whose it is. {@code revenueCollected +
+             * anticipatedRevenue + anticipatedRevenueOutsidePeriod} is what the WhatsApp text export
+             * calls "Total". */
             BigDecimal anticipatedRevenueOutsidePeriod,
             /** Count of distinct completed, actually-paid appointments (bookings, not service line
              * items) in this period — comps excluded, same as revenueCollected. */
             long completedAppointments,
+            /** Real Square bookings for ads-attributed customers whose own start date falls within
+             * this period but that didn't happen (cancelled by customer/seller, declined, or
+             * no-show) — the piece of "what happened to bookings in this period" that wasn't
+             * tracked anywhere before. completedAppointments + cancelledBookings +
+             * anticipatedAppointments is the full bookings breakdown for this period. */
+            long cancelledBookings,
+            /** Count of still-upcoming appointments scheduled within this period — the same
+             * appointments anticipatedRevenue above sums the price of, just the headline count. */
+            long anticipatedAppointments,
             /** Real, non-cancelled Square appointments in this period for this page's
              * ads-attributed contacts that the tracked flow never recorded — a lead a manager
              * booked by phone after the on-site flow didn't complete. Already folded into

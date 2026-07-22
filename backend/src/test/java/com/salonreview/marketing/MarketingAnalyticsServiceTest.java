@@ -933,30 +933,66 @@ class MarketingAnalyticsServiceTest {
 
         assertThat(dto.periods()).hasSize(1);
         assertThat(dto.periods().get(0).anticipatedRevenue()).isEqualByComparingTo("85.00");
+        assertThat(dto.periods().get(0).anticipatedAppointments()).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("anticipatedRevenueOutsidePeriod is the complement of anticipatedRevenue per row, "
-            + "and the totals row isn't a naive sum of each row's own figure")
-    void adsReportComputesAnticipatedRevenueOutsidePeriod() {
+    @DisplayName("adsReport counts cancelled/declined/no-show bookings dated within the period, "
+            + "separately from completed and anticipated")
+    void adsReportCountsCancelledBookings() {
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads")));
+        when(square.customerCreatedAts(Set.of("cust-1")))
+                .thenReturn(Map.of("cust-1", Instant.parse("2026-01-01T00:00:00Z")));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
+
+        var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
+        var cancelledByCustomer = new SquareClient.Booking("bk-1", "CANCELLED_BY_CUSTOMER", "2026-07-10T18:00:00Z",
+                null, null, "loc-1", "cust-1", null, null, List.of(seg));
+        var noShow = new SquareClient.Booking("bk-2", "NO_SHOW", "2026-07-15T18:00:00Z",
+                null, null, "loc-1", "cust-1", null, null, List.of(seg));
+        // Dated in August — outside the July period requested below, so it must not be counted.
+        var cancelledOutsidePeriod = new SquareClient.Booking("bk-3", "DECLINED", "2026-08-01T18:00:00Z",
+                null, null, "loc-1", "cust-1", null, null, List.of(seg));
+        when(square.bookingsForCustomer(eq("cust-1"), any()))
+                .thenReturn(List.of(cancelledByCustomer, noShow, cancelledOutsidePeriod));
+
+        MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
+                TrafficSourceSql.ADS_ONLY, null, MarketingAnalyticsService.PeriodKind.MONTH);
+
+        assertThat(dto.periods()).hasSize(1);
+        assertThat(dto.periods().get(0).cancelledBookings()).isEqualTo(2);
+        assertThat(dto.periods().get(0).completedAppointments()).isEqualTo(0);
+        assertThat(dto.periods().get(0).anticipatedAppointments()).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("anticipatedRevenueOutsidePeriod is scoped to each row's own captured-in-that-window "
+            + "customers, not every ads customer ever, and the totals row isn't a naive sum of rows")
+    void adsReportComputesAnticipatedRevenueOutsidePeriodByCaptureWindow() {
         when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
-                contact("+16195550001", "cust-1", Instant.parse("2026-06-01T00:00:00Z"), "meta_ads")));
-        when(square.customerCreatedAts(any())).thenReturn(Map.of("cust-1", Instant.parse("2026-06-01T00:05:00Z")));
+                // Captured in June — has a future booking in July (inside July's own period, and
+                // inside the whole June-July aligned span).
+                contact("+16195550001", "cust-june", Instant.parse("2026-06-05T00:00:00Z"), "meta_ads"),
+                // Captured in July — has a future booking in September (outside July, and outside
+                // the whole aligned span).
+                contact("+16195550002", "cust-july", Instant.parse("2026-07-10T00:00:00Z"), "meta_ads")));
+        when(square.customerCreatedAts(any())).thenReturn(Map.of(
+                "cust-june", Instant.parse("2026-06-05T00:05:00Z"), "cust-july", Instant.parse("2026-07-10T00:05:00Z")));
         when(aggregator.aggregate(2026, 6, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 6, List.of()));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
 
-        // One booking inside July (inside the June-July aligned range too), one in August (outside
-        // both individual months and outside the whole aligned range).
         var segMani = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
         var segPedi = new SquareClient.AppointmentSegment("team-1", "var-pedi", 60);
-        when(square.bookingsForCustomer(eq("cust-1"), any())).thenReturn(List.of(
-                new SquareClient.Booking("bk-july", "ACCEPTED", "2026-07-15T18:00:00Z", null, null,
-                        "loc-1", "cust-1", null, null, List.of(segMani)),
-                new SquareClient.Booking("bk-august", "ACCEPTED", "2026-08-05T18:00:00Z", null, null,
-                        "loc-1", "cust-1", null, null, List.of(segPedi))));
+        when(square.bookingsForCustomer(eq("cust-june"), any())).thenReturn(List.of(
+                new SquareClient.Booking("bk-july", "ACCEPTED", "2026-07-20T18:00:00Z", null, null,
+                        "loc-1", "cust-june", null, null, List.of(segMani))));
+        when(square.bookingsForCustomer(eq("cust-july"), any())).thenReturn(List.of(
+                new SquareClient.Booking("bk-sept", "ACCEPTED", "2026-09-10T18:00:00Z", null, null,
+                        "loc-1", "cust-july", null, null, List.of(segPedi))));
         when(square.catalogPrices(any())).thenReturn(Map.of("var-mani", new BigDecimal("150.00"), "var-pedi", new BigDecimal("200.00")));
         when(square.catalogNames(any())).thenReturn(Map.of("var-mani", "Manicure", "var-pedi", "Pedicure"));
-        when(square.customerNames(any())).thenReturn(Map.of("cust-1", "Jane Doe"));
+        when(square.customerNames(any())).thenReturn(Map.of("cust-june", "June Customer", "cust-july", "July Customer"));
 
         MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2026, 6, 1), LocalDate.of(2026, 7, 31),
                 TrafficSourceSql.ADS_ONLY, "mani", MarketingAnalyticsService.PeriodKind.MONTH);
@@ -965,17 +1001,16 @@ class MarketingAnalyticsServiceTest {
         PeriodRow july = dto.periods().get(0);
         PeriodRow june = dto.periods().get(1);
 
-        // June: neither booking is in June, so both count as "outside".
-        assertThat(june.anticipatedRevenue()).isEqualByComparingTo("0.00");
-        assertThat(june.anticipatedRevenueOutsidePeriod()).isEqualByComparingTo("350.00");
+        // June's own cohort is just cust-june — their July booking is outside June's own period.
+        assertThat(june.anticipatedRevenueOutsidePeriod()).isEqualByComparingTo("150.00");
 
-        // July: the July booking is now inside the period (not "outside"); only August still is.
-        assertThat(july.anticipatedRevenue()).isEqualByComparingTo("150.00");
+        // July's own cohort is just cust-july — cust-june's July booking doesn't count here even
+        // though it's a real upcoming appointment, because cust-june wasn't captured in July.
         assertThat(july.anticipatedRevenueOutsidePeriod()).isEqualByComparingTo("200.00");
 
-        // Totals (aligned June 1 - July 31): the July booking is inside the aligned span, so only
-        // August (outside the whole displayed window) counts — not 350+200, which would double-count.
-        assertThat(dto.totals().anticipatedRevenue()).isEqualByComparingTo("150.00");
+        // Totals (aligned June 1 - July 31): both customers were captured somewhere in the aligned
+        // span, but cust-june's July booking is INSIDE that span, so only cust-july's September
+        // booking counts — 200.00, not a naive 150+200=350 sum of the two rows above.
         assertThat(dto.totals().anticipatedRevenueOutsidePeriod()).isEqualByComparingTo("200.00");
     }
 

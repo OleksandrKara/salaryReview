@@ -955,13 +955,22 @@ export interface MarketingAdsReportPeriod {
    * service rendered in this period — booked through the tracked flow itself, not a manager
    * follow-up (see customersFollowedUp). */
   customersCreated: number;
-  /** Catalog-price value of every still-upcoming appointment whose date falls outside this row's
-   * own period — the complement of anticipatedRevenue above, so the two never double-count the
-   * same appointment. revenueCollected + anticipatedRevenue + this = the full forward-booked
-   * pipeline, cancellations notwithstanding — what the WhatsApp text export calls "Total". */
+  /** Catalog-price value of upcoming appointments dated outside this row's own period, booked by
+   * exactly the customers whose own firstTouch falls within this period — "of the leads this
+   * specific window brought in, what have they got booked beyond it". Not every ads customer ever:
+   * that would make this figure identical for every past period, since a past period's own dates
+   * can never contain a future appointment regardless of whose it is. revenueCollected +
+   * anticipatedRevenue + this = what the WhatsApp text export calls "Total". */
   anticipatedRevenueOutsidePeriod: number;
   /** Count of distinct completed, actually-paid appointments (not service line items) in this period. */
   completedAppointments: number;
+  /** Real bookings for ads-attributed customers, dated within this period, that didn't happen
+   * (cancelled by customer/seller, declined, or no-show). completedAppointments + this +
+   * anticipatedAppointments is the full bookings breakdown for this period. */
+  cancelledBookings: number;
+  /** Count of still-upcoming appointments scheduled within this period — the same appointments
+   * anticipatedRevenue above sums the price of, just the headline count. */
+  anticipatedAppointments: number;
   /** Real, non-cancelled Square appointments in this period for this page's ads-attributed
    * contacts that the tracked flow never recorded — a lead a manager booked by phone after the
    * on-site flow didn't complete. Already folded into revenueCollected/anticipatedRevenue above;
