@@ -45,14 +45,13 @@ public record MarketingAdsReportDto(
              * booked through the tracked flow itself, not a manager follow-up (see
              * {@link #customersFollowedUp}). */
             long customersCreated,
-            /** Catalog-price value of every still-upcoming appointment, any future date, for every
-             * ads-attributed customer in scope of this report (all of {@code sources}/{@code slug},
-             * not bound to this row's own period) — the full forward-booked pipeline right now,
-             * cancellations notwithstanding. Deliberately identical across every row in a WEEK/MONTH
-             * trend (it isn't really a per-period figure, unlike {@link #anticipatedRevenue}) — same
-             * reasoning as {@code MarketingAnalyticsDto#adSpendThisMonth} always being the current
-             * month regardless of the requested range. */
-            BigDecimal anticipatedRevenueAllDates,
+            /** Catalog-price value of every still-upcoming appointment whose date falls outside this
+             * row's own [periodStart, periodEnd] — the complement of {@link #anticipatedRevenue},
+             * so the two never double-count the same appointment. {@code revenueCollected +
+             * anticipatedRevenue + anticipatedRevenueOutsidePeriod} is the full forward-booked
+             * pipeline for this period's cohort plus everything else still on the books, cancellations
+             * notwithstanding — what the WhatsApp text export calls "Total". */
+            BigDecimal anticipatedRevenueOutsidePeriod,
             /** Count of distinct completed, actually-paid appointments (bookings, not service line
              * items) in this period — comps excluded, same as revenueCollected. */
             long completedAppointments,

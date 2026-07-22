@@ -955,11 +955,11 @@ export interface MarketingAdsReportPeriod {
    * service rendered in this period — booked through the tracked flow itself, not a manager
    * follow-up (see customersFollowedUp). */
   customersCreated: number;
-  /** Catalog-price value of every still-upcoming appointment, any future date, for every
-   * ads-attributed customer in scope of this report — not bound to this row's own period. The
-   * full forward-booked pipeline right now, cancellations notwithstanding; deliberately identical
-   * across every row in a WEEK/MONTH trend, unlike anticipatedRevenue above. */
-  anticipatedRevenueAllDates: number;
+  /** Catalog-price value of every still-upcoming appointment whose date falls outside this row's
+   * own period — the complement of anticipatedRevenue above, so the two never double-count the
+   * same appointment. revenueCollected + anticipatedRevenue + this = the full forward-booked
+   * pipeline, cancellations notwithstanding — what the WhatsApp text export calls "Total". */
+  anticipatedRevenueOutsidePeriod: number;
   /** Count of distinct completed, actually-paid appointments (not service line items) in this period. */
   completedAppointments: number;
   /** Real, non-cancelled Square appointments in this period for this page's ads-attributed
