@@ -955,11 +955,11 @@ export interface MarketingAdsReportPeriod {
    * service rendered in this period — booked through the tracked flow itself, not a manager
    * follow-up (see customersFollowedUp). */
   customersCreated: number;
-  /** Catalog-price value of every still-upcoming appointment (any future date, not just this
-   * period) already booked by exactly the customersCreated cohort above — how much more the new
-   * customers this period's ad spend brought in have already booked ahead. Unlike
-   * anticipatedRevenue, not bounded to this period's own date range. */
-  newCustomerBookedAhead: number;
+  /** Catalog-price value of every still-upcoming appointment, any future date, for every
+   * ads-attributed customer in scope of this report — not bound to this row's own period. The
+   * full forward-booked pipeline right now, cancellations notwithstanding; deliberately identical
+   * across every row in a WEEK/MONTH trend, unlike anticipatedRevenue above. */
+  anticipatedRevenueAllDates: number;
   /** Count of distinct completed, actually-paid appointments (not service line items) in this period. */
   completedAppointments: number;
   /** Real, non-cancelled Square appointments in this period for this page's ads-attributed

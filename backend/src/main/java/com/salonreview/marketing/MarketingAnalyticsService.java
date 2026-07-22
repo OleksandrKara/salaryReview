@@ -276,11 +276,17 @@ public class MarketingAnalyticsService {
         Set<String> alreadyCountedBookingIds = bookingIdsOf(inRange, upcomingResult.bookingIds());
         mergeFollowUpsInto(followUps, freshCustomerIds, today, completed, upcoming, alreadyCountedBookingIds);
 
+        // Not period-scoped at all (unlike anticipatedRevenue below) — every ads-attributed
+        // customer's full forward-booked pipeline, so it's the same figure on every row.
+        BigDecimal anticipatedRevenueAllDates = upcoming.stream().map(UpcomingAppointment::price)
+                .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+
         List<PeriodRow> rows = new ArrayList<>();
         for (LocalDate[] p : periods) {
-            rows.add(buildPeriodRow(p[0], p[1], slug, inRange, completed, upcoming, freshCustomerIds, followUps, today));
+            rows.add(buildPeriodRow(p[0], p[1], slug, inRange, completed, upcoming, freshCustomerIds, followUps, today,
+                    anticipatedRevenueAllDates));
         }
-        PeriodRow totals = totalsRow(alignedFrom, alignedTo, rows);
+        PeriodRow totals = totalsRow(alignedFrom, alignedTo, rows, anticipatedRevenueAllDates);
 
         List<PeriodRow> mostRecentFirst = new ArrayList<>(rows);
         Collections.reverse(mostRecentFirst);
@@ -357,23 +363,11 @@ public class MarketingAnalyticsService {
             LocalDate periodStart, LocalDate periodEnd, String slug,
             List<AttributedService> inRange, List<CompletedAppointment> completed,
             List<UpcomingAppointment> upcoming, Set<String> freshCustomerIds,
-            List<FollowUpAppointment> followUps, LocalDate today) {
+            List<FollowUpAppointment> followUps, LocalDate today, BigDecimal anticipatedRevenueAllDates) {
         List<AttributedService> bucket = inRange.stream()
                 .filter(s -> withinPeriod(parseIso(s.date()), periodStart, periodEnd))
                 .toList();
         long customersCreated = segment(bucket, freshCustomerIds::contains).customerCount();
-
-        // Exactly the customersCreated cohort above (fresh, tracked-flow, with a service in this
-        // period) — not bounded to this period's date range, since a second visit landing in a
-        // later period is still value this period's acquisition produced.
-        Set<String> newCustomerIds = bucket.stream()
-                .map(AttributedService::customerId)
-                .filter(freshCustomerIds::contains)
-                .collect(java.util.stream.Collectors.toSet());
-        BigDecimal newCustomerBookedAhead = upcoming.stream()
-                .filter(u -> newCustomerIds.contains(u.customerId()))
-                .map(UpcomingAppointment::price)
-                .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
 
         List<CompletedAppointment> bucketCompleted = completed.stream()
                 .filter(c -> withinPeriod(c.date(), periodStart, periodEnd))
@@ -401,7 +395,7 @@ public class MarketingAnalyticsService {
         boolean monthInProgress = periodEnd.isAfter(today);
 
         return new PeriodRow(periodStart, periodEnd, spend.amount(), spend.estimated(), revenueCollected,
-                anticipatedRevenue, customersCreated, newCustomerBookedAhead, bucketCompleted.size(),
+                anticipatedRevenue, customersCreated, anticipatedRevenueAllDates, bucketCompleted.size(),
                 customersFollowedUp, monthInProgress);
     }
 
@@ -409,19 +403,20 @@ public class MarketingAnalyticsService {
         return date != null && !date.isBefore(periodStart) && !date.isAfter(periodEnd);
     }
 
-    private PeriodRow totalsRow(LocalDate alignedFrom, LocalDate alignedTo, List<PeriodRow> rows) {
+    private PeriodRow totalsRow(LocalDate alignedFrom, LocalDate alignedTo, List<PeriodRow> rows,
+            BigDecimal anticipatedRevenueAllDates) {
         BigDecimal adSpend = rows.stream().map(PeriodRow::adSpend).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
         boolean adSpendEstimated = rows.stream().anyMatch(PeriodRow::adSpendEstimated);
         BigDecimal revenue = rows.stream().map(PeriodRow::revenueCollected).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
         BigDecimal anticipated = rows.stream().map(PeriodRow::anticipatedRevenue).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
         long customersCreated = rows.stream().mapToLong(PeriodRow::customersCreated).sum();
-        BigDecimal newCustomerBookedAhead = rows.stream().map(PeriodRow::newCustomerBookedAhead)
-                .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
         long completedAppointments = rows.stream().mapToLong(PeriodRow::completedAppointments).sum();
         long customersFollowedUp = rows.stream().mapToLong(PeriodRow::customersFollowedUp).sum();
         boolean monthInProgress = rows.stream().anyMatch(PeriodRow::monthInProgress);
+        // anticipatedRevenueAllDates isn't summed across rows — every row already carries the same
+        // not-period-scoped figure, passed straight through here rather than multiplied by row count.
         return new PeriodRow(alignedFrom, alignedTo, adSpend, adSpendEstimated, revenue, anticipated,
-                customersCreated, newCustomerBookedAhead, completedAppointments, customersFollowedUp, monthInProgress);
+                customersCreated, anticipatedRevenueAllDates, completedAppointments, customersFollowedUp, monthInProgress);
     }
 
     /** Splits [from, to] into whole calendar weeks (Monday–Sunday) or whole calendar months that

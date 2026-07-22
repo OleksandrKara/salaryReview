@@ -45,13 +45,14 @@ public record MarketingAdsReportDto(
              * booked through the tracked flow itself, not a manager follow-up (see
              * {@link #customersFollowedUp}). */
             long customersCreated,
-            /** Catalog-price value of every still-upcoming appointment (any future date, not just
-             * this period) already booked by exactly the {@link #customersCreated} cohort above —
-             * "of the new customers this ad spend brought in this period, how much more have they
-             * already booked ahead." Unlike {@link #anticipatedRevenue}, this is deliberately not
-             * bounded to this period's date range, since a new customer's second visit landing in
-             * a later period is still value this period's acquisition produced. */
-            BigDecimal newCustomerBookedAhead,
+            /** Catalog-price value of every still-upcoming appointment, any future date, for every
+             * ads-attributed customer in scope of this report (all of {@code sources}/{@code slug},
+             * not bound to this row's own period) — the full forward-booked pipeline right now,
+             * cancellations notwithstanding. Deliberately identical across every row in a WEEK/MONTH
+             * trend (it isn't really a per-period figure, unlike {@link #anticipatedRevenue}) — same
+             * reasoning as {@code MarketingAnalyticsDto#adSpendThisMonth} always being the current
+             * month regardless of the requested range. */
+            BigDecimal anticipatedRevenueAllDates,
             /** Count of distinct completed, actually-paid appointments (bookings, not service line
              * items) in this period — comps excluded, same as revenueCollected. */
             long completedAppointments,

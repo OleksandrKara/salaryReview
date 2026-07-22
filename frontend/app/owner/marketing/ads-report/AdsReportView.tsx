@@ -139,6 +139,7 @@ function formatWhatsAppReport(row: MarketingAdsReportPeriod, periodType: Marketi
   lines.push('*Money*');
   lines.push(`Collected: ${usdExact(row.revenueCollected)}`);
   lines.push(`Anticipated (this period only): ${usdExact(row.anticipatedRevenue)}`);
+  lines.push(`Anticipated revenue (all future dates): ${usdExact(row.anticipatedRevenueAllDates)}`);
   lines.push(`Total: ${usdExact(totalRevenue)}`);
   lines.push('');
   lines.push('*Ad spend & ROI*');
@@ -149,7 +150,6 @@ function formatWhatsAppReport(row: MarketingAdsReportPeriod, periodType: Marketi
   lines.push('');
   lines.push('*Customers*');
   lines.push(`New: ${row.customersCreated}`);
-  lines.push(`Booked ahead by new customers (any future date): ${usdExact(row.newCustomerBookedAhead)}`);
   lines.push(`Follow-up (booked by manager): ${row.customersFollowedUp}`);
   lines.push(`Completed appts: ${row.completedAppointments}`);
   if (costPerCustomer !== null) lines.push(`Cost per customer: ${usdExact(costPerCustomer)}`);
@@ -344,12 +344,12 @@ export default function AdsReportView({ initialData, slug }: { initialData: Mark
           value={usd(totals.anticipatedRevenue)}
           hint="within this period"
         />
-        <StatCard label="Customers created" value={totals.customersCreated.toLocaleString()} />
         <StatCard
-          label="Booked ahead (new)"
-          value={usd(totals.newCustomerBookedAhead)}
-          hint="new customers, any future date"
+          label="Anticipated revenue (all future dates)"
+          value={usd(totals.anticipatedRevenueAllDates)}
+          hint="every ads customer, any date"
         />
+        <StatCard label="Customers created" value={totals.customersCreated.toLocaleString()} />
         <StatCard label="Follow-up bookings" value={totals.customersFollowedUp.toLocaleString()} />
         <StatCard label="Completed appts" value={totals.completedAppointments.toLocaleString()} />
       </div>
@@ -590,17 +590,17 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
                 <div className="text-right tabular-nums">{usdExact(row.revenueCollected)}</div>
                 <div className="text-zinc-500">ROI</div>
                 <div className="text-right tabular-nums font-medium">{roiLabel(roi)}</div>
-                <div className="text-zinc-500" title="Upcoming appointments starting within this period only — the breakdown below can show a larger total, since it includes upcoming appointments in later periods too.">Anticipated</div>
+                <div className="text-zinc-500" title="Upcoming appointments starting within this period only — the row below can show a larger total, since it includes upcoming appointments in later periods too.">Anticipated</div>
                 <div className="text-right tabular-nums">{usdExact(row.anticipatedRevenue)}</div>
-                <div className="text-zinc-500">Customers created</div>
-                <div className="text-right tabular-nums">{row.customersCreated}</div>
                 <div
                   className="text-zinc-500"
-                  title="What this period's new customers (Customers created, above) have already booked ahead, any future date — not limited to this period."
+                  title="Every ads-attributed customer's still-upcoming appointments, any future date — not limited to this period, and the same figure on every row."
                 >
-                  Booked ahead (new)
+                  Anticipated revenue (all future dates)
                 </div>
-                <div className="text-right tabular-nums">{usdExact(row.newCustomerBookedAhead)}</div>
+                <div className="text-right tabular-nums">{usdExact(row.anticipatedRevenueAllDates)}</div>
+                <div className="text-zinc-500">Customers created</div>
+                <div className="text-right tabular-nums">{row.customersCreated}</div>
                 <div className="text-zinc-500">Follow-up bookings</div>
                 <div className="text-right tabular-nums">{row.customersFollowedUp}</div>
                 <div className="text-zinc-500">Completed appts</div>
@@ -622,17 +622,17 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
               <th className="px-3 py-2 text-right">ROI</th>
               <th
                 className="px-3 py-2 text-right"
-                title="Upcoming appointments starting within this period only — the breakdown below can show a larger total, since it includes upcoming appointments in later periods too."
+                title="Upcoming appointments starting within this period only — the row below can show a larger total, since it includes upcoming appointments in later periods too."
               >
                 Anticipated
               </th>
-              <th className="px-3 py-2 text-right">Customers created</th>
               <th
                 className="px-3 py-2 text-right"
-                title="What this period's new customers (Customers created) have already booked ahead, any future date — not limited to this period."
+                title="Every ads-attributed customer's still-upcoming appointments, any future date — not limited to this period, and the same figure on every row."
               >
-                Booked ahead (new)
+                Anticipated revenue (all future dates)
               </th>
+              <th className="px-3 py-2 text-right">Customers created</th>
               <th className="px-3 py-2 text-right">Follow-up</th>
               <th className="px-3 py-2 text-right">Completed appts</th>
             </tr>
@@ -654,8 +654,8 @@ function PeriodTable({ periods, periodType }: { periods: MarketingAdsReportPerio
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usdExact(row.revenueCollected)}</td>
                   <td className="px-3 py-2 text-right tabular-nums font-medium">{roiLabel(roi)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usdExact(row.anticipatedRevenue)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usdExact(row.anticipatedRevenueAllDates)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{row.customersCreated}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usdExact(row.newCustomerBookedAhead)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{row.customersFollowedUp}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{row.completedAppointments}</td>
                 </tr>
