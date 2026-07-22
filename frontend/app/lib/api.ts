@@ -463,6 +463,14 @@ export const api = {
   listAdSpendEntries: (slug: string) =>
     proxyGet<AdSpendEntry[]>(`/api/owner/marketing/ads-report/spend?slug=${encodeURIComponent(slug)}`),
 
+  // Edits an existing entry in place — for fixing an outright mistake (wrong amount/dates), not a
+  // genuine revision (enter a new row via createAdSpendEntry for that, so history stays auditable).
+  updateAdSpendEntry: (id: number, periodStart: string, periodEnd: string, amount: number) =>
+    proxyJson<AdSpendEntry>(`/api/owner/marketing/ads-report/spend/${id}`, 'PUT', { periodStart, periodEnd, amount }),
+
+  // Removes an outright mistaken entry (duplicate, wrong amount typed in).
+  deleteAdSpendEntry: (id: number) => proxyVoid(`/api/owner/marketing/ads-report/spend/${id}`, 'DELETE'),
+
   // One Square customer's submission + appointment history — fetched lazily, only when a row on
   // the Ads Report breakdown's Completed/Anticipated lists is expanded.
   getMarketingCustomerHistory: (customerId: string) =>

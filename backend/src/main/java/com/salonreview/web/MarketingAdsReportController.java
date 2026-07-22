@@ -8,6 +8,7 @@ import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.marketing.TrafficSourceParam;
 import com.salonreview.web.dto.MarketingAdsReportDto;
 import com.salonreview.web.dto.MarketingCustomerHistoryDto;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -82,6 +83,19 @@ public class MarketingAdsReportController {
     @GetMapping("/spend")
     public List<AdSpendEntryDto> listSpendEntries(@RequestParam String slug) {
         return service.listAdSpendEntries(slug).stream().map(MarketingAdsReportController::toDto).toList();
+    }
+
+    @PutMapping("/spend/{id}")
+    public ResponseEntity<AdSpendEntryDto> updateSpendEntry(@PathVariable Long id, @RequestBody AdSpendEntryRequest req) {
+        return service.updateAdSpendEntry(id, req.periodStart(), req.periodEnd(), req.amount())
+                .map(MarketingAdsReportController::toDto)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @DeleteMapping("/spend/{id}")
+    public ResponseEntity<Void> deleteSpendEntry(@PathVariable Long id) {
+        return service.deleteAdSpendEntry(id) ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
     }
 
     /** One customer's submission + appointment history, fetched lazily when the owner expands a
