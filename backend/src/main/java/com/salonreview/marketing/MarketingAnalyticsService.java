@@ -164,14 +164,18 @@ public class MarketingAnalyticsService {
         // tags each paid service with the booking that produced it, so this is free (no extra Square call).
         Set<String> paidBookingIds = monthToDate.stream()
                 .map(AttributedService::bookingId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
-        List<UpcomingAppointment> upcoming = new ArrayList<>(
-                upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today, bookingHistory));
+        UpcomingResult upcomingResult =
+                upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today, bookingHistory);
+        List<UpcomingAppointment> upcoming = new ArrayList<>(upcomingResult.appointments());
 
         // Folds manager-follow-up appointments into the completed/upcoming lists (not into the
         // all/fresh/returning segment stats above, which stay scoped to the tracked flow's own
         // AttributedService rows) — see design.md D6, so Ads Report's drill-down agrees with the
-        // adsReport summary numbers above it rather than silently undercounting.
-        mergeFollowUpsInto(resolveFollowUps(slug), freshCustomerIds, today, completed, upcoming);
+        // adsReport summary numbers above it rather than silently undercounting. alreadyCountedBookingIds
+        // (every booking the tracked flow already surfaced, completed or upcoming) keeps a follow-up
+        // from re-adding the same visit a second time under the same customer.
+        Set<String> alreadyCountedBookingIds = bookingIdsOf(inRange, upcomingResult.bookingIds());
+        mergeFollowUpsInto(resolveFollowUps(slug), freshCustomerIds, today, completed, upcoming, alreadyCountedBookingIds);
 
         return new MarketingAnalyticsDto(from, to, all, fresh, returning, upcoming, completed, currentMonthToDate, adSpend);
     }
@@ -263,12 +267,14 @@ public class MarketingAnalyticsService {
         List<CompletedAppointment> completed = new ArrayList<>(buildCompletedAppointments(inRange, freshCustomerIds));
         Set<String> paidBookingIds = inRange.stream()
                 .map(AttributedService::bookingId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
-        List<UpcomingAppointment> upcoming = new ArrayList<>(adsCustomers.isEmpty()
-                ? List.<UpcomingAppointment>of()
-                : upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today, bookingHistory));
+        UpcomingResult upcomingResult = adsCustomers.isEmpty()
+                ? new UpcomingResult(List.of(), Set.of())
+                : upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today, bookingHistory);
+        List<UpcomingAppointment> upcoming = new ArrayList<>(upcomingResult.appointments());
 
         List<FollowUpAppointment> followUps = resolveFollowUps(slug);
-        mergeFollowUpsInto(followUps, freshCustomerIds, today, completed, upcoming);
+        Set<String> alreadyCountedBookingIds = bookingIdsOf(inRange, upcomingResult.bookingIds());
+        mergeFollowUpsInto(followUps, freshCustomerIds, today, completed, upcoming, alreadyCountedBookingIds);
 
         List<PeriodRow> rows = new ArrayList<>();
         for (LocalDate[] p : periods) {
@@ -293,15 +299,36 @@ public class MarketingAnalyticsService {
                 .orElse(List.of());
     }
 
+    /** Every bookingId the tracked ads flow already surfaced for this report — from {@code
+     * collectServices}' payroll match ({@code inRange}, the same source {@code
+     * buildCompletedAppointments} groups by booking) and from the upcoming-appointments scan.
+     * {@link #resolveFollowUps} only knows to skip a booking that has a row in {@code
+     * marketing.attribution}, which is a narrower, separate notion of "already known" — a booking
+     * can be picked up here (the customer is ads-attributed and Square shows the payment/visit)
+     * without ever getting an attribution row, and without this set, {@code mergeFollowUpsInto}
+     * would add it a second time as a "manager follow-up" for the same customer.
+     */
+    private static Set<String> bookingIdsOf(List<AttributedService> inRange, Set<String> upcomingBookingIds) {
+        Set<String> ids = inRange.stream()
+                .map(AttributedService::bookingId).filter(Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        ids.addAll(upcomingBookingIds);
+        return ids;
+    }
+
     /** Classifies each follow-up appointment as completed (a real matched payment) or upcoming
      * (not yet happened) using the exact same rule the tracked-flow path already applies, and
      * appends it to the mutable lists in place — a follow-up appointment with neither (a past
      * visit with no matched payment) is silently dropped, matching {@code
-     * buildCompletedAppointments}' own "no match, not shown" convention.
+     * buildCompletedAppointments}' own "no match, not shown" convention. A follow-up whose
+     * bookingId is already in {@code alreadyCountedBookingIds} is skipped outright — it's already
+     * represented in {@code completed}/{@code upcoming} via the tracked flow, and adding it again
+     * here would show the same customer and visit twice in the breakdown.
      */
     private void mergeFollowUpsInto(
             List<FollowUpAppointment> followUps, Set<String> freshCustomerIds, LocalDate today,
-            List<CompletedAppointment> completed, List<UpcomingAppointment> upcoming) {
+            List<CompletedAppointment> completed, List<UpcomingAppointment> upcoming,
+            Set<String> alreadyCountedBookingIds) {
         if (followUps.isEmpty()) return;
         Set<String> customerIds = followUps.stream()
                 .map(FollowUpAppointment::customerId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
@@ -310,6 +337,7 @@ public class MarketingAnalyticsService {
         for (FollowUpAppointment f : followUps) {
             var a = f.appointment();
             if (a.startAt() == null) continue;
+            if (a.bookingId() != null && alreadyCountedBookingIds.contains(a.bookingId())) continue;
             String customerId = f.customerId();
             String customerName = customerNames.getOrDefault(customerId, "Customer");
             String serviceName = a.serviceName() == null || a.serviceName().isBlank() ? "Service" : a.serviceName();
@@ -603,7 +631,9 @@ public class MarketingAnalyticsService {
      * visit's segments are joined into one service name and one summed (menu list price) total, since
      * "an upcoming visit" — not "a line item" — is what the owner wants to see in this list.
      */
-    private List<UpcomingAppointment> upcomingAppointments(
+    private record UpcomingResult(List<UpcomingAppointment> appointments, Set<String> bookingIds) {}
+
+    private UpcomingResult upcomingAppointments(
             Set<String> adsCustomerIds, Set<String> freshCustomerIds, Set<String> paidBookingIds, LocalDate today,
             Map<String, List<SquareClient.Booking>> bookingHistory) {
         record FutureBooking(String customerId, SquareClient.Booking booking) {}
@@ -618,7 +648,7 @@ public class MarketingAnalyticsService {
                         .filter(b -> isTodayOrLater(b.startAt(), today))
                         .map(b -> new FutureBooking(id, b)))
                 .toList();
-        if (future.isEmpty()) return List.of();
+        if (future.isEmpty()) return new UpcomingResult(List.of(), Set.of());
 
         List<String> variationIds = future.stream()
                 .flatMap(f -> f.booking().appointmentSegments() == null ? Stream.<String>empty()
@@ -651,7 +681,9 @@ public class MarketingAnalyticsService {
             ));
         }
         result.sort(Comparator.comparing(UpcomingAppointment::startAt));
-        return result;
+        Set<String> bookingIds = future.stream()
+                .map(f -> f.booking().id()).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        return new UpcomingResult(result, bookingIds);
     }
 
     /** Best-effort: a customer whose Square booking lookup fails is simply excluded from the
