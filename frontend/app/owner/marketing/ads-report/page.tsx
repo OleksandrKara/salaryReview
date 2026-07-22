@@ -37,7 +37,7 @@ export default async function MarketingAdsReportPage({
         {/* Keyed by slug so switching pages via the shared selector — a client-side navigation
             that wouldn't otherwise remount this component — actually re-fetches for the new page
             instead of keeping whatever it last showed. */}
-        <AdsReportView key={slug} initialData={data} slug={slug} />
+        <AdsReportView key={slug} initialData={data} slug={slug} language={me.preferredLanguage} />
       </div>
     </main>
   );
