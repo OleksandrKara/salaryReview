@@ -34,6 +34,7 @@ import type {
   CancelledAppointment,
   ManagerTimesheet,
   AdminTimesheet,
+  StaffDocument,
 } from './types';
 
 // Server-only backend calls. Auth is the backend session: we hold its JSESSIONID in our httpOnly
@@ -127,6 +128,8 @@ export const serverApi = {
   getTwilioSmsSettings: () => serverFetch<TwilioSmsSettingsDto>(`/api/owner/settings/sms`),
 
   listProviders: () => serverFetch<Provider[]>(`/api/providers?all=true`),
+
+  listStaffDocuments: () => serverFetch<StaffDocument[]>(`/api/owner/staff-documents`),
 
   getSquareRoster: () => serverFetch<SquareRosterEntry[]>(`/api/users/square-roster`),
 

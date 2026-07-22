@@ -29,7 +29,7 @@ const STAFF_ONLY = ['/manager', '/admin/redos', '/owner/retention', '/admin/manu
 // carved out of /owner into STAFF_ONLY above, so only /owner/overview stays owner-only here.
 const OWNER_ONLY = [
   '/reports', '/owner/overview', '/admin/users', '/admin/prepaid', '/admin/owner-customers',
-  '/admin/manager-time', '/rag/admin', '/sops/admin',
+  '/admin/manager-time', '/admin/documents', '/rag/admin', '/sops/admin',
 ];
 const PROVIDER_AREAS = ['/me']; // /me and /me/* belong to providers
 const ADS_MANAGER_AREAS = ['/owner/marketing']; // the only area this role may reach, full stop
