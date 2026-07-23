@@ -53,10 +53,22 @@ export default function MarketingTabs() {
   const [pageChangePending, startPageChangeTransition] = useTransition();
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  // undefined = not yet fetched (renders nothing); null = fetched, never synced; string = fetched,
+  // has a real timestamp — three distinct states, so "haven't checked yet" never flashes as
+  // "Never synced yet." for a page whose real answer is a moment away.
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
     api.getMarketingPages().then((p) => { if (!cancelled) setPages(p); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Independent of the pages fetch above — a failure here shouldn't block the page selector, and
+  // vice versa. Cheap (a single DB row on the backend), safe to fetch on every mount.
+  useEffect(() => {
+    let cancelled = false;
+    api.getMarketingSyncStatus().then((s) => { if (!cancelled) setLastSyncedAt(s.lastSyncedAt); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -81,6 +93,9 @@ export default function MarketingTabs() {
     try {
       await api.syncMarketingContacts();
       router.refresh();
+      // Optimistic — the backend recorded its own Instant.now() during that same request, close
+      // enough for a "last synced" display to not need a second round trip just to re-read it.
+      setLastSyncedAt(new Date().toISOString());
       setSyncMessage('✓ Synced — appointment data refreshed.');
     } catch (e) {
       setSyncMessage(e instanceof Error ? `Sync failed: ${e.message}` : 'Sync failed. Please try again.');
@@ -160,6 +175,22 @@ export default function MarketingTabs() {
           </span>
         )}
       </div>
+      <p className="mt-1 text-xs text-zinc-400">{fmtLastSyncedAt(lastSyncedAt)}</p>
     </div>
   );
+}
+
+/** "Last synced Jul 22 at 2:30 PM" — same absolute-time convention SyncBadge already uses
+ * elsewhere in the app, rather than a relative "5 minutes ago" that would need a ticking timer to
+ * stay accurate on a page left open a while. Blank (not an error message) while the initial fetch
+ * is still in flight, so it never flashes "Never synced yet" for a page that actually has a
+ * real timestamp arriving a moment later. */
+function fmtLastSyncedAt(iso: string | null | undefined): string {
+  if (iso === undefined) return '';
+  if (iso === null) return 'Never synced yet.';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `Last synced ${date} at ${time}`;
 }

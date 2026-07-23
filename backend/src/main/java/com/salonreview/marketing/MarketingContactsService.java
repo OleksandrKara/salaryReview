@@ -1,8 +1,10 @@
 package com.salonreview.marketing;
 
 import com.salonreview.domain.MarketingContactSquareLink;
+import com.salonreview.domain.MarketingSyncStatus;
 import com.salonreview.domain.SalonConfig;
 import com.salonreview.repo.MarketingContactSquareLinkRepository;
+import com.salonreview.repo.MarketingSyncStatusRepository;
 import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClient.AppointmentSegment;
@@ -48,17 +50,25 @@ public class MarketingContactsService {
     private final SquareClient square;
     private final SquareMonthAggregator aggregator;
     private final SalonConfigRepository salonConfig;
+    private final MarketingSyncStatusRepository syncStatus;
 
     public MarketingContactsService(MarketingContactsRepository repository,
                                      MarketingContactSquareLinkRepository squareLinks,
                                      SquareClient square,
                                      SquareMonthAggregator aggregator,
-                                     SalonConfigRepository salonConfig) {
+                                     SalonConfigRepository salonConfig,
+                                     MarketingSyncStatusRepository syncStatus) {
         this.repository = repository;
         this.squareLinks = squareLinks;
         this.square = square;
         this.aggregator = aggregator;
         this.salonConfig = salonConfig;
+        this.syncStatus = syncStatus;
+    }
+
+    /** When "Sync appointments" was last actually invoked — null if never (see V50). */
+    public Instant lastSyncedAt() {
+        return syncStatus.getSingleton().getLastSyncedAt();
     }
 
     /** One customer's submission + appointment history, resolved by Square customer id rather
@@ -116,6 +126,11 @@ public class MarketingContactsService {
      * <p>Also busts the Square read cache first, so already-linked contacts' appointment statuses
      * (a booking that's since become NO_SHOW or CANCELLED) are refreshed too, not just up to
      * whatever the normal cache TTL happens to allow.
+     *
+     * <p>Records this run's time in marketing_sync_status regardless of whether any new link was
+     * actually found — a no-op run (everything already linked) is still a real sync the owner
+     * should be able to trust "Last synced: just now" for, not a stale timestamp left over from
+     * whenever a new link last happened to be created.
      */
     @Transactional
     public MarketingContactDto syncSquareLinks() {
@@ -132,6 +147,9 @@ public class MarketingContactsService {
                     .lastSyncedAt(Instant.now())
                     .build());
         }
+        MarketingSyncStatus status = syncStatus.getSingleton();
+        status.setLastSyncedAt(Instant.now());
+        syncStatus.save(status);
         return contacts();
     }
 

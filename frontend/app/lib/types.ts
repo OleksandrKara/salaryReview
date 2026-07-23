@@ -1119,6 +1119,11 @@ export interface MarketingContactsData {
   contacts: MarketingContact[];
 }
 
+export interface MarketingSyncStatusData {
+  /** ISO-8601 instant "Sync appointments" was last actually run; null if never. */
+  lastSyncedAt: string | null;
+}
+
 export interface MarketingContactSubmission {
   submissionType: string;
   occurredAt: string;

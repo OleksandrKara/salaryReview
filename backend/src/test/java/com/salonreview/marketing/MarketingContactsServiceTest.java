@@ -1,11 +1,13 @@
 package com.salonreview.marketing;
 
 import com.salonreview.domain.MarketingContactSquareLink;
+import com.salonreview.domain.MarketingSyncStatus;
 import com.salonreview.domain.SalonConfig;
 import com.salonreview.marketing.MarketingContactsRepository.RawAppointmentSubmission;
 import com.salonreview.marketing.MarketingContactsRepository.RawContact;
 import com.salonreview.marketing.MarketingContactsRepository.RawSubmission;
 import com.salonreview.repo.MarketingContactSquareLinkRepository;
+import com.salonreview.repo.MarketingSyncStatusRepository;
 import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClient.AppointmentSegment;
@@ -43,6 +45,7 @@ class MarketingContactsServiceTest {
     private SquareClient square;
     private SquareMonthAggregator aggregator;
     private SalonConfigRepository salonConfig;
+    private MarketingSyncStatusRepository syncStatus;
     private MarketingContactsService service;
 
     @BeforeEach
@@ -52,12 +55,14 @@ class MarketingContactsServiceTest {
         square = mock(SquareClient.class);
         aggregator = mock(SquareMonthAggregator.class);
         salonConfig = mock(SalonConfigRepository.class);
-        service = new MarketingContactsService(repository, squareLinks, square, aggregator, salonConfig);
+        syncStatus = mock(MarketingSyncStatusRepository.class);
+        service = new MarketingContactsService(repository, squareLinks, square, aggregator, salonConfig, syncStatus);
         when(repository.findSubmissionHistory(any())).thenReturn(List.of());
         when(repository.findSubmissionsByBookingIds(any())).thenReturn(Map.of());
         when(squareLinks.findByPhoneNumber(any())).thenReturn(Optional.empty());
         when(salonConfig.findById(1)).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
+        when(syncStatus.getSingleton()).thenReturn(MarketingSyncStatus.builder().build());
     }
 
     private static RawContact rawContact(UUID id, String squareCustomerId) {
@@ -324,6 +329,34 @@ class MarketingContactsServiceTest {
         verify(square, never()).customerIdsForPhone(any());
         verify(squareLinks, never()).save(any());
         verify(square).invalidate();
+    }
+
+    @Test
+    @DisplayName("sync records a fresh lastSyncedAt even on a no-op run — the button's own timestamp "
+            + "must stay trustworthy regardless of whether anything new was actually linked")
+    void syncRecordsTimestampEvenWhenNothingNewIsLinked() {
+        UUID linkedId = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(linkedId, "SQCUST_STORED")));
+        when(square.bookingsForCustomer(any(), any())).thenReturn(List.of());
+        MarketingSyncStatus status = MarketingSyncStatus.builder()
+                .lastSyncedAt(Instant.parse("2020-01-01T00:00:00Z")).build();
+        when(syncStatus.getSingleton()).thenReturn(status);
+
+        service.syncSquareLinks();
+
+        verify(squareLinks, never()).save(any());
+        var captor = org.mockito.ArgumentCaptor.forClass(MarketingSyncStatus.class);
+        verify(syncStatus).save(captor.capture());
+        assertThat(captor.getValue().getLastSyncedAt()).isAfter(Instant.parse("2020-01-01T00:00:00Z"));
+    }
+
+    @Test
+    @DisplayName("lastSyncedAt reads straight off the marketing_sync_status singleton")
+    void lastSyncedAtReadsSingleton() {
+        Instant syncedAt = Instant.parse("2026-06-01T12:00:00Z");
+        when(syncStatus.getSingleton()).thenReturn(MarketingSyncStatus.builder().lastSyncedAt(syncedAt).build());
+
+        assertThat(service.lastSyncedAt()).isEqualTo(syncedAt);
     }
 
     @Test
