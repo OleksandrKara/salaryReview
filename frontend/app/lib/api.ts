@@ -517,6 +517,10 @@ export const api = {
 
   staffDocumentDownloadUrl: (id: number) => `/api/owner/staff-documents/${id}/download`,
 
+  // Every field optional — omitted means "leave as-is" (see the backend's own UpdateStaffDocumentRequest).
+  updateStaffDocument: (id: number, body: { expirationDate?: string; documentType?: string; label?: string }) =>
+    proxyJson<StaffDocument>(`/api/owner/staff-documents/${id}`, 'PATCH', body),
+
   deleteStaffDocument: (id: number) => proxyVoid(`/api/owner/staff-documents/${id}`, 'DELETE'),
 };
 

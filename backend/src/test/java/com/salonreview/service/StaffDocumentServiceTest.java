@@ -145,4 +145,49 @@ class StaffDocumentServiceTest {
 
         assertThat(service.listAll()).containsExactly(d);
     }
+
+    @Test
+    @DisplayName("update returns empty for a non-existent id")
+    void updateMissingReturnsEmpty() {
+        when(documents.findById(99L)).thenReturn(Optional.empty());
+
+        assertThat(service.update(99L, LocalDate.now(), null, null)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("update only touches fields that are non-null, leaving the rest as-is")
+    void updateOnlyTouchesGivenFields() {
+        StaffDocument existing = StaffDocument.builder().id(1L).documentType("License")
+                .label("Cosmetology — CA").expirationDate(LocalDate.of(2027, 1, 1)).build();
+        when(documents.findById(1L)).thenReturn(Optional.of(existing));
+
+        StaffDocument updated = service.update(1L, LocalDate.of(2099, 1, 1), null, null).orElseThrow();
+
+        assertThat(updated.getExpirationDate()).isEqualTo(LocalDate.of(2099, 1, 1));
+        assertThat(updated.getDocumentType()).isEqualTo("License"); // untouched
+        assertThat(updated.getLabel()).isEqualTo("Cosmetology — CA"); // untouched
+    }
+
+    @Test
+    @DisplayName("update renames documentType/label; an empty label clears it")
+    void updateRenamesAndClearsLabel() {
+        StaffDocument existing = StaffDocument.builder().id(1L).documentType("License")
+                .label("Cosmetology — CA").expirationDate(LocalDate.of(2027, 1, 1)).build();
+        when(documents.findById(1L)).thenReturn(Optional.of(existing));
+
+        StaffDocument updated = service.update(1L, null, "Insurance", "").orElseThrow();
+
+        assertThat(updated.getDocumentType()).isEqualTo("Insurance");
+        assertThat(updated.getLabel()).isNull();
+        assertThat(updated.getExpirationDate()).isEqualTo(LocalDate.of(2027, 1, 1)); // untouched
+    }
+
+    @Test
+    @DisplayName("update rejects a blank documentType")
+    void updateRejectsBlankDocumentType() {
+        when(documents.findById(1L)).thenReturn(Optional.of(StaffDocument.builder().id(1L).build()));
+
+        assertThatThrownBy(() -> service.update(1L, null, "  ", null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }

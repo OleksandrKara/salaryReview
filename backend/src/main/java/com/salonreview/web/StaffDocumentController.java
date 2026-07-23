@@ -75,6 +75,24 @@ public class StaffDocumentController {
         return toDto(saved, providerNames, userNames, LocalDate.now());
     }
 
+    /** Corrects an existing document in place — expiration date and/or type/label — without
+     * deleting and re-uploading the same file just to fix a mistyped date or rename it. Every
+     * field is optional; an absent one is left untouched (see StaffDocumentService#update). */
+    @PatchMapping("/{id}")
+    public ResponseEntity<StaffDocumentDto> update(
+            @PathVariable Long id, @RequestBody UpdateStaffDocumentRequest req) {
+        LocalDate expirationDate = req.expirationDate() == null ? null : LocalDate.parse(req.expirationDate());
+        return service.update(id, expirationDate, req.documentType(), req.label())
+                .map(d -> {
+                    Map<Long, String> providerNames = d.getProviderId() == null ? Map.of()
+                            : providers.findById(d.getProviderId()).map(p -> Map.of(d.getProviderId(), p.getDisplayName())).orElse(Map.of());
+                    Map<Long, String> userNames = d.getAppUserId() == null ? Map.of()
+                            : users.findById(d.getAppUserId()).map(u -> Map.of(d.getAppUserId(), u.getUsername())).orElse(Map.of());
+                    return ResponseEntity.ok(toDto(d, providerNames, userNames, LocalDate.now()));
+                })
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
     @GetMapping("/{id}/download")
     public ResponseEntity<byte[]> download(@PathVariable Long id) {
         return service.get(id)
@@ -125,4 +143,8 @@ public class StaffDocumentController {
             String status,
             String createdBy,
             Instant createdAt) {}
+
+    /** Every field optional — null means "leave as-is" (see StaffDocumentService#update).
+     * expirationDate is yyyy-MM-dd, same wire format as the multipart create() form's own field. */
+    public record UpdateStaffDocumentRequest(String expirationDate, String documentType, String label) {}
 }
