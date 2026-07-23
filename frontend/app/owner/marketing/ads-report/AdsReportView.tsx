@@ -32,7 +32,7 @@ import { Spinner } from '../../../components/Spinner';
 import TrafficSourceFilter, { ADS_ONLY_SOURCES } from '../TrafficSourceFilter';
 import { AppointmentHistoryList, HistoryToggle, PAYMENT_CHANNEL_LABELS, PaymentChannelBadge, SubmissionHistoryList } from '../ContactHistory';
 import PeriodFilter from '../PeriodFilter';
-import { lastNMonthsRange, lastNWeeksRange, monthToDateSoFarRange, parsePeriodParams } from '../period';
+import { lastNMonthsRange, lastNWeeksRange, monthToDateSoFarRange, parsePeriodParams, todayIso } from '../period';
 import type { PeriodSelection, PeriodType } from '../period';
 
 const usd = (n: number) =>
@@ -58,15 +58,18 @@ function mondayOnOrBefore(d: Date): Date {
   return monday;
 }
 
+// Seeded from the salon's own business timezone (see period.ts's todayIso), not the browser's —
+// parseLocalDate turns that into a Date whose local getters/setters (getDay, setDate, etc.
+// below) then stay internally consistent with that Pacific calendar date.
 function thisWeekRange(): { from: string; to: string } {
-  const monday = mondayOnOrBefore(new Date());
+  const monday = mondayOnOrBefore(parseLocalDate(todayIso()));
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
   return { from: isoDate(monday), to: isoDate(sunday) };
 }
 
 function thisMonthRange(): { from: string; to: string } {
-  const today = new Date();
+  const today = parseLocalDate(todayIso());
   const from = new Date(today.getFullYear(), today.getMonth(), 1);
   const to = new Date(today.getFullYear(), today.getMonth() + 1, 0);
   return { from: isoDate(from), to: isoDate(to) };
@@ -94,7 +97,7 @@ function fmtDateRange(fromIso: string, toIso: string): string {
 }
 
 function isCurrentPeriod(row: MarketingAdsReportPeriod): boolean {
-  const today = isoDate(new Date());
+  const today = todayIso();
   return today >= row.periodStart && today <= row.periodEnd;
 }
 

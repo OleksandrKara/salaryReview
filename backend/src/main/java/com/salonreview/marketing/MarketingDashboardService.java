@@ -1,6 +1,7 @@
 package com.salonreview.marketing;
 
 import com.salonreview.config.MarketingLandingProperties;
+import com.salonreview.square.SquareClient;
 import com.salonreview.web.dto.MarketingDashboardDto;
 import com.salonreview.web.dto.MarketingDashboardDto.VariantStat;
 import org.slf4j.Logger;
@@ -14,6 +15,9 @@ import org.springframework.http.HttpStatus;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,13 +33,30 @@ public class MarketingDashboardService {
     private final MarketingDashboardRepository repository;
     private final MarketingContactsService contactsService;
     private final MarketingLandingProperties landingProperties;
+    private final SquareClient square;
 
     public MarketingDashboardService(MarketingDashboardRepository repository,
                                       MarketingContactsService contactsService,
-                                      MarketingLandingProperties landingProperties) {
+                                      MarketingLandingProperties landingProperties,
+                                      SquareClient square) {
         this.repository = repository;
         this.contactsService = contactsService;
         this.landingProperties = landingProperties;
+        this.square = square;
+    }
+
+    /** The salon's real business timezone (e.g. "America/Los_Angeles"), resolved from Square's own
+     * location config — same pattern used throughout this codebase (see e.g.
+     * MarketingContactsService#resolveZone) so a period filter's from/to boundaries agree with
+     * every other zone-aware report instead of the UTC these used to be interpreted in. Falls
+     * back to UTC only if Square's location has no configured zone or the lookup fails. */
+    private ZoneId resolveZone() {
+        try {
+            String tz = square.locationTimeZone();
+            return tz != null && !tz.isBlank() ? ZoneId.of(tz) : ZoneOffset.UTC;
+        } catch (RuntimeException e) {
+            return ZoneOffset.UTC;
+        }
     }
 
     /**
@@ -47,25 +68,31 @@ public class MarketingDashboardService {
      *
      * <p>{@code periodFrom}/{@code periodTo} are the owner's currently-selected period-filter
      * window (All/Month to date/Custom — see the shared frontend PeriodFilter), both nullable
-     * meaning "unbounded" on that side. This is layered on top of, never instead of, the
-     * permanent {@code stats_since} cutoff (the "Hide stats before" setting): the effective lower
-     * bound is whichever of the two is later (both null means unbounded), so a period filter can
-     * only narrow the view further, never resurface pre-cutoff test traffic the owner explicitly
-     * hid.
+     * meaning "unbounded" on that side, expressed as calendar dates (inclusive on both ends) in
+     * the salon's own business timezone rather than UTC — resolved here via {@link #resolveZone()}
+     * so "today"/period boundaries agree with every other zone-aware report in this codebase. This
+     * is layered on top of, never instead of, the permanent {@code stats_since} cutoff (the "Hide
+     * stats before" setting): the effective lower bound is whichever of the two is later (both
+     * null means unbounded), so a period filter can only narrow the view further, never resurface
+     * pre-cutoff test traffic the owner explicitly hid.
      */
-    public MarketingDashboardDto dashboard(String slug, Set<String> sources, Instant periodFrom, Instant periodTo) {
+    public MarketingDashboardDto dashboard(String slug, Set<String> sources, LocalDate periodFrom, LocalDate periodTo) {
         try {
             Optional<UUID> landingPageId = repository.findLandingPageId(slug);
             if (landingPageId.isEmpty()) {
                 return MarketingDashboardDto.unavailable(slug);
             }
 
+            ZoneId zone = resolveZone();
+            Instant periodFromInstant = periodFrom == null ? null : periodFrom.atStartOfDay(zone).toInstant();
+            Instant periodToInstant = periodTo == null ? null : periodTo.plusDays(1).atStartOfDay(zone).toInstant();
+
             Instant statsSince = repository.findStatsSince(landingPageId.get()).orElse(null);
-            Instant effectiveFrom = laterOf(statsSince, periodFrom);
-            Set<String> attributedBookingIds = repository.findAttributedBookingIds(landingPageId.get(), effectiveFrom, periodTo);
+            Instant effectiveFrom = laterOf(statsSince, periodFromInstant);
+            Set<String> attributedBookingIds = repository.findAttributedBookingIds(landingPageId.get(), effectiveFrom, periodToInstant);
             Map<String, Long> followUpByVariant =
-                    contactsService.countFollowUpBookingsByVariant(slug, effectiveFrom, periodTo, attributedBookingIds);
-            List<VariantStat> variants = repository.findVariantStats(landingPageId.get(), slug, effectiveFrom, periodTo, sources).stream()
+                    contactsService.countFollowUpBookingsByVariant(slug, effectiveFrom, periodToInstant, attributedBookingIds);
+            List<VariantStat> variants = repository.findVariantStats(landingPageId.get(), slug, effectiveFrom, periodToInstant, sources).stream()
                     .map(raw -> toVariantStat(raw, slug, followUpByVariant.getOrDefault(raw.name(), 0L)))
                     .collect(Collectors.toList());
 

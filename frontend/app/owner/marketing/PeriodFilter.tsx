@@ -3,7 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import type { PeriodSelection, PeriodType } from './period';
-import { withPeriodParams } from './period';
+import { todayIso, withPeriodParams } from './period';
 
 const PERIOD_LABELS: Record<PeriodType, string> = {
   all: 'All',
@@ -116,7 +116,7 @@ export default function PeriodFilter({
               type="date"
               value={customTo}
               min={customFrom || undefined}
-              max={new Date().toISOString().slice(0, 10)}
+              max={todayIso()}
               disabled={disabled}
               onChange={(e) => setCustomTo(e.target.value)}
               className="rounded border border-zinc-300 px-2 py-1.5 text-xs disabled:opacity-50"

@@ -1,6 +1,7 @@
 package com.salonreview.marketing;
 
 import com.salonreview.marketing.FunnelAnalyticsRepository.RawFunnelStep;
+import com.salonreview.square.SquareClient;
 import com.salonreview.web.dto.FunnelDashboardDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -30,7 +31,9 @@ class FunnelAnalyticsServiceTest {
     void setUp() {
         repository = mock(FunnelAnalyticsRepository.class);
         landingPageRepository = mock(MarketingDashboardRepository.class);
-        service = new FunnelAnalyticsService(repository, landingPageRepository);
+        SquareClient square = mock(SquareClient.class);
+        when(square.locationTimeZone()).thenReturn("America/Los_Angeles");
+        service = new FunnelAnalyticsService(repository, landingPageRepository, square);
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.salonreview.marketing;
 
 import com.salonreview.marketing.FunnelAnalyticsRepository.RawFunnelStep;
+import com.salonreview.square.SquareClient;
 import com.salonreview.web.dto.FunnelDashboardDto;
 import com.salonreview.web.dto.FunnelDashboardDto.FunnelStepStat;
 import org.slf4j.Logger;
@@ -9,6 +10,9 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,11 +35,25 @@ public class FunnelAnalyticsService {
 
     private final FunnelAnalyticsRepository repository;
     private final MarketingDashboardRepository landingPageRepository;
+    private final SquareClient square;
 
     public FunnelAnalyticsService(FunnelAnalyticsRepository repository,
-                                   MarketingDashboardRepository landingPageRepository) {
+                                   MarketingDashboardRepository landingPageRepository,
+                                   SquareClient square) {
         this.repository = repository;
         this.landingPageRepository = landingPageRepository;
+        this.square = square;
+    }
+
+    /** The salon's real business timezone, resolved from Square's own location config — see
+     * MarketingDashboardService#resolveZone for the identical pattern used across this codebase. */
+    private ZoneId resolveZone() {
+        try {
+            String tz = square.locationTimeZone();
+            return tz != null && !tz.isBlank() ? ZoneId.of(tz) : ZoneOffset.UTC;
+        } catch (RuntimeException e) {
+            return ZoneOffset.UTC;
+        }
     }
 
     /**
@@ -45,25 +63,31 @@ public class FunnelAnalyticsService {
      *
      * <p>{@code periodFrom}/{@code periodTo} are the owner's currently-selected period-filter
      * window (All/Month to date/Custom — see the shared frontend PeriodFilter), both nullable
-     * meaning "unbounded" on that side. This is layered on top of, never instead of, the
-     * permanent {@code stats_since} cutoff: the effective lower bound is whichever of the two is
-     * later (both null means unbounded), so a period filter can only narrow the view further, and
-     * can never resurface pre-cutoff test traffic the owner explicitly hid.
+     * meaning "unbounded" on that side, expressed as calendar dates (inclusive on both ends) in
+     * the salon's own business timezone rather than UTC — resolved via {@link #resolveZone()}.
+     * This is layered on top of, never instead of, the permanent {@code stats_since} cutoff: the
+     * effective lower bound is whichever of the two is later (both null means unbounded), so a
+     * period filter can only narrow the view further, and can never resurface pre-cutoff test
+     * traffic the owner explicitly hid.
      */
-    public List<FunnelDashboardDto> funnel(String slug, Set<String> sources, Instant periodFrom, Instant periodTo) {
+    public List<FunnelDashboardDto> funnel(String slug, Set<String> sources, LocalDate periodFrom, LocalDate periodTo) {
         try {
             Optional<UUID> landingPageId = landingPageRepository.findLandingPageId(slug);
             if (landingPageId.isEmpty()) return List.of();
 
+            ZoneId zone = resolveZone();
+            Instant periodFromInstant = periodFrom == null ? null : periodFrom.atStartOfDay(zone).toInstant();
+            Instant periodToInstant = periodTo == null ? null : periodTo.plusDays(1).atStartOfDay(zone).toInstant();
+
             Instant statsSince = landingPageRepository.findStatsSince(landingPageId.get()).orElse(null);
-            Instant effectiveFrom = laterOf(statsSince, periodFrom);
-            List<RawFunnelStep> rawSteps = repository.findFunnelSteps(landingPageId.get(), effectiveFrom, periodTo, sources);
+            Instant effectiveFrom = laterOf(statsSince, periodFromInstant);
+            List<RawFunnelStep> rawSteps = repository.findFunnelSteps(landingPageId.get(), effectiveFrom, periodToInstant, sources);
             if (rawSteps.isEmpty()) return List.of();
 
-            long totalVisitors = repository.countPageViews(landingPageId.get(), effectiveFrom, periodTo, sources);
+            long totalVisitors = repository.countPageViews(landingPageId.get(), effectiveFrom, periodToInstant, sources);
             // Shared across every flow_key this page has — in practice a page has exactly one
             // active flow at a time, so this is never actually split across multiple funnels.
-            long totalCompleted = repository.countBookingsCompleted(landingPageId.get(), effectiveFrom, periodTo, sources);
+            long totalCompleted = repository.countBookingsCompleted(landingPageId.get(), effectiveFrom, periodToInstant, sources);
 
             Map<String, List<RawFunnelStep>> byFlow = new LinkedHashMap<>();
             for (RawFunnelStep step : rawSteps) {

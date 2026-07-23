@@ -14,11 +14,19 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/owner/marketing/ads-report")
 public class MarketingAdsReportController {
+
+    // This controller has no SquareClient injected, and computing default week/month/mtd ranges
+    // is a low-stakes fallback (only used when the caller omits from/to) rather than a
+    // data-correctness path — so unlike the zone-aware services elsewhere in this codebase, it's
+    // simplest to hardcode the salon's real zone directly here, same precedent as
+    // TelegramNotificationService's own hardcoded "America/Los_Angeles".
+    private static final ZoneId SALON_ZONE = ZoneId.of("America/Los_Angeles");
 
     private final MarketingAnalyticsService service;
     private final MarketingContactsService contactsService;
@@ -51,7 +59,7 @@ public class MarketingAdsReportController {
             case "all" -> PeriodKind.ALL;
             default -> PeriodKind.WEEK;
         };
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(SALON_ZONE);
         LocalDate end;
         LocalDate start;
         if (kind == PeriodKind.MONTH_TO_DATE) {
