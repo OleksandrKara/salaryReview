@@ -50,6 +50,7 @@ function linksFor(role: Role): NavLink[] {
       { href: '/manager/time', key: 'navMyTime' },
       { href: '/admin/redos', key: 'mgrRedos' },
       { href: '/admin/manual-credits', key: 'navManualCredits' },
+      { href: '/my-documents', key: 'navMyDocuments' },
       ...COMMON,
     ];
   }
@@ -57,7 +58,8 @@ function linksFor(role: Role): NavLink[] {
     // Read-only marketing access only — no salary/SOP/KB data, so no COMMON links here.
     return [{ href: '/owner/marketing', key: 'navMarketing' }];
   }
-  return [{ href: '/me', key: 'navMyPay' }, ...COMMON]; // PROVIDER
+  // PROVIDER
+  return [{ href: '/me', key: 'navMyPay' }, { href: '/my-documents', key: 'navMyDocuments' }, ...COMMON];
 }
 
 export default function AdminMenu({

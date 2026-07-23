@@ -131,6 +131,10 @@ export const serverApi = {
 
   listStaffDocuments: () => serverFetch<StaffDocument[]>(`/api/owner/staff-documents`),
 
+  // A provider/manager's own read-only "My Documents" — list + download only, see
+  // StaffDocumentSelfController. Always the caller's own documents; no id/slug parameter.
+  getMyStaffDocuments: () => serverFetch<StaffDocument[]>(`/api/staff-documents/me`),
+
   getSquareRoster: () => serverFetch<SquareRosterEntry[]>(`/api/users/square-roster`),
 
   getProviderDetail: (year: number, month: number, providerId: number) =>

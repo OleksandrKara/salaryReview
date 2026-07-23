@@ -190,4 +190,22 @@ class StaffDocumentServiceTest {
         assertThatThrownBy(() -> service.update(1L, null, "  ", null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    @DisplayName("listForProvider delegates to the provider-scoped query")
+    void listForProviderDelegates() {
+        StaffDocument d = StaffDocument.builder().id(1L).providerId(10L).build();
+        when(documents.findAllByProviderIdOrderByExpirationDateAsc(10L)).thenReturn(List.of(d));
+
+        assertThat(service.listForProvider(10L)).containsExactly(d);
+    }
+
+    @Test
+    @DisplayName("listForManager delegates to the manager-scoped query")
+    void listForManagerDelegates() {
+        StaffDocument d = StaffDocument.builder().id(2L).appUserId(20L).build();
+        when(documents.findAllByAppUserIdOrderByExpirationDateAsc(20L)).thenReturn(List.of(d));
+
+        assertThat(service.listForManager(20L)).containsExactly(d);
+    }
 }
