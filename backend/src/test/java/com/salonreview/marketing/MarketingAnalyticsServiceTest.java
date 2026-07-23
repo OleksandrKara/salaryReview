@@ -301,6 +301,8 @@ class MarketingAnalyticsServiceTest {
                 .thenReturn(Map.of("var-mani", new BigDecimal("50.00"), "var-pedi", new BigDecimal("70.00")));
         when(square.catalogNames(List.of("var-mani", "var-pedi")))
                 .thenReturn(Map.of("var-mani", "Manicure", "var-pedi", "Pedicure"));
+        when(square.catalogPrices(List.of("var-mani"))).thenReturn(Map.of("var-mani", new BigDecimal("50.00")));
+        when(square.catalogNames(List.of("var-mani"))).thenReturn(Map.of("var-mani", "Manicure"));
         when(square.customerNames(Set.of("cust-1"))).thenReturn(Map.of("cust-1", "Jane Doe"));
 
         MarketingAnalyticsDto dto = service.analytics(
@@ -312,6 +314,18 @@ class MarketingAnalyticsServiceTest {
         assertThat(appt.serviceName()).isEqualTo("Manicure + Pedicure");
         assertThat(appt.price()).isEqualByComparingTo("120.00");
         assertThat(appt.freshFromAds()).isTrue();
+
+        // The same "cancelled" booking that upcomingAppointments() correctly ignores (it didn't
+        // happen) should surface in the new cancelled list instead.
+        assertThat(dto.cancelled()).hasSize(1);
+        MarketingAnalyticsDto.CancelledAppointment cancelledAppt = dto.cancelled().get(0);
+        assertThat(cancelledAppt.customerName()).isEqualTo("Jane Doe");
+        assertThat(cancelledAppt.serviceName()).isEqualTo("Manicure");
+        assertThat(cancelledAppt.price()).isEqualByComparingTo("50.00");
+        assertThat(cancelledAppt.status()).isEqualTo("CANCELLED_BY_CUSTOMER");
+        assertThat(cancelledAppt.date()).isEqualTo(LocalDate.of(2026, 7, 25));
+        assertThat(cancelledAppt.freshFromAds()).isTrue();
+        assertThat(cancelledAppt.capturedInRange()).isTrue();
     }
 
     @Test
@@ -673,11 +687,11 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
-    @DisplayName("upcoming is scoped to contacts captured within [from, to] — a long-standing ads "
-            + "customer's future booking doesn't inflate a narrow window's breakdown just because "
-            + "they're also ads-attributed (regression guard for the 'always shows the same total "
-            + "regardless of the selected period' bug)")
-    void upcomingExcludesCustomersCapturedOutsideRange() {
+    @DisplayName("upcoming includes every ads customer's future booking (matching the Ads Report's "
+            + "own 'Anticipated (this period)' scope, so the drill-down can reconcile against it), "
+            + "but tags each one with whether that customer was actually captured within [from, to] "
+            + "— the cohort the 'outside period' figures are restricted to")
+    void upcomingTagsButDoesNotExcludeCustomersCapturedOutsideRange() {
         when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
                 // Captured back in January — outside the July window below.
                 contact("+16195550001", "cust-old", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads"),
@@ -701,8 +715,11 @@ class MarketingAnalyticsServiceTest {
         MarketingAnalyticsDto dto = service.analytics(
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY);
 
-        assertThat(dto.upcoming()).hasSize(1);
-        assertThat(dto.upcoming().get(0).customerName()).isEqualTo("New Customer");
+        assertThat(dto.upcoming()).hasSize(2);
+        var old = dto.upcoming().stream().filter(u -> u.customerName().equals("Old Customer")).findFirst().orElseThrow();
+        var fresh = dto.upcoming().stream().filter(u -> u.customerName().equals("New Customer")).findFirst().orElseThrow();
+        assertThat(old.capturedInRange()).isFalse();
+        assertThat(fresh.capturedInRange()).isTrue();
     }
 
     @Test
