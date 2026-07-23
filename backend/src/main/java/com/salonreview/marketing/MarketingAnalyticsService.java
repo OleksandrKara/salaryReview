@@ -56,6 +56,11 @@ public class MarketingAnalyticsService {
             new Segment(0, 0, BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
     private static final BigDecimal ZERO_MONEY = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
 
+    // "All time" start for adsReport()'s ALL PeriodKind — well before this marketing schema (or
+    // any salon it's been deployed for) could have real data, so it behaves as an unbounded lower
+    // edge without needing an extra query to find the actual earliest row just for this case.
+    private static final LocalDate ALL_TIME_START = LocalDate.of(2020, 1, 1);
+
     // A genuinely new customer's Square record can only be created at/after the moment the ad funnel
     // first captured them; a small grace window absorbs clock/event-ordering slack rather than
     // requiring an exact instant-for-instant comparison.
@@ -239,10 +244,11 @@ public class MarketingAnalyticsService {
 
     /** Which grain {@link #adsReport} buckets into — see
      * openspec/changes/ads-report-consolidation/design.md D3. WEEK/MONTH may return several
-     * historical rows (a trend, e.g. for the Full Month chart); MONTH_TO_DATE and CUSTOM always
-     * return exactly one, unbucketed row for the exact range requested.
+     * historical rows (a trend, e.g. for the Full Month chart); MONTH_TO_DATE, CUSTOM, and ALL
+     * always return exactly one, unbucketed row for the exact range requested (ALL's range being
+     * {@link #ALL_TIME_START} through today).
      */
-    public enum PeriodKind { WEEK, MONTH, MONTH_TO_DATE, CUSTOM }
+    public enum PeriodKind { WEEK, MONTH, MONTH_TO_DATE, CUSTOM, ALL }
 
     /** Ad spend, ROI inputs, and volume metrics for the Ads Report tab, bucketed into one row per
      * week or per month (WEEK/MONTH) or a single row for the exact requested range
@@ -267,6 +273,7 @@ public class MarketingAnalyticsService {
             case MONTH_TO_DATE -> List.<LocalDate[]>of(new LocalDate[]{today.withDayOfMonth(1), today});
             case CUSTOM -> (from == null || to == null || to.isBefore(from))
                     ? List.<LocalDate[]>of() : List.<LocalDate[]>of(new LocalDate[]{from, to});
+            case ALL -> List.<LocalDate[]>of(new LocalDate[]{ALL_TIME_START, today});
         };
         if (periods.isEmpty()) {
             PeriodRow empty = new PeriodRow(from, to, ZERO_MONEY, false, ZERO_MONEY, ZERO_MONEY, 0, ZERO_MONEY, 0, 0, 0, 0, 0, false);
@@ -322,7 +329,7 @@ public class MarketingAnalyticsService {
         if (slug == null) return List.of();
         return dashboardRepository.findLandingPageId(slug)
                 .map(pageId -> contactsService.followUpAppointments(
-                        slug, null, dashboardRepository.findAttributedBookingIds(pageId, null)))
+                        slug, null, dashboardRepository.findAttributedBookingIds(pageId, null, null)))
                 .orElse(List.of());
     }
 

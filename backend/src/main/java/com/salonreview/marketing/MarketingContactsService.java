@@ -164,12 +164,14 @@ public class MarketingContactsService {
      * created directly in Square (their contacts row still has a square_customer_id, but that
      * particular new booking never went through our attribution recording).
      */
-    public Map<String, Long> countFollowUpBookingsByVariant(String landingPageSlug, Instant statsSince, java.util.Set<String> attributedBookingIds) {
+    public Map<String, Long> countFollowUpBookingsByVariant(
+            String landingPageSlug, Instant statsSince, Instant periodTo, java.util.Set<String> attributedBookingIds) {
         // uncountedAppointments is a Square round trip per candidate contact — same
         // parallelization reasoning as contacts() above.
         return repository.listAll().parallelStream()
                 .filter(r -> landingPageSlug.equals(r.landingPageSlug()))
                 .filter(r -> statsSince == null || !r.createdAt().isBefore(statsSince))
+                .filter(r -> periodTo == null || r.createdAt().isBefore(periodTo))
                 .filter(r -> !uncountedAppointments(r, attributedBookingIds).isEmpty())
                 .collect(Collectors.groupingBy(
                         r -> r.variantName() == null ? "" : r.variantName(),

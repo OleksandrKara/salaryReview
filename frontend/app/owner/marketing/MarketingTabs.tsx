@@ -74,9 +74,18 @@ export default function MarketingTabs() {
 
   const currentSlug = searchParams.get('slug') ?? DEFAULT_SLUG;
 
+  // Preserves every other param already on the URL (period/from/to, most importantly — see
+  // PeriodFilter) rather than rebuilding the query string from just slug, which would otherwise
+  // silently reset the owner's currently-selected period every time they switch pages or tabs.
+  function hrefWithSlug(pathnameOrTab: string, slug: string): string {
+    const params = new URLSearchParams(searchParams.toString());
+    if (slug === DEFAULT_SLUG) params.delete('slug'); else params.set('slug', slug);
+    const qs = params.toString();
+    return qs ? `${pathnameOrTab}?${qs}` : pathnameOrTab;
+  }
+
   function selectPage(slug: string) {
-    const href = slug === DEFAULT_SLUG ? pathname : `${pathname}?slug=${encodeURIComponent(slug)}`;
-    startPageChangeTransition(() => { router.push(href); });
+    startPageChangeTransition(() => { router.push(hrefWithSlug(pathname, slug)); });
   }
 
   // Resolves any lead that never linked to a Square customer through the tracked booking flow (a
@@ -113,7 +122,7 @@ export default function MarketingTabs() {
         <div className="flex min-w-0 gap-1 overflow-x-auto border-b border-transparent">
           {TABS.map((tab) => {
             const active = pathname === tab.href;
-            const href = currentSlug !== DEFAULT_SLUG ? `${tab.href}?slug=${encodeURIComponent(currentSlug)}` : tab.href;
+            const href = hrefWithSlug(tab.href, currentSlug);
             return (
               <Link
                 key={tab.href}

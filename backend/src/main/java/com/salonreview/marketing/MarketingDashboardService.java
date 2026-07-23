@@ -44,8 +44,16 @@ public class MarketingDashboardService {
      * "unavailable" DTO instead of a 500 — this app's own health must never depend on that
      * other service's schema. sources is the set of {@link TrafficSourceSql} buckets to count —
      * see MarketingDashboardRepository.findVariantStats.
+     *
+     * <p>{@code periodFrom}/{@code periodTo} are the owner's currently-selected period-filter
+     * window (All/Month to date/Custom — see the shared frontend PeriodFilter), both nullable
+     * meaning "unbounded" on that side. This is layered on top of, never instead of, the
+     * permanent {@code stats_since} cutoff (the "Hide stats before" setting): the effective lower
+     * bound is whichever of the two is later (both null means unbounded), so a period filter can
+     * only narrow the view further, never resurface pre-cutoff test traffic the owner explicitly
+     * hid.
      */
-    public MarketingDashboardDto dashboard(String slug, Set<String> sources) {
+    public MarketingDashboardDto dashboard(String slug, Set<String> sources, Instant periodFrom, Instant periodTo) {
         try {
             Optional<UUID> landingPageId = repository.findLandingPageId(slug);
             if (landingPageId.isEmpty()) {
@@ -53,9 +61,11 @@ public class MarketingDashboardService {
             }
 
             Instant statsSince = repository.findStatsSince(landingPageId.get()).orElse(null);
-            Set<String> attributedBookingIds = repository.findAttributedBookingIds(landingPageId.get(), statsSince);
-            Map<String, Long> followUpByVariant = contactsService.countFollowUpBookingsByVariant(slug, statsSince, attributedBookingIds);
-            List<VariantStat> variants = repository.findVariantStats(landingPageId.get(), slug, statsSince, sources).stream()
+            Instant effectiveFrom = laterOf(statsSince, periodFrom);
+            Set<String> attributedBookingIds = repository.findAttributedBookingIds(landingPageId.get(), effectiveFrom, periodTo);
+            Map<String, Long> followUpByVariant =
+                    contactsService.countFollowUpBookingsByVariant(slug, effectiveFrom, periodTo, attributedBookingIds);
+            List<VariantStat> variants = repository.findVariantStats(landingPageId.get(), slug, effectiveFrom, periodTo, sources).stream()
                     .map(raw -> toVariantStat(raw, slug, followUpByVariant.getOrDefault(raw.name(), 0L)))
                     .collect(Collectors.toList());
 
@@ -64,6 +74,15 @@ public class MarketingDashboardService {
             log.warn("Marketing schema unavailable while building dashboard for slug={}", slug, ex);
             return MarketingDashboardDto.unavailable(slug);
         }
+    }
+
+    /** The later of two nullable instants, where null means "unbounded" (i.e. loses to any real
+     * value) — null only when both inputs are null. Used to intersect the permanent stats_since
+     * cutoff with the owner's currently-selected period-filter lower bound. */
+    private static Instant laterOf(Instant a, Instant b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return a.isAfter(b) ? a : b;
     }
 
     /** Every landing page for the dashboard's page selector; empty (not an error) if the marketing

@@ -184,19 +184,25 @@ export const serverApi = {
   // TrafficSourceFilter) — omitted here on every current call site, so the backend's own "Ads
   // only" default applies to the initial server-rendered load; kept as a plain string (rather
   // than importing the client component's types) since this module is server-only.
-  getMarketingDashboard: (slug?: string, sources?: string) => {
+  // from/to (yyyy-MM-dd, both optional) are the shared marketing period filter — omitted means
+  // "All" (no additional bound beyond the page's permanent stats-since cutoff).
+  getMarketingDashboard: (slug?: string, sources?: string, from?: string, to?: string) => {
     const query = new URLSearchParams();
     if (slug) query.set('slug', slug);
     if (sources) query.set('sources', sources);
+    if (from) query.set('from', from);
+    if (to) query.set('to', to);
     return serverFetch<MarketingDashboardData>(`/api/owner/marketing?${query.toString()}`);
   },
 
   getMarketingPages: () => serverFetch<MarketingLandingPage[]>('/api/owner/marketing/pages'),
 
-  getMarketingFunnel: (slug?: string, sources?: string) => {
+  getMarketingFunnel: (slug?: string, sources?: string, from?: string, to?: string) => {
     const query = new URLSearchParams();
     if (slug) query.set('slug', slug);
     if (sources) query.set('sources', sources);
+    if (from) query.set('from', from);
+    if (to) query.set('to', to);
     return serverFetch<FunnelDashboardData[]>(`/api/owner/marketing/funnel?${query.toString()}`);
   },
 
@@ -217,10 +223,11 @@ export const serverApi = {
     return serverFetch<MarketingAnalyticsData>(`/api/owner/marketing/analytics${qs ? `?${qs}` : ''}`);
   },
 
-  /** period is 'week'|'month'|'mtd'|'custom'; from/to/sources/slug follow the same conventions as
-   * getMarketingAnalytics above. 'mtd' ignores from/to (always [1st-of-month, today]); 'custom'
+  /** period is 'week'|'month'|'mtd'|'custom'|'all'; from/to/sources/slug follow the same
+   * conventions as getMarketingAnalytics above. 'mtd'/'all' ignore from/to ('mtd' is always
+   * [1st-of-month, today], 'all' is the backend's own all-time start through today); 'custom'
    * requires both from and to. week/month default to the last 8 weeks/6 months when omitted. */
-  getMarketingAdsReport: (period: 'week' | 'month' | 'mtd' | 'custom', from?: string, to?: string, sources?: string[], slug?: string) => {
+  getMarketingAdsReport: (period: 'week' | 'month' | 'mtd' | 'custom' | 'all', from?: string, to?: string, sources?: string[], slug?: string) => {
     const params = new URLSearchParams();
     params.set('period', period);
     if (from) params.set('from', from);

@@ -1016,8 +1016,8 @@ export interface MarketingAdsReportPeriod {
 
 export interface MarketingAdsReportData {
   /** Which grain `periods` is bucketed into. WEEK/MONTH may return several historical rows (a
-   * trend); MONTH_TO_DATE and CUSTOM always return exactly one. */
-  periodType: 'WEEK' | 'MONTH' | 'MONTH_TO_DATE' | 'CUSTOM';
+   * trend); MONTH_TO_DATE, CUSTOM, and ALL always return exactly one. */
+  periodType: 'WEEK' | 'MONTH' | 'MONTH_TO_DATE' | 'CUSTOM' | 'ALL';
   /** One row per period, most recent first. */
   periods: MarketingAdsReportPeriod[];
   /** Sum (or, for adSpendEstimated/monthInProgress, OR) across every row in `periods` — the

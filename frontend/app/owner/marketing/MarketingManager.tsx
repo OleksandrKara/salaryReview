@@ -1,9 +1,13 @@
 'use client';
 
 import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { api } from '../../lib/api';
 import type { MarketingVariantStat, TrafficSourceKey } from '../../lib/types';
 import TrafficSourceFilter, { ADS_ONLY_SOURCES } from './TrafficSourceFilter';
+import PeriodFilter from './PeriodFilter';
+import { parsePeriodParams, periodToBounds } from './period';
+import type { PeriodSelection } from './period';
 import VariantTable from './VariantTable';
 
 // datetime-local inputs use the browser's local timezone with no offset in the string;
@@ -25,6 +29,7 @@ export default function MarketingManager({
   initialStatsSince: string | null;
   readOnly?: boolean;
 }) {
+  const searchParams = useSearchParams();
   const [variants, setVariants] = useState(initialVariants);
   const [statsSince, setStatsSince] = useState(initialStatsSince);
   const [cutoffInput, setCutoffInput] = useState(initialStatsSince ? toDatetimeLocalValue(initialStatsSince) : '');
@@ -32,16 +37,26 @@ export default function MarketingManager({
   const [busyVariantId, setBusyVariantId] = useState<string | null>(null);
   const [cutoffBusy, setCutoffBusy] = useState(false);
   const [sources, setSources] = useState<Set<TrafficSourceKey>>(() => new Set(ADS_ONLY_SOURCES));
+  // Seeded from the URL (?period=&from=&to=) — see PeriodFilter/../period, shared by every
+  // marketing tab. Layered on top of, never replacing, the permanent "Hide stats before" cutoff
+  // below — the backend intersects the two itself.
+  const [selection, setSelection] = useState<PeriodSelection>(() => parsePeriodParams(searchParams));
 
-  async function refresh(nextSources: Set<TrafficSourceKey> = sources) {
-    const data = await api.getMarketingDashboard(slug, nextSources);
+  async function refresh(nextSources: Set<TrafficSourceKey> = sources, nextSelection: PeriodSelection = selection) {
+    const bounds = periodToBounds(nextSelection);
+    const data = await api.getMarketingDashboard(slug, nextSources, bounds.from, bounds.to);
     setVariants(data.variants);
     setStatsSince(data.statsSince);
   }
 
   function changeSources(next: Set<TrafficSourceKey>) {
     setSources(next);
-    void refresh(next);
+    void refresh(next, selection);
+  }
+
+  function changePeriod(next: PeriodSelection) {
+    setSelection(next);
+    void refresh(sources, next);
   }
 
   async function withVariantBusy(v: MarketingVariantStat, action: () => Promise<void>) {
@@ -125,6 +140,10 @@ export default function MarketingManager({
           onChange={changeSources}
           description="Counts page views, clicks, contacts, and bookings for the selected source(s) only. Bookings are matched via contact-capture data and may slightly undercount."
         />
+      </div>
+
+      <div className="mb-4">
+        <PeriodFilter value={selection} onChange={changePeriod} />
       </div>
 
       {readOnly ? (

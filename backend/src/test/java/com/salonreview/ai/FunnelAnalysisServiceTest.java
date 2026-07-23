@@ -68,7 +68,7 @@ class FunnelAnalysisServiceTest {
             return row;
         });
 
-        when(funnelAnalyticsService.funnel(eq("home"), any())).thenReturn(List.of(sampleFunnel()));
+        when(funnelAnalyticsService.funnel(eq("home"), any(), any(), any())).thenReturn(List.of(sampleFunnel()));
     }
 
     private static FunnelDashboardDto sampleFunnel() {

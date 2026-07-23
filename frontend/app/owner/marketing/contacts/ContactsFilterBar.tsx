@@ -1,8 +1,12 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import type { MarketingContact, TrafficSourceKey } from '../../../lib/types';
 import TrafficSourceFilter, { ADS_ONLY_SOURCES, ALL_TRAFFIC_SOURCES } from '../TrafficSourceFilter';
+import PeriodFilter from '../PeriodFilter';
+import { parsePeriodParams, periodToBounds } from '../period';
+import type { PeriodSelection } from '../period';
 import ContactsTable from './ContactsTable';
 
 const SUBMISSION_TYPE_LABELS: Record<string, string> = {
@@ -23,8 +27,11 @@ interface Filters {
   landingPage: string;
   variant: string;
   submissionTypes: Set<string>;
-  createdFrom: string;
-  createdTo: string;
+  /** The shared marketing period filter (see PeriodFilter/../period), applied to createdAt — the
+   * natural "when was this lead captured" mapping to a period, same concept every other tab's
+   * period filter narrows by. modifiedFrom/modifiedTo below are a separate, second date facet,
+   * unrelated to this shared control. */
+  period: PeriodSelection;
   modifiedFrom: string;
   modifiedTo: string;
 }
@@ -40,8 +47,7 @@ function emptyFilters(): Filters {
     landingPage: ALL,
     variant: ALL,
     submissionTypes: new Set(),
-    createdFrom: '',
-    createdTo: '',
+    period: { period: 'mtd' },
     modifiedFrom: '',
     modifiedTo: '',
   };
@@ -115,7 +121,8 @@ function applyFilters(contacts: MarketingContact[], f: Filters): MarketingContac
     if (!matchesField(c, f.landingPage, (x) => x.landingPageSlug, (s) => s.landingPageSlug)) return false;
     if (!matchesField(c, f.variant, (x) => x.variantName, (s) => s.variantName)) return false;
     if (f.submissionTypes.size > 0 && !c.submissions.some((s) => f.submissionTypes.has(s.submissionType))) return false;
-    if ((f.createdFrom || f.createdTo) && !withinRange(c.createdAt, f.createdFrom, f.createdTo)) return false;
+    const { from: periodFrom, to: periodTo } = periodToBounds(f.period);
+    if ((periodFrom || periodTo) && !withinRange(c.createdAt, periodFrom ?? '', periodTo ?? '')) return false;
     if ((f.modifiedFrom || f.modifiedTo) && !withinRange(c.updatedAt, f.modifiedFrom, f.modifiedTo)) return false;
     return true;
   });
@@ -144,13 +151,19 @@ function Select({ label, value, options, onChange }: { label: string; value: str
 export default function ContactsFilterBar({
   contacts: initialContacts, initialLandingPage,
 }: { contacts: MarketingContact[]; initialLandingPage?: string }) {
+  const searchParams = useSearchParams();
   // Pre-populates the "Landing page" facet from the shared page selector's ?slug= when explicitly
   // present (e.g. arriving from "Home Page") — left at "All" (today's default) otherwise, since an
   // absent slug is indistinguishable from "the default page was never touched" and forcing a
   // specific-page filter in that case would be a real behavior change, not just a convenience.
+  // period is likewise seeded from ?period=&from=&to= (see ../period) so arriving from another
+  // tab, or reloading, keeps the same period selected — everything here is filtered client-side
+  // over the already-fetched contact list, so unlike the other tabs there's no server refetch
+  // involved, just a different initial predicate.
   const [filters, setFilters] = useState<Filters>(() => ({
     ...emptyFilters(),
     landingPage: initialLandingPage ?? ALL,
+    period: parsePeriodParams(searchParams),
   }));
   const [contacts, setContacts] = useState(initialContacts);
   // "Sync appointments" now lives in MarketingTabs' shared header (visible on every marketing tab,
@@ -201,8 +214,7 @@ export default function ContactsFilterBar({
     filters.landingPage !== ALL ||
     filters.variant !== ALL ||
     filters.submissionTypes.size > 0 ||
-    filters.createdFrom ||
-    filters.createdTo ||
+    filters.period.period !== 'mtd' ||
     filters.modifiedFrom ||
     filters.modifiedTo;
 
@@ -240,6 +252,11 @@ export default function ContactsFilterBar({
           />
         </div>
 
+        <div className="mt-3">
+          <span className="mb-1 block text-xs font-medium text-zinc-500">Period (created)</span>
+          <PeriodFilter value={filters.period} onChange={(next) => setFilters((f) => ({ ...f, period: next }))} />
+        </div>
+
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <Select label="Traffic source" value={filters.trafficSource} options={trafficSources} onChange={(v) => setFilters((f) => ({ ...f, trafficSource: v }))} />
           <Select label="UTM source" value={filters.utmSource} options={utmSources} onChange={(v) => setFilters((f) => ({ ...f, utmSource: v }))} />
@@ -262,14 +279,6 @@ export default function ContactsFilterBar({
             </div>
           </div>
 
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium text-zinc-500">Created from</span>
-            <input type="date" value={filters.createdFrom} onChange={(e) => setFilters((f) => ({ ...f, createdFrom: e.target.value }))} className="rounded border border-zinc-300 px-2 py-1.5 text-xs" />
-          </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium text-zinc-500">Created to</span>
-            <input type="date" value={filters.createdTo} onChange={(e) => setFilters((f) => ({ ...f, createdTo: e.target.value }))} className="rounded border border-zinc-300 px-2 py-1.5 text-xs" />
-          </label>
           <label className="flex flex-col gap-1 text-xs">
             <span className="font-medium text-zinc-500">Modified from</span>
             <input type="date" value={filters.modifiedFrom} onChange={(e) => setFilters((f) => ({ ...f, modifiedFrom: e.target.value }))} className="rounded border border-zinc-300 px-2 py-1.5 text-xs" />
