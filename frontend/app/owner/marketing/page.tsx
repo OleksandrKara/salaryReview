@@ -4,16 +4,22 @@ import PageHeader from '../../components/PageHeader';
 import AbuseBlocksPanel from './AbuseBlocksPanel';
 import MarketingManager from './MarketingManager';
 import MarketingTabs from './MarketingTabs';
+import { parsePeriodParams, periodToBounds } from './period';
 
 export default async function MarketingDashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ slug?: string }>;
+  searchParams: Promise<{ slug?: string; period?: string; from?: string; to?: string }>;
 }) {
-  const { slug } = await searchParams;
+  const params = await searchParams;
+  const { slug } = params;
+  // Same shared period filter every marketing tab reads (see PeriodFilter/./period) — defaults to
+  // Month to date, layered on top of (never replacing) this page's own permanent "Hide stats
+  // before" cutoff, which the backend intersects with these bounds itself.
+  const bounds = periodToBounds(parsePeriodParams(params));
   const [me, data, abuseBlocks] = await Promise.all([
     serverApi.getMe(),
-    serverApi.getMarketingDashboard(slug),
+    serverApi.getMarketingDashboard(slug, undefined, bounds.from, bounds.to),
     serverApi.getAbuseBlocks(),
   ]);
 

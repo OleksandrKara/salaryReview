@@ -43,10 +43,15 @@ export function monthToDateSoFarRange(): DateRange {
 }
 
 /** Reads period/from/to off a URLSearchParams (or a plain searchParams object, e.g. a server
- * component's own `searchParams` prop) — defaults to 'mtd' (Month to date) when period is absent
- * or unrecognized, per the shared filter's own default. 'custom' without both from and to falls
- * back to 'mtd' too, rather than sending a half-specified custom range to the backend. */
-export function parsePeriodParams(searchParams: URLSearchParams | Record<string, string | string[] | undefined>): PeriodSelection {
+ * component's own `searchParams` prop) — defaults to `defaultPeriod` ('mtd', Month to date, unless
+ * a tab overrides it — Funnel defaults to 'all' instead, since a funnel's drop-off shape is
+ * normally read over its whole history, not just the current month) when period is absent or
+ * unrecognized. 'custom' without both from and to falls back to the same default too, rather than
+ * sending a half-specified custom range to the backend. */
+export function parsePeriodParams(
+  searchParams: URLSearchParams | Record<string, string | string[] | undefined>,
+  defaultPeriod: PeriodType = 'mtd',
+): PeriodSelection {
   const get = (key: string): string | undefined => {
     if (searchParams instanceof URLSearchParams) return searchParams.get(key) ?? undefined;
     const v = searchParams[key];
@@ -54,10 +59,10 @@ export function parsePeriodParams(searchParams: URLSearchParams | Record<string,
   };
   const rawPeriod = get('period');
   const period: PeriodType = rawPeriod === 'all' || rawPeriod === 'week' || rawPeriod === 'month'
-    || rawPeriod === 'mtd' || rawPeriod === 'custom' ? rawPeriod : 'mtd';
+    || rawPeriod === 'mtd' || rawPeriod === 'custom' ? rawPeriod : defaultPeriod;
   const from = get('from');
   const to = get('to');
-  if (period === 'custom' && (!from || !to)) return { period: 'mtd' };
+  if (period === 'custom' && (!from || !to)) return { period: defaultPeriod };
   return period === 'custom' ? { period, from, to } : { period };
 }
 
