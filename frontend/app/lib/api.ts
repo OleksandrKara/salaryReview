@@ -382,16 +382,25 @@ export const api = {
   },
 
   // Owner marketing dashboard: variant management + the "hide test data before this date"
-  // stats cutoff. All owner-only, enforced server-side.
-  getMarketingDashboard: (slug: string, sources: Set<TrafficSourceKey>) =>
-    proxyGet<MarketingDashboardData>(`/api/owner/marketing?slug=${encodeURIComponent(slug)}&sources=${sourcesParam(sources)}`),
+  // stats cutoff. All owner-only, enforced server-side. from/to (yyyy-MM-dd, both optional) are
+  // the shared marketing period filter (see PeriodFilter) — omitted means "All".
+  getMarketingDashboard: (slug: string, sources: Set<TrafficSourceKey>, from?: string, to?: string) => {
+    const params = new URLSearchParams({ slug, sources: sourcesParam(sources) });
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    return proxyGet<MarketingDashboardData>(`/api/owner/marketing?${params.toString()}`);
+  },
 
   getMarketingPages: () => proxyGet<MarketingLandingPage[]>('/api/owner/marketing/pages'),
 
   // Client-side (not just serverApi) since Compare mode fetches every other landing page's
-  // funnel on demand, after the initial page load.
-  getMarketingFunnel: (slug: string, sources: Set<TrafficSourceKey>) =>
-    proxyGet<FunnelDashboardData[]>(`/api/owner/marketing/funnel?slug=${encodeURIComponent(slug)}&sources=${sourcesParam(sources)}`),
+  // funnel on demand, after the initial page load. from/to as above.
+  getMarketingFunnel: (slug: string, sources: Set<TrafficSourceKey>, from?: string, to?: string) => {
+    const params = new URLSearchParams({ slug, sources: sourcesParam(sources) });
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    return proxyGet<FunnelDashboardData[]>(`/api/owner/marketing/funnel?${params.toString()}`);
+  },
 
   // "Analyze Funnel" — owner-only (see the route handler); 404s if ai.funnel-analysis.enabled is
   // off on the backend. Cached server-side by the exact funnel numbers (which differ between
@@ -444,11 +453,12 @@ export const api = {
     return proxyGet<MarketingAnalyticsData>(`/api/owner/marketing/analytics${qs ? `?${qs}` : ''}`);
   },
 
-  // period is 'week'|'month'|'mtd'|'custom'; from/to/sources/slug follow the same conventions as
-  // getMarketingAnalytics above. 'mtd' ignores from/to (always [1st-of-month, today]); 'custom'
+  // period is 'week'|'month'|'mtd'|'custom'|'all'; from/to/sources/slug follow the same
+  // conventions as getMarketingAnalytics above. 'mtd'/'all' ignore from/to ('mtd' is always
+  // [1st-of-month, today], 'all' is the backend's own all-time start through today); 'custom'
   // requires both from and to. week/month default to the last 8 weeks/6 months when omitted.
   getMarketingAdsReport: (
-    period: 'week' | 'month' | 'mtd' | 'custom', from?: string, to?: string, sources?: Set<TrafficSourceKey>, slug?: string,
+    period: 'week' | 'month' | 'mtd' | 'custom' | 'all', from?: string, to?: string, sources?: Set<TrafficSourceKey>, slug?: string,
   ) => {
     const params = new URLSearchParams();
     params.set('period', period);

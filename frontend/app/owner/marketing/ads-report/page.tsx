@@ -3,22 +3,22 @@ import { serverApi } from '../../../lib/serverApi';
 import PageHeader from '../../../components/PageHeader';
 import AdsReportView from './AdsReportView';
 import MarketingTabs, { DEFAULT_SLUG } from '../MarketingTabs';
+import { parsePeriodParams } from '../period';
 
 export default async function MarketingAdsReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ slug?: string }>;
+  searchParams: Promise<{ slug?: string; period?: string; from?: string; to?: string }>;
 }) {
-  const { slug: rawSlug } = await searchParams;
-  // The shared page selector (MarketingTabs) always shows DEFAULT_SLUG pre-selected when ?slug=
-  // is absent — this has to actually fetch that page's data rather than silently pooling every
-  // page together, both so the numbers match what the selector claims is showing, and because
-  // pooling is the slowest possible case (every page's ads customers combined into one live
-  // Square sweep) for what a first-time visitor sees by default.
-  const slug = rawSlug ?? DEFAULT_SLUG;
+  const params = await searchParams;
+  const slug = params.slug ?? DEFAULT_SLUG;
+  // Same shared period filter every marketing tab reads (see PeriodFilter/../period) — defaults
+  // to Month to date when absent, matching this endpoint's own pre-existing default so a bare
+  // /owner/marketing/ads-report link behaves exactly as it always has.
+  const selection = parsePeriodParams(params);
   const [me, data] = await Promise.all([
     serverApi.getMe(),
-    serverApi.getMarketingAdsReport('mtd', undefined, undefined, undefined, slug),
+    serverApi.getMarketingAdsReport(selection.period, selection.from, selection.to, undefined, slug),
   ]);
 
   if (me?.role !== 'OWNER' && me?.role !== 'ADS_MANAGER') redirect('/reports');

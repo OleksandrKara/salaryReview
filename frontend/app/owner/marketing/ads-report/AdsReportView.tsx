@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Bar,
   CartesianGrid,
@@ -30,6 +31,9 @@ import type {
 import { Spinner } from '../../../components/Spinner';
 import TrafficSourceFilter, { ADS_ONLY_SOURCES } from '../TrafficSourceFilter';
 import { AppointmentHistoryList, HistoryToggle, PAYMENT_CHANNEL_LABELS, PaymentChannelBadge, SubmissionHistoryList } from '../ContactHistory';
+import PeriodFilter from '../PeriodFilter';
+import { lastNMonthsRange, lastNWeeksRange, monthToDateSoFarRange, parsePeriodParams } from '../period';
+import type { PeriodSelection, PeriodType } from '../period';
 
 const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -44,19 +48,6 @@ function isoDate(d: Date): string {
 function parseLocalDate(iso: string): Date {
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(y, m - 1, d);
-}
-
-function lastNWeeksRange(n: number): { from: string; to: string } {
-  const to = new Date();
-  const from = new Date(to);
-  from.setDate(from.getDate() - (n * 7 - 1));
-  return { from: isoDate(from), to: isoDate(to) };
-}
-
-function lastNMonthsRange(n: number): { from: string; to: string } {
-  const to = new Date();
-  const from = new Date(to.getFullYear(), to.getMonth() - (n - 1), 1);
-  return { from: isoDate(from), to: isoDate(to) };
 }
 
 function mondayOnOrBefore(d: Date): Date {
@@ -79,12 +70,6 @@ function thisMonthRange(): { from: string; to: string } {
   const from = new Date(today.getFullYear(), today.getMonth(), 1);
   const to = new Date(today.getFullYear(), today.getMonth() + 1, 0);
   return { from: isoDate(from), to: isoDate(to) };
-}
-
-function monthToDateSoFarRange(): { from: string; to: string } {
-  const today = new Date();
-  const from = new Date(today.getFullYear(), today.getMonth(), 1);
-  return { from: isoDate(from), to: isoDate(today) };
 }
 
 function fmtPeriodLabel(row: MarketingAdsReportPeriod, periodType: MarketingAdsReportData['periodType']): string {
@@ -323,7 +308,6 @@ const CANCELLATION_STATUS_LABELS: Record<MarketingCancelledAppointment['status']
   NO_SHOW: 'No-show',
 };
 
-type PeriodType = 'week' | 'month' | 'mtd' | 'custom';
 type ViewMode = 'table' | 'text' | 'chart';
 
 const WEEK_PRESETS = [4, 8, 12];
@@ -390,10 +374,18 @@ export default function AdsReportView({
     setData(initialData);
   }
 
-  const [periodType, setPeriodType] = useState<PeriodType>('mtd');
+  // Seeded from the URL (?period=&from=&to=) so a page reload or a tab switch back to Ads Report
+  // restores the same filter instead of always resetting to Month to date — see PeriodFilter and
+  // ../period's parsePeriodParams, shared by every marketing tab.
+  const searchParams = useSearchParams();
+  const initialSelection = parsePeriodParams(searchParams);
+  const [periodType, setPeriodType] = useState<PeriodType>(initialSelection.period);
+  // Not URL-persisted — resets to the default 8 weeks/6 months on reload, same as before this
+  // change; only Ads Report ever reaches 'week'/'month' at all (see PeriodFilter's
+  // enableWeekMonth), so there's no cross-tab consistency to preserve here.
   const [rangeCount, setRangeCount] = useState(8);
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
+  const [customFrom, setCustomFrom] = useState(initialSelection.period === 'custom' ? initialSelection.from ?? '' : '');
+  const [customTo, setCustomTo] = useState(initialSelection.period === 'custom' ? initialSelection.to ?? '' : '');
   const [sources, setSources] = useState<Set<TrafficSourceKey>>(() => new Set(ADS_ONLY_SOURCES));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -417,41 +409,45 @@ export default function AdsReportView({
     }
   }
 
-  // Always re-fetches on mount, for whatever the initial filter is (Month to date, by default) —
-  // the server-rendered initialData above is already correct, but a guaranteed fresh client fetch
-  // (with the loading banner visibly shown) means the owner never has to wonder whether what
-  // they're looking at is current, and it self-heals any staleness in initialData (a cached page,
-  // a slow-to-update session) without needing a manual filter click first.
+  // Always re-fetches on mount, for whatever the initial filter is (from the URL, Month to date by
+  // default) — the server-rendered initialData above is already correct, but a guaranteed fresh
+  // client fetch (with the loading banner visibly shown) means the owner never has to wonder
+  // whether what they're looking at is current, and it self-heals any staleness in initialData (a
+  // cached page, a slow-to-update session) without needing a manual filter click first.
   useEffect(() => {
     // Deferred a microtask out (rather than calling load() directly) so its setLoading(true)
     // doesn't run synchronously inside the effect body itself.
-    void Promise.resolve().then(() => load(periodType, sources));
+    void Promise.resolve().then(() => load(periodType, sources, customFrom || undefined, customTo || undefined));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function selectPeriodType(pt: PeriodType) {
-    setPeriodType(pt);
-    if (view === 'chart' && pt !== 'month') setView('table');
-    if (pt === 'week' || pt === 'month') {
-      const defaultN = pt === 'week' ? 8 : 6;
+  // The single handler PeriodFilter's onChange calls — consolidates what used to be
+  // selectPeriodType + applyCustomRange, since PeriodFilter now owns the custom from/to inputs
+  // itself and only ever calls back once a selection is actually confirmed (immediately for
+  // All/Weekly/Monthly/Month to date; only after "Apply" for Custom).
+  function onPeriodChange(selection: PeriodSelection) {
+    setPeriodType(selection.period);
+    if (view === 'chart' && selection.period !== 'month') setView('table');
+    if (selection.period === 'week' || selection.period === 'month') {
+      const defaultN = selection.period === 'week' ? 8 : 6;
       setRangeCount(defaultN);
-      const range = computeRange(pt, defaultN);
-      void load(pt, sources, range.from, range.to);
-    } else if (pt === 'mtd') {
+      const range = computeRange(selection.period, defaultN);
+      void load(selection.period, sources, range.from, range.to);
+    } else if (selection.period === 'mtd') {
       void load('mtd', sources);
+    } else if (selection.period === 'all') {
+      void load('all', sources);
+    } else if (selection.period === 'custom' && selection.from && selection.to) {
+      setCustomFrom(selection.from);
+      setCustomTo(selection.to);
+      void load('custom', sources, selection.from, selection.to);
     }
-    // 'custom' just switches the control panel — loading waits for Apply below.
   }
 
   function selectRangePreset(n: number) {
     setRangeCount(n);
     const range = computeRange(periodType as 'week' | 'month', n);
     void load(periodType, sources, range.from, range.to);
-  }
-
-  function applyCustomRange() {
-    if (!customFrom || !customTo) return;
-    void load('custom', sources, customFrom, customTo);
   }
 
   function changeSources(next: Set<TrafficSourceKey>) {
@@ -461,7 +457,9 @@ export default function AdsReportView({
       void load(periodType, next, range.from, range.to);
     } else if (periodType === 'mtd') {
       void load('mtd', next);
-    } else if (customFrom && customTo) {
+    } else if (periodType === 'all') {
+      void load('all', next);
+    } else if (periodType === 'custom' && customFrom && customTo) {
       void load('custom', next, customFrom, customTo);
     }
   }
@@ -492,12 +490,12 @@ export default function AdsReportView({
       />
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex flex-wrap gap-1 rounded-lg bg-zinc-100 p-1">
-          <PeriodTypeButton label="Weekly" active={periodType === 'week'} disabled={loading} onClick={() => selectPeriodType('week')} />
-          <PeriodTypeButton label="Monthly" active={periodType === 'month'} disabled={loading} onClick={() => selectPeriodType('month')} />
-          <PeriodTypeButton label="Month to date" active={periodType === 'mtd'} disabled={loading} onClick={() => selectPeriodType('mtd')} />
-          <PeriodTypeButton label="Custom" active={periodType === 'custom'} disabled={loading} onClick={() => selectPeriodType('custom')} />
-        </div>
+        <PeriodFilter
+          value={{ period: periodType, from: customFrom || undefined, to: customTo || undefined }}
+          onChange={onPeriodChange}
+          enableWeekMonth
+          disabled={loading}
+        />
         {(periodType === 'week' || periodType === 'month') && (
           <div className="flex flex-wrap gap-2">
             {(periodType === 'week' ? WEEK_PRESETS : MONTH_PRESETS).map((n) => (
@@ -512,42 +510,6 @@ export default function AdsReportView({
           </div>
         )}
       </div>
-
-      {periodType === 'custom' && (
-        <div className="mt-3 flex flex-wrap items-end gap-3 rounded-lg p-3 ring-1 ring-zinc-200">
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium text-zinc-500">From</span>
-            <input
-              type="date"
-              value={customFrom}
-              max={customTo || undefined}
-              disabled={loading}
-              onChange={(e) => setCustomFrom(e.target.value)}
-              className="rounded border border-zinc-300 px-2 py-1.5 text-xs disabled:opacity-50"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="font-medium text-zinc-500">To</span>
-            <input
-              type="date"
-              value={customTo}
-              min={customFrom || undefined}
-              max={isoDate(new Date())}
-              disabled={loading}
-              onChange={(e) => setCustomTo(e.target.value)}
-              className="rounded border border-zinc-300 px-2 py-1.5 text-xs disabled:opacity-50"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={applyCustomRange}
-            disabled={!customFrom || !customTo || loading}
-            className="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            Apply
-          </button>
-        </div>
-      )}
 
       {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
 
