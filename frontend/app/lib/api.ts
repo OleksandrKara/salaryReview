@@ -42,6 +42,7 @@ import type {
   MarketingCustomerHistory,
   StaffDocument,
   MarketingContactsData,
+  MarketingSyncStatusData,
   MarketingDashboardData,
   MarketingLandingPage,
   RagCitation,
@@ -206,6 +207,10 @@ export const api = {
   // tracked booking flow (a manager followed up and booked them by phone, or they came back
   // through some other channel) and returns the refreshed list — owner-only.
   syncMarketingContacts: () => proxyJson<MarketingContactsData>(`/api/owner/marketing/contacts/sync`, 'POST', {}),
+
+  // When "Sync appointments" was last actually run — cheap (a single DB row, no Square calls),
+  // safe to fetch on every marketing tab's mount.
+  getMarketingSyncStatus: () => proxyGet<MarketingSyncStatusData>(`/api/owner/marketing/contacts/sync`),
 
   // Knowledge Base articles. Reads are role-filtered by the backend; writes/sync are OWNER+MANAGER.
   listKbArticles: () => proxyGet<KbArticle[]>(`/api/kb-articles`),
