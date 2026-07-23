@@ -31,6 +31,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -106,6 +107,36 @@ class StaffDocumentControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.personType").value("PROVIDER"))
                 .andExpect(jsonPath("$.personName").value("Jane Doe"));
+    }
+
+    @Test
+    @DisplayName("PATCH updates expiration date and/or type/label, returning the resolved DTO")
+    void updateBehavior() throws Exception {
+        StaffDocument updated = StaffDocument.builder().id(1L).providerId(10L).documentType("Insurance")
+                .label(null).fileName("lic.pdf").expirationDate(LocalDate.of(2099, 1, 1))
+                .createdBy("owner1").createdAt(Instant.now()).build();
+        when(service.update(eq(1L), eq(LocalDate.of(2099, 1, 1)), eq("Insurance"), eq("")))
+                .thenReturn(Optional.of(updated));
+        when(providers.findById(10L)).thenReturn(Optional.of(Provider.builder().id(10L).displayName("Jane Doe").build()));
+
+        mvc.perform(patch("/api/owner/staff-documents/1")
+                        .contentType("application/json")
+                        .content("{\"expirationDate\":\"2099-01-01\",\"documentType\":\"Insurance\",\"label\":\"\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.expirationDate").value("2099-01-01"))
+                .andExpect(jsonPath("$.documentType").value("Insurance"))
+                .andExpect(jsonPath("$.personName").value("Jane Doe"));
+    }
+
+    @Test
+    @DisplayName("PATCH 404s when the document doesn't exist")
+    void updateMissing() throws Exception {
+        when(service.update(eq(99L), any(), any(), any())).thenReturn(Optional.empty());
+
+        mvc.perform(patch("/api/owner/staff-documents/99")
+                        .contentType("application/json")
+                        .content("{\"expirationDate\":\"2099-01-01\"}"))
+                .andExpect(status().isNotFound());
     }
 
     @Test

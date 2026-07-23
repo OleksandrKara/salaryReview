@@ -98,4 +98,30 @@ public class StaffDocumentService {
         documents.deleteById(id);
         return true;
     }
+
+    /** Corrects an existing document in place — the expiration date (a mistyped date at upload, or
+     * pushing a former employee's document (see StaffDocument's own "one row per person" model) far
+     * out so it stops reading as expiring/expired), and/or its type/label (fixing a typo, or just
+     * renaming it), without deleting and re-uploading the same file. Each of the three fields is
+     * only touched when non-null — the same "absent means leave alone" convention
+     * MarketingDashboardController#updateVariant already uses — so a caller editing just the date
+     * doesn't have to resend the type/label too, and vice versa. Deliberately does *not* create a
+     * new row the way a real renewal would (see this class's own javadoc) — that convention is for
+     * a genuinely new document (new file, new coverage period); this is just fixing fields on the
+     * one already on file. Empty (not thrown) if the id doesn't exist, mirroring {@link #delete}'s
+     * not-found handling. */
+    @Transactional
+    public Optional<StaffDocument> update(Long id, LocalDate expirationDate, String documentType, String label) {
+        return documents.findById(id).map(doc -> {
+            if (expirationDate != null) doc.setExpirationDate(expirationDate);
+            if (documentType != null) {
+                if (documentType.isBlank()) throw new IllegalArgumentException("documentType cannot be blank");
+                doc.setDocumentType(documentType.trim());
+            }
+            // "" clears the label (matches updateVariantDescription's own convention); a genuinely
+            // absent field (null) leaves it untouched.
+            if (label != null) doc.setLabel(label.isBlank() ? null : label.trim());
+            return documents.save(doc);
+        });
+    }
 }

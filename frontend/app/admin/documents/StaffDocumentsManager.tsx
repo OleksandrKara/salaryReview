@@ -69,8 +69,18 @@ export default function StaffDocumentsManager({
     setUploadingFor(null);
   }
 
+  function onUpdated(updated: StaffDocument) {
+    setDocuments((xs) => xs.map((x) => (x.id === updated.id ? updated : x)));
+  }
+
   return (
     <div>
+      {/* Shared by both UploadForm's and EditForm's document-type input, wherever either happens
+          to be open — a single datalist works by id regardless of which input references it. */}
+      <datalist id="staff-document-types">
+        {DOCUMENT_TYPE_SUGGESTIONS.map((t) => <option key={t} value={t} />)}
+      </datalist>
+
       {(expiredCount > 0 || expiringCount > 0) && (
         <div className="mb-6 flex flex-wrap gap-2">
           {expiredCount > 0 && (
@@ -95,6 +105,7 @@ export default function StaffDocumentsManager({
         uploadingFor={uploadingFor}
         setUploadingFor={setUploadingFor}
         onUploaded={onUploaded}
+        onUpdated={onUpdated}
         onRemove={remove}
       />
       <PersonGroup
@@ -104,6 +115,7 @@ export default function StaffDocumentsManager({
         uploadingFor={uploadingFor}
         setUploadingFor={setUploadingFor}
         onUploaded={onUploaded}
+        onUpdated={onUpdated}
         onRemove={remove}
       />
     </div>
@@ -111,7 +123,7 @@ export default function StaffDocumentsManager({
 }
 
 function PersonGroup({
-  title, people, docsFor, uploadingFor, setUploadingFor, onUploaded, onRemove,
+  title, people, docsFor, uploadingFor, setUploadingFor, onUploaded, onUpdated, onRemove,
 }: {
   title: string;
   people: Person[];
@@ -119,8 +131,13 @@ function PersonGroup({
   uploadingFor: Person | null;
   setUploadingFor: (p: Person | null) => void;
   onUploaded: (d: StaffDocument) => void;
+  onUpdated: (d: StaffDocument) => void;
   onRemove: (d: StaffDocument) => void;
 }) {
+  // Which single document (across every person in this group) currently has its inline edit form
+  // open — at most one at a time, same "only one thing open" convention as uploadingFor above.
+  const [editingId, setEditingId] = useState<number | null>(null);
+
   if (people.length === 0) return null;
   return (
     <div className="mb-8">
@@ -148,24 +165,37 @@ function PersonGroup({
               ) : (
                 <ul className="mt-2 space-y-1.5">
                   {docs.map((d) => (
-                    <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded bg-zinc-50 px-2.5 py-1.5">
-                      <div className="min-w-0">
-                        <span className="text-sm font-medium text-zinc-700">{d.documentType}</span>
-                        {d.label ? <span className="ml-1.5 text-xs text-zinc-500">{d.label}</span> : null}
-                        <div className="text-xs text-zinc-400">Expires {fmtDate(d.expirationDate)}</div>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <StatusBadge status={d.status} />
-                        <a
-                          href={api.staffDocumentDownloadUrl(d.id)}
-                          className="text-xs font-medium text-blue-600 hover:underline"
-                        >
-                          Download
-                        </a>
-                        <button onClick={() => onRemove(d)} className="text-xs font-medium text-red-600 hover:underline">
-                          Delete
-                        </button>
-                      </div>
+                    <li key={d.id} className="rounded bg-zinc-50 px-2.5 py-1.5">
+                      {editingId === d.id ? (
+                        <EditForm
+                          doc={d}
+                          onUpdated={(saved) => { onUpdated(saved); setEditingId(null); }}
+                          onCancel={() => setEditingId(null)}
+                        />
+                      ) : (
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="text-sm font-medium text-zinc-700">{d.documentType}</span>
+                            {d.label ? <span className="ml-1.5 text-xs text-zinc-500">{d.label}</span> : null}
+                            <div className="text-xs text-zinc-400">Expires {fmtDate(d.expirationDate)}</div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <StatusBadge status={d.status} />
+                            <a
+                              href={api.staffDocumentDownloadUrl(d.id)}
+                              className="text-xs font-medium text-blue-600 hover:underline"
+                            >
+                              Download
+                            </a>
+                            <button onClick={() => setEditingId(d.id)} className="text-xs font-medium text-zinc-600 hover:underline">
+                              Edit
+                            </button>
+                            <button onClick={() => onRemove(d)} className="text-xs font-medium text-red-600 hover:underline">
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -176,6 +206,89 @@ function PersonGroup({
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+function EditForm({
+  doc, onUpdated, onCancel,
+}: {
+  doc: StaffDocument;
+  onUpdated: (d: StaffDocument) => void;
+  onCancel: () => void;
+}) {
+  const [documentType, setDocumentType] = useState(doc.documentType);
+  const [label, setLabel] = useState(doc.label ?? '');
+  const [expirationDate, setExpirationDate] = useState(doc.expirationDate);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    if (!documentType.trim() || !expirationDate) {
+      setError('Document type and expiration date are required.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await api.updateStaffDocument(doc.id, {
+        documentType: documentType.trim(),
+        label: label.trim(),
+        expirationDate,
+      });
+      onUpdated(saved);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Update failed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <label className="block text-xs font-medium text-zinc-600">
+          Document type
+          <input
+            list="staff-document-types"
+            value={documentType}
+            onChange={(e) => setDocumentType(e.target.value)}
+            className="mt-1 w-full rounded px-2 py-1 text-sm ring-1 ring-zinc-200"
+          />
+        </label>
+        <label className="block text-xs font-medium text-zinc-600">
+          Label (optional)
+          <input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="e.g. Cosmetology — CA"
+            className="mt-1 w-full rounded px-2 py-1 text-sm ring-1 ring-zinc-200"
+          />
+        </label>
+        <label className="block text-xs font-medium text-zinc-600">
+          Expiration date
+          <input
+            type="date"
+            value={expirationDate}
+            onChange={(e) => setExpirationDate(e.target.value)}
+            className="mt-1 w-full rounded px-2 py-1 text-sm ring-1 ring-zinc-200"
+          />
+        </label>
+      </div>
+      {error ? <p className="text-xs text-red-600">{error}</p> : null}
+      <div className="flex gap-2">
+        <button
+          onClick={submit}
+          disabled={busy}
+          className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40"
+        >
+          {busy ? <Spinner className="h-3.5 w-3.5 text-white" /> : null}
+          Save
+        </button>
+        <button onClick={onCancel} disabled={busy} className="rounded-lg px-3 py-1.5 text-xs ring-1 ring-zinc-200">
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
@@ -230,9 +343,6 @@ function UploadForm({
             placeholder="Contract, License, NDA…"
             className="mt-1 w-full rounded px-2 py-1 text-sm ring-1 ring-zinc-200"
           />
-          <datalist id="staff-document-types">
-            {DOCUMENT_TYPE_SUGGESTIONS.map((t) => <option key={t} value={t} />)}
-          </datalist>
         </label>
         <label className="block text-xs font-medium text-zinc-600">
           Label (optional)
