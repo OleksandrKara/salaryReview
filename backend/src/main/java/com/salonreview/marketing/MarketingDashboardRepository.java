@@ -92,20 +92,42 @@ public class MarketingDashboardRepository {
      * rows), the same tradeoff already accepted for that column. Also scoped by landing page slug
      * so two different landing pages can't have their variant-name contact counts collide.
      *
-     * <p>sources == {@link TrafficSourceSql#ALL} ("All traffic") runs byte-for-byte the same query
-     * as before this filter existed. Otherwise: for page views/book-now clicks, requires a joined
-     * marketing.visits row whose classification (see {@link TrafficSourceSql}) is one of the
-     * selected sources; for contacts, the same classification applied to the contact's own
-     * columns; for bookings, a LEFT JOIN from marketing.attribution to marketing.contacts by
-     * booking_id (attribution has no session_id of its own to check against visits directly) —
-     * in the current data only ~57% of attribution rows have a matching contacts row, so a
-     * filtered-sources "Bookings" count is a best-effort floor, not a guaranteed-exact count.
-     * All-traffic mode is unaffected and remains exact.
+     * <p>sources == {@link TrafficSourceSql#ALL} ("All traffic") counts every marketing.attribution
+     * row directly — a plain, exact COUNT(*), no join to marketing.contacts at all. Bookings only
+     * need a source *classification* when sources is actually filtered down to a subset, and
+     * attribution has no session_id of its own to classify by, so the filtered case (only) joins to
+     * marketing.contacts by booking_id to borrow its classification — in the current data only
+     * ~57% of attribution rows have a matching contacts row, so a filtered-sources "Bookings" count
+     * is a best-effort floor there, not a guaranteed-exact count. (A previous version of this query
+     * required that same contacts-row match unconditionally, even in All-traffic mode where no
+     * classification is needed at all — silently dropping any real, tracked booking whose contact
+     * row's square_booking_id didn't happen to match, e.g. a client who re-booked after an earlier
+     * attempt left a stale value there. Confirmed against a real case: a self-booked "home" page
+     * client with a genuine attribution row who nonetheless showed zero bookings anywhere on the
+     * Overview tab.)
      */
     public List<RawVariantStat> findVariantStats(UUID landingPageId, String landingPageSlug, Instant statsSince, Set<String> sources) {
         String pageViewFilter = sourceFilter(() -> TrafficSourceSql.visitInSources("e.session_id", sources), sources);
         String contactFilterC2 = sourceFilter(() -> TrafficSourceSql.contactInSources("c2", sources), sources);
         String contactFilterC = sourceFilter(() -> TrafficSourceSql.contactInSources("c", sources), sources);
+        boolean allTraffic = sources.equals(TrafficSourceSql.ALL);
+        String bookingsSubquery = allTraffic
+                ? """
+                  SELECT a.variant_id, COUNT(*) AS bookings_completed
+                  FROM marketing.attribution a
+                  WHERE (?::timestamptz IS NULL OR a.created_at >= ?)
+                  GROUP BY a.variant_id
+                  """
+                : """
+                  SELECT a.variant_id, COUNT(*) AS bookings_completed
+                  FROM marketing.attribution a
+                  WHERE (?::timestamptz IS NULL OR a.created_at >= ?)
+                    AND EXISTS (
+                        SELECT 1 FROM marketing.contacts c2
+                        WHERE c2.square_booking_id = a.booking_id AND %s
+                    )
+                  GROUP BY a.variant_id
+                  """.formatted(contactFilterC2);
         String sql = """
                 SELECT v.id AS variant_id, v.name AS name, v.weight AS weight,
                        v.key AS key, v.description AS description,
@@ -122,14 +144,7 @@ public class MarketingDashboardRepository {
                     GROUP BY e.variant_id
                 ) pv ON pv.variant_id = v.id
                 LEFT JOIN (
-                    SELECT a.variant_id, COUNT(*) AS bookings_completed
-                    FROM marketing.attribution a
-                    WHERE (?::timestamptz IS NULL OR a.created_at >= ?)
-                      AND EXISTS (
-                          SELECT 1 FROM marketing.contacts c2
-                          WHERE c2.square_booking_id = a.booking_id AND %2$s
-                      )
-                    GROUP BY a.variant_id
+                    %2$s
                 ) bk ON bk.variant_id = v.id
                 LEFT JOIN (
                     SELECT c.variant_name, COUNT(*) AS contacts_created
@@ -148,7 +163,7 @@ public class MarketingDashboardRepository {
                 ) bc ON bc.variant_id = v.id
                 WHERE v.landing_page_id = ?
                 ORDER BY v.created_at ASC
-                """.formatted(pageViewFilter, contactFilterC2, contactFilterC);
+                """.formatted(pageViewFilter, bookingsSubquery, contactFilterC);
         Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
         return jdbcTemplate.query(sql, (rs, rowNum) -> new RawVariantStat(
                 rs.getObject("variant_id", UUID.class).toString(),
