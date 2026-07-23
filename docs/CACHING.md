@@ -96,6 +96,31 @@ For when someone suspects a gap with Square and wants fresh data immediately:
   whole cache). Any signed‑in user may call it — it only busts a read cache.
 - After invalidation the next render pulls fresh from Square and `lastFetchAt` (the badge) updates.
 
+## Marketing dashboard's own response cache
+
+The four marketing tabs (Overview, Contacts, Funnel, Ads Report) layer DB queries and — for
+Contacts/Ads Report/Analytics — live per-contact Square lookups (follow-up detection, freshness
+checks) on top of `SquareClient`'s own already-cached reads. That extra orchestration wasn't
+cached at all before, so every tab load/filter change re-did it from scratch even when nothing had
+changed. Each owning service (`MarketingDashboardService`, `FunnelAnalyticsService`,
+`MarketingContactsService`, `MarketingAnalyticsService`) now holds its own `TtlCache` — the exact
+same `cached(key, ttl, loader)`-over-`ConcurrentHashMap` pattern as `SquareClient` above, just
+extracted so these services don't each hand-roll it — keyed by that method's own parameters
+(slug/sources/period/etc.), same **10-minute TTL**, same reasoning as bookings/orders above.
+
+Busted by:
+- **"Sync now"** (`POST /api/sync`) — now also calls each of these services' `invalidateCache()`,
+  alongside `SquareClient.invalidate()`, so the button means "everything fresh now" for the
+  marketing tabs too, not just the underlying Square reads.
+- **Any direct edit within a service** — renaming/deleting/duplicating a variant or changing the
+  "Hide stats before" cutoff (`MarketingDashboardService`), an ad-spend entry create/edit/delete
+  (`MarketingAnalyticsService`), or a Contacts "Sync appointments" run (`MarketingContactsService`,
+  which also returns the freshly-computed result directly rather than reading its own now-empty
+  cache) — so an owner's own explicit action is reflected immediately, never stuck behind the TTL.
+
+`FunnelAnalyticsService` has no mutating actions of its own; its cache only clears via "Sync now"
+or naturally expiring after 10 minutes.
+
 ## Operational notes
 
 - The cache is **in‑memory per backend instance** — it's empty after a restart/redeploy (first load is

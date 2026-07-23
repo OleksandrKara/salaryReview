@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.YearMonth;
 import java.time.ZoneId;
@@ -45,12 +46,19 @@ public class MarketingContactsService {
     // .../directory/{id} form (missing the /customer/ segment) was reported broken too.
     private static final String SQUARE_CUSTOMER_PROFILE_URL = "https://app.squareup.com/dashboard/customers/directory/customer/%s";
 
+    // See docs/CACHING.md / MarketingDashboardService's own CACHE_TTL — same 10-min TTL. contacts()
+    // is the most Square-call-heavy of the marketing tabs (one round trip per Square-linked
+    // contact), so it benefits the most from this.
+    private static final Duration CACHE_TTL = Duration.ofMinutes(10);
+    private static final String CONTACTS_CACHE_KEY = "contacts";
+
     private final MarketingContactsRepository repository;
     private final MarketingContactSquareLinkRepository squareLinks;
     private final SquareClient square;
     private final SquareMonthAggregator aggregator;
     private final SalonConfigRepository salonConfig;
     private final MarketingSyncStatusRepository syncStatus;
+    private final TtlCache cache = new TtlCache();
 
     public MarketingContactsService(MarketingContactsRepository repository,
                                      MarketingContactSquareLinkRepository squareLinks,
@@ -97,6 +105,10 @@ public class MarketingContactsService {
      * extra round trip — see the Contact record's field docs.
      */
     public MarketingContactDto contacts() {
+        return cache.get(CONTACTS_CACHE_KEY, CACHE_TTL, this::computeContacts);
+    }
+
+    private MarketingContactDto computeContacts() {
         try {
             // Each contact with a known Square customer needs its own round trip(s) to Square
             // (toContact -> fetchAppointments) — parallelizing across contacts, on top of the
@@ -135,6 +147,7 @@ public class MarketingContactsService {
     @Transactional
     public MarketingContactDto syncSquareLinks() {
         square.invalidate();
+        cache.invalidateAll();
         List<MarketingContactsRepository.RawContact> raw = repository.listAll();
         for (MarketingContactsRepository.RawContact r : raw) {
             if (r.squareCustomerId() != null) continue; // already linked via the tracked flow
@@ -150,7 +163,18 @@ public class MarketingContactsService {
         MarketingSyncStatus status = syncStatus.getSingleton();
         status.setLastSyncedAt(Instant.now());
         syncStatus.save(status);
-        return contacts();
+        // Bypasses the cache deliberately — this sync just ran live, so the result must reflect
+        // it immediately; contacts() would otherwise be a legitimate cache miss anyway (just
+        // cleared above), but computing directly avoids relying on that as an implementation detail.
+        MarketingContactDto fresh = computeContacts();
+        cache.get(CONTACTS_CACHE_KEY, CACHE_TTL, () -> fresh);
+        return fresh;
+    }
+
+    /** Backs the global "Sync now" button (see SquareSyncController) — so forcing a fresh Square
+     * pull also busts this service's own cached contacts list. */
+    public void invalidateCache() {
+        cache.invalidateAll();
     }
 
     /**
