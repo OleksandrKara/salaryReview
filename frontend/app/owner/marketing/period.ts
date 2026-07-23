@@ -44,10 +44,10 @@ export function monthToDateSoFarRange(): DateRange {
 
 /** Reads period/from/to off a URLSearchParams (or a plain searchParams object, e.g. a server
  * component's own `searchParams` prop) — defaults to `defaultPeriod` ('mtd', Month to date, unless
- * a tab overrides it — Funnel defaults to 'all' instead, since a funnel's drop-off shape is
- * normally read over its whole history, not just the current month) when period is absent or
- * unrecognized. 'custom' without both from and to falls back to the same default too, rather than
- * sending a half-specified custom range to the backend. */
+ * a tab overrides it — Overview and Funnel both default to 'all' instead, since their numbers are
+ * normally read over the whole history rather than just the current month) when period is absent
+ * or unrecognized. 'custom' without both from and to falls back to the same default too, rather
+ * than sending a half-specified custom range to the backend. */
 export function parsePeriodParams(
   searchParams: URLSearchParams | Record<string, string | string[] | undefined>,
   defaultPeriod: PeriodType = 'mtd',
