@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -33,9 +34,14 @@ public class FunnelAnalyticsService {
 
     private static final Logger log = LoggerFactory.getLogger(FunnelAnalyticsService.class);
 
+    // See docs/CACHING.md / MarketingDashboardService's own CACHE_TTL — same 10-min TTL and same
+    // "Sync now" escape hatch (see invalidateCache()).
+    private static final Duration CACHE_TTL = Duration.ofMinutes(10);
+
     private final FunnelAnalyticsRepository repository;
     private final MarketingDashboardRepository landingPageRepository;
     private final SquareClient square;
+    private final TtlCache cache = new TtlCache();
 
     public FunnelAnalyticsService(FunnelAnalyticsRepository repository,
                                    MarketingDashboardRepository landingPageRepository,
@@ -71,6 +77,11 @@ public class FunnelAnalyticsService {
      * traffic the owner explicitly hid.
      */
     public List<FunnelDashboardDto> funnel(String slug, Set<String> sources, LocalDate periodFrom, LocalDate periodTo) {
+        String key = "funnel:" + slug + ":" + sources + ":" + periodFrom + ":" + periodTo;
+        return cache.get(key, CACHE_TTL, () -> computeFunnel(slug, sources, periodFrom, periodTo));
+    }
+
+    private List<FunnelDashboardDto> computeFunnel(String slug, Set<String> sources, LocalDate periodFrom, LocalDate periodTo) {
         try {
             Optional<UUID> landingPageId = landingPageRepository.findLandingPageId(slug);
             if (landingPageId.isEmpty()) return List.of();
@@ -112,6 +123,12 @@ public class FunnelAnalyticsService {
         if (a == null) return b;
         if (b == null) return a;
         return a.isAfter(b) ? a : b;
+    }
+
+    /** Backs the global "Sync now" button (see SquareSyncController) — so forcing a fresh Square
+     * pull also busts this service's own cached funnel responses. */
+    public void invalidateCache() {
+        cache.invalidateAll();
     }
 
     private FunnelDashboardDto toDto(String slug, String flowKey, List<RawFunnelStep> steps,

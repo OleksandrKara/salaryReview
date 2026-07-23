@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -30,10 +31,17 @@ public class MarketingDashboardService {
 
     private static final Logger log = LoggerFactory.getLogger(MarketingDashboardService.class);
 
+    // See docs/CACHING.md — same 10-min TTL as SquareClient's own bookings/orders cache, for the
+    // same reason: this is a periodic-review tool, not a live dashboard, and "Sync now" (see
+    // SquareSyncController) busts this alongside SquareClient's cache for anyone who wants fresher
+    // numbers immediately.
+    private static final Duration CACHE_TTL = Duration.ofMinutes(10);
+
     private final MarketingDashboardRepository repository;
     private final MarketingContactsService contactsService;
     private final MarketingLandingProperties landingProperties;
     private final SquareClient square;
+    private final TtlCache cache = new TtlCache();
 
     public MarketingDashboardService(MarketingDashboardRepository repository,
                                       MarketingContactsService contactsService,
@@ -77,6 +85,11 @@ public class MarketingDashboardService {
      * pre-cutoff test traffic the owner explicitly hid.
      */
     public MarketingDashboardDto dashboard(String slug, Set<String> sources, LocalDate periodFrom, LocalDate periodTo) {
+        String key = "dashboard:" + slug + ":" + sources + ":" + periodFrom + ":" + periodTo;
+        return cache.get(key, CACHE_TTL, () -> computeDashboard(slug, sources, periodFrom, periodTo));
+    }
+
+    private MarketingDashboardDto computeDashboard(String slug, Set<String> sources, LocalDate periodFrom, LocalDate periodTo) {
         try {
             Optional<UUID> landingPageId = repository.findLandingPageId(slug);
             if (landingPageId.isEmpty()) {
@@ -133,6 +146,7 @@ public class MarketingDashboardService {
         }
         try {
             repository.renameVariant(variantId, newName.trim(), Slugs.slugify(newName));
+            cache.invalidateAll();
         } catch (DataIntegrityViolationException ex) {
             throw keyCollisionError();
         }
@@ -140,6 +154,7 @@ public class MarketingDashboardService {
 
     public void updateVariantDescription(UUID variantId, String description) {
         repository.updateVariantDescription(variantId, description == null || description.isBlank() ? null : description.trim());
+        cache.invalidateAll();
     }
 
     /** Blocks deletion with a friendly message when the variant has recorded page views or
@@ -149,6 +164,7 @@ public class MarketingDashboardService {
     public void deleteVariant(UUID variantId) {
         try {
             repository.deleteVariant(variantId);
+            cache.invalidateAll();
         } catch (DataIntegrityViolationException ex) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Can't delete — this variant has recorded page views or bookings. Set its weight to 0 instead to pull it out of rotation.");
@@ -167,7 +183,9 @@ public class MarketingDashboardService {
         MarketingDashboardRepository.VariantSource source = repository.findVariantSource(sourceVariantId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such variant"));
         try {
-            return repository.duplicateVariant(source, newName.trim(), Slugs.slugify(newName));
+            UUID newId = repository.duplicateVariant(source, newName.trim(), Slugs.slugify(newName));
+            cache.invalidateAll();
+            return newId;
         } catch (DataIntegrityViolationException ex) {
             throw keyCollisionError();
         }
@@ -186,6 +204,13 @@ public class MarketingDashboardService {
         UUID landingPageId = repository.findLandingPageId(slug)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such landing page"));
         repository.updateStatsSince(landingPageId, statsSince);
+        cache.invalidateAll();
+    }
+
+    /** Backs the global "Sync now" button (see SquareSyncController) — so forcing a fresh Square
+     * pull also busts this service's own cached dashboard responses, not just SquareClient's. */
+    public void invalidateCache() {
+        cache.invalidateAll();
     }
 
     private VariantStat toVariantStat(MarketingDashboardRepository.RawVariantStat raw, String slug, long followUpBookings) {

@@ -77,6 +77,11 @@ public class MarketingAnalyticsService {
     // that far back reasonably counts as a fresh re-acquisition anyway.
     private static final Duration BOOKING_HISTORY_LOOKBACK = Duration.ofDays(400);
 
+    // See docs/CACHING.md / MarketingDashboardService's own CACHE_TTL — same 10-min TTL and same
+    // "Sync now" escape hatch (see invalidateCache()). Covers both analytics() and adsReport() —
+    // this class's two expensive, ads-attributed-customer computations.
+    private static final Duration CACHE_TTL = Duration.ofMinutes(10);
+
     private final MarketingContactsRepository contactsRepository;
     private final MarketingContactsService contactsService;
     private final MarketingDashboardRepository dashboardRepository;
@@ -85,6 +90,7 @@ public class MarketingAnalyticsService {
     private final SalonConfigRepository salonConfig;
     private final AdSpendEntryRepository adSpendEntryRepository;
     private final java.time.Clock clock;
+    private final TtlCache cache = new TtlCache();
 
     @Autowired
     public MarketingAnalyticsService(
@@ -156,6 +162,11 @@ public class MarketingAnalyticsService {
     /** Same as the 3-arg overload, optionally scoped to a single landing page slug (e.g. "home") —
      * {@code slug == null} pools every page together, identical to the original behavior. */
     public MarketingAnalyticsDto analytics(LocalDate from, LocalDate to, Set<String> sources, String slug) {
+        String key = "analytics:" + from + ":" + to + ":" + sources + ":" + slug;
+        return cache.get(key, CACHE_TTL, () -> computeAnalytics(from, to, sources, slug));
+    }
+
+    private MarketingAnalyticsDto computeAnalytics(LocalDate from, LocalDate to, Set<String> sources, String slug) {
         Map<String, AdsCustomer> adsCustomers = resolveAdsCustomers(sources, slug);
         LocalDate today = LocalDate.now(clock.withZone(resolveZone()));
         // Ad spend is now tracked per landing page (see AdSpendEntry) — with no single page
@@ -282,6 +293,11 @@ public class MarketingAnalyticsService {
      * fetching the narrower raw range would silently drop those edge days from their bucket.
      */
     public MarketingAdsReportDto adsReport(LocalDate from, LocalDate to, Set<String> sources, String slug, PeriodKind periodKind) {
+        String key = "adsReport:" + from + ":" + to + ":" + sources + ":" + slug + ":" + periodKind;
+        return cache.get(key, CACHE_TTL, () -> computeAdsReport(from, to, sources, slug, periodKind));
+    }
+
+    private MarketingAdsReportDto computeAdsReport(LocalDate from, LocalDate to, Set<String> sources, String slug, PeriodKind periodKind) {
         String periodType = periodKind.name();
         LocalDate today = LocalDate.now(clock.withZone(resolveZone()));
         List<LocalDate[]> periods = switch (periodKind) {
@@ -590,7 +606,9 @@ public class MarketingAnalyticsService {
                 .amountSpent(amount.setScale(2, RoundingMode.HALF_UP))
                 .enteredBy(enteredBy)
                 .build();
-        return adSpendEntryRepository.save(entry);
+        AdSpendEntry saved = adSpendEntryRepository.save(entry);
+        cache.invalidateAll();
+        return saved;
     }
 
     /** Every entered spend row for one page, most recent period first — for the ad-spend-entry
@@ -614,7 +632,9 @@ public class MarketingAnalyticsService {
             entry.setPeriodStart(periodStart);
             entry.setPeriodEnd(periodEnd);
             entry.setAmountSpent(amount.setScale(2, RoundingMode.HALF_UP));
-            return adSpendEntryRepository.save(entry);
+            AdSpendEntry saved = adSpendEntryRepository.save(entry);
+            cache.invalidateAll();
+            return saved;
         });
     }
 
@@ -624,7 +644,14 @@ public class MarketingAnalyticsService {
     public boolean deleteAdSpendEntry(Long id) {
         if (!adSpendEntryRepository.existsById(id)) return false;
         adSpendEntryRepository.deleteById(id);
+        cache.invalidateAll();
         return true;
+    }
+
+    /** Backs the global "Sync now" button (see SquareSyncController) — so forcing a fresh Square
+     * pull also busts this service's own cached analytics()/adsReport() responses. */
+    public void invalidateCache() {
+        cache.invalidateAll();
     }
 
     /** Every Square customer id a channel-attributed contact resolves to, each tagged with that
