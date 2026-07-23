@@ -49,6 +49,18 @@ public class StaffDocumentService {
         return documents.findAllByOrderByExpirationDateAsc();
     }
 
+    /** One provider's own documents, soonest-expiring first — backs the self-service "My
+     * Documents" view (see StaffDocumentSelfController), so a provider only ever sees their own
+     * files, never another person's. */
+    public List<StaffDocument> listForProvider(Long providerId) {
+        return documents.findAllByProviderIdOrderByExpirationDateAsc(providerId);
+    }
+
+    /** Same as {@link #listForProvider}, for a manager login (identified by their own app_user id). */
+    public List<StaffDocument> listForManager(Long appUserId) {
+        return documents.findAllByAppUserIdOrderByExpirationDateAsc(appUserId);
+    }
+
     public Optional<StaffDocument> get(Long id) {
         return documents.findById(id);
     }

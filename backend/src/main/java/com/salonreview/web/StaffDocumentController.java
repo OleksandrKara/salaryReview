@@ -7,6 +7,7 @@ import com.salonreview.domain.StaffDocument;
 import com.salonreview.repo.AppUserRepository;
 import com.salonreview.repo.ProviderRepository;
 import com.salonreview.service.StaffDocumentService;
+import com.salonreview.web.dto.StaffDocumentDto;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -15,7 +16,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -108,8 +108,10 @@ public class StaffDocumentController {
         return service.delete(id) ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
     }
 
-    private static StaffDocumentDto toDto(StaffDocument d, Map<Long, String> providerNames,
-                                          Map<Long, String> userNames, LocalDate today) {
+    /** Package-private (not private) so StaffDocumentSelfController's own read-only endpoints can
+     * build the exact same DTO shape for a person's own documents. */
+    static StaffDocumentDto toDto(StaffDocument d, Map<Long, String> providerNames,
+                                  Map<Long, String> userNames, LocalDate today) {
         boolean isProvider = d.getProviderId() != null;
         Long personId = isProvider ? d.getProviderId() : d.getAppUserId();
         String personName = isProvider
@@ -128,21 +130,6 @@ public class StaffDocumentController {
                 d.getCreatedBy(),
                 d.getCreatedAt());
     }
-
-    public record StaffDocumentDto(
-            Long id,
-            /** "PROVIDER" or "MANAGER". */
-            String personType,
-            Long personId,
-            String personName,
-            String documentType,
-            String label,
-            String fileName,
-            LocalDate expirationDate,
-            /** "OK" | "EXPIRING_SOON" | "EXPIRED" — see StaffDocumentService#statusFor. */
-            String status,
-            String createdBy,
-            Instant createdAt) {}
 
     /** Every field optional — null means "leave as-is" (see StaffDocumentService#update).
      * expirationDate is yyyy-MM-dd, same wire format as the multipart create() form's own field. */

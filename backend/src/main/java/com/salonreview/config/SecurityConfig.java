@@ -62,6 +62,9 @@ public class SecurityConfig {
                                 .hasAnyRole("OWNER", "ADS_MANAGER")
                         .requestMatchers("/api/users/**", "/api/owner/**", "/api/rag/admin/**").hasRole("OWNER")
                         .requestMatchers("/api/settlements/me/**").hasRole("PROVIDER")
+                        // A provider/manager's own read-only "My Documents" — list + download only,
+                        // never create/edit/delete (that stays under /api/owner/** above, OWNER-only).
+                        .requestMatchers("/api/staff-documents/me/**").hasAnyRole("PROVIDER", "MANAGER")
                         // RAG admin (upload/approve/delete/config) is OWNER-only above; asking +
                         // feedback are OWNER+MANAGER. The admin matcher is listed first so it wins.
                         .requestMatchers("/api/rag/**").hasAnyRole("OWNER", "MANAGER")

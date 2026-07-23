@@ -121,6 +121,20 @@ const STRINGS = {
   navMyPay: { EN: 'My pay', RU: 'Моя зарплата' },
   navMyTime: { EN: 'My time', RU: 'Моё время' },
   navManagerTime: { EN: 'Manager time', RU: 'Время менеджеров' },
+  navMyDocuments: { EN: 'My Documents', RU: 'Мои документы' },
+
+  // My Documents (provider/manager self-service, read-only)
+  myDocumentsTitle: { EN: 'My Documents', RU: 'Мои документы' },
+  myDocumentsSubtitle: {
+    EN: 'Your contracts, licenses, and other documents on file. View and download only — ask the owner for any changes.',
+    RU: 'Ваши контракты, лицензии и другие документы. Только просмотр и скачивание — по любым изменениям обращайтесь к владельцу.',
+  },
+  myDocumentsEmpty: { EN: 'No documents on file yet.', RU: 'Пока нет документов.' },
+  myDocumentsExpiresOn: { EN: 'Expires', RU: 'Истекает' },
+  myDocumentsDownload: { EN: 'Download', RU: 'Скачать' },
+  myDocumentsStatusOk: { EN: 'Valid', RU: 'Действителен' },
+  myDocumentsStatusExpiringSoon: { EN: 'Expiring soon', RU: 'Истекает скоро' },
+  myDocumentsStatusExpired: { EN: 'Expired', RU: 'Истёк' },
 
   // Manager time tracking
   timeMyTitle: { EN: 'My time', RU: 'Моё время' },
