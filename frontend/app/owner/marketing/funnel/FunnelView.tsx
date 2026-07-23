@@ -1,9 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { api } from '../../../lib/api';
 import type { FunnelAnalysisResult, FunnelDashboardData, MarketingLandingPage, Role, TrafficSourceKey } from '../../../lib/types';
 import TrafficSourceFilter, { ADS_ONLY_SOURCES, ALL_TRAFFIC_SOURCES } from '../TrafficSourceFilter';
+import PeriodFilter from '../PeriodFilter';
+import { parsePeriodParams, periodToBounds } from '../period';
+import type { PeriodSelection } from '../period';
 
 /** The AI "Analyze Funnel" feature has its own, separate ads/all contract (see api.analyzeFunnel)
  * — it isn't part of this tab's 5-way filter. Selecting every bucket maps to "all"; anything
@@ -350,8 +354,12 @@ export default function FunnelView({
   pages: MarketingLandingPage[];
   role: Role;
 }) {
+  const searchParams = useSearchParams();
   const [data, setData] = useState(initialData);
   const [sources, setSources] = useState<Set<TrafficSourceKey>>(() => new Set(ADS_ONLY_SOURCES));
+  // Defaults to 'all' (not the usual 'mtd') — a funnel's drop-off shape is normally read over its
+  // whole history, not just the current month. See ../period's parsePeriodParams.
+  const [selection, setSelection] = useState<PeriodSelection>(() => parsePeriodParams(searchParams, 'all'));
   const [compareMode, setCompareMode] = useState(false);
   const [compareData, setCompareData] = useState<Record<string, FunnelDashboardData[]>>({});
   const [loadingCompare, setLoadingCompare] = useState(false);
@@ -364,11 +372,14 @@ export default function FunnelView({
   // and having every click 403/404.
   const canAnalyze = role === 'OWNER';
 
-  async function loadCompareData(nextSources: Set<TrafficSourceKey>) {
+  async function loadCompareData(nextSources: Set<TrafficSourceKey>, nextSelection: PeriodSelection) {
     if (otherPages.length === 0) return;
     setLoadingCompare(true);
     try {
-      const results = await Promise.all(otherPages.map((p) => api.getMarketingFunnel(p.slug, nextSources)));
+      const bounds = periodToBounds(nextSelection);
+      const results = await Promise.all(
+        otherPages.map((p) => api.getMarketingFunnel(p.slug, nextSources, bounds.from, bounds.to)),
+      );
       const next: Record<string, FunnelDashboardData[]> = {};
       otherPages.forEach((p, i) => {
         next[p.slug] = results[i];
@@ -381,7 +392,7 @@ export default function FunnelView({
 
   async function toggleCompare() {
     if (!compareMode && Object.keys(compareData).length === 0) {
-      await loadCompareData(sources);
+      await loadCompareData(sources, selection);
     }
     setCompareMode((v) => !v);
   }
@@ -390,11 +401,29 @@ export default function FunnelView({
     setSources(next);
     setLoadingSources(true);
     try {
-      const fresh = await api.getMarketingFunnel(slug, next);
+      const bounds = periodToBounds(selection);
+      const fresh = await api.getMarketingFunnel(slug, next, bounds.from, bounds.to);
       setData(fresh);
       // Compare data was fetched for the old selection — invalidate and refetch if already showing.
       if (compareMode) {
-        await loadCompareData(next);
+        await loadCompareData(next, selection);
+      } else {
+        setCompareData({});
+      }
+    } finally {
+      setLoadingSources(false);
+    }
+  }
+
+  async function changePeriod(next: PeriodSelection) {
+    setSelection(next);
+    setLoadingSources(true);
+    try {
+      const bounds = periodToBounds(next);
+      const fresh = await api.getMarketingFunnel(slug, sources, bounds.from, bounds.to);
+      setData(fresh);
+      if (compareMode) {
+        await loadCompareData(sources, next);
       } else {
         setCompareData({});
       }
@@ -414,6 +443,9 @@ export default function FunnelView({
             onChange={changeSources}
             description="Counts visitors, funnel steps, and bookings for the selected source(s) only."
           />
+        </div>
+        <div className="mb-4">
+          <PeriodFilter value={selection} onChange={changePeriod} />
         </div>
         <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">
           No booking-funnel data recorded yet for this landing page under the selected source(s) — try All traffic.
@@ -444,6 +476,10 @@ export default function FunnelView({
                 : `Compare with ${otherPages.map((p) => p.name).join(', ')}`}
           </button>
         )}
+      </div>
+
+      <div className="mb-4">
+        <PeriodFilter value={selection} onChange={changePeriod} disabled={loadingSources} />
       </div>
 
       <div className={compareMode ? 'grid gap-4 lg:grid-cols-2' : 'space-y-4'}>

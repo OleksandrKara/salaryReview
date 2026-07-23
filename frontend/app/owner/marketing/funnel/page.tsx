@@ -3,19 +3,25 @@ import { serverApi } from '../../../lib/serverApi';
 import PageHeader from '../../../components/PageHeader';
 import MarketingTabs from '../MarketingTabs';
 import FunnelView from './FunnelView';
+import { parsePeriodParams, periodToBounds } from '../period';
 
 const DEFAULT_SLUG = 'mani';
 
 export default async function MarketingFunnelPage({
   searchParams,
 }: {
-  searchParams: Promise<{ slug?: string }>;
+  searchParams: Promise<{ slug?: string; period?: string; from?: string; to?: string }>;
 }) {
-  const { slug } = await searchParams;
+  const params = await searchParams;
+  const { slug } = params;
   const resolvedSlug = slug ?? DEFAULT_SLUG;
+  // Same shared period filter every marketing tab reads (see PeriodFilter/../period) — defaults
+  // to 'all' here specifically (not the usual 'mtd'), since a funnel's drop-off shape is normally
+  // read over its whole history rather than just the current month.
+  const bounds = periodToBounds(parsePeriodParams(params, 'all'));
   const [me, data, pages] = await Promise.all([
     serverApi.getMe(),
-    serverApi.getMarketingFunnel(slug),
+    serverApi.getMarketingFunnel(slug, undefined, bounds.from, bounds.to),
     serverApi.getMarketingPages(),
   ]);
 
