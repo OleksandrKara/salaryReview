@@ -11,6 +11,7 @@ import com.salonreview.square.SquareMonthAggregator.AttributedService;
 import com.salonreview.web.dto.MarketingAdsReportDto;
 import com.salonreview.web.dto.MarketingAdsReportDto.PeriodRow;
 import com.salonreview.web.dto.MarketingAnalyticsDto;
+import com.salonreview.web.dto.MarketingAnalyticsDto.CancelledAppointment;
 import com.salonreview.web.dto.MarketingAnalyticsDto.CompletedAppointment;
 import com.salonreview.web.dto.MarketingAnalyticsDto.Segment;
 import com.salonreview.web.dto.MarketingAnalyticsDto.UpcomingAppointment;
@@ -142,8 +143,8 @@ public class MarketingAnalyticsService {
         // ads-report-consolidation), where a slug is always present.
         BigDecimal adSpend = slug == null ? ZERO_MONEY : resolveSpend(slug, today.withDayOfMonth(1), today).amount();
         if (adsCustomers.isEmpty()) {
-            return new MarketingAnalyticsDto(
-                    from, to, EMPTY_SEGMENT, EMPTY_SEGMENT, EMPTY_SEGMENT, List.of(), List.of(), EMPTY_SEGMENT, adSpend);
+            return new MarketingAnalyticsDto(from, to, EMPTY_SEGMENT, EMPTY_SEGMENT, EMPTY_SEGMENT, List.of(), List.of(),
+                    List.of(), EMPTY_SEGMENT, adSpend);
         }
 
         Map<String, List<SquareClient.Booking>> bookingHistory = bookingHistoryByCustomer(adsCustomers.keySet());
@@ -164,31 +165,36 @@ public class MarketingAnalyticsService {
         // tags each paid service with the booking that produced it, so this is free (no extra Square call).
         Set<String> paidBookingIds = monthToDate.stream()
                 .map(AttributedService::bookingId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
-        // "Anticipated from upcoming appointments" is scoped to contacts actually captured within
-        // [from, to] (firstTouch) — unlike Completed above (any ads customer's payment landing in
-        // [from, to]), a long-standing customer's unrelated future booking shouldn't inflate this
-        // section just because they're also ads-attributed; the owner is looking at what this
-        // specific window's leads have booked ahead, not the whole account's forward pipeline.
+        // customersCapturedInRange tags (not restricts) upcoming/cancelled below — whether a
+        // customer's own firstTouch falls within [from, to], the same cohort the Ads Report's
+        // "Anticipated (outside period)"/"Cancelled (outside period)" figures use. upcoming/
+        // cancelled themselves are fetched for every ads customer (unrestricted), matching
+        // adsReport()'s own scope for "this period" figures (Completed, Anticipated (this period),
+        // Cancelled (this period) all count any ads customer whose booking date falls in range) —
+        // so the drill-down's own filtered totals can reconcile exactly against every headline
+        // number above it, not just the ones a narrower fetch happened to include.
         Set<String> customersCapturedInRange = adsCustomers.entrySet().stream()
                 .filter(e -> withinPeriod(e.getValue().firstTouch().atZone(java.time.ZoneOffset.UTC).toLocalDate(), from, to))
                 .map(Map.Entry::getKey)
                 .collect(java.util.stream.Collectors.toSet());
-        UpcomingResult upcomingResult =
-                upcomingAppointments(customersCapturedInRange, freshCustomerIds, paidBookingIds, today, bookingHistory);
+        UpcomingResult upcomingResult = upcomingAppointments(
+                adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today, bookingHistory, customersCapturedInRange);
         List<UpcomingAppointment> upcoming = new ArrayList<>(upcomingResult.appointments());
+        List<CancelledAppointment> cancelled = buildCancelledAppointments(
+                adsCustomers.keySet(), freshCustomerIds, customersCapturedInRange, bookingHistory);
 
         // Folds manager-follow-up appointments into the completed/upcoming lists (not into the
         // all/fresh/returning segment stats above, which stay scoped to the tracked flow's own
         // AttributedService rows) — see design.md D6, so Ads Report's drill-down agrees with the
         // adsReport summary numbers above it rather than silently undercounting. alreadyCountedBookingIds
         // (every booking the tracked flow already surfaced, completed or upcoming) keeps a follow-up
-        // from re-adding the same visit a second time under the same customer. The upcoming side is
-        // further restricted to customersCapturedInRange, same reasoning as above.
+        // from re-adding the same visit a second time under the same customer.
         Set<String> alreadyCountedBookingIds = bookingIdsOf(inRange, upcomingResult.bookingIds());
         mergeFollowUpsInto(resolveFollowUps(slug), freshCustomerIds, today, completed, upcoming,
                 alreadyCountedBookingIds, customersCapturedInRange);
 
-        return new MarketingAnalyticsDto(from, to, all, fresh, returning, upcoming, completed, currentMonthToDate, adSpend);
+        return new MarketingAnalyticsDto(
+                from, to, all, fresh, returning, upcoming, completed, cancelled, currentMonthToDate, adSpend);
     }
 
     /** Collapses [from, to]'s matched payroll lines (inRange — the same list the segments above are
@@ -280,7 +286,11 @@ public class MarketingAnalyticsService {
                 .map(AttributedService::bookingId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
         UpcomingResult upcomingResult = adsCustomers.isEmpty()
                 ? new UpcomingResult(List.of(), Set.of())
-                : upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today, bookingHistory);
+                // capturedInRange tagging is irrelevant here — adsReport() only ever reads
+                // aggregated counts off these UpcomingAppointment objects (see buildPeriodRow),
+                // never serializes the objects themselves to any DTO, and computes its own
+                // per-row captured-in-range cohort separately (anticipatedOutsidePeriodForCustomersCapturedIn).
+                : upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today, bookingHistory, null);
         List<UpcomingAppointment> upcoming = new ArrayList<>(upcomingResult.appointments());
 
         List<FollowUpAppointment> followUps = resolveFollowUps(slug);
@@ -340,12 +350,16 @@ public class MarketingAnalyticsService {
      * buildCompletedAppointments}' own "no match, not shown" convention. A follow-up whose
      * bookingId is already in {@code alreadyCountedBookingIds} is skipped outright — it's already
      * represented in {@code completed}/{@code upcoming} via the tracked flow, and adding it again
-     * here would show the same customer and visit twice in the breakdown.
+     * here would show the same customer and visit twice in the breakdown. {@code
+     * capturedInRangeIds} tags (never restricts — every follow-up is always added) each new
+     * UpcomingAppointment's capturedInRange field; {@code null} (adsReport()'s call) just tags
+     * everything false, since that field goes unread there (see analytics()'s own call site for
+     * where it matters).
      */
     private void mergeFollowUpsInto(
             List<FollowUpAppointment> followUps, Set<String> freshCustomerIds, LocalDate today,
             List<CompletedAppointment> completed, List<UpcomingAppointment> upcoming,
-            Set<String> alreadyCountedBookingIds, Set<String> upcomingAllowedCustomerIds) {
+            Set<String> alreadyCountedBookingIds, Set<String> capturedInRangeIds) {
         if (followUps.isEmpty()) return;
         Set<String> customerIds = followUps.stream()
                 .map(FollowUpAppointment::customerId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
@@ -364,11 +378,9 @@ public class MarketingAnalyticsService {
                 completed.add(new CompletedAppointment(customerId, customerName, serviceName, date,
                         a.collectedAmount().setScale(2, RoundingMode.HALF_UP), a.paymentChannel(), fresh));
             } else if (!date.isBefore(today)) {
-                // upcomingAllowedCustomerIds == null means "no restriction" (adsReport()'s own call,
-                // which splits by appointment date, not by when the contact was captured).
-                if (upcomingAllowedCustomerIds != null && !upcomingAllowedCustomerIds.contains(customerId)) continue;
                 upcoming.add(new UpcomingAppointment(customerId, customerName, serviceName, a.startAt(),
-                        a.price() == null ? ZERO_MONEY : a.price().setScale(2, RoundingMode.HALF_UP), fresh));
+                        a.price() == null ? ZERO_MONEY : a.price().setScale(2, RoundingMode.HALF_UP), fresh,
+                        capturedInRangeIds != null && capturedInRangeIds.contains(customerId)));
             }
         }
     }
@@ -764,7 +776,7 @@ public class MarketingAnalyticsService {
 
     private UpcomingResult upcomingAppointments(
             Set<String> adsCustomerIds, Set<String> freshCustomerIds, Set<String> paidBookingIds, LocalDate today,
-            Map<String, List<SquareClient.Booking>> bookingHistory) {
+            Map<String, List<SquareClient.Booking>> bookingHistory, Set<String> capturedInRangeIds) {
         record FutureBooking(String customerId, SquareClient.Booking booking) {}
         // Filters the same booking history freshCustomerIds already fetched (400-day lookback,
         // which already extends through Square's FUTURE_BOOKING_HORIZON regardless of since) —
@@ -806,13 +818,70 @@ public class MarketingAnalyticsService {
                     names.isEmpty() ? "Service" : String.join(" + ", names),
                     Instant.parse(f.booking().startAt()),
                     price.setScale(2, RoundingMode.HALF_UP),
-                    freshCustomerIds.contains(f.customerId())
+                    freshCustomerIds.contains(f.customerId()),
+                    capturedInRangeIds != null && capturedInRangeIds.contains(f.customerId())
             ));
         }
         result.sort(Comparator.comparing(UpcomingAppointment::startAt));
         Set<String> bookingIds = future.stream()
                 .map(f -> f.booking().id()).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
         return new UpcomingResult(result, bookingIds);
+    }
+
+    /** Mirrors {@link #upcomingAppointments} but for bookings that didn't happen (cancelled by
+     * either side, declined, or no-show) — any date, past or future relative to today, since a
+     * booking can be cancelled ahead of its own date. price is a catalog estimate, same convention
+     * as UpcomingAppointment (there's nothing actually collected to report). Always scoped to every
+     * ads customer (unrestricted), matching the Ads Report's own "Cancelled" count — {@code
+     * capturedInRangeIds} only tags capturedInRange, exactly like upcomingAppointments above.
+     */
+    private List<CancelledAppointment> buildCancelledAppointments(
+            Set<String> adsCustomerIds, Set<String> freshCustomerIds, Set<String> capturedInRangeIds,
+            Map<String, List<SquareClient.Booking>> bookingHistory) {
+        record CancelledBooking(String customerId, SquareClient.Booking booking) {}
+        List<CancelledBooking> cancelledBookings = adsCustomerIds.stream()
+                .flatMap(id -> bookingHistory.getOrDefault(id, List.of()).stream()
+                        .filter(b -> !didHappen(b))
+                        .filter(b -> bookingStartDate(b) != null)
+                        .map(b -> new CancelledBooking(id, b)))
+                .toList();
+        if (cancelledBookings.isEmpty()) return List.of();
+
+        List<String> variationIds = cancelledBookings.stream()
+                .flatMap(c -> c.booking().appointmentSegments() == null ? Stream.<String>empty()
+                        : c.booking().appointmentSegments().stream()
+                                .map(SquareClient.AppointmentSegment::serviceVariationId))
+                .filter(Objects::nonNull)
+                .toList();
+        Map<String, BigDecimal> prices = square.catalogPrices(variationIds);
+        Map<String, String> serviceNames = square.catalogNames(variationIds);
+        Map<String, String> customerNames = square.customerNames(adsCustomerIds);
+
+        List<CancelledAppointment> result = new ArrayList<>();
+        for (CancelledBooking c : cancelledBookings) {
+            var segs = c.booking().appointmentSegments();
+            BigDecimal price = BigDecimal.ZERO;
+            List<String> names = new ArrayList<>();
+            if (segs != null) {
+                for (var seg : segs) {
+                    price = price.add(prices.getOrDefault(seg.serviceVariationId(), BigDecimal.ZERO));
+                    String name = serviceNames.get(seg.serviceVariationId());
+                    if (name != null) names.add(name);
+                }
+            }
+            result.add(new CancelledAppointment(
+                    c.customerId(),
+                    customerNames.getOrDefault(c.customerId(), "Customer"),
+                    names.isEmpty() ? "Service" : String.join(" + ", names),
+                    bookingStartDate(c.booking()),
+                    price.setScale(2, RoundingMode.HALF_UP),
+                    c.booking().status(),
+                    freshCustomerIds.contains(c.customerId()),
+                    capturedInRangeIds != null && capturedInRangeIds.contains(c.customerId())
+            ));
+        }
+        result.sort(Comparator.comparing(CancelledAppointment::date).reversed());
+        return result;
     }
 
     /** Best-effort: a customer whose Square booking lookup fails is simply excluded from the

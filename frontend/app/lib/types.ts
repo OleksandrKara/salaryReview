@@ -893,6 +893,12 @@ export interface MarketingUpcomingAppointment {
   price: number;
   /** Whether Square's record for this customer was created fresh off this ad touch. */
   freshFromAds: boolean;
+  /** Whether this customer's own firstTouch fell within the requested [from, to] — the cohort the
+   * Ads Report's "Anticipated (outside period)" figure is restricted to. Every ads customer's
+   * upcoming appointments are included in this list (not just this cohort); use this flag to split
+   * it into "this period" (startAt within [from, to], any customer) vs. "outside period" (startAt
+   * outside it, but only where this is true) and match those headline figures exactly. */
+  capturedInRange: boolean;
 }
 
 export interface MarketingCompletedAppointment {
@@ -910,6 +916,23 @@ export interface MarketingCompletedAppointment {
   freshFromAds: boolean;
 }
 
+export interface MarketingCancelledAppointment {
+  customerId: string;
+  customerName: string;
+  /** Multi-service visits are joined with " + ", e.g. "Manicure + Pedicure". */
+  serviceName: string;
+  /** ISO-8601 date (yyyy-MM-dd) — the booking's own start date, any date past or future relative
+   * to today (a booking can be cancelled ahead of its own date). */
+  date: string;
+  /** Catalog list-price estimate — there's nothing actually collected to report here. */
+  price: number;
+  /** Square's own raw booking status. */
+  status: 'CANCELLED_BY_CUSTOMER' | 'CANCELLED_BY_SELLER' | 'DECLINED' | 'NO_SHOW';
+  freshFromAds: boolean;
+  /** Same meaning as MarketingUpcomingAppointment.capturedInRange. */
+  capturedInRange: boolean;
+}
+
 export interface MarketingAnalyticsData {
   /** ISO-8601 date (yyyy-MM-dd), inclusive on both ends. */
   from: string;
@@ -925,6 +948,9 @@ export interface MarketingAnalyticsData {
   /** Every already-completed, actually-paid appointment within [from, to] — one row per booking,
    * with the real collected amount and payment channel. Comps are excluded (nothing collected). */
   completed: MarketingCompletedAppointment[];
+  /** Every real booking for an ads-attributed customer that didn't happen (cancelled by either
+   * side, declined, or no-show) — any date, regardless of [from, to]. */
+  cancelled: MarketingCancelledAppointment[];
   /** Gross revenue for every ads customer, fixed to [1st of the current month, today] — independent
    * of [from, to], so the ROI card always means "this month". */
   currentMonthToDate: MarketingAnalyticsSegment;

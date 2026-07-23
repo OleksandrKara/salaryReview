@@ -21,10 +21,10 @@ import type {
   MarketingAdsReportPeriod,
   MarketingAnalyticsData,
   MarketingAnalyticsSegment,
+  MarketingCancelledAppointment,
   MarketingCompletedAppointment,
   MarketingCustomerHistory,
   MarketingLandingPage,
-  MarketingUpcomingAppointment,
   TrafficSourceKey,
 } from '../../../lib/types';
 import { Spinner } from '../../../components/Spinner';
@@ -215,12 +215,158 @@ function formatWhatsAppReport(
   return lines.join('\n');
 }
 
+// --- Appointment ledger (drill-down popup + "View breakdown") ---
+//
+// Every figure in the Revenue/Bookings blocks above is a sum or count over some set of individual
+// appointments — this section normalizes MarketingAnalyticsData's three separate lists (completed/
+// upcoming/cancelled, three different shapes) into one common row shape, tagged with exactly the
+// category a reader would expect to find it under if they clicked that figure. Two UIs share this:
+// a per-figure popup (LedgerModal, "look at this one number") and the "View breakdown" section
+// (BreakdownDrilldown, "look at everything at once") — see AppointmentLedger below.
+
+type LedgerFilter = 'all' | 'completed' | 'anticipated-period' | 'anticipated-outside' | 'cancelled-period' | 'cancelled-outside';
+
+interface LedgerRow {
+  key: string;
+  customerId: string;
+  customerName: string;
+  serviceName: string;
+  /** ISO-8601 date (yyyy-MM-dd) — the day this row is "dated" on, whatever category it's in. */
+  date: string;
+  /** Pre-formatted for display: a still-upcoming appointment shows its actual booked time
+   * (fmtAppointment, "Today · 2:30 PM") since that's the whole point of an anticipated row; a
+   * completed/cancelled one — already in the past — just shows the day (fmtDay). */
+  dateLabel: string;
+  amount: number;
+  /** Whether `amount` is a real collected total or a catalog-price estimate (upcoming/cancelled
+   * appointments haven't actually been paid, so there's nothing real to report there). */
+  amountKind: 'collected' | 'estimate';
+  category: Exclude<LedgerFilter, 'all'>;
+  freshFromAds: boolean;
+  paymentChannel?: MarketingCompletedAppointment['paymentChannel'];
+  cancellationStatus?: MarketingCancelledAppointment['status'];
+}
+
+const LEDGER_FILTERS: LedgerFilter[] = [
+  'all', 'completed', 'anticipated-period', 'anticipated-outside', 'cancelled-period', 'cancelled-outside',
+];
+
+const LEDGER_FILTER_LABELS: Record<LedgerFilter, string> = {
+  all: 'All',
+  completed: 'Collected',
+  'anticipated-period': 'Anticipated (period)',
+  'anticipated-outside': 'Anticipated (outside)',
+  'cancelled-period': 'Cancelled',
+  'cancelled-outside': 'Cancelled (outside)',
+};
+
+/** Builds the unified row list from a MarketingAnalyticsData response. Anticipated/Cancelled rows
+ * whose date falls outside [data.from, data.to] AND whose customer wasn't captured (firstTouch)
+ * within that same window are silently dropped — exactly the set the Ads Report's own headline
+ * "Anticipated (outside period)"/Cancelled figures exclude too (see MarketingAnalyticsService's
+ * capturedInRange doc comments), so this ledger's own totals reconcile against those figures
+ * exactly rather than showing a bigger, harder-to-explain number.
+ */
+function buildLedgerRows(data: MarketingAnalyticsData): LedgerRow[] {
+  const rows: LedgerRow[] = [];
+  for (const c of data.completed) {
+    rows.push({
+      key: `completed-${c.customerId}-${c.date}-${c.serviceName}`,
+      customerId: c.customerId, customerName: c.customerName, serviceName: c.serviceName,
+      date: c.date, dateLabel: fmtDay(c.date), amount: c.collected, amountKind: 'collected', category: 'completed',
+      freshFromAds: c.freshFromAds, paymentChannel: c.paymentChannel,
+    });
+  }
+  for (const u of data.upcoming) {
+    const date = u.startAt.slice(0, 10);
+    const inPeriod = date >= data.from && date <= data.to;
+    if (!inPeriod && !u.capturedInRange) continue;
+    rows.push({
+      key: `upcoming-${u.customerId}-${u.startAt}`,
+      customerId: u.customerId, customerName: u.customerName, serviceName: u.serviceName,
+      date, dateLabel: fmtAppointment(u.startAt), amount: u.price, amountKind: 'estimate',
+      category: inPeriod ? 'anticipated-period' : 'anticipated-outside',
+      freshFromAds: u.freshFromAds,
+    });
+  }
+  for (const c of data.cancelled) {
+    const inPeriod = c.date >= data.from && c.date <= data.to;
+    if (!inPeriod && !c.capturedInRange) continue;
+    rows.push({
+      key: `cancelled-${c.customerId}-${c.date}-${c.serviceName}`,
+      customerId: c.customerId, customerName: c.customerName, serviceName: c.serviceName,
+      date: c.date, dateLabel: fmtDay(c.date), amount: c.price, amountKind: 'estimate',
+      category: inPeriod ? 'cancelled-period' : 'cancelled-outside',
+      freshFromAds: c.freshFromAds, cancellationStatus: c.status,
+    });
+  }
+  // Most-recent first throughout, including "All" — a still-upcoming row's date is today or
+  // later, so it naturally floats to the top ("what's coming up"), with history below it, the
+  // same reading order a bank statement uses.
+  rows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  return rows;
+}
+
+function countLedgerRows(rows: LedgerRow[]): Record<LedgerFilter, number> {
+  const counts: Record<LedgerFilter, number> = {
+    all: rows.length, completed: 0, 'anticipated-period': 0, 'anticipated-outside': 0,
+    'cancelled-period': 0, 'cancelled-outside': 0,
+  };
+  for (const r of rows) counts[r.category] += 1;
+  return counts;
+}
+
+const CANCELLATION_STATUS_LABELS: Record<MarketingCancelledAppointment['status'], string> = {
+  CANCELLED_BY_CUSTOMER: 'Cancelled by customer',
+  CANCELLED_BY_SELLER: 'Cancelled by salon',
+  DECLINED: 'Declined',
+  NO_SHOW: 'No-show',
+};
+
 type PeriodType = 'week' | 'month' | 'mtd' | 'custom';
 type ViewMode = 'table' | 'text' | 'chart';
 
 const WEEK_PRESETS = [4, 8, 12];
 const MONTH_PRESETS = [3, 6, 12];
 const DEFAULT_SLUG = 'mani';
+
+/** Fetches MarketingAnalyticsData on demand — not on mount — since it's a live, per-customer
+ * Square sweep (bookingsForCustomer for every ads-attributed contact), the same reason "View
+ * breakdown" has always been an opt-in expand rather than loaded eagerly. `ensureLoaded()` is
+ * idempotent and safe to call from multiple places (a popup click, "View breakdown" opening) —
+ * once triggered, later changes to from/to/sources/slug still refetch, but no second fetch fires
+ * just because a second consumer also wants the data that's already loading/loaded. Shared by both
+ * consumers so they show the exact same snapshot and never double the Square load.
+ */
+function useAnalyticsBreakdown(from: string, to: string, sources: Set<TrafficSourceKey>, slug?: string) {
+  const [data, setData] = useState<MarketingAnalyticsData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [triggered, setTriggered] = useState(false);
+
+  useEffect(() => {
+    if (!triggered) return;
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError('');
+      try {
+        const result = await api.getMarketingAnalytics(from, to, sources, slug);
+        if (!cancelled) { setData(result); setError(''); }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load breakdown.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    // Deferred a microtask out so setLoading(true) doesn't run synchronously inside the effect
+    // body itself — same pattern AdsReportView's own mount-fetch effect already uses below.
+    void Promise.resolve().then(load);
+    return () => { cancelled = true; };
+  }, [triggered, from, to, sources, slug]);
+
+  return { data, loading, error, ensureLoaded: () => setTriggered(true) };
+}
 
 export default function AdsReportView({
   initialData,
@@ -327,6 +473,15 @@ export default function AdsReportView({
   // table's ROI columns, and the WhatsApp text export all agreeing on whether to show it.
   const showRoi = totals.adSpend > 0;
 
+  // Shared by the per-figure popup and "View breakdown" below, so both ever only fetch once and
+  // always agree on what they show — see useAnalyticsBreakdown's own comment.
+  const analyticsBreakdown = useAnalyticsBreakdown(totals.periodStart, totals.periodEnd, sources, slug);
+  const [popupFilter, setPopupFilter] = useState<LedgerFilter | null>(null);
+  function openLedgerPopup(filter: LedgerFilter) {
+    analyticsBreakdown.ensureLoaded();
+    setPopupFilter(filter);
+  }
+
   return (
     <div>
       <TrafficSourceFilter
@@ -408,9 +563,9 @@ export default function AdsReportView({
       </p>
 
       <div className={`mt-4 flex flex-col gap-3 transition-opacity ${loading ? 'opacity-50' : ''}`}>
-        <MoneyBreakdown row={totals} layout="horizontal" lang={lang} />
+        <MoneyBreakdown row={totals} layout="horizontal" lang={lang} onExpand={openLedgerPopup} />
         {showRoi && <ROIBreakdown row={totals} layout="horizontal" lang={lang} />}
-        <BookingsBreakdown row={totals} layout="horizontal" lang={lang} />
+        <BookingsBreakdown row={totals} layout="horizontal" lang={lang} onExpand={openLedgerPopup} />
       </div>
 
       {data.periods.length === 0 ? (
@@ -436,7 +591,10 @@ export default function AdsReportView({
       <div className="mt-8 border-t border-zinc-100 pt-6">
         <button
           type="button"
-          onClick={() => setShowBreakdown((v) => !v)}
+          onClick={() => {
+            setShowBreakdown((v) => !v);
+            analyticsBreakdown.ensureLoaded();
+          }}
           className="text-sm font-medium text-blue-600 hover:underline"
         >
           {showBreakdown ? 'Hide breakdown' : 'View breakdown'}
@@ -445,13 +603,24 @@ export default function AdsReportView({
           <BreakdownDrilldown
             from={totals.periodStart}
             to={totals.periodEnd}
-            sources={sources}
-            slug={slug}
+            data={analyticsBreakdown.data}
+            loading={analyticsBreakdown.loading}
+            error={analyticsBreakdown.error}
           />
         )}
       </div>
 
       <AdSpendEntryForm slug={slug} />
+
+      {popupFilter && (
+        <LedgerModal
+          filter={popupFilter}
+          onClose={() => setPopupFilter(null)}
+          data={analyticsBreakdown.data}
+          loading={analyticsBreakdown.loading}
+          error={analyticsBreakdown.error}
+        />
+      )}
     </div>
   );
 }
@@ -609,7 +778,17 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
  * reads top to bottom, since there's no room for four side-by-side cards there. Wrapped in its own
  * emerald-tinted card with a title + info icon (BlockTitle) so it reads as one distinct block next
  * to the ROI and Bookings blocks below, not just another row of numbers. */
-function MoneyBreakdown({ row, layout, lang }: { row: MarketingAdsReportPeriod; layout: 'horizontal' | 'stacked'; lang: Language | null }) {
+function MoneyBreakdown({
+  row, layout, lang, onExpand,
+}: {
+  row: MarketingAdsReportPeriod;
+  layout: 'horizontal' | 'stacked';
+  lang: Language | null;
+  /** When given, every term becomes a button that opens the appointment ledger pre-filtered to
+   * that figure — the "quick look" popup. Only wired up for the top summary's totals row; the
+   * per-period table/mobile cards below don't get it (no per-period ledger scope exists). */
+  onExpand?: (filter: LedgerFilter) => void;
+}) {
   const total = totalRevenueOf(row);
   const title = <BlockTitle label={t(lang, 'adsRevenueTitle')} info={t(lang, 'adsRevenueInfo')} />;
   if (layout === 'stacked') {
@@ -639,13 +818,13 @@ function MoneyBreakdown({ row, layout, lang }: { row: MarketingAdsReportPeriod; 
     <section className="rounded-xl border-l-4 border-emerald-300 bg-emerald-50/40 p-3 ring-1 ring-zinc-200 sm:p-4">
       {title}
       <div className="flex flex-wrap items-stretch gap-1.5">
-        <MoneyTerm label="Collected" value={usd(row.revenueCollected)} />
+        <MoneyTerm label="Collected" value={usd(row.revenueCollected)} onClick={onExpand && (() => onExpand('completed'))} />
         <MoneyOperator symbol="+" />
-        <MoneyTerm label="Anticipated (this period)" value={usd(row.anticipatedRevenue)} />
+        <MoneyTerm label="Anticipated (this period)" value={usd(row.anticipatedRevenue)} onClick={onExpand && (() => onExpand('anticipated-period'))} />
         <MoneyOperator symbol="+" />
-        <MoneyTerm label="Anticipated (outside period)" value={usd(row.anticipatedRevenueOutsidePeriod)} />
+        <MoneyTerm label="Anticipated (outside period)" value={usd(row.anticipatedRevenueOutsidePeriod)} onClick={onExpand && (() => onExpand('anticipated-outside'))} />
         <MoneyOperator symbol="=" />
-        <MoneyTerm label="Total" value={usd(total)} tone="positive" />
+        <MoneyTerm label="Total" value={usd(total)} tone="positive" onClick={onExpand && (() => onExpand('all'))} />
       </div>
     </section>
   );
@@ -706,7 +885,14 @@ function ROIBreakdown({ row, layout, lang }: { row: MarketingAdsReportPeriod; la
  * dated in this period, laid out the same equation-style way as MoneyBreakdown/ROIBreakdown so a
  * reader who's used those reads this one the same way. Cancelled is tinted rose once it's
  * non-zero, the one figure here that's meaningfully bad news rather than neutral bookkeeping. */
-function BookingsBreakdown({ row, layout, lang }: { row: MarketingAdsReportPeriod; layout: 'horizontal' | 'stacked'; lang: Language | null }) {
+function BookingsBreakdown({
+  row, layout, lang, onExpand,
+}: {
+  row: MarketingAdsReportPeriod;
+  layout: 'horizontal' | 'stacked';
+  lang: Language | null;
+  onExpand?: (filter: LedgerFilter) => void;
+}) {
   const b = bookingsBreakdownOf(row);
   const cancelledLabel = `${b.cancelled}${b.cancelledPercent !== null ? ` (${b.cancelledPercent.toFixed(0)}%)` : ''}`;
   const cancelledTone: 'negative' | undefined = b.cancelled > 0 ? 'negative' : undefined;
@@ -742,15 +928,15 @@ function BookingsBreakdown({ row, layout, lang }: { row: MarketingAdsReportPerio
     <section className="rounded-xl border-l-4 border-violet-300 bg-violet-50/40 p-3 ring-1 ring-zinc-200 sm:p-4">
       {title}
       <div className="flex flex-wrap items-stretch gap-1.5">
-        <MoneyTerm label="Completed" value={String(b.completed)} />
+        <MoneyTerm label="Completed" value={String(b.completed)} onClick={onExpand && (() => onExpand('completed'))} />
         <MoneyOperator symbol="+" />
-        <MoneyTerm label="Cancelled" value={cancelledLabel} tone={cancelledTone} />
+        <MoneyTerm label="Cancelled" value={cancelledLabel} tone={cancelledTone} onClick={onExpand && (() => onExpand('cancelled-period'))} />
         <MoneyOperator symbol="+" />
-        <MoneyTerm label="Anticipated (period)" value={String(b.anticipated)} />
+        <MoneyTerm label="Anticipated (period)" value={String(b.anticipated)} onClick={onExpand && (() => onExpand('anticipated-period'))} />
         <MoneyOperator symbol="+" />
-        <MoneyTerm label="Anticipated (outside period)" value={String(b.anticipatedOutsidePeriod)} />
+        <MoneyTerm label="Anticipated (outside period)" value={String(b.anticipatedOutsidePeriod)} onClick={onExpand && (() => onExpand('anticipated-outside'))} />
         <MoneyOperator symbol="=" />
-        <MoneyTerm label="Total bookings" value={String(b.total)} />
+        <MoneyTerm label="Total bookings" value={String(b.total)} onClick={onExpand && (() => onExpand('all'))} />
       </div>
     </section>
   );
@@ -803,16 +989,51 @@ function InfoTooltip({ text }: { text: string }) {
   );
 }
 
-function MoneyTerm({ label, value, tone }: { label: string; value: string; tone?: 'positive' | 'negative' }) {
+/** A single figure tile in the Revenue/ROI/Bookings equation rows. When `onClick` is given, the
+ * whole tile becomes a button that opens the appointment ledger for that figure — a bigger, easier
+ * tap target than a small expand icon would be, with a magnifying-glass hint in the corner and a
+ * hover/active state so it reads as interactive rather than just another stat. */
+function MoneyTerm({
+  label, value, tone, onClick,
+}: {
+  label: string;
+  value: string;
+  tone?: 'positive' | 'negative';
+  onClick?: () => void;
+}) {
   const boxClass = tone === 'positive' ? 'bg-emerald-50 ring-emerald-200'
     : tone === 'negative' ? 'bg-rose-50 ring-rose-200'
       : 'ring-zinc-200';
   const textClass = tone === 'positive' ? 'text-emerald-700' : tone === 'negative' ? 'text-rose-700' : 'text-zinc-900';
-  return (
-    <div className={`rounded-lg p-3 ring-1 sm:p-4 ${boxClass}`}>
-      <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-500 sm:text-xs">{label}</div>
+  const content = (
+    <>
+      <div className="flex items-start justify-between gap-1">
+        <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-500 sm:text-xs">{label}</div>
+        {onClick && <SearchIcon className="h-3 w-3 shrink-0 text-zinc-400" />}
+      </div>
       <div className={`mt-1 text-lg font-semibold sm:text-2xl ${textClass}`}>{value}</div>
-    </div>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`rounded-lg p-3 text-left ring-1 transition-[filter] hover:brightness-95 active:brightness-90 sm:p-4 ${boxClass}`}
+      >
+        {content}
+      </button>
+    );
+  }
+  return <div className={`rounded-lg p-3 ring-1 sm:p-4 ${boxClass}`}>{content}</div>;
+}
+
+function SearchIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2} className={className} aria-hidden="true">
+      <circle cx="8.5" cy="8.5" r="5.5" />
+      <path d="M17 17l-4-4" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -1267,9 +1488,9 @@ function EntryRow({
 
 type SegmentKey = 'all' | 'fresh' | 'returning';
 
-/** Per-customer "expand to see appointments/submissions" state shared by CompletedList and
- * UpcomingList below — the same Square customer can appear in both, and expanding it in one
- * should show it already-expanded (and already-fetched, not re-fetched) in the other. Fetched
+/** Per-customer "expand to see appointments/submissions" state shared by every LedgerList row —
+ * the same Square customer can appear under more than one ledger category, and expanding it under
+ * one should show it already-expanded (and already-fetched, not re-fetched) under another. Fetched
  * lazily, one customer at a time, only on the owner's own click (design.md's "fetch on click"
  * decision) — the breakdown's own load stays fast regardless of how many customers are in range.
  */
@@ -1372,25 +1593,25 @@ function CustomerHistoryExpand({ customerId, expand }: { customerId: string; exp
   );
 }
 
+/** The deep-dive view ("View breakdown") — every appointment for the range shown above, in one
+ * list, filterable by both customer segment (SegmentTabs, existing) and ledger category
+ * (LedgerFilterTabs, new) at once. `data`/`loading`/`error` come from AdsReportView's shared
+ * useAnalyticsBreakdown — not fetched here — so this and the per-figure popup below always agree
+ * on the exact same snapshot and never double the underlying live Square sweep.
+ */
 function BreakdownDrilldown({
-  from, to, sources, slug,
-}: { from: string; to: string; sources: Set<TrafficSourceKey>; slug?: string }) {
-  const [data, setData] = useState<MarketingAnalyticsData | null>(null);
+  from, to, data, loading, error,
+}: {
+  from: string;
+  to: string;
+  data: MarketingAnalyticsData | null;
+  loading: boolean;
+  error: string;
+}) {
   const [segment, setSegment] = useState<SegmentKey>('all');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const historyExpand = useCustomerHistoryExpand();
 
-  useEffect(() => {
-    let cancelled = false;
-    api.getMarketingAnalytics(from, to, sources, slug)
-      .then((result) => { if (!cancelled) { setData(result); setError(''); } })
-      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load breakdown.'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [from, to, sources, slug]);
-
-  if (loading) {
+  if (loading && !data) {
     return (
       <div className="mt-4 flex items-center gap-2 text-sm text-zinc-500">
         <Spinner className="h-4 w-4" /> Loading breakdown…
@@ -1401,14 +1622,9 @@ function BreakdownDrilldown({
   if (!data) return null;
 
   const activeSegment: MarketingAnalyticsSegment = data[segment];
-  const upcomingForSegment = data.upcoming.filter((a) => segment === 'all' || (segment === 'fresh' ? a.freshFromAds : !a.freshFromAds));
-  const upcomingTotal = upcomingForSegment.reduce((sum, a) => sum + a.price, 0);
-  const completedForSegment = data.completed.filter((a) => segment === 'all' || (segment === 'fresh' ? a.freshFromAds : !a.freshFromAds));
-  const completedTotal = completedForSegment.reduce((sum, a) => sum + a.collected, 0);
-  const byChannel = completedForSegment.reduce<Record<string, number>>((acc, a) => {
-    acc[a.paymentChannel] = (acc[a.paymentChannel] ?? 0) + a.collected;
-    return acc;
-  }, {});
+  const rows = buildLedgerRows(data).filter(
+    (r) => segment === 'all' || (segment === 'fresh' ? r.freshFromAds : !r.freshFromAds),
+  );
 
   return (
     <div className="mt-4">
@@ -1422,54 +1638,262 @@ function BreakdownDrilldown({
 
       <div className="mt-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-sm font-medium text-zinc-500">Completed appointments &amp; collected revenue</h3>
-          <span className="text-xs text-zinc-400">already rung up — cash, card, or a provider&apos;s cash note; includes follow-ups</span>
+          <h3 className="text-sm font-medium text-zinc-500">Every appointment for {segmentLabel(segment).toLowerCase()}</h3>
+          <span className="text-xs text-zinc-400">{fmtDateRange(from, to)} — collected, anticipated, and cancelled, all in one place</span>
         </div>
-        {completedForSegment.length === 0 ? (
-          <div className="mt-3 rounded-lg border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">
-            No completed, paid appointments for {segmentLabel(segment).toLowerCase()} in this range.
-          </div>
-        ) : (
-          <>
-            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <StatCard label="Completed appointments" value={completedForSegment.length.toLocaleString()} />
-              <StatCard label="Total collected" value={usd(completedTotal)} />
-            </div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {Object.entries(byChannel).map(([channel, amount]) => (
-                <ChannelBreakdownBadge key={channel} channel={channel} amount={amount} />
-              ))}
-            </div>
-            <CompletedList appointments={completedForSegment} historyExpand={historyExpand} />
-          </>
-        )}
-      </div>
-
-      <div className="mt-6">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-sm font-medium text-zinc-500">Anticipated from upcoming appointments</h3>
-          <span className="text-xs text-zinc-400">not counted above — nothing&apos;s been rung up yet; includes follow-ups</span>
-        </div>
-        <p className="mt-1 text-xs text-zinc-400">
-          Only contacts first captured by ads within the range selected above — but every future
-          appointment they&apos;ve booked, any date, not just ones inside that range. Change the
-          period up top and this section updates too, since it&apos;s a different contact list.
-        </p>
-        {upcomingForSegment.length === 0 ? (
-          <div className="mt-3 rounded-lg border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">
-            No upcoming appointments for {segmentLabel(segment).toLowerCase()} right now.
-          </div>
-        ) : (
-          <>
-            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <StatCard label="Upcoming appointments" value={upcomingForSegment.length.toLocaleString()} />
-              <StatCard label="Anticipated revenue (all future dates)" value={usd(upcomingTotal)} />
-            </div>
-            <UpcomingList appointments={upcomingForSegment} historyExpand={historyExpand} />
-          </>
-        )}
+        <AppointmentLedger rows={rows} initialFilter="all" historyExpand={historyExpand} />
       </div>
     </div>
+  );
+}
+
+/** Reusable filterable list, used both inline ("View breakdown") and inside LedgerModal (the
+ * per-figure popup). Owns which category is active; the caller decides which rows are even in
+ * play (BreakdownDrilldown pre-filters by customer segment; the popup doesn't need to).
+ */
+function AppointmentLedger({
+  rows, initialFilter, historyExpand,
+}: {
+  rows: LedgerRow[];
+  initialFilter: LedgerFilter;
+  historyExpand: HistoryExpandState;
+}) {
+  const [filter, setFilter] = useState<LedgerFilter>(initialFilter);
+  // Reset to whatever category the popup/section was opened with — same "adjust state during
+  // render on a prop change" pattern this file already uses (AdsReportView's prevInitialData,
+  // AdSpendEntryForm's prevSlug) — not an effect, so there's no one-frame flash of the old filter.
+  const [prevInitialFilter, setPrevInitialFilter] = useState(initialFilter);
+  if (initialFilter !== prevInitialFilter) {
+    setPrevInitialFilter(initialFilter);
+    setFilter(initialFilter);
+  }
+
+  const counts = useMemo(() => countLedgerRows(rows), [rows]);
+  const filtered = filter === 'all' ? rows : rows.filter((r) => r.category === filter);
+
+  // Only meaningful for a single, homogeneous category — mixing Collected with Anticipated/
+  // Cancelled amounts under one channel breakdown would conflate real money with estimates.
+  const byChannel = filter === 'completed'
+    ? filtered.reduce<Record<string, number>>((acc, r) => {
+      if (r.paymentChannel) acc[r.paymentChannel] = (acc[r.paymentChannel] ?? 0) + r.amount;
+      return acc;
+    }, {})
+    : null;
+
+  return (
+    <div>
+      <div className="mt-3">
+        <LedgerFilterTabs filter={filter} onChange={setFilter} counts={counts} />
+      </div>
+      {byChannel && Object.keys(byChannel).length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {Object.entries(byChannel).map(([channel, amount]) => (
+            <ChannelBreakdownBadge key={channel} channel={channel} amount={amount} />
+          ))}
+        </div>
+      )}
+      {filtered.length === 0 ? (
+        <div className="mt-3 rounded-lg border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">
+          Nothing here for this filter.
+        </div>
+      ) : (
+        <LedgerList rows={filtered} historyExpand={historyExpand} />
+      )}
+    </div>
+  );
+}
+
+function LedgerFilterTabs({
+  filter, onChange, counts,
+}: {
+  filter: LedgerFilter;
+  onChange: (f: LedgerFilter) => void;
+  counts: Record<LedgerFilter, number>;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {LEDGER_FILTERS.map((f) => {
+        const active = filter === f;
+        const count = counts[f];
+        return (
+          <button
+            key={f}
+            type="button"
+            onClick={() => onChange(f)}
+            disabled={count === 0 && f !== 'all'}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 ring-inset transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+              active
+                ? 'bg-zinc-900 text-white ring-zinc-900'
+                : 'bg-white text-zinc-600 ring-zinc-200 hover:bg-zinc-50'
+            }`}
+          >
+            {LEDGER_FILTER_LABELS[f]} · {count}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const LEDGER_CATEGORY_STYLES: Record<Exclude<LedgerFilter, 'all'>, string> = {
+  completed: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  'anticipated-period': 'bg-violet-50 text-violet-700 ring-violet-200',
+  'anticipated-outside': 'bg-violet-50/60 text-violet-500 ring-violet-100',
+  'cancelled-period': 'bg-rose-50 text-rose-700 ring-rose-200',
+  'cancelled-outside': 'bg-rose-50/60 text-rose-500 ring-rose-100',
+};
+
+function LedgerCategoryBadge({ category }: { category: LedgerRow['category'] }) {
+  return (
+    <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${LEDGER_CATEGORY_STYLES[category]}`}>
+      {LEDGER_FILTER_LABELS[category]}
+    </span>
+  );
+}
+
+/** One amount cell — a real collected total shown plainly, a catalog estimate prefixed "~" (the
+ * same convention AdSpendCell already uses for an estimated ad-spend figure), so it's never
+ * ambiguous whether a $ figure here is money in hand or a still-hypothetical number. */
+function LedgerAmount({ row }: { row: LedgerRow }) {
+  return <>{row.amountKind === 'estimate' ? '~' : ''}{usdExact(row.amount)}</>;
+}
+
+function LedgerList({ rows, historyExpand }: { rows: LedgerRow[]; historyExpand: HistoryExpandState }) {
+  return (
+    <>
+      <div className="mt-3 flex flex-col gap-2 sm:hidden">
+        {rows.map((r) => (
+          <div key={r.key} className="rounded-lg p-3 ring-1 ring-zinc-200">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium">{r.customerName}</span>
+              <FreshBadge fresh={r.freshFromAds} />
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-2 text-sm text-zinc-600">
+              <span>{r.serviceName}</span>
+              <span className="font-medium tabular-nums"><LedgerAmount row={r} /></span>
+            </div>
+            <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs text-zinc-400">{r.dateLabel}</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {r.paymentChannel && <PaymentChannelBadge channel={r.paymentChannel} />}
+                {r.cancellationStatus && (
+                  <span className="whitespace-nowrap text-xs text-zinc-400">{CANCELLATION_STATUS_LABELS[r.cancellationStatus]}</span>
+                )}
+                <LedgerCategoryBadge category={r.category} />
+              </div>
+            </div>
+            <CustomerHistoryExpand customerId={r.customerId} expand={historyExpand} />
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 hidden overflow-x-auto rounded-lg ring-1 ring-zinc-200 sm:block">
+        <table className="w-full text-sm">
+          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+            <tr>
+              <th className="px-3 py-2">Customer</th>
+              <th className="px-3 py-2">Service</th>
+              <th className="px-3 py-2">Date</th>
+              <th className="px-3 py-2 text-right">Amount</th>
+              <th className="px-3 py-2">Detail</th>
+              <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2">Source</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-100">
+            {rows.map((r) => (
+              <Fragment key={r.key}>
+                <tr className="hover:bg-zinc-50">
+                  <td className="px-3 py-2 font-medium">{r.customerName}</td>
+                  <td className="px-3 py-2 text-zinc-600">{r.serviceName}</td>
+                  <td className="px-3 py-2 text-zinc-600">{r.dateLabel}</td>
+                  <td className="px-3 py-2 text-right tabular-nums"><LedgerAmount row={r} /></td>
+                  <td className="px-3 py-2">
+                    {r.paymentChannel && <PaymentChannelBadge channel={r.paymentChannel} />}
+                    {r.cancellationStatus && (
+                      <span className="whitespace-nowrap text-xs text-zinc-400">{CANCELLATION_STATUS_LABELS[r.cancellationStatus]}</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2"><LedgerCategoryBadge category={r.category} /></td>
+                  <td className="px-3 py-2"><FreshBadge fresh={r.freshFromAds} /></td>
+                </tr>
+                <tr className="bg-zinc-50/50">
+                  <td colSpan={7} className="px-3 pb-2">
+                    <CustomerHistoryExpand customerId={r.customerId} expand={historyExpand} />
+                  </td>
+                </tr>
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+/** The "quick look" popup — opened by clicking a figure in the top summary's Revenue/Bookings
+ * blocks (see MoneyTerm's onClick). Deliberately no segment tabs here (that's what makes this the
+ * fast path vs. "View breakdown" below it) — just the one category the reader clicked into,
+ * with the rest of the ledger's own filter chips still available if they want to look around
+ * without leaving the popup. Escape or clicking the backdrop closes it. */
+function LedgerModal({
+  filter, onClose, data, loading, error,
+}: {
+  filter: LedgerFilter;
+  onClose: () => void;
+  data: MarketingAnalyticsData | null;
+  loading: boolean;
+  error: string;
+}) {
+  const historyExpand = useCustomerHistoryExpand();
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-10 sm:pt-16"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="w-full max-w-3xl rounded-xl bg-white p-4 shadow-xl sm:p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-base font-semibold text-zinc-900">{LEDGER_FILTER_LABELS[filter]}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-full p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"
+          >
+            <CloseIcon className="h-4 w-4" />
+          </button>
+        </div>
+        {loading && !data && (
+          <div className="mt-4 flex items-center gap-2 text-sm text-zinc-500">
+            <Spinner className="h-4 w-4" /> Loading…
+          </div>
+        )}
+        {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+        {data && <AppointmentLedger rows={buildLedgerRows(data)} initialFilter={filter} historyExpand={historyExpand} />}
+      </div>
+    </div>
+  );
+}
+
+function CloseIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2} className={className} aria-hidden="true">
+      <path d="M5 5l10 10M15 5L5 15" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -1519,121 +1943,6 @@ function ChannelBreakdownBadge({ channel, amount }: { channel: string; amount: n
     <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 ring-1 ring-inset ring-zinc-200">
       {PAYMENT_CHANNEL_LABELS[channel] ?? channel}: {usdExact(amount)}
     </span>
-  );
-}
-
-function CompletedList({ appointments, historyExpand }: { appointments: MarketingCompletedAppointment[]; historyExpand: HistoryExpandState }) {
-  return (
-    <>
-      <div className="mt-3 flex flex-col gap-2 sm:hidden">
-        {appointments.map((a) => (
-          <div key={a.customerId + a.date + a.serviceName} className="rounded-lg p-3 ring-1 ring-zinc-200">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-medium">{a.customerName}</span>
-              <FreshBadge fresh={a.freshFromAds} />
-            </div>
-            <div className="mt-1 flex items-center justify-between gap-2 text-sm text-zinc-600">
-              <span>{a.serviceName}</span>
-              <span className="font-medium tabular-nums">{usdExact(a.collected)}</span>
-            </div>
-            <div className="mt-1 flex items-center justify-between gap-2">
-              <span className="text-xs text-zinc-400">{fmtDay(a.date)}</span>
-              <PaymentChannelBadge channel={a.paymentChannel} />
-            </div>
-            <CustomerHistoryExpand customerId={a.customerId} expand={historyExpand} />
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-3 hidden overflow-x-auto rounded-lg ring-1 ring-zinc-200 sm:block">
-        <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
-            <tr>
-              <th className="px-3 py-2">Customer</th>
-              <th className="px-3 py-2">Service</th>
-              <th className="px-3 py-2">Date</th>
-              <th className="px-3 py-2 text-right">Collected</th>
-              <th className="px-3 py-2">Payment</th>
-              <th className="px-3 py-2">Source</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100">
-            {appointments.map((a) => (
-              <Fragment key={a.customerId + a.date + a.serviceName}>
-                <tr className="hover:bg-zinc-50">
-                  <td className="px-3 py-2 font-medium">{a.customerName}</td>
-                  <td className="px-3 py-2 text-zinc-600">{a.serviceName}</td>
-                  <td className="px-3 py-2 text-zinc-600">{fmtDay(a.date)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{usdExact(a.collected)}</td>
-                  <td className="px-3 py-2"><PaymentChannelBadge channel={a.paymentChannel} /></td>
-                  <td className="px-3 py-2"><FreshBadge fresh={a.freshFromAds} /></td>
-                </tr>
-                <tr className="bg-zinc-50/50">
-                  <td colSpan={6} className="px-3 pb-2">
-                    <CustomerHistoryExpand customerId={a.customerId} expand={historyExpand} />
-                  </td>
-                </tr>
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
-  );
-}
-
-function UpcomingList({ appointments, historyExpand }: { appointments: MarketingUpcomingAppointment[]; historyExpand: HistoryExpandState }) {
-  return (
-    <>
-      <div className="mt-3 flex flex-col gap-2 sm:hidden">
-        {appointments.map((a) => (
-          <div key={a.customerId + a.startAt} className="rounded-lg p-3 ring-1 ring-zinc-200">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-medium">{a.customerName}</span>
-              <FreshBadge fresh={a.freshFromAds} />
-            </div>
-            <div className="mt-1 flex items-center justify-between gap-2 text-sm text-zinc-600">
-              <span>{a.serviceName}</span>
-              <span className="font-medium tabular-nums">{usdExact(a.price)}</span>
-            </div>
-            <div className="mt-1 text-xs text-zinc-400">{fmtAppointment(a.startAt)}</div>
-            <CustomerHistoryExpand customerId={a.customerId} expand={historyExpand} />
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-3 hidden overflow-x-auto rounded-lg ring-1 ring-zinc-200 sm:block">
-        <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
-            <tr>
-              <th className="px-3 py-2">Customer</th>
-              <th className="px-3 py-2">Service</th>
-              <th className="px-3 py-2">When</th>
-              <th className="px-3 py-2 text-right">Price</th>
-              <th className="px-3 py-2">Source</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100">
-            {appointments.map((a) => (
-              <Fragment key={a.customerId + a.startAt}>
-                <tr className="hover:bg-zinc-50">
-                  <td className="px-3 py-2 font-medium">{a.customerName}</td>
-                  <td className="px-3 py-2 text-zinc-600">{a.serviceName}</td>
-                  <td className="px-3 py-2 text-zinc-600">{fmtAppointment(a.startAt)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{usdExact(a.price)}</td>
-                  <td className="px-3 py-2"><FreshBadge fresh={a.freshFromAds} /></td>
-                </tr>
-                <tr className="bg-zinc-50/50">
-                  <td colSpan={5} className="px-3 pb-2">
-                    <CustomerHistoryExpand customerId={a.customerId} expand={historyExpand} />
-                  </td>
-                </tr>
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
   );
 }
 

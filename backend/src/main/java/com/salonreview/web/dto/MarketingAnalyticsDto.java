@@ -28,6 +28,15 @@ public record MarketingAnalyticsDto(
          * real payment channel. Owner/family comps are excluded (nothing was collected).
          */
         List<CompletedAppointment> completed,
+        /** Every real Square booking for an ads-attributed customer that didn't happen (cancelled
+         * by either side, declined, or no-show) — one row per booking, any date (past or future
+         * relative to today; a booking can be cancelled ahead of its own date). Not restricted to
+         * [from, to]: same "the drill-down should be able to reconcile every headline number, not
+         * just the ones a narrower fetch happened to include" reasoning as broadening {@code
+         * upcoming} above — the Ads Report's own "Cancelled" count sums this same, unrestricted
+         * set filtered to [from, to] by date; see MarketingAnalyticsService#buildCancelledAppointments.
+         */
+        List<CancelledAppointment> cancelled,
         /** Gross revenue for every ads customer, fixed to [1st of the current month, today] —
          * independent of the requested [from, to] — so the ROI card always means "this month",
          * matching the ad-spend figure below.
@@ -47,6 +56,11 @@ public record MarketingAnalyticsDto(
     /** One still-future appointment for an ads-attributed customer — one row per booking (not per
      * service segment, unlike Segment.serviceCount), since "an upcoming visit" is the natural unit
      * for a forward-looking list. price is the summed catalog list price of its service segment(s).
+     * capturedInRange is whether this customer's own firstTouch fell within the requested [from,
+     * to] — the same cohort restriction the Ads Report's "Anticipated (outside period)" figure
+     * uses, exposed here so the frontend can split this single list into "this period" (startAt
+     * within [from, to], any customer) vs. "outside period" (startAt outside it, but only for
+     * capturedInRange customers) and have both sums agree with those headline figures exactly.
      */
     public record UpcomingAppointment(
             String customerId,
@@ -54,7 +68,25 @@ public record MarketingAnalyticsDto(
             String serviceName,
             Instant startAt,
             BigDecimal price,
-            boolean freshFromAds
+            boolean freshFromAds,
+            boolean capturedInRange
+    ) {}
+
+    /** One real Square booking for an ads-attributed customer that didn't happen — cancelled by
+     * either side, declined, or a no-show. price is a catalog estimate (there's nothing actually
+     * collected to report, unlike CompletedAppointment). status is Square's own raw booking status
+     * ("CANCELLED_BY_CUSTOMER", "CANCELLED_BY_SELLER", "DECLINED", or "NO_SHOW"). capturedInRange
+     * mirrors UpcomingAppointment's field of the same name, same reasoning.
+     */
+    public record CancelledAppointment(
+            String customerId,
+            String customerName,
+            String serviceName,
+            LocalDate date,
+            BigDecimal price,
+            String status,
+            boolean freshFromAds,
+            boolean capturedInRange
     ) {}
 
     /** One already-completed, actually-paid appointment for an ads-attributed customer — one row
