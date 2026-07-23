@@ -3,6 +3,7 @@ package com.salonreview.marketing;
 import com.salonreview.config.MarketingLandingProperties;
 import com.salonreview.marketing.MarketingDashboardRepository.RawVariantStat;
 import com.salonreview.marketing.MarketingDashboardRepository.VariantSource;
+import com.salonreview.square.SquareClient;
 import com.salonreview.web.dto.MarketingDashboardDto;
 import com.salonreview.web.dto.MarketingDashboardDto.VariantStat;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,7 +47,9 @@ class MarketingDashboardServiceTest {
         when(contactsService.countFollowUpBookingsByVariant(any(), any(), any(), any())).thenReturn(Map.of());
         MarketingLandingProperties landingProperties = new MarketingLandingProperties();
         landingProperties.setLandingBaseUrls(java.util.Map.of("mani", "https://mani.akluxnails.com"));
-        service = new MarketingDashboardService(repository, contactsService, landingProperties);
+        SquareClient square = mock(SquareClient.class);
+        when(square.locationTimeZone()).thenReturn("America/Los_Angeles");
+        service = new MarketingDashboardService(repository, contactsService, landingProperties, square);
     }
 
     @Test

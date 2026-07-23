@@ -19,27 +19,80 @@ export interface PeriodSelection {
   to?: string;
 }
 
-function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+// Every "today"/period boundary in this file resolves against the salon's own business
+// timezone rather than the ambient one (server process or browser) this code happens to run
+// in — this file runs in both, and neither is guaranteed to be Pacific. Matches the backend's
+// own resolveZone() convention (see MarketingDashboardService), except this can't call Square
+// for the salon's *actual* configured zone from a framework-free frontend module, so it
+// hardcodes Pacific directly, same precedent as MarketingAdsReportController's SALON_ZONE.
+const SALON_TIME_ZONE = 'America/Los_Angeles';
+
+interface YMD {
+  year: number;
+  month: number; // 1-12
+  day: number;
+}
+
+function todayInSalonZone(): YMD {
+  return dateToYmdInSalonZone(new Date());
+}
+
+function dateToYmdInSalonZone(d: Date): YMD {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: SALON_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  return { year: get('year'), month: get('month'), day: get('day') };
+}
+
+function isoDate({ year, month, day }: YMD): string {
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+// Pure calendar-date arithmetic via a UTC-anchored scratch Date — a YMD triple reinterpreted as
+// UTC midnight is only ever used here to add/subtract whole days or months, never read back as
+// a real instant, so the UTC anchoring is just a safe, zone-independent way to do the math
+// (using local-zone Date setters instead would silently reintroduce the server/browser's own
+// zone instead of the salon's).
+function addDays(ymd: YMD, delta: number): YMD {
+  const d = new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day));
+  d.setUTCDate(d.getUTCDate() + delta);
+  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
+}
+
+function addMonths(ymd: YMD, delta: number): YMD {
+  const d = new Date(Date.UTC(ymd.year, ymd.month - 1 + delta, 1));
+  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: 1 };
+}
+
+function startOfMonth(ymd: YMD): YMD {
+  return { year: ymd.year, month: ymd.month, day: 1 };
+}
+
+/** Today's date (yyyy-MM-dd) in the salon's business timezone — used e.g. as the custom-range
+ * date picker's upper bound, so "today" there agrees with what "Month to date" etc. compute. */
+export function todayIso(): string {
+  return isoDate(todayInSalonZone());
 }
 
 export function lastNWeeksRange(n: number): DateRange {
-  const to = new Date();
-  const from = new Date(to);
-  from.setDate(from.getDate() - (n * 7 - 1));
+  const to = todayInSalonZone();
+  const from = addDays(to, -(n * 7 - 1));
   return { from: isoDate(from), to: isoDate(to) };
 }
 
 export function lastNMonthsRange(n: number): DateRange {
-  const to = new Date();
-  const from = new Date(to.getFullYear(), to.getMonth() - (n - 1), 1);
+  const to = todayInSalonZone();
+  const from = addMonths(startOfMonth(to), -(n - 1));
   return { from: isoDate(from), to: isoDate(to) };
 }
 
 export function monthToDateSoFarRange(): DateRange {
-  const today = new Date();
-  const from = new Date(today.getFullYear(), today.getMonth(), 1);
-  return { from: isoDate(from), to: isoDate(today) };
+  const today = todayInSalonZone();
+  return { from: isoDate(startOfMonth(today)), to: isoDate(today) };
 }
 
 /** Reads period/from/to off a URLSearchParams (or a plain searchParams object, e.g. a server

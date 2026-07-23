@@ -28,6 +28,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -120,6 +122,21 @@ public class MarketingAnalyticsService {
         this.adSpendEntryRepository = adSpendEntryRepository;
     }
 
+    /** The salon's real business timezone (e.g. "America/Los_Angeles"), resolved from Square's own
+     * location config — same pattern used throughout this codebase (see e.g.
+     * MarketingContactsService#resolveZone) so "today"/period boundaries here agree with every
+     * other zone-aware report instead of the UTC this class used to compute them in. Falls back to
+     * UTC only if Square's location has no configured zone or the lookup fails — SquareClient
+     * caches the underlying call, so this is cheap to call per-request. */
+    private ZoneId resolveZone() {
+        try {
+            String tz = square.locationTimeZone();
+            return tz != null && !tz.isBlank() ? ZoneId.of(tz) : ZoneOffset.UTC;
+        } catch (RuntimeException e) {
+            return ZoneOffset.UTC;
+        }
+    }
+
     /** A resolved ads-attributed Square customer id: the earliest moment our own ad funnel captured
      * this person, and which channel. Several Square customer ids can map back to the same contact
      * (see resolveAdsCustomers) — each still carries this contact's firstTouch/channel.
@@ -140,7 +157,7 @@ public class MarketingAnalyticsService {
      * {@code slug == null} pools every page together, identical to the original behavior. */
     public MarketingAnalyticsDto analytics(LocalDate from, LocalDate to, Set<String> sources, String slug) {
         Map<String, AdsCustomer> adsCustomers = resolveAdsCustomers(sources, slug);
-        LocalDate today = LocalDate.now(clock);
+        LocalDate today = LocalDate.now(clock.withZone(resolveZone()));
         // Ad spend is now tracked per landing page (see AdSpendEntry) — with no single page
         // selected there's nothing unambiguous to show, so this pooled-pages case reports zero
         // rather than guessing which page's spend to surface. Analytics itself is being retired
@@ -266,7 +283,7 @@ public class MarketingAnalyticsService {
      */
     public MarketingAdsReportDto adsReport(LocalDate from, LocalDate to, Set<String> sources, String slug, PeriodKind periodKind) {
         String periodType = periodKind.name();
-        LocalDate today = LocalDate.now(clock);
+        LocalDate today = LocalDate.now(clock.withZone(resolveZone()));
         List<LocalDate[]> periods = switch (periodKind) {
             case WEEK -> buildPeriods(from, to, true);
             case MONTH -> buildPeriods(from, to, false);

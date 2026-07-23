@@ -11,7 +11,6 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -28,17 +27,17 @@ public class MarketingDashboardController {
     /** sources is a comma-separated list of traffic-source buckets (meta_ads, google_ads,
      * instagram_organic, google_organic, direct), or "all" — see TrafficSourceParam. Defaults to
      * "Ads only" (meta_ads + google_ads) when omitted, same default as the Contacts/Analytics tabs,
-     * since mani runs ads. from/to (yyyy-MM-dd, both optional) are the shared marketing period
-     * filter — omitted means "All" (no additional bound beyond the page's permanent stats-since
-     * cutoff). to is inclusive on the wire but converted to an exclusive next-day bound before
-     * reaching the service. */
+     * since mani runs ads. from/to (yyyy-MM-dd, both optional, both inclusive) are the shared
+     * marketing period filter — omitted means "All" (no additional bound beyond the page's
+     * permanent stats-since cutoff). Resolved against the salon's own business timezone (not UTC)
+     * inside the service — see MarketingDashboardService#resolveZone. */
     @GetMapping("/marketing")
     public MarketingDashboardDto marketing(@RequestParam(defaultValue = "mani") String slug,
                                             @RequestParam(required = false) String sources,
                                             @RequestParam(required = false) String from,
                                             @RequestParam(required = false) String to) {
-        Instant periodFrom = from == null ? null : LocalDate.parse(from).atStartOfDay(ZoneOffset.UTC).toInstant();
-        Instant periodTo = to == null ? null : LocalDate.parse(to).plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        LocalDate periodFrom = from == null ? null : LocalDate.parse(from);
+        LocalDate periodTo = to == null ? null : LocalDate.parse(to);
         return service.dashboard(slug, TrafficSourceParam.parse(sources), periodFrom, periodTo);
     }
 

@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Set;
 
@@ -83,7 +84,7 @@ class MarketingAdsReportControllerTest {
                         .param("slug", "mani"))
                 .andExpect(status().isOk());
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(ZoneId.of("America/Los_Angeles"));
         verify(service).adsReport(
                 eq(today.withDayOfMonth(1)), eq(today), any(), eq("mani"), eq(PeriodKind.MONTH_TO_DATE));
     }
