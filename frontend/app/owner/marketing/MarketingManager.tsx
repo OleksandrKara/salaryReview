@@ -38,9 +38,10 @@ export default function MarketingManager({
   const [cutoffBusy, setCutoffBusy] = useState(false);
   const [sources, setSources] = useState<Set<TrafficSourceKey>>(() => new Set(ADS_ONLY_SOURCES));
   // Seeded from the URL (?period=&from=&to=) — see PeriodFilter/../period, shared by every
-  // marketing tab. Layered on top of, never replacing, the permanent "Hide stats before" cutoff
-  // below — the backend intersects the two itself.
-  const [selection, setSelection] = useState<PeriodSelection>(() => parsePeriodParams(searchParams));
+  // marketing tab. Defaults to 'all' (like Funnel, unlike most tabs' 'mtd') — layered on top of,
+  // never replacing, the permanent "Hide stats before" cutoff below, which the backend intersects
+  // with this itself.
+  const [selection, setSelection] = useState<PeriodSelection>(() => parsePeriodParams(searchParams, 'all'));
 
   async function refresh(nextSources: Set<TrafficSourceKey> = sources, nextSelection: PeriodSelection = selection) {
     const bounds = periodToBounds(nextSelection);
