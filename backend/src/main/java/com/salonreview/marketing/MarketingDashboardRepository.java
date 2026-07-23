@@ -106,7 +106,8 @@ public class MarketingDashboardRepository {
      * client with a genuine attribution row who nonetheless showed zero bookings anywhere on the
      * Overview tab.)
      */
-    public List<RawVariantStat> findVariantStats(UUID landingPageId, String landingPageSlug, Instant statsSince, Set<String> sources) {
+    public List<RawVariantStat> findVariantStats(
+            UUID landingPageId, String landingPageSlug, Instant statsSince, Instant periodTo, Set<String> sources) {
         String pageViewFilter = sourceFilter(() -> TrafficSourceSql.visitInSources("e.session_id", sources), sources);
         String contactFilterC2 = sourceFilter(() -> TrafficSourceSql.contactInSources("c2", sources), sources);
         String contactFilterC = sourceFilter(() -> TrafficSourceSql.contactInSources("c", sources), sources);
@@ -116,12 +117,14 @@ public class MarketingDashboardRepository {
                   SELECT a.variant_id, COUNT(*) AS bookings_completed
                   FROM marketing.attribution a
                   WHERE (?::timestamptz IS NULL OR a.created_at >= ?)
+                    AND (?::timestamptz IS NULL OR a.created_at < ?)
                   GROUP BY a.variant_id
                   """
                 : """
                   SELECT a.variant_id, COUNT(*) AS bookings_completed
                   FROM marketing.attribution a
                   WHERE (?::timestamptz IS NULL OR a.created_at >= ?)
+                    AND (?::timestamptz IS NULL OR a.created_at < ?)
                     AND EXISTS (
                         SELECT 1 FROM marketing.contacts c2
                         WHERE c2.square_booking_id = a.booking_id AND %s
@@ -140,6 +143,7 @@ public class MarketingDashboardRepository {
                     SELECT e.variant_id, COUNT(*) AS page_views
                     FROM marketing.events e
                     WHERE e.event_type = 'page_view' AND (?::timestamptz IS NULL OR e.created_at >= ?)
+                      AND (?::timestamptz IS NULL OR e.created_at < ?)
                       AND %1$s
                     GROUP BY e.variant_id
                 ) pv ON pv.variant_id = v.id
@@ -150,6 +154,7 @@ public class MarketingDashboardRepository {
                     SELECT c.variant_name, COUNT(*) AS contacts_created
                     FROM marketing.contacts c
                     WHERE c.landing_page_slug = ? AND (?::timestamptz IS NULL OR c.created_at >= ?)
+                      AND (?::timestamptz IS NULL OR c.created_at < ?)
                       AND %3$s
                     GROUP BY c.variant_name
                 ) ct ON ct.variant_name = v.name
@@ -158,6 +163,7 @@ public class MarketingDashboardRepository {
                     FROM marketing.events e
                     WHERE e.event_type = 'click' AND e.metadata->>'target' = 'book_now'
                       AND (?::timestamptz IS NULL OR e.created_at >= ?)
+                      AND (?::timestamptz IS NULL OR e.created_at < ?)
                       AND %1$s
                     GROUP BY e.variant_id
                 ) bc ON bc.variant_id = v.id
@@ -165,6 +171,7 @@ public class MarketingDashboardRepository {
                 ORDER BY v.created_at ASC
                 """.formatted(pageViewFilter, bookingsSubquery, contactFilterC);
         Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
+        Timestamp to = periodTo == null ? null : Timestamp.from(periodTo);
         return jdbcTemplate.query(sql, (rs, rowNum) -> new RawVariantStat(
                 rs.getObject("variant_id", UUID.class).toString(),
                 rs.getString("name"),
@@ -175,10 +182,10 @@ public class MarketingDashboardRepository {
                 rs.getLong("book_now_clicks"),
                 rs.getString("key"),
                 rs.getString("description")
-        ), cutoff, cutoff,
-           cutoff, cutoff,
-           landingPageSlug, cutoff, cutoff,
-           cutoff, cutoff,
+        ), cutoff, cutoff, to, to,
+           cutoff, cutoff, to, to,
+           landingPageSlug, cutoff, cutoff, to, to,
+           cutoff, cutoff, to, to,
            landingPageId);
     }
 
@@ -195,12 +202,14 @@ public class MarketingDashboardRepository {
      * only Square knows about (e.g. a manager follow-up booked directly, or the tracked request got
      * cancelled and a different booking replaced it).
      */
-    public Set<String> findAttributedBookingIds(UUID landingPageId, Instant statsSince) {
+    public Set<String> findAttributedBookingIds(UUID landingPageId, Instant statsSince, Instant periodTo) {
         Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
+        Timestamp to = periodTo == null ? null : Timestamp.from(periodTo);
         List<String> ids = jdbcTemplate.query(
-                "SELECT booking_id FROM marketing.attribution WHERE landing_page_id = ? AND (?::timestamptz IS NULL OR created_at >= ?)",
+                "SELECT booking_id FROM marketing.attribution WHERE landing_page_id = ? "
+                        + "AND (?::timestamptz IS NULL OR created_at >= ?) AND (?::timestamptz IS NULL OR created_at < ?)",
                 (rs, rowNum) -> rs.getString("booking_id"),
-                landingPageId, cutoff, cutoff);
+                landingPageId, cutoff, cutoff, to, to);
         return new java.util.HashSet<>(ids);
     }
 

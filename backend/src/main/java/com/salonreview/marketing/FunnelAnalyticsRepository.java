@@ -44,7 +44,7 @@ public class FunnelAnalyticsRepository {
      * before this filter existed — see MarketingDashboardRepository.findVariantStats for the full
      * rationale (same classification, shared via {@link TrafficSourceSql}).
      */
-    public List<RawFunnelStep> findFunnelSteps(UUID landingPageId, Instant statsSince, Set<String> sources) {
+    public List<RawFunnelStep> findFunnelSteps(UUID landingPageId, Instant statsSince, Instant periodTo, Set<String> sources) {
         boolean all = sources.equals(TrafficSourceSql.ALL);
         String sql = """
                 SELECT flow_key, step_key, step_index,
@@ -52,34 +52,38 @@ public class FunnelAnalyticsRepository {
                        COUNT(DISTINCT session_id) AS reached_count
                 FROM marketing.funnel_events fe
                 WHERE fe.landing_page_id = ? AND (?::timestamptz IS NULL OR fe.created_at >= ?)
+                  AND (?::timestamptz IS NULL OR fe.created_at < ?)
                   AND %s
                 GROUP BY flow_key, step_key, step_index
                 ORDER BY flow_key, step_index
                 """.formatted(all ? "TRUE" : TrafficSourceSql.visitInSources("fe.session_id", sources));
         Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
+        Timestamp to = periodTo == null ? null : Timestamp.from(periodTo);
         return jdbcTemplate.query(sql, (rs, rowNum) -> new RawFunnelStep(
                 rs.getString("flow_key"),
                 rs.getString("step_key"),
                 rs.getInt("step_index"),
                 rs.getInt("step_count_total"),
                 rs.getLong("reached_count")
-        ), landingPageId, cutoff, cutoff);
+        ), landingPageId, cutoff, cutoff, to, to);
     }
 
     /** Top-of-funnel denominator — same page_view count the main marketing dashboard shows, so
      * the two dashboards never disagree on "how many people saw this page".
      */
-    public long countPageViews(UUID landingPageId, Instant statsSince, Set<String> sources) {
+    public long countPageViews(UUID landingPageId, Instant statsSince, Instant periodTo, Set<String> sources) {
         boolean all = sources.equals(TrafficSourceSql.ALL);
         Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
+        Timestamp to = periodTo == null ? null : Timestamp.from(periodTo);
         Long count = jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*) FROM marketing.events e
                 WHERE e.landing_page_id = ? AND e.event_type = 'page_view'
                   AND (?::timestamptz IS NULL OR e.created_at >= ?)
+                  AND (?::timestamptz IS NULL OR e.created_at < ?)
                   AND %s
                 """.formatted(all ? "TRUE" : TrafficSourceSql.visitInSources("e.session_id", sources)),
-                Long.class, landingPageId, cutoff, cutoff);
+                Long.class, landingPageId, cutoff, cutoff, to, to);
         return count == null ? 0 : count;
     }
 
@@ -90,18 +94,20 @@ public class FunnelAnalyticsRepository {
      * best-effort floor via a LEFT JOIN to marketing.contacts by booking_id, not a
      * guaranteed-exact count.
      */
-    public long countBookingsCompleted(UUID landingPageId, Instant statsSince, Set<String> sources) {
+    public long countBookingsCompleted(UUID landingPageId, Instant statsSince, Instant periodTo, Set<String> sources) {
         boolean all = sources.equals(TrafficSourceSql.ALL);
         String filter = all ? "TRUE" : "EXISTS (SELECT 1 FROM marketing.contacts c2 WHERE c2.square_booking_id = a.booking_id AND %s)"
                 .formatted(TrafficSourceSql.contactInSources("c2", sources));
         Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
+        Timestamp to = periodTo == null ? null : Timestamp.from(periodTo);
         Long count = jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*) FROM marketing.attribution a
                 WHERE a.landing_page_id = ? AND (?::timestamptz IS NULL OR a.created_at >= ?)
+                  AND (?::timestamptz IS NULL OR a.created_at < ?)
                   AND %s
                 """.formatted(filter),
-                Long.class, landingPageId, cutoff, cutoff);
+                Long.class, landingPageId, cutoff, cutoff, to, to);
         return count == null ? 0 : count;
     }
 }

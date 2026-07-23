@@ -482,7 +482,7 @@ class MarketingAnalyticsServiceTest {
 
         java.util.UUID pageId = java.util.UUID.randomUUID();
         when(dashboardRepository.findLandingPageId("mani")).thenReturn(java.util.Optional.of(pageId));
-        when(dashboardRepository.findAttributedBookingIds(pageId, null)).thenReturn(Set.of());
+        when(dashboardRepository.findAttributedBookingIds(pageId, null, null)).thenReturn(Set.of());
         var followUpAppt = new com.salonreview.web.dto.MarketingContactDto.Appointment(
                 "bk-followup", "ACCEPTED", Instant.parse("2026-07-05T18:00:00Z"), "Manicure",
                 new BigDecimal("85.00"), null, "CARD", new BigDecimal("85.00"),
@@ -521,7 +521,7 @@ class MarketingAnalyticsServiceTest {
         when(dashboardRepository.findLandingPageId("mani")).thenReturn(java.util.Optional.of(pageId));
         // marketing.attribution has no row for this booking (e.g. attribution capture missed it) —
         // by that check alone, follow-up detection would treat it as "uncounted".
-        when(dashboardRepository.findAttributedBookingIds(pageId, null)).thenReturn(Set.of());
+        when(dashboardRepository.findAttributedBookingIds(pageId, null, null)).thenReturn(Set.of());
         var sameBooking = new com.salonreview.web.dto.MarketingContactDto.Appointment(
                 "bk-shared", "ACCEPTED", Instant.parse("2026-07-05T18:00:00Z"), "Manicure",
                 new BigDecimal("85.00"), null, "CARD", new BigDecimal("85.00"),
@@ -929,6 +929,21 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
+    @DisplayName("adsReport (all): exactly one row spanning the service's all-time start through today, ignoring the given from/to")
+    void adsReportAllUsesAllTimeRangeIgnoringFromTo() {
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of());
+
+        MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2020, 1, 1), LocalDate.of(2020, 1, 2),
+                TrafficSourceSql.ADS_ONLY, null, MarketingAnalyticsService.PeriodKind.ALL);
+
+        assertThat(dto.periodType()).isEqualTo("ALL");
+        assertThat(dto.periods()).hasSize(1);
+        PeriodRow row = dto.periods().get(0);
+        assertThat(row.periodStart()).isEqualTo(LocalDate.of(2020, 1, 1));
+        assertThat(row.periodEnd()).isEqualTo(LocalDate.of(2026, 7, 7));
+    }
+
+    @Test
     @DisplayName("adsReport buckets a still-upcoming appointment's anticipated revenue into the period it's scheduled in")
     void adsReportBucketsAnticipatedRevenue() {
         when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
@@ -1056,7 +1071,7 @@ class MarketingAnalyticsServiceTest {
         when(dashboardRepository.findLandingPageId("mani")).thenReturn(java.util.Optional.of(pageId));
         // marketing.attribution has no row for this booking, same gap as the completed-side bug —
         // by that check alone, follow-up detection would treat "bk-1" as undiscovered.
-        when(dashboardRepository.findAttributedBookingIds(pageId, null)).thenReturn(Set.of());
+        when(dashboardRepository.findAttributedBookingIds(pageId, null, null)).thenReturn(Set.of());
         var sameBooking = new com.salonreview.web.dto.MarketingContactDto.Appointment(
                 "bk-1", "ACCEPTED", Instant.parse("2026-07-20T18:00:00Z"), "Manicure",
                 new BigDecimal("85.00"), null, null, null, null, null, null, null, null, null);

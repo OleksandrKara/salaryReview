@@ -89,6 +89,19 @@ class MarketingAdsReportControllerTest {
     }
 
     @Test
+    @DisplayName("period=all ignores from/to entirely and maps to PeriodKind.ALL")
+    void periodAllIgnoresFromTo() throws Exception {
+        mvc.perform(get("/api/owner/marketing/ads-report")
+                        .param("period", "all")
+                        .param("from", "2020-01-01")
+                        .param("to", "2020-01-02")
+                        .param("slug", "mani"))
+                .andExpect(status().isOk());
+
+        verify(service).adsReport(any(), any(), any(), eq("mani"), eq(PeriodKind.ALL));
+    }
+
+    @Test
     @DisplayName("period=custom uses the explicit from/to verbatim, with no calendar alignment")
     void periodCustomUsesExplicitRange() throws Exception {
         mvc.perform(get("/api/owner/marketing/ads-report")

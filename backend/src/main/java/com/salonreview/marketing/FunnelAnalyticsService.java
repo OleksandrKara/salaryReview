@@ -42,20 +42,28 @@ public class FunnelAnalyticsService {
      * One entry per {@code flow_key} this landing page has ever recorded (almost always exactly
      * one). Never throws: any {@link DataAccessException} (schema not reachable, same guarantee
      * as {@link MarketingDashboardService#dashboard}) yields an empty list instead of a 500.
+     *
+     * <p>{@code periodFrom}/{@code periodTo} are the owner's currently-selected period-filter
+     * window (All/Month to date/Custom — see the shared frontend PeriodFilter), both nullable
+     * meaning "unbounded" on that side. This is layered on top of, never instead of, the
+     * permanent {@code stats_since} cutoff: the effective lower bound is whichever of the two is
+     * later (both null means unbounded), so a period filter can only narrow the view further, and
+     * can never resurface pre-cutoff test traffic the owner explicitly hid.
      */
-    public List<FunnelDashboardDto> funnel(String slug, Set<String> sources) {
+    public List<FunnelDashboardDto> funnel(String slug, Set<String> sources, Instant periodFrom, Instant periodTo) {
         try {
             Optional<UUID> landingPageId = landingPageRepository.findLandingPageId(slug);
             if (landingPageId.isEmpty()) return List.of();
 
             Instant statsSince = landingPageRepository.findStatsSince(landingPageId.get()).orElse(null);
-            List<RawFunnelStep> rawSteps = repository.findFunnelSteps(landingPageId.get(), statsSince, sources);
+            Instant effectiveFrom = laterOf(statsSince, periodFrom);
+            List<RawFunnelStep> rawSteps = repository.findFunnelSteps(landingPageId.get(), effectiveFrom, periodTo, sources);
             if (rawSteps.isEmpty()) return List.of();
 
-            long totalVisitors = repository.countPageViews(landingPageId.get(), statsSince, sources);
+            long totalVisitors = repository.countPageViews(landingPageId.get(), effectiveFrom, periodTo, sources);
             // Shared across every flow_key this page has — in practice a page has exactly one
             // active flow at a time, so this is never actually split across multiple funnels.
-            long totalCompleted = repository.countBookingsCompleted(landingPageId.get(), statsSince, sources);
+            long totalCompleted = repository.countBookingsCompleted(landingPageId.get(), effectiveFrom, periodTo, sources);
 
             Map<String, List<RawFunnelStep>> byFlow = new LinkedHashMap<>();
             for (RawFunnelStep step : rawSteps) {
@@ -71,6 +79,15 @@ public class FunnelAnalyticsService {
             log.warn("Marketing schema unavailable while building funnel for slug={}", slug, ex);
             return List.of();
         }
+    }
+
+    /** The later of two nullable instants, where null means "unbounded" (i.e. loses to any real
+     * value) — null only when both inputs are null. Used to intersect the permanent stats_since
+     * cutoff with the owner's currently-selected period-filter lower bound. */
+    private static Instant laterOf(Instant a, Instant b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return a.isAfter(b) ? a : b;
     }
 
     private FunnelDashboardDto toDto(String slug, String flowKey, List<RawFunnelStep> steps,

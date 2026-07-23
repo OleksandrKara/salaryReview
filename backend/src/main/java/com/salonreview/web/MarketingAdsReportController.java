@@ -28,12 +28,13 @@ public class MarketingAdsReportController {
         this.contactsService = contactsService;
     }
 
-    /** period is "week" (default), "month", "mtd" (month-to-date), or "custom" — which grain to
-     * bucket into (see MarketingAnalyticsService.PeriodKind). "custom" requires explicit from/to
-     * (no default-range fallback — a caller-specified range is the whole point of that kind).
-     * "mtd" ignores from/to entirely — it's always [1st of the current month, today]. week/month
-     * default to the last 8 whole weeks, or the last 6 whole months, ending today, when from/to
-     * are omitted. sources/slug follow the same conventions as the Analytics tab (see
+    /** period is "week" (default), "month", "mtd" (month-to-date), "custom", or "all" — which
+     * grain to bucket into (see MarketingAnalyticsService.PeriodKind). "custom" requires explicit
+     * from/to (no default-range fallback — a caller-specified range is the whole point of that
+     * kind). "mtd"/"all" ignore from/to entirely — "mtd" is always [1st of the current month,
+     * today], "all" is the service's own all-time start through today. week/month default to the
+     * last 8 whole weeks, or the last 6 whole months, ending today, when from/to are omitted.
+     * sources/slug follow the same conventions as the Analytics tab (see
      * MarketingAnalyticsController).
      */
     @GetMapping
@@ -47,6 +48,7 @@ public class MarketingAdsReportController {
             case "month" -> PeriodKind.MONTH;
             case "mtd" -> PeriodKind.MONTH_TO_DATE;
             case "custom" -> PeriodKind.CUSTOM;
+            case "all" -> PeriodKind.ALL;
             default -> PeriodKind.WEEK;
         };
         LocalDate today = LocalDate.now();
@@ -55,6 +57,13 @@ public class MarketingAdsReportController {
         if (kind == PeriodKind.MONTH_TO_DATE) {
             end = today;
             start = today.withDayOfMonth(1);
+        } else if (kind == PeriodKind.ALL) {
+            // Both ignored by the service for ALL (it computes its own all-time start), but
+            // adsReport() still takes from/to as parameters — pass today for both so the
+            // "no periods" empty-DTO fallback (see adsReport's own from/to echo) is sane if it's
+            // ever reached, same as MONTH_TO_DATE effectively does today via end/start above.
+            end = today;
+            start = today;
         } else if (kind == PeriodKind.CUSTOM) {
             if (from == null || to == null) {
                 throw new IllegalArgumentException("period=custom requires both from and to");

@@ -42,8 +42,8 @@ class MarketingDashboardServiceTest {
     void setUp() {
         repository = mock(MarketingDashboardRepository.class);
         contactsService = mock(MarketingContactsService.class);
-        when(repository.findAttributedBookingIds(any(), any())).thenReturn(Set.of());
-        when(contactsService.countFollowUpBookingsByVariant(any(), any(), any())).thenReturn(Map.of());
+        when(repository.findAttributedBookingIds(any(), any(), any())).thenReturn(Set.of());
+        when(contactsService.countFollowUpBookingsByVariant(any(), any(), any(), any())).thenReturn(Map.of());
         MarketingLandingProperties landingProperties = new MarketingLandingProperties();
         landingProperties.setLandingBaseUrls(java.util.Map.of("mani", "https://mani.akluxnails.com"));
         service = new MarketingDashboardService(repository, contactsService, landingProperties);
@@ -53,11 +53,11 @@ class MarketingDashboardServiceTest {
     @DisplayName("computes conversion rate from page views and completed bookings")
     void computesConversionRate() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
-        when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
+        when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
                 new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 25, 40, 60, "control", "Baseline, no changes")
         ));
 
-        MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY);
+        MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY, null, null);
 
         assertThat(dashboard.available()).isTrue();
         VariantStat variant = dashboard.variants().get(0);
@@ -77,13 +77,13 @@ class MarketingDashboardServiceTest {
     @DisplayName("adjusted conversion rate folds in manager follow-up bookings found via Square, on top of the tracked count")
     void adjustedConversionRateIncludesFollowUpBookings() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
-        when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
+        when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
                 new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 6, 40, 60, "control", null)
         ));
-        when(contactsService.countFollowUpBookingsByVariant(eq("mani"), isNull(), any()))
+        when(contactsService.countFollowUpBookingsByVariant(eq("mani"), isNull(), isNull(), any()))
                 .thenReturn(Map.of("Control", 2L));
 
-        MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY);
+        MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY, null, null);
 
         VariantStat variant = dashboard.variants().get(0);
         assertThat(variant.bookingsCompleted()).isEqualTo(6);
@@ -98,23 +98,23 @@ class MarketingDashboardServiceTest {
         Instant cutoff = Instant.parse("2026-07-10T09:00:00Z");
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findStatsSince(LANDING_PAGE_ID)).thenReturn(Optional.of(cutoff));
-        when(repository.findVariantStats(LANDING_PAGE_ID, "mani", cutoff, TrafficSourceSql.ADS_ONLY)).thenReturn(List.of());
+        when(repository.findVariantStats(LANDING_PAGE_ID, "mani", cutoff, null, TrafficSourceSql.ADS_ONLY)).thenReturn(List.of());
 
-        MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY);
+        MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY, null, null);
 
         assertThat(dashboard.statsSince()).isEqualTo(cutoff.toString());
-        verify(repository).findVariantStats(LANDING_PAGE_ID, "mani", cutoff, TrafficSourceSql.ADS_ONLY);
+        verify(repository).findVariantStats(LANDING_PAGE_ID, "mani", cutoff, null, TrafficSourceSql.ADS_ONLY);
     }
 
     @Test
     @DisplayName("deep link is null when the variant has no key yet")
     void deepLinkIsNullWithoutKey() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
-        when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
+        when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
                 new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 25, 40, 60, null, null)
         ));
 
-        MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY);
+        MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY, null, null);
 
         assertThat(dashboard.variants().get(0).deepLinkUrl()).isNull();
     }
@@ -123,11 +123,11 @@ class MarketingDashboardServiceTest {
     @DisplayName("conversion rate is zero, not a division error, when there are no page views yet")
     void zeroPageViewsYieldsZeroConversionRate() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
-        when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
+        when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
                 new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 0, 0, 0, 0, "control", null)
         ));
 
-        MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY);
+        MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY, null, null);
 
         assertThat(dashboard.variants().get(0).conversionRate()).isEqualTo(0.0);
     }
@@ -137,7 +137,7 @@ class MarketingDashboardServiceTest {
     void unavailableWhenRepositoryThrows() {
         when(repository.findLandingPageId("mani")).thenThrow(new DataAccessResourceFailureException("relation \"marketing.landing_pages\" does not exist"));
 
-        MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY);
+        MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY, null, null);
 
         assertThat(dashboard.available()).isFalse();
         assertThat(dashboard.variants()).isEmpty();
@@ -148,7 +148,7 @@ class MarketingDashboardServiceTest {
     void unavailableWhenSlugNotFound() {
         when(repository.findLandingPageId("unknown-slug")).thenReturn(Optional.empty());
 
-        MarketingDashboardDto dashboard = service.dashboard("unknown-slug", TrafficSourceSql.ADS_ONLY);
+        MarketingDashboardDto dashboard = service.dashboard("unknown-slug", TrafficSourceSql.ADS_ONLY, null, null);
 
         assertThat(dashboard.available()).isFalse();
         assertThat(dashboard.landingPageSlug()).isEqualTo("unknown-slug");

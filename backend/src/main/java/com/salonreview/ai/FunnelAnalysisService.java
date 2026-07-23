@@ -83,7 +83,10 @@ public class FunnelAnalysisService {
         AnthropicClient client = anthropicClientProvider.getIfAvailable();
         if (client == null) return Optional.empty();
 
-        List<FunnelDashboardDto> funnels = funnelAnalyticsService.funnel(slug, TrafficSourceParam.parse(adsOnly ? null : "all"));
+        // Always the full history, independent of whatever period filter the owner currently has
+        // selected on the dashboard — this analysis is about the funnel's overall health, not a
+        // temporary view.
+        List<FunnelDashboardDto> funnels = funnelAnalyticsService.funnel(slug, TrafficSourceParam.parse(adsOnly ? null : "all"), null, null);
         FunnelDashboardDto funnel = funnels.stream()
                 .filter(f -> f.flowKey().equals(flowKey))
                 .findFirst()
