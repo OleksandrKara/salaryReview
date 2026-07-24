@@ -80,13 +80,18 @@ class OwnerOverviewServiceTest {
         aggregator  = mock(SquareMonthAggregator.class);
         // Retention (client counts) isn't the focus here; an unstubbed mock yields no counts, so months
         // simply report 0 clients seen/returning — which these revenue/payroll assertions ignore.
+        ManualAdjustmentService manualAdjustments = mock(ManualAdjustmentService.class);
         service     = new OwnerOverviewService(payPeriods, entries, new CommissionCalculator(),
-                salonConfig, aggregator, mock(RetentionAnalyticsService.class));
+                salonConfig, aggregator, mock(RetentionAnalyticsService.class), manualAdjustments);
 
         when(salonConfig.findById(1)).thenReturn(Optional.of(CFG));
         // Default: no periods for any year (overridden per test)
         when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(anyInt())).thenReturn(List.of());
         when(entries.findAllByPayPeriodId(anyLong())).thenReturn(List.of());
+        // No manual adjustments by default — individual tests can override to exercise the fold-in.
+        when(manualAdjustments.totalGrossForMonth(anyInt(), anyInt())).thenReturn(BigDecimal.ZERO);
+        when(manualAdjustments.countedUnitDeltaForMonth(anyInt(), anyInt(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(0);
     }
 
     @Test
