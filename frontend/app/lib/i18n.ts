@@ -112,7 +112,7 @@ const STRINGS = {
   navRetention: { EN: 'Retention', RU: 'Удержание' },
   navPrepaid: { EN: 'Prepaid', RU: 'Предоплата' },
   navOwnerComps: { EN: 'Owner comps', RU: 'Услуги владельцу' },
-  navManualCredits: { EN: 'Manual credits', RU: 'Ручные начисления' },
+  navManualAdjustments: { EN: 'Manual adjustments', RU: 'Ручные корректировки' },
   navUsers: { EN: 'Users', RU: 'Пользователи' },
   navStaffDocuments: { EN: 'Staff Documents', RU: 'Документы сотрудников' },
   navTelegramSettings: { EN: 'Telegram Notifications', RU: 'Уведомления в Telegram' },

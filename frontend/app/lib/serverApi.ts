@@ -6,7 +6,7 @@ import type {
   AbuseBlocksData,
   AppUser,
   KbArticle,
-  ManualCredit,
+  ManualAdjustment,
   Me,
   Sop,
   TelegramSettingsDto,
@@ -146,7 +146,7 @@ export const serverApi = {
 
   listRedos: () => serverFetch<Redo[]>(`/api/redos`),
 
-  listManualCredits: () => serverFetch<ManualCredit[]>(`/api/manual-credits`),
+  listManualAdjustments: () => serverFetch<ManualAdjustment[]>(`/api/manual-adjustments`),
 
   getRevenuePulse: (year: number, month: number) =>
     serverFetch<RevenuePulse>(`/api/owner/pulse?year=${year}&month=${month}`),

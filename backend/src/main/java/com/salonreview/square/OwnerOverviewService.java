@@ -46,16 +46,19 @@ public class OwnerOverviewService {
     private final SalonConfigRepository salonConfig;
     private final SquareMonthAggregator aggregator;
     private final RetentionAnalyticsService retention;
+    private final ManualAdjustmentService manualAdjustments;
 
     public OwnerOverviewService(PayPeriodRepository payPeriods, PeriodEntryRepository entries,
                                 CommissionCalculator calculator, SalonConfigRepository salonConfig,
-                                SquareMonthAggregator aggregator, RetentionAnalyticsService retention) {
+                                SquareMonthAggregator aggregator, RetentionAnalyticsService retention,
+                                ManualAdjustmentService manualAdjustments) {
         this.payPeriods = payPeriods;
         this.entries = entries;
         this.calculator = calculator;
         this.salonConfig = salonConfig;
         this.aggregator = aggregator;
         this.retention = retention;
+        this.manualAdjustments = manualAdjustments;
     }
 
     public OwnerOverviewDto overview(int fromYear, int fromMonth, int toYear, int toMonth) {
@@ -179,6 +182,12 @@ public class OwnerOverviewService {
                 tips       = tips.add(pm.firstHalf().cardTips()).add(pm.secondHalf().cardTips());
                 procedures += pm.firstHalf().countedServices() + pm.secondHalf().countedServices();
             }
+            // Manual adjustments (credits or deductions like a refund) aren't Square orders, so the
+            // aggregator above never sees them — fold them in here too, the same way
+            // SettlementPreviewService does for payroll, so this "live" revenue figure isn't
+            // silently stale relative to what providers actually get paid on.
+            card       = card.add(manualAdjustments.totalGrossForMonth(year, month));
+            procedures += manualAdjustments.countedUnitDeltaForMonth(year, month, cfg.getServicePriceCutoff());
 
             BigDecimal gross   = card.add(cash);
             BigDecimal rate    = cfg.getBaseCommissionRate();

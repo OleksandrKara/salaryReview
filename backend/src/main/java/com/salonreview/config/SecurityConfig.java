@@ -95,12 +95,12 @@ public class SecurityConfig {
                         // though owners don't clock time). Specific /admin matcher first so it wins.
                         .requestMatchers("/api/time/admin/**").hasRole("OWNER")
                         .requestMatchers("/api/time/**").hasAnyRole("OWNER", "MANAGER")
-                        // Manual credits: managers get read-only visibility (the routine payroll
+                        // Manual adjustments: managers get read-only visibility (the routine payroll
                         // bookkeeping context they already see via redos/time), but adding or deleting one
                         // is owner-only — unlike redos below. GET matcher listed first so it wins.
-                        .requestMatchers(HttpMethod.GET, "/api/manual-credits", "/api/manual-credits/**")
+                        .requestMatchers(HttpMethod.GET, "/api/manual-adjustments", "/api/manual-adjustments/**")
                                 .hasAnyRole("OWNER", "MANAGER")
-                        .requestMatchers("/api/manual-credits", "/api/manual-credits/**").hasRole("OWNER")
+                        .requestMatchers("/api/manual-adjustments", "/api/manual-adjustments/**").hasRole("OWNER")
                         .requestMatchers("/api/redos/**", "/api/providers/**")
                                 .hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers("/api/settlements/**", "/api/square/**", "/api/pay-periods/**",

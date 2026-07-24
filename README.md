@@ -65,7 +65,7 @@ See `backend/src/main/java/com/salonreview/ai/` and
   (see `docs/ROADMAP.md`). Handles cash-note parsing (English `cashew $nn` and
   Russian `наличные`), prepaid package draw-downs with anti-fraud guards (a
   draw-down only ever confirms against a real Square booking that happened),
-  redo/comp/manual-credit adjustments, no-show fee detection, and owner/family
+  redo/comp/manual-adjustment adjustments, no-show fee detection, and owner/family
   comped visits — all folded into one settlement.
 - **Real accounts and roles**, not a shared login: owner (full admin + user
   management), manager (full reports, no user admin), provider (read-only view of
@@ -129,7 +129,7 @@ Docker Compose for development and the one production VPS.
 - **`/me`** (provider) — a provider's own read-only month, with
   approve/request-correction feedback that surfaces back to the owner/manager view.
 - **`/owner/overview`** — cross-month KPI and growth view.
-- **`/admin/*`** — users, redos, manual credits, owner-customers (comped
+- **`/admin/*`** — users, redos, manual adjustments, owner-customers (comped
   family/friends), prepaid packages.
 
 ---
@@ -175,7 +175,7 @@ cash_to_salon      = round2(cashCollected - cashGross * rate - cashTierRebate)
 - Spring Web MVC, Spring Data JPA + Hibernate, Spring Security (server sessions,
   BCrypt, method security), Spring Validation
 - Flyway — 21 migrations tracking the full feature history (tiers, accounts,
-  prepaid packages, redos, manual credits, suspicious-booking triage, …)
+  prepaid packages, redos, manual adjustments, suspicious-booking triage, …)
 - **Anthropic Java SDK** (`anthropic-java` 2.40.1) — Claude Haiku 4.5 with
   structured outputs + prompt caching
 - **LangSmith** REST tracing for LLM observability and feedback-driven evals
@@ -221,7 +221,7 @@ Role-gated via Spring Security (`OWNER`, `MANAGER`, `PROVIDER`):
 | Providers | `GET/POST/PATCH/DELETE /api/providers` |
 | Suspicious bookings + AI | `GET /api/suspicious`, `POST /api/suspicious/{bookingId}/triage`, `POST /api/suspicious/{bookingId}/triage/feedback` |
 | Tier grants | `GET/POST /api/settlements/grants` |
-| Redos / manual credits / owner-customers / prepaid | `/api/redos`, `/api/manual-credits`, `/api/owner-customers`, `/api/prepaid` |
+| Redos / manual adjustments / owner-customers / prepaid | `/api/redos`, `/api/manual-adjustments`, `/api/owner-customers`, `/api/prepaid` |
 | No-show fees | `/api/no-show-fees` |
 | Square sync | `POST /api/sync` (busts the read cache on demand) |
 | Users (owner-only) | `/api/users` |
@@ -254,7 +254,7 @@ salaryReview/
 │   ├── reports/[providerId]/   owner/manager month view + AI Explain button
 │   ├── me/                     provider self-service view
 │   ├── owner/overview/         cross-month KPIs
-│   └── admin/                  users, redos, manual credits, owner-customers, prepaid
+│   └── admin/                  users, redos, manual adjustments, owner-customers, prepaid
 └── e2e/tests/             Playwright specs (chromium/firefox/webkit)
 ```
 

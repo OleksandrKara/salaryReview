@@ -37,6 +37,7 @@ class RevenueSnapshotServiceTest {
     private PayPeriodRepository payPeriods;
     private PeriodEntryRepository entries;
     private RevenueForecastService forecaster;
+    private ManualAdjustmentService manualAdjustments;
     private RevenueSnapshotService service;
 
     @BeforeEach
@@ -48,7 +49,12 @@ class RevenueSnapshotServiceTest {
         payPeriods  = mock(PayPeriodRepository.class);
         entries     = mock(PeriodEntryRepository.class);
         forecaster  = mock(RevenueForecastService.class);
-        service     = new RevenueSnapshotService(repo, aggregator, square, salonConfig, payPeriods, entries, forecaster);
+        manualAdjustments = mock(ManualAdjustmentService.class);
+        service     = new RevenueSnapshotService(repo, aggregator, square, salonConfig, payPeriods, entries,
+                forecaster, manualAdjustments);
+        // No manual adjustments by default — individual tests can override to exercise the fold-in.
+        when(manualAdjustments.totalGrossThrough(any())).thenReturn(BigDecimal.ZERO);
+        when(manualAdjustments.countedUnitDeltaThrough(any(), any())).thenReturn(0);
 
         when(salonConfig.findById(1)).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").tierServiceThreshold(25)

@@ -23,9 +23,9 @@ const ADS_MANAGER_HOME = '/owner/marketing';
 // Owner + manager (providers blocked). Retention is view-only for managers, same data as owners.
 // Manual credits are routine payroll bookkeeping, not a salary decision, so managers get it too
 // (see SecurityConfig.java's matching backend rule).
-const STAFF_ONLY = ['/manager', '/admin/redos', '/owner/retention', '/admin/manual-credits'];
+const STAFF_ONLY = ['/manager', '/admin/redos', '/owner/retention', '/admin/manual-adjustments'];
 // Owner only (managers and providers blocked). /reports (salary) and the other admin tools live here;
-// redos and manual-credits are intentionally absent (gated by STAFF_ONLY instead). Retention is
+// redos and manual-adjustments are intentionally absent (gated by STAFF_ONLY instead). Retention is
 // carved out of /owner into STAFF_ONLY above, so only /owner/overview stays owner-only here.
 const OWNER_ONLY = [
   '/reports', '/owner/overview', '/admin/users', '/admin/prepaid', '/admin/owner-customers',

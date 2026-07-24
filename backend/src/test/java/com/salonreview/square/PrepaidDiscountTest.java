@@ -45,7 +45,7 @@ class PrepaidDiscountTest {
         ProviderRepository providerRepo = mock(ProviderRepository.class);
 
         SettlementPreviewService service = new SettlementPreviewService(aggregator, new TierCommissionEngine(),
-                salonConfigRepo, directory, tierGrants, feedback, square, prepaidRedemptions, prepaidPackages, providerRepo, mock(com.salonreview.repo.RedoRepository.class), mock(com.salonreview.repo.ManualCreditRepository.class), mock(com.salonreview.square.NoShowFeeService.class), mock(com.salonreview.square.SuspiciousBookingService.class), mock(com.salonreview.square.CancelledAppointmentService.class));
+                salonConfigRepo, directory, tierGrants, feedback, square, prepaidRedemptions, prepaidPackages, providerRepo, mock(com.salonreview.repo.RedoRepository.class), mock(com.salonreview.repo.ManualAdjustmentRepository.class), mock(com.salonreview.square.NoShowFeeService.class), mock(com.salonreview.square.SuspiciousBookingService.class), mock(com.salonreview.square.CancelledAppointmentService.class));
 
         SalonConfig sc = mock(SalonConfig.class);
         when(sc.toCommissionConfig()).thenReturn(new CommissionConfig(60,

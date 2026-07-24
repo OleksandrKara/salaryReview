@@ -53,7 +53,7 @@ public class SettlementPreviewService {
     private final PrepaidPackageRepository prepaidPackages;
     private final com.salonreview.repo.ProviderRepository providerRepo;
     private final com.salonreview.repo.RedoRepository redoRepo;
-    private final com.salonreview.repo.ManualCreditRepository manualCredits;
+    private final com.salonreview.repo.ManualAdjustmentRepository manualAdjustments;
     private final NoShowFeeService noShowFees;
     private final SuspiciousBookingService suspiciousBookings;
     private final CancelledAppointmentService cancelledAppointments;
@@ -65,7 +65,7 @@ public class SettlementPreviewService {
                                     PrepaidPackageRepository prepaidPackages,
                                     com.salonreview.repo.ProviderRepository providerRepo,
                                     com.salonreview.repo.RedoRepository redoRepo,
-                                    com.salonreview.repo.ManualCreditRepository manualCredits,
+                                    com.salonreview.repo.ManualAdjustmentRepository manualAdjustments,
                                     NoShowFeeService noShowFees,
                                     SuspiciousBookingService suspiciousBookings,
                                     CancelledAppointmentService cancelledAppointments) {
@@ -80,7 +80,7 @@ public class SettlementPreviewService {
         this.prepaidPackages = prepaidPackages;
         this.redoRepo = redoRepo;
         this.providerRepo = providerRepo;
-        this.manualCredits = manualCredits;
+        this.manualAdjustments = manualAdjustments;
         this.noShowFees = noShowFees;
         this.suspiciousBookings = suspiciousBookings;
         this.cancelledAppointments = cancelledAppointments;
@@ -155,24 +155,30 @@ public class SettlementPreviewService {
     }
 
     /**
-     * Manual service credits in this month, as synthetic lines keyed by provider — folded like a card
-     * service ({@link #applyExtraLines}): gross is the commission basis, discount is salon-absorbed,
-     * tip pays out, and it counts toward the tier when gross ≥ cutoff.
+     * Manual adjustments in this month, as synthetic lines keyed by provider — folded like a card
+     * service ({@link #applyExtraLines}): gross is the (signed) commission basis, discount is
+     * salon-absorbed (credits only), tip pays out (credits only). Counts toward the tier — in
+     * either direction — whenever the adjustment's magnitude clears the cutoff: a credit adds one
+     * counted unit, a deduction (e.g. a refund) removes one, mirroring how Redo signs its own
+     * counted units. Comparing against the raw signed gross here would silently never decrement
+     * (a negative amount is never ≥ a positive cutoff), which is exactly the bug that motivated
+     * building this on {@code gross.abs()} instead.
      */
-    private Map<Long, List<AttributedService>> manualCreditLinesByProvider(int year, int month, BigDecimal cutoff) {
-        List<com.salonreview.domain.ManualCredit> all = manualCredits.findAllByOrderByServiceDateDesc();
+    private Map<Long, List<AttributedService>> manualAdjustmentLinesByProvider(int year, int month, BigDecimal cutoff) {
+        List<com.salonreview.domain.ManualAdjustment> all = manualAdjustments.findAllByOrderByServiceDateDesc();
         if (all.isEmpty()) return Map.of();
         Map<Long, List<AttributedService>> byProvider = new LinkedHashMap<>();
-        for (com.salonreview.domain.ManualCredit c : all) {
+        for (com.salonreview.domain.ManualAdjustment c : all) {
             if (!inMonth(c.getServiceDate(), year, month)) continue;
-            boolean counts = c.getGross().compareTo(cutoff) >= 0;
+            boolean counts = c.getGross().abs().compareTo(cutoff) >= 0;
+            int countedUnits = counts ? c.getGross().signum() : 0;
             BigDecimal net = c.getGross().subtract(c.getDiscount());
             String half = c.getServiceDate().getDayOfMonth() <= 15 ? "FIRST" : "SECOND";
-            String svc = c.getServiceName() == null || c.getServiceName().isBlank() ? "Manual credit" : c.getServiceName();
+            String svc = c.getServiceName() == null || c.getServiceName().isBlank() ? "Manual adjustment" : c.getServiceName();
             byProvider.computeIfAbsent(c.getProviderId(), k -> new ArrayList<>())
                     .add(new AttributedService("", providerName(c.getProviderId()), c.getServiceDate().toString(),
                             half, svc, c.getGross(), c.getDiscount(), net, c.getTip(),
-                            counts, counts ? 1 : 0, 1, false, "MANUAL", null, null, null, null));
+                            countedUnits > 0, countedUnits, c.getGross().signum(), false, "ADJUSTMENT", null, null, null, null));
         }
         return byProvider;
     }
@@ -290,8 +296,8 @@ public class SettlementPreviewService {
         // Redos move a service's commission from the original provider to the redo provider.
         Map<Long, List<AttributedService>> redo = redoLinesByProvider(year, month, cutoff);
         applyExtraLines(byPerson, procedures, discounts, redo);
-        // Manual credits: owner-entered exceptions, folded in like a card service.
-        applyExtraLines(byPerson, procedures, discounts, manualCreditLinesByProvider(year, month, cutoff));
+        // Manual adjustments: owner-entered exceptions (credits or deductions), folded in like a card service.
+        applyExtraLines(byPerson, procedures, discounts, manualAdjustmentLinesByProvider(year, month, cutoff));
         // No-show fees: a flat $25 (split across a multi-provider no-show) paid to the provider in full as
         // an adjustment — not commissioned — in the month the fee was paid.
         Map<Long, List<AttributedService>> noShowRaw = noShowFees.noShowFeeLinesByProvider(year, month);
@@ -392,7 +398,7 @@ public class SettlementPreviewService {
         MonthAggregation agg = aggregator.aggregate(year, month, sc.getServicePriceCutoff());
         Map<Long, List<AttributedService>> prepaid = prepaidLinesByProvider(year, month);
         Map<Long, List<AttributedService>> redo = redoLinesByProvider(year, month, sc.getServicePriceCutoff());
-        Map<Long, List<AttributedService>> manual = manualCreditLinesByProvider(year, month, sc.getServicePriceCutoff());
+        Map<Long, List<AttributedService>> manual = manualAdjustmentLinesByProvider(year, month, sc.getServicePriceCutoff());
         NoShowFeeService.NoShowMonth nsm = noShowFees.compute(year, month);
         Map<Long, List<AttributedService>> noShow = (nsm == null || nsm.linesByProvider() == null)
                 ? Map.of() : nsm.linesByProvider();

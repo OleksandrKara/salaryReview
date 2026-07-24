@@ -580,9 +580,9 @@ export interface RedoCreateRequest {
   serviceName?: string | null;
 }
 
-// --- Manual service credits (owner/manager) ---
+// --- Manual settlement adjustments (owner/manager) ---
 
-export interface ManualCredit {
+export interface ManualAdjustment {
   id: number;
   providerId: number;
   providerName: string;
@@ -593,7 +593,7 @@ export interface ManualCredit {
   serviceName: string | null;
 }
 
-export interface ManualCreditCreateRequest {
+export interface ManualAdjustmentCreateRequest {
   providerId: number;
   serviceDate: string;
   gross: number;

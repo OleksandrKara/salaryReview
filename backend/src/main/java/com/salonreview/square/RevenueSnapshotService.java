@@ -45,6 +45,7 @@ public class RevenueSnapshotService {
     private final PayPeriodRepository payPeriods;
     private final PeriodEntryRepository entries;
     private final RevenueForecastService forecaster;
+    private final ManualAdjustmentService manualAdjustments;
 
     public RevenueSnapshotService(RevenueSnapshotRepository repo,
                                   SquareMonthAggregator aggregator,
@@ -52,7 +53,8 @@ public class RevenueSnapshotService {
                                   SalonConfigRepository salonConfig,
                                   PayPeriodRepository payPeriods,
                                   PeriodEntryRepository entries,
-                                  RevenueForecastService forecaster) {
+                                  RevenueForecastService forecaster,
+                                  ManualAdjustmentService manualAdjustments) {
         this.repo = repo;
         this.aggregator = aggregator;
         this.square = square;
@@ -60,6 +62,7 @@ public class RevenueSnapshotService {
         this.payPeriods = payPeriods;
         this.entries = entries;
         this.forecaster = forecaster;
+        this.manualAdjustments = manualAdjustments;
     }
 
     /**
@@ -90,6 +93,11 @@ public class RevenueSnapshotService {
             }
             mtdServices += s.countedUnits();
         }
+        // Manual adjustments (credits or deductions like a refund) aren't Square orders, so the
+        // aggregator above never sees them — fold them in the same way OwnerOverviewService and
+        // SettlementPreviewService do, so this MTD figure isn't silently stale.
+        mtdCard = mtdCard.add(manualAdjustments.totalGrossThrough(date));
+        mtdServices += manualAdjustments.countedUnitDeltaThrough(date, priceCutoff);
         BigDecimal mtdRevenue = mtdCard.add(mtdCash).setScale(2, RoundingMode.HALF_UP);
 
         UpcomingResult upcoming = computeUpcoming(date);

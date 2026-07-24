@@ -35,7 +35,7 @@ function linksFor(role: Role): NavLink[] {
       { href: '/admin/prepaid', key: 'navPrepaid' },
       { href: '/admin/owner-customers', key: 'navOwnerComps' },
       { href: '/admin/redos', key: 'mgrRedos' },
-      { href: '/admin/manual-credits', key: 'navManualCredits' },
+      { href: '/admin/manual-adjustments', key: 'navManualAdjustments' },
       { href: '/admin/manager-time', key: 'navManagerTime' },
       { href: '/sops/admin', key: 'sopAdminTitle' },
       { href: '/admin/users', key: 'navUsers' },
@@ -49,7 +49,7 @@ function linksFor(role: Role): NavLink[] {
       { href: '/manager', key: 'navDashboard' },
       { href: '/manager/time', key: 'navMyTime' },
       { href: '/admin/redos', key: 'mgrRedos' },
-      { href: '/admin/manual-credits', key: 'navManualCredits' },
+      { href: '/admin/manual-adjustments', key: 'navManualAdjustments' },
       { href: '/my-documents', key: 'navMyDocuments' },
       ...COMMON,
     ];
