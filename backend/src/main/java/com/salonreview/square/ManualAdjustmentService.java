@@ -63,9 +63,17 @@ public class ManualAdjustmentService {
         BigDecimal tip = req.tip() == null ? BigDecimal.ZERO : req.tip();
         boolean deduction = req.gross().signum() < 0;
         if (deduction) {
-            if (discount.signum() != 0 || tip.signum() != 0) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "a deduction (negative gross) can't carry a discount or tip");
+            // A refund typically only voids the service charge — the provider still keeps
+            // whatever tip they were actually paid on that visit, so tip stays optional here
+            // (entered positive; it flows into cardTips exactly like a credit's tip, so it's
+            // reduced by the salon's real cardTipFeeRate automatically, same as everywhere else).
+            // A discount, though, never applies to a deduction — there's no "salon-absorbed
+            // discount" concept when you're clawing back a commission.
+            if (discount.signum() != 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "a deduction (negative gross) can't carry a discount");
+            }
+            if (tip.signum() < 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "tip can't be negative");
             }
             if (req.serviceName() == null || req.serviceName().isBlank()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "a reason is required for a deduction");
