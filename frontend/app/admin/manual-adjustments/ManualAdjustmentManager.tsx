@@ -69,7 +69,7 @@ export default function ManualAdjustmentManager({
           serviceDate,
           gross:    direction === 'deduction' ? -magnitude : magnitude,
           discount: direction === 'deduction' ? 0 : Number(discount || 0),
-          tip:      direction === 'deduction' ? 0 : Number(tip || 0),
+          tip:      Number(tip || 0),
           serviceName: serviceName || null,
         }),
       });
@@ -122,15 +122,13 @@ export default function ManualAdjustmentManager({
             <input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} required className={`${input} sm:w-28`} />
           </Field>
           {direction === 'credit' && (
-            <>
-              <Field label="Discount" hint="optional">
-                <input type="number" step="0.01" min="0" value={discount} onChange={(e) => setDiscount(e.target.value)} className={`${input} sm:w-24`} />
-              </Field>
-              <Field label="Tip" hint="optional">
-                <input type="number" step="0.01" min="0" value={tip} onChange={(e) => setTip(e.target.value)} className={`${input} sm:w-24`} />
-              </Field>
-            </>
+            <Field label="Discount" hint="optional">
+              <input type="number" step="0.01" min="0" value={discount} onChange={(e) => setDiscount(e.target.value)} className={`${input} sm:w-24`} />
+            </Field>
           )}
+          <Field label="Tip" hint={direction === 'deduction' ? 'optional — only if she still keeps a tip on this visit' : 'optional'}>
+            <input type="number" step="0.01" min="0" value={tip} onChange={(e) => setTip(e.target.value)} className={`${input} sm:w-24`} />
+          </Field>
           <Field label={direction === 'deduction' ? 'Reason' : 'Service'} hint={direction === 'deduction' ? undefined : 'optional'}>
             <input value={serviceName} onChange={(e) => setServiceName(e.target.value)} required={direction === 'deduction'} className={`${input} sm:w-44`} />
           </Field>

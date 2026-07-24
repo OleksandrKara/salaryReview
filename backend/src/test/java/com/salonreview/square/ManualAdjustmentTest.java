@@ -96,7 +96,7 @@ class ManualAdjustmentTest {
     }
 
     @Test
-    @DisplayName("Manual adjustment deduction (refund): gross -124.20 → commission reduced and tier count decremented")
+    @DisplayName("Manual adjustment deduction (refund): gross -124.20, tip kept 20.00 → commission reduced, tier count decremented, tip still paid after the card fee")
     void deductionReducesCommissionAndTierCount() {
         SquareMonthAggregator aggregator = mock(SquareMonthAggregator.class);
         SalonConfigRepository salonConfigRepo = mock(SalonConfigRepository.class);
@@ -114,10 +114,12 @@ class ManualAdjustmentTest {
                 new MonthAggregation(2026, 7, "UTC", List.of(), new SquareMonthAggregator.Diag(), List.of(), List.of(), List.of()));
         when(providerRepo.findById(1L)).thenReturn(Optional.of(Provider.builder().id(1L).displayName("Susan").build()));
 
-        // Chloe Pruitt's July 13 manicure was refunded $124.20 — deduct Susan's commission and tier count.
+        // Chloe Pruitt's July 13 manicure was refunded $124.20 — deduct Susan's commission and tier
+        // count, but she still keeps the $20 tip from that visit (reduced by the same card-tip fee
+        // as any other tip, not a special rate).
         when(manualAdjustments.findAllByOrderByServiceDateDesc()).thenReturn(List.of(ManualAdjustment.builder()
                 .id(2L).providerId(1L).serviceDate(LocalDate.of(2026, 7, 13))
-                .gross(new BigDecimal("-124.20")).discount(BigDecimal.ZERO).tip(BigDecimal.ZERO)
+                .gross(new BigDecimal("-124.20")).discount(BigDecimal.ZERO).tip(new BigDecimal("20.00"))
                 .serviceName("Refund — Chloe Pruitt").build()));
 
         ProviderDetail detail = service.providerDetail(2026, 7, 1L);
@@ -126,6 +128,7 @@ class ManualAdjustmentTest {
                 .filter(s -> "ADJUSTMENT".equals(s.channel())).findFirst().orElseThrow();
         assertThat(line.gross()).isEqualByComparingTo("-124.20");
         assertThat(line.net()).isEqualByComparingTo("-124.20");
+        assertThat(line.tip()).isEqualByComparingTo("20.00");
         // The old (buggy) comparison — raw signed gross against a positive cutoff — would never be
         // true for a negative amount, silently leaving the tier count un-decremented. Asserting
         // false here is exactly the regression this test guards against.
@@ -133,5 +136,8 @@ class ManualAdjustmentTest {
         assertThat(line.countedUnits()).isEqualTo(-1);
         assertThat(detail.payout().firstHalf().cardRevenue()).isEqualByComparingTo("-124.20");
         assertThat(detail.payout().firstHalf().countedServices()).isEqualTo(-1);
+        // The tip still pays out in full (minus the standard 3.5% card fee) even though the service
+        // commission was clawed back — same rate/mechanism as any other tip, nothing special-cased.
+        assertThat(detail.payout().firstHalf().tipsAfterFee()).isEqualByComparingTo("19.30"); // 20.00 × 0.965
     }
 }

@@ -23,8 +23,10 @@ export default async function ManualAdjustmentsPage() {
         no service line, checked out under the wrong date, etc.), or deduct a provider&apos;s commission for
         something like a refunded service. A credit&apos;s <span className="font-medium">gross</span> is the
         commission basis, with any salon-absorbed <span className="font-medium">discount</span> and{' '}
-        <span className="font-medium">tip</span>; a deduction has no discount or tip and requires a reason.
-        Both pay out (or claw back) exactly like a card service (shown as an{' '}
+        <span className="font-medium">tip</span>; a deduction has no discount and requires a reason, but can
+        still carry a <span className="font-medium">tip</span> if the provider keeps it even though the
+        service itself was refunded — it&apos;s reduced by the same card-tip fee as any other tip. Both pay
+        out (or claw back) exactly like a card service (shown as an{' '}
         <span className="font-medium text-sky-700">ADJUSTMENT</span> line) — neither ever touches Square or
         charges the customer.
       </p>
