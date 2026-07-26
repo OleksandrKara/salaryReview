@@ -368,7 +368,7 @@ class MarketingContactsServiceTest {
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
 
-        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of("OTHERBOOK"));
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of("OTHERBOOK"), java.util.Set.of());
 
         assertThat(byVariant).containsEntry("Version_1", 1L);
     }
@@ -383,9 +383,28 @@ class MarketingContactsServiceTest {
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
 
-        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of("OTHERBOOK"));
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of("OTHERBOOK"), java.util.Set.of());
 
         assertThat(byVariant).containsEntry("Version_1", 1L);
+    }
+
+    @Test
+    @DisplayName("does not count an already-converted customer's later, unrelated real appointment as a follow-up")
+    void followUpExcludesAlreadyConvertedCustomersOtherAppointment() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        // A brand-new booking (never attributed) for a customer who already converted on-page
+        // through some other tracked booking — e.g. a normal future rebooking. Since SQCUST123 is
+        // in convertedCustomerIds, this must not add a second, spurious follow-up for them.
+        Booking futureRebooking = new Booking("FUTUREBOOK", "ACCEPTED", "2026-08-01T21:00:00Z", null, null,
+                "LOC1", "SQCUST123", null, null, List.of());
+        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(futureRebooking));
+
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant(
+                "mani", null, null, java.util.Set.of("OTHERBOOK"), java.util.Set.of("SQCUST123"));
+
+        assertThat(byVariant).isEmpty();
+        verify(square, never()).bookingsForCustomer(eq("SQCUST123"), any());
     }
 
     @Test
@@ -397,7 +416,7 @@ class MarketingContactsServiceTest {
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
 
-        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of("TRACKEDBOOK"));
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of("TRACKEDBOOK"), java.util.Set.of());
 
         assertThat(byVariant).isEmpty();
     }
@@ -411,7 +430,7 @@ class MarketingContactsServiceTest {
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(cancelled));
 
-        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of());
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of(), java.util.Set.of());
 
         assertThat(byVariant).isEmpty();
     }
@@ -428,7 +447,7 @@ class MarketingContactsServiceTest {
                 "LOC1", "SQCUST999", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST999"), any())).thenReturn(List.of(accepted));
 
-        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of());
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of(), java.util.Set.of());
 
         assertThat(byVariant).containsEntry("Version_1", 1L);
     }
@@ -452,11 +471,26 @@ class MarketingContactsServiceTest {
         ));
 
         Map<String, Long> byVariant = service.countFollowUpBookingsByVariant(
-                "mani", Instant.parse("2026-07-01T00:00:00Z"), null, java.util.Set.of());
+                "mani", Instant.parse("2026-07-01T00:00:00Z"), null, java.util.Set.of(), java.util.Set.of());
 
         assertThat(byVariant).isEmpty();
         verify(square, never()).bookingsForCustomer(eq("SQCUST_OTHERPAGE"), any());
         verify(square, never()).bookingsForCustomer(eq("SQCUST_OLD"), any());
+    }
+
+    @Test
+    @DisplayName("followUpAppointments excludes an already-converted customer's other real appointment")
+    void followUpAppointmentsExcludesAlreadyConvertedCustomer() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        Booking futureRebooking = new Booking("FUTUREBOOK", "ACCEPTED", "2026-08-01T21:00:00Z", null, null,
+                "LOC1", "SQCUST123", null, null, List.of());
+        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(futureRebooking));
+
+        List<MarketingContactsService.FollowUpAppointment> appointments = service.followUpAppointments(
+                "mani", null, java.util.Set.of("OTHERBOOK"), java.util.Set.of("SQCUST123"));
+
+        assertThat(appointments).isEmpty();
     }
 
     @Test
@@ -469,7 +503,7 @@ class MarketingContactsServiceTest {
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
 
         List<MarketingContactsService.FollowUpAppointment> appointments =
-                service.followUpAppointments("mani", null, java.util.Set.of("OTHERBOOK"));
+                service.followUpAppointments("mani", null, java.util.Set.of("OTHERBOOK"), java.util.Set.of());
 
         assertThat(appointments).hasSize(1);
         assertThat(appointments.get(0).customerId()).isEqualTo("SQCUST123");
@@ -486,7 +520,7 @@ class MarketingContactsServiceTest {
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(tracked));
 
         List<MarketingContactsService.FollowUpAppointment> appointments =
-                service.followUpAppointments("mani", null, java.util.Set.of("TRACKEDBOOK"));
+                service.followUpAppointments("mani", null, java.util.Set.of("TRACKEDBOOK"), java.util.Set.of());
 
         assertThat(appointments).isEmpty();
     }
@@ -501,7 +535,7 @@ class MarketingContactsServiceTest {
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(cancelled));
 
         List<MarketingContactsService.FollowUpAppointment> appointments =
-                service.followUpAppointments("mani", null, java.util.Set.of());
+                service.followUpAppointments("mani", null, java.util.Set.of(), java.util.Set.of());
 
         assertThat(appointments).isEmpty();
     }

@@ -107,9 +107,19 @@ public class MarketingDashboardService {
             Set<String> attributedBookingIds = attributedRows.stream()
                     .map(MarketingDashboardRepository.AttributedBookingRow::bookingId)
                     .collect(Collectors.toSet());
-            Map<String, Long> conversionsByVariant = conversionsByVariant(attributedRows, slug);
-            Map<String, Long> followUpByVariant =
-                    contactsService.countFollowUpBookingsByVariant(slug, effectiveFrom, periodToInstant, attributedBookingIds);
+            Map<String, String> customerIdByBooking = contactsService.resolveCustomerIdsByBookingId(slug);
+            Map<String, Long> conversionsByVariant = conversionsByVariant(attributedRows, customerIdByBooking);
+            // Every real customer who already has a genuine attributed conversion on this page —
+            // countFollowUpBookingsByVariant excludes them entirely, not just their one already-
+            // tracked booking_id, so a customer's later, unrelated real appointment (a normal
+            // repeat visit, a reschedule onto a new booking_id) never double-counts them as a
+            // fresh manager follow-up too (see that method's own doc comment).
+            Set<String> convertedCustomerIds = attributedBookingIds.stream()
+                    .map(customerIdByBooking::get)
+                    .filter(java.util.Objects::nonNull)
+                    .collect(Collectors.toSet());
+            Map<String, Long> followUpByVariant = contactsService.countFollowUpBookingsByVariant(
+                    slug, effectiveFrom, periodToInstant, attributedBookingIds, convertedCustomerIds);
             List<VariantStat> variants = repository.findVariantStats(landingPageId.get(), slug, effectiveFrom, periodToInstant, sources).stream()
                     .map(raw -> toVariantStat(raw, slug,
                             conversionsByVariant.getOrDefault(raw.variantId(), 0L),
@@ -133,8 +143,7 @@ public class MarketingDashboardService {
      * on its own rather than being silently dropped, the same "fail open" call already made for
      * findVariantStats' contacts join (see its own doc comment on the self-booked "home" page bug). */
     private Map<String, Long> conversionsByVariant(
-            List<MarketingDashboardRepository.AttributedBookingRow> rows, String slug) {
-        Map<String, String> customerIdByBooking = contactsService.resolveCustomerIdsByBookingId(slug);
+            List<MarketingDashboardRepository.AttributedBookingRow> rows, Map<String, String> customerIdByBooking) {
         Map<String, MarketingDashboardRepository.AttributedBookingRow> earliestPerCustomer = new java.util.LinkedHashMap<>();
         List<MarketingDashboardRepository.AttributedBookingRow> unresolved = new java.util.ArrayList<>();
         for (var row : rows) {

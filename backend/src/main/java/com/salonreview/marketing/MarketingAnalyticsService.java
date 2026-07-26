@@ -363,12 +363,23 @@ public class MarketingAnalyticsService {
     /** Every real, non-cancelled Square appointment for this page's ads-attributed contacts that
      * {@code marketing.attribution} doesn't know about — empty (rather than an error) when no
      * page is selected or the slug doesn't resolve to a real landing page, since follow-up
-     * detection is inherently page-scoped (see design.md D1/D4). */
+     * detection is inherently page-scoped (see design.md D1/D4). {@code convertedCustomerIds} (see
+     * MarketingContactsService#followUpAppointments) keeps a customer who already genuinely
+     * converted on this page from also showing up as a follow-up for some later, unrelated real
+     * appointment of theirs.
+     */
     private List<FollowUpAppointment> resolveFollowUps(String slug) {
         if (slug == null) return List.of();
         return dashboardRepository.findLandingPageId(slug)
-                .map(pageId -> contactsService.followUpAppointments(
-                        slug, null, dashboardRepository.findAttributedBookingIds(pageId, null, null)))
+                .map(pageId -> {
+                    Set<String> attributedBookingIds = dashboardRepository.findAttributedBookingIds(pageId, null, null);
+                    Map<String, String> customerIdByBooking = contactsService.resolveCustomerIdsByBookingId(slug);
+                    Set<String> convertedCustomerIds = attributedBookingIds.stream()
+                            .map(customerIdByBooking::get)
+                            .filter(Objects::nonNull)
+                            .collect(java.util.stream.Collectors.toSet());
+                    return contactsService.followUpAppointments(slug, null, attributedBookingIds, convertedCustomerIds);
+                })
                 .orElse(List.of());
     }
 

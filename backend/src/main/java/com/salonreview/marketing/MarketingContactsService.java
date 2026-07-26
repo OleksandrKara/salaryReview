@@ -187,9 +187,19 @@ public class MarketingContactsService {
      * original tracked request was later cancelled and replaced by a different booking a manager
      * created directly in Square (their contacts row still has a square_customer_id, but that
      * particular new booking never went through our attribution recording).
+     *
+     * <p>{@code convertedCustomerIds} (every real customer who already has a genuine attributed
+     * conversion on this page — see MarketingDashboardService#conversionsByVariant) excludes that
+     * customer from follow-up counting entirely, not just their one already-tracked booking_id. A
+     * customer who converted on-page and later gets any other real appointment — a normal repeat
+     * visit booked directly in Square, a reschedule that landed on a new booking_id, anything —
+     * isn't a manager "follow-up" story; without this exclusion that other booking still isn't in
+     * {@code attributedBookingIds} (it's a different booking_id), so it would double-count an
+     * already-converted client as a fresh follow-up too.
      */
     public Map<String, Long> countFollowUpBookingsByVariant(
-            String landingPageSlug, Instant statsSince, Instant periodTo, java.util.Set<String> attributedBookingIds) {
+            String landingPageSlug, Instant statsSince, Instant periodTo,
+            java.util.Set<String> attributedBookingIds, java.util.Set<String> convertedCustomerIds) {
         // uncountedAppointments is a Square round trip per candidate contact — same
         // parallelization reasoning as contacts() above. Grouped by resolved customer id first,
         // keeping only the earliest qualifying contact row per real client, before counting by
@@ -201,6 +211,7 @@ public class MarketingContactsService {
                 .filter(r -> landingPageSlug.equals(r.landingPageSlug()))
                 .filter(r -> statsSince == null || !r.createdAt().isBefore(statsSince))
                 .filter(r -> periodTo == null || r.createdAt().isBefore(periodTo))
+                .filter(r -> !convertedCustomerIds.contains(resolveSquareCustomerId(r)))
                 .filter(r -> !uncountedAppointments(r, attributedBookingIds).isEmpty())
                 .collect(Collectors.toMap(
                         this::resolveSquareCustomerId,
@@ -242,12 +253,17 @@ public class MarketingContactsService {
      * count) so Ads Report can fold their real/catalog price and date straight into the same
      * revenueCollected/anticipatedRevenue figures the tracked-flow path already computes. A
      * booking already in {@code attributedBookingIds} is never included here — it's already
-     * counted via that path, never double-counted as a follow-up too.
+     * counted via that path, never double-counted as a follow-up too. {@code convertedCustomerIds}
+     * carries the same customer-level exclusion {@link #countFollowUpBookingsByVariant} applies —
+     * see its doc comment for why a booking_id-only check isn't enough.
      */
-    public List<FollowUpAppointment> followUpAppointments(String landingPageSlug, Instant statsSince, java.util.Set<String> attributedBookingIds) {
+    public List<FollowUpAppointment> followUpAppointments(
+            String landingPageSlug, Instant statsSince,
+            java.util.Set<String> attributedBookingIds, java.util.Set<String> convertedCustomerIds) {
         return repository.listAll().parallelStream()
                 .filter(r -> landingPageSlug.equals(r.landingPageSlug()))
                 .filter(r -> statsSince == null || !r.createdAt().isBefore(statsSince))
+                .filter(r -> !convertedCustomerIds.contains(resolveSquareCustomerId(r)))
                 .flatMap(r -> {
                     String customerId = resolveSquareCustomerId(r);
                     return uncountedAppointments(r, attributedBookingIds).stream()
