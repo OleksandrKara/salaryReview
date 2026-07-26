@@ -1501,17 +1501,27 @@ type SegmentKey = 'all' | 'fresh' | 'returning';
  * decision) — the breakdown's own load stays fast regardless of how many customers are in range.
  */
 interface HistoryExpandState {
-  isAppointmentsOpen(customerId: string): boolean;
-  isSubmissionsOpen(customerId: string): boolean;
+  isAppointmentsOpen(rowKey: string): boolean;
+  isSubmissionsOpen(rowKey: string): boolean;
   isLoading(customerId: string): boolean;
   history(customerId: string): MarketingCustomerHistory | undefined;
-  toggleAppointments(customerId: string): void;
-  toggleSubmissions(customerId: string): void;
+  toggleAppointments(rowKey: string, customerId: string): void;
+  toggleSubmissions(rowKey: string, customerId: string): void;
 }
 
 function useCustomerHistoryExpand(): HistoryExpandState {
+  // Expand/collapse is keyed by the row's own unique key, not the customer id — the same Square
+  // customer can have more than one row (e.g. a genuine "completed" appointment and a separate,
+  // unrelated "anticipated" one), and each row's own toggle should be independent. Expanding one
+  // row must never make a *different* row for the same person also render as open — that bug
+  // (found investigating Ashanti Williamson always showing a "$85 cash note" line under
+  // Anticipated (outside) once her Collected row had been expanded) came from keying this by
+  // customerId, which every row for that person shares.
   const [expandedAppointments, setExpandedAppointments] = useState<Set<string>>(new Set());
   const [expandedSubmissions, setExpandedSubmissions] = useState<Set<string>>(new Set());
+  // The fetched history itself is still fine to key (and cache) by customer id and share across
+  // that person's rows — it's the same real data regardless of which row asked for it, so this
+  // avoids re-fetching it once per row.
   const [historyByCustomer, setHistoryByCustomer] = useState<Map<string, MarketingCustomerHistory>>(new Map());
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
 
@@ -1526,33 +1536,41 @@ function useCustomerHistoryExpand(): HistoryExpandState {
       .finally(() => setLoadingIds((prev) => { const next = new Set(prev); next.delete(customerId); return next; }));
   }
 
-  function toggle(set: Set<string>, setSet: (updater: (s: Set<string>) => Set<string>) => void, customerId: string) {
-    const opening = !set.has(customerId);
+  function toggle(
+    set: Set<string>, setSet: (updater: (s: Set<string>) => Set<string>) => void, rowKey: string, customerId: string,
+  ) {
+    const opening = !set.has(rowKey);
     setSet((prev) => {
       const next = new Set(prev);
-      if (next.has(customerId)) next.delete(customerId);
-      else next.add(customerId);
+      if (next.has(rowKey)) next.delete(rowKey);
+      else next.add(rowKey);
       return next;
     });
     if (opening) ensureLoaded(customerId);
   }
 
   return {
-    isAppointmentsOpen: (id) => expandedAppointments.has(id),
-    isSubmissionsOpen: (id) => expandedSubmissions.has(id),
+    isAppointmentsOpen: (rowKey) => expandedAppointments.has(rowKey),
+    isSubmissionsOpen: (rowKey) => expandedSubmissions.has(rowKey),
     isLoading: (id) => loadingIds.has(id),
     history: (id) => historyByCustomer.get(id),
-    toggleAppointments: (id) => toggle(expandedAppointments, setExpandedAppointments, id),
-    toggleSubmissions: (id) => toggle(expandedSubmissions, setExpandedSubmissions, id),
+    toggleAppointments: (rowKey, customerId) => toggle(expandedAppointments, setExpandedAppointments, rowKey, customerId),
+    toggleSubmissions: (rowKey, customerId) => toggle(expandedSubmissions, setExpandedSubmissions, rowKey, customerId),
   };
 }
 
 /** The expand affordance itself — shown under a completed/upcoming row. Three states: not yet
  * clicked (plain links, count unknown), loading (spinner), loaded (real HistoryToggle counts,
  * matching ContactsTable's exact convention including its "no history" plain-text fallback). */
-function CustomerHistoryExpand({ customerId, expand }: { customerId: string; expand: HistoryExpandState }) {
-  const appointmentsOpen = expand.isAppointmentsOpen(customerId);
-  const submissionsOpen = expand.isSubmissionsOpen(customerId);
+function CustomerHistoryExpand({
+  rowKey, customerId, expand,
+}: {
+  rowKey: string;
+  customerId: string;
+  expand: HistoryExpandState;
+}) {
+  const appointmentsOpen = expand.isAppointmentsOpen(rowKey);
+  const submissionsOpen = expand.isSubmissionsOpen(rowKey);
   const hist = expand.history(customerId);
   const loading = expand.isLoading(customerId);
 
@@ -1561,8 +1579,8 @@ function CustomerHistoryExpand({ customerId, expand }: { customerId: string; exp
       <div className="flex flex-wrap items-center gap-3">
         {hist ? (
           <>
-            <HistoryToggle label="Appointments" count={hist.appointments.length} open={appointmentsOpen} onClick={() => expand.toggleAppointments(customerId)} />
-            <HistoryToggle label="Submissions" count={hist.submissions.length} open={submissionsOpen} onClick={() => expand.toggleSubmissions(customerId)} />
+            <HistoryToggle label="Appointments" count={hist.appointments.length} open={appointmentsOpen} onClick={() => expand.toggleAppointments(rowKey, customerId)} />
+            <HistoryToggle label="Submissions" count={hist.submissions.length} open={submissionsOpen} onClick={() => expand.toggleSubmissions(rowKey, customerId)} />
           </>
         ) : loading ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-zinc-400">
@@ -1570,10 +1588,10 @@ function CustomerHistoryExpand({ customerId, expand }: { customerId: string; exp
           </span>
         ) : (
           <>
-            <button type="button" onClick={() => expand.toggleAppointments(customerId)} className="text-xs font-medium text-blue-600 hover:underline">
+            <button type="button" onClick={() => expand.toggleAppointments(rowKey, customerId)} className="text-xs font-medium text-blue-600 hover:underline">
               Appointments
             </button>
-            <button type="button" onClick={() => expand.toggleSubmissions(customerId)} className="text-xs font-medium text-blue-600 hover:underline">
+            <button type="button" onClick={() => expand.toggleSubmissions(rowKey, customerId)} className="text-xs font-medium text-blue-600 hover:underline">
               Submissions
             </button>
           </>
@@ -1788,7 +1806,7 @@ function LedgerList({ rows, historyExpand }: { rows: LedgerRow[]; historyExpand:
                 <LedgerCategoryBadge category={r.category} />
               </div>
             </div>
-            <CustomerHistoryExpand customerId={r.customerId} expand={historyExpand} />
+            <CustomerHistoryExpand rowKey={r.key} customerId={r.customerId} expand={historyExpand} />
           </div>
         ))}
       </div>
@@ -1825,7 +1843,7 @@ function LedgerList({ rows, historyExpand }: { rows: LedgerRow[]; historyExpand:
                 </tr>
                 <tr className="bg-zinc-50/50">
                   <td colSpan={7} className="px-3 pb-2">
-                    <CustomerHistoryExpand customerId={r.customerId} expand={historyExpand} />
+                    <CustomerHistoryExpand rowKey={r.key} customerId={r.customerId} expand={historyExpand} />
                   </td>
                 </tr>
               </Fragment>
