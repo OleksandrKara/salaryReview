@@ -4,6 +4,8 @@ import com.salonreview.marketing.MarketingAnalyticsService;
 import com.salonreview.marketing.MarketingAnalyticsService.PeriodKind;
 import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.web.dto.MarketingAdsReportDto;
+import com.salonreview.web.dto.MarketingAdsReportDto.CountSplit;
+import com.salonreview.web.dto.MarketingAdsReportDto.MoneySplit;
 import com.salonreview.web.dto.MarketingAdsReportDto.PeriodRow;
 import com.salonreview.web.dto.MarketingContactDto.Contact;
 import com.salonreview.web.dto.MarketingCustomerHistoryDto;
@@ -40,9 +42,12 @@ class MarketingAdsReportControllerTest {
     private MarketingContactsService contactsService;
     private MockMvc mvc;
 
+    private static final MoneySplit ZERO_MONEY_SPLIT = new MoneySplit(BigDecimal.ZERO, BigDecimal.ZERO);
+    private static final CountSplit ZERO_COUNT_SPLIT = new CountSplit(0, 0);
     private static final PeriodRow EMPTY_ROW = new PeriodRow(
             LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
-            BigDecimal.ZERO, false, BigDecimal.ZERO, BigDecimal.ZERO, 0, BigDecimal.ZERO, 0, 0, 0, 0, 0, false);
+            BigDecimal.ZERO, false, BigDecimal.ZERO, ZERO_MONEY_SPLIT, BigDecimal.ZERO, ZERO_MONEY_SPLIT, 0,
+            BigDecimal.ZERO, ZERO_MONEY_SPLIT, 0, ZERO_COUNT_SPLIT, 0, 0, ZERO_COUNT_SPLIT, 0, ZERO_COUNT_SPLIT, 0, false);
     private static final MarketingAdsReportDto EMPTY_DTO =
             new MarketingAdsReportDto("WEEK", List.of(), EMPTY_ROW);
 

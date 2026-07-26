@@ -960,6 +960,19 @@ export interface MarketingAnalyticsData {
 
 // --- Marketing Ads Report (com.salonreview.web.MarketingAdsReportController) ---
 
+/** A money figure split by whether it came from a customer's first ads-attributed visit vs. a
+ * later, repeat one — firstVisit + repeat always equals the un-split figure it accompanies. */
+export interface MoneySplit {
+  firstVisit: number;
+  repeat: number;
+}
+
+/** Same split as MoneySplit, for a headline count instead of a dollar figure. */
+export interface CountSplit {
+  firstVisit: number;
+  repeat: number;
+}
+
 export interface MarketingAdsReportPeriod {
   /** ISO-8601 dates (yyyy-MM-dd), inclusive on both ends. */
   periodStart: string;
@@ -974,9 +987,13 @@ export interface MarketingAdsReportPeriod {
    * in this period — real, not a catalog estimate. Comps excluded (nothing collected). Includes
    * manager-follow-up appointments (see customersFollowedUp). */
   revenueCollected: number;
+  /** revenueCollected split by first-visit vs. repeat. */
+  revenueCollectedSplit: MoneySplit;
   /** Catalog-price value of still-upcoming ads-attributed appointments scheduled in this period —
    * zero for periods entirely in the past. Includes not-yet-paid follow-up appointments. */
   anticipatedRevenue: number;
+  /** anticipatedRevenue split by first-visit vs. repeat. */
+  anticipatedRevenueSplit: MoneySplit;
   /** Ads-attributed customers whose Square record was created fresh off the ad touch, with a
    * service rendered in this period — booked through the tracked flow itself, not a manager
    * follow-up (see customersFollowedUp). */
@@ -988,8 +1005,12 @@ export interface MarketingAdsReportPeriod {
    * can never contain a future appointment regardless of whose it is. revenueCollected +
    * anticipatedRevenue + this = what the WhatsApp text export calls "Total". */
   anticipatedRevenueOutsidePeriod: number;
+  /** anticipatedRevenueOutsidePeriod split by first-visit vs. repeat. */
+  anticipatedRevenueOutsidePeriodSplit: MoneySplit;
   /** Count of distinct completed, actually-paid appointments (not service line items) in this period. */
   completedAppointments: number;
+  /** completedAppointments split by first-visit vs. repeat. */
+  completedAppointmentsSplit: CountSplit;
   /** Real bookings for ads-attributed customers, dated within this period, that didn't happen
    * (cancelled by customer/seller, declined, or no-show). completedAppointments + this +
    * anticipatedAppointments is the full bookings breakdown for this period. */
@@ -999,10 +1020,14 @@ export interface MarketingAdsReportPeriod {
    * completedAppointments + cancelledBookings + anticipatedAppointments +
    * anticipatedAppointmentsOutsidePeriod is the full bookings breakdown for this period. */
   anticipatedAppointments: number;
+  /** anticipatedAppointments split by first-visit vs. repeat. */
+  anticipatedAppointmentsSplit: CountSplit;
   /** Count of still-upcoming appointments dated outside this row's own period, booked by exactly
    * the customers captured (firstTouch) within that same window — the headline count for
    * anticipatedRevenueOutsidePeriod, same scoping and same reasoning. */
   anticipatedAppointmentsOutsidePeriod: number;
+  /** anticipatedAppointmentsOutsidePeriod split by first-visit vs. repeat. */
+  anticipatedAppointmentsOutsidePeriodSplit: CountSplit;
   /** Real, non-cancelled Square appointments in this period for this page's ads-attributed
    * contacts that the tracked flow never recorded — a lead a manager booked by phone after the
    * on-site flow didn't complete. Already folded into revenueCollected/anticipatedRevenue above;

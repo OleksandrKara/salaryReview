@@ -851,6 +851,44 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
+    @DisplayName("adsReport splits revenueCollected/completedAppointments into first-visit vs. repeat, same freshness check as analytics()")
+    void adsReportSplitsFirstVisitFromRepeat() {
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
+                contact("+16195550001", "cust-fresh", Instant.parse("2026-07-05T12:00:00Z"), "meta_ads"),
+                contact("+16195550002", "cust-returning", Instant.parse("2026-07-05T12:00:00Z"), "meta_ads")));
+        when(square.customerCreatedAts(Set.of("cust-fresh", "cust-returning"))).thenReturn(Map.of(
+                "cust-fresh", Instant.parse("2026-07-05T12:05:00Z"),
+                "cust-returning", Instant.parse("2025-01-01T00:00:00Z")));
+        // Distinct bookingIds — svc()'s hardcoded "booking-1" would merge these into one grouped
+        // row (buildCompletedAppointments groups by bookingId), collapsing the very split under test.
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
+                new AttributedService("p1", "P", "2026-07-10", "FIRST", "Manicure", new BigDecimal("100.00"),
+                        BigDecimal.ZERO, new BigDecimal("100.00"), BigDecimal.ZERO, true, 1, 1, false, "CARD",
+                        null, "booking-fresh", "cust-fresh", "Customer"),
+                new AttributedService("p1", "P", "2026-07-12", "FIRST", "Manicure", new BigDecimal("80.00"),
+                        BigDecimal.ZERO, new BigDecimal("80.00"), BigDecimal.ZERO, true, 1, 1, false, "CARD",
+                        null, "booking-returning", "cust-returning", "Customer")
+        )));
+
+        MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
+                TrafficSourceSql.ADS_ONLY, "mani", MarketingAnalyticsService.PeriodKind.MONTH);
+
+        PeriodRow july = dto.periods().get(0);
+        assertThat(july.revenueCollected()).isEqualByComparingTo("180.00");
+        assertThat(july.revenueCollectedSplit().firstVisit()).isEqualByComparingTo("100.00");
+        assertThat(july.revenueCollectedSplit().repeat()).isEqualByComparingTo("80.00");
+        assertThat(july.completedAppointments()).isEqualTo(2);
+        assertThat(july.completedAppointmentsSplit().firstVisit()).isEqualTo(1);
+        assertThat(july.completedAppointmentsSplit().repeat()).isEqualTo(1);
+
+        // Single-period report, so totals mirror the one row exactly.
+        assertThat(dto.totals().revenueCollectedSplit().firstVisit()).isEqualByComparingTo("100.00");
+        assertThat(dto.totals().revenueCollectedSplit().repeat()).isEqualByComparingTo("80.00");
+        assertThat(dto.totals().completedAppointmentsSplit().firstVisit()).isEqualTo(1);
+        assertThat(dto.totals().completedAppointmentsSplit().repeat()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("adsReport (weekly): a week straddling two months blends each month's own prorated daily rate")
     void adsReportWeeklyProratesAcrossMonthBoundary() {
         when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of());
