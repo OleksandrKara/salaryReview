@@ -432,9 +432,38 @@ public class MarketingAnalyticsService {
             boolean fresh = customerId != null && freshCustomerIds.contains(customerId);
             LocalDate date = a.startAt().atZone(java.time.ZoneOffset.UTC).toLocalDate();
             if (a.collectedAmount() != null) {
+                LocalDate finalDate = date;
+                String finalService = serviceName;
+                // Defensive: alreadyCountedBookingIds is keyed by booking_id, which only guards
+                // against re-adding *this exact* booking. It can't catch a follow-up that
+                // resolves to the same real customer + date + service as something already in
+                // completed via a *different* booking_id (e.g. a reschedule, or two attribution
+                // paths for the same visit) — seen in production duplicating an
+                // already-attributed, already-listed appointment. Logged rather than silently
+                // dropped so the actual mismatched booking_id is visible for root-causing.
+                boolean alreadyListed = completed.stream().anyMatch(c ->
+                        Objects.equals(c.customerId(), customerId) && finalDate.equals(c.date())
+                                && finalService.equals(c.serviceName()));
+                if (alreadyListed) {
+                    log.warn("Follow-up merge skipped a completed appointment that duplicates one already listed "
+                                    + "(customerId={}, date={}, service={}, bookingId={})",
+                            customerId, date, serviceName, a.bookingId());
+                    continue;
+                }
                 completed.add(new CompletedAppointment(customerId, customerName, serviceName, date,
                         a.collectedAmount().setScale(2, RoundingMode.HALF_UP), a.paymentChannel(), fresh));
             } else if (!date.isBefore(today)) {
+                Instant finalStartAt = a.startAt();
+                String finalService = serviceName;
+                boolean alreadyListed = upcoming.stream().anyMatch(u ->
+                        Objects.equals(u.customerId(), customerId) && Objects.equals(u.startAt(), finalStartAt)
+                                && finalService.equals(u.serviceName()));
+                if (alreadyListed) {
+                    log.warn("Follow-up merge skipped an upcoming appointment that duplicates one already listed "
+                                    + "(customerId={}, startAt={}, service={}, bookingId={})",
+                            customerId, a.startAt(), serviceName, a.bookingId());
+                    continue;
+                }
                 upcoming.add(new UpcomingAppointment(customerId, customerName, serviceName, a.startAt(),
                         a.price() == null ? ZERO_MONEY : a.price().setScale(2, RoundingMode.HALF_UP), fresh,
                         capturedInRangeIds != null && capturedInRangeIds.contains(customerId)));

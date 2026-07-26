@@ -538,6 +538,45 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
+    @DisplayName("a follow-up appointment resolving to a DIFFERENT bookingId than the one already tracked, "
+            + "but the same customer/date/service, is not re-added — regression guard for the "
+            + "Ashanti Williamson breakdown bug where alreadyCountedBookingIds' booking-id-only guard "
+            + "missed a same-visit duplicate surfaced through a different bookingId")
+    void analyticsDoesNotDoubleCountFollowUpWithDifferentBookingIdSameVisit() {
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
+        when(square.customerCreatedAts(Set.of("cust-1")))
+                .thenReturn(Map.of("cust-1", Instant.parse("2026-07-01T00:05:00Z")));
+        // Already surfaced by the tracked flow under its own real bookingId.
+        AttributedService trackedService = new AttributedService("p1", "P", "2026-07-05", "FIRST", "Manicure",
+                new BigDecimal("85.00"), BigDecimal.ZERO, new BigDecimal("85.00"), BigDecimal.ZERO, true, 1, 1,
+                false, "CARD", null, "bk-real", "cust-1", "Customer");
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00")))
+                .thenReturn(aggOf(2026, 7, List.of(trackedService)));
+        when(square.customerNames(Set.of("cust-1"))).thenReturn(Map.of("cust-1", "Jane Doe"));
+
+        java.util.UUID pageId = java.util.UUID.randomUUID();
+        when(dashboardRepository.findLandingPageId("mani")).thenReturn(java.util.Optional.of(pageId));
+        when(dashboardRepository.findAttributedBookingIds(pageId, null, null)).thenReturn(Set.of());
+        // Follow-up detection resolves the SAME visit (same customer/date/service) but under a
+        // DIFFERENT bookingId — alreadyCountedBookingIds (keyed only on "bk-real") would not catch
+        // this, since it's checking "bk-different", not "bk-real".
+        var duplicateOfSameVisit = new com.salonreview.web.dto.MarketingContactDto.Appointment(
+                "bk-different", "ACCEPTED", Instant.parse("2026-07-05T18:00:00Z"), "Manicure",
+                new BigDecimal("85.00"), null, "CARD", new BigDecimal("85.00"),
+                null, null, null, null, null, null);
+        when(contactsService.followUpAppointments("mani", null, Set.of(), Set.of())).thenReturn(List.of(
+                new MarketingContactsService.FollowUpAppointment("cust-1", duplicateOfSameVisit)));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY, "mani");
+
+        assertThat(dto.completed()).hasSize(1);
+        assertThat(dto.completed().get(0).collected()).isEqualByComparingTo("85.00");
+        assertThat(dto.completed().get(0).customerName()).isEqualTo("Jane Doe");
+    }
+
+    @Test
     @DisplayName("default (no slug) call still uses the exact no-arg contacts query — regression guard for byte-identical default behavior")
     void defaultCallUsesNoArgContactsQuery() {
         when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
