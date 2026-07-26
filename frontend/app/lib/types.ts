@@ -775,7 +775,10 @@ export interface MarketingVariantStat {
   name: string;
   weight: number;
   pageViews: number;
-  bookingsCompleted: number;
+  /** Genuine conversions — distinct real customers who completed the tracked booking flow on
+   * this page/variant, each counted once even if they (or a manager, or anyone else) later
+   * rebooked them again through the same flow. */
+  conversions: number;
   /** Contacts (leads) captured under this variant, matched by name — a later rename won't
    * reattach older contacts to the new name (see the backend DTO's field doc). */
   contactsCreated: number;
@@ -783,12 +786,12 @@ export interface MarketingVariantStat {
    * fire this from their one shared "open the booking modal" call site. */
   bookNowClicks: number;
   conversionRate: number;
-  /** Real appointments Square knows about that bookingsCompleted doesn't — a manager followed up
+  /** Distinct real customers Square knows about that conversions doesn't — a manager followed up
    * on a lead and booked them by phone, or the lead's original tracked request was cancelled and
    * a different booking replaced it. Zero unless a manager follow-up has actually been found via
    * the same phone-resolution "Sync" mechanism as the Contacts tab. */
   followUpBookings: number;
-  /** (bookingsCompleted + followUpBookings) / pageViews. Equal to conversionRate when
+  /** (conversions + followUpBookings) / pageViews. Equal to conversionRate when
    * followUpBookings is zero. */
   adjustedConversionRate: number;
   /** Direct ?v=<key> link to view this exact variant, or null if it has no key yet. */

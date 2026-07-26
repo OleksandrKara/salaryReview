@@ -102,11 +102,18 @@ public class MarketingDashboardService {
 
             Instant statsSince = repository.findStatsSince(landingPageId.get()).orElse(null);
             Instant effectiveFrom = laterOf(statsSince, periodFromInstant);
-            Set<String> attributedBookingIds = repository.findAttributedBookingIds(landingPageId.get(), effectiveFrom, periodToInstant);
+            List<MarketingDashboardRepository.AttributedBookingRow> attributedRows =
+                    repository.findAttributedBookingRows(landingPageId.get(), effectiveFrom, periodToInstant, sources);
+            Set<String> attributedBookingIds = attributedRows.stream()
+                    .map(MarketingDashboardRepository.AttributedBookingRow::bookingId)
+                    .collect(Collectors.toSet());
+            Map<String, Long> conversionsByVariant = conversionsByVariant(attributedRows, slug);
             Map<String, Long> followUpByVariant =
                     contactsService.countFollowUpBookingsByVariant(slug, effectiveFrom, periodToInstant, attributedBookingIds);
             List<VariantStat> variants = repository.findVariantStats(landingPageId.get(), slug, effectiveFrom, periodToInstant, sources).stream()
-                    .map(raw -> toVariantStat(raw, slug, followUpByVariant.getOrDefault(raw.name(), 0L)))
+                    .map(raw -> toVariantStat(raw, slug,
+                            conversionsByVariant.getOrDefault(raw.variantId(), 0L),
+                            followUpByVariant.getOrDefault(raw.name(), 0L)))
                     .collect(Collectors.toList());
 
             return new MarketingDashboardDto(true, slug, variants, statsSince == null ? null : statsSince.toString());
@@ -114,6 +121,32 @@ public class MarketingDashboardService {
             log.warn("Marketing schema unavailable while building dashboard for slug={}", slug, ex);
             return MarketingDashboardDto.unavailable(slug);
         }
+    }
+
+    /** Collapses raw attribution rows down to one genuine conversion per real customer, grouped by
+     * variant — a returning customer's second (or later) tracked-flow booking on this page is a
+     * rebooking, not a fresh conversion, and is dropped here rather than inflating the count (see
+     * the Overview tab's "18 +7 follow-up -> 25" framing: the 18 must never include a repeat visit,
+     * whether the client rebooked themselves or a manager rebooked them). A booking whose customer
+     * can't be resolved at all (a data-quality gap — every tracked-flow booking should have a
+     * marketing.contacts row with either a direct or Sync-linked square_customer_id) always counts
+     * on its own rather than being silently dropped, the same "fail open" call already made for
+     * findVariantStats' contacts join (see its own doc comment on the self-booked "home" page bug). */
+    private Map<String, Long> conversionsByVariant(
+            List<MarketingDashboardRepository.AttributedBookingRow> rows, String slug) {
+        Map<String, String> customerIdByBooking = contactsService.resolveCustomerIdsByBookingId(slug);
+        Map<String, MarketingDashboardRepository.AttributedBookingRow> earliestPerCustomer = new java.util.LinkedHashMap<>();
+        List<MarketingDashboardRepository.AttributedBookingRow> unresolved = new java.util.ArrayList<>();
+        for (var row : rows) {
+            String customerId = customerIdByBooking.get(row.bookingId());
+            if (customerId == null) {
+                unresolved.add(row);
+                continue;
+            }
+            earliestPerCustomer.merge(customerId, row, (a, b) -> a.createdAt().isBefore(b.createdAt()) ? a : b);
+        }
+        return java.util.stream.Stream.concat(earliestPerCustomer.values().stream(), unresolved.stream())
+                .collect(Collectors.groupingBy(MarketingDashboardRepository.AttributedBookingRow::variantId, Collectors.counting()));
     }
 
     /** The later of two nullable instants, where null means "unbounded" (i.e. loses to any real
@@ -213,14 +246,15 @@ public class MarketingDashboardService {
         cache.invalidateAll();
     }
 
-    private VariantStat toVariantStat(MarketingDashboardRepository.RawVariantStat raw, String slug, long followUpBookings) {
-        double conversionRate = raw.pageViews() == 0 ? 0.0 : (double) raw.bookingsCompleted() / raw.pageViews();
+    private VariantStat toVariantStat(MarketingDashboardRepository.RawVariantStat raw, String slug,
+                                      long conversions, long followUpBookings) {
+        double conversionRate = raw.pageViews() == 0 ? 0.0 : (double) conversions / raw.pageViews();
         double adjustedConversionRate = raw.pageViews() == 0
                 ? 0.0
-                : (double) (raw.bookingsCompleted() + followUpBookings) / raw.pageViews();
+                : (double) (conversions + followUpBookings) / raw.pageViews();
         String deepLinkUrl = raw.key() == null ? null : buildDeepLinkUrl(raw.key(), slug);
         return new VariantStat(raw.variantId(), raw.name(), raw.weight(),
-                raw.pageViews(), raw.bookingsCompleted(), raw.contactsCreated(), raw.bookNowClicks(),
+                raw.pageViews(), conversions, raw.contactsCreated(), raw.bookNowClicks(),
                 conversionRate, followUpBookings, adjustedConversionRate, deepLinkUrl, raw.description());
     }
 

@@ -21,13 +21,18 @@ import java.util.UUID;
 @Repository
 public class MarketingDashboardRepository {
 
-    /** Raw per-variant counts — conversionRate is computed in the service layer, not stored here. */
+    /** Raw per-variant counts — conversionRate is computed in the service layer, not stored here.
+     * Deliberately excludes a bookings/conversions count: unlike pageViews/contactsCreated/
+     * bookNowClicks (each a plain, correct COUNT(*)), collapsing marketing.attribution rows down
+     * to one genuine conversion per real customer needs a Java-side join to resolved customer ids
+     * (see MarketingDashboardService#conversionsByVariant) — a repeat customer's second tracked-flow
+     * booking on this page is a rebooking, not a fresh conversion, and a raw SQL COUNT(*) can't
+     * tell the two apart. */
     public record RawVariantStat(
             String variantId,
             String name,
             int weight,
             long pageViews,
-            long bookingsCompleted,
             long contactsCreated,
             /** Clicks on anything that opens the booking form (step 1) — event_type='click',
              * metadata->>'target'='book_now'. Both akluxnails-home and mani fire this same
@@ -36,6 +41,13 @@ public class MarketingDashboardRepository {
             String key,
             String description
     ) {}
+
+    /** One marketing.attribution row, unaggregated — variantId + bookingId + createdAt, enough for
+     * the service layer to resolve each booking's real customer and collapse repeats down to one
+     * genuine conversion per customer (see MarketingDashboardService#conversionsByVariant), which a
+     * plain SQL COUNT(*) can't do. Same statsSince/periodTo/sources scoping as the old
+     * bookings_completed subquery this replaces. */
+    public record AttributedBookingRow(String variantId, String bookingId, Instant createdAt) {}
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -109,33 +121,11 @@ public class MarketingDashboardRepository {
     public List<RawVariantStat> findVariantStats(
             UUID landingPageId, String landingPageSlug, Instant statsSince, Instant periodTo, Set<String> sources) {
         String pageViewFilter = sourceFilter(() -> TrafficSourceSql.visitInSources("e.session_id", sources), sources);
-        String contactFilterC2 = sourceFilter(() -> TrafficSourceSql.contactInSources("c2", sources), sources);
         String contactFilterC = sourceFilter(() -> TrafficSourceSql.contactInSources("c", sources), sources);
-        boolean allTraffic = sources.equals(TrafficSourceSql.ALL);
-        String bookingsSubquery = allTraffic
-                ? """
-                  SELECT a.variant_id, COUNT(*) AS bookings_completed
-                  FROM marketing.attribution a
-                  WHERE (?::timestamptz IS NULL OR a.created_at >= ?)
-                    AND (?::timestamptz IS NULL OR a.created_at < ?)
-                  GROUP BY a.variant_id
-                  """
-                : """
-                  SELECT a.variant_id, COUNT(*) AS bookings_completed
-                  FROM marketing.attribution a
-                  WHERE (?::timestamptz IS NULL OR a.created_at >= ?)
-                    AND (?::timestamptz IS NULL OR a.created_at < ?)
-                    AND EXISTS (
-                        SELECT 1 FROM marketing.contacts c2
-                        WHERE c2.square_booking_id = a.booking_id AND %s
-                    )
-                  GROUP BY a.variant_id
-                  """.formatted(contactFilterC2);
         String sql = """
                 SELECT v.id AS variant_id, v.name AS name, v.weight AS weight,
                        v.key AS key, v.description AS description,
                        COALESCE(pv.page_views, 0) AS page_views,
-                       COALESCE(bk.bookings_completed, 0) AS bookings_completed,
                        COALESCE(ct.contacts_created, 0) AS contacts_created,
                        COALESCE(bc.book_now_clicks, 0) AS book_now_clicks
                 FROM marketing.landing_variants v
@@ -148,14 +138,11 @@ public class MarketingDashboardRepository {
                     GROUP BY e.variant_id
                 ) pv ON pv.variant_id = v.id
                 LEFT JOIN (
-                    %2$s
-                ) bk ON bk.variant_id = v.id
-                LEFT JOIN (
                     SELECT c.variant_name, COUNT(*) AS contacts_created
                     FROM marketing.contacts c
                     WHERE c.landing_page_slug = ? AND (?::timestamptz IS NULL OR c.created_at >= ?)
                       AND (?::timestamptz IS NULL OR c.created_at < ?)
-                      AND %3$s
+                      AND %2$s
                     GROUP BY c.variant_name
                 ) ct ON ct.variant_name = v.name
                 LEFT JOIN (
@@ -169,7 +156,7 @@ public class MarketingDashboardRepository {
                 ) bc ON bc.variant_id = v.id
                 WHERE v.landing_page_id = ?
                 ORDER BY v.created_at ASC
-                """.formatted(pageViewFilter, bookingsSubquery, contactFilterC);
+                """.formatted(pageViewFilter, contactFilterC);
         Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
         Timestamp to = periodTo == null ? null : Timestamp.from(periodTo);
         return jdbcTemplate.query(sql, (rs, rowNum) -> new RawVariantStat(
@@ -177,16 +164,53 @@ public class MarketingDashboardRepository {
                 rs.getString("name"),
                 rs.getInt("weight"),
                 rs.getLong("page_views"),
-                rs.getLong("bookings_completed"),
                 rs.getLong("contacts_created"),
                 rs.getLong("book_now_clicks"),
                 rs.getString("key"),
                 rs.getString("description")
         ), cutoff, cutoff, to, to,
-           cutoff, cutoff, to, to,
            landingPageSlug, cutoff, cutoff, to, to,
            cutoff, cutoff, to, to,
            landingPageId);
+    }
+
+    /** Raw marketing.attribution rows for this landing page/period/source scope — replaces the old
+     * bookings_completed subquery's blind COUNT(*): the service layer needs each row's own
+     * booking_id/created_at to resolve its real customer and collapse repeats down to one genuine
+     * conversion per customer (see MarketingDashboardService#conversionsByVariant). Same
+     * statsSince/periodTo/sources semantics as before — "All traffic" counts every row directly;
+     * otherwise a row only qualifies if its booking_id has a matching, correctly-classified
+     * marketing.contacts row. */
+    public List<AttributedBookingRow> findAttributedBookingRows(
+            UUID landingPageId, Instant statsSince, Instant periodTo, Set<String> sources) {
+        String contactFilterC2 = sourceFilter(() -> TrafficSourceSql.contactInSources("c2", sources), sources);
+        boolean allTraffic = sources.equals(TrafficSourceSql.ALL);
+        String sql = allTraffic
+                ? """
+                  SELECT a.variant_id, a.booking_id, a.created_at
+                  FROM marketing.attribution a
+                  WHERE a.landing_page_id = ?
+                    AND (?::timestamptz IS NULL OR a.created_at >= ?)
+                    AND (?::timestamptz IS NULL OR a.created_at < ?)
+                  """
+                : """
+                  SELECT a.variant_id, a.booking_id, a.created_at
+                  FROM marketing.attribution a
+                  WHERE a.landing_page_id = ?
+                    AND (?::timestamptz IS NULL OR a.created_at >= ?)
+                    AND (?::timestamptz IS NULL OR a.created_at < ?)
+                    AND EXISTS (
+                        SELECT 1 FROM marketing.contacts c2
+                        WHERE c2.square_booking_id = a.booking_id AND %s
+                    )
+                  """.formatted(contactFilterC2);
+        Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
+        Timestamp to = periodTo == null ? null : Timestamp.from(periodTo);
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new AttributedBookingRow(
+                rs.getObject("variant_id", UUID.class).toString(),
+                rs.getString("booking_id"),
+                rs.getTimestamp("created_at").toInstant()
+        ), landingPageId, cutoff, cutoff, to, to);
     }
 
     /** "All traffic" short-circuits to a literal TRUE (byte-for-byte the pre-filter query);
@@ -196,11 +220,11 @@ public class MarketingDashboardRepository {
         return sources.equals(TrafficSourceSql.ALL) ? "TRUE" : classifiedCheck.get();
     }
 
-    /** Every booking_id already reflected in marketing.attribution for this landing page (same
-     * statsSince cutoff as findVariantStats' bookings_completed subquery) — used to tell whether a
-     * contact's currently-real Square appointment is one the tracked flow already counted, or one
-     * only Square knows about (e.g. a manager follow-up booked directly, or the tracked request got
-     * cancelled and a different booking replaced it).
+    /** Every booking_id already reflected in marketing.attribution for this landing page (unbounded
+     * by any statsSince/periodTo — used by Ads Report, which needs "ever tracked", not "tracked in
+     * this period") — used to tell whether a contact's currently-real Square appointment is one the
+     * tracked flow already counted, or one only Square knows about (e.g. a manager follow-up booked
+     * directly, or the tracked request got cancelled and a different booking replaced it).
      */
     public Set<String> findAttributedBookingIds(UUID landingPageId, Instant statsSince, Instant periodTo) {
         Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
