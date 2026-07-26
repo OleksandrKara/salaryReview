@@ -487,7 +487,7 @@ class MarketingAnalyticsServiceTest {
                 "bk-followup", "ACCEPTED", Instant.parse("2026-07-05T18:00:00Z"), "Manicure",
                 new BigDecimal("85.00"), null, "CARD", new BigDecimal("85.00"),
                 null, null, null, null, null, null);
-        when(contactsService.followUpAppointments("mani", null, Set.of())).thenReturn(List.of(
+        when(contactsService.followUpAppointments("mani", null, Set.of(), Set.of())).thenReturn(List.of(
                 new MarketingContactsService.FollowUpAppointment("cust-1", followUpAppt)));
         when(square.customerNames(Set.of("cust-1"))).thenReturn(Map.of("cust-1", "Jane Doe"));
 
@@ -526,7 +526,7 @@ class MarketingAnalyticsServiceTest {
                 "bk-shared", "ACCEPTED", Instant.parse("2026-07-05T18:00:00Z"), "Manicure",
                 new BigDecimal("85.00"), null, "CARD", new BigDecimal("85.00"),
                 null, null, null, null, null, null);
-        when(contactsService.followUpAppointments("mani", null, Set.of())).thenReturn(List.of(
+        when(contactsService.followUpAppointments("mani", null, Set.of(), Set.of())).thenReturn(List.of(
                 new MarketingContactsService.FollowUpAppointment("cust-1", sameBooking)));
 
         MarketingAnalyticsDto dto = service.analytics(
@@ -1113,7 +1113,7 @@ class MarketingAnalyticsServiceTest {
         var sameBooking = new com.salonreview.web.dto.MarketingContactDto.Appointment(
                 "bk-1", "ACCEPTED", Instant.parse("2026-07-20T18:00:00Z"), "Manicure",
                 new BigDecimal("85.00"), null, null, null, null, null, null, null, null, null);
-        when(contactsService.followUpAppointments("mani", null, Set.of())).thenReturn(List.of(
+        when(contactsService.followUpAppointments("mani", null, Set.of(), Set.of())).thenReturn(List.of(
                 new MarketingContactsService.FollowUpAppointment("cust-1", sameBooking)));
 
         MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),

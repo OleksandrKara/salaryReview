@@ -46,7 +46,7 @@ class MarketingDashboardServiceTest {
         contactsService = mock(MarketingContactsService.class);
         when(repository.findAttributedBookingRows(any(), any(), any(), any())).thenReturn(List.of());
         when(contactsService.resolveCustomerIdsByBookingId(any())).thenReturn(Map.of());
-        when(contactsService.countFollowUpBookingsByVariant(any(), any(), any(), any())).thenReturn(Map.of());
+        when(contactsService.countFollowUpBookingsByVariant(any(), any(), any(), any(), any())).thenReturn(Map.of());
         MarketingLandingProperties landingProperties = new MarketingLandingProperties();
         landingProperties.setLandingBaseUrls(java.util.Map.of("mani", "https://mani.akluxnails.com"));
         SquareClient square = mock(SquareClient.class);
@@ -147,7 +147,7 @@ class MarketingDashboardServiceTest {
         when(contactsService.resolveCustomerIdsByBookingId("mani")).thenReturn(Map.of(
                 "booking-1", "cust-1", "booking-2", "cust-2", "booking-3", "cust-3",
                 "booking-4", "cust-4", "booking-5", "cust-5", "booking-6", "cust-6"));
-        when(contactsService.countFollowUpBookingsByVariant(eq("mani"), isNull(), isNull(), any()))
+        when(contactsService.countFollowUpBookingsByVariant(eq("mani"), isNull(), isNull(), any(), any()))
                 .thenReturn(Map.of("Control", 2L));
 
         MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY, null, null);
