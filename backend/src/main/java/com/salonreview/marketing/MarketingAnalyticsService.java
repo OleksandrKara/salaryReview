@@ -9,6 +9,8 @@ import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareMonthAggregator;
 import com.salonreview.square.SquareMonthAggregator.AttributedService;
 import com.salonreview.web.dto.MarketingAdsReportDto;
+import com.salonreview.web.dto.MarketingAdsReportDto.CountSplit;
+import com.salonreview.web.dto.MarketingAdsReportDto.MoneySplit;
 import com.salonreview.web.dto.MarketingAdsReportDto.PeriodRow;
 import com.salonreview.web.dto.MarketingAnalyticsDto;
 import com.salonreview.web.dto.MarketingAnalyticsDto.CancelledAppointment;
@@ -309,7 +311,11 @@ public class MarketingAnalyticsService {
             case ALL -> List.<LocalDate[]>of(new LocalDate[]{ALL_TIME_START, today});
         };
         if (periods.isEmpty()) {
-            PeriodRow empty = new PeriodRow(from, to, ZERO_MONEY, false, ZERO_MONEY, ZERO_MONEY, 0, ZERO_MONEY, 0, 0, 0, 0, 0, false);
+            MoneySplit zeroMoneySplit = new MoneySplit(ZERO_MONEY, ZERO_MONEY);
+            CountSplit zeroCountSplit = new CountSplit(0, 0);
+            PeriodRow empty = new PeriodRow(from, to, ZERO_MONEY, false, ZERO_MONEY, zeroMoneySplit, ZERO_MONEY,
+                    zeroMoneySplit, 0, ZERO_MONEY, zeroMoneySplit, 0, zeroCountSplit, 0, 0, zeroCountSplit,
+                    0, zeroCountSplit, 0, false);
             return new MarketingAdsReportDto(periodType, List.of(), empty);
         }
         LocalDate alignedFrom = periods.get(0)[0];
@@ -441,12 +447,16 @@ public class MarketingAnalyticsService {
                 .toList();
         BigDecimal revenueCollected = bucketCompleted.stream().map(CompletedAppointment::collected)
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+        MoneySplit revenueCollectedSplit = moneySplit(bucketCompleted, CompletedAppointment::freshFromAds, CompletedAppointment::collected);
+        CountSplit completedAppointmentsSplit = countSplit(bucketCompleted, CompletedAppointment::freshFromAds);
 
         List<UpcomingAppointment> bucketUpcoming = upcoming.stream()
                 .filter(u -> withinPeriod(u.startAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), periodStart, periodEnd))
                 .toList();
         BigDecimal anticipatedRevenue = bucketUpcoming.stream().map(UpcomingAppointment::price)
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+        MoneySplit anticipatedRevenueSplit = moneySplit(bucketUpcoming, UpcomingAppointment::freshFromAds, UpcomingAppointment::price);
+        CountSplit anticipatedAppointmentsSplit = countSplit(bucketUpcoming, UpcomingAppointment::freshFromAds);
         OutsidePeriodAnticipated outsidePeriod =
                 anticipatedOutsidePeriodForCustomersCapturedIn(adsCustomers, upcoming, periodStart, periodEnd);
 
@@ -467,8 +477,10 @@ public class MarketingAnalyticsService {
         boolean monthInProgress = periodEnd.isAfter(today);
 
         return new PeriodRow(periodStart, periodEnd, spend.amount(), spend.estimated(), revenueCollected,
-                anticipatedRevenue, customersCreated, outsidePeriod.revenue(), bucketCompleted.size(),
-                cancelledBookings, bucketUpcoming.size(), outsidePeriod.appointments(), customersFollowedUp,
+                revenueCollectedSplit, anticipatedRevenue, anticipatedRevenueSplit, customersCreated,
+                outsidePeriod.revenue(), outsidePeriod.revenueSplit(), bucketCompleted.size(), completedAppointmentsSplit,
+                cancelledBookings, bucketUpcoming.size(), anticipatedAppointmentsSplit,
+                outsidePeriod.appointments(), outsidePeriod.appointmentsSplit(), customersFollowedUp,
                 monthInProgress);
     }
 
@@ -497,8 +509,10 @@ public class MarketingAnalyticsService {
      * makes it actually vary per period, answering "of the leads this specific window brought in,
      * what have they booked beyond it" rather than a report-wide constant. */
     /** revenue: catalog-price sum; appointments: headline count — of the exact same outside-period,
-     * captured-in-this-window set, computed together since they always share the same filter. */
-    private record OutsidePeriodAnticipated(BigDecimal revenue, long appointments) {}
+     * captured-in-this-window set, computed together since they always share the same filter.
+     * revenueSplit/appointmentsSplit break each down by first-visit vs. repeat (see {@link MoneySplit}). */
+    private record OutsidePeriodAnticipated(BigDecimal revenue, MoneySplit revenueSplit,
+                                             long appointments, CountSplit appointmentsSplit) {}
 
     private static OutsidePeriodAnticipated anticipatedOutsidePeriodForCustomersCapturedIn(
             Map<String, AdsCustomer> adsCustomers, List<UpcomingAppointment> upcoming,
@@ -510,7 +524,27 @@ public class MarketingAnalyticsService {
                 .toList();
         BigDecimal revenue = outside.stream().map(UpcomingAppointment::price)
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
-        return new OutsidePeriodAnticipated(revenue, outside.size());
+        return new OutsidePeriodAnticipated(revenue, moneySplit(outside, UpcomingAppointment::freshFromAds, UpcomingAppointment::price),
+                outside.size(), countSplit(outside, UpcomingAppointment::freshFromAds));
+    }
+
+    /** Splits a money figure by a "first visit" predicate — {@code firstVisit} sums the items that
+     * satisfy it, {@code repeat} sums the rest. "First visit" is always the same freshFromAds check
+     * {@link CompletedAppointment}/{@link UpcomingAppointment} already carry, never a new
+     * definition — this just adds up what's already tagged. */
+    private static <T> MoneySplit moneySplit(
+            List<T> items, java.util.function.Predicate<T> isFirstVisit, java.util.function.Function<T, BigDecimal> amount) {
+        BigDecimal firstVisit = items.stream().filter(isFirstVisit).map(amount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal repeat = items.stream().filter(isFirstVisit.negate()).map(amount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+        return new MoneySplit(firstVisit, repeat);
+    }
+
+    /** Same as {@link #moneySplit}, for a headline count. */
+    private static <T> CountSplit countSplit(List<T> items, java.util.function.Predicate<T> isFirstVisit) {
+        long firstVisit = items.stream().filter(isFirstVisit).count();
+        return new CountSplit(firstVisit, items.size() - firstVisit);
     }
 
     /** Real Square bookings for ads-attributed customers, any status that didn't happen (cancelled,
@@ -544,22 +578,42 @@ public class MarketingAnalyticsService {
         BigDecimal adSpend = rows.stream().map(PeriodRow::adSpend).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
         boolean adSpendEstimated = rows.stream().anyMatch(PeriodRow::adSpendEstimated);
         BigDecimal revenue = rows.stream().map(PeriodRow::revenueCollected).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+        MoneySplit revenueSplit = sumMoneySplit(rows, PeriodRow::revenueCollectedSplit);
         BigDecimal anticipated = rows.stream().map(PeriodRow::anticipatedRevenue).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+        MoneySplit anticipatedSplit = sumMoneySplit(rows, PeriodRow::anticipatedRevenueSplit);
         long customersCreated = rows.stream().mapToLong(PeriodRow::customersCreated).sum();
         long completedAppointments = rows.stream().mapToLong(PeriodRow::completedAppointments).sum();
+        CountSplit completedAppointmentsSplit = sumCountSplit(rows, PeriodRow::completedAppointmentsSplit);
         // Unlike anticipatedRevenueOutsidePeriod (passed in, not summed — see below), these two are
         // scoped by appointment date per row, so each row's own bucket is disjoint and summing is safe.
         long cancelledBookings = rows.stream().mapToLong(PeriodRow::cancelledBookings).sum();
         long anticipatedAppointments = rows.stream().mapToLong(PeriodRow::anticipatedAppointments).sum();
+        CountSplit anticipatedAppointmentsSplit = sumCountSplit(rows, PeriodRow::anticipatedAppointmentsSplit);
         long customersFollowedUp = rows.stream().mapToLong(PeriodRow::customersFollowedUp).sum();
         boolean monthInProgress = rows.stream().anyMatch(PeriodRow::monthInProgress);
         // Not a sum of each row's own anticipatedRevenueOutsidePeriod — that would double-count an
         // appointment outside row A's period but inside row B's. Computed once by the caller against
         // the full aligned span instead (see anticipatedOutsidePeriodForCustomersCapturedIn), passed
         // straight through here.
-        return new PeriodRow(alignedFrom, alignedTo, adSpend, adSpendEstimated, revenue, anticipated,
-                customersCreated, outsidePeriod.revenue(), completedAppointments, cancelledBookings,
-                anticipatedAppointments, outsidePeriod.appointments(), customersFollowedUp, monthInProgress);
+        return new PeriodRow(alignedFrom, alignedTo, adSpend, adSpendEstimated, revenue, revenueSplit, anticipated,
+                anticipatedSplit, customersCreated, outsidePeriod.revenue(), outsidePeriod.revenueSplit(),
+                completedAppointments, completedAppointmentsSplit, cancelledBookings,
+                anticipatedAppointments, anticipatedAppointmentsSplit, outsidePeriod.appointments(),
+                outsidePeriod.appointmentsSplit(), customersFollowedUp, monthInProgress);
+    }
+
+    private static MoneySplit sumMoneySplit(List<PeriodRow> rows, java.util.function.Function<PeriodRow, MoneySplit> f) {
+        BigDecimal firstVisit = rows.stream().map(f).map(MoneySplit::firstVisit)
+                .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal repeat = rows.stream().map(f).map(MoneySplit::repeat)
+                .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+        return new MoneySplit(firstVisit, repeat);
+    }
+
+    private static CountSplit sumCountSplit(List<PeriodRow> rows, java.util.function.Function<PeriodRow, CountSplit> f) {
+        long firstVisit = rows.stream().map(f).mapToLong(CountSplit::firstVisit).sum();
+        long repeat = rows.stream().map(f).mapToLong(CountSplit::repeat).sum();
+        return new CountSplit(firstVisit, repeat);
     }
 
     /** Splits [from, to] into whole calendar weeks (Monday–Sunday) or whole calendar months that

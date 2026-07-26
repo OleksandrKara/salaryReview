@@ -159,6 +159,14 @@ function bookingsBreakdownOf(row: MarketingAdsReportPeriod): {
   };
 }
 
+// First-visit vs. repeat sub-line shown under a Revenue/Bookings term — same shape for a dollar
+// figure (MoneySplit) or a headline count (CountSplit), since both are just {firstVisit, repeat}.
+// "First visit" is always the same freshFromAds check used everywhere else in Ads Report/Analytics,
+// never a separate definition, so this line always agrees with e.g. customersCreated above it.
+function splitLabel(split: { firstVisit: number; repeat: number }, fmt: (n: number) => string): string {
+  return `First-visit ${fmt(split.firstVisit)} · Repeat ${fmt(split.repeat)}`;
+}
+
 // Revenue (collected/anticipated/total) and, when there's any ad spend to report against, ROI
 // (realized vs total ROAS/ROI%) — the money-and-ROI half of what MarketingAdsReportDto.PeriodRow
 // carries; the Bookings breakdown below is the other half. customersCreated/customersFollowedUp
@@ -181,8 +189,11 @@ function formatWhatsAppReport(
   lines.push('');
   lines.push('*Revenue*');
   lines.push(`Collected: ${usdExact(row.revenueCollected)}`);
+  lines.push(`  ${splitLabel(row.revenueCollectedSplit, usdExact)}`);
   lines.push(`Anticipated (this period only): ${usdExact(row.anticipatedRevenue)}`);
-  lines.push(`Anticipated (future dates outside of period): ${usdExact(row.anticipatedRevenueOutsidePeriod)}`);
+  lines.push(`  ${splitLabel(row.anticipatedRevenueSplit, usdExact)}`);
+  lines.push(`Anticipated (outside period): ${usdExact(row.anticipatedRevenueOutsidePeriod)}`);
+  lines.push(`  ${splitLabel(row.anticipatedRevenueOutsidePeriodSplit, usdExact)}`);
   lines.push(`Total: ${usdExact(totalRevenue)}`);
   if (showRoi) {
     const { realizedRoas, totalRoas, roiPercent } = roiMetricsOf(row);
@@ -196,9 +207,12 @@ function formatWhatsAppReport(
   lines.push('');
   lines.push('*Bookings*');
   lines.push(`Completed: ${bookings.completed}`);
+  lines.push(`  ${splitLabel(row.completedAppointmentsSplit, String)}`);
   lines.push(`Cancelled: ${bookings.cancelled}${bookings.cancelledPercent !== null ? ` (${bookings.cancelledPercent.toFixed(0)}%)` : ''}`);
   lines.push(`Anticipated (this period): ${bookings.anticipated}`);
+  lines.push(`  ${splitLabel(row.anticipatedAppointmentsSplit, String)}`);
   lines.push(`Anticipated (outside period): ${bookings.anticipatedOutsidePeriod}`);
+  lines.push(`  ${splitLabel(row.anticipatedAppointmentsOutsidePeriodSplit, String)}`);
   lines.push(`Total: ${bookings.total}`);
   return lines.join('\n');
 }
@@ -764,14 +778,17 @@ function MoneyBreakdown({
           <span className="text-zinc-500">Collected</span>
           <span className="tabular-nums font-medium text-zinc-900">{usdExact(row.revenueCollected)}</span>
         </div>
+        <div className="text-right text-[10px] text-zinc-400">{splitLabel(row.revenueCollectedSplit, usdExact)}</div>
         <div className="mt-1 flex items-center justify-between">
           <span className="text-zinc-400">+ Anticipated (this period)</span>
           <span className="tabular-nums text-zinc-600">{usdExact(row.anticipatedRevenue)}</span>
         </div>
+        <div className="text-right text-[10px] text-zinc-400">{splitLabel(row.anticipatedRevenueSplit, usdExact)}</div>
         <div className="mt-1 flex items-center justify-between">
           <span className="text-zinc-400">+ Anticipated (outside period)</span>
           <span className="tabular-nums text-zinc-600">{usdExact(row.anticipatedRevenueOutsidePeriod)}</span>
         </div>
+        <div className="text-right text-[10px] text-zinc-400">{splitLabel(row.anticipatedRevenueOutsidePeriodSplit, usdExact)}</div>
         <div className="mt-1.5 flex items-center justify-between border-t border-zinc-300 pt-1.5">
           <span className="font-semibold text-emerald-700">= Total</span>
           <span className="tabular-nums font-semibold text-emerald-700">{usdExact(total)}</span>
@@ -783,11 +800,11 @@ function MoneyBreakdown({
     <section className="rounded-xl border-l-4 border-emerald-300 bg-emerald-50/40 p-3 ring-1 ring-zinc-200 sm:p-4">
       {title}
       <div className="flex flex-wrap items-stretch gap-1.5">
-        <MoneyTerm label="Collected" value={usd(row.revenueCollected)} onClick={onExpand && (() => onExpand('completed'))} />
+        <MoneyTerm label="Collected" value={usd(row.revenueCollected)} hint={splitLabel(row.revenueCollectedSplit, usd)} onClick={onExpand && (() => onExpand('completed'))} />
         <MoneyOperator symbol="+" />
-        <MoneyTerm label="Anticipated (this period)" value={usd(row.anticipatedRevenue)} onClick={onExpand && (() => onExpand('anticipated-period'))} />
+        <MoneyTerm label="Anticipated (this period)" value={usd(row.anticipatedRevenue)} hint={splitLabel(row.anticipatedRevenueSplit, usd)} onClick={onExpand && (() => onExpand('anticipated-period'))} />
         <MoneyOperator symbol="+" />
-        <MoneyTerm label="Anticipated (outside period)" value={usd(row.anticipatedRevenueOutsidePeriod)} onClick={onExpand && (() => onExpand('anticipated-outside'))} />
+        <MoneyTerm label="Anticipated (outside period)" value={usd(row.anticipatedRevenueOutsidePeriod)} hint={splitLabel(row.anticipatedRevenueOutsidePeriodSplit, usd)} onClick={onExpand && (() => onExpand('anticipated-outside'))} />
         <MoneyOperator symbol="=" />
         <MoneyTerm label="Total" value={usd(total)} tone="positive" onClick={onExpand && (() => onExpand('all'))} />
       </div>
@@ -870,6 +887,7 @@ function BookingsBreakdown({
           <span className="text-zinc-500">Completed</span>
           <span className="tabular-nums font-medium text-zinc-900">{b.completed}</span>
         </div>
+        <div className="text-right text-[10px] text-zinc-400">{splitLabel(row.completedAppointmentsSplit, String)}</div>
         <div className="mt-1 flex items-center justify-between">
           <span className="text-zinc-400">Cancelled</span>
           <span className={`tabular-nums ${b.cancelled > 0 ? 'text-rose-600' : 'text-zinc-600'}`}>{cancelledLabel}</span>
@@ -878,10 +896,12 @@ function BookingsBreakdown({
           <span className="text-zinc-400">+ Anticipated (this period)</span>
           <span className="tabular-nums text-zinc-600">{b.anticipated}</span>
         </div>
+        <div className="text-right text-[10px] text-zinc-400">{splitLabel(row.anticipatedAppointmentsSplit, String)}</div>
         <div className="mt-1 flex items-center justify-between">
           <span className="text-zinc-400">+ Anticipated (outside period)</span>
           <span className="tabular-nums text-zinc-600">{b.anticipatedOutsidePeriod}</span>
         </div>
+        <div className="text-right text-[10px] text-zinc-400">{splitLabel(row.anticipatedAppointmentsOutsidePeriodSplit, String)}</div>
         <div className="mt-1.5 flex items-center justify-between border-t border-zinc-300 pt-1.5">
           <span className="font-semibold text-zinc-700">= Total bookings</span>
           <span className="tabular-nums font-semibold text-zinc-900">{b.total}</span>
@@ -893,13 +913,13 @@ function BookingsBreakdown({
     <section className="rounded-xl border-l-4 border-violet-300 bg-violet-50/40 p-3 ring-1 ring-zinc-200 sm:p-4">
       {title}
       <div className="flex flex-wrap items-stretch gap-1.5">
-        <MoneyTerm label="Completed" value={String(b.completed)} onClick={onExpand && (() => onExpand('completed'))} />
+        <MoneyTerm label="Completed" value={String(b.completed)} hint={splitLabel(row.completedAppointmentsSplit, String)} onClick={onExpand && (() => onExpand('completed'))} />
         <MoneyOperator symbol="+" />
         <MoneyTerm label="Cancelled" value={cancelledLabel} tone={cancelledTone} onClick={onExpand && (() => onExpand('cancelled-period'))} />
         <MoneyOperator symbol="+" />
-        <MoneyTerm label="Anticipated (period)" value={String(b.anticipated)} onClick={onExpand && (() => onExpand('anticipated-period'))} />
+        <MoneyTerm label="Anticipated (period)" value={String(b.anticipated)} hint={splitLabel(row.anticipatedAppointmentsSplit, String)} onClick={onExpand && (() => onExpand('anticipated-period'))} />
         <MoneyOperator symbol="+" />
-        <MoneyTerm label="Anticipated (outside period)" value={String(b.anticipatedOutsidePeriod)} onClick={onExpand && (() => onExpand('anticipated-outside'))} />
+        <MoneyTerm label="Anticipated (outside period)" value={String(b.anticipatedOutsidePeriod)} hint={splitLabel(row.anticipatedAppointmentsOutsidePeriodSplit, String)} onClick={onExpand && (() => onExpand('anticipated-outside'))} />
         <MoneyOperator symbol="=" />
         <MoneyTerm label="Total bookings" value={String(b.total)} onClick={onExpand && (() => onExpand('all'))} />
       </div>
@@ -959,12 +979,14 @@ function InfoTooltip({ text }: { text: string }) {
  * tap target than a small expand icon would be, with a magnifying-glass hint in the corner and a
  * hover/active state so it reads as interactive rather than just another stat. */
 function MoneyTerm({
-  label, value, tone, onClick,
+  label, value, tone, onClick, hint,
 }: {
   label: string;
   value: string;
   tone?: 'positive' | 'negative';
   onClick?: () => void;
+  /** A small caption under the value — the first-visit/repeat split for terms that have one. */
+  hint?: string;
 }) {
   const boxClass = tone === 'positive' ? 'bg-emerald-50 ring-emerald-200'
     : tone === 'negative' ? 'bg-rose-50 ring-rose-200'
@@ -977,6 +999,7 @@ function MoneyTerm({
         {onClick && <SearchIcon className="h-3 w-3 shrink-0 text-zinc-400" />}
       </div>
       <div className={`mt-1 text-lg font-semibold sm:text-2xl ${textClass}`}>{value}</div>
+      {hint && <div className="mt-0.5 text-[10px] leading-tight text-zinc-400">{hint}</div>}
     </>
   );
   if (onClick) {
@@ -1148,9 +1171,18 @@ function PeriodTable({
                       {current && !row.monthInProgress && <CurrentBadge />}
                     </div>
                   </td>
-                  <td className="border-l border-zinc-100 px-3 py-2 text-right tabular-nums text-zinc-600">{usdExact(row.revenueCollected)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usdExact(row.anticipatedRevenue)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{usdExact(row.anticipatedRevenueOutsidePeriod)}</td>
+                  <td className="border-l border-zinc-100 px-3 py-2 text-right tabular-nums text-zinc-600">
+                    {usdExact(row.revenueCollected)}
+                    <div className="text-[10px] font-normal text-zinc-400">{splitLabel(row.revenueCollectedSplit, usdExact)}</div>
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">
+                    {usdExact(row.anticipatedRevenue)}
+                    <div className="text-[10px] font-normal text-zinc-400">{splitLabel(row.anticipatedRevenueSplit, usdExact)}</div>
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">
+                    {usdExact(row.anticipatedRevenueOutsidePeriod)}
+                    <div className="text-[10px] font-normal text-zinc-400">{splitLabel(row.anticipatedRevenueOutsidePeriodSplit, usdExact)}</div>
+                  </td>
                   <td className={`px-3 py-2 text-right tabular-nums font-semibold text-emerald-700 ${current ? 'bg-emerald-50/60' : 'bg-emerald-50/40'}`}>
                     {usdExact(totalRevenueOf(row))}
                   </td>
@@ -1162,10 +1194,19 @@ function PeriodTable({
                       <td className={`px-3 py-2 text-right tabular-nums font-semibold ${roiTextClass}`}>{roiPercentLabel(roiPercent)}</td>
                     </>
                   )}
-                  <td className="border-l border-zinc-100 px-3 py-2 text-right tabular-nums text-zinc-600">{bookings.completed}</td>
+                  <td className="border-l border-zinc-100 px-3 py-2 text-right tabular-nums text-zinc-600">
+                    {bookings.completed}
+                    <div className="text-[10px] font-normal text-zinc-400">{splitLabel(row.completedAppointmentsSplit, String)}</div>
+                  </td>
                   <td className={`px-3 py-2 text-right tabular-nums ${bookings.cancelled > 0 ? 'text-rose-600' : 'text-zinc-600'}`}>{cancelledLabel}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{bookings.anticipated}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{bookings.anticipatedOutsidePeriod}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">
+                    {bookings.anticipated}
+                    <div className="text-[10px] font-normal text-zinc-400">{splitLabel(row.anticipatedAppointmentsSplit, String)}</div>
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">
+                    {bookings.anticipatedOutsidePeriod}
+                    <div className="text-[10px] font-normal text-zinc-400">{splitLabel(row.anticipatedAppointmentsOutsidePeriodSplit, String)}</div>
+                  </td>
                   <td className={`px-3 py-2 text-right tabular-nums font-semibold text-zinc-700 ${current ? 'bg-zinc-100' : 'bg-zinc-50'}`}>
                     {bookings.total}
                   </td>
