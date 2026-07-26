@@ -191,15 +191,43 @@ public class MarketingContactsService {
     public Map<String, Long> countFollowUpBookingsByVariant(
             String landingPageSlug, Instant statsSince, Instant periodTo, java.util.Set<String> attributedBookingIds) {
         // uncountedAppointments is a Square round trip per candidate contact — same
-        // parallelization reasoning as contacts() above.
+        // parallelization reasoning as contacts() above. Grouped by resolved customer id first,
+        // keeping only the earliest qualifying contact row per real client, before counting by
+        // variant — the same lead can otherwise show up as two separate marketing.contacts rows
+        // (e.g. they filled the form again on a later visit), which would double-count one real
+        // follow-up as two. A repeat contact row surfacing the exact same follow-up doesn't
+        // deserve a second count just because the client happened to re-submit.
         return repository.listAll().parallelStream()
                 .filter(r -> landingPageSlug.equals(r.landingPageSlug()))
                 .filter(r -> statsSince == null || !r.createdAt().isBefore(statsSince))
                 .filter(r -> periodTo == null || r.createdAt().isBefore(periodTo))
                 .filter(r -> !uncountedAppointments(r, attributedBookingIds).isEmpty())
+                .collect(Collectors.toMap(
+                        this::resolveSquareCustomerId,
+                        r -> r,
+                        (a, b) -> a.createdAt().isBefore(b.createdAt()) ? a : b))
+                .values().stream()
                 .collect(Collectors.groupingBy(
                         r -> r.variantName() == null ? "" : r.variantName(),
                         Collectors.counting()));
+    }
+
+    /** booking_id -> resolved Square customer id (see resolveSquareCustomerId), for every contact
+     * under this landing page that completed a booking through the tracked flow — used to
+     * collapse a customer's attributed bookings down to just their first genuine conversion on
+     * this page (see MarketingDashboardService), the same resolution countFollowUpBookingsByVariant
+     * above already trusts. A contact with no square_booking_id never completed the tracked flow,
+     * so it's irrelevant here and skipped; one whose customer id can't be resolved at all is
+     * skipped too (the caller treats an unresolvable booking as its own, uncollapsed conversion
+     * rather than silently dropping it). */
+    public Map<String, String> resolveCustomerIdsByBookingId(String landingPageSlug) {
+        Map<String, String> byBooking = new java.util.HashMap<>();
+        for (MarketingContactsRepository.RawContact r : repository.listAll()) {
+            if (!landingPageSlug.equals(r.landingPageSlug()) || r.squareBookingId() == null) continue;
+            String customerId = resolveSquareCustomerId(r);
+            if (customerId != null) byBooking.put(r.squareBookingId(), customerId);
+        }
+        return byBooking;
     }
 
     /** Pairs a follow-up {@link Appointment} with the Square customer id it belongs to —

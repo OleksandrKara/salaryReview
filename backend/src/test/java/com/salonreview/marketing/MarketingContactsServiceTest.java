@@ -374,6 +374,21 @@ class MarketingContactsServiceTest {
     }
 
     @Test
+    @DisplayName("counts one real client only once even if they left two separate lead-capture contact rows")
+    void followUpCollapsesDuplicateContactRowsForSameCustomer() {
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id1, "SQCUST123"), rawContact(id2, "SQCUST123")));
+        Booking accepted = new Booking("NEWBOOK", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
+                "LOC1", "SQCUST123", null, null, List.of());
+        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
+
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of("OTHERBOOK"));
+
+        assertThat(byVariant).containsEntry("Version_1", 1L);
+    }
+
+    @Test
     @DisplayName("does not count a booking that's already in the attributed set")
     void followUpSkipsAlreadyAttributedBooking() {
         UUID id = UUID.randomUUID();

@@ -1,6 +1,7 @@
 package com.salonreview.marketing;
 
 import com.salonreview.config.MarketingLandingProperties;
+import com.salonreview.marketing.MarketingDashboardRepository.AttributedBookingRow;
 import com.salonreview.marketing.MarketingDashboardRepository.RawVariantStat;
 import com.salonreview.marketing.MarketingDashboardRepository.VariantSource;
 import com.salonreview.square.SquareClient;
@@ -43,7 +44,8 @@ class MarketingDashboardServiceTest {
     void setUp() {
         repository = mock(MarketingDashboardRepository.class);
         contactsService = mock(MarketingContactsService.class);
-        when(repository.findAttributedBookingIds(any(), any(), any())).thenReturn(Set.of());
+        when(repository.findAttributedBookingRows(any(), any(), any(), any())).thenReturn(List.of());
+        when(contactsService.resolveCustomerIdsByBookingId(any())).thenReturn(Map.of());
         when(contactsService.countFollowUpBookingsByVariant(any(), any(), any(), any())).thenReturn(Map.of());
         MarketingLandingProperties landingProperties = new MarketingLandingProperties();
         landingProperties.setLandingBaseUrls(java.util.Map.of("mani", "https://mani.akluxnails.com"));
@@ -52,28 +54,78 @@ class MarketingDashboardServiceTest {
         service = new MarketingDashboardService(repository, contactsService, landingProperties, square);
     }
 
+    private static AttributedBookingRow attributedRow(String variantId, String bookingId, String isoInstant) {
+        return new AttributedBookingRow(variantId, bookingId, Instant.parse(isoInstant));
+    }
+
     @Test
-    @DisplayName("computes conversion rate from page views and completed bookings")
+    @DisplayName("computes conversion rate from page views and distinct converted customers")
     void computesConversionRate() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
-                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 25, 40, 60, "control", "Baseline, no changes")
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 40, 60, "control", "Baseline, no changes")
         ));
+        List<AttributedBookingRow> rows = List.of(
+                attributedRow(VARIANT_ID.toString(), "booking-1", "2026-07-01T00:00:00Z"),
+                attributedRow(VARIANT_ID.toString(), "booking-2", "2026-07-02T00:00:00Z"),
+                attributedRow(VARIANT_ID.toString(), "booking-3", "2026-07-03T00:00:00Z"),
+                attributedRow(VARIANT_ID.toString(), "booking-4", "2026-07-04T00:00:00Z")
+        );
+        when(repository.findAttributedBookingRows(eq(LANDING_PAGE_ID), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(rows);
+        when(contactsService.resolveCustomerIdsByBookingId("mani")).thenReturn(Map.of(
+                "booking-1", "cust-1", "booking-2", "cust-2", "booking-3", "cust-3", "booking-4", "cust-4"));
 
         MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY, null, null);
 
         assertThat(dashboard.available()).isTrue();
         VariantStat variant = dashboard.variants().get(0);
         assertThat(variant.pageViews()).isEqualTo(100);
-        assertThat(variant.bookingsCompleted()).isEqualTo(25);
+        assertThat(variant.conversions()).isEqualTo(4);
         assertThat(variant.contactsCreated()).isEqualTo(40);
         assertThat(variant.bookNowClicks()).isEqualTo(60);
-        assertThat(variant.conversionRate()).isEqualTo(0.25);
+        assertThat(variant.conversionRate()).isEqualTo(0.04);
         assertThat(variant.followUpBookings()).isEqualTo(0);
-        assertThat(variant.adjustedConversionRate()).isEqualTo(0.25);
+        assertThat(variant.adjustedConversionRate()).isEqualTo(0.04);
         assertThat(variant.deepLinkUrl()).isEqualTo("https://mani.akluxnails.com/?v=control");
         assertThat(variant.description()).isEqualTo("Baseline, no changes");
         assertThat(dashboard.statsSince()).isNull();
+    }
+
+    @Test
+    @DisplayName("a returning customer's repeat tracked-flow booking on this page doesn't count as a second conversion")
+    void repeatCustomerBookingDoesNotInflateConversions() {
+        when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 0, 0, "control", null)
+        ));
+        // Same real customer (cust-1) booked twice through the tracked flow — only the earlier one is a genuine conversion.
+        when(repository.findAttributedBookingRows(eq(LANDING_PAGE_ID), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
+                attributedRow(VARIANT_ID.toString(), "booking-first", "2026-07-01T00:00:00Z"),
+                attributedRow(VARIANT_ID.toString(), "booking-repeat", "2026-07-15T00:00:00Z")
+        ));
+        when(contactsService.resolveCustomerIdsByBookingId("mani")).thenReturn(Map.of(
+                "booking-first", "cust-1", "booking-repeat", "cust-1"));
+
+        MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY, null, null);
+
+        assertThat(dashboard.variants().get(0).conversions()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a booking whose customer can't be resolved counts on its own rather than being silently dropped")
+    void unresolvableCustomerBookingStillCountsAsConversion() {
+        when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 0, 0, "control", null)
+        ));
+        when(repository.findAttributedBookingRows(eq(LANDING_PAGE_ID), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
+                attributedRow(VARIANT_ID.toString(), "booking-unresolved", "2026-07-01T00:00:00Z")
+        ));
+        when(contactsService.resolveCustomerIdsByBookingId("mani")).thenReturn(Map.of()); // no resolution found
+
+        MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY, null, null);
+
+        assertThat(dashboard.variants().get(0).conversions()).isEqualTo(1);
     }
 
     @Test
@@ -81,15 +133,27 @@ class MarketingDashboardServiceTest {
     void adjustedConversionRateIncludesFollowUpBookings() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
-                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 6, 40, 60, "control", null)
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 40, 60, "control", null)
         ));
+        List<AttributedBookingRow> rows = List.of(
+                attributedRow(VARIANT_ID.toString(), "booking-1", "2026-07-01T00:00:00Z"),
+                attributedRow(VARIANT_ID.toString(), "booking-2", "2026-07-02T00:00:00Z"),
+                attributedRow(VARIANT_ID.toString(), "booking-3", "2026-07-03T00:00:00Z"),
+                attributedRow(VARIANT_ID.toString(), "booking-4", "2026-07-04T00:00:00Z"),
+                attributedRow(VARIANT_ID.toString(), "booking-5", "2026-07-05T00:00:00Z"),
+                attributedRow(VARIANT_ID.toString(), "booking-6", "2026-07-06T00:00:00Z")
+        );
+        when(repository.findAttributedBookingRows(eq(LANDING_PAGE_ID), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(rows);
+        when(contactsService.resolveCustomerIdsByBookingId("mani")).thenReturn(Map.of(
+                "booking-1", "cust-1", "booking-2", "cust-2", "booking-3", "cust-3",
+                "booking-4", "cust-4", "booking-5", "cust-5", "booking-6", "cust-6"));
         when(contactsService.countFollowUpBookingsByVariant(eq("mani"), isNull(), isNull(), any()))
                 .thenReturn(Map.of("Control", 2L));
 
         MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY, null, null);
 
         VariantStat variant = dashboard.variants().get(0);
-        assertThat(variant.bookingsCompleted()).isEqualTo(6);
+        assertThat(variant.conversions()).isEqualTo(6);
         assertThat(variant.followUpBookings()).isEqualTo(2);
         assertThat(variant.conversionRate()).isEqualTo(0.06);
         assertThat(variant.adjustedConversionRate()).isEqualTo(0.08);
@@ -114,7 +178,7 @@ class MarketingDashboardServiceTest {
     void deepLinkIsNullWithoutKey() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
-                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 25, 40, 60, null, null)
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 40, 60, null, null)
         ));
 
         MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY, null, null);
@@ -127,7 +191,7 @@ class MarketingDashboardServiceTest {
     void zeroPageViewsYieldsZeroConversionRate() {
         when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
-                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 0, 0, 0, 0, "control", null)
+                new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 0, 0, 0, "control", null)
         ));
 
         MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY, null, null);

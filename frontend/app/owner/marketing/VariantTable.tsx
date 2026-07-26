@@ -40,10 +40,10 @@ function ActionButtons({ v, actions }: { v: MarketingVariantStat; actions: Varia
   );
 }
 
-// Bookings/Conversion always show the tracked-only number first (bold, primary) — the
+// Conversions/Conversion % always show the tracked-only number first (bold, primary) — the
 // follow-up line only renders when there's actually something to add, so a variant/page with no
 // manager follow-ups looks exactly like it did before this feature existed.
-function BookingsValue({ tracked, followUp, size = 'sm' }: { tracked: number; followUp: number; size?: 'sm' | 'base' }) {
+function ConversionsValue({ tracked, followUp, size = 'sm' }: { tracked: number; followUp: number; size?: 'sm' | 'base' }) {
   const primaryClass = size === 'base' ? 'font-semibold tabular-nums' : 'tabular-nums';
   return (
     <>
@@ -109,17 +109,17 @@ function totalsFor(variants: MarketingVariantStat[]) {
   const totalWeight = variants.reduce((sum, v) => sum + v.weight, 0);
   const totalPageViews = variants.reduce((sum, v) => sum + v.pageViews, 0);
   const totalContacts = variants.reduce((sum, v) => sum + v.contactsCreated, 0);
-  const totalBookings = variants.reduce((sum, v) => sum + v.bookingsCompleted, 0);
+  const totalConversions = variants.reduce((sum, v) => sum + v.conversions, 0);
   const totalFollowUpBookings = variants.reduce((sum, v) => sum + v.followUpBookings, 0);
   const totalBookNowClicks = variants.reduce((sum, v) => sum + v.bookNowClicks, 0);
   // The aggregate rate, not an average of the per-variant rates — a variant with 10 views at 50%
   // shouldn't count as much as one with 10,000 views at 2% when rolled up.
-  const conversionRate = totalPageViews === 0 ? 0 : totalBookings / totalPageViews;
-  const adjustedConversionRate = totalPageViews === 0 ? 0 : (totalBookings + totalFollowUpBookings) / totalPageViews;
+  const conversionRate = totalPageViews === 0 ? 0 : totalConversions / totalPageViews;
+  const adjustedConversionRate = totalPageViews === 0 ? 0 : (totalConversions + totalFollowUpBookings) / totalPageViews;
   const totalBookClickRate = totalPageViews === 0 ? 0 : totalBookNowClicks / totalPageViews;
   const totalContactRate = totalPageViews === 0 ? 0 : totalContacts / totalPageViews;
   return {
-    totalWeight, totalPageViews, totalContacts, totalBookings,
+    totalWeight, totalPageViews, totalContacts, totalConversions,
     totalFollowUpBookings, totalBookNowClicks, conversionRate, adjustedConversionRate,
     totalBookClickRate, totalContactRate,
   };
@@ -161,8 +161,8 @@ function MobileCard({
           {v.pageViews > 0 && <RateSubline rate={contactRate(v)} isLeader={v.variantId === bestContactId} />}
         </div>
         <div>
-          <dt className="text-xs text-zinc-500">Bookings</dt>
-          <dd><BookingsValue tracked={v.bookingsCompleted} followUp={v.followUpBookings} /></dd>
+          <dt className="text-xs text-zinc-500">Conversions</dt>
+          <dd><ConversionsValue tracked={v.conversions} followUp={v.followUpBookings} /></dd>
         </div>
         <div>
           <dt className="text-xs text-zinc-500">Conversion</dt>
@@ -212,7 +212,7 @@ function DesktopRow({
         {v.contactsCreated.toLocaleString('en-US')}
         {v.pageViews > 0 && <RateSubline rate={contactRate(v)} isLeader={v.variantId === bestContactId} />}
       </td>
-      <td className="px-3 py-2 text-right"><BookingsValue tracked={v.bookingsCompleted} followUp={v.followUpBookings} /></td>
+      <td className="px-3 py-2 text-right"><ConversionsValue tracked={v.conversions} followUp={v.followUpBookings} /></td>
       <td className="px-3 py-2 text-right text-zinc-500">
         <ConversionValue rate={v.conversionRate} adjustedRate={v.adjustedConversionRate} followUp={v.followUpBookings} />
       </td>
@@ -302,8 +302,8 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
               {totals.totalPageViews > 0 && <div className="tabular-nums text-xs text-zinc-400">{pct(totals.totalContactRate)}</div>}
             </div>
             <div>
-              <dt className="text-xs text-zinc-500">Bookings</dt>
-              <dd><BookingsValue tracked={totals.totalBookings} followUp={totals.totalFollowUpBookings} size="base" /></dd>
+              <dt className="text-xs text-zinc-500">Conversions</dt>
+              <dd><ConversionsValue tracked={totals.totalConversions} followUp={totals.totalFollowUpBookings} size="base" /></dd>
             </div>
             <div>
               <dt className="text-xs text-zinc-500">Conversion</dt>
@@ -325,7 +325,7 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
               <th className="px-3 py-2 text-right">Page Views</th>
               <th className="px-3 py-2 text-right">Book Clicks</th>
               <th className="px-3 py-2 text-right">Contacts</th>
-              <th className="px-3 py-2 text-right">Bookings</th>
+              <th className="px-3 py-2 text-right">Conversions</th>
               <th className="px-3 py-2 text-right">Conversion %</th>
               <th className="px-3 py-2">Link</th>
               {!actions.readOnly && <th className="px-3 py-2">Actions</th>}
@@ -354,7 +354,7 @@ export default function VariantTable({ variants, ...actions }: { variants: Marke
                 {totals.totalContacts.toLocaleString('en-US')}
                 {totals.totalPageViews > 0 && <div className="text-xs font-normal text-zinc-400">{pct(totals.totalContactRate)}</div>}
               </td>
-              <td className="px-3 py-2 text-right"><BookingsValue tracked={totals.totalBookings} followUp={totals.totalFollowUpBookings} size="base" /></td>
+              <td className="px-3 py-2 text-right"><ConversionsValue tracked={totals.totalConversions} followUp={totals.totalFollowUpBookings} size="base" /></td>
               <td className="px-3 py-2 text-right text-zinc-600">
                 <ConversionValue rate={totals.conversionRate} adjustedRate={totals.adjustedConversionRate} followUp={totals.totalFollowUpBookings} />
               </td>

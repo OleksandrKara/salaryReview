@@ -15,7 +15,13 @@ public record MarketingDashboardDto(
             String name,
             int weight,
             long pageViews,
-            long bookingsCompleted,
+            /** Genuine conversions — distinct real customers who completed the tracked booking
+             * flow on this page/variant, each counted once even if they (or a manager, or anyone
+             * else) later rebooked them again through the same flow. A rebooking isn't a new
+             * conversion, so it's excluded here entirely rather than inflating this count — see
+             * MarketingDashboardService#conversionsByVariant for how a customer's bookings are
+             * collapsed down to their earliest one. */
+            long conversions,
             /** Contacts (leads) captured under this variant — matched by variant name, since
              * marketing.contacts.variant_name is a denormalized snapshot at capture time, not a
              * foreign key; a later rename won't reattach older contacts to the new name. */
@@ -24,15 +30,16 @@ public record MarketingDashboardDto(
              * MarketingDashboardRepository.RawVariantStat.bookNowClicks for the query. */
             long bookNowClicks,
             double conversionRate,
-            /** Real appointments Square knows about that bookingsCompleted doesn't — a manager
+            /** Distinct real customers Square knows about that conversions doesn't — a manager
              * followed up on a lead and booked them by phone, or the lead's original tracked
              * request was cancelled and a different booking replaced it — found via the same
-             * phone-resolution "Sync" mechanism as the Contacts tab. Zero unless a manager
-             * follow-up has actually been found. See MarketingContactsService.countFollowUpBookingsByVariant. */
+             * phone-resolution "Sync" mechanism as the Contacts tab, deduped by that same resolved
+             * customer id so one client who left two separate lead submissions still only counts
+             * once. Zero unless a manager follow-up has actually been found. See
+             * MarketingContactsService.countFollowUpBookingsByVariant. */
             long followUpBookings,
-            /** (bookingsCompleted + followUpBookings) / pageViews — the conversion rate if
-             * manager follow-ups are counted too. Equal to conversionRate when followUpBookings
-             * is zero. */
+            /** (conversions + followUpBookings) / pageViews — the conversion rate if manager
+             * follow-ups are counted too. Equal to conversionRate when followUpBookings is zero. */
             double adjustedConversionRate,
             /** Direct ?v=<key> link to view this exact variant, or null if it has no key yet. */
             String deepLinkUrl,

@@ -95,8 +95,8 @@ export default function MarketingManager({
   }
 
   function onDelete(v: MarketingVariantStat) {
-    if (v.pageViews > 0 || v.bookingsCompleted > 0) {
-      if (!confirm(`"${v.name}" has ${v.pageViews} page view(s) and ${v.bookingsCompleted} booking(s) recorded — deletion will likely be blocked. Try anyway?`)) return;
+    if (v.pageViews > 0 || v.conversions > 0) {
+      if (!confirm(`"${v.name}" has ${v.pageViews} page view(s) and ${v.conversions} conversion(s) recorded — deletion will likely be blocked. Try anyway?`)) return;
     } else if (!confirm(`Delete "${v.name}"? This cannot be undone.`)) {
       return;
     }
