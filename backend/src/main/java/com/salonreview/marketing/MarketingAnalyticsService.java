@@ -316,7 +316,7 @@ public class MarketingAnalyticsService {
             CountSplit zeroCountSplit = new CountSplit(0, 0);
             PeriodRow empty = new PeriodRow(from, to, ZERO_MONEY, false, ZERO_MONEY, zeroMoneySplit, ZERO_MONEY,
                     zeroMoneySplit, 0, ZERO_MONEY, zeroMoneySplit, 0, zeroCountSplit, 0, 0, zeroCountSplit,
-                    0, zeroCountSplit, 0, false);
+                    0, zeroCountSplit, 0, false, 0, 0, 0, 0);
             return new MarketingAdsReportDto(periodType, List.of(), empty);
         }
         LocalDate alignedFrom = periods.get(0)[0];
@@ -354,7 +354,20 @@ public class MarketingAnalyticsService {
         // (which would double-count appointments outside one row's period but inside another's).
         OutsidePeriodAnticipated totalsOutsidePeriod =
                 anticipatedOutsidePeriodForCustomersCapturedIn(adsCustomers, upcoming, alignedFrom, alignedTo);
-        PeriodRow totals = totalsRow(alignedFrom, alignedTo, rows, totalsOutsidePeriod);
+        // Same reasoning for the three "distinct customers" counts below: a repeat customer with,
+        // say, a completed visit in week 1 and another in week 3 would be counted in both rows'
+        // own customersCollected, so summing those per-row counts for the totals row would
+        // double-count them. Computed once against the full aligned span instead, exactly like
+        // totalsOutsidePeriod above.
+        long totalsCustomersCollected = completed.stream()
+                .filter(c -> withinPeriod(c.date(), alignedFrom, alignedTo))
+                .map(CompletedAppointment::customerId).distinct().count();
+        long totalsCustomersAnticipated = upcoming.stream()
+                .filter(u -> withinPeriod(u.startAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), alignedFrom, alignedTo))
+                .map(UpcomingAppointment::customerId).distinct().count();
+        long totalsCustomersCancelled = cancelledBookingsIn(bookingHistory, alignedFrom, alignedTo).customers();
+        PeriodRow totals = totalsRow(alignedFrom, alignedTo, rows, totalsOutsidePeriod,
+                totalsCustomersCollected, totalsCustomersCancelled, totalsCustomersAnticipated);
 
         List<PeriodRow> mostRecentFirst = new ArrayList<>(rows);
         Collections.reverse(mostRecentFirst);
@@ -502,7 +515,8 @@ public class MarketingAnalyticsService {
         OutsidePeriodAnticipated outsidePeriod =
                 anticipatedOutsidePeriodForCustomersCapturedIn(adsCustomers, upcoming, periodStart, periodEnd);
 
-        long cancelledBookings = cancelledBookingsIn(bookingHistory, periodStart, periodEnd);
+        CancelledIn cancelledIn = cancelledBookingsIn(bookingHistory, periodStart, periodEnd);
+        long cancelledBookings = cancelledIn.bookings();
 
         long customersFollowedUp = followUps.stream()
                 .filter(f -> f.appointment().startAt() != null && withinPeriod(
@@ -518,12 +532,16 @@ public class MarketingAnalyticsService {
 
         boolean monthInProgress = periodEnd.isAfter(today);
 
+        long customersCollected = bucketCompleted.stream().map(CompletedAppointment::customerId).distinct().count();
+        long customersAnticipated = bucketUpcoming.stream().map(UpcomingAppointment::customerId).distinct().count();
+
         return new PeriodRow(periodStart, periodEnd, spend.amount(), spend.estimated(), revenueCollected,
                 revenueCollectedSplit, anticipatedRevenue, anticipatedRevenueSplit, customersCreated,
                 outsidePeriod.revenue(), outsidePeriod.revenueSplit(), bucketCompleted.size(), completedAppointmentsSplit,
                 cancelledBookings, bucketUpcoming.size(), anticipatedAppointmentsSplit,
                 outsidePeriod.appointments(), outsidePeriod.appointmentsSplit(), customersFollowedUp,
-                monthInProgress);
+                monthInProgress, customersCollected, cancelledIn.customers(), customersAnticipated,
+                outsidePeriod.customers());
     }
 
     private static boolean withinPeriod(LocalDate date, LocalDate periodStart, LocalDate periodEnd) {
@@ -550,11 +568,13 @@ public class MarketingAnalyticsService {
      * which past week/month you're looking at. Restricting to this window's own new customers
      * makes it actually vary per period, answering "of the leads this specific window brought in,
      * what have they booked beyond it" rather than a report-wide constant. */
-    /** revenue: catalog-price sum; appointments: headline count — of the exact same outside-period,
-     * captured-in-this-window set, computed together since they always share the same filter.
-     * revenueSplit/appointmentsSplit break each down by first-visit vs. repeat (see {@link MoneySplit}). */
+    /** revenue: catalog-price sum; appointments: headline count; customers: distinct customerId
+     * count (a customer with two such appointments counts once here, twice in appointments) — of
+     * the exact same outside-period, captured-in-this-window set, computed together since they
+     * always share the same filter. revenueSplit/appointmentsSplit break each down by first-visit
+     * vs. repeat (see {@link MoneySplit}). */
     private record OutsidePeriodAnticipated(BigDecimal revenue, MoneySplit revenueSplit,
-                                             long appointments, CountSplit appointmentsSplit) {}
+                                             long appointments, CountSplit appointmentsSplit, long customers) {}
 
     private static OutsidePeriodAnticipated anticipatedOutsidePeriodForCustomersCapturedIn(
             Map<String, AdsCustomer> adsCustomers, List<UpcomingAppointment> upcoming,
@@ -566,8 +586,9 @@ public class MarketingAnalyticsService {
                 .toList();
         BigDecimal revenue = outside.stream().map(UpcomingAppointment::price)
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
+        long customers = outside.stream().map(UpcomingAppointment::customerId).distinct().count();
         return new OutsidePeriodAnticipated(revenue, moneySplit(outside, UpcomingAppointment::freshFromAds, UpcomingAppointment::price),
-                outside.size(), countSplit(outside, UpcomingAppointment::freshFromAds));
+                outside.size(), countSplit(outside, UpcomingAppointment::freshFromAds), customers);
     }
 
     /** Splits a money figure by a "first visit" predicate — {@code firstVisit} sums the items that
@@ -589,6 +610,11 @@ public class MarketingAnalyticsService {
         return new CountSplit(firstVisit, items.size() - firstVisit);
     }
 
+    /** bookings: headline count; customers: distinct customerId count (a customer cancelled twice
+     * in the same window counts once here, twice in bookings) — of the same cancelled-in-window
+     * set, computed together since they share the same filter. */
+    private record CancelledIn(long bookings, long customers) {}
+
     /** Real Square bookings for ads-attributed customers, any status that didn't happen (cancelled,
      * declined, no-show — see didHappen), whose own start date falls within [periodStart,
      * periodEnd] — the piece of the completed/cancelled/anticipated breakdown that wasn't tracked
@@ -596,13 +622,16 @@ public class MarketingAnalyticsService {
      * or are still live). Scoped by appointment date, like completedAppointments/anticipatedRevenue
      * above, not by customer-capture window — this is "what happened to bookings in this window",
      * not "what this window's new customers did". */
-    private static long cancelledBookingsIn(
+    private static CancelledIn cancelledBookingsIn(
             Map<String, List<SquareClient.Booking>> bookingHistory, LocalDate periodStart, LocalDate periodEnd) {
-        return bookingHistory.values().stream()
+        List<SquareClient.Booking> cancelled = bookingHistory.values().stream()
                 .flatMap(List::stream)
                 .filter(b -> !didHappen(b))
                 .filter(b -> withinPeriod(bookingStartDate(b), periodStart, periodEnd))
-                .count();
+                .toList();
+        long customers = cancelled.stream().map(SquareClient.Booking::customerId)
+                .filter(Objects::nonNull).distinct().count();
+        return new CancelledIn(cancelled.size(), customers);
     }
 
     private static LocalDate bookingStartDate(SquareClient.Booking b) {
@@ -616,7 +645,8 @@ public class MarketingAnalyticsService {
 
 
     private PeriodRow totalsRow(LocalDate alignedFrom, LocalDate alignedTo, List<PeriodRow> rows,
-            OutsidePeriodAnticipated outsidePeriod) {
+            OutsidePeriodAnticipated outsidePeriod, long customersCollected, long customersCancelled,
+            long customersAnticipated) {
         BigDecimal adSpend = rows.stream().map(PeriodRow::adSpend).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
         boolean adSpendEstimated = rows.stream().anyMatch(PeriodRow::adSpendEstimated);
         BigDecimal revenue = rows.stream().map(PeriodRow::revenueCollected).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
@@ -641,7 +671,8 @@ public class MarketingAnalyticsService {
                 anticipatedSplit, customersCreated, outsidePeriod.revenue(), outsidePeriod.revenueSplit(),
                 completedAppointments, completedAppointmentsSplit, cancelledBookings,
                 anticipatedAppointments, anticipatedAppointmentsSplit, outsidePeriod.appointments(),
-                outsidePeriod.appointmentsSplit(), customersFollowedUp, monthInProgress);
+                outsidePeriod.appointmentsSplit(), customersFollowedUp, monthInProgress,
+                customersCollected, customersCancelled, customersAnticipated, outsidePeriod.customers());
     }
 
     private static MoneySplit sumMoneySplit(List<PeriodRow> rows, java.util.function.Function<PeriodRow, MoneySplit> f) {

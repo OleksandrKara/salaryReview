@@ -105,6 +105,19 @@ public record MarketingAdsReportDto(
             /** True when this row's periodEnd is still in the future relative to today — a Full
              * Month report viewed before the month closes. Always false for WEEK/MONTH_TO_DATE/
              * CUSTOM rows that don't extend past today. */
-            boolean monthInProgress
+            boolean monthInProgress,
+            /** Distinct customers behind {@link #completedAppointments} — a customer with two
+             * completed visits in the same period counts once here but twice there. Answers "how
+             * many people" alongside "how many bookings", the same distinction the Ads Report's new
+             * Customers block draws for every bucket below. */
+            long customersCollected,
+            /** Distinct customers behind {@link #cancelledBookings}. */
+            long customersCancelled,
+            /** Distinct customers behind {@link #anticipatedAppointments}. */
+            long customersAnticipated,
+            /** Distinct customers behind {@link #anticipatedAppointmentsOutsidePeriod} — same
+             * captured-in-this-window scoping, not summed across rows for the same reason (see
+             * {@link #anticipatedAppointmentsOutsidePeriod}'s own doc). */
+            long customersAnticipatedOutsidePeriod
     ) {}
 }

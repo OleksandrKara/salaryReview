@@ -159,6 +159,25 @@ function bookingsBreakdownOf(row: MarketingAdsReportPeriod): {
   };
 }
 
+// Same shape as bookingsBreakdownOf, one level up: distinct people instead of appointments. A
+// customer who falls into more than one bucket (e.g. one visit completed, another still
+// upcoming) is counted in each — see adsCustomersInfo — so `total` here is a sum of the four
+// buckets, not a deduped headcount across them (same convention bookingsBreakdownOf already
+// uses, where the four buckets are inherently disjoint since one appointment is one bucket).
+function customersBreakdownOf(row: MarketingAdsReportPeriod): {
+  total: number;
+  completed: number;
+  cancelled: number;
+  anticipated: number;
+  anticipatedOutsidePeriod: number;
+} {
+  const completed = row.customersCollected;
+  const cancelled = row.customersCancelled;
+  const anticipated = row.customersAnticipated;
+  const anticipatedOutsidePeriod = row.customersAnticipatedOutsidePeriod;
+  return { total: completed + cancelled + anticipated + anticipatedOutsidePeriod, completed, cancelled, anticipated, anticipatedOutsidePeriod };
+}
+
 // First-visit vs. repeat sub-line shown under a Revenue/Bookings term — same shape for a dollar
 // figure (MoneySplit) or a headline count (CountSplit), since both are just {firstVisit, repeat}.
 // "First visit" is always the same freshFromAds check used everywhere else in Ads Report/Analytics,
@@ -182,6 +201,7 @@ function formatWhatsAppReport(
 ): string {
   const totalRevenue = totalRevenueOf(row);
   const bookings = bookingsBreakdownOf(row);
+  const customers = customersBreakdownOf(row);
 
   const lines: string[] = [];
   lines.push(`*Ads Report${slug ? ` — ${slug}` : ''}*`);
@@ -214,6 +234,13 @@ function formatWhatsAppReport(
   lines.push(`Anticipated (outside period): ${bookings.anticipatedOutsidePeriod}`);
   lines.push(`  ${splitLabel(row.anticipatedAppointmentsOutsidePeriodSplit, String)}`);
   lines.push(`Total: ${bookings.total}`);
+  lines.push('');
+  lines.push('*Customers*');
+  lines.push(`Completed: ${customers.completed}`);
+  lines.push(`Cancelled: ${customers.cancelled}`);
+  lines.push(`Anticipated (this period): ${customers.anticipated}`);
+  lines.push(`Anticipated (outside period): ${customers.anticipatedOutsidePeriod}`);
+  lines.push(`Total: ${customers.total}`);
   return lines.join('\n');
 }
 
@@ -570,6 +597,7 @@ export default function AdsReportView({
         <MoneyBreakdown row={totals} layout="horizontal" lang={lang} onExpand={openLedgerPopup} />
         {showRoi && <ROIBreakdown row={totals} layout="horizontal" lang={lang} />}
         <BookingsBreakdown row={totals} layout="horizontal" lang={lang} onExpand={openLedgerPopup} />
+        <CustomersBreakdown row={totals} layout="horizontal" lang={lang} onExpand={openLedgerPopup} />
       </div>
 
       {data.periods.length === 0 ? (
@@ -975,10 +1003,73 @@ function BookingsBreakdown({
   );
 }
 
+/** Completed + Cancelled + Anticipated (period) + Anticipated (outside) = Total customers — the
+ * same four buckets as BookingsBreakdown, but counting distinct people instead of appointments.
+ * Exists because those two questions genuinely differ: "Collected: 6 bookings" earlier in the
+ * week and "Anticipated (outside): 6 bookings" for next month can describe the same 3 repeat
+ * customers or 12 different ones, and bookings alone can't tell you which. Shares onExpand with
+ * BookingsBreakdown (the same underlying ledger filter, just read as "who" instead of "how many
+ * visits") — see adsCustomersInfo for the one caveat (a customer in two buckets is counted in
+ * both, so the four don't add up to a unique headcount). */
+function CustomersBreakdown({
+  row, layout, lang, onExpand,
+}: {
+  row: MarketingAdsReportPeriod;
+  layout: 'horizontal' | 'stacked';
+  lang: Language | null;
+  onExpand?: (filter: LedgerFilter) => void;
+}) {
+  const c = customersBreakdownOf(row);
+  const title = <BlockTitle label={t(lang, 'adsCustomersTitle')} info={t(lang, 'adsCustomersInfo')} />;
+  if (layout === 'stacked') {
+    return (
+      <div className="rounded-lg border-l-4 border-amber-300 bg-amber-50/40 p-2.5 text-xs ring-1 ring-zinc-200">
+        {title}
+        <div className="flex items-center justify-between">
+          <span className="text-zinc-500">Completed</span>
+          <span className="tabular-nums font-medium text-zinc-900">{c.completed}</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between">
+          <span className="text-zinc-400">Cancelled</span>
+          <span className={`tabular-nums ${c.cancelled > 0 ? 'text-rose-600' : 'text-zinc-600'}`}>{c.cancelled}</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between">
+          <span className="text-zinc-400">+ Anticipated (this period)</span>
+          <span className="tabular-nums text-zinc-600">{c.anticipated}</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between">
+          <span className="text-zinc-400">+ Anticipated (outside period)</span>
+          <span className="tabular-nums text-zinc-600">{c.anticipatedOutsidePeriod}</span>
+        </div>
+        <div className="mt-1.5 flex items-center justify-between border-t border-zinc-300 pt-1.5">
+          <span className="font-semibold text-zinc-700">= Total customers</span>
+          <span className="tabular-nums font-semibold text-zinc-900">{c.total}</span>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <section className="rounded-xl border-l-4 border-amber-300 bg-amber-50/40 p-3 ring-1 ring-zinc-200 sm:p-4">
+      {title}
+      <div className="flex flex-wrap items-stretch gap-1.5">
+        <MoneyTerm label="Completed" value={String(c.completed)} onClick={onExpand && (() => onExpand('completed'))} />
+        <MoneyOperator symbol="+" />
+        <MoneyTerm label="Cancelled" value={String(c.cancelled)} tone={c.cancelled > 0 ? 'negative' : undefined} onClick={onExpand && (() => onExpand('cancelled-period'))} />
+        <MoneyOperator symbol="+" />
+        <MoneyTerm label="Anticipated (period)" value={String(c.anticipated)} onClick={onExpand && (() => onExpand('anticipated-period'))} />
+        <MoneyOperator symbol="+" />
+        <MoneyTerm label="Anticipated (outside period)" value={String(c.anticipatedOutsidePeriod)} onClick={onExpand && (() => onExpand('anticipated-outside'))} />
+        <MoneyOperator symbol="=" />
+        <MoneyTerm label="Total customers" value={String(c.total)} onClick={onExpand && (() => onExpand('all'))} />
+      </div>
+    </section>
+  );
+}
+
 /** Small uppercase label + info icon shown at the top of every MoneyBreakdown/ROIBreakdown/
- * BookingsBreakdown block, in both layouts — gives each block a name and a plain-language
- * explanation (localized, see i18n.ts's ads* keys) instead of leaving a reader to infer what
- * "Collected / Anticipated / Total" as a group is even about. */
+ * BookingsBreakdown/CustomersBreakdown block, in both layouts — gives each block a name and a
+ * plain-language explanation (localized, see i18n.ts's ads* keys) instead of leaving a reader to
+ * infer what "Collected / Anticipated / Total" as a group is even about. */
 function BlockTitle({ label, info }: { label: string; info: string }) {
   return (
     <div className="mb-1.5 flex items-center gap-1">
@@ -1134,6 +1225,7 @@ function PeriodTable({
                 <MoneyBreakdown row={row} layout="stacked" lang={lang} />
                 {showRoi && <ROIBreakdown row={row} layout="stacked" lang={lang} />}
                 <BookingsBreakdown row={row} layout="stacked" lang={lang} />
+                <CustomersBreakdown row={row} layout="stacked" lang={lang} />
               </div>
             </div>
           );
@@ -1151,6 +1243,7 @@ function PeriodTable({
                 <th className="border-l border-zinc-200 px-3 py-1.5 text-center" colSpan={4}>{t(lang, 'adsRoiTitle')}</th>
               )}
               <th className="border-l border-zinc-200 px-3 py-1.5 text-center" colSpan={5}>{t(lang, 'adsBookingsTitle')}</th>
+              <th className="border-l border-zinc-200 px-3 py-1.5 text-center" colSpan={5}>{t(lang, 'adsCustomersTitle')}</th>
             </tr>
             <tr>
               <th className="border-l border-zinc-200 px-3 py-2 text-right font-normal normal-case">Collected</th>
@@ -1201,6 +1294,22 @@ function PeriodTable({
               <th className="bg-zinc-100 px-3 py-2 text-right font-semibold normal-case text-zinc-700">
                 = Total
               </th>
+              <th className="border-l border-zinc-200 px-3 py-2 text-right font-normal normal-case">Completed</th>
+              <th className="px-3 py-2 text-right font-normal normal-case" title="Cancelled by either side, declined, or no-show.">
+                Cancelled
+              </th>
+              <th className="px-3 py-2 text-right font-normal normal-case" title="Upcoming appointments starting within this period only.">
+                Anticipated (period)
+              </th>
+              <th
+                className="px-3 py-2 text-right font-normal normal-case"
+                title="Upcoming appointments dated outside this period, booked by exactly the customers first captured by ads within this same period."
+              >
+                Anticipated (outside period)
+              </th>
+              <th className="bg-amber-50 px-3 py-2 text-right font-semibold normal-case text-amber-700">
+                = Total
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
@@ -1210,6 +1319,7 @@ function PeriodTable({
               const roiTextClass = roiPercent === null ? 'text-zinc-600' : roiPercent >= 0 ? 'text-emerald-700' : 'text-rose-700';
               const bookings = bookingsBreakdownOf(row);
               const cancelledLabel = `${bookings.cancelled}${bookings.cancelledPercent !== null ? ` (${bookings.cancelledPercent.toFixed(0)}%)` : ''}`;
+              const customers = customersBreakdownOf(row);
               return (
                 <tr key={row.periodStart} className={current ? 'bg-blue-50' : 'hover:bg-zinc-50'}>
                   <td className="px-3 py-2 font-medium">
@@ -1257,6 +1367,13 @@ function PeriodTable({
                   </td>
                   <td className={`px-3 py-2 text-right tabular-nums font-semibold text-zinc-700 ${current ? 'bg-zinc-100' : 'bg-zinc-50'}`}>
                     {bookings.total}
+                  </td>
+                  <td className="border-l border-zinc-100 px-3 py-2 text-right tabular-nums text-zinc-600">{customers.completed}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums ${customers.cancelled > 0 ? 'text-rose-600' : 'text-zinc-600'}`}>{customers.cancelled}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{customers.anticipated}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{customers.anticipatedOutsidePeriod}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums font-semibold text-amber-700 ${current ? 'bg-amber-50/60' : 'bg-amber-50/40'}`}>
+                    {customers.total}
                   </td>
                 </tr>
               );

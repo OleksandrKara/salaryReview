@@ -1050,6 +1050,17 @@ export interface MarketingAdsReportPeriod {
    * report viewed before the month closes. Always false for WEEK/MONTH_TO_DATE/CUSTOM rows that
    * don't extend past today. */
   monthInProgress: boolean;
+  /** Distinct customers behind completedAppointments — a customer with two completed visits in
+   * the same period counts once here but twice there. Answers "how many people" alongside "how
+   * many bookings", for each bucket the Customers block below draws the same distinction for. */
+  customersCollected: number;
+  /** Distinct customers behind cancelledBookings. */
+  customersCancelled: number;
+  /** Distinct customers behind anticipatedAppointments. */
+  customersAnticipated: number;
+  /** Distinct customers behind anticipatedAppointmentsOutsidePeriod — same captured-in-this-window
+   * scoping (see anticipatedAppointmentsOutsidePeriod's own doc). */
+  customersAnticipatedOutsidePeriod: number;
 }
 
 export interface MarketingAdsReportData {

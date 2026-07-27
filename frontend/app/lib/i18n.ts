@@ -328,6 +328,11 @@ const STRINGS = {
     EN: 'What happened to every appointment dated in this period for these ads-driven customers: completed, cancelled/no-show, or still upcoming — split into this period and later.',
     RU: 'Что произошло с каждой записью на этот период у клиентов, привлечённых рекламой: завершена, отменена/неявка, или ещё предстоит — с разбивкой на этот период и на будущее.',
   },
+  adsCustomersTitle: { EN: 'Customers', RU: 'Клиенты' },
+  adsCustomersInfo: {
+    EN: 'The same breakdown as Bookings, but counting distinct people instead of appointments — someone with two visits in one bucket counts once here. A customer who falls into more than one bucket (e.g. one visit completed, another still upcoming) is counted in each, so these four don’t add up to a unique headcount.',
+    RU: 'Та же разбивка, что и в Записях, но считаются уникальные люди, а не записи — человек с двумя визитами в одной категории здесь считается один раз. Клиент, попадающий в несколько категорий одновременно (например, один визит завершён, другой ещё предстоит), учитывается в каждой из них, поэтому сумма этих четырёх чисел — не уникальное количество людей.',
+  },
 } satisfies Record<string, Record<Language, string>>;
 
 /** Translate a UI key to the given language; English when the language is unset. */
