@@ -332,7 +332,7 @@ const CANCELLATION_STATUS_LABELS: Record<MarketingCancelledAppointment['status']
 
 type ViewMode = 'table' | 'text' | 'chart';
 
-const WEEK_PRESETS = [4, 8, 12];
+const WEEK_PRESETS = [3, 8, 12];
 const MONTH_PRESETS = [3, 6, 12];
 const DEFAULT_SLUG = 'mani';
 
@@ -402,10 +402,12 @@ export default function AdsReportView({
   const searchParams = useSearchParams();
   const initialSelection = parsePeriodParams(searchParams);
   const [periodType, setPeriodType] = useState<PeriodType>(initialSelection.period);
-  // Not URL-persisted — resets to the default 8 weeks/6 months on reload, same as before this
+  // Not URL-persisted — resets to the default 3 weeks/6 months on reload, same as before this
   // change; only Ads Report ever reaches 'week'/'month' at all (see PeriodFilter's
-  // enableWeekMonth), so there's no cross-tab consistency to preserve here.
-  const [rangeCount, setRangeCount] = useState(8);
+  // enableWeekMonth), so there's no cross-tab consistency to preserve here. Weekly defaults to
+  // 3 (not a wider window) to keep the Square sweep behind every weekly load fast — the 8/12-week
+  // presets are still one tap away for a longer look-back.
+  const [rangeCount, setRangeCount] = useState(3);
   const [customFrom, setCustomFrom] = useState(initialSelection.period === 'custom' ? initialSelection.from ?? '' : '');
   const [customTo, setCustomTo] = useState(initialSelection.period === 'custom' ? initialSelection.to ?? '' : '');
   const [sources, setSources] = useState<Set<TrafficSourceKey>>(() => new Set(ADS_ONLY_SOURCES));
@@ -451,7 +453,7 @@ export default function AdsReportView({
     setPeriodType(selection.period);
     if (view === 'chart' && selection.period !== 'month') setView('table');
     if (selection.period === 'week' || selection.period === 'month') {
-      const defaultN = selection.period === 'week' ? 8 : 6;
+      const defaultN = selection.period === 'week' ? 3 : 6;
       setRangeCount(defaultN);
       const range = computeRange(selection.period, defaultN);
       void load(selection.period, sources, range.from, range.to);
@@ -489,9 +491,27 @@ export default function AdsReportView({
   const totals = data.totals;
   // ROI is only meaningful once there's spend to measure a return against — showing "Realized
   // ROAS: —" etc. for a page with no ad spend entered is noise, not information. A single flag
-  // derived from the totals row (a sum across every visible period) keeps the top summary, the
-  // table's ROI columns, and the WhatsApp text export all agreeing on whether to show it.
+  // derived from the totals row (a sum across every visible period) keeps the top summary and
+  // the table's ROI columns all agreeing on whether to show it.
   const showRoi = totals.adSpend > 0;
+
+  // Which single period (week/month) the Text view's WhatsApp export is for — defaults to the
+  // most recent *completed* one (periods arrives most-recent-first, so "last week"/"last month",
+  // not whatever's still in progress) rather than always the aggregate across the whole visible
+  // range, so a report for one specific past week is one tap away instead of requiring a Custom
+  // date-range round trip. Only meaningful for week/month grain, where periods has more than one
+  // row — mtd/custom/all already return exactly one row, identical to totals.
+  function defaultTextPeriodStart(periods: MarketingAdsReportPeriod[]): string | null {
+    if (periods.length === 0) return null;
+    return (periods.find((p) => !isCurrentPeriod(p)) ?? periods[0]).periodStart;
+  }
+  const [selectedTextPeriodStart, setSelectedTextPeriodStart] = useState(() => defaultTextPeriodStart(data.periods));
+  const [prevPeriodsForText, setPrevPeriodsForText] = useState(data.periods);
+  if (data.periods !== prevPeriodsForText) {
+    setPrevPeriodsForText(data.periods);
+    setSelectedTextPeriodStart(defaultTextPeriodStart(data.periods));
+  }
+  const textRow = data.periods.find((p) => p.periodStart === selectedTextPeriodStart) ?? totals;
 
   // Shared by the per-figure popup and "View breakdown" below, so both ever only fetch once and
   // always agree on what they show — see useAnalyticsBreakdown's own comment.
@@ -567,7 +587,28 @@ export default function AdsReportView({
           </div>
 
           {view === 'table' && <PeriodTable periods={data.periods} periodType={data.periodType} lang={lang} showRoi={showRoi} />}
-          {view === 'text' && <WhatsAppTextView row={totals} periodType={data.periodType} slug={slug} showRoi={showRoi} />}
+          {view === 'text' && (
+            <>
+              {data.periods.length > 1 && (
+                <label className="mt-4 flex flex-col gap-1 text-xs">
+                  <span className="font-medium text-zinc-500">Period</span>
+                  <select
+                    value={selectedTextPeriodStart ?? ''}
+                    onChange={(e) => setSelectedTextPeriodStart(e.target.value)}
+                    className="w-fit rounded border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900"
+                  >
+                    {data.periods.map((p) => (
+                      <option key={p.periodStart} value={p.periodStart}>
+                        {fmtPeriodLabel(p, data.periodType)}
+                        {isCurrentPeriod(p) ? ' (in progress)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <WhatsAppTextView row={textRow} periodType={data.periodType} slug={slug} showRoi={showRoi} />
+            </>
+          )}
           {view === 'chart' && periodType === 'month' && <TrendChart periods={data.periods} />}
         </div>
       )}
@@ -643,7 +684,9 @@ function WhatsAppTextView({
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs text-zinc-500">Ready to paste into WhatsApp — for the range shown above.</span>
+        <span className="text-xs text-zinc-500">
+          Ready to paste into WhatsApp — for {fmtDateRange(row.periodStart, row.periodEnd)}.
+        </span>
         <button
           type="button"
           onClick={copy}
