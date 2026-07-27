@@ -923,6 +923,48 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
+    @DisplayName("adsReport: customersCollected dedupes a customer with two completed visits in one "
+            + "month, and the totals row dedupes the same customer across two different months rather "
+            + "than double-counting them the way completedAppointments (correctly) does")
+    void adsReportCustomersCollectedDedupesWithinAndAcrossPeriods() {
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
+                contact("+16195550001", "cust-repeat", Instant.parse("2026-06-01T00:00:00Z"), "meta_ads")));
+        when(square.customerCreatedAts(any())).thenReturn(Map.of(
+                "cust-repeat", Instant.parse("2026-06-01T00:05:00Z")));
+        // Two completed visits in June (same customer, different bookings) — completedAppointments
+        // should count both, customersCollected should count the one person once.
+        var juneVisit1 = new AttributedService("p1", "P", "2026-06-05", "FIRST", "Manicure",
+                new BigDecimal("80.00"), BigDecimal.ZERO, new BigDecimal("80.00"), BigDecimal.ZERO,
+                true, 1, 1, false, "CARD", null, "booking-june-1", "cust-repeat", null);
+        var juneVisit2 = new AttributedService("p1", "P", "2026-06-20", "SECOND", "Manicure",
+                new BigDecimal("85.00"), BigDecimal.ZERO, new BigDecimal("85.00"), BigDecimal.ZERO,
+                true, 1, 1, false, "CARD", null, "booking-june-2", "cust-repeat", null);
+        // Same customer again in July — a separate month's own row.
+        var julyVisit = new AttributedService("p1", "P", "2026-07-10", "FIRST", "Manicure",
+                new BigDecimal("90.00"), BigDecimal.ZERO, new BigDecimal("90.00"), BigDecimal.ZERO,
+                true, 1, 1, false, "CARD", null, "booking-july", "cust-repeat", null);
+        when(aggregator.aggregate(2026, 6, new BigDecimal("60.00")))
+                .thenReturn(aggOf(2026, 6, List.of(juneVisit1, juneVisit2)));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(julyVisit)));
+
+        MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2026, 6, 1), LocalDate.of(2026, 7, 31),
+                TrafficSourceSql.ADS_ONLY, "mani", MarketingAnalyticsService.PeriodKind.MONTH);
+
+        PeriodRow july = dto.periods().get(0);
+        PeriodRow june = dto.periods().get(1);
+        assertThat(june.completedAppointments()).isEqualTo(2);
+        assertThat(june.customersCollected()).isEqualTo(1);
+        assertThat(july.completedAppointments()).isEqualTo(1);
+        assertThat(july.customersCollected()).isEqualTo(1);
+
+        // completedAppointments sums safely (3 real, disjoint-by-date bookings across the two
+        // months) — but customersCollected must NOT sum the same way, or the one real person would
+        // be reported as 2 distinct customers overall.
+        assertThat(dto.totals().completedAppointments()).isEqualTo(3);
+        assertThat(dto.totals().customersCollected()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("adsReport splits revenueCollected/completedAppointments into first-visit vs. repeat, same freshness check as analytics()")
     void adsReportSplitsFirstVisitFromRepeat() {
         when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(

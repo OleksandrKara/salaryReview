@@ -47,7 +47,8 @@ class MarketingAdsReportControllerTest {
     private static final PeriodRow EMPTY_ROW = new PeriodRow(
             LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
             BigDecimal.ZERO, false, BigDecimal.ZERO, ZERO_MONEY_SPLIT, BigDecimal.ZERO, ZERO_MONEY_SPLIT, 0,
-            BigDecimal.ZERO, ZERO_MONEY_SPLIT, 0, ZERO_COUNT_SPLIT, 0, 0, ZERO_COUNT_SPLIT, 0, ZERO_COUNT_SPLIT, 0, false);
+            BigDecimal.ZERO, ZERO_MONEY_SPLIT, 0, ZERO_COUNT_SPLIT, 0, 0, ZERO_COUNT_SPLIT, 0, ZERO_COUNT_SPLIT, 0, false,
+            0, 0, 0, 0);
     private static final MarketingAdsReportDto EMPTY_DTO =
             new MarketingAdsReportDto("WEEK", List.of(), EMPTY_ROW);
 
