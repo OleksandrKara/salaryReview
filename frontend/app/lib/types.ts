@@ -902,6 +902,9 @@ export interface MarketingUpcomingAppointment {
    * it into "this period" (startAt within [from, to], any customer) vs. "outside period" (startAt
    * outside it, but only where this is true) and match those headline figures exactly. */
   capturedInRange: boolean;
+  /** The real Square booking id — use this (not customerId+startAt) as a row's unique key; two
+   * different bookings could in principle share a startAt. */
+  bookingId: string | null;
 }
 
 export interface MarketingCompletedAppointment {
@@ -917,6 +920,11 @@ export interface MarketingCompletedAppointment {
    * checkout) — the same classification used for payroll. */
   paymentChannel: 'CASH' | 'CARD' | 'CASH-NOTE';
   freshFromAds: boolean;
+  /** The real Square booking id — use this (not customerId+date+serviceName) as a row's unique
+   * key. Two genuinely different same-day cash-note appointments for one customer both get the
+   * identical generic serviceName "cash note (N counted)", so date+serviceName alone can collide
+   * (seen in production: caused a React duplicate-key bug in the Ads Report ledger). */
+  bookingId: string | null;
 }
 
 export interface MarketingCancelledAppointment {
@@ -934,6 +942,8 @@ export interface MarketingCancelledAppointment {
   freshFromAds: boolean;
   /** Same meaning as MarketingUpcomingAppointment.capturedInRange. */
   capturedInRange: boolean;
+  /** Same reasoning as MarketingCompletedAppointment.bookingId. */
+  bookingId: string | null;
 }
 
 export interface MarketingAnalyticsData {

@@ -273,7 +273,12 @@ function buildLedgerRows(data: MarketingAnalyticsData): LedgerRow[] {
   const rows: LedgerRow[] = [];
   for (const c of data.completed) {
     rows.push({
-      key: `completed-${c.customerId}-${c.date}-${c.serviceName}`,
+      // bookingId, not date+serviceName — two genuinely different same-day cash-note
+      // appointments for one customer both get the identical generic serviceName "cash note (N
+      // counted)", so date+serviceName alone can collide (a real production case: Ashanti
+      // Williamson's two same-day cash visits shared a key, causing a React duplicate-key bug —
+      // a ghost row on ledger-tab switches whose expand state was shared with the real row).
+      key: `completed-${c.bookingId ?? `${c.customerId}-${c.date}-${c.serviceName}`}`,
       customerId: c.customerId, customerName: c.customerName, serviceName: c.serviceName,
       date: c.date, dateLabel: fmtDay(c.date), amount: c.collected, amountKind: 'collected', category: 'completed',
       freshFromAds: c.freshFromAds, paymentChannel: c.paymentChannel,
@@ -284,7 +289,7 @@ function buildLedgerRows(data: MarketingAnalyticsData): LedgerRow[] {
     const inPeriod = date >= data.from && date <= data.to;
     if (!inPeriod && !u.capturedInRange) continue;
     rows.push({
-      key: `upcoming-${u.customerId}-${u.startAt}`,
+      key: `upcoming-${u.bookingId ?? `${u.customerId}-${u.startAt}`}`,
       customerId: u.customerId, customerName: u.customerName, serviceName: u.serviceName,
       date, dateLabel: fmtAppointment(u.startAt), amount: u.price, amountKind: 'estimate',
       category: inPeriod ? 'anticipated-period' : 'anticipated-outside',
@@ -295,7 +300,7 @@ function buildLedgerRows(data: MarketingAnalyticsData): LedgerRow[] {
     const inPeriod = c.date >= data.from && c.date <= data.to;
     if (!inPeriod && !c.capturedInRange) continue;
     rows.push({
-      key: `cancelled-${c.customerId}-${c.date}-${c.serviceName}`,
+      key: `cancelled-${c.bookingId ?? `${c.customerId}-${c.date}-${c.serviceName}`}`,
       customerId: c.customerId, customerName: c.customerName, serviceName: c.serviceName,
       date: c.date, dateLabel: fmtDay(c.date), amount: c.price, amountKind: 'estimate',
       category: inPeriod ? 'cancelled-period' : 'cancelled-outside',
