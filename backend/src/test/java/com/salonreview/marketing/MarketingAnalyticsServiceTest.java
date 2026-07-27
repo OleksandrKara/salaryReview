@@ -74,6 +74,12 @@ class MarketingAnalyticsServiceTest {
                 null, "booking-1", customerId, "Customer");
     }
 
+    private static AttributedService cashNoteSvc(String date, String customerId, String bookingId, String amount) {
+        return new AttributedService("p1", "P", date, "FIRST", "cash note (1 counted)", new BigDecimal(amount),
+                BigDecimal.ZERO, new BigDecimal(amount), BigDecimal.ZERO, true, 1, 1, false, "CASH-NOTE",
+                null, bookingId, customerId, "Customer");
+    }
+
     private static MonthAggregation aggOf(int year, int month, List<AttributedService> services) {
         return new MonthAggregation(year, month, "UTC", List.of(), new SquareMonthAggregator.Diag(),
                 services, List.of(), List.of());
@@ -574,6 +580,33 @@ class MarketingAnalyticsServiceTest {
         assertThat(dto.completed()).hasSize(1);
         assertThat(dto.completed().get(0).collected()).isEqualByComparingTo("85.00");
         assertThat(dto.completed().get(0).customerName()).isEqualTo("Jane Doe");
+    }
+
+    @Test
+    @DisplayName("two genuinely different same-day cash-note appointments for one customer both survive as "
+            + "distinct completed rows, each carrying its own real bookingId — regression guard for the Ashanti "
+            + "Williamson Ads Report bug where both shared the generic serviceName \"cash note (1 counted)\", "
+            + "making the frontend's (customerId, date, serviceName) row key collide and rendering as a "
+            + "React duplicate-key ghost row on ledger-tab switches")
+    void twoSameDayCashNoteAppointmentsGetDistinctBookingIds() {
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
+        when(square.customerCreatedAts(Set.of("cust-1")))
+                .thenReturn(Map.of("cust-1", Instant.parse("2026-07-01T00:05:00Z")));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
+                cashNoteSvc("2026-07-22", "cust-1", "bk-real-1", "85.00"),
+                cashNoteSvc("2026-07-22", "cust-1", "bk-real-2", "88.00"))));
+        when(square.customerNames(Set.of("cust-1"))).thenReturn(Map.of("cust-1", "Ashanti Williamson"));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY, "mani");
+
+        assertThat(dto.completed()).hasSize(2);
+        assertThat(dto.completed()).extracting(MarketingAnalyticsDto.CompletedAppointment::bookingId)
+                .containsExactlyInAnyOrder("bk-real-1", "bk-real-2");
+        assertThat(dto.completed()).extracting(MarketingAnalyticsDto.CompletedAppointment::collected)
+                .usingElementComparator(BigDecimal::compareTo)
+                .containsExactlyInAnyOrder(new BigDecimal("85.00"), new BigDecimal("88.00"));
     }
 
     @Test

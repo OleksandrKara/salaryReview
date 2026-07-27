@@ -69,7 +69,14 @@ public record MarketingAnalyticsDto(
             Instant startAt,
             BigDecimal price,
             boolean freshFromAds,
-            boolean capturedInRange
+            boolean capturedInRange,
+            /** The real Square booking id — lets the frontend key each row uniquely instead of by
+             * (customerId, startAt), which two genuinely different bookings could share if Square's
+             * own start_at ever collided (defensive; startAt alone hasn't been observed to collide
+             * in practice, unlike CompletedAppointment's date+serviceName below). Nullable only for
+             * a follow-up appointment whose underlying Appointment DTO didn't carry one.
+             */
+            String bookingId
     ) {}
 
     /** One real Square booking for an ads-attributed customer that didn't happen — cancelled by
@@ -86,7 +93,11 @@ public record MarketingAnalyticsDto(
             BigDecimal price,
             String status,
             boolean freshFromAds,
-            boolean capturedInRange
+            boolean capturedInRange,
+            /** See CompletedAppointment.bookingId's doc — same reasoning: two cancelled bookings for
+             * the same customer, same day, same service name are a real (if less common) case this
+             * disambiguates for the frontend's row key. */
+            String bookingId
     ) {}
 
     /** One already-completed, actually-paid appointment for an ads-attributed customer — one row
@@ -101,6 +112,18 @@ public record MarketingAnalyticsDto(
             LocalDate date,
             BigDecimal collected,
             String paymentChannel,
-            boolean freshFromAds
+            boolean freshFromAds,
+            /** The real Square booking id. Two genuinely different appointments for the same
+             * customer on the same calendar day can carry the identical generic serviceName
+             * "cash note (N counted)" (SquareMonthAggregator's label for any cash-note booking,
+             * regardless of the actual service) — (customerId, date, serviceName) alone is not a
+             * unique row identity in that case. Seen in production: Ashanti Williamson's two same-day
+             * cash appointments collided on the frontend's derived row key, causing a React duplicate-
+             * key rendering bug (a ghost row appearing after switching ledger tabs, with both rows'
+             * expand state incorrectly shared). bookingId is always non-null here — {@code
+             * buildCompletedAppointments} groups by it, {@code mergeFollowUpsInto} carries it through
+             * from the underlying Appointment DTO (nullable there only in principle).
+             */
+            String bookingId
     ) {}
 }

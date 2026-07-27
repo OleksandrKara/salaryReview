@@ -265,7 +265,8 @@ public class MarketingAnalyticsService {
                     parseIso(first.date()),
                     collected,
                     first.channel(),
-                    freshCustomerIds.contains(first.customerId())
+                    freshCustomerIds.contains(first.customerId()),
+                    first.bookingId()
             ));
         }
         result.sort(Comparator.comparing(CompletedAppointment::date).reversed());
@@ -451,7 +452,8 @@ public class MarketingAnalyticsService {
                     continue;
                 }
                 completed.add(new CompletedAppointment(customerId, customerName, serviceName, date,
-                        a.collectedAmount().setScale(2, RoundingMode.HALF_UP), a.paymentChannel(), fresh));
+                        a.collectedAmount().setScale(2, RoundingMode.HALF_UP), a.paymentChannel(), fresh,
+                        a.bookingId()));
             } else if (!date.isBefore(today)) {
                 Instant finalStartAt = a.startAt();
                 String finalService = serviceName;
@@ -466,7 +468,7 @@ public class MarketingAnalyticsService {
                 }
                 upcoming.add(new UpcomingAppointment(customerId, customerName, serviceName, a.startAt(),
                         a.price() == null ? ZERO_MONEY : a.price().setScale(2, RoundingMode.HALF_UP), fresh,
-                        capturedInRangeIds != null && capturedInRangeIds.contains(customerId)));
+                        capturedInRangeIds != null && capturedInRangeIds.contains(customerId), a.bookingId()));
             }
         }
     }
@@ -964,7 +966,8 @@ public class MarketingAnalyticsService {
                     Instant.parse(f.booking().startAt()),
                     price.setScale(2, RoundingMode.HALF_UP),
                     freshCustomerIds.contains(f.customerId()),
-                    capturedInRangeIds != null && capturedInRangeIds.contains(f.customerId())
+                    capturedInRangeIds != null && capturedInRangeIds.contains(f.customerId()),
+                    f.booking().id()
             ));
         }
         result.sort(Comparator.comparing(UpcomingAppointment::startAt));
@@ -1022,7 +1025,8 @@ public class MarketingAnalyticsService {
                     price.setScale(2, RoundingMode.HALF_UP),
                     c.booking().status(),
                     freshCustomerIds.contains(c.customerId()),
-                    capturedInRangeIds != null && capturedInRangeIds.contains(c.customerId())
+                    capturedInRangeIds != null && capturedInRangeIds.contains(c.customerId()),
+                    c.booking().id()
             ));
         }
         result.sort(Comparator.comparing(CancelledAppointment::date).reversed());
