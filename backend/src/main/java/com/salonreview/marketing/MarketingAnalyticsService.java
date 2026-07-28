@@ -410,8 +410,22 @@ public class MarketingAnalyticsService {
             return new MarketingLtvDto(List.of(), channelLtv("all", Set.of(), List.of()));
         }
 
-        LocalDate today = LocalDate.now(clock.withZone(resolveZone()));
-        List<AttributedService> allServices = collectServices(customers.keySet(), ALL_TIME_START, today, priceCutoff());
+        ZoneId zone = resolveZone();
+        LocalDate today = LocalDate.now(clock.withZone(zone));
+        // Bounded to this page's own earliest attributed customer, not the fixed 2020 ALL_TIME_START
+        // sentinel adsReport()'s ALL period uses — that constant is fine there (an owner opts into
+        // "all" occasionally, for a page that may be years old); here, every single load of this tab
+        // would otherwise sweep every month back to 2020 regardless of how young the page actually
+        // is. For mani (created 2026-07-04), that's ~78 months of real Square API calls — one per
+        // month — for a page with real data in exactly one of them, and was enough live Square
+        // traffic to trip rate-limiting (confirmed in production logs: repeated 429s from
+        // connect.squareup.com right around when this was first tested).
+        LocalDate earliestFirstTouch = customers.values().stream()
+                .map(AdsCustomer::firstTouch)
+                .min(Comparator.naturalOrder())
+                .map(instant -> instant.atZone(zone).toLocalDate())
+                .orElse(today);
+        List<AttributedService> allServices = collectServices(customers.keySet(), earliestFirstTouch, today, priceCutoff());
 
         Map<String, List<String>> idsByChannel = new LinkedHashMap<>();
         for (Map.Entry<String, AdsCustomer> e : customers.entrySet()) {
