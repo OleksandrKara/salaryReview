@@ -406,6 +406,7 @@ public class MarketingAnalyticsService {
         // unfiltered, tagged with its own already-classified channel — exactly the breakdown this
         // report groups by, rather than a single pre-filtered bucket.
         Map<String, AdsCustomer> customers = resolveAdsCustomers(ALL_SOURCES, slug);
+        log.info("ltv({}): resolved {} Square customer ids from attributed contacts", slug, customers.size());
         if (customers.isEmpty()) {
             return new MarketingLtvDto(List.of(), channelLtv("all", Set.of(), List.of()));
         }
@@ -426,6 +427,9 @@ public class MarketingAnalyticsService {
                 .map(instant -> instant.atZone(zone).toLocalDate())
                 .orElse(today);
         List<AttributedService> allServices = collectServices(customers.keySet(), earliestFirstTouch, today, priceCutoff());
+        log.info("ltv({}): swept [{}, {}] -> {} priced services for {} distinct paying customers",
+                slug, earliestFirstTouch, today, allServices.size(),
+                allServices.stream().map(AttributedService::customerId).distinct().count());
 
         Map<String, List<String>> idsByChannel = new LinkedHashMap<>();
         for (Map.Entry<String, AdsCustomer> e : customers.entrySet()) {
