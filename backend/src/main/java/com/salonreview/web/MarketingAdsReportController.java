@@ -8,6 +8,7 @@ import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.marketing.TrafficSourceParam;
 import com.salonreview.web.dto.MarketingAdsReportDto;
 import com.salonreview.web.dto.MarketingCustomerHistoryDto;
+import com.salonreview.web.dto.MarketingLtvDto;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -113,6 +114,15 @@ public class MarketingAdsReportController {
     @DeleteMapping("/spend/{id}")
     public ResponseEntity<Void> deleteSpendEntry(@PathVariable Long id) {
         return service.deleteAdSpendEntry(id) ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
+    }
+
+    /** All-time customer lifetime value by acquisition channel — see
+     * {@link MarketingAnalyticsService#ltv}. Unlike the report above, this is never period-scoped
+     * (a customer's LTV spans every visit since their first touch), so it takes only slug.
+     */
+    @GetMapping("/ltv")
+    public MarketingLtvDto ltv(@RequestParam(required = false) String slug) {
+        return service.ltv(slug);
     }
 
     /** One customer's submission + appointment history, fetched lazily when the owner expands a

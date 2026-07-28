@@ -10,7 +10,7 @@ export const ALL_TRAFFIC_SOURCES: TrafficSourceKey[] = [
  * is the more useful default view. */
 export const ADS_ONLY_SOURCES: TrafficSourceKey[] = ['meta_ads', 'google_ads'];
 
-const SOURCE_LABELS: Record<TrafficSourceKey, string> = {
+export const SOURCE_LABELS: Record<TrafficSourceKey, string> = {
   meta_ads: 'Meta Ads',
   google_ads: 'Google Ads',
   instagram_organic: 'Instagram (organic)',

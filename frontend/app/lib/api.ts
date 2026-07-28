@@ -38,6 +38,7 @@ import type {
   FunnelDashboardData,
   AdSpendEntry,
   MarketingAdsReportData,
+  MarketingLtvData,
   MarketingAnalyticsData,
   MarketingCustomerHistory,
   StaffDocument,
@@ -467,6 +468,13 @@ export const api = {
     if (sources) params.set('sources', sourcesParam(sources));
     if (slug) params.set('slug', slug);
     return proxyGet<MarketingAdsReportData>(`/api/owner/marketing/ads-report?${params.toString()}`);
+  },
+
+  // All-time customer lifetime value by acquisition channel for one page — never period-scoped,
+  // unlike getMarketingAdsReport above (a customer's LTV spans every visit since first touch).
+  getMarketingLtv: (slug?: string) => {
+    const qs = slug ? `?slug=${encodeURIComponent(slug)}` : '';
+    return proxyGet<MarketingLtvData>(`/api/owner/marketing/ads-report/ltv${qs}`);
   },
 
   // Records a new ad-spend-entry row for one page and period — never upserts; a corrected

@@ -13,6 +13,8 @@ import com.salonreview.web.dto.MarketingAdsReportDto.CountSplit;
 import com.salonreview.web.dto.MarketingAdsReportDto.MoneySplit;
 import com.salonreview.web.dto.MarketingAdsReportDto.PeriodRow;
 import com.salonreview.web.dto.MarketingAnalyticsDto;
+import com.salonreview.web.dto.MarketingLtvDto;
+import com.salonreview.web.dto.MarketingLtvDto.ChannelLtv;
 import com.salonreview.web.dto.MarketingAnalyticsDto.CancelledAppointment;
 import com.salonreview.web.dto.MarketingAnalyticsDto.CompletedAppointment;
 import com.salonreview.web.dto.MarketingAnalyticsDto.Segment;
@@ -372,6 +374,76 @@ public class MarketingAnalyticsService {
         List<PeriodRow> mostRecentFirst = new ArrayList<>(rows);
         Collections.reverse(mostRecentFirst);
         return new MarketingAdsReportDto(periodType, mostRecentFirst, totals);
+    }
+
+    /** Display order for {@link #ltv}'s channel rows — always shown, even at zero customers, so a
+     * channel with no acquisitions yet reads as "nothing here" rather than being silently absent.
+     * "other" (a contact whose channel didn't classify into any of these five — see
+     * TrafficSourceSql's ELSE NULL branch) is appended separately, only when non-empty. */
+    private static final List<String> LTV_CHANNEL_ORDER = List.of(
+            TrafficSourceSql.META_ADS, TrafficSourceSql.GOOGLE_ADS,
+            TrafficSourceSql.INSTAGRAM_ORGANIC, TrafficSourceSql.GOOGLE_ORGANIC,
+            TrafficSourceSql.DIRECT);
+    private static final String LTV_OTHER_CHANNEL = "other";
+
+    /** All-time customer lifetime value by acquisition channel, for one landing page — see
+     * {@link MarketingLtvDto}. Reuses the exact same customer resolution and revenue-collection
+     * machinery as {@link #adsReport} (resolveAdsCustomers/collectServices), just over the full
+     * all-time span instead of one period, and grouped by channel instead of bucketed by date.
+     * {@code slug == null} (no page selected) is empty, same "nothing to show yet" convention as
+     * {@link #resolveFollowUps}.
+     */
+    public MarketingLtvDto ltv(String slug) {
+        String key = "ltv:" + slug;
+        return cache.get(key, CACHE_TTL, () -> computeLtv(slug));
+    }
+
+    private MarketingLtvDto computeLtv(String slug) {
+        if (slug == null) {
+            return new MarketingLtvDto(List.of(), channelLtv("all", Set.of(), List.of()));
+        }
+        // ALL_SOURCES (not a filtered subset) is what makes resolveAdsCustomers pull every contact
+        // unfiltered, tagged with its own already-classified channel — exactly the breakdown this
+        // report groups by, rather than a single pre-filtered bucket.
+        Map<String, AdsCustomer> customers = resolveAdsCustomers(ALL_SOURCES, slug);
+        if (customers.isEmpty()) {
+            return new MarketingLtvDto(List.of(), channelLtv("all", Set.of(), List.of()));
+        }
+
+        LocalDate today = LocalDate.now(clock.withZone(resolveZone()));
+        List<AttributedService> allServices = collectServices(customers.keySet(), ALL_TIME_START, today, priceCutoff());
+
+        Map<String, List<String>> idsByChannel = new LinkedHashMap<>();
+        for (Map.Entry<String, AdsCustomer> e : customers.entrySet()) {
+            String channel = e.getValue().channel();
+            String bucket = (channel == null || !LTV_CHANNEL_ORDER.contains(channel)) ? LTV_OTHER_CHANNEL : channel;
+            idsByChannel.computeIfAbsent(bucket, k -> new ArrayList<>()).add(e.getKey());
+        }
+
+        List<ChannelLtv> rows = new ArrayList<>();
+        for (String channel : LTV_CHANNEL_ORDER) {
+            rows.add(channelLtv(channel, new HashSet<>(idsByChannel.getOrDefault(channel, List.of())), allServices));
+        }
+        List<String> other = idsByChannel.get(LTV_OTHER_CHANNEL);
+        if (other != null && !other.isEmpty()) {
+            rows.add(channelLtv(LTV_OTHER_CHANNEL, new HashSet<>(other), allServices));
+        }
+
+        ChannelLtv totals = channelLtv("all", customers.keySet(), allServices);
+        return new MarketingLtvDto(rows, totals);
+    }
+
+    private static ChannelLtv channelLtv(
+            String channel, Set<String> customerIds, List<AttributedService> allServices) {
+        BigDecimal gross = allServices.stream()
+                .filter(s -> customerIds.contains(s.customerId()))
+                .map(AttributedService::gross)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
+        long customerCount = customerIds.size();
+        BigDecimal average = customerCount == 0 ? null
+                : gross.divide(BigDecimal.valueOf(customerCount), 2, RoundingMode.HALF_UP);
+        return new ChannelLtv(channel, customerCount, gross, average);
     }
 
     /** Every real, non-cancelled Square appointment for this page's ads-attributed contacts that

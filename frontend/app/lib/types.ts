@@ -1074,6 +1074,31 @@ export interface MarketingAdsReportData {
   totals: MarketingAdsReportPeriod;
 }
 
+/** All-time customer lifetime value by acquisition channel, for one landing page — pairs with the
+ * Ads Report's per-period cost figures to answer "which channel's customers are actually worth it
+ * long-term", not just "which channel books the cheapest first visit". Never period-bucketed: a
+ * customer's LTV is their total revenue collected across every visit since their first touch. */
+export interface ChannelLtv {
+  /** One of the five TrafficSourceKey values, or "all" (the totals row), or "other" (a contact
+   * whose channel didn't classify into any of the five). */
+  channel: string;
+  /** Distinct customers ever attributed to this channel — the LTV denominator, including a
+   * customer who never actually paid anything (e.g. cancelled their only booking), at $0. */
+  customerCount: number;
+  /** All-time gross revenue collected (any visit, any date) from exactly these customers. */
+  totalRevenue: number;
+  /** totalRevenue / customerCount — null when customerCount is 0. */
+  averageLtv: number | null;
+}
+
+export interface MarketingLtvData {
+  /** One row per recognized channel, always present even at zero customers, plus "other" only
+   * when at least one customer's channel didn't classify into any of the five. */
+  channels: ChannelLtv[];
+  /** Every channel combined, same no-double-counting guarantee as the Ads Report's totals row. */
+  totals: ChannelLtv;
+}
+
 /** One Square customer's submission + appointment history, fetched lazily when a row on the Ads
  * Report breakdown drill-down is expanded (see MarketingAdsReportController#customerHistory) —
  * same shape as MarketingContact's own fields, just reachable by Square customer id instead of by
