@@ -402,6 +402,42 @@ function useAnalyticsBreakdown(from: string, to: string, sources: Set<TrafficSou
   return { data, loading, error, ensureLoaded: () => setTriggered(true) };
 }
 
+/** Fetches MarketingLtvData on demand — this page is already heavy (see the breakdown drill-down
+ * above), so a section the owner doesn't always need to look at stays collapsed and unfetched
+ * until they actually expand it, same "opt-in expand" convention as useAnalyticsBreakdown. Only
+ * depends on slug (never period/sources) — a customer's lifetime value spans every visit since
+ * their first touch, not one reporting window.
+ */
+function useLtv(slug?: string) {
+  const [data, setData] = useState<MarketingLtvData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [triggered, setTriggered] = useState(false);
+
+  useEffect(() => {
+    if (!triggered) return;
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError('');
+      try {
+        const result = await api.getMarketingLtv(slug);
+        if (!cancelled) { setData(result); setError(''); }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load lifetime value.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    // Deferred a microtask out so setLoading(true) doesn't run synchronously inside the effect
+    // body itself — same pattern useAnalyticsBreakdown above uses.
+    void Promise.resolve().then(load);
+    return () => { cancelled = true; };
+  }, [triggered, slug]);
+
+  return { data, loading, error, ensureLoaded: () => setTriggered(true) };
+}
+
 export default function AdsReportView({
   initialData,
   slug,
@@ -473,18 +509,8 @@ export default function AdsReportView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // LTV is never period- or source-scoped (a customer's lifetime value spans every visit since
-  // their first touch), so — unlike the effect above — this only ever runs once per mount, which
-  // is exactly once per page switch: the parent server component keys this whole view by slug
-  // (see page.tsx), remounting it on every page change.
-  const [ltv, setLtv] = useState<MarketingLtvData | null>(null);
-  const [ltvError, setLtvError] = useState('');
-  useEffect(() => {
-    api.getMarketingLtv(slug)
-      .then(setLtv)
-      .catch((e) => setLtvError(e instanceof Error ? e.message : 'Failed to load lifetime value.'));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const ltv = useLtv(slug);
+  const [showLtv, setShowLtv] = useState(false);
 
   // The single handler PeriodFilter's onChange calls — consolidates what used to be
   // selectPeriodType + applyCustomRange, since PeriodFilter now owns the custom from/to inputs
@@ -677,7 +703,19 @@ export default function AdsReportView({
         )}
       </div>
 
-      <CustomerLtvSection data={ltv} error={ltvError} />
+      <div className="mt-8 border-t border-zinc-100 pt-6">
+        <button
+          type="button"
+          onClick={() => {
+            setShowLtv((v) => !v);
+            ltv.ensureLoaded();
+          }}
+          className="text-sm font-medium text-blue-600 hover:underline"
+        >
+          {showLtv ? 'Hide customer lifetime value' : 'View customer lifetime value'}
+        </button>
+        {showLtv && <CustomerLtvSection data={ltv.data} loading={ltv.loading} error={ltv.error} />}
+      </div>
 
       <AdSpendEntryForm slug={slug} />
 
@@ -704,12 +742,25 @@ const LTV_CHANNEL_LABELS: Record<string, string> = {
  * every period/source change, since a customer's LTV spans every visit since their first touch).
  * Silent while loading (no spinner of its own): this section sits below the fold and the fetch is
  * fast, so a flash of "loading…" would be more distracting than useful. */
-function CustomerLtvSection({ data, error }: { data: MarketingLtvData | null; error: string }) {
-  if (error) return <p className="mt-8 text-sm text-red-600">{error}</p>;
+function CustomerLtvSection({
+  data, loading, error,
+}: {
+  data: MarketingLtvData | null;
+  loading: boolean;
+  error: string;
+}) {
+  if (loading && !data) {
+    return (
+      <div className="mt-4 flex items-center gap-2 text-sm text-zinc-500">
+        <Spinner className="h-4 w-4" /> Loading lifetime value…
+      </div>
+    );
+  }
+  if (error) return <p className="mt-4 text-sm text-red-600">{error}</p>;
   if (!data || data.channels.length === 0) return null;
 
   return (
-    <section className="mt-8 rounded-xl border-l-4 border-indigo-300 bg-indigo-50/40 p-3 ring-1 ring-zinc-200 sm:p-4">
+    <section className="mt-4 rounded-xl border-l-4 border-indigo-300 bg-indigo-50/40 p-3 ring-1 ring-zinc-200 sm:p-4">
       <BlockTitle
         label="Customer Lifetime Value by Channel"
         info="All-time revenue collected per customer, grouped by how they first found you — pairs with the ad spend above to see which channel's customers are actually worth it long-term, not just which one books the cheapest first visit. A customer who never paid still counts toward their channel's customer count, at $0."
