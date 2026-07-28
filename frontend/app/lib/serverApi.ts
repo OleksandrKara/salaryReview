@@ -13,6 +13,7 @@ import type {
   TwilioSmsSettingsDto,
   FunnelDashboardData,
   MarketingAdsReportData,
+  MarketingLtvData,
   MarketingAnalyticsData,
   MarketingContactsData,
   MarketingDashboardData,
@@ -239,5 +240,12 @@ export const serverApi = {
     if (sources) params.set('sources', sources.join(','));
     if (slug) params.set('slug', slug);
     return serverFetch<MarketingAdsReportData>(`/api/owner/marketing/ads-report?${params.toString()}`);
+  },
+
+  // All-time customer lifetime value by acquisition channel for one page — never period-scoped
+  // (a customer's LTV spans every visit since their first touch), unlike getMarketingAdsReport.
+  getMarketingLtv: (slug?: string) => {
+    const qs = slug ? `?slug=${encodeURIComponent(slug)}` : '';
+    return serverFetch<MarketingLtvData>(`/api/owner/marketing/ads-report/ltv${qs}`);
   },
 };

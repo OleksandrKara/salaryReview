@@ -12,6 +12,7 @@ const TABS = [
   { href: '/owner/marketing/contacts', label: 'Contacts' },
   { href: '/owner/marketing/funnel', label: 'Funnel' },
   { href: '/owner/marketing/ads-report', label: 'Ads Report' },
+  { href: '/owner/marketing/ltv', label: 'LTV' },
 ];
 
 // Also the default landing page every marketing page.tsx server component should scope its own

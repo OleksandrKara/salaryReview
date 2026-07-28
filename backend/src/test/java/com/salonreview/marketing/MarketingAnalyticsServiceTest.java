@@ -1284,8 +1284,8 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
-    @DisplayName("ltv: a customer with zero paid visits still counts toward their channel's customerCount, at $0")
-    void ltvCountsNonPayingCustomersTowardDenominator() {
+    @DisplayName("ltv: a customer with zero paid visits is excluded entirely, not counted at $0")
+    void ltvExcludesNonPayingCustomersFromDenominator() {
         stubEmptyAggregationForEveryMonth();
         when(contactsRepository.findAllAttributedContacts("mani")).thenReturn(List.of(
                 contact("+16195550001", "cust-meta-1", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads"),
@@ -1295,11 +1295,13 @@ class MarketingAnalyticsServiceTest {
 
         MarketingLtvDto dto = service.ltv("mani");
 
+        // cust-meta-2 was attributed (a lead) but never actually paid — excluded from both the
+        // count and the average, not counted at $0.
         MarketingLtvDto.ChannelLtv meta = dto.channels().stream()
                 .filter(c -> c.channel().equals("meta_ads")).findFirst().orElseThrow();
-        assertThat(meta.customerCount()).isEqualTo(2);
+        assertThat(meta.customerCount()).isEqualTo(1);
         assertThat(meta.totalRevenue()).isEqualByComparingTo("100.00");
-        assertThat(meta.averageLtv()).isEqualByComparingTo("50.00");
+        assertThat(meta.averageLtv()).isEqualByComparingTo("100.00");
     }
 
     @Test
