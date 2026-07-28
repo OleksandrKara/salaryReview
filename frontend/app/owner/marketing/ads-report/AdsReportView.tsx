@@ -26,10 +26,11 @@ import type {
   MarketingCompletedAppointment,
   MarketingCustomerHistory,
   MarketingLandingPage,
+  MarketingLtvData,
   TrafficSourceKey,
 } from '../../../lib/types';
 import { Spinner } from '../../../components/Spinner';
-import TrafficSourceFilter, { ADS_ONLY_SOURCES } from '../TrafficSourceFilter';
+import TrafficSourceFilter, { ADS_ONLY_SOURCES, SOURCE_LABELS } from '../TrafficSourceFilter';
 import { AppointmentHistoryList, HistoryToggle, PAYMENT_CHANNEL_LABELS, PaymentChannelBadge, SubmissionHistoryList } from '../ContactHistory';
 import PeriodFilter from '../PeriodFilter';
 import { lastNMonthsRange, lastNWeeksRange, monthToDateSoFarRange, parsePeriodParams, todayIso } from '../period';
@@ -401,6 +402,42 @@ function useAnalyticsBreakdown(from: string, to: string, sources: Set<TrafficSou
   return { data, loading, error, ensureLoaded: () => setTriggered(true) };
 }
 
+/** Fetches MarketingLtvData on demand — this page is already heavy (see the breakdown drill-down
+ * above), so a section the owner doesn't always need to look at stays collapsed and unfetched
+ * until they actually expand it, same "opt-in expand" convention as useAnalyticsBreakdown. Only
+ * depends on slug (never period/sources) — a customer's lifetime value spans every visit since
+ * their first touch, not one reporting window.
+ */
+function useLtv(slug?: string) {
+  const [data, setData] = useState<MarketingLtvData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [triggered, setTriggered] = useState(false);
+
+  useEffect(() => {
+    if (!triggered) return;
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError('');
+      try {
+        const result = await api.getMarketingLtv(slug);
+        if (!cancelled) { setData(result); setError(''); }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load lifetime value.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    // Deferred a microtask out so setLoading(true) doesn't run synchronously inside the effect
+    // body itself — same pattern useAnalyticsBreakdown above uses.
+    void Promise.resolve().then(load);
+    return () => { cancelled = true; };
+  }, [triggered, slug]);
+
+  return { data, loading, error, ensureLoaded: () => setTriggered(true) };
+}
+
 export default function AdsReportView({
   initialData,
   slug,
@@ -471,6 +508,9 @@ export default function AdsReportView({
     void Promise.resolve().then(() => load(periodType, sources, customFrom || undefined, customTo || undefined));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const ltv = useLtv(slug);
+  const [showLtv, setShowLtv] = useState(false);
 
   // The single handler PeriodFilter's onChange calls — consolidates what used to be
   // selectPeriodType + applyCustomRange, since PeriodFilter now owns the custom from/to inputs
@@ -663,6 +703,20 @@ export default function AdsReportView({
         )}
       </div>
 
+      <div className="mt-8 border-t border-zinc-100 pt-6">
+        <button
+          type="button"
+          onClick={() => {
+            setShowLtv((v) => !v);
+            ltv.ensureLoaded();
+          }}
+          className="text-sm font-medium text-blue-600 hover:underline"
+        >
+          {showLtv ? 'Hide customer lifetime value' : 'View customer lifetime value'}
+        </button>
+        {showLtv && <CustomerLtvSection data={ltv.data} loading={ltv.loading} error={ltv.error} />}
+      </div>
+
       <AdSpendEntryForm slug={slug} />
 
       {popupFilter && (
@@ -675,6 +729,75 @@ export default function AdsReportView({
         />
       )}
     </div>
+  );
+}
+
+const LTV_CHANNEL_LABELS: Record<string, string> = {
+  ...SOURCE_LABELS,
+  other: 'Other',
+};
+
+/** All-time customer lifetime value by acquisition channel — separate from the period-scoped
+ * report above (see AdsReportView's own `ltv` fetch, which loads once per page rather than on
+ * every period/source change, since a customer's LTV spans every visit since their first touch).
+ * Silent while loading (no spinner of its own): this section sits below the fold and the fetch is
+ * fast, so a flash of "loading…" would be more distracting than useful. */
+function CustomerLtvSection({
+  data, loading, error,
+}: {
+  data: MarketingLtvData | null;
+  loading: boolean;
+  error: string;
+}) {
+  if (loading && !data) {
+    return (
+      <div className="mt-4 flex items-center gap-2 text-sm text-zinc-500">
+        <Spinner className="h-4 w-4" /> Loading lifetime value…
+      </div>
+    );
+  }
+  if (error) return <p className="mt-4 text-sm text-red-600">{error}</p>;
+  if (!data || data.channels.length === 0) return null;
+
+  return (
+    <section className="mt-4 rounded-xl border-l-4 border-indigo-300 bg-indigo-50/40 p-3 ring-1 ring-zinc-200 sm:p-4">
+      <BlockTitle
+        label="Customer Lifetime Value by Channel"
+        info="All-time revenue collected per customer, grouped by how they first found you — pairs with the ad spend above to see which channel's customers are actually worth it long-term, not just which one books the cheapest first visit. A customer who never paid still counts toward their channel's customer count, at $0."
+      />
+      <div className="overflow-x-auto">
+        <table className="mt-2 w-full min-w-[420px] text-left text-xs sm:text-sm">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-wide text-zinc-500 sm:text-xs">
+              <th className="py-1.5 pr-3 font-medium">Channel</th>
+              <th className="py-1.5 pr-3 text-right font-medium">Customers</th>
+              <th className="py-1.5 pr-3 text-right font-medium">Total revenue</th>
+              <th className="py-1.5 text-right font-medium">Avg. LTV</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.channels.map((c) => (
+              <tr key={c.channel} className="border-t border-zinc-200/70">
+                <td className="py-1.5 pr-3 font-medium text-zinc-700">{LTV_CHANNEL_LABELS[c.channel] ?? c.channel}</td>
+                <td className="py-1.5 pr-3 text-right tabular-nums text-zinc-600">{c.customerCount}</td>
+                <td className="py-1.5 pr-3 text-right tabular-nums text-zinc-600">{usdExact(c.totalRevenue)}</td>
+                <td className="py-1.5 text-right tabular-nums font-medium text-zinc-900">
+                  {c.averageLtv == null ? '—' : usdExact(c.averageLtv)}
+                </td>
+              </tr>
+            ))}
+            <tr className="border-t-2 border-indigo-200 font-semibold text-indigo-900">
+              <td className="py-1.5 pr-3">All channels</td>
+              <td className="py-1.5 pr-3 text-right tabular-nums">{data.totals.customerCount}</td>
+              <td className="py-1.5 pr-3 text-right tabular-nums">{usdExact(data.totals.totalRevenue)}</td>
+              <td className="py-1.5 text-right tabular-nums">
+                {data.totals.averageLtv == null ? '—' : usdExact(data.totals.averageLtv)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 

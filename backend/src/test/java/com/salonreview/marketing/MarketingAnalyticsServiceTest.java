@@ -12,6 +12,7 @@ import com.salonreview.square.SquareMonthAggregator.MonthAggregation;
 import com.salonreview.web.dto.MarketingAdsReportDto;
 import com.salonreview.web.dto.MarketingAdsReportDto.PeriodRow;
 import com.salonreview.web.dto.MarketingAnalyticsDto;
+import com.salonreview.web.dto.MarketingLtvDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -1235,5 +1236,83 @@ class MarketingAnalyticsServiceTest {
 
         assertThat(dto.periods()).hasSize(1);
         assertThat(dto.periods().get(0).anticipatedRevenue()).isEqualByComparingTo("85.00");
+    }
+
+    /** ltv() scans every month from ALL_TIME_START (2020-01) through FIXED_CLOCK's "today"
+     * (2026-07) — this default stub covers every one of those calls with an empty aggregation so
+     * only the month(s) a test actually cares about need their own explicit stub. */
+    private void stubEmptyAggregationForEveryMonth() {
+        when(aggregator.aggregate(org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyInt(), any()))
+                .thenAnswer(inv -> aggOf(inv.getArgument(0), inv.getArgument(1), List.of()));
+    }
+
+    @Test
+    @DisplayName("ltv: groups all-time revenue and customer count by acquisition channel")
+    void ltvGroupsByChannel() {
+        stubEmptyAggregationForEveryMonth();
+        when(contactsRepository.findAllAttributedContacts("mani")).thenReturn(List.of(
+                contact("+16195550001", "cust-meta-1", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads"),
+                contact("+16195550002", "cust-meta-2", Instant.parse("2026-02-01T00:00:00Z"), "meta_ads"),
+                contact("+16195550003", "cust-direct-1", Instant.parse("2026-03-01T00:00:00Z"), "direct")));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
+                svc("2026-07-01", "cust-meta-1", "100.00"),
+                svc("2026-07-02", "cust-meta-1", "50.00"), // repeat visit, same customer
+                svc("2026-07-03", "cust-meta-2", "80.00"),
+                svc("2026-07-04", "cust-direct-1", "60.00"))));
+
+        MarketingLtvDto dto = service.ltv("mani");
+
+        assertThat(dto.channels()).hasSize(5); // meta_ads, google_ads, instagram_organic, google_organic, direct — always all 5
+        MarketingLtvDto.ChannelLtv meta = dto.channels().stream()
+                .filter(c -> c.channel().equals("meta_ads")).findFirst().orElseThrow();
+        assertThat(meta.customerCount()).isEqualTo(2);
+        assertThat(meta.totalRevenue()).isEqualByComparingTo("230.00");
+        assertThat(meta.averageLtv()).isEqualByComparingTo("115.00");
+
+        MarketingLtvDto.ChannelLtv direct = dto.channels().stream()
+                .filter(c -> c.channel().equals("direct")).findFirst().orElseThrow();
+        assertThat(direct.customerCount()).isEqualTo(1);
+        assertThat(direct.totalRevenue()).isEqualByComparingTo("60.00");
+
+        MarketingLtvDto.ChannelLtv googleAds = dto.channels().stream()
+                .filter(c -> c.channel().equals("google_ads")).findFirst().orElseThrow();
+        assertThat(googleAds.customerCount()).isEqualTo(0);
+        assertThat(googleAds.averageLtv()).isNull();
+
+        assertThat(dto.totals().customerCount()).isEqualTo(3);
+        assertThat(dto.totals().totalRevenue()).isEqualByComparingTo("290.00");
+    }
+
+    @Test
+    @DisplayName("ltv: a customer with zero paid visits still counts toward their channel's customerCount, at $0")
+    void ltvCountsNonPayingCustomersTowardDenominator() {
+        stubEmptyAggregationForEveryMonth();
+        when(contactsRepository.findAllAttributedContacts("mani")).thenReturn(List.of(
+                contact("+16195550001", "cust-meta-1", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads"),
+                contact("+16195550002", "cust-meta-2", Instant.parse("2026-02-01T00:00:00Z"), "meta_ads")));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
+                svc("2026-07-01", "cust-meta-1", "100.00")))); // cust-meta-2 never paid (e.g. cancelled)
+
+        MarketingLtvDto dto = service.ltv("mani");
+
+        MarketingLtvDto.ChannelLtv meta = dto.channels().stream()
+                .filter(c -> c.channel().equals("meta_ads")).findFirst().orElseThrow();
+        assertThat(meta.customerCount()).isEqualTo(2);
+        assertThat(meta.totalRevenue()).isEqualByComparingTo("100.00");
+        assertThat(meta.averageLtv()).isEqualByComparingTo("50.00");
+    }
+
+    @Test
+    @DisplayName("ltv: no attributed contacts yields an empty channel list and zeroed totals, no Square calls")
+    void ltvWithNoContactsIsEmpty() {
+        when(contactsRepository.findAllAttributedContacts("mani")).thenReturn(List.of());
+
+        MarketingLtvDto dto = service.ltv("mani");
+
+        assertThat(dto.channels()).isEmpty();
+        assertThat(dto.totals().customerCount()).isEqualTo(0);
+        assertThat(dto.totals().totalRevenue()).isEqualByComparingTo("0.00");
+        assertThat(dto.totals().averageLtv()).isNull();
+        org.mockito.Mockito.verifyNoInteractions(aggregator);
     }
 }
