@@ -873,6 +873,23 @@ public class MarketingAnalyticsService {
         cache.invalidateAll();
     }
 
+    /** Cached wrapper around {@link #resolveAdsCustomersUncached} — this resolution does one
+     * parallel Square API call per attributed contact (see below), and both adsReport() and ltv()
+     * call it independently for the same (sources, slug); without sharing this cache, loading both
+     * tabs (or reloading one) within the TTL window doubles or repeats that Square load for no
+     * benefit. Real production incident: for a page with ~40 attributed contacts, this parallel
+     * burst alone was enough to trip Square's rate limiting (429s), and — since a contact with no
+     * stored square_customer_id contributes nothing to the result when its phone lookup also fails —
+     * enough failures here can silently shrink the whole customer set toward empty, which is exactly
+     * what made the LTV tab report "no paying customers" for a page that has real repeat business.
+     * Caching the result means a retry (or the sibling tab) doesn't repeat the same expensive sweep
+     * while Square is still recovering from the first one.
+     */
+    private Map<String, AdsCustomer> resolveAdsCustomers(Set<String> sources, String slug) {
+        String key = "adsCustomers:" + sources + ":" + slug;
+        return cache.get(key, CACHE_TTL, () -> resolveAdsCustomersUncached(sources, slug));
+    }
+
     /** Every Square customer id a channel-attributed contact resolves to, each tagged with that
      * contact's first touch and channel. A contact's originally-linked square_customer_id can go
      * stale (e.g. a follow-up appointment booked by phone gets matched or created against a
@@ -887,7 +904,7 @@ public class MarketingAnalyticsService {
      * findAdsAttributedContacts(sources, slug), which only ever returns contacts already known to
      * classify into one of the requested buckets.
      */
-    private Map<String, AdsCustomer> resolveAdsCustomers(Set<String> sources, String slug) {
+    private Map<String, AdsCustomer> resolveAdsCustomersUncached(Set<String> sources, String slug) {
         List<MarketingContactsRepository.AdsAttributedContact> contacts = sources.equals(ALL_SOURCES)
                 ? contactsRepository.findAllAttributedContacts(slug)
                 // slug == null calls the exact one-arg overload (not findAdsAttributedContacts(sources, null))
