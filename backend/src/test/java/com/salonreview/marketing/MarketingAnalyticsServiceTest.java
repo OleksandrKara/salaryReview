@@ -1284,6 +1284,29 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
+    @DisplayName("ltv: bounds the Square month sweep to this page's own earliest attributed customer, not a fixed 2020 start")
+    void ltvBoundsSweepToEarliestFirstTouch() {
+        // Regression test for a real production incident: scanning every month back to
+        // ALL_TIME_START (2020) for a page created in 2026 triggered ~78 real Square API calls on
+        // every single load of this tab, tripping Square's rate limiting (confirmed via production
+        // logs — repeated 429s from connect.squareup.com). Bounding to the earliest attributed
+        // customer's firstTouch cuts that down to just the months that could possibly have data.
+        when(contactsRepository.findAllAttributedContacts("mani")).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-06-15T00:00:00Z"), "meta_ads")));
+        when(aggregator.aggregate(2026, 6, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 6, List.of(
+                svc("2026-06-20", "cust-1", "90.00"))));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
+
+        MarketingLtvDto dto = service.ltv("mani");
+
+        assertThat(dto.totals().customerCount()).isEqualTo(1);
+        assertThat(dto.totals().totalRevenue()).isEqualByComparingTo("90.00");
+        org.mockito.Mockito.verify(aggregator, org.mockito.Mockito.never()).aggregate(2020, 1, new BigDecimal("60.00"));
+        org.mockito.Mockito.verify(aggregator, org.mockito.Mockito.never()).aggregate(2026, 1, new BigDecimal("60.00"));
+        org.mockito.Mockito.verify(aggregator, org.mockito.Mockito.never()).aggregate(2026, 5, new BigDecimal("60.00"));
+    }
+
+    @Test
     @DisplayName("ltv: a customer with zero paid visits is excluded entirely, not counted at $0")
     void ltvExcludesNonPayingCustomersFromDenominator() {
         stubEmptyAggregationForEveryMonth();
