@@ -22,9 +22,12 @@ public record MarketingLtvDto(
 ) {
     public record ChannelLtv(
             String channel,
-            /** Distinct customers ever attributed to this channel for this page — the LTV
-             * denominator, not just customers who happened to pay something (a customer who
-             * cancelled their only booking still counts here, at $0 lifetime value). */
+            /** Distinct customers attributed to this channel who completed at least one real, paid
+             * visit — a lead who was only ever captured (never actually paid — e.g. a cancelled-only
+             * booking, or a contact who never converted) doesn't count here at all, in either the
+             * numerator or denominator. This is a deliberate correction from an earlier version that
+             * counted every attributed lead (at $0 for non-payers) — that inflated the customer count
+             * with people who never became real customers and understated true average LTV. */
             long customerCount,
             /** All-time gross revenue collected (any visit, any date) from exactly these customers. */
             BigDecimal totalRevenue,

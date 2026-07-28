@@ -433,14 +433,20 @@ public class MarketingAnalyticsService {
         return new MarketingLtvDto(rows, totals);
     }
 
+    /** customerCount only counts customers who appear in allServices (i.e. paid for at least one
+     * real visit) — customerIds (every attributed lead for this channel) is used purely as the
+     * membership filter, not as the denominator, so a lead who never actually converted doesn't
+     * inflate the count or drag the average down. See ChannelLtv.customerCount's own doc. */
     private static ChannelLtv channelLtv(
             String channel, Set<String> customerIds, List<AttributedService> allServices) {
-        BigDecimal gross = allServices.stream()
+        List<AttributedService> paid = allServices.stream()
                 .filter(s -> customerIds.contains(s.customerId()))
+                .toList();
+        BigDecimal gross = paid.stream()
                 .map(AttributedService::gross)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(2, RoundingMode.HALF_UP);
-        long customerCount = customerIds.size();
+        long customerCount = paid.stream().map(AttributedService::customerId).distinct().count();
         BigDecimal average = customerCount == 0 ? null
                 : gross.divide(BigDecimal.valueOf(customerCount), 2, RoundingMode.HALF_UP);
         return new ChannelLtv(channel, customerCount, gross, average);
