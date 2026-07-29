@@ -23,10 +23,19 @@ spring:
 
 # Square API — credentials come from the environment so secrets never land in git.
 # SANDBOX by default; set SQUARE_ENVIRONMENT=production to hit real salon data.
+#
+# webhook.* backs the checkout-review-request automation's payment.updated receiver (see
+# openspec/changes/sms-automations-hub). Blank signature-key means every webhook request is
+# rejected — same "no sensible open default" shape as internal.api.key below. notification-url
+# must match, byte-for-byte, the URL configured in the Square Developer Dashboard subscription —
+# it's part of the HMAC input, not just documentation.
 square:
   environment: ${SQUARE_ENVIRONMENT:sandbox}
   access-token: ${SQUARE_ACCESS_TOKEN:}
   location-id: ${SQUARE_LOCATION_ID:}
+  webhook:
+    signature-key: ${SQUARE_WEBHOOK_SIGNATURE_KEY:}
+    notification-url: ${SQUARE_WEBHOOK_NOTIFICATION_URL:https://salon.akluxnails.com/api/public/webhooks/square}
 
 # Base URL of each public landing page (all served by the separate salonLandings/akluxnails-home
 # services), keyed by marketing.landing_pages.slug — used to build ?v=<key> deep links to a
@@ -42,6 +51,10 @@ app:
   auth:
     username: ${APP_OWNER_USERNAME:owner}
     password: ${APP_OWNER_PASSWORD:}
+  # This app's own public origin — used to build the click-tracked GET /r/{id} short links sent in
+  # the checkout-review-request automation's reply messages (see
+  # openspec/changes/sms-automations-hub).
+  public-base-url: ${APP_PUBLIC_BASE_URL:https://salon.akluxnails.com}
 
 # Shared secret for service-to-service calls from mani/akluxnails-home (Telegram 4-hand-request
 # relay — see InternalApiProperties/InternalNotificationController). Blank means every internal
@@ -49,6 +62,13 @@ app:
 internal:
   api:
     key: ${INTERNAL_API_KEY:}
+
+# Twilio's inbound-SMS webhook (reply branching for the checkout-review-request automation — see
+# openspec/changes/sms-automations-hub). Blank auth-token means every inbound request is rejected.
+twilio:
+  inbound:
+    auth-token: ${TWILIO_AUTH_TOKEN:}
+    webhook-url: ${TWILIO_INBOUND_WEBHOOK_URL:https://salon.akluxnails.com/api/public/sms/inbound}
 
 # AI triage (suspicious-booking explainer). Feature flag is off by default; turn on per environment
 # only after ANTHROPIC_API_KEY and LANGSMITH_API_KEY are set. See AiTriageProperties.java.

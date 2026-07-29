@@ -65,7 +65,7 @@ class CancelledAppointmentDetectionTest {
         OrderLineItem line = new OrderLineItem("uid", "Cancelation Policy", "1", null,
                 null, null, new Money(2500L, "USD"), null);
         return new Order("ord-fee", "LOC", CUST, "COMPLETED", closedAt.toString(), closedAt.toString(),
-                List.of(line), null, null, null);
+                List.of(line), null, null, null, null);
     }
 
     private MonthAggregation runFor(Booking b) {

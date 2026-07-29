@@ -30,6 +30,7 @@ function linksFor(role: Role): NavLink[] {
       { href: '/reports', key: 'navSalaryReport' },
       { href: '/owner/overview', key: 'navRevenue' },
       { href: '/owner/marketing', key: 'navMarketing' },
+      { href: '/owner/automations', key: 'navAutomations' },
       { href: '/owner/retention', key: 'navRetention' },
       ...COMMON,
       { href: '/admin/prepaid', key: 'navPrepaid' },
@@ -66,10 +67,12 @@ export default function AdminMenu({
   role,
   language,
   kbRequestOpenCount = 0,
+  smsUnreadCount = 0,
 }: {
   role: Role;
   language: Language | null;
   kbRequestOpenCount?: number;
+  smsUnreadCount?: number;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -138,11 +141,18 @@ export default function AdminMenu({
                   href={l.href}
                   onClick={() => setOpen(false)}
                   aria-current={isActive(l.href) ? 'page' : undefined}
-                  className={`block px-4 py-2 text-sm hover:bg-zinc-50 ${
+                  className={`flex items-center justify-between gap-2 px-4 py-2 text-sm hover:bg-zinc-50 ${
                     isActive(l.href) ? 'font-semibold text-zinc-900' : 'text-zinc-700'
                   }`}
                 >
                   {t(language, l.key)}
+                  {/* Unread-count badge for the automations hub, visible from anywhere in the app —
+                      see openspec/changes/sms-automations-hub design.md tasks.md 8.5. */}
+                  {l.href === '/owner/automations' && smsUnreadCount > 0 ? (
+                    <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-none text-white">
+                      {smsUnreadCount > 99 ? '99+' : smsUnreadCount}
+                    </span>
+                  ) : null}
                 </Link>
               ))}
               <div className="flex items-center gap-2 border-t border-zinc-100 px-4 py-2 text-sm text-zinc-500">

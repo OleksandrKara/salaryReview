@@ -21,6 +21,8 @@ class TwilioSmsServiceTest {
     private SmsTemplateRegistry templateRegistry;
     private TwilioSmsConfigService configService;
     private SmsConsentRepository consentRepository;
+    private SmsAutomationService automationService;
+    private SmsMessageLogService messageLogService;
     private TwilioSmsClient client;
     private TwilioSmsService service;
 
@@ -29,9 +31,13 @@ class TwilioSmsServiceTest {
         templateRegistry = mock(SmsTemplateRegistry.class);
         configService = mock(TwilioSmsConfigService.class);
         consentRepository = mock(SmsConsentRepository.class);
+        automationService = mock(SmsAutomationService.class);
+        messageLogService = mock(SmsMessageLogService.class);
         client = mock(TwilioSmsClient.class);
-        service = new TwilioSmsService(templateRegistry, configService, consentRepository, client);
+        service = new TwilioSmsService(templateRegistry, configService, consentRepository, automationService,
+                messageLogService, client);
 
+        when(automationService.isEnabled(any())).thenReturn(true);
         when(templateRegistry.find(TRANSACTIONAL_KEY))
                 .thenReturn(new SmsTemplate(TRANSACTIONAL_KEY, SmsMessageClass.TRANSACTIONAL, vars -> "transactional body"));
         when(templateRegistry.find(MARKETING_KEY))
@@ -112,5 +118,34 @@ class TwilioSmsServiceTest {
 
         assertThat(result.sent()).isFalse();
         assertThat(result.reason()).isEqualTo("send_failed");
+    }
+
+    @Test
+    @DisplayName("Disabled automation → automation_disabled, no consent check, no send attempt")
+    void disabledAutomationSkipsSend() throws Exception {
+        String key = "test_gated";
+        when(templateRegistry.find(key)).thenReturn(
+                new SmsTemplate(key, SmsMessageClass.TRANSACTIONAL, "some_automation", vars -> "gated body"));
+        when(automationService.isEnabled("some_automation")).thenReturn(false);
+
+        var result = service.sendTemplated(key, PHONE, Map.of());
+
+        assertThat(result.sent()).isFalse();
+        assertThat(result.reason()).isEqualTo("automation_disabled");
+        verifyNoInteractions(consentRepository, client);
+    }
+
+    @Test
+    @DisplayName("Every send attempt, including blocked ones, is logged to the activity log")
+    void everyAttemptIsLogged() throws Exception {
+        when(configService.get()).thenReturn(configured());
+
+        service.sendTemplated(TRANSACTIONAL_KEY, PHONE, Map.of());
+        verify(messageLogService).logOutbound(eq(TRANSACTIONAL_KEY), any(), eq(PHONE), eq("transactional body"),
+                eq(true), eq(null), any());
+
+        service.sendTemplated("does_not_exist", PHONE, Map.of());
+        verify(messageLogService).logOutbound(eq("does_not_exist"), eq(null), eq(PHONE), eq(""), eq(false),
+                eq("unknown_template"), eq(null));
     }
 }

@@ -107,7 +107,7 @@ class OwnerCompAggregatorTest {
         OrderLineItem li = new OrderLineItem("u1", "Nail Artist", "1", VAR,
                 null, new Money(9900L, "USD"), new Money(9900L, "USD"), null);
         Order paid = new Order("o1", "LOC", OWNER_CUST, "COMPLETED", "2026-05-18T16:00:00Z",
-                "2026-05-18T16:00:00Z", List.of(li), null, null, null);
+                "2026-05-18T16:00:00Z", List.of(li), null, null, null, null);
         when(square.completedOrders(any(), any())).thenReturn(List.of(paid));
 
         MonthAggregation agg = aggregator.aggregate(2026, 5, new BigDecimal("50.00"));

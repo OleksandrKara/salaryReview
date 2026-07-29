@@ -11,6 +11,8 @@ import type {
   Sop,
   TelegramSettingsDto,
   TwilioSmsSettingsDto,
+  SmsAutomationSummary,
+  SmsMessageDto,
   FunnelDashboardData,
   MarketingAdsReportData,
   MarketingLtvData,
@@ -127,6 +129,24 @@ export const serverApi = {
   getTelegramSettings: () => serverFetch<TelegramSettingsDto>(`/api/owner/settings/telegram`),
 
   getTwilioSmsSettings: () => serverFetch<TwilioSmsSettingsDto>(`/api/owner/settings/sms`),
+
+  listSmsAutomations: () => serverFetch<SmsAutomationSummary[]>(`/api/owner/automations`),
+
+  listSmsActivity: (limit = 100) =>
+    serverFetch<SmsMessageDto[]>(`/api/owner/automations/activity?limit=${limit}`),
+
+  // Unread-count badge on the nav entry, fetched from every OWNER page via PageHeader — same
+  // never-throws-except-session-redirect shape as getKbRequestOpenCount, so a hiccup here can't
+  // take down every page's header.
+  getSmsUnreadCount: async (): Promise<number> => {
+    try {
+      const { unreadCount } = await serverFetch<{ unreadCount: number }>(`/api/owner/automations/activity/unread-count`);
+      return unreadCount;
+    } catch (e) {
+      if (e && typeof e === 'object' && 'digest' in e && String(e.digest).startsWith('NEXT_REDIRECT')) throw e;
+      return 0;
+    }
+  },
 
   listProviders: () => serverFetch<Provider[]>(`/api/providers?all=true`),
 
