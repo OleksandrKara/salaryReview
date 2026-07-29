@@ -23,11 +23,15 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
     /** Newest unread inbound rows first, for the inbox view's default sort. */
     List<SmsMessage> findByDirectionAndReadAtIsNullOrderByCreatedAtDesc(String direction);
 
+    // Parameters are explicitly CAST to string — a bare `:phoneNumber` inside CONCAT()/LIKE, when
+    // bound null (the common case: no filter applied), leaves Postgres unable to infer its type
+    // and it defaults to bytea, which then fails "operator does not exist: text ~~ bytea" against
+    // the LIKE operator. The cast fixes the type for both the null-check and the LIKE branch.
     @Query("""
             SELECT m FROM SmsMessage m
-            WHERE (:phoneNumber IS NULL OR m.phoneNumber LIKE CONCAT('%', :phoneNumber, '%'))
-              AND (:direction IS NULL OR m.direction = :direction)
-              AND (:automationKey IS NULL OR m.automationKey = :automationKey)
+            WHERE (:phoneNumber IS NULL OR m.phoneNumber LIKE CONCAT('%', CAST(:phoneNumber AS string), '%'))
+              AND (:direction IS NULL OR m.direction = CAST(:direction AS string))
+              AND (:automationKey IS NULL OR m.automationKey = CAST(:automationKey AS string))
             ORDER BY m.createdAt DESC
             """)
     Page<SmsMessage> search(@Param("phoneNumber") String phoneNumber,
