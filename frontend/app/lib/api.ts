@@ -29,6 +29,9 @@ import type {
   TelegramSettingsUpdateRequest,
   TwilioSmsSettingsDto,
   TwilioSmsSettingsUpdateRequest,
+  SmsAutomationSummary,
+  SmsMessageDto,
+  SmsMessageDirection,
   Me,
   RagAnswer,
   KbRequest,
@@ -203,6 +206,26 @@ export const api = {
 
   updateTwilioSmsSettings: (body: TwilioSmsSettingsUpdateRequest) =>
     proxyJson<TwilioSmsSettingsDto>(`/api/owner/settings/sms`, 'PUT', body),
+
+  // SMS automations hub (owner): registry list/toggle + the full sent/received activity log.
+  listSmsAutomations: () => proxyGet<SmsAutomationSummary[]>(`/api/owner/automations`),
+
+  toggleSmsAutomation: (key: string, enabled: boolean) =>
+    proxyVoid(`/api/owner/automations/${encodeURIComponent(key)}`, 'PUT', { enabled }),
+
+  listSmsActivity: (filters: { phoneNumber?: string; direction?: SmsMessageDirection; automationKey?: string; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (filters.phoneNumber) params.set('phoneNumber', filters.phoneNumber);
+    if (filters.direction) params.set('direction', filters.direction);
+    if (filters.automationKey) params.set('automationKey', filters.automationKey);
+    params.set('limit', String(filters.limit ?? 100));
+    return proxyGet<SmsMessageDto[]>(`/api/owner/automations/activity?${params.toString()}`);
+  },
+
+  getSmsUnreadCount: () => proxyGet<{ unreadCount: number }>(`/api/owner/automations/activity/unread-count`),
+
+  markSmsMessageRead: (id: number) =>
+    proxyVoid(`/api/owner/automations/activity/${id}/read`, 'POST'),
 
   // Marketing contacts: resolves any lead that never linked to a Square customer through the
   // tracked booking flow (a manager followed up and booked them by phone, or they came back

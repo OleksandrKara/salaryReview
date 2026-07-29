@@ -74,7 +74,7 @@ class SuspiciousBookingDetectionTest {
         OrderLineItem line = new OrderLineItem("uid", "Some service", "1", catalogObjectId,
                 gross, gross, gross, null);
         return new Order("ord-1", "LOC", customerId, "COMPLETED", when.toString(), when.toString(),
-                List.of(line), null, null, null);
+                List.of(line), null, null, null, null);
     }
 
     private MonthAggregation runForBookingMonth(List<Booking> bookings) {

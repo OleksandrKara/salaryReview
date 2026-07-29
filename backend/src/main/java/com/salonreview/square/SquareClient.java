@@ -421,7 +421,7 @@ public class SquareClient {
     // each — but cached process-wide (names/creation dates never change) and the misses fetched in
     // parallel, so a month's worth of customers only ever costs one round of lookups. A sentinel
     // "not found" Customer (all-null fields) is cached too, so a bad id isn't refetched forever.
-    private static final Customer NOT_FOUND = new Customer(null, null, null, null);
+    private static final Customer NOT_FOUND = new Customer(null, null, null, null, null);
     private final Map<String, Customer> customerCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** Display names for the given customer ids. Best-effort, cached; blanks for any we can't resolve. */
@@ -584,6 +584,41 @@ public class SquareClient {
         return cash.compareTo(other) > 0;
     }
 
+    /** Whether an order was placed through an online booking (has a {@code BOOKING}-type
+     * fulfillment) rather than rung up in-salon at the register — confirmed against real Square
+     * data: a booking-driven order carries {@code fulfillments: [{type: "BOOKING", ...}]}, while a
+     * walk-in POS sale has no {@code fulfillments} array at all (see
+     * openspec/changes/sms-automations-hub/design.md D2). Used by the checkout-review automation to
+     * fire only for in-salon checkouts. */
+    public static boolean isBookingLinked(Order o) {
+        return o != null && o.fulfillments() != null
+                && o.fulfillments().stream().anyMatch(f -> "BOOKING".equals(f.type()));
+    }
+
+    /** A single order by id, uncached — used by the checkout-review automation's Square webhook
+     * handler, which needs a fresh read at the moment of a real payment event rather than whatever
+     * a TTL cache happened to have. Empty on any failure (never throws — the automation silently
+     * skips rather than blocking on a transient Square error). */
+    public java.util.Optional<Order> orderById(String orderId) {
+        try {
+            OrderResponse resp = throttled(() ->
+                    http.get().uri("/v2/orders/{id}", orderId).retrieve().body(OrderResponse.class));
+            return java.util.Optional.ofNullable(resp == null ? null : resp.order());
+        } catch (RuntimeException e) {
+            log.warn("Failed to fetch Square order {} for checkout-review automation: {}", orderId, e.getMessage());
+            return java.util.Optional.empty();
+        }
+    }
+
+    /** The phone number on file for a Square customer, or {@code null} if absent/unresolvable — a
+     * genuinely anonymous walk-in with no profile is the expected reason for {@code null}, not an
+     * error (see design.md D2). */
+    public String customerPhone(String customerId) {
+        return fetchCustomer(customerId).map(Customer::phoneNumber)
+                .filter(p -> p != null && !p.isBlank())
+                .orElse(null);
+    }
+
     // --- Response models (only the fields we use; unknown JSON ignored) ---
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -618,7 +653,7 @@ public class SquareClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record Customer(String id, String givenName, String familyName, String createdAt) {
+    public record Customer(String id, String givenName, String familyName, String createdAt, String phoneNumber) {
         public String fullName() {
             return ((givenName == null ? "" : givenName) + " " + (familyName == null ? "" : familyName)).trim();
         }
@@ -693,7 +728,16 @@ public class SquareClient {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Order(String id, String locationId, String customerId, String state, String closedAt,
                         String createdAt, List<OrderLineItem> lineItems, Money totalTipMoney,
-                        Money totalDiscountMoney, List<Tender> tenders) {}
+                        Money totalDiscountMoney, List<Tender> tenders, List<Fulfillment> fulfillments) {}
+
+    /** Only present on an order created via an online booking — see {@link #isBookingLinked}. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record Fulfillment(String type, String state) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record OrderResponse(Order order) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)

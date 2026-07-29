@@ -75,6 +75,33 @@ export interface TwilioSmsSettingsUpdateRequest {
   fromPhoneNumber?: string | null;
 }
 
+// --- SMS automations hub (com.salonreview.sms / com.salonreview.web.Sms*Controller) ---
+
+export interface SmsAutomationSummary {
+  key: string;
+  name: string;
+  audienceDescription: string;
+  enabled: boolean;
+  sentLast30Days: number;
+}
+
+export type SmsMessageDirection = 'OUTBOUND' | 'INBOUND';
+
+export interface SmsMessageDto {
+  id: number;
+  direction: SmsMessageDirection;
+  automationKey: string | null;
+  phoneNumber: string;
+  templateKey: string | null;
+  body: string;
+  status: string;
+  reason: string | null;
+  linkTarget: string | null;
+  clickedAt: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
 export interface Provider {
   id: number;
   name: string;

@@ -31,38 +31,59 @@ public class TwilioSmsService {
     private final SmsTemplateRegistry templateRegistry;
     private final TwilioSmsConfigService configService;
     private final SmsConsentRepository consentRepository;
+    private final SmsAutomationService automationService;
+    private final SmsMessageLogService messageLogService;
     private final TwilioSmsClient client;
 
     public TwilioSmsService(SmsTemplateRegistry templateRegistry, TwilioSmsConfigService configService,
-                            SmsConsentRepository consentRepository, TwilioSmsClient client) {
+                            SmsConsentRepository consentRepository, SmsAutomationService automationService,
+                            SmsMessageLogService messageLogService, TwilioSmsClient client) {
         this.templateRegistry = templateRegistry;
         this.configService = configService;
         this.consentRepository = consentRepository;
+        this.automationService = automationService;
+        this.messageLogService = messageLogService;
         this.client = client;
     }
 
     public SmsSendResult sendTemplated(String templateKey, String phoneNumber, Map<String, String> variables) {
         SmsTemplate template = templateRegistry.find(templateKey);
         if (template == null) {
+            // Nothing to render and no automationKey to attribute this to — logged as a bare
+            // attempt so it's still visible in the activity view, matching every other outcome.
+            messageLogService.logOutbound(templateKey, null, phoneNumber, "", false, "unknown_template", null);
             return SmsSendResult.skipped("unknown_template");
+        }
+
+        String body = template.render().apply(variables == null ? Map.of() : variables);
+        String automationKey = template.automationKey();
+
+        if (!automationService.isEnabled(automationKey)) {
+            log.info("SMS template '{}' skipped — automation '{}' is disabled", templateKey, automationKey);
+            messageLogService.logOutbound(templateKey, automationKey, phoneNumber, body, false, "automation_disabled", null);
+            return SmsSendResult.skipped("automation_disabled");
         }
 
         if (template.messageClass() == SmsMessageClass.MARKETING && !consentRepository.hasMarketingConsent(phoneNumber)) {
             log.info("SMS template '{}' skipped — no marketing consent for this contact", templateKey);
+            messageLogService.logOutbound(templateKey, automationKey, phoneNumber, body, false, "no_consent", null);
             return SmsSendResult.skipped("no_consent");
         }
 
         TwilioSmsConfig config = configService.get();
         if (!config.isConfigured()) {
             log.info("SMS template '{}' skipped — Twilio credentials not configured", templateKey);
+            messageLogService.logOutbound(templateKey, automationKey, phoneNumber, body, false, "not_configured", null);
             return SmsSendResult.skipped("not_configured");
         }
 
         try {
-            client.send(config, phoneNumber, template.render().apply(variables == null ? Map.of() : variables));
+            String twilioMessageSid = client.send(config, phoneNumber, body);
+            messageLogService.logOutbound(templateKey, automationKey, phoneNumber, body, true, null, twilioMessageSid);
             return SmsSendResult.ok();
         } catch (Exception e) {
             log.warn("SMS template '{}' send failed (caller unaffected): {}", templateKey, e.getMessage());
+            messageLogService.logOutbound(templateKey, automationKey, phoneNumber, body, false, "send_failed", null);
             return SmsSendResult.skipped("send_failed");
         }
     }

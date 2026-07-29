@@ -45,6 +45,12 @@ public class SecurityConfig {
                         // controller's own X-Internal-Api-Key check instead (see
                         // InternalNotificationController).
                         .requestMatchers("/api/internal/**").permitAll()
+                        // Square's payment webhook, Twilio's inbound-SMS webhook, and the click-tracked
+                        // short-link redirect are all called by third parties with no session — each
+                        // enforces its own signature check (or, for /r/**, is a harmless public redirect
+                        // with nothing sensitive to protect). See openspec/changes/sms-automations-hub.
+                        .requestMatchers("/api/public/webhooks/square", "/api/public/sms/inbound", "/r/**")
+                                .permitAll()
                         // Retention is read-only visibility for managers too (same data as owners, no
                         // other owner routes). Listed first so it wins over the owner-only catch-all.
                         .requestMatchers(HttpMethod.GET, "/api/owner/retention", "/api/owner/retention/**")

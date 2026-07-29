@@ -21,14 +21,16 @@ export default async function PageHeader({
     r = me.role;
     l = me.preferredLanguage;
   }
-  const kbRequestOpenCount = r === 'OWNER' ? await serverApi.getKbRequestOpenCount() : 0;
+  const [kbRequestOpenCount, smsUnreadCount] = r === 'OWNER'
+    ? await Promise.all([serverApi.getKbRequestOpenCount(), serverApi.getSmsUnreadCount()])
+    : [0, 0];
 
   return (
     <div className="mb-6 flex items-center gap-3">
       {/* AdminMenu is fixed to the viewport corner, not this row — the right padding here just
           keeps a long title from running underneath it on narrow screens. */}
       <h1 className="pr-24 text-xl font-semibold sm:text-2xl">{title}</h1>
-      <AdminMenu role={r} language={l ?? null} kbRequestOpenCount={kbRequestOpenCount} />
+      <AdminMenu role={r} language={l ?? null} kbRequestOpenCount={kbRequestOpenCount} smsUnreadCount={smsUnreadCount} />
     </div>
   );
 }

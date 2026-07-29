@@ -55,7 +55,7 @@ class NoShowFeeTest {
         // A completed $25 "Cancelation Policy" order for CUST1, paid May 12.
         Order fee = new Order("O1", "LOC", "CUST1", "COMPLETED", "2026-05-12T20:00:00Z", "2026-05-12T20:00:00Z",
                 List.of(new OrderLineItem("u1", "Cancelation Policy", "1", null, usd(2500), usd(2500), usd(2500), null)),
-                null, null, List.of());
+                null, null, List.of(), null);
         when(square.completedOrders(any(), any())).thenReturn(List.of(fee));
 
         when(directory.resolveOrCreate(eq("M1"), any())).thenReturn(Provider.builder().id(1L).displayName("Susan").build());

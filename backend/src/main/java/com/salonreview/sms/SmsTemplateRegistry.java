@@ -22,6 +22,7 @@ public class SmsTemplateRegistry {
             "four_hand_request_received", new SmsTemplate(
                     "four_hand_request_received",
                     SmsMessageClass.TRANSACTIONAL,
+                    "four_hand_request",
                     vars -> render("Hi {{name}}, we got your 4-Hand request for {{preferredTime}}! "
                             + "We'll call you shortly to confirm the exact time & pricing. — AK.LUX.NAILS", vars)
             ),
@@ -32,6 +33,21 @@ public class SmsTemplateRegistry {
                     SmsMessageClass.TRANSACTIONAL,
                     vars -> render("This is the first message from AK.LUX.NAILS' new toll-free number "
                             + "— Twilio verification approved and live!", vars)
+            ),
+            /** Sent by {@code SmsReplyFlowScheduler} 2 minutes after an in-salon checkout — see
+             * openspec/changes/sms-automations-hub design.md D5 for why this is TRANSACTIONAL (a
+             * content-neutral, non-promotional same-day follow-up, not a marketing message). No
+             * {{name}} falls back to a name-less greeting rather than rendering an empty "Hi ,". */
+            "checkout_rating_request", new SmsTemplate(
+                    "checkout_rating_request",
+                    SmsMessageClass.TRANSACTIONAL,
+                    "checkout_review_request",
+                    vars -> {
+                        String name = vars == null ? null : vars.get("name");
+                        String greeting = (name == null || name.isBlank()) ? "Hi" : "Hi " + name + ",";
+                        return greeting + " on a scale of 1 to 5, how did you like your nails today? 💅 "
+                                + "Just reply with a number. — AK.LUX.NAILS";
+                    }
             )
     );
 

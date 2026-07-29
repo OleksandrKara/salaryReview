@@ -56,7 +56,7 @@ class TipAllocationTest {
     private static Order order(BigDecimal tipDollars, OrderLineItem... lines) {
         Money tip = new Money(tipDollars.movePointRight(2).longValueExact(), "USD");
         return new Order("o1", "LOC", CUST, "COMPLETED", "2026-05-10T16:00:00Z", "2026-05-10T16:00:00Z",
-                List.of(lines), tip, null, null);
+                List.of(lines), tip, null, null, null);
     }
 
     private static AttributedService lineFor(MonthAggregation agg, String service) {

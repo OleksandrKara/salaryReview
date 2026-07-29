@@ -1,0 +1,125 @@
+package com.salonreview.sms;
+
+import com.salonreview.domain.SmsReplyFlow;
+import com.salonreview.repo.SmsReplyFlowRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+
+/**
+ * Durable, DB-backed delayed-send + expiry poller — see openspec/changes/sms-automations-hub
+ * design.md D3.
+ */
+class SmsReplyFlowSchedulerTest {
+
+    private static final String PHONE = "+15551234567";
+
+    private SmsReplyFlowRepository repository;
+    private TwilioSmsService smsService;
+    private SmsReplyFlowScheduler scheduler;
+
+    @BeforeEach
+    void setUp() {
+        repository = mock(SmsReplyFlowRepository.class);
+        smsService = mock(TwilioSmsService.class);
+        scheduler = new SmsReplyFlowScheduler(repository, smsService);
+    }
+
+    private static SmsReplyFlow flow(String state) {
+        return SmsReplyFlow.builder()
+                .id(1L).automationKey("checkout_review_request").phoneNumber(PHONE)
+                .customerName("Jane").state(state).sendDueAt(Instant.now()).build();
+    }
+
+    @Test
+    @DisplayName("due AWAITING_SEND row: send succeeds → transitions to AWAITING_REPLY with a 24h expiry set")
+    void dueRowSendsAndTransitions() {
+        SmsReplyFlow due = flow(SmsReplyFlow.STATE_AWAITING_SEND);
+        when(repository.findByStateAndSendDueAtBefore(eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
+                .thenReturn(List.of(due));
+        when(smsService.sendTemplated(eq("checkout_rating_request"), eq(PHONE), any()))
+                .thenReturn(new TwilioSmsService.SmsSendResult(true, null));
+
+        scheduler.sendDueRatingRequests();
+
+        assertThat(due.getState()).isEqualTo(SmsReplyFlow.STATE_AWAITING_REPLY);
+        assertThat(due.getReplyExpiresAt()).isAfter(Instant.now().plusSeconds(23 * 3600));
+        verify(repository).save(due);
+        verify(smsService).sendTemplated("checkout_rating_request", PHONE, Map.of("name", "Jane"));
+    }
+
+    @Test
+    @DisplayName("due AWAITING_SEND row: send fails → transitions straight to EXPIRED, no reply window")
+    void dueRowSendFailureExpires() {
+        SmsReplyFlow due = flow(SmsReplyFlow.STATE_AWAITING_SEND);
+        when(repository.findByStateAndSendDueAtBefore(eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
+                .thenReturn(List.of(due));
+        when(smsService.sendTemplated(eq("checkout_rating_request"), eq(PHONE), any()))
+                .thenReturn(new TwilioSmsService.SmsSendResult(false, "not_configured"));
+
+        scheduler.sendDueRatingRequests();
+
+        assertThat(due.getState()).isEqualTo(SmsReplyFlow.STATE_EXPIRED);
+        assertThat(due.getReplyExpiresAt()).isNull();
+        verify(repository).save(due);
+    }
+
+    @Test
+    @DisplayName("no customer name on the flow → variables map is empty, not a name-shaped map with null")
+    void noNameSendsEmptyVariables() {
+        SmsReplyFlow due = flow(SmsReplyFlow.STATE_AWAITING_SEND);
+        due.setCustomerName(null);
+        when(repository.findByStateAndSendDueAtBefore(eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
+                .thenReturn(List.of(due));
+        when(smsService.sendTemplated(any(), any(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
+
+        scheduler.sendDueRatingRequests();
+
+        verify(smsService).sendTemplated("checkout_rating_request", PHONE, Map.of());
+    }
+
+    @Test
+    @DisplayName("not-yet-due row is left untouched — repository query itself is the filter")
+    void notDueRowUntouched() {
+        when(repository.findByStateAndSendDueAtBefore(eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
+                .thenReturn(List.of());
+
+        scheduler.sendDueRatingRequests();
+
+        verifyNoInteractions(smsService);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("past-expiry AWAITING_REPLY row transitions to EXPIRED")
+    void staleReplyWindowExpires() {
+        SmsReplyFlow stale = flow(SmsReplyFlow.STATE_AWAITING_REPLY);
+        when(repository.findByStateAndReplyExpiresAtBefore(eq(SmsReplyFlow.STATE_AWAITING_REPLY), any()))
+                .thenReturn(List.of(stale));
+
+        scheduler.expireStaleReplyWindows();
+
+        assertThat(stale.getState()).isEqualTo(SmsReplyFlow.STATE_EXPIRED);
+        verify(repository).save(stale);
+    }
+
+    @Test
+    @DisplayName("no stale rows → nothing saved")
+    void noStaleRowsNoOp() {
+        when(repository.findByStateAndReplyExpiresAtBefore(eq(SmsReplyFlow.STATE_AWAITING_REPLY), any()))
+                .thenReturn(List.of());
+
+        scheduler.expireStaleReplyWindows();
+
+        verify(repository, never()).save(any());
+    }
+}
