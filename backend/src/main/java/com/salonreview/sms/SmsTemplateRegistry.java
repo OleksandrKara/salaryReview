@@ -24,6 +24,14 @@ public class SmsTemplateRegistry {
                     SmsMessageClass.TRANSACTIONAL,
                     vars -> render("Hi {{name}}, we got your 4-Hand request for {{preferredTime}}! "
                             + "We'll call you shortly to confirm the exact time & pricing. — AK.LUX.NAILS", vars)
+            ),
+            /** One-off operational check, not a customer-facing message — TRANSACTIONAL so it isn't
+             * blocked by a marketing-consent lookup that would never find the owner's own number. */
+            "toll_free_live_test", new SmsTemplate(
+                    "toll_free_live_test",
+                    SmsMessageClass.TRANSACTIONAL,
+                    vars -> render("This is the first message from AK.LUX.NAILS' new toll-free number "
+                            + "— Twilio verification approved and live!", vars)
             )
     );
 
