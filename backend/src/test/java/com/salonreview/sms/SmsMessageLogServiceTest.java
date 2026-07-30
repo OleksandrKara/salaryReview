@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -80,5 +81,26 @@ class SmsMessageLogServiceTest {
         service.markRead(999L);
 
         verify(repository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("generateUniqueClickToken re-rolls on a collision and returns the first free candidate")
+    void generateUniqueClickTokenRerollsOnCollision() {
+        when(repository.existsByClickToken(any()))
+                .thenReturn(true, true, false); // first two candidates taken, third is free
+
+        String token = service.generateUniqueClickToken();
+
+        assertThat(token).isNotNull().hasSize(5);
+        verify(repository, times(3)).existsByClickToken(any());
+    }
+
+    @Test
+    @DisplayName("generateUniqueClickToken gives up after repeated collisions rather than looping forever")
+    void generateUniqueClickTokenGivesUpEventually() {
+        when(repository.existsByClickToken(any())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.generateUniqueClickToken())
+                .isInstanceOf(IllegalStateException.class);
     }
 }
