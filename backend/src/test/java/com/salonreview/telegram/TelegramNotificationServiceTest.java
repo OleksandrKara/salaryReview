@@ -74,4 +74,26 @@ class TelegramNotificationServiceTest {
 
         assertThat(service.formatMessage(withoutPrice)).doesNotContain("Estimated price");
     }
+
+    @Test
+    @DisplayName("inbound-SMS alert: blank bot token → false, no exception")
+    void inboundSmsAlertBlankBotTokenSkips() {
+        TelegramConfigService configService = mock(TelegramConfigService.class);
+        when(configService.get()).thenReturn(
+                TelegramNotificationConfig.builder().botToken(null).chatId("999888777").build());
+        TelegramNotificationService service = new TelegramNotificationService(configService);
+
+        assertThat(service.sendInboundSmsAlert("+15551234567", "hi", null)).isFalse();
+    }
+
+    @Test
+    @DisplayName("inbound-SMS alert: blank chat id → false, no exception")
+    void inboundSmsAlertBlankChatIdSkips() {
+        TelegramConfigService configService = mock(TelegramConfigService.class);
+        when(configService.get()).thenReturn(
+                TelegramNotificationConfig.builder().botToken("some-token").chatId("").build());
+        TelegramNotificationService service = new TelegramNotificationService(configService);
+
+        assertThat(service.sendInboundSmsAlert("+15551234567", "hi", "checkout_review_request")).isFalse();
+    }
 }
