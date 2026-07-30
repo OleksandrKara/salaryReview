@@ -38,6 +38,12 @@ services:
       SQUARE_ENVIRONMENT: ${SQUARE_ENVIRONMENT:-sandbox}
       SQUARE_ACCESS_TOKEN: ${SQUARE_ACCESS_TOKEN:-}
       SQUARE_LOCATION_ID: ${SQUARE_LOCATION_ID:-}
+      # Square's payment.updated/payment.created webhook (checkout-review-request automation).
+      # Blank signature-key means every webhook request is rejected — was missing here entirely
+      # until the automation's first real payment revealed no subscription/signature-key existed
+      # on either side.
+      SQUARE_WEBHOOK_SIGNATURE_KEY: ${SQUARE_WEBHOOK_SIGNATURE_KEY:-}
+      SQUARE_WEBHOOK_NOTIFICATION_URL: ${SQUARE_WEBHOOK_NOTIFICATION_URL:-https://salon.akluxnails.com/api/public/webhooks/square}
       # First owner account, seeded when the user table is empty. Use a strong password on a server.
       APP_OWNER_USERNAME: ${APP_OWNER_USERNAME:-owner}
       APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:-changeme}
