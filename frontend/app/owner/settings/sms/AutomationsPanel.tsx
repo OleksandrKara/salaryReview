@@ -1,17 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { api } from '../../lib/api';
-import type { SmsAutomationSummary, SmsMessageDto } from '../../lib/types';
-import SmsActivityLog from './SmsActivityLog';
+import { api } from '../../../lib/api';
+import type { SmsAutomationSummary } from '../../../lib/types';
 
-export default function AutomationsView({
-  initialAutomations,
-  initialActivity,
-}: {
-  initialAutomations: SmsAutomationSummary[];
-  initialActivity: SmsMessageDto[];
-}) {
+// Toggle grid for owner-controlled SMS automations — extracted from the former standalone
+// /owner/automations hub, now folded into this page so every SMS-related control (automations,
+// activity, credentials) lives on one page (see openspec/changes consolidation request).
+export default function AutomationsPanel({ initialAutomations }: { initialAutomations: SmsAutomationSummary[] }) {
   const [automations, setAutomations] = useState(initialAutomations);
 
   async function toggle(key: string, enabled: boolean) {
@@ -26,27 +22,10 @@ export default function AutomationsView({
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      <section>
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Automations</h2>
-        <p className="mt-1 text-sm text-zinc-500">
-          Automated texts we send. New automations always ship off — turn one on once you&apos;ve
-          tested it.
-        </p>
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {automations.map((a) => (
-            <AutomationCard key={a.key} automation={a} onToggle={(enabled) => toggle(a.key, enabled)} />
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Activity</h2>
-        <p className="mt-1 text-sm text-zinc-500">
-          Every text we&apos;ve sent and every reply we&apos;ve received, regardless of automation.
-        </p>
-        <SmsActivityLog initialActivity={initialActivity} />
-      </section>
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {automations.map((a) => (
+        <AutomationCard key={a.key} automation={a} onToggle={(enabled) => toggle(a.key, enabled)} />
+      ))}
     </div>
   );
 }

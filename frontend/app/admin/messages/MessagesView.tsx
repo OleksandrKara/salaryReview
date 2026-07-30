@@ -86,7 +86,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
   }
 
   return (
-    <div className="flex h-[70vh] min-h-[420px] overflow-hidden rounded-lg ring-1 ring-zinc-200">
+    <div className="flex h-full min-h-0 overflow-hidden sm:h-[70vh] sm:min-h-[420px] sm:rounded-lg sm:ring-1 sm:ring-zinc-200">
       {/* Contact list — full width on mobile until a thread is opened, fixed sidebar on desktop. */}
       <div className={`w-full shrink-0 overflow-y-auto border-r border-zinc-200 sm:block sm:w-72 ${selectedPhone ? 'hidden sm:block' : ''}`}>
         {conversations.length === 0 ? (
@@ -136,9 +136,9 @@ export default function MessagesView({ initialConversations }: { initialConversa
                 type="button"
                 onClick={() => setSelectedPhone(null)}
                 aria-label="Back to conversations"
-                className="text-zinc-400 hover:text-zinc-600 sm:hidden"
+                className="-ml-2 flex h-11 w-11 shrink-0 items-center justify-center text-zinc-400 hover:text-zinc-600 sm:hidden"
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <path d="m15 18-6-6 6-6" />
                 </svg>
               </button>
@@ -175,20 +175,26 @@ export default function MessagesView({ initialConversations }: { initialConversa
                 e.preventDefault();
                 void sendReply();
               }}
-              className="flex items-center gap-2 border-t border-zinc-200 p-3"
+              className="flex items-center gap-2 border-t border-zinc-200 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
             >
+              {/* text-base (16px), not text-sm, on mobile — a smaller font on a focused input
+                  makes iOS Safari auto-zoom the whole page, which is jarring here. */}
               <input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder="Type a reply…"
-                className="min-w-0 flex-1 rounded-full border border-zinc-300 px-4 py-2 text-sm"
+                className="min-w-0 flex-1 rounded-full border border-zinc-300 px-4 py-2.5 text-base sm:py-2 sm:text-sm"
               />
               <button
                 type="submit"
                 disabled={!draft.trim() || sending}
-                className="shrink-0 rounded-full bg-sky-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white disabled:opacity-40 sm:h-auto sm:w-auto sm:px-4 sm:py-2"
+                aria-label="Send"
               >
-                Send
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="sm:hidden">
+                  <path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" />
+                </svg>
+                <span className="hidden text-sm font-medium sm:inline">Send</span>
               </button>
             </form>
           </>

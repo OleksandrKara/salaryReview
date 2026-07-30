@@ -6,7 +6,12 @@ import MessagesView from './MessagesView';
 // Shared OWNER+MANAGER conversation view — see openspec/changes/lead-followup-and-manager-inbox
 // design.md D6/D7. Lives under /admin/* (not /owner/*) since both roles use it, matching this
 // app's existing /admin/redos, /admin/manual-adjustments convention. The automation registry +
-// toggle + flat activity log stay OWNER-only at /owner/automations.
+// toggle + activity log now live at /owner/settings/sms.
+//
+// Mobile is edge-to-edge, full dynamic-viewport height (100dvh, not 100vh — dvh tracks the
+// visual viewport as the on-screen keyboard opens/closes, so the composer never ends up hidden
+// behind it) so this reads as a real chat app rather than a bounded card floating in page
+// padding. Desktop keeps the bounded two-column card look (see MessagesView's own sm: classes).
 export default async function MessagesPage() {
   const me = await serverApi.getMe();
   if (me.role !== 'OWNER' && me.role !== 'MANAGER') redirect('/reports');
@@ -14,9 +19,13 @@ export default async function MessagesPage() {
   const conversations = await serverApi.listSmsConversations();
 
   return (
-    <main className="mx-auto max-w-5xl p-4 sm:p-8">
-      <PageHeader title="Messages" role={me.role} language={me.preferredLanguage} />
-      <MessagesView initialConversations={conversations} />
+    <main className="mx-auto flex h-[100dvh] max-w-5xl flex-col sm:h-auto sm:p-8">
+      <div className="shrink-0 px-4 pt-4 sm:px-0 sm:pt-0">
+        <PageHeader title="Messages" role={me.role} language={me.preferredLanguage} />
+      </div>
+      <div className="min-h-0 flex-1">
+        <MessagesView initialConversations={conversations} />
+      </div>
     </main>
   );
 }
