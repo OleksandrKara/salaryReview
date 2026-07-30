@@ -8,6 +8,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -110,6 +111,17 @@ public class MarketingContactsRepository {
         String sql = "SELECT " + CONTACT_COLUMNS + ", " + TrafficSourceSql.contactChannelCase("c") + " AS channel"
                 + " FROM marketing.contacts c ORDER BY c.created_at DESC";
         return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact);
+    }
+
+    /** contacts is unique on phone_number, so this is at most one row — backs the manager
+     * conversation view's contact info panel (see openspec/changes, MessagesView contact
+     * sidebar). Empty when this phone number never went through the tracked capture flow (e.g. a
+     * checkout-review or lead-follow-up text sent purely from Square/booking data). */
+    public Optional<RawContact> findByPhoneNumber(String phoneNumber) {
+        String sql = "SELECT " + CONTACT_COLUMNS + ", " + TrafficSourceSql.contactChannelCase("c") + " AS channel"
+                + " FROM marketing.contacts c WHERE c.phone_number = ?";
+        return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact, phoneNumber)
+                .stream().findFirst();
     }
 
     /** Contacts eligible for {@code LeadFollowUpScheduler}'s poll — old enough ({@code

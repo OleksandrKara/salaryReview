@@ -86,6 +86,21 @@ public class MarketingContactsService {
      * owner's own click — see design.md's "fetch on click" decision for that capability. Empty
      * (not an error) if the schema is unreachable or no contact resolves to this customer id.
      */
+    /** One contact's profile + submission/appointment history, resolved by phone number — for the
+     * manager conversation view's contact info sidebar (see MessagesView), which only knows the
+     * phone number a thread is keyed by. Empty (not an error) if this number never went through
+     * the tracked capture flow (e.g. a checkout-review/lead-follow-up text sent purely from
+     * Square/booking data with no matching marketing.contacts row) or if the schema is
+     * unreachable. */
+    public Optional<Contact> contactByPhone(String phoneNumber) {
+        try {
+            return repository.findByPhoneNumber(phoneNumber).map(this::toContact);
+        } catch (DataAccessException ex) {
+            log.warn("Marketing schema unavailable while resolving contact for phone {}", phoneNumber, ex);
+            return Optional.empty();
+        }
+    }
+
     public Optional<Contact> contactByCustomerId(String squareCustomerId) {
         try {
             return repository.listAll().stream()
