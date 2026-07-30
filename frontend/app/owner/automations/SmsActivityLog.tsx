@@ -32,6 +32,32 @@ function formatWhen(iso: string): string {
   });
 }
 
+/** Only meaningful for messages that actually carry a click-tracked short link (see
+ * CheckoutReviewReplyService/ShortLinkController) — most messages have none, and render nothing. */
+function LinkClickBadge({ message }: { message: SmsMessageDto }) {
+  if (!message.linkTarget) {
+    return null;
+  }
+  if (message.clickedAt) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700"
+        title={new Date(message.clickedAt).toLocaleString()}
+      >
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M20 6 9 17l-5-5" />
+        </svg>
+        Clicked {formatWhen(message.clickedAt)}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500">
+      Link not clicked
+    </span>
+  );
+}
+
 function StatusPill({ message }: { message: SmsMessageDto }) {
   if (message.direction === 'INBOUND') {
     return (
@@ -153,6 +179,7 @@ export default function SmsActivityLog({ initialActivity }: { initialActivity: S
                   <th className="px-3 py-2 font-medium">Automation</th>
                   <th className="px-3 py-2 font-medium">Message</th>
                   <th className="px-3 py-2 font-medium">Status</th>
+                  <th className="px-3 py-2 font-medium">Link</th>
                 </tr>
               </thead>
               <tbody>
@@ -174,6 +201,7 @@ export default function SmsActivityLog({ initialActivity }: { initialActivity: S
                         {m.body}
                       </td>
                       <td className="px-3 py-2.5"><StatusPill message={m} /></td>
+                      <td className="whitespace-nowrap px-3 py-2.5"><LinkClickBadge message={m} /></td>
                     </tr>
                   );
                 })}
@@ -205,7 +233,10 @@ function MessageCard({ message, onMarkRead }: { message: SmsMessageDto; onMarkRe
         <span className="text-xs text-zinc-400">
           {message.automationKey ? AUTOMATION_LABELS[message.automationKey] ?? message.automationKey : 'Not automation-linked'}
         </span>
-        <StatusPill message={message} />
+        <div className="flex items-center gap-1.5">
+          <LinkClickBadge message={message} />
+          <StatusPill message={message} />
+        </div>
       </div>
     </div>
   );
