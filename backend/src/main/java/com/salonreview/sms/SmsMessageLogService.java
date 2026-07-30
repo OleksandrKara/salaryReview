@@ -75,6 +75,20 @@ public class SmsMessageLogService {
         return repository.save(message);
     }
 
+    /** A fresh {@link ClickTokens#generate()} candidate, re-rolled if it happens to collide with
+     * one already in use (see design.md D6) — keeping the token itself short (5 chars) is only
+     * safe because collisions are handled here rather than avoided by padding the length. Never
+     * expected to need more than one attempt in practice. */
+    String generateUniqueClickToken() {
+        for (int attempt = 0; attempt < 20; attempt++) {
+            String candidate = ClickTokens.generate();
+            if (!repository.existsByClickToken(candidate)) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException("Could not generate a unique click token after 20 attempts");
+    }
+
     public Page<SmsMessage> search(String phoneNumber, String direction, String automationKey, Pageable pageable) {
         return repository.search(phoneNumber, direction, automationKey, pageable);
     }

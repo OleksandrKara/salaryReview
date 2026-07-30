@@ -46,6 +46,7 @@ class CheckoutReviewReplyServiceTest {
         client = mock(TwilioSmsClient.class);
         service = new CheckoutReviewReplyService(messageLogService, configService, client, PUBLIC_BASE_URL);
 
+        when(messageLogService.generateUniqueClickToken()).thenReturn("abc12");
         when(messageLogService.logOutboundWithLink(anyString(), eq("checkout_review_request"), eq(PHONE),
                 eq(""), eq(false), eq("pending"), eq(null), anyString(), anyString()))
                 .thenAnswer(inv -> SmsMessage.builder().id(1L).direction("OUTBOUND")
@@ -67,7 +68,7 @@ class CheckoutReviewReplyServiceTest {
                 eq(PHONE), eq(""), eq(false), eq("pending"), eq(null), eq(CheckoutReviewLinks.GOOGLE_REVIEW_TARGET),
                 tokenCaptor.capture());
         String token = tokenCaptor.getValue();
-        assertThat(token).hasSize(8).matches("[a-z0-9]+");
+        assertThat(token).isEqualTo("abc12");
 
         var bodyCaptor = ArgumentCaptor.forClass(String.class);
         verify(client).send(any(), eq(PHONE), bodyCaptor.capture());

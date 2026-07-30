@@ -44,7 +44,7 @@ public class CheckoutReviewReplyService {
         String templateKey = positive ? "checkout_review_positive" : "checkout_review_negative";
         String linkTarget = positive ? CheckoutReviewLinks.GOOGLE_REVIEW_TARGET : CheckoutReviewLinks.FEEDBACK_FORM_TARGET;
 
-        String clickToken = ClickTokens.generate();
+        String clickToken = messageLogService.generateUniqueClickToken();
         SmsMessage reserved = messageLogService.logOutboundWithLink(
                 templateKey, AUTOMATION_KEY, flow.getPhoneNumber(),
                 "", false, "pending", null, linkTarget, clickToken);

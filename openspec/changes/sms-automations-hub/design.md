@@ -166,7 +166,7 @@ already relies on today without incident.
 
 ### D6: Click-tracked short links are keyed by the outbound `sms_message` row, not a separate table
 
-**Decision**: `GET /r/{token}` (public, no auth) where `{token}` is a fresh, random 8-character
+**Decision**: `GET /r/{token}` (public, no auth) where `{token}` is a fresh, random 5-character
 lowercase-alphanumeric (base36) opaque token (see `ClickTokens`), stored on
 `sms_message.click_token` (unique) — not the row's own sequential `id`. An earlier revision used
 the raw numeric `id` directly on the reasoning that a guessable id leaks nothing security-relevant
@@ -174,16 +174,23 @@ here (only two fixed destinations exist either way). That's still true, but the 
 during a real test send that a bare incrementing number at the end of the link (e.g.
 `.../r/1234`) *reads* like a raw tracking-link artifact rather than a normal business link, which
 hurts click-through trust — so this was revised to an opaque token purely for that perception
-reason, not a security one. The token is deliberately single-case (not mixed-case) and kept short
-(8 chars, ~2.8 trillion combinations — far more than this business will ever send) to match the
-visual convention of trusted link-shorteners (bit.ly, tinyurl) rather than looking like a random
-tracking blob; SMS-segment cost was *not* the driver here (the owner explicitly deprioritized that
-given current low message volume — see the emoji/em-dash note below, unchanged for now for the
-same reason). That row also gains `link_target` (`GOOGLE_REVIEW` | `FEEDBACK_FORM`) and
-`clicked_at` (nullable). The redirect handler resolves the real destination from `link_target`
-(the two real URLs — Google Maps review page and the feedback Google Form — are small, fixed,
-code-level config, not owner-editable copy, matching every other "no CMS" convention here), stamps
-`clicked_at` if unset, and issues a `302`.
+reason, not a security one. The token is deliberately single-case (not mixed-case) to match the
+visual convention of trusted link-shorteners (bit.ly, tinyurl) and coupon codes rather than looking
+like a random tracking blob.
+
+The token was first sized at 8 characters (~2.8 trillion combinations, generated once with no
+collision handling) but the owner asked for it shorter still. 5 characters (~60 million
+combinations) alone isn't "effectively collision-free" at every conceivable volume, so rather than
+just accepting that risk, `SmsMessageLogService.generateUniqueClickToken()` re-rolls a fresh
+candidate against `SmsMessageRepository.existsByClickToken` before it's ever reserved — a collision
+just costs one extra (cheap) query, never a failed send. This is what makes going short safe: the
+length only needs to keep retries rare in practice, not guarantee zero collisions on the first
+try. SMS-segment cost was *not* the driver for shortening the token — see the emoji/em-dash note
+below, left unchanged for now for a separate reason. That row also gains `link_target`
+(`GOOGLE_REVIEW` | `FEEDBACK_FORM`) and `clicked_at` (nullable). The redirect handler resolves the
+real destination from `link_target` (the two real URLs — Google Maps review page and the feedback
+Google Form — are small, fixed, code-level config, not owner-editable copy, matching every other
+"no CMS" convention here), stamps `clicked_at` if unset, and issues a `302`.
 
 **Known lever not yet taken**: the templates' emoji (💅🌟) and em-dash (—) force UCS-2 SMS encoding
 (70-char segments) instead of GSM-7 (160-char segments), roughly doubling per-message Twilio cost
