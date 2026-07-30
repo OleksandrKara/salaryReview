@@ -79,6 +79,43 @@ public class TelegramNotificationService {
         }
     }
 
+    /** Alerts managers/owner (same Telegram chat as the 4-hand alert — see
+     * openspec/changes/sms-automations-hub) whenever a customer texts the salon's number, whether
+     * or not it matched a pending automation reply — a customer reply always needs a human's
+     * attention, not just a dashboard entry nobody's watching. Never throws, same contract as
+     * {@link #sendFourHandRequestAlert}. */
+    public boolean sendInboundSmsAlert(String phoneNumber, String body, String automationKey) {
+        TelegramNotificationConfig cfg = configService.get();
+        String token = cfg.getBotToken();
+        String chatId = cfg.getChatId();
+        if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
+            log.info("Inbound-SMS Telegram alert skipped — bot token or chat id not configured");
+            return false;
+        }
+
+        String text = "📩 New text from " + phoneNumber
+                + (automationKey == null ? "" : " (re: " + automationKey + ")")
+                + "\n" + body;
+        try {
+            Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", text);
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
+                    .timeout(Duration.ofSeconds(5))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(reqBody)))
+                    .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                log.warn("Inbound-SMS Telegram alert send failed: HTTP {} {}", res.statusCode(), res.body());
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.warn("Inbound-SMS Telegram alert send failed (caller unaffected): {}", e.getMessage());
+            return false;
+        }
+    }
+
     /** Package-private for direct unit testing, same convention as {@link #formatPreferredTime}. */
     String formatMessage(FourHandRequestNotification n) {
         StringBuilder sb = new StringBuilder();

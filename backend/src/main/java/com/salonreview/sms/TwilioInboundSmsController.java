@@ -4,6 +4,7 @@ import com.salonreview.config.TwilioInboundProperties;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.repo.SmsReplyFlowRepository;
+import com.salonreview.telegram.TelegramNotificationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -36,13 +37,16 @@ public class TwilioInboundSmsController {
     private final SmsMessageLogService messageLogService;
     private final SmsReplyFlowRepository replyFlowRepository;
     private final CheckoutReviewReplyService replyService;
+    private final TelegramNotificationService telegramService;
 
     public TwilioInboundSmsController(TwilioInboundProperties properties, SmsMessageLogService messageLogService,
-                                       SmsReplyFlowRepository replyFlowRepository, CheckoutReviewReplyService replyService) {
+                                       SmsReplyFlowRepository replyFlowRepository, CheckoutReviewReplyService replyService,
+                                       TelegramNotificationService telegramService) {
         this.properties = properties;
         this.messageLogService = messageLogService;
         this.replyFlowRepository = replyFlowRepository;
         this.replyService = replyService;
+        this.telegramService = telegramService;
     }
 
     @PostMapping(value = "/api/public/sms/inbound", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
@@ -67,6 +71,10 @@ public class TwilioInboundSmsController {
         SmsMessage logged = messageLogService.logInbound(from, body, pending.map(SmsReplyFlow::getAutomationKey).orElse(null));
         logged.setTwilioMessageSid(params.get("MessageSid"));
         messageLogService.save(logged);
+
+        // A customer reply always needs a human's attention right away, not just a dashboard entry
+        // nobody's actively watching — see openspec/changes/sms-automations-hub proposal.md.
+        telegramService.sendInboundSmsAlert(from, body, logged.getAutomationKey());
 
         if (pending.isPresent()) {
             SmsReplyFlow flow = pending.get();

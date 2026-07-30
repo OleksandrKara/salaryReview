@@ -4,6 +4,7 @@ import com.salonreview.config.TwilioInboundProperties;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.repo.SmsReplyFlowRepository;
+import com.salonreview.telegram.TelegramNotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,6 +39,7 @@ class TwilioInboundSmsControllerTest {
     private SmsMessageLogService messageLogService;
     private SmsReplyFlowRepository replyFlowRepository;
     private CheckoutReviewReplyService replyService;
+    private TelegramNotificationService telegramService;
     private MockMvc mvc;
 
     @BeforeEach
@@ -48,11 +50,16 @@ class TwilioInboundSmsControllerTest {
         messageLogService = mock(SmsMessageLogService.class);
         replyFlowRepository = mock(SmsReplyFlowRepository.class);
         replyService = mock(CheckoutReviewReplyService.class);
+        telegramService = mock(TelegramNotificationService.class);
+        // thenAnswer (not a fixed thenReturn) so logged.getAutomationKey() reflects whatever
+        // automationKey the controller actually passed in, matching the real implementation —
+        // needed since the controller forwards logged.getAutomationKey() to the Telegram alert.
         when(messageLogService.logInbound(any(), any(), any()))
-                .thenReturn(SmsMessage.builder().id(99L).direction("INBOUND").build());
+                .thenAnswer(inv -> SmsMessage.builder().id(99L).direction("INBOUND")
+                        .automationKey(inv.getArgument(2)).build());
 
         TwilioInboundSmsController controller = new TwilioInboundSmsController(
-                properties, messageLogService, replyFlowRepository, replyService);
+                properties, messageLogService, replyFlowRepository, replyService, telegramService);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -82,7 +89,7 @@ class TwilioInboundSmsControllerTest {
                         .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
                 .andExpect(status().isUnauthorized());
 
-        verifyNoInteractions(messageLogService, replyFlowRepository, replyService);
+        verifyNoInteractions(messageLogService, replyFlowRepository, replyService, telegramService);
     }
 
     @Test
@@ -96,7 +103,7 @@ class TwilioInboundSmsControllerTest {
                         .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
                 .andExpect(status().isUnauthorized());
 
-        verifyNoInteractions(messageLogService, replyFlowRepository, replyService);
+        verifyNoInteractions(messageLogService, replyFlowRepository, replyService, telegramService);
     }
 
     @Test
@@ -118,6 +125,7 @@ class TwilioInboundSmsControllerTest {
         verify(messageLogService).logInbound(PHONE, p.get("Body"), "checkout_review_request");
         verify(replyService).sendBranchReply(pending, true);
         verify(replyFlowRepository).save(pending);
+        verify(telegramService).sendInboundSmsAlert(PHONE, p.get("Body"), "checkout_review_request");
         org.assertj.core.api.Assertions.assertThat(pending.getState()).isEqualTo(SmsReplyFlow.STATE_COMPLETED);
     }
 
@@ -156,6 +164,7 @@ class TwilioInboundSmsControllerTest {
                 .andExpect(status().isOk());
 
         verify(messageLogService).logInbound(PHONE, p.get("Body"), null);
+        verify(telegramService).sendInboundSmsAlert(PHONE, p.get("Body"), null);
         verifyNoInteractions(replyService);
         verify(replyFlowRepository, never()).save(any());
     }
