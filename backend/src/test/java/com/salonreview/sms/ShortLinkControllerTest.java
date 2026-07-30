@@ -31,10 +31,11 @@ class ShortLinkControllerTest {
     @DisplayName("first click on a Google-review link → stamps clicked_at and redirects to the Google review URL")
     void firstClickStampsAndRedirectsGoogle() {
         SmsMessage message = SmsMessage.builder().id(1L).direction("OUTBOUND").phoneNumber("+15551234567")
-                .body("...").status("SENT").linkTarget(CheckoutReviewLinks.GOOGLE_REVIEW_TARGET).build();
-        when(repository.findById(1L)).thenReturn(Optional.of(message));
+                .body("...").status("SENT").linkTarget(CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)
+                .clickToken("abc123XYZ0").build();
+        when(repository.findByClickToken("abc123XYZ0")).thenReturn(Optional.of(message));
 
-        ResponseEntity<Void> response = controller.redirect(1L);
+        ResponseEntity<Void> response = controller.redirect("abc123XYZ0");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FOUND);
         assertThat(response.getHeaders().getLocation()).hasToString(CheckoutReviewLinks.GOOGLE_REVIEW_URL);
@@ -46,10 +47,11 @@ class ShortLinkControllerTest {
     @DisplayName("feedback-form link target → redirects to the feedback form URL")
     void redirectsToFeedbackForm() {
         SmsMessage message = SmsMessage.builder().id(2L).direction("OUTBOUND").phoneNumber("+15551234567")
-                .body("...").status("SENT").linkTarget(CheckoutReviewLinks.FEEDBACK_FORM_TARGET).build();
-        when(repository.findById(2L)).thenReturn(Optional.of(message));
+                .body("...").status("SENT").linkTarget(CheckoutReviewLinks.FEEDBACK_FORM_TARGET)
+                .clickToken("def456UVW1").build();
+        when(repository.findByClickToken("def456UVW1")).thenReturn(Optional.of(message));
 
-        ResponseEntity<Void> response = controller.redirect(2L);
+        ResponseEntity<Void> response = controller.redirect("def456UVW1");
 
         assertThat(response.getHeaders().getLocation()).hasToString(CheckoutReviewLinks.FEEDBACK_FORM_URL);
     }
@@ -60,10 +62,10 @@ class ShortLinkControllerTest {
         Instant original = Instant.now().minusSeconds(3600);
         SmsMessage message = SmsMessage.builder().id(1L).direction("OUTBOUND").phoneNumber("+15551234567")
                 .body("...").status("SENT").linkTarget(CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)
-                .clickedAt(original).build();
-        when(repository.findById(1L)).thenReturn(Optional.of(message));
+                .clickToken("abc123XYZ0").clickedAt(original).build();
+        when(repository.findByClickToken("abc123XYZ0")).thenReturn(Optional.of(message));
 
-        ResponseEntity<Void> response = controller.redirect(1L);
+        ResponseEntity<Void> response = controller.redirect("abc123XYZ0");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FOUND);
         assertThat(message.getClickedAt()).isEqualTo(original);
@@ -71,11 +73,11 @@ class ShortLinkControllerTest {
     }
 
     @Test
-    @DisplayName("unknown id → 404, no redirect")
-    void unknownIdReturns404() {
-        when(repository.findById(999L)).thenReturn(Optional.empty());
+    @DisplayName("unknown token → 404, no redirect")
+    void unknownTokenReturns404() {
+        when(repository.findByClickToken("does-not-exist")).thenReturn(Optional.empty());
 
-        ResponseEntity<Void> response = controller.redirect(999L);
+        ResponseEntity<Void> response = controller.redirect("does-not-exist");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }

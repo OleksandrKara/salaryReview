@@ -37,10 +37,12 @@ public class SmsMessageLogService {
                 .build());
     }
 
-    /** {@code linkTarget} is set when this outbound message contains a click-tracked short link
-     * (see {@code ShortLinkController}) — {@code null} for messages with no link. */
+    /** {@code linkTarget}/{@code clickToken} are set when this outbound message contains a
+     * click-tracked {@code /r/{clickToken}} short link (see {@code ShortLinkController}) — both
+     * {@code null} for messages with no link. */
     public SmsMessage logOutboundWithLink(String templateKey, String automationKey, String phoneNumber, String body,
-                                           boolean sent, String reason, String twilioMessageSid, String linkTarget) {
+                                           boolean sent, String reason, String twilioMessageSid, String linkTarget,
+                                           String clickToken) {
         return repository.save(SmsMessage.builder()
                 .direction("OUTBOUND")
                 .automationKey(automationKey)
@@ -51,6 +53,7 @@ public class SmsMessageLogService {
                 .status(sent ? "SENT" : "NOT_SENT")
                 .reason(reason)
                 .linkTarget(linkTarget)
+                .clickToken(clickToken)
                 .build());
     }
 
@@ -70,6 +73,20 @@ public class SmsMessageLogService {
      * real body (containing that row's own short link) and send outcome are known. */
     public SmsMessage save(SmsMessage message) {
         return repository.save(message);
+    }
+
+    /** A fresh {@link ClickTokens#generate()} candidate, re-rolled if it happens to collide with
+     * one already in use (see design.md D6) — keeping the token itself short (5 chars) is only
+     * safe because collisions are handled here rather than avoided by padding the length. Never
+     * expected to need more than one attempt in practice. */
+    String generateUniqueClickToken() {
+        for (int attempt = 0; attempt < 20; attempt++) {
+            String candidate = ClickTokens.generate();
+            if (!repository.existsByClickToken(candidate)) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException("Could not generate a unique click token after 20 attempts");
     }
 
     public Page<SmsMessage> search(String phoneNumber, String direction, String automationKey, Pageable pageable) {

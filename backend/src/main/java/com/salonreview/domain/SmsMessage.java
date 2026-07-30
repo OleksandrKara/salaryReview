@@ -49,6 +49,11 @@ public class SmsMessage {
     @Column(name = "link_target")
     private String linkTarget; // "GOOGLE_REVIEW" | "FEEDBACK_FORM"
 
+    /** Opaque short-link token for messages carrying a click-tracked {@code /r/{token}} link —
+     * see V53, design.md D6. {@code null} for messages with no link. */
+    @Column(name = "click_token")
+    private String clickToken;
+
     @Column(name = "clicked_at")
     private Instant clickedAt;
 
