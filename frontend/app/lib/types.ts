@@ -102,6 +102,21 @@ export interface SmsMessageDto {
   createdAt: string;
 }
 
+// One conversation (grouped by phone number) in the manager-facing /admin/messages inbox — see
+// openspec/changes/lead-followup-and-manager-inbox design.md D8.
+export interface SmsConversationDto {
+  phoneNumber: string;
+  lastMessageAt: string;
+  lastMessageBody: string;
+  lastMessageDirection: SmsMessageDirection;
+  unreadCount: number;
+}
+
+export interface SmsReplyResult {
+  sent: boolean;
+  reason: string | null;
+}
+
 export interface Provider {
   id: number;
   name: string;

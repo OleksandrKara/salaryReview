@@ -148,4 +148,42 @@ class TwilioSmsServiceTest {
         verify(messageLogService).logOutbound(eq("does_not_exist"), eq(null), eq(PHONE), eq(""), eq(false),
                 eq("unknown_template"), eq(null));
     }
+
+    @Test
+    @DisplayName("sendManual: sends a freeform body directly, bypassing templates/automation/consent")
+    void sendManualSendsDirectly() throws Exception {
+        when(configService.get()).thenReturn(configured());
+
+        var result = service.sendManual(PHONE, "hand-typed reply");
+
+        assertThat(result.sent()).isTrue();
+        verify(client).send(any(), eq(PHONE), eq("hand-typed reply"));
+        verify(messageLogService).logOutbound(eq(null), eq(null), eq(PHONE), eq("hand-typed reply"),
+                eq(true), eq(null), any());
+        verifyNoInteractions(templateRegistry, consentRepository, automationService);
+    }
+
+    @Test
+    @DisplayName("sendManual: unset credentials → not_configured, no HTTP attempt")
+    void sendManualUnconfiguredSkips() throws Exception {
+        when(configService.get()).thenReturn(TwilioSmsConfig.builder().build());
+
+        var result = service.sendManual(PHONE, "hi");
+
+        assertThat(result.sent()).isFalse();
+        assertThat(result.reason()).isEqualTo("not_configured");
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    @DisplayName("sendManual: Twilio client failure → send_failed, never throws")
+    void sendManualClientFailureReturnsSendFailed() throws Exception {
+        when(configService.get()).thenReturn(configured());
+        doThrow(new java.io.IOException("boom")).when(client).send(any(), any(), any());
+
+        var result = service.sendManual(PHONE, "hi");
+
+        assertThat(result.sent()).isFalse();
+        assertThat(result.reason()).isEqualTo("send_failed");
+    }
 }

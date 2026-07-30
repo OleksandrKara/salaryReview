@@ -24,6 +24,12 @@ public final class SmsAutomationRegistry {
                     "Post-checkout satisfaction request",
                     "Every customer who completes an in-salon checkout at the register — 2 minutes later, "
                             + "asked to rate their visit 1–5, then routed to a Google review or a private feedback form"
+            ),
+            "lead_follow_up", new AutomationMeta(
+                    "lead_follow_up",
+                    "Lead follow-up nudge",
+                    "Every lead who leaves contact info but has no upcoming appointment 2 minutes later — "
+                            + "a purely helpful, no-incentive text offering to help find a time"
             )
     );
 

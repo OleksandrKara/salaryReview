@@ -93,6 +93,17 @@ public class SmsMessageLogService {
         return repository.search(phoneNumber, direction, automationKey, pageable);
     }
 
+    /** One row per distinct phone number, most-recent-message-first — backs the manager
+     * conversation view's contact list (design.md D8). */
+    public java.util.List<SmsMessageRepository.ConversationSummaryProjection> conversations() {
+        return repository.conversationSummaries();
+    }
+
+    /** Full chronological thread for one phone number. */
+    public java.util.List<SmsMessage> thread(String phoneNumber) {
+        return repository.findByPhoneNumberOrderByCreatedAtAsc(phoneNumber);
+    }
+
     public long unreadCount() {
         return repository.countByDirectionAndReadAtIsNull("INBOUND");
     }

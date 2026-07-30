@@ -32,6 +32,8 @@ import type {
   SmsAutomationSummary,
   SmsMessageDto,
   SmsMessageDirection,
+  SmsConversationDto,
+  SmsReplyResult,
   Me,
   RagAnswer,
   KbRequest,
@@ -226,6 +228,15 @@ export const api = {
 
   markSmsMessageRead: (id: number) =>
     proxyVoid(`/api/owner/automations/activity/${id}/read`, 'POST'),
+
+  // Manager conversation view (/admin/messages): grouped-by-phone-number inbox + reply.
+  listSmsConversations: () => proxyGet<SmsConversationDto[]>(`/api/owner/automations/activity/conversations`),
+
+  getSmsThread: (phoneNumber: string) =>
+    proxyGet<SmsMessageDto[]>(`/api/owner/automations/activity/conversations/${encodeURIComponent(phoneNumber)}`),
+
+  sendSmsReply: (phoneNumber: string, body: string) =>
+    proxyJson<SmsReplyResult>(`/api/owner/automations/activity/reply`, 'POST', { phoneNumber, body }),
 
   // Marketing contacts: resolves any lead that never linked to a Square customer through the
   // tracked booking flow (a manager followed up and booked them by phone, or they came back
