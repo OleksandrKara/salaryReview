@@ -44,6 +44,11 @@ services:
       # on either side.
       SQUARE_WEBHOOK_SIGNATURE_KEY: ${SQUARE_WEBHOOK_SIGNATURE_KEY:-}
       SQUARE_WEBHOOK_NOTIFICATION_URL: ${SQUARE_WEBHOOK_NOTIFICATION_URL:-https://salon.akluxnails.com/api/public/webhooks/square}
+      # Twilio's inbound-SMS webhook (reply branching for checkout-review-request/lead_follow_up).
+      # Blank auth-token means every inbound reply is rejected — same "referenced in
+      # application.yml but never actually passed through" gap the Square webhook had.
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_INBOUND_WEBHOOK_URL: ${TWILIO_INBOUND_WEBHOOK_URL:-https://salon.akluxnails.com/api/public/sms/inbound}
       # First owner account, seeded when the user table is empty. Use a strong password on a server.
       APP_OWNER_USERNAME: ${APP_OWNER_USERNAME:-owner}
       APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:-changeme}
