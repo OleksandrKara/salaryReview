@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import LanguageSwitch from './LanguageSwitch';
+import MessagesNotifierIcon from './MessagesNotifierIcon';
 import { t } from '../lib/i18n';
 import type { Language, Role } from '../lib/types';
 
@@ -30,7 +31,6 @@ function linksFor(role: Role): NavLink[] {
       { href: '/reports', key: 'navSalaryReport' },
       { href: '/owner/overview', key: 'navRevenue' },
       { href: '/owner/marketing', key: 'navMarketing' },
-      { href: '/admin/messages', key: 'navMessages' },
       { href: '/owner/retention', key: 'navRetention' },
       ...COMMON,
       { href: '/admin/prepaid', key: 'navPrepaid' },
@@ -49,7 +49,6 @@ function linksFor(role: Role): NavLink[] {
     return [
       { href: '/manager', key: 'navDashboard' },
       { href: '/manager/time', key: 'navMyTime' },
-      { href: '/admin/messages', key: 'navMessages' },
       { href: '/admin/redos', key: 'mgrRedos' },
       { href: '/admin/manual-adjustments', key: 'navManualAdjustments' },
       { href: '/my-documents', key: 'navMyDocuments' },
@@ -115,6 +114,10 @@ export default function AdminMenu({
         </Link>
       ) : null}
 
+      {role === 'OWNER' || role === 'MANAGER' ? (
+        <MessagesNotifierIcon initialUnreadCount={smsUnreadCount} />
+      ) : null}
+
       <div className="relative">
         <button
           type="button"
@@ -147,15 +150,6 @@ export default function AdminMenu({
                   }`}
                 >
                   {t(language, l.key)}
-                  {/* Unread-count badge for the SMS settings page's Activity log and the Messages
-                      inbox (same unread count — one shared sms_message log), visible from
-                      anywhere in the app — see openspec/changes/sms-automations-hub design.md
-                      tasks.md 8.5 and openspec/changes/lead-followup-and-manager-inbox tasks.md 4.3. */}
-                  {(l.href === '/owner/settings/sms' || l.href === '/admin/messages') && smsUnreadCount > 0 ? (
-                    <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-none text-white">
-                      {smsUnreadCount > 99 ? '99+' : smsUnreadCount}
-                    </span>
-                  ) : null}
                 </Link>
               ))}
               <div className="flex items-center gap-2 border-t border-zinc-100 px-4 py-2 text-sm text-zinc-500">
