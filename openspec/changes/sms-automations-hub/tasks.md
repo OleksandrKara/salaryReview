@@ -73,9 +73,10 @@
 - [ ] 5.4 Branch: body contains digit `5` → send the Google-review short-link message
       (`checkout_review_positive`, `TRANSACTIONAL`); otherwise → the feedback-form short-link
       message (`checkout_review_negative`, `TRANSACTIONAL`); either way flip the row to `COMPLETED`
-- [x] 5.5 `ShortLinkController`: `GET /r/{id}` (`permitAll()`), `id` = raw `sms_message.id` (no
-      encoding — see design.md D6), stamp `clicked_at` if unset, `302` to the fixed Google-review
-      or feedback-form URL per that row's `link_target`
+- [x] 5.5 `ShortLinkController`: `GET /r/{token}` (`permitAll()`), `token` = opaque
+      `ClickTokens`-generated string stored on `sms_message.click_token` (revised from the raw
+      `sms_message.id` — see design.md D6, V53), stamp `clicked_at` if unset, `302` to the fixed
+      Google-review or feedback-form URL per that row's `link_target`
 
 ## 6. Backend (salaryReview) — owner-facing API
 

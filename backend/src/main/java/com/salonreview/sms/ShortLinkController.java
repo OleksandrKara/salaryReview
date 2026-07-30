@@ -27,9 +27,9 @@ public class ShortLinkController {
         this.repository = repository;
     }
 
-    @GetMapping("/r/{id}")
-    public ResponseEntity<Void> redirect(@PathVariable long id) {
-        SmsMessage message = repository.findById(id).orElse(null);
+    @GetMapping("/r/{token}")
+    public ResponseEntity<Void> redirect(@PathVariable String token) {
+        SmsMessage message = repository.findByClickToken(token).orElse(null);
         String target = message == null ? null : CheckoutReviewLinks.resolve(message.getLinkTarget());
         if (target == null) {
             return ResponseEntity.notFound().build();

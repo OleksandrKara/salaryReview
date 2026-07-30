@@ -9,8 +9,12 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
+
+    /** Backs the click-tracked {@code /r/{token}} short link — see V53, design.md D6. */
+    Optional<SmsMessage> findByClickToken(String clickToken);
 
     /** Backs the hub's unread-count badge — every unread inbound message, regardless of whether
      * it ever matched an automation. */

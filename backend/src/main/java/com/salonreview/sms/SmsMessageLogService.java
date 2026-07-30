@@ -37,10 +37,12 @@ public class SmsMessageLogService {
                 .build());
     }
 
-    /** {@code linkTarget} is set when this outbound message contains a click-tracked short link
-     * (see {@code ShortLinkController}) — {@code null} for messages with no link. */
+    /** {@code linkTarget}/{@code clickToken} are set when this outbound message contains a
+     * click-tracked {@code /r/{clickToken}} short link (see {@code ShortLinkController}) — both
+     * {@code null} for messages with no link. */
     public SmsMessage logOutboundWithLink(String templateKey, String automationKey, String phoneNumber, String body,
-                                           boolean sent, String reason, String twilioMessageSid, String linkTarget) {
+                                           boolean sent, String reason, String twilioMessageSid, String linkTarget,
+                                           String clickToken) {
         return repository.save(SmsMessage.builder()
                 .direction("OUTBOUND")
                 .automationKey(automationKey)
@@ -51,6 +53,7 @@ public class SmsMessageLogService {
                 .status(sent ? "SENT" : "NOT_SENT")
                 .reason(reason)
                 .linkTarget(linkTarget)
+                .clickToken(clickToken)
                 .build());
     }
 
