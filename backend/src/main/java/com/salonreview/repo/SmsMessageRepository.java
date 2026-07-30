@@ -13,6 +13,45 @@ import java.util.Optional;
 
 public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
 
+    /** One row per distinct phone number this salon has ever texted with, most-recent-message-
+     * first — backs the manager conversation view's contact list (see
+     * openspec/changes/lead-followup-and-manager-inbox design.md D8). */
+    interface ConversationSummaryProjection {
+        String getPhoneNumber();
+        Instant getLastMessageAt();
+        String getLastMessageBody();
+        String getLastMessageDirection();
+        Long getUnreadCount();
+    }
+
+    @Query(value = """
+            SELECT latest.phone_number AS phoneNumber,
+                   latest.last_message_at AS lastMessageAt,
+                   latest.last_message_body AS lastMessageBody,
+                   latest.last_message_direction AS lastMessageDirection,
+                   COALESCE(unread.unread_count, 0) AS unreadCount
+            FROM (
+                SELECT DISTINCT ON (phone_number) phone_number,
+                       created_at AS last_message_at,
+                       body AS last_message_body,
+                       direction AS last_message_direction
+                FROM sms_message
+                ORDER BY phone_number, created_at DESC
+            ) latest
+            LEFT JOIN (
+                SELECT phone_number, COUNT(*) AS unread_count
+                FROM sms_message
+                WHERE direction = 'INBOUND' AND read_at IS NULL
+                GROUP BY phone_number
+            ) unread ON unread.phone_number = latest.phone_number
+            ORDER BY latest.last_message_at DESC
+            """, nativeQuery = true)
+    List<ConversationSummaryProjection> conversationSummaries();
+
+    /** Full chronological thread for one phone number — backs the manager conversation view's
+     * selected-thread panel. */
+    List<SmsMessage> findByPhoneNumberOrderByCreatedAtAsc(String phoneNumber);
+
     /** Backs the click-tracked {@code /r/{token}} short link — see V53, design.md D6. */
     Optional<SmsMessage> findByClickToken(String clickToken);
 

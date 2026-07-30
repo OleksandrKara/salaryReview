@@ -13,6 +13,7 @@ import type {
   TwilioSmsSettingsDto,
   SmsAutomationSummary,
   SmsMessageDto,
+  SmsConversationDto,
   FunnelDashboardData,
   MarketingAdsReportData,
   MarketingLtvData,
@@ -134,6 +135,9 @@ export const serverApi = {
 
   listSmsActivity: (limit = 100) =>
     serverFetch<SmsMessageDto[]>(`/api/owner/automations/activity?limit=${limit}`),
+
+  listSmsConversations: () =>
+    serverFetch<SmsConversationDto[]>(`/api/owner/automations/activity/conversations`),
 
   // Unread-count badge on the nav entry, fetched from every OWNER page via PageHeader — same
   // never-throws-except-session-redirect shape as getKbRequestOpenCount, so a hiccup here can't

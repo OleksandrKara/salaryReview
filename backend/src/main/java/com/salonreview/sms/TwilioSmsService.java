@@ -87,4 +87,27 @@ public class TwilioSmsService {
             return SmsSendResult.skipped("send_failed");
         }
     }
+
+    /** A human-typed reply from a manager/owner, bypassing templates and automation/consent
+     * gating entirely — see openspec/changes/lead-followup-and-manager-inbox design.md D9. A
+     * manager replying to a customer who just texted the salon is a direct conversational reply,
+     * not a marketing send, so it's sendable regardless of {@code sms_marketing_consent}. */
+    public SmsSendResult sendManual(String phoneNumber, String body) {
+        TwilioSmsConfig config = configService.get();
+        if (!config.isConfigured()) {
+            log.info("Manual reply skipped — Twilio credentials not configured");
+            messageLogService.logOutbound(null, null, phoneNumber, body, false, "not_configured", null);
+            return SmsSendResult.skipped("not_configured");
+        }
+
+        try {
+            String twilioMessageSid = client.send(config, phoneNumber, body);
+            messageLogService.logOutbound(null, null, phoneNumber, body, true, null, twilioMessageSid);
+            return SmsSendResult.ok();
+        } catch (Exception e) {
+            log.warn("Manual reply send failed (caller unaffected): {}", e.getMessage());
+            messageLogService.logOutbound(null, null, phoneNumber, body, false, "send_failed", null);
+            return SmsSendResult.skipped("send_failed");
+        }
+    }
 }

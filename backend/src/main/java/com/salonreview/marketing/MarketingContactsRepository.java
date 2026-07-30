@@ -112,6 +112,22 @@ public class MarketingContactsRepository {
         return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact);
     }
 
+    /** Contacts eligible for {@code LeadFollowUpScheduler}'s poll — old enough ({@code
+     * createdAt <= olderThan}) but not so old the poll's own scan window has moved past them
+     * ({@code createdAt >= newerThan}), and never already processed by this automation
+     * ({@code lead_followup_send}, this app's own table, joined read-only against the shared
+     * marketing schema — see openspec/changes/lead-followup-and-manager-inbox design.md D1/D3).
+     */
+    public List<RawContact> findPendingFollowUp(Instant olderThan, Instant newerThan) {
+        String sql = "SELECT " + CONTACT_COLUMNS + ", " + TrafficSourceSql.contactChannelCase("c") + " AS channel"
+                + " FROM marketing.contacts c"
+                + " WHERE c.created_at <= ? AND c.created_at >= ?"
+                + " AND NOT EXISTS (SELECT 1 FROM lead_followup_send lfs WHERE lfs.contact_id = c.id)"
+                + " ORDER BY c.created_at ASC";
+        return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact,
+                Timestamp.from(olderThan), Timestamp.from(newerThan));
+    }
+
     /** One channel-attributed contact — phone_number is the stable match key (contacts is unique on
      * it), squareCustomerId the customer profile we happened to link at the time (nullable: none
      * captured yet), channel which {@link TrafficSourceSql} bucket the contact's own utm/referrer

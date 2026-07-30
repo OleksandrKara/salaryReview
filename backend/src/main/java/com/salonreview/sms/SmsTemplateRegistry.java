@@ -48,6 +48,21 @@ public class SmsTemplateRegistry {
                         return greeting + " on a scale of 1 to 5, how did you like your nails today? 💅 "
                                 + "Just reply with a number. — AK.LUX.NAILS";
                     }
+            ),
+            /** Sent by {@code LeadFollowUpScheduler} 2 minutes after a lead leaves contact info
+             * with no upcoming appointment — see openspec/changes/lead-followup-and-manager-inbox
+             * design.md D4. Purely helpful, no discount/incentive — TRANSACTIONAL, sendable
+             * regardless of marketing consent. No {{name}} falls back to a name-less greeting. */
+            "lead_follow_up_nudge", new SmsTemplate(
+                    "lead_follow_up_nudge",
+                    SmsMessageClass.TRANSACTIONAL,
+                    "lead_follow_up",
+                    vars -> {
+                        String name = vars == null ? null : vars.get("name");
+                        String greeting = (name == null || name.isBlank()) ? "Hi" : "Hi " + name + ",";
+                        return greeting + " just checking in — need help finding a time that works? "
+                                + "Reply here and we'll help you book! 💅 — AK.LUX.NAILS";
+                    }
             )
     );
 

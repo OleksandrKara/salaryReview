@@ -66,6 +66,13 @@ public class SecurityConfig {
                                 .hasAnyRole("OWNER", "ADS_MANAGER")
                         .requestMatchers(HttpMethod.POST, "/api/owner/marketing/ads-report/spend")
                                 .hasAnyRole("OWNER", "ADS_MANAGER")
+                        // SMS automations hub: MANAGER gets read/reply access to the activity/
+                        // conversation view (openspec/changes/lead-followup-and-manager-inbox
+                        // design.md D6), but toggling an automation on/off
+                        // (PUT /api/owner/automations/{key}) is still an OWNER-only business
+                        // decision — that request falls through to the catch-all below, unaffected
+                        // by this matcher. Listed first so it wins.
+                        .requestMatchers("/api/owner/automations/activity/**").hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers("/api/users/**", "/api/owner/**", "/api/rag/admin/**").hasRole("OWNER")
                         .requestMatchers("/api/settlements/me/**").hasRole("PROVIDER")
                         // A provider/manager's own read-only "My Documents" — list + download only,

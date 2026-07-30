@@ -1189,23 +1189,15 @@ public class MarketingAnalyticsService {
         }
     }
 
+    /** Delegates to {@link com.salonreview.square.SquareBookingFilters}, extracted there so
+     * {@code LeadFollowUpScheduler} can reuse the exact same rule — see
+     * openspec/changes/lead-followup-and-manager-inbox design.md D2. */
     private static boolean didHappen(SquareClient.Booking b) {
-        String status = b.status();
-        if (status == null) return true;
-        return switch (status) {
-            case "CANCELLED_BY_CUSTOMER", "CANCELLED_BY_SELLER", "DECLINED", "NO_SHOW" -> false;
-            default -> true;
-        };
+        return com.salonreview.square.SquareBookingFilters.didHappen(b);
     }
 
     private static boolean isTodayOrLater(String startAt, LocalDate today) {
-        if (startAt == null || startAt.isBlank()) return false;
-        try {
-            LocalDate day = Instant.parse(startAt).atZone(java.time.ZoneOffset.UTC).toLocalDate();
-            return !day.isBefore(today);
-        } catch (DateTimeParseException e) {
-            return false;
-        }
+        return com.salonreview.square.SquareBookingFilters.isTodayOrLater(startAt, today);
     }
 
     private BigDecimal priceCutoff() {

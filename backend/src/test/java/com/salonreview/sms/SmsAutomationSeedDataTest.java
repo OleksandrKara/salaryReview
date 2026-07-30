@@ -33,4 +33,11 @@ class SmsAutomationSeedDataTest {
 
         assertThat(seeded.isEnabled()).isTrue();
     }
+
+    @Test
+    void leadFollowUpSeedsDisabled() {
+        SmsAutomation seeded = repository.findById("lead_follow_up").orElseThrow();
+
+        assertThat(seeded.isEnabled()).isFalse();
+    }
 }
