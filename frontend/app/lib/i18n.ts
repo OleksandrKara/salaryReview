@@ -117,7 +117,6 @@ const STRINGS = {
   navStaffDocuments: { EN: 'Staff Documents', RU: 'Документы сотрудников' },
   navTelegramSettings: { EN: 'Telegram Notifications', RU: 'Уведомления в Telegram' },
   navSmsSettings: { EN: 'SMS Notifications', RU: 'Уведомления по SMS' },
-  navAutomations: { EN: 'SMS Automations', RU: 'SMS-автоматизации' },
   navMessages: { EN: 'Messages', RU: 'Сообщения' },
   navDashboard: { EN: 'Dashboard', RU: 'Панель' },
   navMyPay: { EN: 'My pay', RU: 'Моя зарплата' },

@@ -30,7 +30,6 @@ function linksFor(role: Role): NavLink[] {
       { href: '/reports', key: 'navSalaryReport' },
       { href: '/owner/overview', key: 'navRevenue' },
       { href: '/owner/marketing', key: 'navMarketing' },
-      { href: '/owner/automations', key: 'navAutomations' },
       { href: '/admin/messages', key: 'navMessages' },
       { href: '/owner/retention', key: 'navRetention' },
       ...COMMON,
@@ -148,11 +147,11 @@ export default function AdminMenu({
                   }`}
                 >
                   {t(language, l.key)}
-                  {/* Unread-count badge for the automations hub/messages inbox (same unread count —
-                      one shared sms_message log), visible from anywhere in the app — see
-                      openspec/changes/sms-automations-hub design.md tasks.md 8.5 and
-                      openspec/changes/lead-followup-and-manager-inbox tasks.md 4.3. */}
-                  {(l.href === '/owner/automations' || l.href === '/admin/messages') && smsUnreadCount > 0 ? (
+                  {/* Unread-count badge for the SMS settings page's Activity log and the Messages
+                      inbox (same unread count — one shared sms_message log), visible from
+                      anywhere in the app — see openspec/changes/sms-automations-hub design.md
+                      tasks.md 8.5 and openspec/changes/lead-followup-and-manager-inbox tasks.md 4.3. */}
+                  {(l.href === '/owner/settings/sms' || l.href === '/admin/messages') && smsUnreadCount > 0 ? (
                     <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-none text-white">
                       {smsUnreadCount > 99 ? '99+' : smsUnreadCount}
                     </span>

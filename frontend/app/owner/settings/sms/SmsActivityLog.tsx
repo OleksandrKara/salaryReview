@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { api } from '../../lib/api';
-import type { SmsMessageDirection, SmsMessageDto } from '../../lib/types';
+import { api } from '../../../lib/api';
+import type { SmsMessageDirection, SmsMessageDto } from '../../../lib/types';
 
 const AUTOMATION_LABELS: Record<string, string> = {
   four_hand_request: '4-hand request',
