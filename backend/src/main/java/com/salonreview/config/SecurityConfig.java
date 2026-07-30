@@ -49,7 +49,11 @@ public class SecurityConfig {
                         // short-link redirect are all called by third parties with no session — each
                         // enforces its own signature check (or, for /r/**, is a harmless public redirect
                         // with nothing sensitive to protect). See openspec/changes/sms-automations-hub.
-                        .requestMatchers("/api/public/webhooks/square", "/api/public/sms/inbound", "/r/**")
+                        // Twilio's inbound-Voice webhook is the same "harmless public endpoint" shape —
+                        // a fixed <Dial> response regardless of caller, nothing to protect (see
+                        // openspec/changes/lead-followup-and-manager-inbox tasks.md section 6).
+                        .requestMatchers("/api/public/webhooks/square", "/api/public/sms/inbound",
+                                "/api/public/voice/inbound", "/r/**")
                                 .permitAll()
                         // Retention is read-only visibility for managers too (same data as owners, no
                         // other owner routes). Listed first so it wins over the owner-only catch-all.
