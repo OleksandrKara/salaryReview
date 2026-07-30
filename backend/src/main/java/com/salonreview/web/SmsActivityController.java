@@ -1,9 +1,11 @@
 package com.salonreview.web;
 
 import com.salonreview.domain.SmsMessage;
+import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.repo.SmsMessageRepository.ConversationSummaryProjection;
 import com.salonreview.sms.SmsMessageLogService;
 import com.salonreview.sms.TwilioSmsService;
+import com.salonreview.web.dto.MarketingContactDto;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.*;
@@ -11,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Full SMS activity log (sent + received, regardless of automation) backing the
@@ -27,10 +30,13 @@ public class SmsActivityController {
 
     private final SmsMessageLogService service;
     private final TwilioSmsService smsService;
+    private final MarketingContactsService contactsService;
 
-    public SmsActivityController(SmsMessageLogService service, TwilioSmsService smsService) {
+    public SmsActivityController(SmsMessageLogService service, TwilioSmsService smsService,
+                                  MarketingContactsService contactsService) {
         this.service = service;
         this.smsService = smsService;
+        this.contactsService = contactsService;
     }
 
     public record SmsMessageDto(long id, String direction, String automationKey, String phoneNumber,
@@ -78,6 +84,17 @@ public class SmsActivityController {
     @GetMapping("/conversations/{phoneNumber}")
     public List<SmsMessageDto> thread(@PathVariable String phoneNumber) {
         return service.thread(phoneNumber).stream().map(SmsActivityController::toDto).toList();
+    }
+
+    /** This phone number's marketing profile (name, email, submission/appointment history), for
+     * the conversation view's contact info sidebar — serializes as a JSON {@code null} body (via
+     * Jackson's jdk8 module, on by default in Spring Boot) if this number never went through the
+     * tracked capture flow (e.g. a checkout-review text sent purely from Square payment data,
+     * with no matching marketing.contacts row) — never an empty/no body, which a bare
+     * {@code null} return value would produce and which breaks a caller doing {@code res.json()}. */
+    @GetMapping("/conversations/{phoneNumber}/contact")
+    public Optional<MarketingContactDto.Contact> contact(@PathVariable String phoneNumber) {
+        return contactsService.contactByPhone(phoneNumber);
     }
 
     /** A manager/owner's freeform reply — bypasses templates and automation/consent gating

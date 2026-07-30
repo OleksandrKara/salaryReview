@@ -34,6 +34,7 @@ import type {
   SmsMessageDirection,
   SmsConversationDto,
   SmsReplyResult,
+  MarketingContact,
   Me,
   RagAnswer,
   KbRequest,
@@ -234,6 +235,10 @@ export const api = {
 
   getSmsThread: (phoneNumber: string) =>
     proxyGet<SmsMessageDto[]>(`/api/owner/automations/activity/conversations/${encodeURIComponent(phoneNumber)}`),
+
+  // null when this phone number never went through the tracked marketing.contacts capture flow.
+  getSmsContact: (phoneNumber: string) =>
+    proxyGet<MarketingContact | null>(`/api/owner/automations/activity/conversations/${encodeURIComponent(phoneNumber)}/contact`),
 
   sendSmsReply: (phoneNumber: string, body: string) =>
     proxyJson<SmsReplyResult>(`/api/owner/automations/activity/reply`, 'POST', { phoneNumber, body }),

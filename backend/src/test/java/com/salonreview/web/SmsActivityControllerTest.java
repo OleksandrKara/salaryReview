@@ -2,9 +2,11 @@ package com.salonreview.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.domain.SmsMessage;
+import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.repo.SmsMessageRepository.ConversationSummaryProjection;
 import com.salonreview.sms.SmsMessageLogService;
 import com.salonreview.sms.TwilioSmsService;
+import com.salonreview.web.dto.MarketingContactDto.Contact;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,10 +15,12 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -32,13 +36,26 @@ class SmsActivityControllerTest {
 
     private SmsMessageLogService service;
     private TwilioSmsService smsService;
+    private MarketingContactsService contactsService;
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
         service = mock(SmsMessageLogService.class);
         smsService = mock(TwilioSmsService.class);
-        mvc = MockMvcBuilders.standaloneSetup(new SmsActivityController(service, smsService)).build();
+        contactsService = mock(MarketingContactsService.class);
+        mvc = MockMvcBuilders.standaloneSetup(new SmsActivityController(service, smsService, contactsService)).build();
+    }
+
+    private static Contact contact(String givenName, String emailAddress) {
+        // id, givenName, phoneNumber, emailAddress, originalTrafficSource, marketingTrafficSource,
+        // channel, utmSource, utmMedium, utmCampaign, landingPageSlug, variantName, deviceType,
+        // osName, osVersion, browserName, browserVersion, smsMarketingConsent,
+        // emailMarketingConsent, squareProfileUrl, submissions, appointments, createdAt, updatedAt
+        return new Contact("id-1", givenName, PHONE, emailAddress,
+                null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null,
+                List.of(), List.of(), Instant.now(), Instant.now());
     }
 
     private record FakeConversationSummary(String phoneNumber, Instant lastMessageAt, String lastMessageBody,
@@ -71,6 +88,27 @@ class SmsActivityControllerTest {
         mvc.perform(get("/api/owner/automations/activity/conversations/{phoneNumber}", PHONE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].body").value("hi"));
+    }
+
+    @Test
+    @DisplayName("GET /conversations/{phoneNumber}/contact returns the resolved marketing profile")
+    void contactReturnsResolvedProfile() throws Exception {
+        when(contactsService.contactByPhone(PHONE)).thenReturn(Optional.of(contact("Jane", "jane@example.com")));
+
+        mvc.perform(get("/api/owner/automations/activity/conversations/{phoneNumber}/contact", PHONE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.givenName").value("Jane"))
+                .andExpect(jsonPath("$.emailAddress").value("jane@example.com"));
+    }
+
+    @Test
+    @DisplayName("GET /conversations/{phoneNumber}/contact returns a null body when no profile is found")
+    void contactReturnsNullWhenNotFound() throws Exception {
+        when(contactsService.contactByPhone(PHONE)).thenReturn(Optional.empty());
+
+        mvc.perform(get("/api/owner/automations/activity/conversations/{phoneNumber}/contact", PHONE))
+                .andExpect(status().isOk())
+                .andExpect(content().string("null"));
     }
 
     @Test
