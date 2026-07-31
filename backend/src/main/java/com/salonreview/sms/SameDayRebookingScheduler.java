@@ -35,6 +35,11 @@ public class SameDayRebookingScheduler {
     private static final Logger log = LoggerFactory.getLogger(SameDayRebookingScheduler.class);
     static final String AUTOMATION_KEY = "same_day_rebooking_discount";
     static final String TEMPLATE_KEY = "same_day_rebooking_nudge";
+    /** Sent instead of {@link #TEMPLATE_KEY} when the customer has no marketing consent on file —
+     * a plain appointment-reminder framing (no discount/offer language), which TCPA/CA law doesn't
+     * gate behind marketing consent. The signed link is identical either way, so a click still
+     * silently applies the same-day discount — see design.md D3 and sendNudge below. */
+    static final String TEMPLATE_KEY_TRANSACTIONAL = "same_day_rebooking_reminder";
 
     private final SameDayRebookingSendRepository repository;
     private final SquareClient square;
@@ -100,12 +105,7 @@ public class SameDayRebookingScheduler {
             return;
         }
 
-        if (!hasConsent(send)) {
-            save(send, SameDayRebookingSend.STATE_SKIPPED_NO_CONSENT);
-            return;
-        }
-
-        sendNudge(send);
+        sendNudge(send, hasConsent(send));
         save(send, SameDayRebookingSend.STATE_SENT);
     }
 
@@ -131,25 +131,24 @@ public class SameDayRebookingScheduler {
         return square.customerSegmentIds(send.getSquareCustomerId()).contains(segmentId);
     }
 
-    private void sendNudge(SameDayRebookingSend send) {
+    private void sendNudge(SameDayRebookingSend send, boolean consented) {
         String clickToken = messageLogService.generateUniqueClickToken();
         long expEpochSeconds = send.getPromoExpiresAt().getEpochSecond();
         // Reconstructed deterministically by ShortLinkController at click time — see
         // RebookingPromoSigner and design.md D8/D9. No signature stored here; it's recomputed.
+        // Identical regardless of consent — the discount is applied on click either way, it's
+        // only the SMS wording that differs (see class doc).
         String linkTarget = "REBOOK:" + expEpochSeconds;
+        String templateKey = consented ? TEMPLATE_KEY : TEMPLATE_KEY_TRANSACTIONAL;
         SmsMessage reserved = messageLogService.logOutboundWithLink(
-                TEMPLATE_KEY, AUTOMATION_KEY, send.getPhoneNumber(), "", false, "pending", null, linkTarget, clickToken);
+                templateKey, AUTOMATION_KEY, send.getPhoneNumber(), "", false, "pending", null, linkTarget, clickToken);
 
         String shortLink = publicBaseUrl + "/r/" + clickToken;
-        String name = send.getCustomerName();
-        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
-        String body = greeting + " So glad you loved your visit today 💅 Rebook before midnight and take "
-                + "$10 off your next appointment (min. $99 service total) — grab your spot: " + shortLink
-                + " — AK.LUX.NAILS";
+        String body = consented ? marketingBody(send.getCustomerName(), shortLink) : transactionalBody(shortLink);
 
         TwilioSmsConfig config = configService.get();
         if (!config.isConfigured()) {
-            log.info("same_day_rebooking_nudge skipped — Twilio credentials not configured");
+            log.info("{} skipped — Twilio credentials not configured", templateKey);
             updateReserved(reserved, body, false, "not_configured", null);
             return;
         }
@@ -157,9 +156,23 @@ public class SameDayRebookingScheduler {
             String twilioMessageSid = client.send(config, send.getPhoneNumber(), body);
             updateReserved(reserved, body, true, null, twilioMessageSid);
         } catch (Exception e) {
-            log.warn("same_day_rebooking_nudge send failed (caller unaffected): {}", e.getMessage());
+            log.warn("{} send failed (caller unaffected): {}", templateKey, e.getMessage());
             updateReserved(reserved, body, false, "send_failed", null);
         }
+    }
+
+    private static String marketingBody(String name, String shortLink) {
+        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
+        return greeting + " So glad you loved your visit today 💅 Rebook before midnight and take "
+                + "$10 off your next appointment (min. $99 service total) — grab your spot: " + shortLink
+                + " — AK.LUX.NAILS";
+    }
+
+    private static String transactionalBody(String shortLink) {
+        return "Thank you for visiting AK.LUX.NAILS!\n\n"
+                + "Based on your technician's recommendation, your next appointment is due in about 4 weeks.\n\n"
+                + "Reserving now gives you the best chance of keeping your preferred technician and appointment time.\n\n"
+                + "Book here: " + shortLink;
     }
 
     private void updateReserved(SmsMessage reserved, String body, boolean sent, String reason, String twilioMessageSid) {
