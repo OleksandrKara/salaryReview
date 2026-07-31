@@ -95,6 +95,13 @@ export default function AssistantWidget() {
 
   if (role !== 'OWNER' && role !== 'MANAGER') return null;
 
+  // /admin/messages has its own bottom-right control (the SMS composer's Send button) on a
+  // 100dvh, edge-to-edge mobile layout — this widget's own fixed bottom-6 right-6 would sit
+  // right on top of it. Hiding here rather than nudging position/size: this component keeps
+  // rendering in the root layout without remounting (see the effect above), so any in-progress
+  // conversation is untouched and reappears the moment the manager navigates elsewhere.
+  if (pathname?.startsWith('/admin/messages')) return null;
+
   function patch(id: number, fn: (m: Msg) => Msg) {
     setMessages((ms) => ms.map((m) => (m.id === id ? fn(m) : m)));
   }
