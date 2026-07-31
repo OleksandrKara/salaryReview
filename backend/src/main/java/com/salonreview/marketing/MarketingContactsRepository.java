@@ -159,17 +159,28 @@ public class MarketingContactsRepository {
     }
 
     /** Contacts eligible for {@code LeadFollowUpScheduler}'s poll — old enough ({@code
-     * createdAt <= olderThan}) but not so old the poll's own scan window has moved past them
-     * ({@code createdAt >= newerThan}), and never already processed by this automation
+     * updatedAt <= olderThan}) but not so old the poll's own scan window has moved past them
+     * ({@code updatedAt >= newerThan}), and never already processed by this automation
      * ({@code lead_followup_send}, this app's own table, joined read-only against the shared
      * marketing schema — see openspec/changes/lead-followup-and-manager-inbox design.md D1/D3).
+     *
+     * <p>Keyed on {@code updated_at}, not {@code created_at}: marketing.contacts is unique on
+     * phone_number, so a returning lead who submits the capture form again months after their
+     * first visit doesn't get a new row — the existing one is upserted, which only bumps
+     * updated_at. Filtering on created_at (the original design) meant that row's age window closed
+     * the moment it was first created and never opened again, so the automation could never see a
+     * repeat lead at all, no matter how long after their first visit they came back — confirmed
+     * live: a real re-submission months after a contact's created_at sat in this table for 10+
+     * minutes without ever being picked up. updated_at also does the right thing for a genuinely
+     * new contact (INSERT sets both columns to the same instant), so first-time leads are
+     * unaffected.
      */
     public List<RawContact> findPendingFollowUp(Instant olderThan, Instant newerThan) {
         String sql = "SELECT " + CONTACT_COLUMNS + ", " + TrafficSourceSql.contactChannelCase("c") + " AS channel"
                 + " FROM marketing.contacts c"
-                + " WHERE c.created_at <= ? AND c.created_at >= ?"
+                + " WHERE c.updated_at <= ? AND c.updated_at >= ?"
                 + " AND NOT EXISTS (SELECT 1 FROM lead_followup_send lfs WHERE lfs.contact_id = c.id)"
-                + " ORDER BY c.created_at ASC";
+                + " ORDER BY c.updated_at ASC";
         return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact,
                 Timestamp.from(olderThan), Timestamp.from(newerThan));
     }
