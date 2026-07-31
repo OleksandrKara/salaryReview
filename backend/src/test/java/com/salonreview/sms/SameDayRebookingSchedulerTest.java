@@ -200,6 +200,21 @@ class SameDayRebookingSchedulerTest {
     }
 
     @Test
+    @DisplayName("customer has ever left negative feedback → SKIPPED_NEGATIVE_FEEDBACK, never sent, regardless of consent")
+    void negativeFeedbackIsSkipped() throws Exception {
+        when(messageLogService.hasNegativeFeedback(PHONE)).thenReturn(true);
+        SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
+        givenDue(s);
+
+        scheduler.sendDueRebookingNudges();
+
+        verifyNoInteractions(client);
+        ArgumentCaptor<SameDayRebookingSend> captor = ArgumentCaptor.forClass(SameDayRebookingSend.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().getState()).isEqualTo(SameDayRebookingSend.STATE_SKIPPED_NEGATIVE_FEEDBACK);
+    }
+
+    @Test
     @DisplayName("Square failure while checking upcoming bookings → no row written, retried next poll")
     void squareFailureRetriesNextPoll() {
         SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));

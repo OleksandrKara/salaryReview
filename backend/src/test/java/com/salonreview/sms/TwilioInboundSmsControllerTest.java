@@ -8,6 +8,7 @@ import com.salonreview.telegram.TelegramNotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -19,6 +20,7 @@ import java.util.Base64;
 import java.util.Optional;
 import java.util.TreeMap;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -147,6 +149,49 @@ class TwilioInboundSmsControllerTest {
 
         verify(replyService).sendBranchReply(pending, false);
         org.assertj.core.api.Assertions.assertThat(pending.getState()).isEqualTo(SmsReplyFlow.STATE_COMPLETED);
+    }
+
+    @Test
+    @DisplayName("valid signature, reply contains a low (1-4) rating digit → negative feedback flag set")
+    void lowRatingDigitSetsNegativeFeedback() throws Exception {
+        var p = params(PHONE, "2, not happy with the service");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        SmsReplyFlow pending = SmsReplyFlow.builder().id(9L).automationKey("checkout_review_request")
+                .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
+        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.of(pending));
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        // save() is called twice on the same reserved SmsMessage instance — once right after
+        // logInbound (before this check runs), once more after setNegativeFeedbackAt — so what
+        // matters is the count (proves the second save actually happened) plus the final state.
+        ArgumentCaptor<SmsMessage> captor = ArgumentCaptor.forClass(SmsMessage.class);
+        verify(messageLogService, times(2)).save(captor.capture());
+        assertThat(captor.getValue().getNegativeFeedbackAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("valid signature, positive reply with no low-rating digit → negative feedback flag never set, saved only once")
+    void noLowRatingDigitLeavesNegativeFeedbackUnset() throws Exception {
+        var p = params(PHONE, "5 stars! love it");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        SmsReplyFlow pending = SmsReplyFlow.builder().id(10L).automationKey("checkout_review_request")
+                .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
+        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.of(pending));
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        verify(messageLogService, times(1)).save(any());
     }
 
     @Test

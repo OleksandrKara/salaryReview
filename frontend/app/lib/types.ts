@@ -131,6 +131,11 @@ export interface SmsConversationDto {
   squareProfileUrl: string | null;
   lastMessageDeliveryStatus: SmsDeliveryStatus;
   lastMessageDeliveryErrorMessage: string | null;
+  /** True if this phone number has *ever* replied to the checkout-review-request automation with
+   * a low (1-4) star rating — permanent once true, so it stays true even once the conversation
+   * moves on to friendlier messages. Same phone number is permanently excluded from the
+   * same-day-rebooking win-back nudge on the backend. */
+  hasNegativeFeedback: boolean;
 }
 
 export interface SmsReplyResult {

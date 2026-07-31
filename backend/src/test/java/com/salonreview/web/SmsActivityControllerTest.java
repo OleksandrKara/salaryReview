@@ -71,6 +71,7 @@ class SmsActivityControllerTest {
         @Override public Long getUnreadCount() { return unreadCount; }
         @Override public String getLastMessageDeliveryStatus() { return null; }
         @Override public String getLastMessageDeliveryErrorMessage() { return null; }
+        @Override public boolean getHasNegativeFeedback() { return false; }
     }
 
     @Test

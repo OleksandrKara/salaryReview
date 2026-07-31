@@ -193,4 +193,12 @@ class SmsMessageLogServiceTest {
 
         verify(repository, never()).save(any());
     }
+
+    @Test
+    @DisplayName("hasNegativeFeedback normalizes the phone number and delegates to the repository")
+    void hasNegativeFeedbackNormalizesAndDelegates() {
+        when(repository.existsByPhoneNumberAndNegativeFeedbackAtIsNotNull("+15551234567")).thenReturn(true);
+
+        assertThat(service.hasNegativeFeedback("(555) 123-4567")).isTrue();
+    }
 }

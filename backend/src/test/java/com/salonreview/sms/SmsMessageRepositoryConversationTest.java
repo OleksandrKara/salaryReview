@@ -39,6 +39,22 @@ class SmsMessageRepositoryConversationTest {
         assertThat(match.getLastMessageDirection()).isEqualTo("INBOUND");
         assertThat(match.getUnreadCount()).isEqualTo(2L);
         assertThat(match.getLastMessageDeliveryStatus()).isNull();
+        assertThat(match.getHasNegativeFeedback()).isFalse();
+    }
+
+    @Test
+    void conversationSummariesSurfacesNegativeFeedbackEvenWhenNotTheLastMessage() {
+        String phone = "+15554443322";
+        repository.save(SmsMessage.builder().direction("INBOUND").phoneNumber(phone)
+                .body("2, not happy").status("RECEIVED").negativeFeedbackAt(Instant.now().minusSeconds(120)).build());
+        repository.save(SmsMessage.builder().direction("OUTBOUND").phoneNumber(phone)
+                .body("a later, unrelated message").status("SENT").createdAt(Instant.now()).build());
+
+        List<SmsMessageRepository.ConversationSummaryProjection> conversations = repository.conversationSummaries();
+
+        var match = conversations.stream().filter(c -> c.getPhoneNumber().equals(phone)).findFirst().orElseThrow();
+        assertThat(match.getLastMessageBody()).isEqualTo("a later, unrelated message");
+        assertThat(match.getHasNegativeFeedback()).isTrue();
     }
 
     @Test

@@ -157,6 +157,13 @@ public class SmsMessageLogService {
         return repository.existsByPhoneNumberAndLinkTargetAndClickedAtIsNotNull(PhoneNumbers.normalize(phoneNumber), linkTarget);
     }
 
+    /** Whether this phone number has ever left a low-rating reply to the checkout-review-request
+     * automation — see {@link com.salonreview.repo.SmsMessageRepository#existsByPhoneNumberAndNegativeFeedbackAtIsNotNull}.
+     * Used by {@code SameDayRebookingScheduler} to permanently exclude them from the win-back nudge. */
+    public boolean hasNegativeFeedback(String phoneNumber) {
+        return repository.existsByPhoneNumberAndNegativeFeedbackAtIsNotNull(PhoneNumbers.normalize(phoneNumber));
+    }
+
     /** {@code sentAt} is null if this link target was never sent to this phone at all — distinct
      * from "sent but not yet clicked" ({@code sentAt} set, {@code clickedAt} null) — so a caller
      * (the contact sidebar) can tell "never asked" apart from "asked, didn't click yet" apart from

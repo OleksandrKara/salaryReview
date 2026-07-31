@@ -79,6 +79,14 @@ public class SmsMessage {
     @Column(name = "delivery_updated_at")
     private Instant deliveryUpdatedAt;
 
+    /** Set on this INBOUND row when the customer's reply to the checkout-review-request
+     * automation contains a low (1-4) digit rating — see {@code TwilioInboundSmsController}.
+     * Once set for any message from a phone number, that number is permanently excluded from the
+     * same-day-rebooking win-back nudge ({@code SameDayRebookingScheduler}) and flagged in the
+     * manager conversation view. {@code null} for every other message. */
+    @Column(name = "negative_feedback_at")
+    private Instant negativeFeedbackAt;
+
     @Column(name = "created_at", nullable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();

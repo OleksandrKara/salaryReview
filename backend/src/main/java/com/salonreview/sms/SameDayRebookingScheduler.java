@@ -105,6 +105,14 @@ public class SameDayRebookingScheduler {
             return;
         }
 
+        // A customer who ever rated a low star count on the checkout-review-request automation
+        // is never re-approached with this win-back nudge, regardless of how long ago that was or
+        // how this particular visit went — see negative-feedback-tracking design.
+        if (messageLogService.hasNegativeFeedback(send.getPhoneNumber())) {
+            save(send, SameDayRebookingSend.STATE_SKIPPED_NEGATIVE_FEEDBACK);
+            return;
+        }
+
         sendNudge(send, hasConsent(send));
         save(send, SameDayRebookingSend.STATE_SENT);
     }
