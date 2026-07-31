@@ -40,4 +40,11 @@ class SmsAutomationSeedDataTest {
 
         assertThat(seeded.isEnabled()).isFalse();
     }
+
+    @Test
+    void sameDayRebookingDiscountSeedsDisabled() {
+        SmsAutomation seeded = repository.findById("same_day_rebooking_discount").orElseThrow();
+
+        assertThat(seeded.isEnabled()).isFalse();
+    }
 }

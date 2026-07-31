@@ -64,6 +64,12 @@ public class SmsTemplateRegistry {
                                 + "Reply here and we'll help you book! 💅 — AK.LUX.NAILS";
                     }
             )
+            // NOTE: "same_day_rebooking_nudge" is NOT registered here — like
+            // CheckoutReviewReplyService's own branch replies, it needs a self-referencing
+            // click-tracked link generated up front, so SameDayRebookingScheduler bypasses this
+            // registry/TwilioSmsService.sendTemplated entirely and hand-renders its body, doing
+            // its own (dual-source) consent check before ever sending — see
+            // openspec/changes/same-day-rebooking-discount design.md D3/D5.
     );
 
     /** {@code null} if no template is registered under this key. */

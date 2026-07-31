@@ -30,6 +30,13 @@ public final class SmsAutomationRegistry {
                     "Lead follow-up nudge",
                     "Every lead who leaves contact info but has no upcoming appointment 2 minutes later — "
                             + "a purely helpful, no-incentive text offering to help find a time"
+            ),
+            "same_day_rebooking_discount", new AutomationMeta(
+                    "same_day_rebooking_discount",
+                    "Same-day rebooking discount",
+                    "Every in-salon checkout, 3 hours later, if they haven't already rebooked and have "
+                            + "given SMS-marketing consent (in this app or in Square) — a $10-off nudge to "
+                            + "rebook before midnight, min. $99 order"
             )
     );
 

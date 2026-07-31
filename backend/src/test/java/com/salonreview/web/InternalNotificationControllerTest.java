@@ -2,7 +2,11 @@ package com.salonreview.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.config.InternalApiProperties;
+import com.salonreview.config.RebookingProperties;
+import com.salonreview.repo.SameDayRebookingGroupMembershipRepository;
+import com.salonreview.sms.RebookingPromoSigner;
 import com.salonreview.sms.TwilioSmsService;
+import com.salonreview.square.SquareClient;
 import com.salonreview.telegram.TelegramNotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -13,6 +17,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -31,6 +36,10 @@ class InternalNotificationControllerTest {
     private InternalApiProperties props;
     private TelegramNotificationService telegram;
     private TwilioSmsService sms;
+    private RebookingPromoSigner promoSigner;
+    private RebookingProperties rebookingProperties;
+    private SameDayRebookingGroupMembershipRepository groupMembershipRepository;
+    private SquareClient square;
     private MockMvc mvc;
     private final ObjectMapper json = new ObjectMapper();
 
@@ -39,7 +48,13 @@ class InternalNotificationControllerTest {
         props = mock(InternalApiProperties.class);
         telegram = mock(TelegramNotificationService.class);
         sms = mock(TwilioSmsService.class);
-        InternalNotificationController controller = new InternalNotificationController(props, telegram, sms);
+        promoSigner = mock(RebookingPromoSigner.class);
+        rebookingProperties = new RebookingProperties();
+        rebookingProperties.setAutoDiscountGroupId("grp1");
+        groupMembershipRepository = mock(SameDayRebookingGroupMembershipRepository.class);
+        square = mock(SquareClient.class);
+        InternalNotificationController controller = new InternalNotificationController(
+                props, telegram, sms, promoSigner, rebookingProperties, groupMembershipRepository, square);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -140,5 +155,71 @@ class InternalNotificationControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sent").value(false))
                 .andExpect(jsonPath("$.reason").value("no_consent"));
+    }
+
+    private static final String ENROLL_BODY = "{\"squareCustomerId\":\"cust1\",\"expEpochSeconds\":9999999999,\"signature\":\"sig123\"}";
+
+    @Test
+    @DisplayName("rebooking-promo/enroll: missing key → 401")
+    void enrollMissingKeyReturns401() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+
+        mvc.perform(post("/api/internal/rebooking-promo/enroll")
+                        .contentType("application/json").content(ENROLL_BODY))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("rebooking-promo/enroll: invalid signature → 200 enrolled:false, no Square call")
+    void enrollInvalidSignatureNotEnrolled() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        when(promoSigner.verify("REBOOK10", 9999999999L, "sig123")).thenReturn(false);
+
+        mvc.perform(post("/api/internal/rebooking-promo/enroll")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content(ENROLL_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enrolled").value(false))
+                .andExpect(jsonPath("$.reason").value("invalid_signature"));
+
+        verifyNoSquareCall();
+    }
+
+    @Test
+    @DisplayName("rebooking-promo/enroll: valid signature + unexpired → enrolls in Square group, writes membership")
+    void enrollValidSignatureEnrolls() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        when(promoSigner.verify("REBOOK10", 9999999999L, "sig123")).thenReturn(true);
+
+        mvc.perform(post("/api/internal/rebooking-promo/enroll")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content(ENROLL_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enrolled").value(true));
+
+        verify(square).addCustomerToGroup("cust1", "grp1");
+        verify(groupMembershipRepository).save(any());
+        verify(telegram).sendRebookingPromoAlert(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("rebooking-promo/enroll: valid signature but already-expired exp → not enrolled")
+    void enrollExpiredNotEnrolled() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        String pastBody = "{\"squareCustomerId\":\"cust1\",\"expEpochSeconds\":1,\"signature\":\"sig123\"}";
+        when(promoSigner.verify("REBOOK10", 1L, "sig123")).thenReturn(true);
+
+        mvc.perform(post("/api/internal/rebooking-promo/enroll")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content(pastBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enrolled").value(false))
+                .andExpect(jsonPath("$.reason").value("expired"));
+
+        verifyNoSquareCall();
+    }
+
+    private void verifyNoSquareCall() {
+        org.mockito.Mockito.verifyNoInteractions(square);
     }
 }

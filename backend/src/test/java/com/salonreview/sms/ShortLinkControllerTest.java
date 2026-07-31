@@ -1,5 +1,6 @@
 package com.salonreview.sms;
 
+import com.salonreview.config.MarketingLandingProperties;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.repo.SmsMessageRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,16 +16,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-/** Click-tracked short link redirect — see openspec/changes/sms-automations-hub design.md D6. */
+/** Click-tracked short link redirect — see openspec/changes/sms-automations-hub design.md D6 and
+ * openspec/changes/same-day-rebooking-discount design.md D5/D8/D9. */
 class ShortLinkControllerTest {
 
     private SmsMessageRepository repository;
+    private RebookingPromoSigner promoSigner;
+    private MarketingLandingProperties landingProperties;
     private ShortLinkController controller;
 
     @BeforeEach
     void setUp() {
         repository = mock(SmsMessageRepository.class);
-        controller = new ShortLinkController(repository);
+        promoSigner = mock(RebookingPromoSigner.class);
+        landingProperties = mock(MarketingLandingProperties.class);
+        when(landingProperties.baseUrlFor("home")).thenReturn("https://akluxnails.com");
+        controller = new ShortLinkController(repository, promoSigner, landingProperties);
     }
 
     @Test
@@ -78,6 +85,36 @@ class ShortLinkControllerTest {
         when(repository.findByClickToken("does-not-exist")).thenReturn(Optional.empty());
 
         ResponseEntity<Void> response = controller.redirect("does-not-exist");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("REBOOK target → resolves to the signed promo URL on the home landing page")
+    void rebookTargetResolvesToSignedPromoUrl() {
+        SmsMessage message = SmsMessage.builder().id(3L).direction("OUTBOUND").phoneNumber("+15551234567")
+                .body("...").status("SENT").linkTarget("REBOOK:1700000000")
+                .clickToken("rebook0001").build();
+        when(repository.findByClickToken("rebook0001")).thenReturn(Optional.of(message));
+        when(promoSigner.sign("REBOOK10", 1700000000L)).thenReturn("sig-abc");
+
+        ResponseEntity<Void> response = controller.redirect("rebook0001");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FOUND);
+        assertThat(response.getHeaders().getLocation())
+                .hasToString("https://akluxnails.com/?promo=REBOOK10&exp=1700000000&sig=sig-abc");
+    }
+
+    @Test
+    @DisplayName("REBOOK target with signing not configured (null signature) → 404, never an unsigned link")
+    void rebookTargetWithNoSigningConfigured404s() {
+        SmsMessage message = SmsMessage.builder().id(4L).direction("OUTBOUND").phoneNumber("+15551234567")
+                .body("...").status("SENT").linkTarget("REBOOK:1700000000")
+                .clickToken("rebook0002").build();
+        when(repository.findByClickToken("rebook0002")).thenReturn(Optional.of(message));
+        when(promoSigner.sign("REBOOK10", 1700000000L)).thenReturn(null);
+
+        ResponseEntity<Void> response = controller.redirect("rebook0002");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
