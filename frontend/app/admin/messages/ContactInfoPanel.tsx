@@ -71,10 +71,11 @@ export default function ContactInfoPanel({
   const name = conversationName ?? displayName(contact?.givenName, contact?.familyName);
 
   return (
-    <div className="flex h-full flex-col">
+    <div data-testid="contact-info-panel" className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-3">
         <button
           type="button"
+          data-testid="contact-info-panel-close-button"
           onClick={onClose}
           aria-label="Close contact info"
           className="-ml-2 flex h-11 w-11 shrink-0 items-center justify-center text-zinc-400 hover:text-zinc-600 sm:hidden"
@@ -86,14 +87,14 @@ export default function ContactInfoPanel({
         <span className="font-medium text-zinc-900">Contact info</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-4">
+      <div data-testid="contact-info-panel-body" className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-4">
         {contact === undefined ? (
           <p className="text-sm text-zinc-400">Loading…</p>
         ) : (
           <>
             <div className="mb-5">
               <div className="flex items-center gap-1.5">
-                <div className="truncate text-base font-semibold text-zinc-900">
+                <div data-testid="contact-info-name" className="truncate text-base font-semibold text-zinc-900">
                   {name ?? formatPhone(phoneNumber)}
                 </div>
                 {contact?.smsMarketingConsent ? (
@@ -114,6 +115,7 @@ export default function ContactInfoPanel({
                   href={resolvedSquareProfileUrl}
                   target="_blank"
                   rel="noreferrer"
+                  data-testid="contact-info-square-link"
                   className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-sky-700 hover:underline"
                 >
                   View in Square
@@ -135,7 +137,7 @@ export default function ContactInfoPanel({
                     const badge = appointmentBadge(a);
                     const price = formatMoney(a.collectedAmount ?? a.price);
                     return (
-                      <li key={a.bookingId} className="rounded-lg ring-1 ring-zinc-100 px-3 py-2 text-sm">
+                      <li key={a.bookingId} data-testid="contact-info-appointment" className="rounded-lg ring-1 ring-zinc-100 px-3 py-2 text-sm">
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-medium text-zinc-900">{formatDate(a.startAt)}</span>
                           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${badge.className}`}>
@@ -159,7 +161,7 @@ export default function ContactInfoPanel({
                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Form history</h3>
                 <ul className="flex flex-col gap-2">
                   {contact.submissions.map((s, i) => (
-                    <li key={i} className="rounded-lg ring-1 ring-zinc-100 px-3 py-2 text-sm">
+                    <li key={i} data-testid="contact-info-submission" className="rounded-lg ring-1 ring-zinc-100 px-3 py-2 text-sm">
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-medium capitalize text-zinc-900">
                           {s.submissionType.replace(/_/g, ' ')}
