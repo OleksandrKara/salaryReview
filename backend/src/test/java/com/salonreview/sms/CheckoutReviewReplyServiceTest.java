@@ -83,6 +83,26 @@ class CheckoutReviewReplyServiceTest {
     }
 
     @Test
+    @DisplayName("positive branch, repeat reviewer (already clicked the Google review link before): sends the feedback-form link with different copy, not the Google review link again")
+    void repeatReviewerGetsFeedbackFormInstead() throws Exception {
+        when(configService.get()).thenReturn(configured());
+        when(client.send(any(), eq(PHONE), anyString())).thenReturn("SM_SID_3");
+        when(messageLogService.hasClickedLinkTarget(PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
+
+        service.sendBranchReply(flow(), true);
+
+        var tokenCaptor = ArgumentCaptor.forClass(String.class);
+        verify(messageLogService).logOutboundWithLink(eq("checkout_review_positive_repeat"), eq("checkout_review_request"),
+                eq(PHONE), eq(""), eq(false), eq("pending"), eq(null), eq(CheckoutReviewLinks.FEEDBACK_FORM_TARGET),
+                tokenCaptor.capture());
+
+        var bodyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
+        assertThat(bodyCaptor.getValue()).contains(PUBLIC_BASE_URL + "/r/" + tokenCaptor.getValue());
+        assertThat(bodyCaptor.getValue()).doesNotContain("share your experience");
+    }
+
+    @Test
     @DisplayName("negative branch: body contains a self-referencing short link to the feedback-form target")
     void negativeBranchSendsFeedbackFormLink() throws Exception {
         when(configService.get()).thenReturn(configured());
