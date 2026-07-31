@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.mockito.Mockito.*;
@@ -48,11 +49,12 @@ class SmsActivityControllerTest {
     }
 
     private static Contact contact(String givenName, String emailAddress) {
-        // id, givenName, phoneNumber, emailAddress, originalTrafficSource, marketingTrafficSource,
-        // channel, utmSource, utmMedium, utmCampaign, landingPageSlug, variantName, deviceType,
-        // osName, osVersion, browserName, browserVersion, smsMarketingConsent,
-        // emailMarketingConsent, squareProfileUrl, submissions, appointments, createdAt, updatedAt
-        return new Contact("id-1", givenName, PHONE, emailAddress,
+        // id, givenName, familyName, phoneNumber, emailAddress, originalTrafficSource,
+        // marketingTrafficSource, channel, utmSource, utmMedium, utmCampaign, landingPageSlug,
+        // variantName, deviceType, osName, osVersion, browserName, browserVersion,
+        // smsMarketingConsent, emailMarketingConsent, squareProfileUrl, submissions,
+        // appointments, createdAt, updatedAt
+        return new Contact("id-1", givenName, null, PHONE, emailAddress,
                 null, null, null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null,
                 List.of(), List.of(), Instant.now(), Instant.now());
@@ -72,11 +74,16 @@ class SmsActivityControllerTest {
     void conversationsMapsProjections() throws Exception {
         when(service.conversations()).thenReturn(List.of(
                 new FakeConversationSummary(PHONE, Instant.now(), "hi", "INBOUND", 2L)));
+        when(contactsService.resolveDisplayNames(List.of(PHONE)))
+                .thenReturn(Map.of(PHONE, new MarketingContactsService.ContactNameInfo("Jane", "Doe", true)));
 
         mvc.perform(get("/api/owner/automations/activity/conversations"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].phoneNumber").value(PHONE))
-                .andExpect(jsonPath("$[0].unreadCount").value(2));
+                .andExpect(jsonPath("$[0].unreadCount").value(2))
+                .andExpect(jsonPath("$[0].givenName").value("Jane"))
+                .andExpect(jsonPath("$[0].familyName").value("Doe"))
+                .andExpect(jsonPath("$[0].smsConsent").value(true));
     }
 
     @Test

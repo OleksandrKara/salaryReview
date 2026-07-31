@@ -144,6 +144,7 @@ class MarketingAdsReportControllerTest {
         Contact contact = new Contact(
                 "contact-1",     // id
                 "Jane",          // givenName
+                null,            // familyName
                 "+16195550001",  // phoneNumber
                 null,            // emailAddress
                 null,            // originalTrafficSource

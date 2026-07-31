@@ -110,6 +110,12 @@ export interface SmsConversationDto {
   lastMessageBody: string;
   lastMessageDirection: SmsMessageDirection;
   unreadCount: number;
+  givenName: string | null;
+  familyName: string | null;
+  /** True if consent for SMS marketing comes from *either* source: this app's own
+   * marketing.contacts capture, or the customer belonging to Square's own consent segment — see
+   * MarketingContactsService#resolveDisplayNames on the backend. */
+  smsConsent: boolean;
 }
 
 export interface SmsReplyResult {
@@ -1189,6 +1195,9 @@ export interface AbuseBlocksData {
 export interface MarketingContact {
   id: string;
   givenName: string | null;
+  /** Last name — Square-resolved (marketing.contacts itself has no family_name column), best-
+   * effort only when a Square customer is already linked. Null otherwise. */
+  familyName: string | null;
   phoneNumber: string;
   emailAddress: string | null;
   originalTrafficSource: string | null;

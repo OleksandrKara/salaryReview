@@ -434,6 +434,31 @@ public class SquareClient {
         return names;
     }
 
+    /** Given (first) names only — never concatenated with family name, unlike {@link
+     * #customerNames}. Use this, not {@code customerNames}, anywhere the result can feed a
+     * customer-facing message (an SMS greeting should always read "Hi Jane," never "Hi Jane
+     * Smith,") — see CheckoutReviewTriggerService. Best-effort, cached; missing for any we can't
+     * resolve. */
+    public Map<String, String> customerGivenNames(Collection<String> customerIds) {
+        Map<String, String> names = new HashMap<>();
+        for (var e : fetchCustomers(customerIds).entrySet()) {
+            String n = e.getValue().givenName();
+            if (n != null && !n.isBlank()) names.put(e.getKey(), n);
+        }
+        return names;
+    }
+
+    /** Family (last) names only, for display purposes (e.g. the Messages conversation list) —
+     * never used for an SMS greeting. Best-effort, cached; missing for any we can't resolve. */
+    public Map<String, String> customerFamilyNames(Collection<String> customerIds) {
+        Map<String, String> names = new HashMap<>();
+        for (var e : fetchCustomers(customerIds).entrySet()) {
+            String n = e.getValue().familyName();
+            if (n != null && !n.isBlank()) names.put(e.getKey(), n);
+        }
+        return names;
+    }
+
     /** When each customer's Square record was created. Best-effort, cached; missing for any we can't
      * resolve — used to tell a brand-new-to-Square customer from one who already existed before
      * coming back through an ad.
@@ -627,6 +652,21 @@ public class SquareClient {
         return fetchCustomer(customerId).map(Customer::segmentIds)
                 .filter(java.util.Objects::nonNull)
                 .orElse(List.of());
+    }
+
+    /** Batched sibling of the single-customer overload above — segment ids ride along on every
+     * customer fetch, so this costs nothing beyond the same fetchCustomers() cache every other
+     * batch accessor here already uses. Backs the Messages page's merged SMS-consent indicator
+     * (Square's own segment as an alternate consent source alongside marketing.contacts — see
+     * MarketingContactsService#resolveDisplayNames). Missing (not empty-list) for any customer id
+     * that can't be resolved at all. */
+    public Map<String, List<String>> customerSegmentIdsBatch(Collection<String> customerIds) {
+        Map<String, List<String>> result = new HashMap<>();
+        for (var e : fetchCustomers(customerIds).entrySet()) {
+            List<String> segments = e.getValue().segmentIds();
+            if (segments != null) result.put(e.getKey(), segments);
+        }
+        return result;
     }
 
     /** Adds a customer to a Square customer group — used to enroll a customer in the same-day-

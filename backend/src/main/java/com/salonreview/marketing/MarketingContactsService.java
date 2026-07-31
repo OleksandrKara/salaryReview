@@ -1,5 +1,6 @@
 package com.salonreview.marketing;
 
+import com.salonreview.config.RebookingProperties;
 import com.salonreview.domain.MarketingContactSquareLink;
 import com.salonreview.domain.MarketingSyncStatus;
 import com.salonreview.domain.SalonConfig;
@@ -28,6 +29,7 @@ import java.time.Instant;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +60,7 @@ public class MarketingContactsService {
     private final SquareMonthAggregator aggregator;
     private final SalonConfigRepository salonConfig;
     private final MarketingSyncStatusRepository syncStatus;
+    private final RebookingProperties rebookingProperties;
     private final TtlCache cache = new TtlCache();
 
     public MarketingContactsService(MarketingContactsRepository repository,
@@ -65,13 +68,15 @@ public class MarketingContactsService {
                                      SquareClient square,
                                      SquareMonthAggregator aggregator,
                                      SalonConfigRepository salonConfig,
-                                     MarketingSyncStatusRepository syncStatus) {
+                                     MarketingSyncStatusRepository syncStatus,
+                                     RebookingProperties rebookingProperties) {
         this.repository = repository;
         this.squareLinks = squareLinks;
         this.square = square;
         this.aggregator = aggregator;
         this.salonConfig = salonConfig;
         this.syncStatus = syncStatus;
+        this.rebookingProperties = rebookingProperties;
     }
 
     /** When "Sync appointments" was last actually invoked — null if never (see V50). */
@@ -112,6 +117,86 @@ public class MarketingContactsService {
             return Optional.empty();
         }
     }
+
+    /** Given name + optional family name + merged SMS-marketing-consent, for every phone number
+     * in a Messages conversation list, in one batch (see SmsActivityController#conversations).
+     * Name resolution ladder mirrors LeadFollowUpScheduler's own fallback order:
+     * marketing.contacts' own given_name/square_customer_id columns first, then
+     * marketing_contact_square_link for a customer id when the row itself has none, then — only
+     * for phone numbers with no marketing.contacts row at all — a live Square phone lookup, same
+     * as LeadFollowUpScheduler. Family name is always Square-resolved (marketing.contacts has no
+     * such column, see Contact#familyName). Consent is true if *either* source says so — the
+     * same "either source" rule SameDayRebookingScheduler#hasConsent already uses for sending:
+     * marketing.contacts.sms_marketing_consent, or the customer belonging to Square's own
+     * consentSegmentId (RebookingProperties) — so this page never shows "no consent" for someone
+     * the automations would in fact be allowed to text. Best-effort throughout: a phone number
+     * with nothing resolvable still gets an entry (all-null/false), so a caller doesn't need a
+     * separate null-check just for consent. */
+    public Map<String, ContactNameInfo> resolveDisplayNames(Collection<String> phoneNumbers) {
+        if (phoneNumbers.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            Map<String, MarketingContactsRepository.PhoneName> byPhone = repository
+                    .findNamesByPhoneNumbers(phoneNumbers).stream()
+                    .collect(Collectors.toMap(MarketingContactsRepository.PhoneName::phoneNumber, r -> r, (a, b) -> a));
+
+            Map<String, String> customerIdByPhone = new HashMap<>();
+            for (String phone : phoneNumbers) {
+                MarketingContactsRepository.PhoneName row = byPhone.get(phone);
+                if (row != null) {
+                    String customerId = row.squareCustomerId() != null
+                            ? row.squareCustomerId()
+                            : squareLinks.findByPhoneNumber(phone).map(MarketingContactSquareLink::getSquareCustomerId).orElse(null);
+                    if (customerId != null) {
+                        customerIdByPhone.put(phone, customerId);
+                    }
+                } else {
+                    // No marketing.contacts row at all (e.g. a checkout-review/rebooking text
+                    // sent from Square data with no tracked capture) — last-resort live lookup,
+                    // same fallback LeadFollowUpScheduler uses.
+                    List<String> candidates = square.customerIdsForPhone(phone);
+                    if (!candidates.isEmpty()) {
+                        customerIdByPhone.put(phone, candidates.get(0));
+                    }
+                }
+            }
+
+            Map<String, String> givenFromSquare = square.customerGivenNames(customerIdByPhone.values());
+            Map<String, String> familyFromSquare = square.customerFamilyNames(customerIdByPhone.values());
+            Map<String, List<String>> segmentsByCustomer = square.customerSegmentIdsBatch(customerIdByPhone.values());
+            if (segmentsByCustomer == null) {
+                segmentsByCustomer = Map.of();
+            }
+            String consentSegmentId = rebookingProperties.getConsentSegmentId();
+
+            Map<String, ContactNameInfo> result = new HashMap<>();
+            for (String phone : phoneNumbers) {
+                MarketingContactsRepository.PhoneName row = byPhone.get(phone);
+                String customerId = customerIdByPhone.get(phone);
+                String givenName = row != null && row.givenName() != null && !row.givenName().isBlank()
+                        ? row.givenName()
+                        : (customerId != null ? givenFromSquare.get(customerId) : null);
+                String familyName = customerId != null ? familyFromSquare.get(customerId) : null;
+
+                boolean ownConsent = row != null && Boolean.TRUE.equals(row.smsMarketingConsent());
+                boolean squareConsent = customerId != null
+                        && consentSegmentId != null && !consentSegmentId.isBlank()
+                        && segmentsByCustomer.getOrDefault(customerId, List.of()).contains(consentSegmentId);
+
+                result.put(phone, new ContactNameInfo(givenName, familyName, ownConsent || squareConsent));
+            }
+            return result;
+        } catch (DataAccessException ex) {
+            log.warn("Marketing schema unavailable while resolving display names for {} phone numbers",
+                    phoneNumbers.size(), ex);
+            return Map.of();
+        }
+    }
+
+    /** Nullable given/family name plus merged SMS-marketing-consent for one phone number — see
+     * #resolveDisplayNames. */
+    public record ContactNameInfo(String givenName, String familyName, boolean smsConsent) {}
 
     /** Never throws: same "this app's health must never depend on the other service's
      * schema" guarantee as MarketingDashboardService.dashboard. Submissions and (when a Square
@@ -309,12 +394,33 @@ public class MarketingContactsService {
                 : squareLinks.findByPhoneNumber(raw.phoneNumber()).map(MarketingContactSquareLink::getSquareCustomerId).orElse(null);
     }
 
+    /** Whether this Square customer belongs to the consent-bearing segment configured in
+     * {@link RebookingProperties#getConsentSegmentId()} — see #resolveDisplayNames and #toContact
+     * for the two callers that fold this into a merged consent flag. False (not an error) for a
+     * null customer id or an unconfigured segment. */
+    private boolean hasSquareConsentSegment(String squareCustomerId) {
+        String consentSegmentId = rebookingProperties.getConsentSegmentId();
+        if (squareCustomerId == null || consentSegmentId == null || consentSegmentId.isBlank()) {
+            return false;
+        }
+        List<String> segments = square.customerSegmentIds(squareCustomerId);
+        return segments != null && segments.contains(consentSegmentId);
+    }
+
     private Contact toContact(MarketingContactsRepository.RawContact raw) {
         String effectiveSquareCustomerId = resolveSquareCustomerId(raw);
 
         String squareProfileUrl = effectiveSquareCustomerId == null
                 ? null
                 : String.format(SQUARE_CUSTOMER_PROFILE_URL, effectiveSquareCustomerId);
+
+        // marketing.contacts has no family_name column of its own (the booking form collects one,
+        // it's just never persisted there) — Square is the only source, so this is best-effort
+        // and only attempted when a customer is already linked, never a fresh phone lookup just
+        // for display.
+        String familyName = effectiveSquareCustomerId == null
+                ? null
+                : square.customerFamilyNames(List.of(effectiveSquareCustomerId)).get(effectiveSquareCustomerId);
 
         List<Submission> submissions = repository.findSubmissionHistory(raw.phoneNumber())
                 .stream()
@@ -325,9 +431,16 @@ public class MarketingContactsService {
                 ? List.of()
                 : fetchAppointments(effectiveSquareCustomerId, raw.createdAt());
 
+        // True from *either* source — the same "either source" consent rule
+        // SameDayRebookingScheduler#hasConsent already uses for sending, so this field never
+        // shows "no consent" for someone the automations would in fact be allowed to text.
+        boolean smsMarketingConsent = Boolean.TRUE.equals(raw.smsMarketingConsent())
+                || hasSquareConsentSegment(effectiveSquareCustomerId);
+
         return new Contact(
                 raw.id().toString(),
                 raw.givenName(),
+                familyName,
                 raw.phoneNumber(),
                 raw.emailAddress(),
                 raw.originalTrafficSource(),
@@ -343,7 +456,7 @@ public class MarketingContactsService {
                 raw.osVersion(),
                 raw.browserName(),
                 raw.browserVersion(),
-                raw.smsMarketingConsent(),
+                smsMarketingConsent,
                 raw.emailMarketingConsent(),
                 squareProfileUrl,
                 submissions,

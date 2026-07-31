@@ -22,6 +22,11 @@ function formatMoney(n: number | null): string | null {
   return n == null ? null : `$${Math.round(n)}`;
 }
 
+function displayName(givenName: string | null | undefined, familyName: string | null | undefined): string | null {
+  const parts = [givenName, familyName].filter((p): p is string => Boolean(p && p.trim()));
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
 function appointmentBadge(a: MarketingContactAppointment): { label: string; className: string } {
   if (a.status === 'CANCELLED_BY_CUSTOMER' || a.status === 'CANCELLED_BY_SELLER' || a.status === 'DECLINED') {
     return { label: 'Cancelled', className: 'bg-zinc-100 text-zinc-500' };
@@ -73,8 +78,18 @@ export default function ContactInfoPanel({
         ) : (
           <>
             <div className="mb-5">
-              <div className="text-base font-semibold text-zinc-900">
-                {contact?.givenName ?? formatPhone(phoneNumber)}
+              <div className="flex items-center gap-1.5">
+                <div className="truncate text-base font-semibold text-zinc-900">
+                  {displayName(contact?.givenName, contact?.familyName) ?? formatPhone(phoneNumber)}
+                </div>
+                {contact?.smsMarketingConsent ? (
+                  <span
+                    className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700"
+                    title="Consent on file via marketing.contacts or Square's own Text Subscribers segment"
+                  >
+                    SMS OK
+                  </span>
+                ) : null}
               </div>
               <div className="mt-1 text-sm tabular-nums text-zinc-500">{formatPhone(phoneNumber)}</div>
               {contact?.emailAddress ? (

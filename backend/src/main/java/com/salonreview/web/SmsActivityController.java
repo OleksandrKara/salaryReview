@@ -44,7 +44,8 @@ public class SmsActivityController {
                                  String linkTarget, Instant clickedAt, Instant readAt, Instant createdAt) {}
 
     public record ConversationDto(String phoneNumber, Instant lastMessageAt, String lastMessageBody,
-                                   String lastMessageDirection, long unreadCount) {}
+                                   String lastMessageDirection, long unreadCount,
+                                   String givenName, String familyName, boolean smsConsent) {}
 
     public record ReplyRequest(String phoneNumber, String body) {}
 
@@ -73,10 +74,17 @@ public class SmsActivityController {
     }
 
     /** One row per distinct phone number, most-recent-message-first — the manager conversation
-     * view's contact list (design.md D8). */
+     * view's contact list (design.md D8). Names are batch-resolved once for every row on the
+     * page rather than per-row, via MarketingContactsService#resolveDisplayNames — see that
+     * method's own docs for the phone -> name resolution ladder. */
     @GetMapping("/conversations")
     public List<ConversationDto> conversations() {
-        return service.conversations().stream().map(SmsActivityController::toConversationDto).toList();
+        List<ConversationSummaryProjection> summaries = service.conversations();
+        List<String> phoneNumbers = summaries.stream().map(ConversationSummaryProjection::getPhoneNumber).toList();
+        Map<String, MarketingContactsService.ContactNameInfo> names = contactsService.resolveDisplayNames(phoneNumbers);
+        return summaries.stream()
+                .map(p -> toConversationDto(p, names.get(p.getPhoneNumber())))
+                .toList();
     }
 
     /** Full chronological thread for one phone number — the manager conversation view's selected-
@@ -111,8 +119,12 @@ public class SmsActivityController {
                 m.getLinkTarget(), m.getClickedAt(), m.getReadAt(), m.getCreatedAt());
     }
 
-    private static ConversationDto toConversationDto(ConversationSummaryProjection p) {
+    private static ConversationDto toConversationDto(ConversationSummaryProjection p,
+                                                       MarketingContactsService.ContactNameInfo nameInfo) {
         return new ConversationDto(p.getPhoneNumber(), p.getLastMessageAt(), p.getLastMessageBody(),
-                p.getLastMessageDirection(), p.getUnreadCount());
+                p.getLastMessageDirection(), p.getUnreadCount(),
+                nameInfo == null ? null : nameInfo.givenName(),
+                nameInfo == null ? null : nameInfo.familyName(),
+                nameInfo != null && nameInfo.smsConsent());
     }
 }

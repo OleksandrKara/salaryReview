@@ -11,6 +11,11 @@ public record MarketingContactDto(
     public record Contact(
             String id,
             String givenName,
+            /** Last name — resolved from Square (marketing.contacts itself has no family_name
+             * column; the booking form collects one, but it's never persisted there), best-effort
+             * only when a Square customer is already linked. Null otherwise — never worth a live
+             * phone-lookup just for display here (see MarketingContactsService#toContact). */
+            String familyName,
             String phoneNumber,
             String emailAddress,
             String originalTrafficSource,
