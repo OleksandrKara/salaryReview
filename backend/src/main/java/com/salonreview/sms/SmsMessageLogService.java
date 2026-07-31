@@ -110,6 +110,12 @@ public class SmsMessageLogService {
         return repository.findByPhoneNumberOrderByCreatedAtAsc(PhoneNumbers.normalize(phoneNumber));
     }
 
+    /** Whether this phone number has ever actually clicked a click-tracked link sent to the given
+     * {@code linkTarget} — see {@link com.salonreview.repo.SmsMessageRepository#existsByPhoneNumberAndLinkTargetAndClickedAtIsNotNull}. */
+    public boolean hasClickedLinkTarget(String phoneNumber, String linkTarget) {
+        return repository.existsByPhoneNumberAndLinkTargetAndClickedAtIsNotNull(PhoneNumbers.normalize(phoneNumber), linkTarget);
+    }
+
     public long unreadCount() {
         return repository.countByDirectionAndReadAtIsNull("INBOUND");
     }

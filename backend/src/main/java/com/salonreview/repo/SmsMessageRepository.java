@@ -59,6 +59,14 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
      * the (extremely rare) chance it collides with one already in use — see design.md D6. */
     boolean existsByClickToken(String clickToken);
 
+    /** Whether this phone number has ever actually followed a click-tracked link to a given
+     * target (e.g. {@code GOOGLE_REVIEW}) — used by the checkout-review-request automation to
+     * avoid asking a proven repeat reviewer for another public Google review every time they rate
+     * 5 stars again (see {@code CheckoutReviewReplyService}). {@code phoneNumber} must already be
+     * E.164-normalized — this table only ever stores normalized numbers (see
+     * {@code SmsMessageLogService}'s own doc comment), so no tolerant matching is needed here. */
+    boolean existsByPhoneNumberAndLinkTargetAndClickedAtIsNotNull(String phoneNumber, String linkTarget);
+
     /** Backs the hub's unread-count badge — every unread inbound message, regardless of whether
      * it ever matched an automation. */
     long countByDirectionAndReadAtIsNull(String direction);

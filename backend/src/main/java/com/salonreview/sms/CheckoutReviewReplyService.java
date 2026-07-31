@@ -41,17 +41,33 @@ public class CheckoutReviewReplyService {
     }
 
     public void sendBranchReply(SmsReplyFlow flow, boolean positive) {
-        String templateKey = positive ? "checkout_review_positive" : "checkout_review_negative";
-        String linkTarget = positive ? CheckoutReviewLinks.GOOGLE_REVIEW_TARGET : CheckoutReviewLinks.FEEDBACK_FORM_TARGET;
+        // A proven repeat 5-star reviewer (already clicked through to Google before) doesn't need
+        // to be asked for another public review every single time — that reads as spammy to them
+        // and to Google's own review-quality checks. Route them to the private feedback form
+        // instead, same destination the negative branch already uses, just with warmer copy.
+        boolean repeatReviewer = positive
+                && messageLogService.hasClickedLinkTarget(flow.getPhoneNumber(), CheckoutReviewLinks.GOOGLE_REVIEW_TARGET);
+
+        String templateKey = positive
+                ? (repeatReviewer ? "checkout_review_positive_repeat" : "checkout_review_positive")
+                : "checkout_review_negative";
+        String linkTarget = (positive && !repeatReviewer)
+                ? CheckoutReviewLinks.GOOGLE_REVIEW_TARGET
+                : CheckoutReviewLinks.FEEDBACK_FORM_TARGET;
 
         String clickToken = messageLogService.generateUniqueClickToken();
         SmsMessage reserved = messageLogService.logOutboundWithLink(
                 templateKey, AUTOMATION_KEY, flow.getPhoneNumber(),
                 "", false, "pending", null, linkTarget, clickToken);
         String shortLink = publicBaseUrl + "/r/" + clickToken;
-        String body = positive
-                ? "Thank you so much! 🌟 We'd love it if you could share your experience: " + shortLink + " — AK.LUX.NAILS"
-                : "Thanks for letting us know. We'd love to hear more so we can do better: " + shortLink + " — AK.LUX.NAILS";
+        String body;
+        if (!positive) {
+            body = "Thanks for letting us know. We'd love to hear more so we can do better: " + shortLink + " — AK.LUX.NAILS";
+        } else if (repeatReviewer) {
+            body = "So glad you loved it again! 💕 You've already shared a review with us — if you have any specific feedback, we'd love to hear it here: " + shortLink + " — AK.LUX.NAILS";
+        } else {
+            body = "Thank you so much! 🌟 We'd love it if you could share your experience: " + shortLink + " — AK.LUX.NAILS";
+        }
 
         TwilioSmsConfig config = configService.get();
         if (!config.isConfigured()) {
