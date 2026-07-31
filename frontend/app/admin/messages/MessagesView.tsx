@@ -24,6 +24,23 @@ function formatBubbleTime(iso: string): string {
   return new Date(iso).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
+// Bubbles only ever show a time-of-day (see formatBubbleTime) — a thread spanning more than a day
+// would otherwise have no way to tell which day a message landed on. Inserted once per calendar-
+// day boundary, same "Today"/"Yesterday" convention as most messaging apps.
+function formatDateSeparator(iso: string): string {
+  const date = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return 'Today';
+  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return date.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: date.getFullYear() === today.getFullYear() ? undefined : 'numeric',
+  });
+}
+
 function displayName(givenName: string | null | undefined, familyName: string | null | undefined): string | null {
   const parts = [givenName, familyName].filter((p): p is string => Boolean(p && p.trim()));
   return parts.length > 0 ? parts.join(' ') : null;
@@ -202,21 +219,33 @@ export default function MessagesView({ initialConversations }: { initialConversa
                 <div className="text-center text-sm text-zinc-400">Loading…</div>
               ) : (
                 <div className="flex flex-col gap-2">
-                  {thread.map((m) => (
-                    <div key={m.id} className={`flex ${m.direction === 'OUTBOUND' ? 'justify-end' : 'justify-start'}`}>
-                      <div
-                        className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
-                          m.direction === 'OUTBOUND' ? 'bg-sky-600 text-white' : 'bg-zinc-100 text-zinc-900'
-                        }`}
-                      >
-                        <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                        <p className={`mt-1 text-[10px] tabular-nums ${m.direction === 'OUTBOUND' ? 'text-sky-100' : 'text-zinc-400'}`}>
-                          {formatBubbleTime(m.createdAt)}
-                          {m.direction === 'OUTBOUND' && m.status !== 'SENT' ? ' · Not sent' : ''}
-                        </p>
+                  {thread.map((m, i) => {
+                    const prev = thread[i - 1];
+                    const showDateSeparator =
+                      !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString();
+                    return (
+                      <div key={m.id}>
+                        {showDateSeparator && (
+                          <div className="my-2 text-center text-xs font-medium text-zinc-400">
+                            {formatDateSeparator(m.createdAt)}
+                          </div>
+                        )}
+                        <div className={`flex ${m.direction === 'OUTBOUND' ? 'justify-end' : 'justify-start'}`}>
+                          <div
+                            className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
+                              m.direction === 'OUTBOUND' ? 'bg-sky-600 text-white' : 'bg-zinc-100 text-zinc-900'
+                            }`}
+                          >
+                            <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                            <p className={`mt-1 text-[10px] tabular-nums ${m.direction === 'OUTBOUND' ? 'text-sky-100' : 'text-zinc-400'}`}>
+                              {formatBubbleTime(m.createdAt)}
+                              {m.direction === 'OUTBOUND' && m.status !== 'SENT' ? ' · Not sent' : ''}
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   <div ref={bottomRef} />
                 </div>
               )}
@@ -259,7 +288,13 @@ export default function MessagesView({ initialConversations }: { initialConversa
         <div
           className={`${showContactPanel ? 'flex' : 'hidden'} fixed inset-0 z-20 flex-col bg-white sm:static sm:z-auto sm:flex sm:w-72 sm:shrink-0 sm:border-l sm:border-zinc-200`}
         >
-          <ContactInfoPanel phoneNumber={selectedPhone} contact={contact} onClose={() => setShowContactPanel(false)} />
+          <ContactInfoPanel
+            phoneNumber={selectedPhone}
+            contact={contact}
+            squareProfileUrl={selectedConversation?.squareProfileUrl ?? null}
+            conversationName={displayName(selectedConversation?.givenName, selectedConversation?.familyName)}
+            onClose={() => setShowContactPanel(false)}
+          />
         </div>
       ) : null}
     </div>

@@ -116,6 +116,10 @@ export interface SmsConversationDto {
    * marketing.contacts capture, or the customer belonging to Square's own consent segment — see
    * MarketingContactsService#resolveDisplayNames on the backend. */
   smsConsent: boolean;
+  /** Square Dashboard customer profile link, or null if no Square customer could be resolved for
+   * this phone number at all (not even via a live phone lookup) — more permissive than
+   * MarketingContact's own squareProfileUrl, which requires a marketing.contacts row to exist. */
+  squareProfileUrl: string | null;
 }
 
 export interface SmsReplyResult {

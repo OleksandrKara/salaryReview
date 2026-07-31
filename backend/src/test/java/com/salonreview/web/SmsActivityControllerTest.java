@@ -75,7 +75,8 @@ class SmsActivityControllerTest {
         when(service.conversations()).thenReturn(List.of(
                 new FakeConversationSummary(PHONE, Instant.now(), "hi", "INBOUND", 2L)));
         when(contactsService.resolveDisplayNames(List.of(PHONE)))
-                .thenReturn(Map.of(PHONE, new MarketingContactsService.ContactNameInfo("Jane", "Doe", true)));
+                .thenReturn(Map.of(PHONE, new MarketingContactsService.ContactNameInfo(
+                        "Jane", "Doe", true, "https://app.squareup.com/dashboard/customers/directory/customer/cust-1")));
 
         mvc.perform(get("/api/owner/automations/activity/conversations"))
                 .andExpect(status().isOk())
@@ -83,7 +84,8 @@ class SmsActivityControllerTest {
                 .andExpect(jsonPath("$[0].unreadCount").value(2))
                 .andExpect(jsonPath("$[0].givenName").value("Jane"))
                 .andExpect(jsonPath("$[0].familyName").value("Doe"))
-                .andExpect(jsonPath("$[0].smsConsent").value(true));
+                .andExpect(jsonPath("$[0].smsConsent").value(true))
+                .andExpect(jsonPath("$[0].squareProfileUrl").value("https://app.squareup.com/dashboard/customers/directory/customer/cust-1"));
     }
 
     @Test
