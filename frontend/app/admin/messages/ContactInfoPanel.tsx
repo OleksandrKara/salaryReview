@@ -86,7 +86,7 @@ export default function ContactInfoPanel({
         <span className="font-medium text-zinc-900">Contact info</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-4">
         {contact === undefined ? (
           <p className="text-sm text-zinc-400">Loading…</p>
         ) : (

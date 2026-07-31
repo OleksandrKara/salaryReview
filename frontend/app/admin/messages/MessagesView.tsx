@@ -132,7 +132,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
   return (
     <div className="flex h-full min-h-0 overflow-hidden sm:h-[70vh] sm:min-h-[420px] sm:rounded-lg sm:ring-1 sm:ring-zinc-200">
       {/* Contact list — full width on mobile until a thread is opened, fixed sidebar on desktop. */}
-      <div className={`w-full shrink-0 overflow-y-auto border-r border-zinc-200 sm:block sm:w-72 ${selectedPhone ? 'hidden sm:block' : ''}`}>
+      <div className={`w-full shrink-0 overflow-y-auto overflow-x-hidden border-r border-zinc-200 sm:block sm:w-72 ${selectedPhone ? 'hidden sm:block' : ''}`}>
         {conversations.length === 0 ? (
           <div className="p-6 text-center text-sm text-zinc-500">No conversations yet.</div>
         ) : (
@@ -211,8 +211,13 @@ export default function MessagesView({ initialConversations }: { initialConversa
           is `auto`, not 0, so without it this column refuses to shrink below its content's full
           height — the outer container's `overflow-hidden` then just clips whatever doesn't fit
           (messages cut off, composer pushed off-screen) instead of the message list's own
-          `overflow-y-auto` scrolling as intended. */}
-      <div className={`flex min-h-0 min-w-0 flex-1 flex-col ${selectedPhone ? 'flex' : 'hidden sm:flex'}`}>
+          `overflow-y-auto` scrolling as intended.
+
+          The `thread-open` class carries no styling of its own — it's a pure marker that
+          page.tsx's `group-has-[.thread-open]/messages` reads to hide this page's own title bar
+          on mobile while a thread is open, so the thread's own back/name/info header is the only
+          one on screen (see page.tsx's doc comment). */}
+      <div className={`flex min-h-0 min-w-0 flex-1 flex-col ${selectedPhone ? 'thread-open flex' : 'hidden sm:flex'}`}>
         {!selectedPhone ? (
           <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
             Select a conversation
@@ -250,7 +255,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-3">
               {threadLoading ? (
                 <div className="text-center text-sm text-zinc-400">Loading…</div>
               ) : (
