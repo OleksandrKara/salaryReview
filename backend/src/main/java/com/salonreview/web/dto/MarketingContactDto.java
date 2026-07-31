@@ -59,7 +59,21 @@ public record MarketingContactDto(
              */
             List<Appointment> appointments,
             Instant createdAt,
-            Instant updatedAt
+            Instant updatedAt,
+            /** Most recent time this contact was sent a checkout-review Google-review link, or
+             * null if never — see {@code SmsMessageLogService.LinkEngagement}. Null, not a
+             * missing/empty state: this contact simply never went through that automation. */
+            Instant googleReviewSentAt,
+            /** Most recent time this contact actually clicked through to Google, or null if never
+             * (including "sent but hasn't clicked yet", same as googleReviewSentAt non-null with
+             * this null). Used by the checkout-review automation itself (see
+             * CheckoutReviewReplyService) and shown in the contact sidebar so a manager can see at
+             * a glance whether this person is a proven repeat reviewer. */
+            Instant googleReviewClickedAt,
+            /** Same pair, for the private feedback-form link (negative branch, or a repeat
+             * reviewer's positive branch — see CheckoutReviewLinks). */
+            Instant feedbackFormSentAt,
+            Instant feedbackFormClickedAt
     ) {}
 
     public record Submission(

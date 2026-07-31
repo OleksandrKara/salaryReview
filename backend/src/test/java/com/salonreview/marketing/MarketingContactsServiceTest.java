@@ -47,6 +47,7 @@ class MarketingContactsServiceTest {
     private SquareMonthAggregator aggregator;
     private SalonConfigRepository salonConfig;
     private MarketingSyncStatusRepository syncStatus;
+    private com.salonreview.sms.SmsMessageLogService smsMessageLogService;
     private MarketingContactsService service;
 
     @BeforeEach
@@ -57,14 +58,19 @@ class MarketingContactsServiceTest {
         aggregator = mock(SquareMonthAggregator.class);
         salonConfig = mock(SalonConfigRepository.class);
         syncStatus = mock(MarketingSyncStatusRepository.class);
+        smsMessageLogService = mock(com.salonreview.sms.SmsMessageLogService.class);
         service = new MarketingContactsService(repository, squareLinks, square, aggregator, salonConfig, syncStatus,
-                new RebookingProperties());
+                new RebookingProperties(), smsMessageLogService);
         when(repository.findSubmissionHistory(any())).thenReturn(List.of());
         when(repository.findSubmissionsByBookingIds(any())).thenReturn(Map.of());
         when(squareLinks.findByPhoneNumber(any())).thenReturn(Optional.empty());
         when(salonConfig.findById(1)).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
         when(syncStatus.getSingleton()).thenReturn(MarketingSyncStatus.builder().build());
+        // No link engagement by default — individual tests override with a specific stub if they
+        // care about the repeat-reviewer/click-status fields.
+        when(smsMessageLogService.linkEngagement(any(), any()))
+                .thenReturn(new com.salonreview.sms.SmsMessageLogService.LinkEngagement(null, null));
     }
 
     private static RawContact rawContact(UUID id, String squareCustomerId) {
@@ -81,6 +87,27 @@ class MarketingContactsServiceTest {
                 Instant.parse("2026-07-01T00:00:00Z"),
                 Instant.parse("2026-07-02T00:00:00Z")
         );
+    }
+
+    @Test
+    @DisplayName("a contact's review-link engagement (sent/clicked for both Google review and feedback form) is surfaced on the Contact DTO")
+    void contactSurfacesReviewLinkEngagement() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of());
+        Instant googleSent = Instant.parse("2026-07-20T10:00:00Z");
+        Instant googleClicked = Instant.parse("2026-07-20T10:05:00Z");
+        when(smsMessageLogService.linkEngagement("(858) 555-0100", com.salonreview.sms.CheckoutReviewLinks.GOOGLE_REVIEW_TARGET))
+                .thenReturn(new com.salonreview.sms.SmsMessageLogService.LinkEngagement(googleSent, googleClicked));
+        when(smsMessageLogService.linkEngagement("(858) 555-0100", com.salonreview.sms.CheckoutReviewLinks.FEEDBACK_FORM_TARGET))
+                .thenReturn(new com.salonreview.sms.SmsMessageLogService.LinkEngagement(null, null));
+
+        Contact c = service.contacts().contacts().get(0);
+
+        assertThat(c.googleReviewSentAt()).isEqualTo(googleSent);
+        assertThat(c.googleReviewClickedAt()).isEqualTo(googleClicked);
+        assertThat(c.feedbackFormSentAt()).isNull();
+        assertThat(c.feedbackFormClickedAt()).isNull();
     }
 
     @Test

@@ -7,6 +7,8 @@ import com.salonreview.domain.SalonConfig;
 import com.salonreview.repo.MarketingContactSquareLinkRepository;
 import com.salonreview.repo.MarketingSyncStatusRepository;
 import com.salonreview.repo.SalonConfigRepository;
+import com.salonreview.sms.CheckoutReviewLinks;
+import com.salonreview.sms.SmsMessageLogService;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClient.AppointmentSegment;
 import com.salonreview.square.SquareClient.Booking;
@@ -67,6 +69,7 @@ public class MarketingContactsService {
     private final SalonConfigRepository salonConfig;
     private final MarketingSyncStatusRepository syncStatus;
     private final RebookingProperties rebookingProperties;
+    private final SmsMessageLogService smsMessageLogService;
     private final TtlCache cache = new TtlCache();
 
     public MarketingContactsService(MarketingContactsRepository repository,
@@ -75,7 +78,8 @@ public class MarketingContactsService {
                                      SquareMonthAggregator aggregator,
                                      SalonConfigRepository salonConfig,
                                      MarketingSyncStatusRepository syncStatus,
-                                     RebookingProperties rebookingProperties) {
+                                     RebookingProperties rebookingProperties,
+                                     SmsMessageLogService smsMessageLogService) {
         this.repository = repository;
         this.squareLinks = squareLinks;
         this.square = square;
@@ -83,6 +87,19 @@ public class MarketingContactsService {
         this.salonConfig = salonConfig;
         this.syncStatus = syncStatus;
         this.rebookingProperties = rebookingProperties;
+        this.smsMessageLogService = smsMessageLogService;
+    }
+
+    /** Both link-engagement pairs (Google review + feedback form) for one phone number, in the
+     * order the {@link Contact} record expects them — see #toContact and
+     * #contactFromLivePhoneLookup, its two callers. */
+    private record ContactLinkEngagement(
+            SmsMessageLogService.LinkEngagement googleReview, SmsMessageLogService.LinkEngagement feedbackForm) {}
+
+    private ContactLinkEngagement linkEngagementFor(String phoneNumber) {
+        return new ContactLinkEngagement(
+                smsMessageLogService.linkEngagement(phoneNumber, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET),
+                smsMessageLogService.linkEngagement(phoneNumber, CheckoutReviewLinks.FEEDBACK_FORM_TARGET));
     }
 
     /** When "Sync appointments" was last actually invoked — null if never (see V50). */
@@ -141,6 +158,7 @@ public class MarketingContactsService {
                 .stream().map(MarketingContactsService::toSubmission).collect(Collectors.toList());
         Instant since = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.DAYS).minus(LIVE_LOOKUP_HISTORY_WINDOW);
         List<Appointment> appointments = fetchAppointments(customerId, since);
+        ContactLinkEngagement engagement = linkEngagementFor(phoneNumber);
 
         return Optional.of(new Contact(
                 "square:" + customerId, givenName, familyName, phoneNumber, null,
@@ -148,7 +166,9 @@ public class MarketingContactsService {
                 null, null, null, null, null,
                 smsMarketingConsent, false,
                 squareProfileUrl, submissions, appointments,
-                null, null
+                null, null,
+                engagement.googleReview().sentAt(), engagement.googleReview().clickedAt(),
+                engagement.feedbackForm().sentAt(), engagement.feedbackForm().clickedAt()
         ));
     }
 
@@ -494,6 +514,8 @@ public class MarketingContactsService {
         boolean smsMarketingConsent = Boolean.TRUE.equals(raw.smsMarketingConsent())
                 || hasSquareConsentSegment(effectiveSquareCustomerId);
 
+        ContactLinkEngagement engagement = linkEngagementFor(raw.phoneNumber());
+
         return new Contact(
                 raw.id().toString(),
                 raw.givenName(),
@@ -519,7 +541,9 @@ public class MarketingContactsService {
                 submissions,
                 appointments,
                 raw.createdAt(),
-                raw.updatedAt()
+                raw.updatedAt(),
+                engagement.googleReview().sentAt(), engagement.googleReview().clickedAt(),
+                engagement.feedbackForm().sentAt(), engagement.feedbackForm().clickedAt()
         );
     }
 

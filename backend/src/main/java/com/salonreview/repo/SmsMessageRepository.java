@@ -67,6 +67,19 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
      * {@code SmsMessageLogService}'s own doc comment), so no tolerant matching is needed here. */
     boolean existsByPhoneNumberAndLinkTargetAndClickedAtIsNotNull(String phoneNumber, String linkTarget);
 
+    /** Most recent time this phone number was sent a click-tracked link to the given target
+     * (any outbound message with that {@code link_target}, sent or not — "sent" here means
+     * "we tried", matching how the contact sidebar wants to distinguish "never sent" from "sent
+     * but not yet clicked"), or {@code null} if never. See {@code SmsMessageLogService#linkEngagement}. */
+    @Query("SELECT MAX(m.createdAt) FROM SmsMessage m "
+            + "WHERE m.phoneNumber = :phoneNumber AND m.linkTarget = :linkTarget AND m.direction = 'OUTBOUND'")
+    Instant findLatestLinkSentAt(@Param("phoneNumber") String phoneNumber, @Param("linkTarget") String linkTarget);
+
+    /** Most recent time this phone number actually clicked through a link to the given target, or
+     * {@code null} if never — see {@code SmsMessageLogService#linkEngagement}. */
+    @Query("SELECT MAX(m.clickedAt) FROM SmsMessage m WHERE m.phoneNumber = :phoneNumber AND m.linkTarget = :linkTarget")
+    Instant findLatestLinkClickedAt(@Param("phoneNumber") String phoneNumber, @Param("linkTarget") String linkTarget);
+
     /** Backs the hub's unread-count badge — every unread inbound message, regardless of whether
      * it ever matched an automation. */
     long countByDirectionAndReadAtIsNull(String direction);

@@ -46,6 +46,14 @@ function displayName(givenName: string | null | undefined, familyName: string | 
   return parts.length > 0 ? parts.join(' ') : null;
 }
 
+/** Human label for a checkout-review-request message's tracked link — null for a message with no
+ * link at all (most messages), which the caller uses to skip rendering the click-status row. */
+function linkTargetLabel(linkTarget: string | null): string | null {
+  if (linkTarget === 'GOOGLE_REVIEW') return 'Google review link';
+  if (linkTarget === 'FEEDBACK_FORM') return 'Feedback form link';
+  return null;
+}
+
 export default function MessagesView({ initialConversations }: { initialConversations: SmsConversationDto[] }) {
   const [conversations, setConversations] = useState(initialConversations);
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
@@ -300,6 +308,26 @@ export default function MessagesView({ initialConversations }: { initialConversa
                               {formatBubbleTime(m.createdAt)}
                               {m.direction === 'OUTBOUND' && m.status !== 'SENT' ? ' · Not sent' : ''}
                             </p>
+                            {/* Click status for the checkout-review automation's tracked links
+                                (Google review / feedback form) — most messages have no linkTarget
+                                at all and skip this row entirely. */}
+                            {linkTargetLabel(m.linkTarget) ? (
+                              <p
+                                data-testid="thread-message-link-status"
+                                data-link-target={m.linkTarget}
+                                data-clicked={m.clickedAt != null}
+                                className={`mt-1 flex items-center gap-1 text-[10px] ${
+                                  m.direction === 'OUTBOUND' ? 'text-sky-100' : 'text-zinc-400'
+                                }`}
+                              >
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+                                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                                </svg>
+                                {linkTargetLabel(m.linkTarget)}
+                                {m.clickedAt ? ` · Opened ${formatBubbleTime(m.clickedAt)}` : ' · Not opened yet'}
+                              </p>
+                            ) : null}
                           </div>
                         </div>
                       </div>

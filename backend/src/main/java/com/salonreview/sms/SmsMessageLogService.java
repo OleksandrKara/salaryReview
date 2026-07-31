@@ -116,6 +116,21 @@ public class SmsMessageLogService {
         return repository.existsByPhoneNumberAndLinkTargetAndClickedAtIsNotNull(PhoneNumbers.normalize(phoneNumber), linkTarget);
     }
 
+    /** {@code sentAt} is null if this link target was never sent to this phone at all — distinct
+     * from "sent but not yet clicked" ({@code sentAt} set, {@code clickedAt} null) — so a caller
+     * (the contact sidebar) can tell "never asked" apart from "asked, didn't click yet" apart from
+     * "clicked on {clickedAt}". Both are the *most recent* occurrence, not the first — see
+     * {@link com.salonreview.repo.SmsMessageRepository#findLatestLinkSentAt}/{@code #findLatestLinkClickedAt}. */
+    public record LinkEngagement(Instant sentAt, Instant clickedAt) {}
+
+    public LinkEngagement linkEngagement(String phoneNumber, String linkTarget) {
+        String normalized = PhoneNumbers.normalize(phoneNumber);
+        return new LinkEngagement(
+                repository.findLatestLinkSentAt(normalized, linkTarget),
+                repository.findLatestLinkClickedAt(normalized, linkTarget)
+        );
+    }
+
     public long unreadCount() {
         return repository.countByDirectionAndReadAtIsNull("INBOUND");
     }
