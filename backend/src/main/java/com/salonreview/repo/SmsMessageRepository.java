@@ -28,6 +28,10 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
          * recent message never reached this customer" without opening the thread. */
         String getLastMessageDeliveryStatus();
         String getLastMessageDeliveryErrorMessage();
+        /** Whether this phone number has *ever* left a low-rating reply, not just on the last
+         * message — this is a permanent flag, so it stays true even once the conversation moves
+         * on to friendlier messages. See {@code SmsMessage#negativeFeedbackAt}. */
+        boolean getHasNegativeFeedback();
     }
 
     @Query(value = """
@@ -37,7 +41,8 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
                    latest.last_message_direction AS lastMessageDirection,
                    COALESCE(unread.unread_count, 0) AS unreadCount,
                    latest.last_message_delivery_status AS lastMessageDeliveryStatus,
-                   latest.last_message_delivery_error_message AS lastMessageDeliveryErrorMessage
+                   latest.last_message_delivery_error_message AS lastMessageDeliveryErrorMessage,
+                   COALESCE(negative.has_negative_feedback, false) AS hasNegativeFeedback
             FROM (
                 SELECT DISTINCT ON (phone_number) phone_number,
                        created_at AS last_message_at,
@@ -54,6 +59,12 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
                 WHERE direction = 'INBOUND' AND read_at IS NULL
                 GROUP BY phone_number
             ) unread ON unread.phone_number = latest.phone_number
+            LEFT JOIN (
+                SELECT phone_number, true AS has_negative_feedback
+                FROM sms_message
+                WHERE negative_feedback_at IS NOT NULL
+                GROUP BY phone_number
+            ) negative ON negative.phone_number = latest.phone_number
             ORDER BY latest.last_message_at DESC
             """, nativeQuery = true)
     List<ConversationSummaryProjection> conversationSummaries();
@@ -80,6 +91,11 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
      * E.164-normalized — this table only ever stores normalized numbers (see
      * {@code SmsMessageLogService}'s own doc comment), so no tolerant matching is needed here. */
     boolean existsByPhoneNumberAndLinkTargetAndClickedAtIsNotNull(String phoneNumber, String linkTarget);
+
+    /** Whether this phone number has ever left a low-rating reply to the checkout-review-request
+     * automation — permanently excludes them from the same-day-rebooking win-back nudge (see
+     * {@code SameDayRebookingScheduler}). {@code phoneNumber} must already be E.164-normalized. */
+    boolean existsByPhoneNumberAndNegativeFeedbackAtIsNotNull(String phoneNumber);
 
     /** Most recent time this phone number was sent a click-tracked link to the given target
      * (any outbound message with that {@code link_target}, sent or not — "sent" here means

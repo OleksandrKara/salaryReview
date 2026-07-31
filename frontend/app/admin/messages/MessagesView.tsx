@@ -5,6 +5,7 @@ import { api } from '../../lib/api';
 import type { MarketingContact, SmsConversationDto, SmsConversationSearchHitDto, SmsMessageDto } from '../../lib/types';
 import ContactInfoPanel from './ContactInfoPanel';
 import SmsConsentIcon from './SmsConsentIcon';
+import NegativeFeedbackIcon from './NegativeFeedbackIcon';
 
 function formatPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -297,6 +298,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
                       {name ? highlightMatch(name, trimmedQuery) : formatPhone(c.phoneNumber)}
                     </span>
                     {c.smsConsent && <span data-testid="conversation-row-consent-icon"><SmsConsentIcon /></span>}
+                    {c.hasNegativeFeedback && <span data-testid="conversation-row-negative-feedback-icon"><NegativeFeedbackIcon /></span>}
                   </span>
                   <span className="flex shrink-0 items-center gap-1.5">
                     <span data-testid="conversation-row-time" className="text-xs tabular-nums text-zinc-400">{formatListTime(c.lastMessageAt)}</span>
@@ -409,6 +411,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
                   ) ?? formatPhone(selectedPhone)}
                 </span>
                 {selectedConversation?.smsConsent && <span data-testid="thread-header-consent-icon"><SmsConsentIcon /></span>}
+                {selectedConversation?.hasNegativeFeedback && <span data-testid="thread-header-negative-feedback-icon"><NegativeFeedbackIcon /></span>}
               </span>
               {/* Desktop always shows the contact panel inline (sm:flex override on the panel
                   itself) — this toggle only matters on mobile, where it opens a full overlay. */}
@@ -548,6 +551,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
             squareProfileUrl={selectedConversation?.squareProfileUrl ?? null}
             conversationName={displayName(selectedConversation?.givenName, selectedConversation?.familyName)}
             smsConsent={selectedConversation?.smsConsent ?? false}
+            hasNegativeFeedback={selectedConversation?.hasNegativeFeedback ?? false}
             onClose={() => setShowContactPanel(false)}
           />
         </div>

@@ -22,6 +22,7 @@ public class SameDayRebookingSend {
     public static final String STATE_SKIPPED_BOOKED = "SKIPPED_BOOKED";
     public static final String STATE_SKIPPED_EXPIRED = "SKIPPED_EXPIRED";
     public static final String STATE_SKIPPED_DISABLED = "SKIPPED_DISABLED";
+    public static final String STATE_SKIPPED_NEGATIVE_FEEDBACK = "SKIPPED_NEGATIVE_FEEDBACK";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

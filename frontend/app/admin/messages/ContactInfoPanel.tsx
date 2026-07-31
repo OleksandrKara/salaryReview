@@ -2,6 +2,7 @@
 
 import type { MarketingContact, MarketingContactAppointment } from '../../lib/types';
 import SmsConsentIcon from './SmsConsentIcon';
+import NegativeFeedbackIcon from './NegativeFeedbackIcon';
 
 function formatPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -64,6 +65,7 @@ export default function ContactInfoPanel({
   squareProfileUrl,
   conversationName,
   smsConsent,
+  hasNegativeFeedback,
   onClose,
 }: {
   phoneNumber: string;
@@ -82,6 +84,10 @@ export default function ContactInfoPanel({
    * over `contact?.smsMarketingConsent`, which is always false/undefined for a phone number with
    * no marketing.contacts row at all, even when it does have Square-only consent. */
   smsConsent?: boolean;
+  /** True if this phone number has *ever* left a low (1-4) star rating on the checkout-review-
+   * request automation — permanent once true. Same phone number is permanently excluded from the
+   * same-day-rebooking win-back nudge on the backend, so a manager knows why before reaching out. */
+  hasNegativeFeedback?: boolean;
   onClose: () => void;
 }) {
   const resolvedSquareProfileUrl = squareProfileUrl ?? contact?.squareProfileUrl ?? null;
@@ -110,8 +116,8 @@ export default function ContactInfoPanel({
         ) : (
           <>
             <div className="mb-5">
-              <div className="flex items-center gap-1.5">
-                <div data-testid="contact-info-name" className="truncate text-base font-semibold text-zinc-900">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <div data-testid="contact-info-name" className="min-w-0 flex-1 truncate text-base font-semibold text-zinc-900">
                   {name ?? formatPhone(phoneNumber)}
                 </div>
                 {smsConsent ? (
@@ -122,6 +128,16 @@ export default function ContactInfoPanel({
                   >
                     <SmsConsentIcon size={11} />
                     SMS OK
+                  </span>
+                ) : null}
+                {hasNegativeFeedback ? (
+                  <span
+                    data-testid="contact-info-negative-feedback-badge"
+                    className="flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700"
+                    title="Has left negative feedback before"
+                  >
+                    <NegativeFeedbackIcon size={11} />
+                    Negative feedback
                   </span>
                 ) : null}
               </div>

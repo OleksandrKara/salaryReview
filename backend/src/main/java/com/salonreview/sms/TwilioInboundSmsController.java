@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 
@@ -74,10 +75,22 @@ public class TwilioInboundSmsController {
         if (pending.isPresent()) {
             SmsReplyFlow flow = pending.get();
             boolean positive = body.contains("5"); // digits only — "Five" spelled out doesn't match, see design.md D4
+            if (containsLowRatingDigit(body)) {
+                logged.setNegativeFeedbackAt(Instant.now());
+                messageLogService.save(logged);
+            }
             replyService.sendBranchReply(flow, positive);
             flow.setState(SmsReplyFlow.STATE_COMPLETED);
             replyFlowRepository.save(flow);
         }
         return ResponseEntity.ok().build();
+    }
+
+    /** A reply containing any of 1-4 — a low star rating — permanently excludes this customer
+     * from the same-day-rebooking win-back nudge (see {@code SameDayRebookingScheduler}); see
+     * negative-feedback-tracking design. Digits only, same convention as the positive check
+     * above — no attempt to parse spelled-out numbers. */
+    private static boolean containsLowRatingDigit(String body) {
+        return body.chars().anyMatch(c -> c >= '1' && c <= '4');
     }
 }
