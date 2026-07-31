@@ -118,20 +118,24 @@ public class MarketingContactsService {
         }
     }
 
-    /** Given name + optional family name + merged SMS-marketing-consent, for every phone number
-     * in a Messages conversation list, in one batch (see SmsActivityController#conversations).
-     * Name resolution ladder mirrors LeadFollowUpScheduler's own fallback order:
-     * marketing.contacts' own given_name/square_customer_id columns first, then
-     * marketing_contact_square_link for a customer id when the row itself has none, then — only
-     * for phone numbers with no marketing.contacts row at all — a live Square phone lookup, same
-     * as LeadFollowUpScheduler. Family name is always Square-resolved (marketing.contacts has no
-     * such column, see Contact#familyName). Consent is true if *either* source says so — the
+    /** Given name + optional family name + merged SMS-marketing-consent + Square profile link,
+     * for every phone number in a Messages conversation list, in one batch (see
+     * SmsActivityController#conversations). Name resolution ladder mirrors LeadFollowUpScheduler's
+     * own fallback order: marketing.contacts' own given_name/square_customer_id columns first,
+     * then marketing_contact_square_link for a customer id when the row itself has none, then —
+     * only for phone numbers with no marketing.contacts row at all — a live Square phone lookup,
+     * same as LeadFollowUpScheduler. Family name is always Square-resolved (marketing.contacts has
+     * no such column, see Contact#familyName). Consent is true if *either* source says so — the
      * same "either source" rule SameDayRebookingScheduler#hasConsent already uses for sending:
      * marketing.contacts.sms_marketing_consent, or the customer belonging to Square's own
      * consentSegmentId (RebookingProperties) — so this page never shows "no consent" for someone
-     * the automations would in fact be allowed to text. Best-effort throughout: a phone number
-     * with nothing resolvable still gets an entry (all-null/false), so a caller doesn't need a
-     * separate null-check just for consent. */
+     * the automations would in fact be allowed to text. squareProfileUrl uses the same customer id
+     * this method already resolved via the fallback ladder above — deliberately more permissive
+     * than {@link #contactByPhone}'s own squareProfileUrl, which requires a marketing.contacts row
+     * to exist at all (a checkout-review text sent purely from Square payment data has none, but
+     * can still resolve a customer id here). Best-effort throughout: a phone number with nothing
+     * resolvable still gets an entry (all-null/false), so a caller doesn't need a separate
+     * null-check just for consent. */
     public Map<String, ContactNameInfo> resolveDisplayNames(Collection<String> phoneNumbers) {
         if (phoneNumbers.isEmpty()) {
             return Map.of();
@@ -184,7 +188,11 @@ public class MarketingContactsService {
                         && consentSegmentId != null && !consentSegmentId.isBlank()
                         && segmentsByCustomer.getOrDefault(customerId, List.of()).contains(consentSegmentId);
 
-                result.put(phone, new ContactNameInfo(givenName, familyName, ownConsent || squareConsent));
+                String squareProfileUrl = customerId == null
+                        ? null
+                        : String.format(SQUARE_CUSTOMER_PROFILE_URL, customerId);
+
+                result.put(phone, new ContactNameInfo(givenName, familyName, ownConsent || squareConsent, squareProfileUrl));
             }
             return result;
         } catch (DataAccessException ex) {
@@ -194,9 +202,9 @@ public class MarketingContactsService {
         }
     }
 
-    /** Nullable given/family name plus merged SMS-marketing-consent for one phone number — see
-     * #resolveDisplayNames. */
-    public record ContactNameInfo(String givenName, String familyName, boolean smsConsent) {}
+    /** Nullable given/family name plus merged SMS-marketing-consent and Square profile link for
+     * one phone number — see #resolveDisplayNames. */
+    public record ContactNameInfo(String givenName, String familyName, boolean smsConsent, String squareProfileUrl) {}
 
     /** Never throws: same "this app's health must never depend on the other service's
      * schema" guarantee as MarketingDashboardService.dashboard. Submissions and (when a Square

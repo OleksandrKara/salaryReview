@@ -50,12 +50,26 @@ function appointmentBadge(a: MarketingContactAppointment): { label: string; clas
 export default function ContactInfoPanel({
   phoneNumber,
   contact,
+  squareProfileUrl,
+  conversationName,
   onClose,
 }: {
   phoneNumber: string;
   contact: MarketingContact | null | undefined;
+  /** From the conversation list's own resolution (MarketingContactsService#resolveDisplayNames),
+   * which can resolve a Square customer — and so a profile link — via a live phone lookup even
+   * when `contact` is null (no marketing.contacts row at all). Preferred over `contact`'s own
+   * squareProfileUrl, which requires that row to exist. */
+  squareProfileUrl?: string | null;
+  /** Same reasoning as squareProfileUrl — the conversation list can resolve a name for a phone
+   * number that has no marketing.contacts row at all, so it's preferred over `contact`'s own
+   * given/family name here too. */
+  conversationName?: string | null;
   onClose: () => void;
 }) {
+  const resolvedSquareProfileUrl = squareProfileUrl ?? contact?.squareProfileUrl ?? null;
+  const name = conversationName ?? displayName(contact?.givenName, contact?.familyName);
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-3">
@@ -80,7 +94,7 @@ export default function ContactInfoPanel({
             <div className="mb-5">
               <div className="flex items-center gap-1.5">
                 <div className="truncate text-base font-semibold text-zinc-900">
-                  {displayName(contact?.givenName, contact?.familyName) ?? formatPhone(phoneNumber)}
+                  {name ?? formatPhone(phoneNumber)}
                 </div>
                 {contact?.smsMarketingConsent ? (
                   <span
@@ -95,9 +109,9 @@ export default function ContactInfoPanel({
               {contact?.emailAddress ? (
                 <div className="mt-0.5 truncate text-sm text-zinc-500">{contact.emailAddress}</div>
               ) : null}
-              {contact?.squareProfileUrl ? (
+              {resolvedSquareProfileUrl ? (
                 <a
-                  href={contact.squareProfileUrl}
+                  href={resolvedSquareProfileUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-sky-700 hover:underline"
@@ -108,7 +122,7 @@ export default function ContactInfoPanel({
                   </svg>
                 </a>
               ) : null}
-              {contact === null ? (
+              {contact === null && !name && !resolvedSquareProfileUrl ? (
                 <p className="mt-3 text-xs text-zinc-400">No profile on file for this number yet.</p>
               ) : null}
             </div>
