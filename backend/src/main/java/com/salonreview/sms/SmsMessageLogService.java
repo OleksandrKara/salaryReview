@@ -6,6 +6,7 @@ import com.salonreview.util.PhoneNumbers;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -148,5 +149,17 @@ public class SmsMessageLogService {
             message.setReadAt(Instant.now());
             repository.save(message);
         }
+    }
+
+    /** Marks an entire phone number's thread read in one write — the manager conversation view
+     * (see MessagesView) calls this on opening a thread, the same moment it optimistically zeroes
+     * the badge locally, so the two actually agree afterward. Before this existed, that view only
+     * updated its own local state; the backend's read_at never changed, so the next unread-count
+     * poll (MessagesNotifierIcon, ~25s) would see the thread as still unread and the badge would
+     * silently revert — the automation hub's SmsActivityLog page didn't have this problem because
+     * it already called the single-message {@link #markRead} endpoint per row on click. */
+    @Transactional
+    public void markThreadRead(String phoneNumber) {
+        repository.markThreadRead(PhoneNumbers.normalize(phoneNumber), Instant.now());
     }
 }

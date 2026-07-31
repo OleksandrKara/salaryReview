@@ -12,6 +12,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
@@ -81,6 +82,14 @@ class SmsMessageLogServiceTest {
         service.markRead(999L);
 
         verify(repository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("markThreadRead normalizes the phone number and delegates to the bulk repository update")
+    void markThreadReadNormalizesAndDelegates() {
+        service.markThreadRead("(555) 123-4567");
+
+        verify(repository).markThreadRead(eq("+15551234567"), any(Instant.class));
     }
 
     @Test

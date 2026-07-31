@@ -4,6 +4,7 @@ import com.salonreview.domain.SmsMessage;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -83,6 +84,15 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
     /** Backs the hub's unread-count badge — every unread inbound message, regardless of whether
      * it ever matched an automation. */
     long countByDirectionAndReadAtIsNull(String direction);
+
+    /** Marks every unread inbound message in one phone number's thread read in a single write —
+     * backs the manager conversation view's "opening a thread marks it read" behavior (see
+     * SmsMessageLogService#markThreadRead). Bulk, not a loop of the single-message endpoint: a
+     * thread can have many unread messages, and this is one round trip instead of N. */
+    @Modifying
+    @Query("UPDATE SmsMessage m SET m.readAt = :now "
+            + "WHERE m.phoneNumber = :phoneNumber AND m.direction = 'INBOUND' AND m.readAt IS NULL")
+    void markThreadRead(@Param("phoneNumber") String phoneNumber, @Param("now") Instant now);
 
     /** 30-day "sent count" shown per automation card — real sends only, not blocked attempts. */
     long countByAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
