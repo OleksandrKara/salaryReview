@@ -60,6 +60,10 @@ export default function MessagesView({ initialConversations }: { initialConversa
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // Read once, inside the debounce effect below, then reset — lets the info-button on a list row
+  // open straight into the contact panel on the same tap, without a race against the effect's own
+  // showContactPanel reset (which normally closes it on every fresh selectedPhone).
+  const pendingShowContactPanelRef = useRef(false);
 
   useEffect(() => {
     if (!selectedPhone) return;
@@ -67,7 +71,8 @@ export default function MessagesView({ initialConversations }: { initialConversa
     // Deferred via setTimeout (same convention as SmsActivityLog's debounced fetch) so every
     // setState call here happens inside a callback rather than synchronously in the effect body.
     const handle = setTimeout(() => {
-      setShowContactPanel(false);
+      setShowContactPanel(pendingShowContactPanelRef.current);
+      pendingShowContactPanelRef.current = false;
       setContact(undefined);
       setThreadLoading(true);
       api.getSmsThread(selectedPhone)
@@ -91,7 +96,8 @@ export default function MessagesView({ initialConversations }: { initialConversa
     bottomRef.current?.scrollIntoView({ block: 'end' });
   }, [thread]);
 
-  function openThread(phoneNumber: string) {
+  function openThread(phoneNumber: string, openContactPanel = false) {
+    pendingShowContactPanelRef.current = openContactPanel;
     setSelectedPhone(phoneNumber);
     // Optimistic — the unread badge for this contact clears the moment they open it, same
     // instant-feedback convention as SmsActivityLog's mark-read-on-click.
@@ -133,11 +139,21 @@ export default function MessagesView({ initialConversations }: { initialConversa
           conversations.map((c) => {
             const name = displayName(c.givenName, c.familyName);
             return (
-              <button
+              // A <div> with button semantics, not a native <button> — the info button below
+              // needs to be a real, independently-clickable <button>, and a <button> can't
+              // contain another one (invalid HTML, breaks hydration).
+              <div
                 key={c.phoneNumber}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => openThread(c.phoneNumber)}
-                className={`flex w-full flex-col gap-0.5 border-b border-zinc-100 px-4 py-3 text-left hover:bg-zinc-50 ${
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    openThread(c.phoneNumber);
+                  }
+                }}
+                className={`flex w-full cursor-pointer flex-col gap-0.5 border-b border-zinc-100 px-4 py-3 text-left hover:bg-zinc-50 ${
                   c.phoneNumber === selectedPhone ? 'bg-sky-50' : ''
                 }`}
               >
@@ -155,7 +171,22 @@ export default function MessagesView({ initialConversations }: { initialConversa
                       </>
                     )}
                   </span>
-                  <span className="shrink-0 text-xs tabular-nums text-zinc-400">{formatListTime(c.lastMessageAt)}</span>
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <span className="text-xs tabular-nums text-zinc-400">{formatListTime(c.lastMessageAt)}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openThread(c.phoneNumber, true);
+                      }}
+                      aria-label={`Contact info for ${name ?? formatPhone(c.phoneNumber)}`}
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600"
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                        <circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" />
+                      </svg>
+                    </button>
+                  </span>
                 </div>
                 {name && <span className="truncate text-xs tabular-nums text-zinc-400">{formatPhone(c.phoneNumber)}</span>}
                 <div className="flex items-center justify-between gap-2">
@@ -169,14 +200,19 @@ export default function MessagesView({ initialConversations }: { initialConversa
                     </span>
                   )}
                 </div>
-              </button>
+              </div>
             );
           })
         )}
       </div>
 
-      {/* Thread — full width on mobile once opened, fills remaining space on desktop. */}
-      <div className={`flex min-w-0 flex-1 flex-col ${selectedPhone ? 'flex' : 'hidden sm:flex'}`}>
+      {/* Thread — full width on mobile once opened, fills remaining space on desktop. min-h-0 is
+          load-bearing here (and on the message-list div below): a flex item's default min-height
+          is `auto`, not 0, so without it this column refuses to shrink below its content's full
+          height — the outer container's `overflow-hidden` then just clips whatever doesn't fit
+          (messages cut off, composer pushed off-screen) instead of the message list's own
+          `overflow-y-auto` scrolling as intended. */}
+      <div className={`flex min-h-0 min-w-0 flex-1 flex-col ${selectedPhone ? 'flex' : 'hidden sm:flex'}`}>
         {!selectedPhone ? (
           <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
             Select a conversation
@@ -214,7 +250,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 py-3">
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
               {threadLoading ? (
                 <div className="text-center text-sm text-zinc-400">Loading…</div>
               ) : (
