@@ -1,5 +1,6 @@
 package com.salonreview.marketing;
 
+import com.salonreview.util.PhoneNumbers;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -119,27 +120,42 @@ public class MarketingContactsRepository {
      * sidebar). Empty when this phone number never went through the tracked capture flow (e.g. a
      * checkout-review or lead-follow-up text sent purely from Square/booking data). */
     public Optional<RawContact> findByPhoneNumber(String phoneNumber) {
+        // Last-10-digits match, not exact string equality — marketing.contacts is owned by the
+        // separate salonLandings service, whose own phone-number format isn't guaranteed to match
+        // whatever format the caller happens to be holding (e.g. this app's own E.164-normalized
+        // numbers vs. a customer-typed "(310) 779-6334") — see PhoneNumbers' own doc comment.
         String sql = "SELECT " + CONTACT_COLUMNS + ", " + TrafficSourceSql.contactChannelCase("c") + " AS channel"
-                + " FROM marketing.contacts c WHERE c.phone_number = ?";
-        return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact, phoneNumber)
+                + " FROM marketing.contacts c"
+                + " WHERE RIGHT(regexp_replace(c.phone_number, '[^0-9]', '', 'g'), 10) = ?";
+        return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact, PhoneNumbers.last10Digits(phoneNumber))
                 .stream().findFirst();
     }
 
     /** Given name + linked Square customer id + this app's own SMS-marketing-consent column (if
      * any), for a batch of phone numbers — a cheap, name-only lookup backing the Messages
      * conversation list, deliberately not the full {@link #findByPhoneNumber} query (which also
-     * pulls submission history). See MarketingContactsService#resolveDisplayNames. */
-    public record PhoneName(String phoneNumber, String givenName, String squareCustomerId, Boolean smsMarketingConsent) {}
+     * pulls submission history). {@code last10} is the row's own phone_number reduced to its last
+     * 10 digits — the reliable join key back to the caller's input, since marketing.contacts'
+     * stored format isn't guaranteed to match the format the caller queried with (see
+     * PhoneNumbers' own doc comment; MarketingContactsService#resolveDisplayNames keys its lookup
+     * map by this field, not the raw {@code phoneNumber}). See
+     * MarketingContactsService#resolveDisplayNames. */
+    public record PhoneName(String phoneNumber, String last10, String givenName, String squareCustomerId,
+                             Boolean smsMarketingConsent) {}
 
     public List<PhoneName> findNamesByPhoneNumbers(Collection<String> phoneNumbers) {
         if (phoneNumbers.isEmpty()) return List.of();
-        String placeholders = phoneNumbers.stream().map(p -> "?").collect(Collectors.joining(","));
-        String sql = "SELECT phone_number, given_name, square_customer_id, sms_marketing_consent FROM marketing.contacts"
-                + " WHERE phone_number IN (" + placeholders + ")";
+        List<String> last10s = phoneNumbers.stream().map(PhoneNumbers::last10Digits).collect(Collectors.toList());
+        String placeholders = last10s.stream().map(p -> "?").collect(Collectors.joining(","));
+        String sql = "SELECT phone_number, given_name, square_customer_id, sms_marketing_consent,"
+                + " RIGHT(regexp_replace(phone_number, '[^0-9]', '', 'g'), 10) AS last10"
+                + " FROM marketing.contacts"
+                + " WHERE RIGHT(regexp_replace(phone_number, '[^0-9]', '', 'g'), 10) IN (" + placeholders + ")";
         return jdbcTemplate.query(sql,
-                (rs, rowNum) -> new PhoneName(rs.getString("phone_number"), rs.getString("given_name"),
-                        rs.getString("square_customer_id"), (Boolean) rs.getObject("sms_marketing_consent")),
-                phoneNumbers.toArray());
+                (rs, rowNum) -> new PhoneName(rs.getString("phone_number"), rs.getString("last10"),
+                        rs.getString("given_name"), rs.getString("square_customer_id"),
+                        (Boolean) rs.getObject("sms_marketing_consent")),
+                last10s.toArray());
     }
 
     /** Contacts eligible for {@code LeadFollowUpScheduler}'s poll — old enough ({@code

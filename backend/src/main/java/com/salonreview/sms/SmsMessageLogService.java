@@ -2,6 +2,7 @@ package com.salonreview.sms;
 
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.repo.SmsMessageRepository;
+import com.salonreview.util.PhoneNumbers;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -13,6 +14,11 @@ import java.util.Optional;
  * The full SMS activity log — every outbound send attempt (sent or not) and every inbound
  * message, regardless of whether it belongs to an automation (see V52, design.md D9). Backs the
  * {@code /owner/automations} hub's inbox/activity view.
+ *
+ * <p>Every write here normalizes phoneNumber to E.164 ({@link PhoneNumbers#normalize}) — the same
+ * customer's number otherwise arrives in different shapes depending on the caller (Twilio's own
+ * inbound webhook vs. Square's {@code Customer.phoneNumber()}), which used to silently split one
+ * customer's texts into two "different" conversations on the Messages page.
  */
 @Service
 public class SmsMessageLogService {
@@ -28,7 +34,7 @@ public class SmsMessageLogService {
         return repository.save(SmsMessage.builder()
                 .direction("OUTBOUND")
                 .automationKey(automationKey)
-                .phoneNumber(phoneNumber)
+                .phoneNumber(PhoneNumbers.normalize(phoneNumber))
                 .templateKey(templateKey)
                 .body(body)
                 .twilioMessageSid(twilioMessageSid)
@@ -46,7 +52,7 @@ public class SmsMessageLogService {
         return repository.save(SmsMessage.builder()
                 .direction("OUTBOUND")
                 .automationKey(automationKey)
-                .phoneNumber(phoneNumber)
+                .phoneNumber(PhoneNumbers.normalize(phoneNumber))
                 .templateKey(templateKey)
                 .body(body)
                 .twilioMessageSid(twilioMessageSid)
@@ -63,7 +69,7 @@ public class SmsMessageLogService {
         return repository.save(SmsMessage.builder()
                 .direction("INBOUND")
                 .automationKey(automationKey)
-                .phoneNumber(phoneNumber)
+                .phoneNumber(PhoneNumbers.normalize(phoneNumber))
                 .body(body)
                 .status("RECEIVED")
                 .build());
@@ -90,7 +96,7 @@ public class SmsMessageLogService {
     }
 
     public Page<SmsMessage> search(String phoneNumber, String direction, String automationKey, Pageable pageable) {
-        return repository.search(phoneNumber, direction, automationKey, pageable);
+        return repository.search(phoneNumber == null ? null : PhoneNumbers.normalize(phoneNumber), direction, automationKey, pageable);
     }
 
     /** One row per distinct phone number, most-recent-message-first — backs the manager
@@ -101,7 +107,7 @@ public class SmsMessageLogService {
 
     /** Full chronological thread for one phone number. */
     public java.util.List<SmsMessage> thread(String phoneNumber) {
-        return repository.findByPhoneNumberOrderByCreatedAtAsc(phoneNumber);
+        return repository.findByPhoneNumberOrderByCreatedAtAsc(PhoneNumbers.normalize(phoneNumber));
     }
 
     public long unreadCount() {
