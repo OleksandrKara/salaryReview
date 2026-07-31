@@ -130,9 +130,12 @@ export default function MessagesView({ initialConversations }: { initialConversa
   const selectedConversation = conversations.find((c) => c.phoneNumber === selectedPhone);
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden sm:h-[70vh] sm:min-h-[420px] sm:rounded-lg sm:ring-1 sm:ring-zinc-200">
+    <div data-testid="messages-view-root" className="flex h-full min-h-0 overflow-hidden sm:h-[70vh] sm:min-h-[420px] sm:rounded-lg sm:ring-1 sm:ring-zinc-200">
       {/* Contact list — full width on mobile until a thread is opened, fixed sidebar on desktop. */}
-      <div className={`w-full shrink-0 overflow-y-auto overflow-x-hidden border-r border-zinc-200 sm:block sm:w-72 ${selectedPhone ? 'hidden sm:block' : ''}`}>
+      <div
+        data-testid="conversation-list"
+        className={`w-full shrink-0 overflow-y-auto overflow-x-hidden border-r border-zinc-200 sm:block sm:w-72 ${selectedPhone ? 'hidden sm:block' : ''}`}
+      >
         {conversations.length === 0 ? (
           <div className="p-6 text-center text-sm text-zinc-500">No conversations yet.</div>
         ) : (
@@ -144,6 +147,8 @@ export default function MessagesView({ initialConversations }: { initialConversa
               // contain another one (invalid HTML, breaks hydration).
               <div
                 key={c.phoneNumber}
+                data-testid="conversation-row"
+                data-phone={c.phoneNumber}
                 role="button"
                 tabIndex={0}
                 onClick={() => openThread(c.phoneNumber)}
@@ -160,21 +165,23 @@ export default function MessagesView({ initialConversations }: { initialConversa
                 <div className="flex items-center justify-between gap-2">
                   <span className="flex min-w-0 items-center gap-1.5">
                     <span
+                      data-testid="conversation-row-name"
                       className={`truncate ${c.unreadCount > 0 ? 'font-semibold text-zinc-900' : 'font-medium text-zinc-700'} ${name ? '' : 'tabular-nums'}`}
                     >
                       {name ?? formatPhone(c.phoneNumber)}
                     </span>
                     {c.smsConsent && (
                       <>
-                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+                        <span data-testid="conversation-row-consent-dot" className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden />
                         <span className="sr-only">SMS marketing consent on file</span>
                       </>
                     )}
                   </span>
                   <span className="flex shrink-0 items-center gap-1.5">
-                    <span className="text-xs tabular-nums text-zinc-400">{formatListTime(c.lastMessageAt)}</span>
+                    <span data-testid="conversation-row-time" className="text-xs tabular-nums text-zinc-400">{formatListTime(c.lastMessageAt)}</span>
                     <button
                       type="button"
+                      data-testid="conversation-row-info-button"
                       onClick={(e) => {
                         e.stopPropagation();
                         openThread(c.phoneNumber, true);
@@ -188,14 +195,21 @@ export default function MessagesView({ initialConversations }: { initialConversa
                     </button>
                   </span>
                 </div>
-                {name && <span className="truncate text-xs tabular-nums text-zinc-400">{formatPhone(c.phoneNumber)}</span>}
-                <div className="flex items-center justify-between gap-2">
-                  <span className={`truncate text-sm ${c.unreadCount > 0 ? 'font-medium text-zinc-900' : 'text-zinc-500'}`}>
+                {name && <span data-testid="conversation-row-phone" className="truncate text-xs tabular-nums text-zinc-400">{formatPhone(c.phoneNumber)}</span>}
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  {/* min-w-0 here (and w-full on page.tsx's <main>) is what actually lets this
+                      truncate: a flex item's default min-width is `auto`, not 0, so without it the
+                      preview text's own unbreakable content (e.g. a tracked SMS short link with no
+                      spaces) can force this row — and the whole page — wider than the viewport. */}
+                  <span
+                    data-testid="conversation-row-preview"
+                    className={`min-w-0 truncate text-sm ${c.unreadCount > 0 ? 'font-medium text-zinc-900' : 'text-zinc-500'}`}
+                  >
                     {c.lastMessageDirection === 'OUTBOUND' ? 'You: ' : ''}
                     {c.lastMessageBody}
                   </span>
                   {c.unreadCount > 0 && (
-                    <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-semibold leading-none text-white">
+                    <span data-testid="conversation-row-unread-badge" className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-semibold leading-none text-white">
                       {c.unreadCount > 99 ? '99+' : c.unreadCount}
                     </span>
                   )}
@@ -217,16 +231,17 @@ export default function MessagesView({ initialConversations }: { initialConversa
           page.tsx's `group-has-[.thread-open]/messages` reads to hide this page's own title bar
           on mobile while a thread is open, so the thread's own back/name/info header is the only
           one on screen (see page.tsx's doc comment). */}
-      <div className={`flex min-h-0 min-w-0 flex-1 flex-col ${selectedPhone ? 'thread-open flex' : 'hidden sm:flex'}`}>
+      <div data-testid="thread-column" className={`flex min-h-0 min-w-0 flex-1 flex-col ${selectedPhone ? 'thread-open flex' : 'hidden sm:flex'}`}>
         {!selectedPhone ? (
           <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
             Select a conversation
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-2 border-b border-zinc-200 px-4 py-3">
+            <div data-testid="thread-header" className="flex items-center gap-2 border-b border-zinc-200 px-4 py-3">
               <button
                 type="button"
+                data-testid="thread-back-button"
                 onClick={() => setSelectedPhone(null)}
                 aria-label="Back to conversations"
                 className="-ml-2 flex h-11 w-11 shrink-0 items-center justify-center text-zinc-400 hover:text-zinc-600 sm:hidden"
@@ -235,7 +250,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
                   <path d="m15 18-6-6 6-6" />
                 </svg>
               </button>
-              <span className="min-w-0 flex-1 truncate font-medium text-zinc-900">
+              <span data-testid="thread-header-name" className="min-w-0 flex-1 truncate font-medium text-zinc-900">
                 {displayName(
                   contact?.givenName ?? selectedConversation?.givenName,
                   contact?.familyName ?? selectedConversation?.familyName,
@@ -245,6 +260,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
                   itself) — this toggle only matters on mobile, where it opens a full overlay. */}
               <button
                 type="button"
+                data-testid="thread-header-info-button"
                 onClick={() => setShowContactPanel((v) => !v)}
                 aria-label="Contact info"
                 className="flex h-11 w-11 shrink-0 items-center justify-center text-zinc-400 hover:text-zinc-600 sm:hidden"
@@ -255,7 +271,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-3">
+            <div data-testid="thread-message-list" className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-3">
               {threadLoading ? (
                 <div className="text-center text-sm text-zinc-400">Loading…</div>
               ) : (
@@ -265,14 +281,16 @@ export default function MessagesView({ initialConversations }: { initialConversa
                     const showDateSeparator =
                       !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString();
                     return (
-                      <div key={m.id}>
+                      <div key={m.id} data-testid="thread-message" data-message-id={m.id}>
                         {showDateSeparator && (
-                          <div className="my-2 text-center text-xs font-medium text-zinc-400">
+                          <div data-testid="thread-date-separator" className="my-2 text-center text-xs font-medium text-zinc-400">
                             {formatDateSeparator(m.createdAt)}
                           </div>
                         )}
                         <div className={`flex ${m.direction === 'OUTBOUND' ? 'justify-end' : 'justify-start'}`}>
                           <div
+                            data-testid="thread-message-bubble"
+                            data-direction={m.direction}
                             className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
                               m.direction === 'OUTBOUND' ? 'bg-sky-600 text-white' : 'bg-zinc-100 text-zinc-900'
                             }`}
@@ -293,6 +311,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
             </div>
 
             <form
+              data-testid="thread-composer"
               onSubmit={(e) => {
                 e.preventDefault();
                 void sendReply();
@@ -302,6 +321,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
               {/* text-base (16px), not text-sm, on mobile — a smaller font on a focused input
                   makes iOS Safari auto-zoom the whole page, which is jarring here. */}
               <input
+                data-testid="thread-composer-input"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder="Type a reply…"
@@ -309,6 +329,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
               />
               <button
                 type="submit"
+                data-testid="thread-composer-send-button"
                 disabled={!draft.trim() || sending}
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white disabled:opacity-40 sm:h-auto sm:w-auto sm:px-4 sm:py-2"
                 aria-label="Send"
@@ -327,6 +348,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
           always-visible third column (sm:flex wins over the mobile-only hidden/flex toggle). */}
       {selectedPhone ? (
         <div
+          data-testid="contact-info-panel-wrapper"
           className={`${showContactPanel ? 'flex' : 'hidden'} fixed inset-0 z-20 flex-col bg-white sm:static sm:z-auto sm:flex sm:w-72 sm:shrink-0 sm:border-l sm:border-zinc-200`}
         >
           <ContactInfoPanel

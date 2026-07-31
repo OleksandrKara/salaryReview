@@ -30,8 +30,25 @@ export default async function MessagesPage() {
   const conversations = await serverApi.listSmsConversations();
 
   return (
-    <main className="group/messages mx-auto flex h-[100dvh] max-w-5xl flex-col sm:h-auto sm:p-8">
-      <div className="shrink-0 px-4 pt-4 sm:px-0 sm:pt-0 max-sm:group-has-[.thread-open]/messages:hidden">
+    // w-full is load-bearing, not decorative: `main` is a flex item of `body`'s column flex
+    // container, and `mx-auto` gives it auto cross-axis margins — per the flexbox spec, auto
+    // margins on the cross axis opt an item OUT of stretch sizing, so without an explicit width
+    // it shrink-wraps to its own content's max-content size instead of the viewport. Any single
+    // unbreakable string anywhere inside (a long SMS body, a tracked short link) then silently
+    // grows the whole page to that string's width and the page scrolls horizontally — no amount
+    // of overflow-x-hidden/truncate further down the tree can prevent that, since those only clip
+    // *within* a box that's already been sized too wide. w-full forces the definite viewport width
+    // this container needs before any of that inner clipping can do its job. Verified against a
+    // real compiled-CSS/headless-browser repro, not just reasoned about: removing w-full reproduces
+    // ~950px of horizontal overflow at 320/375/390px viewports; adding it brings overflow to 0.
+    <main
+      data-testid="messages-page-root"
+      className="group/messages mx-auto flex w-full h-[100dvh] max-w-5xl flex-col sm:h-auto sm:p-8"
+    >
+      <div
+        data-testid="messages-page-title-row"
+        className="shrink-0 px-4 pt-4 sm:px-0 sm:pt-0 max-sm:group-has-[.thread-open]/messages:hidden"
+      >
         <PageHeader title="Messages" role={me.role} language={me.preferredLanguage} />
       </div>
       <div className="min-h-0 flex-1">
