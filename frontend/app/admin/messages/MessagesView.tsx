@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../../lib/api';
 import type { MarketingContact, SmsConversationDto, SmsConversationSearchHitDto, SmsMessageDto } from '../../lib/types';
 import ContactInfoPanel from './ContactInfoPanel';
+import SmsConsentIcon from './SmsConsentIcon';
 
 function formatPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -295,12 +296,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
                     >
                       {name ? highlightMatch(name, trimmedQuery) : formatPhone(c.phoneNumber)}
                     </span>
-                    {c.smsConsent && (
-                      <>
-                        <span data-testid="conversation-row-consent-dot" className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden />
-                        <span className="sr-only">SMS marketing consent on file</span>
-                      </>
-                    )}
+                    {c.smsConsent && <span data-testid="conversation-row-consent-icon"><SmsConsentIcon /></span>}
                   </span>
                   <span className="flex shrink-0 items-center gap-1.5">
                     <span data-testid="conversation-row-time" className="text-xs tabular-nums text-zinc-400">{formatListTime(c.lastMessageAt)}</span>
@@ -405,11 +401,14 @@ export default function MessagesView({ initialConversations }: { initialConversa
                   <path d="m15 18-6-6 6-6" />
                 </svg>
               </button>
-              <span data-testid="thread-header-name" className="min-w-0 flex-1 truncate font-medium text-zinc-900">
-                {displayName(
-                  contact?.givenName ?? selectedConversation?.givenName,
-                  contact?.familyName ?? selectedConversation?.familyName,
-                ) ?? formatPhone(selectedPhone)}
+              <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                <span data-testid="thread-header-name" className="min-w-0 truncate font-medium text-zinc-900">
+                  {displayName(
+                    contact?.givenName ?? selectedConversation?.givenName,
+                    contact?.familyName ?? selectedConversation?.familyName,
+                  ) ?? formatPhone(selectedPhone)}
+                </span>
+                {selectedConversation?.smsConsent && <span data-testid="thread-header-consent-icon"><SmsConsentIcon /></span>}
               </span>
               {/* Desktop always shows the contact panel inline (sm:flex override on the panel
                   itself) — this toggle only matters on mobile, where it opens a full overlay. */}
@@ -548,6 +547,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
             contact={contact}
             squareProfileUrl={selectedConversation?.squareProfileUrl ?? null}
             conversationName={displayName(selectedConversation?.givenName, selectedConversation?.familyName)}
+            smsConsent={selectedConversation?.smsConsent ?? false}
             onClose={() => setShowContactPanel(false)}
           />
         </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import type { MarketingContact, MarketingContactAppointment } from '../../lib/types';
+import SmsConsentIcon from './SmsConsentIcon';
 
 function formatPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -62,6 +63,7 @@ export default function ContactInfoPanel({
   contact,
   squareProfileUrl,
   conversationName,
+  smsConsent,
   onClose,
 }: {
   phoneNumber: string;
@@ -75,6 +77,11 @@ export default function ContactInfoPanel({
    * number that has no marketing.contacts row at all, so it's preferred over `contact`'s own
    * given/family name here too. */
   conversationName?: string | null;
+  /** From the conversation list's own resolution — true if consent comes from *either* source
+   * (this app's own marketing.contacts capture, or Square's Text Subscribers segment). Preferred
+   * over `contact?.smsMarketingConsent`, which is always false/undefined for a phone number with
+   * no marketing.contacts row at all, even when it does have Square-only consent. */
+  smsConsent?: boolean;
   onClose: () => void;
 }) {
   const resolvedSquareProfileUrl = squareProfileUrl ?? contact?.squareProfileUrl ?? null;
@@ -107,11 +114,13 @@ export default function ContactInfoPanel({
                 <div data-testid="contact-info-name" className="truncate text-base font-semibold text-zinc-900">
                   {name ?? formatPhone(phoneNumber)}
                 </div>
-                {contact?.smsMarketingConsent ? (
+                {smsConsent ? (
                   <span
-                    className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700"
-                    title="Consent on file via marketing.contacts or Square's own Text Subscribers segment"
+                    data-testid="contact-info-consent-badge"
+                    className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700"
+                    title="Consent on file via Square's Text Subscribers segment or the salon's own booking form"
                   >
+                    <SmsConsentIcon size={11} />
                     SMS OK
                   </span>
                 ) : null}
