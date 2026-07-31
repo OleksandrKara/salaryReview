@@ -145,19 +145,30 @@ class SameDayRebookingSchedulerTest {
     }
 
     @Test
-    @DisplayName("no consent in either source → SKIPPED_NO_CONSENT, never sent")
-    void noConsentAnywhereIsSkipped() throws Exception {
+    @DisplayName("no consent in either source → still sends, but a transactional reminder with no discount wording")
+    void noConsentAnywhereSendsTransactionalReminder() throws Exception {
         when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(false);
         when(square.customerSegmentIds(CUSTOMER_ID)).thenReturn(List.of());
         SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
         givenDue(s);
+        when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
 
         scheduler.sendDueRebookingNudges();
 
-        verifyNoInteractions(client);
+        ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
+        assertThat(bodyCaptor.getValue())
+                .contains("Thank you for visiting AK.LUX.NAILS")
+                .contains("tok123")
+                .doesNotContain("$10")
+                .doesNotContain("discount")
+                .doesNotContain("off");
+        verify(messageLogService).logOutboundWithLink(
+                eq("same_day_rebooking_reminder"), any(), any(), any(), anyBoolean(), any(), any(), any(), any());
+
         ArgumentCaptor<SameDayRebookingSend> captor = ArgumentCaptor.forClass(SameDayRebookingSend.class);
         verify(repository).save(captor.capture());
-        assertThat(captor.getValue().getState()).isEqualTo(SameDayRebookingSend.STATE_SKIPPED_NO_CONSENT);
+        assertThat(captor.getValue().getState()).isEqualTo(SameDayRebookingSend.STATE_SENT);
     }
 
     @Test

@@ -20,7 +20,6 @@ public class SameDayRebookingSend {
     public static final String STATE_AWAITING_SEND = "AWAITING_SEND";
     public static final String STATE_SENT = "SENT";
     public static final String STATE_SKIPPED_BOOKED = "SKIPPED_BOOKED";
-    public static final String STATE_SKIPPED_NO_CONSENT = "SKIPPED_NO_CONSENT";
     public static final String STATE_SKIPPED_EXPIRED = "SKIPPED_EXPIRED";
     public static final String STATE_SKIPPED_DISABLED = "SKIPPED_DISABLED";
 
