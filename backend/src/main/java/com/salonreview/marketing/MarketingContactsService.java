@@ -55,6 +55,11 @@ public class MarketingContactsService {
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
     private static final String CONTACTS_CACHE_KEY = "contacts";
 
+    // See #contactFromLivePhoneLookup and MarketingAnalyticsService#BOOKING_HISTORY_LOOKBACK for
+    // the same rationale: with no contact createdAt to anchor the Square scan on, this caps it at
+    // a generous window rather than paying for an unbounded "their whole history" lookup.
+    private static final Duration LIVE_LOOKUP_HISTORY_WINDOW = Duration.ofDays(400);
+
     private final MarketingContactsRepository repository;
     private final MarketingContactSquareLinkRepository squareLinks;
     private final SquareClient square;
@@ -94,17 +99,57 @@ public class MarketingContactsService {
      */
     /** One contact's profile + submission/appointment history, resolved by phone number — for the
      * manager conversation view's contact info sidebar (see MessagesView), which only knows the
-     * phone number a thread is keyed by. Empty (not an error) if this number never went through
-     * the tracked capture flow (e.g. a checkout-review/lead-follow-up text sent purely from
-     * Square/booking data with no matching marketing.contacts row) or if the schema is
-     * unreachable. */
+     * phone number a thread is keyed by. Falls back to {@link #contactFromLivePhoneLookup} when
+     * this number never went through the tracked capture flow at all (e.g. a checkout-review text
+     * sent purely from Square/booking data, or a real Square customer who only ever booked directly
+     * — reported live: "Lily Frei" had a conversation thread and a name/profile-link already
+     * resolved via {@link #resolveDisplayNames}'s own live-phone-lookup fallback, but no
+     * appointments here, since this method previously gave up the moment marketing.contacts had no
+     * row — same fallback resolveDisplayNames/LeadFollowUpScheduler already use, just extended to
+     * build the full contact rather than only a name). Empty only if the schema is unreachable or
+     * no Square customer resolves either way. */
     public Optional<Contact> contactByPhone(String phoneNumber) {
         try {
-            return repository.findByPhoneNumber(phoneNumber).map(this::toContact);
+            Optional<Contact> tracked = repository.findByPhoneNumber(phoneNumber).map(this::toContact);
+            return tracked.isPresent() ? tracked : contactFromLivePhoneLookup(phoneNumber);
         } catch (DataAccessException ex) {
             log.warn("Marketing schema unavailable while resolving contact for phone {}", phoneNumber, ex);
             return Optional.empty();
         }
+    }
+
+    /** Builds a Contact for a phone number with no marketing.contacts row at all, purely from a
+     * live Square phone lookup — same resolution ladder's last resort as
+     * {@link #resolveDisplayNames} and {@code LeadFollowUpScheduler#hasUpcomingAppointment}. Every
+     * capture-flow-only field (traffic source, UTMs, device info, createdAt/updatedAt) is null —
+     * there was never a capture event to record them from. {@code since} is capped at
+     * {@link #LIVE_LOOKUP_HISTORY_WINDOW} back, same rationale as
+     * MarketingAnalyticsService#BOOKING_HISTORY_LOOKBACK: with no contact createdAt to anchor on,
+     * an unbounded "their whole history" Square scan isn't free, so this caps it at a generous
+     * window instead. Empty if Square has no customer for this phone either. */
+    private Optional<Contact> contactFromLivePhoneLookup(String phoneNumber) {
+        List<String> candidates = square.customerIdsForPhone(phoneNumber);
+        if (candidates.isEmpty()) return Optional.empty();
+        String customerId = candidates.get(0);
+
+        String givenName = square.customerGivenNames(List.of(customerId)).get(customerId);
+        String familyName = square.customerFamilyNames(List.of(customerId)).get(customerId);
+        String squareProfileUrl = String.format(SQUARE_CUSTOMER_PROFILE_URL, customerId);
+        boolean smsMarketingConsent = hasSquareConsentSegment(customerId);
+
+        List<Submission> submissions = repository.findSubmissionHistory(phoneNumber)
+                .stream().map(MarketingContactsService::toSubmission).collect(Collectors.toList());
+        Instant since = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.DAYS).minus(LIVE_LOOKUP_HISTORY_WINDOW);
+        List<Appointment> appointments = fetchAppointments(customerId, since);
+
+        return Optional.of(new Contact(
+                "square:" + customerId, givenName, familyName, phoneNumber, null,
+                null, null, null, null, null, null, null, null,
+                null, null, null, null, null,
+                smsMarketingConsent, false,
+                squareProfileUrl, submissions, appointments,
+                null, null
+        ));
     }
 
     public Optional<Contact> contactByCustomerId(String squareCustomerId) {

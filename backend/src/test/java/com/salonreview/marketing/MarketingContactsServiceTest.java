@@ -205,6 +205,47 @@ class MarketingContactsServiceTest {
         assertThat(appt.submissionOccurredAt()).isEqualTo(Instant.parse("2026-07-30T10:00:00Z"));
     }
 
+    @Test
+    @DisplayName("contactByPhone falls back to a live Square phone lookup when there's no marketing.contacts row at all")
+    void contactByPhoneFallsBackToLivePhoneLookupWhenNoTrackedRow() {
+        when(repository.findByPhoneNumber("(863) 660-3063")).thenReturn(Optional.empty());
+        when(square.customerIdsForPhone("(863) 660-3063")).thenReturn(List.of("SQCUST999"));
+        when(square.customerGivenNames(List.of("SQCUST999"))).thenReturn(Map.of("SQCUST999", "Lily"));
+        when(square.customerFamilyNames(List.of("SQCUST999"))).thenReturn(Map.of("SQCUST999", "Frei"));
+        when(repository.findSubmissionHistory("(863) 660-3063")).thenReturn(List.of());
+
+        Booking booking = new Booking("SQBOOK9", "ACCEPTED", "2026-08-10T17:00:00Z", null, null,
+                "LOC1", "SQCUST999", null, null,
+                List.of(new AppointmentSegment("TM1", "VAR1", 60)));
+        when(square.bookingsForCustomer(eq("SQCUST999"), any())).thenReturn(List.of(booking));
+        when(square.allTeamMembers()).thenReturn(List.of(new TeamMember("TM1", "Susan", "A.", "ACTIVE", false, null, null)));
+        when(square.catalogNames(List.of("VAR1"))).thenReturn(Map.of("VAR1", "Manicure"));
+        when(square.catalogPrices(List.of("VAR1"))).thenReturn(Map.of("VAR1", new BigDecimal("85.00")));
+        when(repository.findSubmissionsByBookingIds(List.of("SQBOOK9"))).thenReturn(Map.of());
+
+        Optional<Contact> result = service.contactByPhone("(863) 660-3063");
+
+        assertThat(result).isPresent();
+        Contact c = result.get();
+        assertThat(c.givenName()).isEqualTo("Lily");
+        assertThat(c.familyName()).isEqualTo("Frei");
+        assertThat(c.squareProfileUrl()).isEqualTo("https://app.squareup.com/dashboard/customers/directory/customer/SQCUST999");
+        assertThat(c.appointments()).hasSize(1);
+        assertThat(c.appointments().get(0).bookingId()).isEqualTo("SQBOOK9");
+        assertThat(c.createdAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("contactByPhone stays empty when neither marketing.contacts nor a live Square lookup resolves anything")
+    void contactByPhoneEmptyWhenNothingResolves() {
+        when(repository.findByPhoneNumber("(555) 000-0000")).thenReturn(Optional.empty());
+        when(square.customerIdsForPhone("(555) 000-0000")).thenReturn(List.of());
+
+        Optional<Contact> result = service.contactByPhone("(555) 000-0000");
+
+        assertThat(result).isEmpty();
+    }
+
     private static SquareMonthAggregator.MonthAggregation aggOf(int year, int month, List<SquareMonthAggregator.AttributedService> services) {
         return new SquareMonthAggregator.MonthAggregation(year, month, "UTC", List.of(),
                 new SquareMonthAggregator.Diag(), services, List.of(), List.of());
