@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '../../lib/api';
-import type { MarketingContact, SmsConversationDto, SmsMessageDto } from '../../lib/types';
+import type { MarketingContact, SmsConversationDto, SmsConversationSearchHitDto, SmsMessageDto } from '../../lib/types';
 import ContactInfoPanel from './ContactInfoPanel';
 
 function formatPhone(phone: string): string {
@@ -54,6 +54,22 @@ function linkTargetLabel(linkTarget: string | null): string | null {
   return null;
 }
 
+// Wraps the first case-insensitive occurrence of `query` in `text` with a <mark> — used by the
+// conversation list's search box so a match is visually obvious at a glance, not just implied by
+// the row being present in a filtered list.
+function highlightMatch(text: string, query: string): ReactNode {
+  if (!query) return text;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="rounded bg-amber-200 text-inherit">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
+
 export default function MessagesView({ initialConversations }: { initialConversations: SmsConversationDto[] }) {
   const [conversations, setConversations] = useState(initialConversations);
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
@@ -67,6 +83,12 @@ export default function MessagesView({ initialConversations }: { initialConversa
   const [showContactPanel, setShowContactPanel] = useState(false);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  // Search box (conversation list). Name/phone matching is instant and purely client-side, since
+  // every conversation is already loaded; `searchHits` is only populated for message-content
+  // matches, which need a backend lookup since older messages in a thread aren't loaded until
+  // that thread is opened.
+  const [query, setQuery] = useState('');
+  const [searchHits, setSearchHits] = useState<SmsConversationSearchHitDto[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   // Read once, inside the debounce effect below, then reset — lets the info-button on a list row
   // open straight into the contact panel on the same tap, without a race against the effect's own
@@ -110,6 +132,30 @@ export default function MessagesView({ initialConversations }: { initialConversa
     bottomRef.current?.scrollIntoView({ block: 'end' });
   }, [thread]);
 
+  // Debounced message-content search — skipped for very short queries (1 character) so we're not
+  // firing a broad, mostly-useless lookup on every keystroke. Name/phone filtering (below, in
+  // render) doesn't wait on this — it's instant either way.
+  useEffect(() => {
+    const trimmed = query.trim();
+    let cancelled = false;
+    const handle = setTimeout(
+      () => {
+        if (trimmed.length < 2) {
+          setSearchHits([]);
+          return;
+        }
+        api.searchSmsConversations(trimmed).then((hits) => {
+          if (!cancelled) setSearchHits(hits);
+        });
+      },
+      trimmed.length < 2 ? 0 : 300,
+    );
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [query]);
+
   function openThread(phoneNumber: string, openContactPanel = false) {
     pendingShowContactPanelRef.current = openContactPanel;
     setSelectedPhone(phoneNumber);
@@ -143,18 +189,77 @@ export default function MessagesView({ initialConversations }: { initialConversa
   // flashes the phone number before the name arrives.
   const selectedConversation = conversations.find((c) => c.phoneNumber === selectedPhone);
 
+  const trimmedQuery = query.trim();
+  const lowerQuery = trimmedQuery.toLowerCase();
+  const queryDigits = trimmedQuery.replace(/\D/g, '');
+  const searchHitByPhone = new Map(searchHits.map((h) => [h.phoneNumber, h]));
+  const visibleConversations =
+    trimmedQuery === ''
+      ? conversations
+      : conversations.filter((c) => {
+          const name = displayName(c.givenName, c.familyName);
+          const nameMatches = name != null && name.toLowerCase().includes(lowerQuery);
+          const phoneMatches = queryDigits.length > 0 && c.phoneNumber.replace(/\D/g, '').includes(queryDigits);
+          return nameMatches || phoneMatches || searchHitByPhone.has(c.phoneNumber);
+        });
+
   return (
     <div data-testid="messages-view-root" className="flex h-full min-h-0 overflow-hidden sm:h-[70vh] sm:min-h-[420px] sm:rounded-lg sm:ring-1 sm:ring-zinc-200">
       {/* Contact list — full width on mobile until a thread is opened, fixed sidebar on desktop. */}
       <div
         data-testid="conversation-list"
-        className={`w-full shrink-0 overflow-y-auto overflow-x-hidden border-r border-zinc-200 sm:block sm:w-72 ${selectedPhone ? 'hidden sm:block' : ''}`}
+        className={`flex w-full shrink-0 flex-col overflow-hidden border-r border-zinc-200 sm:flex sm:w-72 ${selectedPhone ? 'hidden sm:flex' : ''}`}
       >
+        {conversations.length > 0 && (
+          // text-base (16px), not text-sm, on mobile — matches the composer input's own note
+          // below: a smaller font on a focused input makes iOS Safari auto-zoom the whole page.
+          <div className="shrink-0 border-b border-zinc-100 p-2">
+            <div className="relative">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">
+                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+              </svg>
+              <input
+                data-testid="conversation-search-input"
+                type="text"
+                inputMode="search"
+                autoComplete="off"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search name, phone, or message…"
+                aria-label="Search conversations"
+                className="w-full rounded-full border border-zinc-200 bg-zinc-50 py-2.5 pl-9 pr-9 text-base text-zinc-900 placeholder:text-zinc-400 focus:border-sky-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-100 sm:py-2 sm:text-sm"
+              />
+              {query && (
+                <button
+                  type="button"
+                  data-testid="conversation-search-clear-button"
+                  onClick={() => setQuery('')}
+                  aria-label="Clear search"
+                  className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         {conversations.length === 0 ? (
           <div className="p-6 text-center text-sm text-zinc-500">No conversations yet.</div>
+        ) : visibleConversations.length === 0 ? (
+          <div data-testid="conversation-search-empty" className="p-6 text-center text-sm text-zinc-500">
+            No conversations match &ldquo;{trimmedQuery}&rdquo;.
+          </div>
         ) : (
-          conversations.map((c) => {
+          visibleConversations.map((c) => {
             const name = displayName(c.givenName, c.familyName);
+            const searchHit = searchHitByPhone.get(c.phoneNumber);
+            // Prefer showing *why* this row matched when it's not obvious from the last message
+            // itself — e.g. the match is buried a few messages back in the thread's history.
+            const lastMessageMatches = trimmedQuery !== '' && c.lastMessageBody.toLowerCase().includes(lowerQuery);
+            const showSnippet = searchHit != null && !lastMessageMatches;
             return (
               // A <div> with button semantics, not a native <button> — the info button below
               // needs to be a real, independently-clickable <button>, and a <button> can't
@@ -182,7 +287,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
                       data-testid="conversation-row-name"
                       className={`truncate ${c.unreadCount > 0 ? 'font-semibold text-zinc-900' : 'font-medium text-zinc-700'} ${name ? '' : 'tabular-nums'}`}
                     >
-                      {name ?? formatPhone(c.phoneNumber)}
+                      {name ? highlightMatch(name, trimmedQuery) : formatPhone(c.phoneNumber)}
                     </span>
                     {c.smsConsent && (
                       <>
@@ -209,7 +314,11 @@ export default function MessagesView({ initialConversations }: { initialConversa
                     </button>
                   </span>
                 </div>
-                {name && <span data-testid="conversation-row-phone" className="truncate text-xs tabular-nums text-zinc-400">{formatPhone(c.phoneNumber)}</span>}
+                {name && (
+                  <span data-testid="conversation-row-phone" className="truncate text-xs tabular-nums text-zinc-400">
+                    {highlightMatch(formatPhone(c.phoneNumber), trimmedQuery)}
+                  </span>
+                )}
                 <div className="flex min-w-0 items-center justify-between gap-2">
                   {/* min-w-0 here (and w-full on page.tsx's <main>) is what actually lets this
                       truncate: a flex item's default min-width is `auto`, not 0, so without it the
@@ -217,10 +326,20 @@ export default function MessagesView({ initialConversations }: { initialConversa
                       spaces) can force this row — and the whole page — wider than the viewport. */}
                   <span
                     data-testid="conversation-row-preview"
+                    data-is-snippet={showSnippet}
                     className={`min-w-0 truncate text-sm ${c.unreadCount > 0 ? 'font-medium text-zinc-900' : 'text-zinc-500'}`}
                   >
-                    {c.lastMessageDirection === 'OUTBOUND' ? 'You: ' : ''}
-                    {c.lastMessageBody}
+                    {showSnippet && searchHit ? (
+                      <>
+                        {searchHit.direction === 'OUTBOUND' ? 'You: ' : ''}
+                        {highlightMatch(searchHit.snippet, trimmedQuery)}
+                      </>
+                    ) : (
+                      <>
+                        {c.lastMessageDirection === 'OUTBOUND' ? 'You: ' : ''}
+                        {highlightMatch(c.lastMessageBody, trimmedQuery)}
+                      </>
+                    )}
                   </span>
                   {c.unreadCount > 0 && (
                     <span data-testid="conversation-row-unread-badge" className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-semibold leading-none text-white">
@@ -232,6 +351,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
             );
           })
         )}
+        </div>
       </div>
 
       {/* Thread — full width on mobile once opened, fills remaining space on desktop. min-h-0 is

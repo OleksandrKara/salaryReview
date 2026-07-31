@@ -116,4 +116,12 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
                              @Param("direction") String direction,
                              @Param("automationKey") String automationKey,
                              Pageable pageable);
+
+    /** Newest matching message first, across every phone number — backs the manager conversation
+     * view's search box for matches buried in a thread's older history (name/phone matching is
+     * done client-side against the already-loaded conversation list; see
+     * {@code SmsMessageLogService#searchConversations}). */
+    @Query("SELECT m FROM SmsMessage m WHERE LOWER(m.body) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%')) "
+            + "ORDER BY m.createdAt DESC")
+    List<SmsMessage> searchByBodyContaining(@Param("q") String q, Pageable pageable);
 }

@@ -5,10 +5,14 @@ import com.salonreview.repo.SmsMessageRepository;
 import com.salonreview.util.PhoneNumbers;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -98,6 +102,25 @@ public class SmsMessageLogService {
 
     public Page<SmsMessage> search(String phoneNumber, String direction, String automationKey, Pageable pageable) {
         return repository.search(phoneNumber == null ? null : PhoneNumbers.normalize(phoneNumber), direction, automationKey, pageable);
+    }
+
+    /** One hit per phone number with a matching message, most-recent-match-first — backs the
+     * manager conversation view's search box. Name/phone matching is done client-side against the
+     * already-loaded conversation list (cheap, instant); this covers matches buried in a thread's
+     * older history that the client doesn't have loaded. */
+    public record ConversationSearchHit(String phoneNumber, String snippet, String direction, Instant matchedAt) {}
+
+    public List<ConversationSearchHit> searchConversations(String q) {
+        if (q == null || q.isBlank()) {
+            return List.of();
+        }
+        List<SmsMessage> matches = repository.searchByBodyContaining(q.trim(), PageRequest.of(0, 300));
+        LinkedHashMap<String, ConversationSearchHit> byPhone = new LinkedHashMap<>();
+        for (SmsMessage m : matches) {
+            byPhone.putIfAbsent(m.getPhoneNumber(),
+                    new ConversationSearchHit(m.getPhoneNumber(), m.getBody(), m.getDirection(), m.getCreatedAt()));
+        }
+        return new ArrayList<>(byPhone.values());
     }
 
     /** One row per distinct phone number, most-recent-message-first — backs the manager

@@ -127,6 +127,16 @@ export interface SmsReplyResult {
   reason: string | null;
 }
 
+// One phone number's most-recent matching message for the manager conversation view's search
+// box — content matches only; name/phone matches are found client-side against the already-
+// loaded conversation list (see MessagesView.tsx).
+export interface SmsConversationSearchHitDto {
+  phoneNumber: string;
+  snippet: string;
+  direction: SmsMessageDirection;
+  matchedAt: string;
+}
+
 export interface Provider {
   id: number;
   name: string;

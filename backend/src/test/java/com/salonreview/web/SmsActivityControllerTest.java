@@ -5,6 +5,7 @@ import com.salonreview.domain.SmsMessage;
 import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.repo.SmsMessageRepository.ConversationSummaryProjection;
 import com.salonreview.sms.SmsMessageLogService;
+import com.salonreview.sms.SmsMessageLogService.ConversationSearchHit;
 import com.salonreview.sms.TwilioSmsService;
 import com.salonreview.web.dto.MarketingContactDto.Contact;
 import org.junit.jupiter.api.BeforeEach;
@@ -136,5 +137,18 @@ class SmsActivityControllerTest {
                 .andExpect(jsonPath("$.sent").value(true));
 
         verify(smsService).sendManual(PHONE, "hand-typed reply");
+    }
+
+    @Test
+    @DisplayName("GET /search maps each hit to a ConversationSearchHitDto")
+    void searchMapsHits() throws Exception {
+        when(service.searchConversations("appointment")).thenReturn(List.of(
+                new ConversationSearchHit(PHONE, "running late for my appointment", "INBOUND", Instant.now())));
+
+        mvc.perform(get("/api/owner/automations/activity/search").param("q", "appointment"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].phoneNumber").value(PHONE))
+                .andExpect(jsonPath("$[0].snippet").value("running late for my appointment"))
+                .andExpect(jsonPath("$[0].direction").value("INBOUND"));
     }
 }

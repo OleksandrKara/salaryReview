@@ -52,6 +52,8 @@ public class SmsActivityController {
 
     public record ReplyResult(boolean sent, String reason) {}
 
+    public record ConversationSearchHitDto(String phoneNumber, String snippet, String direction, Instant matchedAt) {}
+
     @GetMapping
     public List<SmsMessageDto> search(@RequestParam(required = false) String phoneNumber,
                                        @RequestParam(required = false) String direction,
@@ -114,6 +116,17 @@ public class SmsActivityController {
     @GetMapping("/conversations/{phoneNumber}/contact")
     public Optional<MarketingContactDto.Contact> contact(@PathVariable String phoneNumber) {
         return contactsService.contactByPhone(phoneNumber);
+    }
+
+    /** Message-content search across every conversation — backs the manager conversation view's
+     * search box for matches buried in a thread's older history (name/phone filtering happens
+     * client-side against the already-loaded conversation list; see
+     * SmsMessageLogService#searchConversations). */
+    @GetMapping("/search")
+    public List<ConversationSearchHitDto> search(@RequestParam String q) {
+        return service.searchConversations(q).stream()
+                .map(h -> new ConversationSearchHitDto(h.phoneNumber(), h.snippet(), h.direction(), h.matchedAt()))
+                .toList();
     }
 
     /** A manager/owner's freeform reply — bypasses templates and automation/consent gating

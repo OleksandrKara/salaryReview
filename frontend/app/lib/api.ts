@@ -33,6 +33,7 @@ import type {
   SmsMessageDto,
   SmsMessageDirection,
   SmsConversationDto,
+  SmsConversationSearchHitDto,
   SmsReplyResult,
   MarketingContact,
   Me,
@@ -249,6 +250,12 @@ export const api = {
 
   sendSmsReply: (phoneNumber: string, body: string) =>
     proxyJson<SmsReplyResult>(`/api/owner/automations/activity/reply`, 'POST', { phoneNumber, body }),
+
+  // Message-content search across every conversation, for the manager conversation view's search
+  // box — name/phone matching is done client-side against the already-loaded conversation list
+  // (see MessagesView.tsx), this covers matches buried in older message history.
+  searchSmsConversations: (q: string) =>
+    proxyGet<SmsConversationSearchHitDto[]>(`/api/owner/automations/activity/search?q=${encodeURIComponent(q)}`),
 
   // Marketing contacts: resolves any lead that never linked to a Square customer through the
   // tracked booking flow (a manager followed up and booked them by phone, or they came back

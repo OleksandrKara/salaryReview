@@ -5,8 +5,10 @@ import com.salonreview.repo.SmsMessageRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.Pageable;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -111,5 +113,32 @@ class SmsMessageLogServiceTest {
 
         assertThatThrownBy(() -> service.generateUniqueClickToken())
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("searchConversations returns one hit per phone number, keeping only the most recent match")
+    void searchConversationsDedupesByPhoneKeepingMostRecent() {
+        SmsMessage newer = SmsMessage.builder().phoneNumber("+15551234567").direction("INBOUND")
+                .body("running late for my appointment").createdAt(Instant.now()).build();
+        SmsMessage older = SmsMessage.builder().phoneNumber("+15551234567").direction("OUTBOUND")
+                .body("see you at your appointment tomorrow").createdAt(Instant.now().minusSeconds(3600)).build();
+        SmsMessage otherPhone = SmsMessage.builder().phoneNumber("+15559876543").direction("INBOUND")
+                .body("can I reschedule my appointment").createdAt(Instant.now().minusSeconds(60)).build();
+        when(repository.searchByBodyContaining(eq("appointment"), any(Pageable.class)))
+                .thenReturn(List.of(newer, otherPhone, older)); // already ordered newest-first
+
+        List<SmsMessageLogService.ConversationSearchHit> hits = service.searchConversations("appointment");
+
+        assertThat(hits).hasSize(2);
+        assertThat(hits.get(0).phoneNumber()).isEqualTo("+15551234567");
+        assertThat(hits.get(0).snippet()).isEqualTo("running late for my appointment");
+        assertThat(hits.get(1).phoneNumber()).isEqualTo("+15559876543");
+    }
+
+    @Test
+    @DisplayName("searchConversations returns an empty list for a blank query without hitting the repository")
+    void searchConversationsWithBlankQueryReturnsEmpty() {
+        assertThat(service.searchConversations("   ")).isEmpty();
+        verify(repository, never()).searchByBodyContaining(any(), any());
     }
 }
