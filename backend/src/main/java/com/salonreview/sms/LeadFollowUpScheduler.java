@@ -20,11 +20,13 @@ import java.util.Map;
 
 /**
  * Polls {@code marketing.contacts} for leads who haven't got an upcoming Square appointment within
- * 2 minutes of leaving contact info — see openspec/changes/lead-followup-and-manager-inbox
- * design.md D1/D2. Same imprecise-but-good-enough 15s poll cadence as
- * {@link SmsReplyFlowScheduler}: a contact becomes eligible at exactly 2:00 but is actually
- * processed on the next tick, so the real send window is ~2:00-2:15 (see design.md's "how exact is
- * 2 minutes, really?" note under D1).
+ * 2 minutes of last leaving contact info — see openspec/changes/lead-followup-and-manager-inbox
+ * design.md D1/D2. "Last leaving contact info" is {@code updated_at}, not {@code created_at} — see
+ * {@link com.salonreview.marketing.MarketingContactsRepository#findPendingFollowUp} for why a
+ * returning lead needs the poll keyed off the row's most recent write, not its first ever one.
+ * Same imprecise-but-good-enough 15s poll cadence as {@link SmsReplyFlowScheduler}: a contact
+ * becomes eligible at exactly 2:00 but is actually processed on the next tick, so the real send
+ * window is ~2:00-2:15 (see design.md's "how exact is 2 minutes, really?" note under D1).
  */
 @Component
 public class LeadFollowUpScheduler {
