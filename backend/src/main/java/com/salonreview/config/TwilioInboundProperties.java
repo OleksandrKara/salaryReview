@@ -6,13 +6,15 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 /**
- * Twilio's inbound-SMS webhook (reply branching for the checkout-review-request automation — see
- * openspec/changes/sms-automations-hub). Blank {@code authToken} means every inbound request is
- * rejected — there's no sensible "open" default for this, matching {@link InternalApiProperties}.
+ * {@code authToken} for every webhook Twilio calls on this account with no session of its own:
+ * the inbound-SMS webhook (reply branching for the checkout-review-request automation) and the
+ * per-message delivery-status callback (see {@code TwilioStatusCallbackController}). Blank
+ * {@code authToken} means every such request is rejected — there's no sensible "open" default for
+ * this, matching {@link InternalApiProperties}.
  *
  * <p>{@code authToken} is the master Account Auth Token (not the restricted API Key/Secret pair
- * {@code twilio_sms_config} stores for sending) — Twilio's inbound-webhook signature scheme
- * requires it specifically.
+ * {@code twilio_sms_config} stores for sending) — Twilio's webhook signature scheme requires it
+ * specifically.
  */
 @Component
 @ConfigurationProperties(prefix = "twilio.inbound")

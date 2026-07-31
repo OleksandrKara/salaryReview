@@ -14,11 +14,6 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.Base64;
 import java.util.Map;
 import java.util.Optional;
 
@@ -52,7 +47,7 @@ public class TwilioInboundSmsController {
     @PostMapping(value = "/api/public/sms/inbound", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public ResponseEntity<Void> receive(@RequestHeader(value = "X-Twilio-Signature", required = false) String signature,
                                          @RequestParam Map<String, String> params) {
-        if (!properties.isConfigured() || !signatureValid(signature, params)) {
+        if (!properties.isConfigured() || !TwilioSignature.valid(properties.getAuthToken(), properties.getWebhookUrl(), params, signature)) {
             log.warn("Twilio inbound SMS rejected — missing/invalid signature");
             return ResponseEntity.status(401).build();
         }
@@ -84,25 +79,5 @@ public class TwilioInboundSmsController {
             replyFlowRepository.save(flow);
         }
         return ResponseEntity.ok().build();
-    }
-
-    /** {@code X-Twilio-Signature} = base64(HMAC-SHA1(authToken, webhookUrl + sorted-concatenated
-     * "key"+"value" pairs of every POST param)) — Twilio's documented validation scheme. */
-    private boolean signatureValid(String signature, Map<String, String> params) {
-        if (signature == null || signature.isBlank()) {
-            return false;
-        }
-        try {
-            StringBuilder data = new StringBuilder(properties.getWebhookUrl());
-            params.keySet().stream().sorted().forEach(key -> data.append(key).append(params.get(key)));
-            Mac mac = Mac.getInstance("HmacSHA1");
-            mac.init(new SecretKeySpec(properties.getAuthToken().getBytes(StandardCharsets.UTF_8), "HmacSHA1"));
-            byte[] computed = mac.doFinal(data.toString().getBytes(StandardCharsets.UTF_8));
-            String expected = Base64.getEncoder().encodeToString(computed);
-            return MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), signature.getBytes(StandardCharsets.UTF_8));
-        } catch (Exception e) {
-            log.warn("Twilio inbound signature check failed: {}", e.getMessage());
-            return false;
-        }
     }
 }

@@ -41,16 +41,20 @@ public class SmsActivityController {
 
     public record SmsMessageDto(long id, String direction, String automationKey, String phoneNumber,
                                  String templateKey, String body, String status, String reason,
-                                 String linkTarget, Instant clickedAt, Instant readAt, Instant createdAt) {}
+                                 String linkTarget, Instant clickedAt, Instant readAt, Instant createdAt,
+                                 String deliveryStatus, String deliveryErrorMessage, Instant deliveryUpdatedAt) {}
 
     public record ConversationDto(String phoneNumber, Instant lastMessageAt, String lastMessageBody,
                                    String lastMessageDirection, long unreadCount,
                                    String givenName, String familyName, boolean smsConsent,
-                                   String squareProfileUrl) {}
+                                   String squareProfileUrl, String lastMessageDeliveryStatus,
+                                   String lastMessageDeliveryErrorMessage) {}
 
     public record ReplyRequest(String phoneNumber, String body) {}
 
     public record ReplyResult(boolean sent, String reason) {}
+
+    public record ConversationSearchHitDto(String phoneNumber, String snippet, String direction, Instant matchedAt) {}
 
     @GetMapping
     public List<SmsMessageDto> search(@RequestParam(required = false) String phoneNumber,
@@ -116,6 +120,17 @@ public class SmsActivityController {
         return contactsService.contactByPhone(phoneNumber);
     }
 
+    /** Message-content search across every conversation — backs the manager conversation view's
+     * search box for matches buried in a thread's older history (name/phone filtering happens
+     * client-side against the already-loaded conversation list; see
+     * SmsMessageLogService#searchConversations). */
+    @GetMapping("/search")
+    public List<ConversationSearchHitDto> search(@RequestParam String q) {
+        return service.searchConversations(q).stream()
+                .map(h -> new ConversationSearchHitDto(h.phoneNumber(), h.snippet(), h.direction(), h.matchedAt()))
+                .toList();
+    }
+
     /** A manager/owner's freeform reply — bypasses templates and automation/consent gating
      * entirely (design.md D9). */
     @PostMapping("/reply")
@@ -127,7 +142,8 @@ public class SmsActivityController {
     private static SmsMessageDto toDto(SmsMessage m) {
         return new SmsMessageDto(m.getId(), m.getDirection(), m.getAutomationKey(), m.getPhoneNumber(),
                 m.getTemplateKey(), m.getBody(), m.getStatus(), m.getReason(),
-                m.getLinkTarget(), m.getClickedAt(), m.getReadAt(), m.getCreatedAt());
+                m.getLinkTarget(), m.getClickedAt(), m.getReadAt(), m.getCreatedAt(),
+                m.getDeliveryStatus(), m.getDeliveryErrorMessage(), m.getDeliveryUpdatedAt());
     }
 
     private static ConversationDto toConversationDto(ConversationSummaryProjection p,
@@ -137,6 +153,7 @@ public class SmsActivityController {
                 nameInfo == null ? null : nameInfo.givenName(),
                 nameInfo == null ? null : nameInfo.familyName(),
                 nameInfo != null && nameInfo.smsConsent(),
-                nameInfo == null ? null : nameInfo.squareProfileUrl());
+                nameInfo == null ? null : nameInfo.squareProfileUrl(),
+                p.getLastMessageDeliveryStatus(), p.getLastMessageDeliveryErrorMessage());
     }
 }

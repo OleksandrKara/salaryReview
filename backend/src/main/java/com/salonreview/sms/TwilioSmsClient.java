@@ -3,6 +3,7 @@ package com.salonreview.sms;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.domain.TwilioSmsConfig;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -30,19 +31,28 @@ public class TwilioSmsClient {
             .connectTimeout(Duration.ofSeconds(5))
             .build();
     private final ObjectMapper mapper = new ObjectMapper();
+    /** Same URL {@link TwilioStatusCallbackController} validates its signature against — both
+     * derive it from {@code app.public-base-url}, so there's no separate setting to keep in sync. */
+    private final String statusCallbackUrl;
+
+    public TwilioSmsClient(@Value("${app.public-base-url}") String publicBaseUrl) {
+        this.statusCallbackUrl = publicBaseUrl + "/api/public/sms/status";
+    }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record MessageResponse(String sid) {}
 
     /** Throws on any non-2xx response or transport failure — callers must catch and translate.
      * Returns Twilio's message SID for the sent message, recorded on the {@code sms_message} row
-     * this send corresponds to (see {@code TwilioSmsService}). */
+     * this send corresponds to (see {@code TwilioSmsService}) — the same SID
+     * {@link TwilioStatusCallbackController} later matches its delivery-status callback against. */
     public String send(TwilioSmsConfig config, String toPhoneNumber, String body) throws IOException, InterruptedException {
         String credentials = config.getApiKey() + ":" + config.getApiSecret();
         String auth = Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
         String form = "To=" + encode(toPhoneNumber)
                 + "&From=" + encode(config.getFromPhoneNumber())
-                + "&Body=" + encode(body);
+                + "&Body=" + encode(body)
+                + "&StatusCallback=" + encode(statusCallbackUrl);
 
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create("https://api.twilio.com/2010-04-01/Accounts/" + config.getAccountSid() + "/Messages.json"))

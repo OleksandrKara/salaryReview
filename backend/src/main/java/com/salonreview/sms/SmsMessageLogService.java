@@ -5,10 +5,15 @@ import com.salonreview.repo.SmsMessageRepository;
 import com.salonreview.util.PhoneNumbers;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -23,6 +28,22 @@ import java.util.Optional;
  */
 @Service
 public class SmsMessageLogService {
+
+    /** Twilio's most common SMS error codes, translated to plain language for the manager
+     * conversation view — see https://www.twilio.com/docs/api/errors. Anything not in this map
+     * falls back to a generic "Delivery error (code N)" rather than failing or showing nothing. */
+    private static final Map<String, String> DELIVERY_ERROR_MESSAGES = Map.ofEntries(
+            Map.entry("30003", "Phone unreachable (turned off or out of coverage)"),
+            Map.entry("30004", "Blocked by carrier"),
+            Map.entry("30005", "Unknown or inactive number"),
+            Map.entry("30006", "Landline or unreachable carrier"),
+            Map.entry("30007", "Filtered as spam by carrier"),
+            Map.entry("30008", "Unknown error from carrier"),
+            Map.entry("30034", "Number/campaign not registered with carriers (A2P 10DLC)"),
+            Map.entry("21211", "Invalid phone number"),
+            Map.entry("21408", "Region not enabled for this account"),
+            Map.entry("21610", "Recipient has opted out (replied STOP)")
+    );
 
     private final SmsMessageRepository repository;
 
@@ -100,6 +121,25 @@ public class SmsMessageLogService {
         return repository.search(phoneNumber == null ? null : PhoneNumbers.normalize(phoneNumber), direction, automationKey, pageable);
     }
 
+    /** One hit per phone number with a matching message, most-recent-match-first — backs the
+     * manager conversation view's search box. Name/phone matching is done client-side against the
+     * already-loaded conversation list (cheap, instant); this covers matches buried in a thread's
+     * older history that the client doesn't have loaded. */
+    public record ConversationSearchHit(String phoneNumber, String snippet, String direction, Instant matchedAt) {}
+
+    public List<ConversationSearchHit> searchConversations(String q) {
+        if (q == null || q.isBlank()) {
+            return List.of();
+        }
+        List<SmsMessage> matches = repository.searchByBodyContaining(q.trim(), PageRequest.of(0, 300));
+        LinkedHashMap<String, ConversationSearchHit> byPhone = new LinkedHashMap<>();
+        for (SmsMessage m : matches) {
+            byPhone.putIfAbsent(m.getPhoneNumber(),
+                    new ConversationSearchHit(m.getPhoneNumber(), m.getBody(), m.getDirection(), m.getCreatedAt()));
+        }
+        return new ArrayList<>(byPhone.values());
+    }
+
     /** One row per distinct phone number, most-recent-message-first — backs the manager
      * conversation view's contact list (design.md D8). */
     public java.util.List<SmsMessageRepository.ConversationSummaryProjection> conversations() {
@@ -134,6 +174,24 @@ public class SmsMessageLogService {
 
     public long unreadCount() {
         return repository.countByDirectionAndReadAtIsNull("INBOUND");
+    }
+
+    /** Applies a Twilio delivery-status callback to the row it was sent from — see
+     * {@code TwilioStatusCallbackController}. No-op if the SID doesn't match any row (already
+     * deleted, or a SID from before this tracking existed). */
+    @Transactional
+    public void updateDeliveryStatus(String twilioMessageSid, String deliveryStatus, String errorCode) {
+        if (twilioMessageSid == null) {
+            return;
+        }
+        repository.findByTwilioMessageSid(twilioMessageSid).ifPresent(m -> {
+            m.setDeliveryStatus(deliveryStatus);
+            m.setDeliveryErrorCode(errorCode);
+            m.setDeliveryErrorMessage(errorCode == null ? null
+                    : DELIVERY_ERROR_MESSAGES.getOrDefault(errorCode, "Delivery error (code " + errorCode + ")"));
+            m.setDeliveryUpdatedAt(Instant.now());
+            repository.save(m);
+        });
     }
 
     /** Idempotent — marking an already-read message read again leaves its original {@code readAt}

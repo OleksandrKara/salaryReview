@@ -23,6 +23,11 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
         String getLastMessageBody();
         String getLastMessageDirection();
         Long getUnreadCount();
+        /** Twilio delivery status of the last message, if it was OUTBOUND and a delivery-status
+         * callback has arrived — {@code null} otherwise. Lets the contact list flag "the most
+         * recent message never reached this customer" without opening the thread. */
+        String getLastMessageDeliveryStatus();
+        String getLastMessageDeliveryErrorMessage();
     }
 
     @Query(value = """
@@ -30,12 +35,16 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
                    latest.last_message_at AS lastMessageAt,
                    latest.last_message_body AS lastMessageBody,
                    latest.last_message_direction AS lastMessageDirection,
-                   COALESCE(unread.unread_count, 0) AS unreadCount
+                   COALESCE(unread.unread_count, 0) AS unreadCount,
+                   latest.last_message_delivery_status AS lastMessageDeliveryStatus,
+                   latest.last_message_delivery_error_message AS lastMessageDeliveryErrorMessage
             FROM (
                 SELECT DISTINCT ON (phone_number) phone_number,
                        created_at AS last_message_at,
                        body AS last_message_body,
-                       direction AS last_message_direction
+                       direction AS last_message_direction,
+                       delivery_status AS last_message_delivery_status,
+                       delivery_error_message AS last_message_delivery_error_message
                 FROM sms_message
                 ORDER BY phone_number, created_at DESC
             ) latest
@@ -55,6 +64,10 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
 
     /** Backs the click-tracked {@code /r/{token}} short link — see V53, design.md D6. */
     Optional<SmsMessage> findByClickToken(String clickToken);
+
+    /** Backs {@link com.salonreview.sms.TwilioStatusCallbackController} — matches an incoming
+     * delivery-status callback back to the row it was sent from. */
+    Optional<SmsMessage> findByTwilioMessageSid(String twilioMessageSid);
 
     /** Used to re-roll a freshly generated {@link com.salonreview.sms.ClickTokens} candidate on
      * the (extremely rare) chance it collides with one already in use — see design.md D6. */
@@ -116,4 +129,12 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
                              @Param("direction") String direction,
                              @Param("automationKey") String automationKey,
                              Pageable pageable);
+
+    /** Newest matching message first, across every phone number — backs the manager conversation
+     * view's search box for matches buried in a thread's older history (name/phone matching is
+     * done client-side against the already-loaded conversation list; see
+     * {@code SmsMessageLogService#searchConversations}). */
+    @Query("SELECT m FROM SmsMessage m WHERE LOWER(m.body) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%')) "
+            + "ORDER BY m.createdAt DESC")
+    List<SmsMessage> searchByBodyContaining(@Param("q") String q, Pageable pageable);
 }
