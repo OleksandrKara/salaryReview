@@ -69,6 +69,8 @@ class SmsActivityControllerTest {
         @Override public String getLastMessageBody() { return lastMessageBody; }
         @Override public String getLastMessageDirection() { return lastMessageDirection; }
         @Override public Long getUnreadCount() { return unreadCount; }
+        @Override public String getLastMessageDeliveryStatus() { return null; }
+        @Override public String getLastMessageDeliveryErrorMessage() { return null; }
     }
 
     @Test

@@ -141,4 +141,56 @@ class SmsMessageLogServiceTest {
         assertThat(service.searchConversations("   ")).isEmpty();
         verify(repository, never()).searchByBodyContaining(any(), any());
     }
+
+    @Test
+    @DisplayName("updateDeliveryStatus applies status, a known error code's plain-language message, and a timestamp")
+    void updateDeliveryStatusAppliesKnownErrorCode() {
+        SmsMessage message = SmsMessage.builder().id(1L).direction("OUTBOUND").phoneNumber("+15551234567")
+                .body("hi").status("SENT").twilioMessageSid("SM123").build();
+        when(repository.findByTwilioMessageSid("SM123")).thenReturn(Optional.of(message));
+
+        service.updateDeliveryStatus("SM123", "undelivered", "30003");
+
+        assertThat(message.getDeliveryStatus()).isEqualTo("undelivered");
+        assertThat(message.getDeliveryErrorCode()).isEqualTo("30003");
+        assertThat(message.getDeliveryErrorMessage()).isEqualTo("Phone unreachable (turned off or out of coverage)");
+        assertThat(message.getDeliveryUpdatedAt()).isNotNull();
+        verify(repository).save(message);
+    }
+
+    @Test
+    @DisplayName("updateDeliveryStatus falls back to a generic message for an unrecognized error code")
+    void updateDeliveryStatusFallsBackForUnknownErrorCode() {
+        SmsMessage message = SmsMessage.builder().id(1L).direction("OUTBOUND").phoneNumber("+15551234567")
+                .body("hi").status("SENT").twilioMessageSid("SM123").build();
+        when(repository.findByTwilioMessageSid("SM123")).thenReturn(Optional.of(message));
+
+        service.updateDeliveryStatus("SM123", "failed", "99999");
+
+        assertThat(message.getDeliveryErrorMessage()).isEqualTo("Delivery error (code 99999)");
+    }
+
+    @Test
+    @DisplayName("updateDeliveryStatus for delivered clears any error code/message")
+    void updateDeliveryStatusDeliveredHasNoError() {
+        SmsMessage message = SmsMessage.builder().id(1L).direction("OUTBOUND").phoneNumber("+15551234567")
+                .body("hi").status("SENT").twilioMessageSid("SM123").build();
+        when(repository.findByTwilioMessageSid("SM123")).thenReturn(Optional.of(message));
+
+        service.updateDeliveryStatus("SM123", "delivered", null);
+
+        assertThat(message.getDeliveryStatus()).isEqualTo("delivered");
+        assertThat(message.getDeliveryErrorCode()).isNull();
+        assertThat(message.getDeliveryErrorMessage()).isNull();
+    }
+
+    @Test
+    @DisplayName("updateDeliveryStatus for an unknown SID is a no-op, doesn't error")
+    void updateDeliveryStatusUnknownSidIsNoOp() {
+        when(repository.findByTwilioMessageSid("SM999")).thenReturn(Optional.empty());
+
+        service.updateDeliveryStatus("SM999", "delivered", null);
+
+        verify(repository, never()).save(any());
+    }
 }

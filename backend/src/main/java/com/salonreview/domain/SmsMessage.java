@@ -60,6 +60,25 @@ public class SmsMessage {
     @Column(name = "read_at")
     private Instant readAt;
 
+    /** Twilio's delivery-status callback for this send — "queued" | "sending" | "sent" |
+     * "delivered" | "undelivered" | "failed" — distinct from {@link #status}, which only ever
+     * reflects whether *our* API call to Twilio succeeded, not what happened to the message
+     * afterward. {@code null} until the callback arrives (or forever, for INBOUND rows and any
+     * OUTBOUND row sent before this tracking existed). */
+    @Column(name = "delivery_status")
+    private String deliveryStatus;
+
+    @Column(name = "delivery_error_code")
+    private String deliveryErrorCode;
+
+    /** Human-readable translation of {@link #deliveryErrorCode} — see
+     * {@code SmsMessageLogService}'s error-code lookup. */
+    @Column(name = "delivery_error_message")
+    private String deliveryErrorMessage;
+
+    @Column(name = "delivery_updated_at")
+    private Instant deliveryUpdatedAt;
+
     @Column(name = "created_at", nullable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();

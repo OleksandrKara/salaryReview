@@ -41,12 +41,14 @@ public class SmsActivityController {
 
     public record SmsMessageDto(long id, String direction, String automationKey, String phoneNumber,
                                  String templateKey, String body, String status, String reason,
-                                 String linkTarget, Instant clickedAt, Instant readAt, Instant createdAt) {}
+                                 String linkTarget, Instant clickedAt, Instant readAt, Instant createdAt,
+                                 String deliveryStatus, String deliveryErrorMessage, Instant deliveryUpdatedAt) {}
 
     public record ConversationDto(String phoneNumber, Instant lastMessageAt, String lastMessageBody,
                                    String lastMessageDirection, long unreadCount,
                                    String givenName, String familyName, boolean smsConsent,
-                                   String squareProfileUrl) {}
+                                   String squareProfileUrl, String lastMessageDeliveryStatus,
+                                   String lastMessageDeliveryErrorMessage) {}
 
     public record ReplyRequest(String phoneNumber, String body) {}
 
@@ -140,7 +142,8 @@ public class SmsActivityController {
     private static SmsMessageDto toDto(SmsMessage m) {
         return new SmsMessageDto(m.getId(), m.getDirection(), m.getAutomationKey(), m.getPhoneNumber(),
                 m.getTemplateKey(), m.getBody(), m.getStatus(), m.getReason(),
-                m.getLinkTarget(), m.getClickedAt(), m.getReadAt(), m.getCreatedAt());
+                m.getLinkTarget(), m.getClickedAt(), m.getReadAt(), m.getCreatedAt(),
+                m.getDeliveryStatus(), m.getDeliveryErrorMessage(), m.getDeliveryUpdatedAt());
     }
 
     private static ConversationDto toConversationDto(ConversationSummaryProjection p,
@@ -150,6 +153,7 @@ public class SmsActivityController {
                 nameInfo == null ? null : nameInfo.givenName(),
                 nameInfo == null ? null : nameInfo.familyName(),
                 nameInfo != null && nameInfo.smsConsent(),
-                nameInfo == null ? null : nameInfo.squareProfileUrl());
+                nameInfo == null ? null : nameInfo.squareProfileUrl(),
+                p.getLastMessageDeliveryStatus(), p.getLastMessageDeliveryErrorMessage());
     }
 }

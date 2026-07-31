@@ -38,6 +38,23 @@ class SmsMessageRepositoryConversationTest {
         assertThat(match.getLastMessageBody()).isEqualTo("latest reply");
         assertThat(match.getLastMessageDirection()).isEqualTo("INBOUND");
         assertThat(match.getUnreadCount()).isEqualTo(2L);
+        assertThat(match.getLastMessageDeliveryStatus()).isNull();
+    }
+
+    @Test
+    void conversationSummariesSurfacesLastMessageDeliveryFailure() {
+        String phone = "+15556665544";
+        repository.save(SmsMessage.builder().direction("OUTBOUND").phoneNumber(phone)
+                .body("rebooking nudge").status("SENT").twilioMessageSid("SM-undelivered")
+                .deliveryStatus("undelivered").deliveryErrorCode("30003")
+                .deliveryErrorMessage("Phone unreachable (turned off or out of coverage)")
+                .createdAt(Instant.now()).build());
+
+        List<SmsMessageRepository.ConversationSummaryProjection> conversations = repository.conversationSummaries();
+
+        var match = conversations.stream().filter(c -> c.getPhoneNumber().equals(phone)).findFirst().orElseThrow();
+        assertThat(match.getLastMessageDeliveryStatus()).isEqualTo("undelivered");
+        assertThat(match.getLastMessageDeliveryErrorMessage()).isEqualTo("Phone unreachable (turned off or out of coverage)");
     }
 
     @Test

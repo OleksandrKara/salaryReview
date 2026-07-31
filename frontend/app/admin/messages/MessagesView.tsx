@@ -54,6 +54,12 @@ function linkTargetLabel(linkTarget: string | null): string | null {
   return null;
 }
 
+// Twilio's two terminal failure states — the ones worth interrupting the owner over. "queued" /
+// "sending" / "sent" are all still in flight or already fine; "delivered" needs no callout.
+function deliveryFailed(deliveryStatus: string | null): boolean {
+  return deliveryStatus === 'undelivered' || deliveryStatus === 'failed';
+}
+
 // Wraps the first case-insensitive occurrence of `query` in `text` with a <mark> — used by the
 // conversation list's search box so a match is visually obvious at a glance, not just implied by
 // the row being present in a filtered list.
@@ -341,11 +347,26 @@ export default function MessagesView({ initialConversations }: { initialConversa
                       </>
                     )}
                   </span>
-                  {c.unreadCount > 0 && (
-                    <span data-testid="conversation-row-unread-badge" className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-semibold leading-none text-white">
-                      {c.unreadCount > 99 ? '99+' : c.unreadCount}
-                    </span>
-                  )}
+                  <span className="flex shrink-0 items-center gap-1">
+                    {c.lastMessageDirection === 'OUTBOUND' && deliveryFailed(c.lastMessageDeliveryStatus) && (
+                      <span
+                        data-testid="conversation-row-delivery-warning"
+                        title={`Last message not delivered${c.lastMessageDeliveryErrorMessage ? ` — ${c.lastMessageDeliveryErrorMessage}` : ''}`}
+                        className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-red-100 text-red-600"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                          <line x1="12" x2="12" y1="9" y2="13" /><line x1="12" x2="12.01" y1="17" y2="17" />
+                        </svg>
+                        <span className="sr-only">Last message not delivered</span>
+                      </span>
+                    )}
+                    {c.unreadCount > 0 && (
+                      <span data-testid="conversation-row-unread-badge" className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-semibold leading-none text-white">
+                        {c.unreadCount > 99 ? '99+' : c.unreadCount}
+                      </span>
+                    )}
+                  </span>
                 </div>
               </div>
             );
@@ -434,6 +455,23 @@ export default function MessagesView({ initialConversations }: { initialConversa
                               {formatBubbleTime(m.createdAt)}
                               {m.direction === 'OUTBOUND' && m.status !== 'SENT' ? ' · Not sent' : ''}
                             </p>
+                            {/* Twilio's delivery-status callback — distinct from "Not sent" above,
+                                which only means our own send attempt to Twilio failed. This means
+                                Twilio accepted it but the carrier/handset never got it. A light-red
+                                chip against the blue bubble background so it can't be missed. */}
+                            {m.direction === 'OUTBOUND' && deliveryFailed(m.deliveryStatus) ? (
+                              <p
+                                data-testid="thread-message-delivery-warning"
+                                data-delivery-status={m.deliveryStatus}
+                                className="mt-1 flex items-start gap-1 rounded-md bg-red-50 px-1.5 py-1 text-[10px] font-medium leading-tight text-red-700"
+                              >
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="mt-px shrink-0">
+                                  <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                                  <line x1="12" x2="12" y1="9" y2="13" /><line x1="12" x2="12.01" y1="17" y2="17" />
+                                </svg>
+                                <span>Not delivered{m.deliveryErrorMessage ? ` — ${m.deliveryErrorMessage}` : ''}</span>
+                              </p>
+                            ) : null}
                             {/* Click status for the checkout-review automation's tracked links
                                 (Google review / feedback form) — most messages have no linkTarget
                                 at all and skip this row entirely. */}

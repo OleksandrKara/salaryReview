@@ -87,6 +87,12 @@ export interface SmsAutomationSummary {
 
 export type SmsMessageDirection = 'OUTBOUND' | 'INBOUND';
 
+// Twilio's per-message delivery-status callback value — "queued" | "sending" | "sent" |
+// "delivered" | "undelivered" | "failed" — or null if no callback has arrived yet (or the
+// message predates this tracking). Distinct from SmsMessageDto.status, which only reflects
+// whether our own send attempt to Twilio succeeded.
+export type SmsDeliveryStatus = string | null;
+
 export interface SmsMessageDto {
   id: number;
   direction: SmsMessageDirection;
@@ -100,6 +106,9 @@ export interface SmsMessageDto {
   clickedAt: string | null;
   readAt: string | null;
   createdAt: string;
+  deliveryStatus: SmsDeliveryStatus;
+  deliveryErrorMessage: string | null;
+  deliveryUpdatedAt: string | null;
 }
 
 // One conversation (grouped by phone number) in the manager-facing /admin/messages inbox — see
@@ -120,6 +129,8 @@ export interface SmsConversationDto {
    * this phone number at all (not even via a live phone lookup) — more permissive than
    * MarketingContact's own squareProfileUrl, which requires a marketing.contacts row to exist. */
   squareProfileUrl: string | null;
+  lastMessageDeliveryStatus: SmsDeliveryStatus;
+  lastMessageDeliveryErrorMessage: string | null;
 }
 
 export interface SmsReplyResult {
