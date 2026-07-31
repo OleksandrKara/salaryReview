@@ -63,7 +63,10 @@ public class CheckoutReviewTriggerService {
             if (phoneNumber == null) {
                 return; // genuinely anonymous walk-in with no phone on file — silent skip, see D2
             }
-            String customerName = square.customerNames(List.of(customerId)).get(customerId);
+            // Given name only, deliberately — this feeds "Hi {name}," greetings on both automations
+            // triggered below, and a greeting should never read "Hi Jane Smith," (see
+            // com.salonreview.square.SquareClient#customerGivenNames' own doc comment).
+            String customerName = square.customerGivenNames(List.of(customerId)).get(customerId);
 
             repository.save(SmsReplyFlow.builder()
                     .automationKey(AUTOMATION_KEY)

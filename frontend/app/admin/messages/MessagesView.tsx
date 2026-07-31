@@ -24,6 +24,11 @@ function formatBubbleTime(iso: string): string {
   return new Date(iso).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
+function displayName(givenName: string | null | undefined, familyName: string | null | undefined): string | null {
+  const parts = [givenName, familyName].filter((p): p is string => Boolean(p && p.trim()));
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
 export default function MessagesView({ initialConversations }: { initialConversations: SmsConversationDto[] }) {
   const [conversations, setConversations] = useState(initialConversations);
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
@@ -96,6 +101,11 @@ export default function MessagesView({ initialConversations }: { initialConversa
     }
   }
 
+  // Already in memory from the conversation list — shown immediately in the thread header while
+  // the richer `contact` fetch (full marketing profile) is still loading, so the header never
+  // flashes the phone number before the name arrives.
+  const selectedConversation = conversations.find((c) => c.phoneNumber === selectedPhone);
+
   return (
     <div className="flex h-full min-h-0 overflow-hidden sm:h-[70vh] sm:min-h-[420px] sm:rounded-lg sm:ring-1 sm:ring-zinc-200">
       {/* Contact list — full width on mobile until a thread is opened, fixed sidebar on desktop. */}
@@ -103,34 +113,48 @@ export default function MessagesView({ initialConversations }: { initialConversa
         {conversations.length === 0 ? (
           <div className="p-6 text-center text-sm text-zinc-500">No conversations yet.</div>
         ) : (
-          conversations.map((c) => (
-            <button
-              key={c.phoneNumber}
-              type="button"
-              onClick={() => openThread(c.phoneNumber)}
-              className={`flex w-full flex-col gap-0.5 border-b border-zinc-100 px-4 py-3 text-left hover:bg-zinc-50 ${
-                c.phoneNumber === selectedPhone ? 'bg-sky-50' : ''
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className={`tabular-nums ${c.unreadCount > 0 ? 'font-semibold text-zinc-900' : 'font-medium text-zinc-700'}`}>
-                  {formatPhone(c.phoneNumber)}
-                </span>
-                <span className="shrink-0 text-xs tabular-nums text-zinc-400">{formatListTime(c.lastMessageAt)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className={`truncate text-sm ${c.unreadCount > 0 ? 'font-medium text-zinc-900' : 'text-zinc-500'}`}>
-                  {c.lastMessageDirection === 'OUTBOUND' ? 'You: ' : ''}
-                  {c.lastMessageBody}
-                </span>
-                {c.unreadCount > 0 && (
-                  <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-semibold leading-none text-white">
-                    {c.unreadCount > 99 ? '99+' : c.unreadCount}
+          conversations.map((c) => {
+            const name = displayName(c.givenName, c.familyName);
+            return (
+              <button
+                key={c.phoneNumber}
+                type="button"
+                onClick={() => openThread(c.phoneNumber)}
+                className={`flex w-full flex-col gap-0.5 border-b border-zinc-100 px-4 py-3 text-left hover:bg-zinc-50 ${
+                  c.phoneNumber === selectedPhone ? 'bg-sky-50' : ''
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span
+                      className={`truncate ${c.unreadCount > 0 ? 'font-semibold text-zinc-900' : 'font-medium text-zinc-700'} ${name ? '' : 'tabular-nums'}`}
+                    >
+                      {name ?? formatPhone(c.phoneNumber)}
+                    </span>
+                    {c.smsConsent && (
+                      <>
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden />
+                        <span className="sr-only">SMS marketing consent on file</span>
+                      </>
+                    )}
                   </span>
-                )}
-              </div>
-            </button>
-          ))
+                  <span className="shrink-0 text-xs tabular-nums text-zinc-400">{formatListTime(c.lastMessageAt)}</span>
+                </div>
+                {name && <span className="truncate text-xs tabular-nums text-zinc-400">{formatPhone(c.phoneNumber)}</span>}
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`truncate text-sm ${c.unreadCount > 0 ? 'font-medium text-zinc-900' : 'text-zinc-500'}`}>
+                    {c.lastMessageDirection === 'OUTBOUND' ? 'You: ' : ''}
+                    {c.lastMessageBody}
+                  </span>
+                  {c.unreadCount > 0 && (
+                    <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-semibold leading-none text-white">
+                      {c.unreadCount > 99 ? '99+' : c.unreadCount}
+                    </span>
+                  )}
+                </div>
+              </button>
+            );
+          })
         )}
       </div>
 
@@ -154,7 +178,10 @@ export default function MessagesView({ initialConversations }: { initialConversa
                 </svg>
               </button>
               <span className="min-w-0 flex-1 truncate font-medium text-zinc-900">
-                {contact?.givenName ?? formatPhone(selectedPhone)}
+                {displayName(
+                  contact?.givenName ?? selectedConversation?.givenName,
+                  contact?.familyName ?? selectedConversation?.familyName,
+                ) ?? formatPhone(selectedPhone)}
               </span>
               {/* Desktop always shows the contact panel inline (sm:flex override on the panel
                   itself) — this toggle only matters on mobile, where it opens a full overlay. */}

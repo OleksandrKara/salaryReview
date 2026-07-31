@@ -1,5 +1,6 @@
 package com.salonreview.marketing;
 
+import com.salonreview.config.RebookingProperties;
 import com.salonreview.domain.MarketingContactSquareLink;
 import com.salonreview.domain.MarketingSyncStatus;
 import com.salonreview.domain.SalonConfig;
@@ -56,7 +57,8 @@ class MarketingContactsServiceTest {
         aggregator = mock(SquareMonthAggregator.class);
         salonConfig = mock(SalonConfigRepository.class);
         syncStatus = mock(MarketingSyncStatusRepository.class);
-        service = new MarketingContactsService(repository, squareLinks, square, aggregator, salonConfig, syncStatus);
+        service = new MarketingContactsService(repository, squareLinks, square, aggregator, salonConfig, syncStatus,
+                new RebookingProperties());
         when(repository.findSubmissionHistory(any())).thenReturn(List.of());
         when(repository.findSubmissionsByBookingIds(any())).thenReturn(Map.of());
         when(squareLinks.findByPhoneNumber(any())).thenReturn(Optional.empty());

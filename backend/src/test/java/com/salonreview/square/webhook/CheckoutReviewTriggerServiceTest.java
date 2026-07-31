@@ -53,7 +53,7 @@ class CheckoutReviewTriggerServiceTest {
         when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
         when(square.orderById("order_1")).thenReturn(Optional.of(order("cust_1", null)));
         when(square.customerPhone("cust_1")).thenReturn(PHONE);
-        when(square.customerNames(List.of("cust_1"))).thenReturn(Map.of("cust_1", "Jane"));
+        when(square.customerGivenNames(List.of("cust_1"))).thenReturn(Map.of("cust_1", "Jane"));
 
         service.handlePaymentUpdated(payment("COMPLETED", "order_1", "cust_1"));
 

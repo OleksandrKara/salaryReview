@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -122,6 +123,23 @@ public class MarketingContactsRepository {
                 + " FROM marketing.contacts c WHERE c.phone_number = ?";
         return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact, phoneNumber)
                 .stream().findFirst();
+    }
+
+    /** Given name + linked Square customer id + this app's own SMS-marketing-consent column (if
+     * any), for a batch of phone numbers — a cheap, name-only lookup backing the Messages
+     * conversation list, deliberately not the full {@link #findByPhoneNumber} query (which also
+     * pulls submission history). See MarketingContactsService#resolveDisplayNames. */
+    public record PhoneName(String phoneNumber, String givenName, String squareCustomerId, Boolean smsMarketingConsent) {}
+
+    public List<PhoneName> findNamesByPhoneNumbers(Collection<String> phoneNumbers) {
+        if (phoneNumbers.isEmpty()) return List.of();
+        String placeholders = phoneNumbers.stream().map(p -> "?").collect(Collectors.joining(","));
+        String sql = "SELECT phone_number, given_name, square_customer_id, sms_marketing_consent FROM marketing.contacts"
+                + " WHERE phone_number IN (" + placeholders + ")";
+        return jdbcTemplate.query(sql,
+                (rs, rowNum) -> new PhoneName(rs.getString("phone_number"), rs.getString("given_name"),
+                        rs.getString("square_customer_id"), (Boolean) rs.getObject("sms_marketing_consent")),
+                phoneNumbers.toArray());
     }
 
     /** Contacts eligible for {@code LeadFollowUpScheduler}'s poll — old enough ({@code
