@@ -95,6 +95,16 @@ public class SmsActivityController {
         return service.thread(phoneNumber).stream().map(SmsActivityController::toDto).toList();
     }
 
+    /** Marks every unread inbound message in this phone number's thread read — called when the
+     * manager conversation view opens a thread, so the unread badge (polled by
+     * MessagesNotifierIcon) actually reflects it afterward rather than reverting on the next poll.
+     * See SmsMessageLogService#markThreadRead's own doc for why the single-message {@link #markRead}
+     * endpoint alone wasn't enough here. */
+    @PostMapping("/conversations/{phoneNumber}/read")
+    public void markThreadRead(@PathVariable String phoneNumber) {
+        service.markThreadRead(phoneNumber);
+    }
+
     /** This phone number's marketing profile (name, email, submission/appointment history), for
      * the conversation view's contact info sidebar — serializes as a JSON {@code null} body (via
      * Jackson's jdk8 module, on by default in Spring Boot) if this number never went through the

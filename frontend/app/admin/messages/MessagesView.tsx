@@ -93,6 +93,12 @@ export default function MessagesView({ initialConversations }: { initialConversa
       api.getSmsContact(selectedPhone).then((data) => {
         if (!cancelled) setContact(data);
       });
+      // Persists the read state opening this thread already shows optimistically (see
+      // openThread's own local unreadCount reset) — without this, the backend's read_at never
+      // actually changes, so the next unread-count poll (MessagesNotifierIcon) sees the thread as
+      // still unread and the badge silently comes back. Fire-and-forget: a failure here just means
+      // the badge might not clear until the next successful open, not worth surfacing to the user.
+      api.markSmsThreadRead(selectedPhone).catch(() => {});
     }, 0);
     return () => {
       cancelled = true;

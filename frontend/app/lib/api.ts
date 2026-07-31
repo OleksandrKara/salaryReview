@@ -240,6 +240,13 @@ export const api = {
   getSmsContact: (phoneNumber: string) =>
     proxyGet<MarketingContact | null>(`/api/owner/automations/activity/conversations/${encodeURIComponent(phoneNumber)}/contact`),
 
+  // Marks every unread inbound message in this thread read in one call — see MessagesView.tsx's
+  // openThread, which calls this alongside its own optimistic local unread-badge reset so the two
+  // actually agree afterward (see markSmsMessageRead above for the older single-message form,
+  // still used by the /owner/settings/sms activity log's per-row click).
+  markSmsThreadRead: (phoneNumber: string) =>
+    proxyVoid(`/api/owner/automations/activity/conversations/${encodeURIComponent(phoneNumber)}/read`, 'POST'),
+
   sendSmsReply: (phoneNumber: string, body: string) =>
     proxyJson<SmsReplyResult>(`/api/owner/automations/activity/reply`, 'POST', { phoneNumber, body }),
 
