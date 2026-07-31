@@ -421,7 +421,7 @@ public class SquareClient {
     // each — but cached process-wide (names/creation dates never change) and the misses fetched in
     // parallel, so a month's worth of customers only ever costs one round of lookups. A sentinel
     // "not found" Customer (all-null fields) is cached too, so a bad id isn't refetched forever.
-    private static final Customer NOT_FOUND = new Customer(null, null, null, null, null);
+    private static final Customer NOT_FOUND = new Customer(null, null, null, null, null, null);
     private final Map<String, Customer> customerCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** Display names for the given customer ids. Best-effort, cached; blanks for any we can't resolve. */
@@ -619,6 +619,38 @@ public class SquareClient {
                 .orElse(null);
     }
 
+    /** The Square customer-group ids this customer belongs to — used by the
+     * {@code same_day_rebooking_discount} automation to check Square's own "Text Subscribers"
+     * segment as an alternate consent source (see openspec/changes/same-day-rebooking-discount
+     * design.md D3). Empty (not null) if the customer can't be resolved or has no segments. */
+    public List<String> customerSegmentIds(String customerId) {
+        return fetchCustomer(customerId).map(Customer::segmentIds)
+                .filter(java.util.Objects::nonNull)
+                .orElse(List.of());
+    }
+
+    /** Adds a customer to a Square customer group — used to enroll a customer in the same-day-
+     * rebooking auto-discount group (see design.md D7). Uncached, mutating; throws on failure so
+     * the caller (the internal enroll endpoint) can decide how to report it, rather than silently
+     * swallowing it the way read-only lookups in this client do. */
+    public void addCustomerToGroup(String customerId, String groupId) {
+        throttled(() -> http.put()
+                .uri("/v2/customers/{customerId}/groups/{groupId}", customerId, groupId)
+                .retrieve()
+                .toBodilessEntity());
+    }
+
+    /** Removes a customer from a Square customer group — used by the group-expiry sweep once a
+     * customer's personal offer window passes (see design.md D7). Uncached, mutating; throws on
+     * failure so the caller (the expiry scheduler) can leave the row unremoved and retry next
+     * tick, matching this automation's fail-closed conventions elsewhere. */
+    public void removeCustomerFromGroup(String customerId, String groupId) {
+        throttled(() -> http.delete()
+                .uri("/v2/customers/{customerId}/groups/{groupId}", customerId, groupId)
+                .retrieve()
+                .toBodilessEntity());
+    }
+
     // --- Response models (only the fields we use; unknown JSON ignored) ---
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -653,7 +685,8 @@ public class SquareClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record Customer(String id, String givenName, String familyName, String createdAt, String phoneNumber) {
+    public record Customer(String id, String givenName, String familyName, String createdAt, String phoneNumber,
+                           List<String> segmentIds) {
         public String fullName() {
             return ((givenName == null ? "" : givenName) + " " + (familyName == null ? "" : familyName)).trim();
         }

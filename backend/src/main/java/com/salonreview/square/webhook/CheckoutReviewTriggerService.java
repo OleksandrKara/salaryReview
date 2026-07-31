@@ -2,6 +2,7 @@ package com.salonreview.square.webhook;
 
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.repo.SmsReplyFlowRepository;
+import com.salonreview.sms.SameDayRebookingTriggerService;
 import com.salonreview.square.SquareClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,10 +28,13 @@ public class CheckoutReviewTriggerService {
 
     private final SquareClient square;
     private final SmsReplyFlowRepository repository;
+    private final SameDayRebookingTriggerService rebookingTrigger;
 
-    public CheckoutReviewTriggerService(SquareClient square, SmsReplyFlowRepository repository) {
+    public CheckoutReviewTriggerService(SquareClient square, SmsReplyFlowRepository repository,
+                                         SameDayRebookingTriggerService rebookingTrigger) {
         this.square = square;
         this.repository = repository;
+        this.rebookingTrigger = rebookingTrigger;
     }
 
     public void handlePaymentUpdated(SquareWebhookEvent.Payment payment) {
@@ -69,6 +73,11 @@ public class CheckoutReviewTriggerService {
                     .squarePaymentId(payment.id())
                     .sendDueAt(Instant.now().plus(SEND_DELAY))
                     .build());
+
+            // A second, independent send off the same qualifying event — see
+            // openspec/changes/same-day-rebooking-discount design.md D1. Reuses the values
+            // already resolved above rather than re-hitting Square.
+            rebookingTrigger.enqueue(payment.id(), customerId, phoneNumber, customerName);
         } catch (Exception e) {
             log.warn("Checkout-review trigger failed for payment {} (event ignored): {}",
                     payment == null ? null : payment.id(), e.getMessage());

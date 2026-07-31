@@ -2,6 +2,7 @@ package com.salonreview.square.webhook;
 
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.repo.SmsReplyFlowRepository;
+import com.salonreview.sms.SameDayRebookingTriggerService;
 import com.salonreview.square.SquareClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,13 +27,15 @@ class CheckoutReviewTriggerServiceTest {
 
     private SquareClient square;
     private SmsReplyFlowRepository repository;
+    private SameDayRebookingTriggerService rebookingTrigger;
     private CheckoutReviewTriggerService service;
 
     @BeforeEach
     void setUp() {
         square = mock(SquareClient.class);
         repository = mock(SmsReplyFlowRepository.class);
-        service = new CheckoutReviewTriggerService(square, repository);
+        rebookingTrigger = mock(SameDayRebookingTriggerService.class);
+        service = new CheckoutReviewTriggerService(square, repository, rebookingTrigger);
     }
 
     private static SquareWebhookEvent.Payment payment(String status, String orderId, String customerId) {
@@ -61,6 +64,10 @@ class CheckoutReviewTriggerServiceTest {
         assertThat(saved.getCustomerName()).isEqualTo("Jane");
         assertThat(saved.getState()).isEqualTo(SmsReplyFlow.STATE_AWAITING_SEND);
         assertThat(saved.getSquarePaymentId()).isEqualTo("pay_1");
+
+        // Second, independent enqueue off the same qualifying event — see
+        // openspec/changes/same-day-rebooking-discount design.md D1.
+        verify(rebookingTrigger).enqueue("pay_1", "cust_1", PHONE, "Jane");
     }
 
     @Test

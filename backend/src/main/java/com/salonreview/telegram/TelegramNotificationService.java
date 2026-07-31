@@ -116,6 +116,46 @@ public class TelegramNotificationService {
         }
     }
 
+    /** Alerts staff that a customer just booked under the same-day-rebooking promo (see
+     * openspec/changes/same-day-rebooking-discount design.md D7) — the customer is now
+     * auto-enrolled in the Square discount group, but staff still need to know NOT to also apply
+     * the old manual "Same day rebooking discount" (would stack to $20 off). Never throws, same
+     * contract as {@link #sendFourHandRequestAlert}. */
+    public boolean sendRebookingPromoAlert(String customerName, String phoneNumber, String appointmentStartAt) {
+        TelegramNotificationConfig cfg = configService.get();
+        String token = cfg.getBotToken();
+        String chatId = cfg.getChatId();
+        if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
+            log.info("Rebooking-promo Telegram alert skipped — bot token or chat id not configured");
+            return false;
+        }
+
+        String text = "🎁 Same-day rebooking discount booked\n"
+                + "Name: " + (customerName == null ? "—" : customerName) + '\n'
+                + "Phone: " + (phoneNumber == null ? "—" : phoneNumber) + '\n'
+                + "Appointment: " + formatPreferredTime(appointmentStartAt) + '\n'
+                + "⚠️ Auto-discount ($10) already applies at checkout — do NOT also apply the "
+                + "manual 'Same day rebooking discount' or they'll get $20 off, not $10.";
+        try {
+            Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", text);
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
+                    .timeout(Duration.ofSeconds(5))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(reqBody)))
+                    .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                log.warn("Rebooking-promo Telegram alert send failed: HTTP {} {}", res.statusCode(), res.body());
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.warn("Rebooking-promo Telegram alert send failed (caller unaffected): {}", e.getMessage());
+            return false;
+        }
+    }
+
     /** Package-private for direct unit testing, same convention as {@link #formatPreferredTime}. */
     String formatMessage(FourHandRequestNotification n) {
         StringBuilder sb = new StringBuilder();

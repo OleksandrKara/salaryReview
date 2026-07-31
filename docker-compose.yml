@@ -49,6 +49,13 @@ services:
       # application.yml but never actually passed through" gap the Square webhook had.
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
       TWILIO_INBOUND_WEBHOOK_URL: ${TWILIO_INBOUND_WEBHOOK_URL:-https://salon.akluxnails.com/api/public/sms/inbound}
+      # same_day_rebooking_discount automation (openspec/changes/same-day-rebooking-discount).
+      # Blank promo secret means the promo short link can't be signed, so it 404s rather than
+      # emitting an unsigned link. Auto-discount group id is blank until the one-time Square
+      # Catalog/CustomerGroup setup is done — group enrollment simply no-ops until then.
+      REBOOKING_PROMO_SECRET: ${REBOOKING_PROMO_SECRET:-}
+      REBOOKING_CONSENT_SEGMENT_ID: ${REBOOKING_CONSENT_SEGMENT_ID:-}
+      REBOOKING_AUTO_DISCOUNT_GROUP_ID: ${REBOOKING_AUTO_DISCOUNT_GROUP_ID:-}
       # First owner account, seeded when the user table is empty. Use a strong password on a server.
       APP_OWNER_USERNAME: ${APP_OWNER_USERNAME:-owner}
       APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:-changeme}

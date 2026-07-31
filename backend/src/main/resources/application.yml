@@ -70,6 +70,18 @@ twilio:
     auth-token: ${TWILIO_AUTH_TOKEN:}
     webhook-url: ${TWILIO_INBOUND_WEBHOOK_URL:https://salon.akluxnails.com/api/public/sms/inbound}
 
+# same_day_rebooking_discount automation — see openspec/changes/same-day-rebooking-discount.
+# promo-secret signs the ?promo=/&exp= promo link (blank means the short-link resolver can't
+# produce a signed URL, so it 404s rather than emitting an unsigned/forgeable one — see D8).
+# consent-segment-id is Square's own "Text Subscribers" customer-group id, an alternate consent
+# source alongside marketing.contacts.sms_marketing_consent (see D3). auto-discount-group-id is
+# blank until the one-time Square Catalog/CustomerGroup setup (see D7) is done, at which point
+# group enrollment/removal simply no-ops rather than erroring.
+rebooking:
+  promo-secret: ${REBOOKING_PROMO_SECRET:}
+  consent-segment-id: ${REBOOKING_CONSENT_SEGMENT_ID:gv2:DN9J6H6X8D4NN9202T6PKWK43C}
+  auto-discount-group-id: ${REBOOKING_AUTO_DISCOUNT_GROUP_ID:}
+
 # AI triage (suspicious-booking explainer). Feature flag is off by default; turn on per environment
 # only after ANTHROPIC_API_KEY and LANGSMITH_API_KEY are set. See AiTriageProperties.java.
 ai:
