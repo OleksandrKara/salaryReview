@@ -166,7 +166,11 @@ class MarketingAdsReportControllerTest {
                 List.of(),       // submissions
                 List.of(),       // appointments
                 null,            // createdAt
-                null);           // updatedAt
+                null,            // updatedAt
+                null,            // googleReviewSentAt
+                null,            // googleReviewClickedAt
+                null,            // feedbackFormSentAt
+                null);           // feedbackFormClickedAt
         when(contactsService.contactByCustomerId("cust-1")).thenReturn(java.util.Optional.of(contact));
 
         mvc.perform(get("/api/owner/marketing/ads-report/customer-history").param("customerId", "cust-1"))

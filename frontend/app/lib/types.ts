@@ -1241,6 +1241,15 @@ export interface MarketingContact {
   appointments: MarketingContactAppointment[];
   createdAt: string;
   updatedAt: string;
+  /** Most recent time this contact was sent / actually clicked the checkout-review automation's
+   * Google-review link — both null if never sent. clickedAt null with sentAt set means "sent, but
+   * hasn't clicked yet", distinct from "never asked" (see ContactInfoPanel's review-links section). */
+  googleReviewSentAt: string | null;
+  googleReviewClickedAt: string | null;
+  /** Same pair for the private feedback-form link (negative branch, or a repeat reviewer's
+   * positive branch — see backend CheckoutReviewLinks). */
+  feedbackFormSentAt: string | null;
+  feedbackFormClickedAt: string | null;
 }
 
 export interface MarketingContactsData {
