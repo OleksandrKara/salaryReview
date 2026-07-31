@@ -4,6 +4,7 @@ import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.repo.SmsReplyFlowRepository;
 import com.salonreview.sms.SameDayRebookingTriggerService;
 import com.salonreview.square.SquareClient;
+import com.salonreview.util.PhoneNumbers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -59,7 +60,12 @@ public class CheckoutReviewTriggerService {
             if (customerId == null) {
                 return; // no customer on the order at all — nothing to text
             }
-            String phoneNumber = square.customerPhone(customerId);
+            // Normalized to E.164 here — Square's own Customer.phoneNumber() returns whatever
+            // format was on file (often not E.164), and Twilio's inbound webhook always sends
+            // E.164. Without normalizing at this one root-cause write point, the same customer's
+            // texts silently split into two "different" threads on the Messages page — see
+            // PhoneNumbers' own doc comment.
+            String phoneNumber = PhoneNumbers.normalize(square.customerPhone(customerId));
             if (phoneNumber == null) {
                 return; // genuinely anonymous walk-in with no phone on file — silent skip, see D2
             }

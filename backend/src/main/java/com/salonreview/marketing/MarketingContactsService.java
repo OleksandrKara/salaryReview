@@ -13,6 +13,7 @@ import com.salonreview.square.SquareClient.Booking;
 import com.salonreview.square.SquareClient.TeamMember;
 import com.salonreview.square.SquareMonthAggregator;
 import com.salonreview.square.SquareMonthAggregator.BookingPayment;
+import com.salonreview.util.PhoneNumbers;
 import com.salonreview.web.dto.MarketingContactDto;
 import com.salonreview.web.dto.MarketingContactDto.Appointment;
 import com.salonreview.web.dto.MarketingContactDto.Contact;
@@ -141,13 +142,16 @@ public class MarketingContactsService {
             return Map.of();
         }
         try {
+            // Keyed by last10Digits, not the raw phone string — marketing.contacts' own stored
+            // format for this row isn't guaranteed to match the format phoneNumbers is holding
+            // (see PhoneNumbers' own doc comment and MarketingContactsRepository#findNamesByPhoneNumbers).
             Map<String, MarketingContactsRepository.PhoneName> byPhone = repository
                     .findNamesByPhoneNumbers(phoneNumbers).stream()
-                    .collect(Collectors.toMap(MarketingContactsRepository.PhoneName::phoneNumber, r -> r, (a, b) -> a));
+                    .collect(Collectors.toMap(MarketingContactsRepository.PhoneName::last10, r -> r, (a, b) -> a));
 
             Map<String, String> customerIdByPhone = new HashMap<>();
             for (String phone : phoneNumbers) {
-                MarketingContactsRepository.PhoneName row = byPhone.get(phone);
+                MarketingContactsRepository.PhoneName row = byPhone.get(PhoneNumbers.last10Digits(phone));
                 if (row != null) {
                     String customerId = row.squareCustomerId() != null
                             ? row.squareCustomerId()
@@ -176,7 +180,7 @@ public class MarketingContactsService {
 
             Map<String, ContactNameInfo> result = new HashMap<>();
             for (String phone : phoneNumbers) {
-                MarketingContactsRepository.PhoneName row = byPhone.get(phone);
+                MarketingContactsRepository.PhoneName row = byPhone.get(PhoneNumbers.last10Digits(phone));
                 String customerId = customerIdByPhone.get(phone);
                 String givenName = row != null && row.givenName() != null && !row.givenName().isBlank()
                         ? row.givenName()
@@ -263,7 +267,7 @@ public class MarketingContactsService {
             List<String> candidates = square.customerIdsForPhone(r.phoneNumber());
             if (candidates.isEmpty()) continue;
             squareLinks.save(MarketingContactSquareLink.builder()
-                    .phoneNumber(r.phoneNumber())
+                    .phoneNumber(PhoneNumbers.normalize(r.phoneNumber()))
                     .squareCustomerId(candidates.get(0))
                     .lastSyncedAt(Instant.now())
                     .build());

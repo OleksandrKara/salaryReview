@@ -304,7 +304,9 @@ class MarketingContactsServiceTest {
 
         var captor = org.mockito.ArgumentCaptor.forClass(MarketingContactSquareLink.class);
         verify(squareLinks).save(captor.capture());
-        assertThat(captor.getValue().getPhoneNumber()).isEqualTo("(858) 555-0100");
+        // Normalized to E.164 on save — see PhoneNumbers' own doc comment for why: this table's
+        // own exact-format writes must stay internally consistent for later lookups to work.
+        assertThat(captor.getValue().getPhoneNumber()).isEqualTo("+18585550100");
         assertThat(captor.getValue().getSquareCustomerId()).isEqualTo("SQCUST777");
     }
 
