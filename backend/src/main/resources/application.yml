@@ -21,6 +21,21 @@ spring:
     enabled: true
     baseline-on-migrate: true
 
+  # HttpSession is Postgres-backed (spring-session-jdbc), not Tomcat's in-memory default — a
+  # backend redeploy no longer signs out every active user, since the session data lives in the
+  # same DB the app already depends on. Schema is Flyway-managed (V59), not Spring Session's own
+  # auto-init. timeout is a sliding idle window, reset on every authenticated request (see
+  # SecurityConfig) — 30 days comfortably covers a provider's ~biweekly login cadence, while an
+  # actively-used session (a manager's all-shift-open tab, the owner's constant use) never hits
+  # the wall at all. See app/lib/authCookies.ts on the frontend for the matching browser-cookie
+  # lifetime — that cookie is refreshed on every proxied request so it slides in lockstep with
+  # this server-side timeout.
+  session:
+    store-type: jdbc
+    timeout: 30d
+    jdbc:
+      initialize-schema: never
+
 # Square API — credentials come from the environment so secrets never land in git.
 # SANDBOX by default; set SQUARE_ENVIRONMENT=production to hit real salon data.
 #
@@ -116,11 +131,6 @@ rag:
 server:
   port: 8080
   forward-headers-strategy: framework
-  servlet:
-    session:
-      # Stay signed in through a 12 h idle window (was Tomcat's 30 min default), matching the 12 h
-      # `sid` cookie set in the frontend login route — so a session lasts up to 12 h. See docs/CACHING.md.
-      timeout: 12h
   error:
     # Without this, ResponseStatusException's reason (e.g. "Username already taken", "Can't
     # delete — has recorded activity") never reaches the JSON body's `message` field, so callers
