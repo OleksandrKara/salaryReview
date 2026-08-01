@@ -21,20 +21,14 @@ spring:
     enabled: true
     baseline-on-migrate: true
 
-  # HttpSession is Postgres-backed (spring-session-jdbc), not Tomcat's in-memory default — a
-  # backend redeploy no longer signs out every active user, since the session data lives in the
-  # same DB the app already depends on. Schema is Flyway-managed (V59), not Spring Session's own
-  # auto-init. timeout is a sliding idle window, reset on every authenticated request (see
-  # SecurityConfig) — 30 days comfortably covers a provider's ~biweekly login cadence, while an
-  # actively-used session (a manager's all-shift-open tab, the owner's constant use) never hits
-  # the wall at all. See app/lib/authCookies.ts on the frontend for the matching browser-cookie
-  # lifetime — that cookie is refreshed on every proxied request so it slides in lockstep with
-  # this server-side timeout.
-  session:
-    store-type: jdbc
-    timeout: 30d
-    jdbc:
-      initialize-schema: never
+  # HttpSession backing store: see com.salonreview.config.HttpSessionConfig, NOT this
+  # `spring.session.*` block — Spring Boot 4.0.6 ships no auto-configuration for these properties
+  # at all (confirmed: spring-boot-autoconfigure-4.0.6 has zero "session" entries in its
+  # configuration metadata, and there is no separate spring-boot-session module either), so a
+  # `store-type: jdbc` key here has always silently done nothing. That inert config previously sat
+  # right here and looked correct, which is exactly how the session-persistence feature shipped
+  # without actually working — every backend redeploy was still wiping everyone's session via
+  # Tomcat's plain in-memory HttpSession, JDBC-backed store or not.
 
 # Square API — credentials come from the environment so secrets never land in git.
 # SANDBOX by default; set SQUARE_ENVIRONMENT=production to hit real salon data.
