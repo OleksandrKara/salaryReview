@@ -6,7 +6,7 @@ const usd = (n: number | null | undefined) =>
     ? '—'
     : n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
-function sum(months: MonthSummary[], key: 'grossRevenue' | 'payrollCost' | 'expenseTotal' | 'netRevenue'): number {
+function sum(months: MonthSummary[], key: 'grossRevenue' | 'payrollCost' | 'expenseTotal' | 'managerLaborCost' | 'netRevenue'): number {
   return months.reduce((acc, m) => acc + (m[key] ?? 0), 0);
 }
 
@@ -55,6 +55,7 @@ export default function NetSummary({ data }: { data: OwnerOverviewData }) {
 
   const totalGross   = sum(netMonths, 'grossRevenue');
   const totalPayroll = sum(netMonths, 'payrollCost');
+  const totalManagerLabor = sum(netMonths, 'managerLaborCost');
   const totalExpense = sum(netMonths, 'expenseTotal');
   const totalNet     = sum(netMonths, 'netRevenue');
   const netMargin = totalGross > 0 ? ((totalNet / totalGross) * 100).toFixed(1) + '%' : null;
@@ -85,16 +86,17 @@ export default function NetSummary({ data }: { data: OwnerOverviewData }) {
           >
             <span className="text-xs font-medium opacity-70">Net</span> {netGrowth.label}
             <InfoTip
-              text={`Net growth compares the average of the first ${netGrowth.w} month${netGrowth.w > 1 ? 's' : ''} of the selected range with the average of the last ${netGrowth.w} — so one unusually high or low month doesn't swing it. Net = gross revenue − payroll − business expenses.`}
+              text={`Net growth compares the average of the first ${netGrowth.w} month${netGrowth.w > 1 ? 's' : ''} of the selected range with the average of the last ${netGrowth.w} — so one unusually high or low month doesn't swing it. Net = gross revenue − payroll − manager time − business expenses.`}
               label="How Net growth is calculated"
             />
           </span>
         </div>
       )}
 
-      <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-zinc-100 pt-4 sm:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-zinc-100 pt-4 sm:grid-cols-3 lg:grid-cols-5">
         <div data-testid="net-summary-gross"><Kpi label="Gross" value={usd(totalGross)} /></div>
         <div data-testid="net-summary-payroll"><Kpi label="Payroll" value={`− ${usd(totalPayroll)}`} /></div>
+        <div data-testid="net-summary-manager-labor"><Kpi label="Manager time" value={`− ${usd(totalManagerLabor)}`} /></div>
         <div data-testid="net-summary-expenses"><Kpi label="Expenses" value={`− ${usd(totalExpense)}`} /></div>
         <div data-testid="net-summary-margin"><Kpi
           label="Net margin"

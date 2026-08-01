@@ -25,6 +25,10 @@ public class ExpenseEntry {
     public static final String CATEGORY_RENT = "RENT";
     public static final String CATEGORY_UTILITIES = "UTILITIES";
     public static final String CATEGORY_OTHER = "OTHER";
+    /** Manual backfill of manager labor cost for months before {@code manager_time_entry} has real
+     * clocked data (see OwnerOverviewService) — kept out of the generic expense total so it isn't
+     * double-counted against the real clocked figure once that exists for a month. */
+    public static final String CATEGORY_MANAGER_TIME = "MANAGER_TIME";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

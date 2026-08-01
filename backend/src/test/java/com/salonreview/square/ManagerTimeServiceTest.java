@@ -142,4 +142,49 @@ class ManagerTimeServiceTest {
         assertThatThrownBy(() -> service.deleteEntry(7L, 99L))
                 .isInstanceOf(ResponseStatusException.class);
     }
+
+    @Test
+    void totalLaborCostReturnsNullWhenNoClockedDataInRange() {
+        when(entries.findByWorkDateBetween(LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30)))
+                .thenReturn(List.of());
+
+        assertThat(service.totalLaborCost(LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30))).isNull();
+    }
+
+    @Test
+    void totalLaborCostSumsAcrossManagersAtTheirOwnRates() {
+        ManagerTimeEntry susan = ManagerTimeEntry.builder().id(1L).userId(7L)
+                .workDate(LocalDate.of(2026, 7, 5))
+                .startAt(Instant.parse("2026-07-05T16:00:00Z")).endAt(Instant.parse("2026-07-05T18:00:00Z")).build(); // 120m
+        ManagerTimeEntry tatiana = ManagerTimeEntry.builder().id(2L).userId(8L)
+                .workDate(LocalDate.of(2026, 7, 10))
+                .startAt(Instant.parse("2026-07-10T16:00:00Z")).endAt(Instant.parse("2026-07-10T17:00:00Z")).build(); // 60m
+        when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+                .thenReturn(List.of(susan, tatiana));
+        when(rates.findById(7L)).thenReturn(Optional.of(
+                ManagerPayRate.builder().userId(7L).usdPerHour(new BigDecimal("20.00")).build()));
+        when(rates.findById(8L)).thenReturn(Optional.of(
+                ManagerPayRate.builder().userId(8L).usdPerHour(new BigDecimal("30.00")).build()));
+
+        // Susan: 2h * $20 = $40; Tatiana: 1h * $30 = $30; total = $70
+        assertThat(service.totalLaborCost(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+                .isEqualByComparingTo("70.00");
+    }
+
+    @Test
+    void totalLaborCostSkipsOpenShiftsAndManagersWithoutARateSet() {
+        ManagerTimeEntry open = ManagerTimeEntry.builder().id(1L).userId(7L)
+                .workDate(LocalDate.of(2026, 7, 5)).startAt(Instant.parse("2026-07-05T16:00:00Z")).build(); // no endAt
+        ManagerTimeEntry noRate = ManagerTimeEntry.builder().id(2L).userId(8L)
+                .workDate(LocalDate.of(2026, 7, 10))
+                .startAt(Instant.parse("2026-07-10T16:00:00Z")).endAt(Instant.parse("2026-07-10T17:00:00Z")).build();
+        when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+                .thenReturn(List.of(open, noRate));
+        when(rates.findById(8L)).thenReturn(Optional.empty());
+
+        // Both entries contribute nothing (open shift has no fixed cost; no rate is unpriceable) —
+        // but the range isn't empty of entries, so this is a legitimate zero, not "no data at all".
+        assertThat(service.totalLaborCost(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+                .isEqualByComparingTo("0.00");
+    }
 }

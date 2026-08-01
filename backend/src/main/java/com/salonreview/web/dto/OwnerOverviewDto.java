@@ -33,16 +33,21 @@ public record OwnerOverviewDto(
              * calendar month from the expense_entries ledger. Null alongside grossRevenue for a
              * month with no data at all (future/unknown), matching that field's own convention. */
             BigDecimal expenseTotal,
-            /** grossRevenue - payrollCost - expenseTotal — the bottom-line figure this salon
-             * actually keeps, not just what came in the door. Null under the same conditions as
+            /** Manager labor cost for this month: real clocked hours x rate when any clocked data
+             * exists (see ManagerTimeService), otherwise the manual MANAGER_TIME expense-entry
+             * backfill for months before that tracking existed. Null under the same conditions as
              * expenseTotal. */
+            BigDecimal managerLaborCost,
+            /** grossRevenue - payrollCost - expenseTotal - managerLaborCost — the bottom-line figure
+             * this salon actually keeps, not just what came in the door. Null if any of the four is
+             * null. */
             BigDecimal netRevenue
     ) {
         /** Copy with the visit-ledger client counts filled in. */
         public MonthSummary withClients(int seen, int returning) {
             return new MonthSummary(year, month, label, cardRevenue, cashRevenue, grossRevenue, tips,
                     procedures, avgPerAppt, payrollCost, payrollPct, finalized, seen, returning,
-                    expenseTotal, netRevenue);
+                    expenseTotal, managerLaborCost, netRevenue);
         }
     }
 

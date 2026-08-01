@@ -842,7 +842,11 @@ export interface MonthSummary {
    * calendar-day overlap for this month — null when not yet resolvable (same conditions as
    * grossRevenue/payrollCost being null). */
   expenseTotal: number | null;
-  /** grossRevenue - payrollCost - expenseTotal — null if any of the three is null. */
+  /** Manager labor cost for this month: real clocked hours x rate whenever any clocked data
+   * exists (manager time tracking started July 2026), otherwise the manual MANAGER_TIME
+   * expense-entry backfill for earlier months. Null under the same conditions as expenseTotal. */
+  managerLaborCost: number | null;
+  /** grossRevenue - payrollCost - expenseTotal - managerLaborCost — null if any of the four is null. */
   netRevenue: number | null;
 }
 
@@ -1227,7 +1231,7 @@ export interface AdSpendEntry {
 
 // --- Expense entries (com.salonreview.web.ExpenseController) ---
 
-export type ExpenseCategory = 'MATERIALS' | 'RENT' | 'UTILITIES' | 'OTHER';
+export type ExpenseCategory = 'MATERIALS' | 'RENT' | 'UTILITIES' | 'OTHER' | 'MANAGER_TIME';
 
 export interface ExpenseEntry {
   id: number;
