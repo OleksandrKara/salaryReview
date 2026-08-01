@@ -4,7 +4,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const TABS = [
-  { href: '/owner/overview', label: 'Overview' },
+  { href: '/owner/overview', label: 'Gross' },
+  { href: '/owner/overview/net', label: 'Net' },
+  { href: '/owner/overview/expenses', label: 'Expenses' },
   { href: '/owner/overview/pulse', label: 'Daily Pulse' },
 ];
 
