@@ -63,7 +63,7 @@ public class LeadFollowUpScheduler {
         Instant now = Instant.now();
         List<RawContact> pending = contactsRepository.findPendingFollowUp(now.minus(MIN_AGE), now.minus(MAX_AGE));
         for (RawContact contact : pending) {
-            if (sendRepository.existsByContactId(contact.id())) {
+            if (sendRepository.existsByContactIdAndContactUpdatedAtGreaterThanEqual(contact.id(), contact.updatedAt())) {
                 continue; // belt-and-suspenders vs. the poll query's own NOT EXISTS
             }
             process(contact);
@@ -122,6 +122,7 @@ public class LeadFollowUpScheduler {
     private void save(RawContact contact, String state) {
         sendRepository.save(LeadFollowUpSend.builder()
                 .contactId(contact.id())
+                .contactUpdatedAt(contact.updatedAt())
                 .phoneNumber(contact.phoneNumber())
                 .state(state)
                 .build());
