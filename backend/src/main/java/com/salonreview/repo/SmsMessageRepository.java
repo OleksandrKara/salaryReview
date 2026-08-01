@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -91,6 +92,15 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
      * E.164-normalized — this table only ever stores normalized numbers (see
      * {@code SmsMessageLogService}'s own doc comment), so no tolerant matching is needed here. */
     boolean existsByPhoneNumberAndLinkTargetAndClickedAtIsNotNull(String phoneNumber, String linkTarget);
+
+    /** Batch form of {@link #existsByPhoneNumberAndLinkTargetAndClickedAtIsNotNull} — one query for
+     * every row on the manager conversation view's list page (which shows a quick-glance icon for
+     * "has clicked this link type before"), not one query per row. See
+     * {@code BlockedNumberRepository#findByPhoneNumberIn}'s own doc comment for the same pattern. */
+    @Query("SELECT DISTINCT m.phoneNumber FROM SmsMessage m "
+            + "WHERE m.phoneNumber IN :phoneNumbers AND m.linkTarget = :linkTarget AND m.clickedAt IS NOT NULL")
+    List<String> findPhoneNumbersWithClickedLinkTarget(@Param("phoneNumbers") Collection<String> phoneNumbers,
+                                                        @Param("linkTarget") String linkTarget);
 
     /** Whether this phone number has ever left a low-rating reply to the checkout-review-request
      * automation — permanently excludes them from the same-day-rebooking win-back nudge (see

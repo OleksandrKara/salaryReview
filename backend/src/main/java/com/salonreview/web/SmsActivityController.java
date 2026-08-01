@@ -5,6 +5,7 @@ import com.salonreview.domain.SmsMessage;
 import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.repo.SmsMessageRepository.ConversationSummaryProjection;
+import com.salonreview.sms.CheckoutReviewLinks;
 import com.salonreview.sms.SmsEventBroadcaster;
 import com.salonreview.sms.SmsMessageLogService;
 import com.salonreview.sms.TwilioSmsService;
@@ -63,7 +64,8 @@ public class SmsActivityController {
                                    String givenName, String familyName, boolean smsConsent,
                                    String squareProfileUrl, String lastMessageDeliveryStatus,
                                    String lastMessageDeliveryErrorMessage, boolean hasNegativeFeedback,
-                                   boolean vip, Integer visitCount, boolean blocked) {}
+                                   boolean vip, Integer visitCount, boolean blocked,
+                                   boolean clickedGoogleReview, boolean clickedFeedbackForm) {}
 
     public record ReplyRequest(String phoneNumber, String body) {}
 
@@ -119,8 +121,17 @@ public class SmsActivityController {
         for (BlockedNumber b : blockedNumberRepository.findByPhoneNumberIn(phoneNumbers)) {
             blockedPhones.add(b.getPhoneNumber());
         }
+        // Same batching reasoning as blockedPhones above — see
+        // SmsMessageLogService#phoneNumbersWithClickedLinkTarget's own doc comment. Quick-glance
+        // "has this contact ever clicked the Google review / feedback form link" icons for the
+        // conversation list — the fuller sent-vs-clicked-vs-never-sent detail with dates already
+        // lives in the contact info panel (see MarketingContactDto.Contact); these two flags are
+        // just the at-a-glance version so a manager doesn't have to open that panel to see it.
+        Set<String> clickedGoogleReview = service.phoneNumbersWithClickedLinkTarget(phoneNumbers, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET);
+        Set<String> clickedFeedbackForm = service.phoneNumbersWithClickedLinkTarget(phoneNumbers, CheckoutReviewLinks.FEEDBACK_FORM_TARGET);
         return summaries.stream()
-                .map(p -> toConversationDto(p, names.get(p.getPhoneNumber()), blockedPhones.contains(p.getPhoneNumber())))
+                .map(p -> toConversationDto(p, names.get(p.getPhoneNumber()), blockedPhones.contains(p.getPhoneNumber()),
+                        clickedGoogleReview.contains(p.getPhoneNumber()), clickedFeedbackForm.contains(p.getPhoneNumber())))
                 .toList();
     }
 
@@ -205,7 +216,8 @@ public class SmsActivityController {
 
     private static ConversationDto toConversationDto(ConversationSummaryProjection p,
                                                        MarketingContactsService.ContactNameInfo nameInfo,
-                                                       boolean blocked) {
+                                                       boolean blocked, boolean clickedGoogleReview,
+                                                       boolean clickedFeedbackForm) {
         return new ConversationDto(p.getPhoneNumber(), p.getLastMessageAt(), p.getLastMessageBody(),
                 p.getLastMessageDirection(), p.getUnreadCount(),
                 nameInfo == null ? null : nameInfo.givenName(),
@@ -215,6 +227,6 @@ public class SmsActivityController {
                 p.getLastMessageDeliveryStatus(), p.getLastMessageDeliveryErrorMessage(), p.getHasNegativeFeedback(),
                 nameInfo != null && nameInfo.vip(),
                 nameInfo == null ? null : nameInfo.visitCount(),
-                blocked);
+                blocked, clickedGoogleReview, clickedFeedbackForm);
     }
 }

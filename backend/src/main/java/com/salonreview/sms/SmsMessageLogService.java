@@ -167,6 +167,14 @@ public class SmsMessageLogService {
         return repository.existsByPhoneNumberAndLinkTargetAndClickedAtIsNotNull(PhoneNumbers.normalize(phoneNumber), linkTarget);
     }
 
+    /** Batch form of {@link #hasClickedLinkTarget} — one query for every phone number on the
+     * manager conversation view's list page, not one per row. {@code phoneNumbers} must already be
+     * E.164-normalized (the caller already has them in that form from the conversation summaries
+     * this backs). */
+    public java.util.Set<String> phoneNumbersWithClickedLinkTarget(java.util.Collection<String> phoneNumbers, String linkTarget) {
+        return new java.util.HashSet<>(repository.findPhoneNumbersWithClickedLinkTarget(phoneNumbers, linkTarget));
+    }
+
     /** Whether this phone number has ever left a low-rating reply to the checkout-review-request
      * automation — see {@link com.salonreview.repo.SmsMessageRepository#existsByPhoneNumberAndNegativeFeedbackAtIsNotNull}.
      * Used by {@code SameDayRebookingScheduler} to permanently exclude them from the win-back nudge. */

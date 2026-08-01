@@ -147,6 +147,14 @@ export interface SmsConversationDto {
    * any further outbound SMS (automated or manual), and inbound texts no longer trigger a
    * Telegram alert (still logged, just no longer paged). */
   blocked: boolean;
+  /** True if this phone number has *ever* clicked through the checkout-review-request
+   * automation's Google review link — quick-glance version of the fuller sent/clicked/date
+   * detail already shown in the contact info panel (see MarketingContact's own
+   * googleReviewClickedAt). Once both this and clickedFeedbackForm are true, the backend stops
+   * sending new review-request asks to this number (see CheckoutReviewTriggerService). */
+  clickedGoogleReview: boolean;
+  /** Same as clickedGoogleReview, for the feedback-form link. */
+  clickedFeedbackForm: boolean;
 }
 
 export interface SmsReplyResult {
