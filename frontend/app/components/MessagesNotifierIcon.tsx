@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import type { SmsConversationDto } from '../lib/types';
 import { setFaviconBadge } from '../lib/faviconBadge';
 import { playNotificationSound, primeAudio } from '../lib/notificationSound';
+import { onSmsUnreadCountChanged } from '../lib/smsUnreadEvent';
 
 const POLL_INTERVAL_MS = 25_000;
 
@@ -73,6 +74,13 @@ export default function MessagesNotifierIcon({ initialUnreadCount }: { initialUn
   useEffect(() => {
     void setFaviconBadge(unreadCount);
   }, [unreadCount]);
+
+  // MessagesView (the /admin/messages thread list) marks a thread read the moment it's opened —
+  // without this, this icon (a separate component tree, mounted in the page header via
+  // PageHeader/AdminMenu) wouldn't find out until its own next poll cycle up to POLL_INTERVAL_MS
+  // later, which read as "the badge doesn't update unless I refresh the page." See
+  // smsUnreadEvent's own doc comment.
+  useEffect(() => onSmsUnreadCountChanged(setUnreadCount), []);
 
   useEffect(() => {
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {

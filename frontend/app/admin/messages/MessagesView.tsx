@@ -7,6 +7,7 @@ import ContactInfoPanel from './ContactInfoPanel';
 import SmsConsentIcon from './SmsConsentIcon';
 import NegativeFeedbackIcon from './NegativeFeedbackIcon';
 import VipIcon from './VipIcon';
+import { dispatchSmsUnreadCountChanged } from '../../lib/smsUnreadEvent';
 
 function formatPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -170,7 +171,12 @@ export default function MessagesView({ initialConversations }: { initialConversa
     setSelectedPhone(phoneNumber);
     // Optimistic — the unread badge for this contact clears the moment they open it, same
     // instant-feedback convention as SmsActivityLog's mark-read-on-click.
-    setConversations((prev) => prev.map((c) => (c.phoneNumber === phoneNumber ? { ...c, unreadCount: 0 } : c)));
+    const next = conversations.map((c) => (c.phoneNumber === phoneNumber ? { ...c, unreadCount: 0 } : c));
+    setConversations(next);
+    // Tells the header's MessagesNotifierIcon (a separate component tree — see
+    // smsUnreadEvent's own doc comment) about the new total immediately, instead of leaving it
+    // stuck showing the old count until its own next poll cycle or a full page refresh.
+    dispatchSmsUnreadCountChanged(next.reduce((sum, c) => sum + c.unreadCount, 0));
   }
 
   async function sendReply() {
@@ -187,6 +193,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
         ]);
         setThread(freshThread);
         setConversations(freshConversations);
+        dispatchSmsUnreadCountChanged(freshConversations.reduce((sum, c) => sum + c.unreadCount, 0));
       }
     } finally {
       setSending(false);
