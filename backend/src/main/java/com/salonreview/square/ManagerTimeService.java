@@ -191,6 +191,29 @@ public class ManagerTimeService {
         return new AdminTimesheetDto(year, month, z.getId(), rows);
     }
 
+    /** Total labor cost (worked minutes x rate) across every manager for an arbitrary [from, to]
+     * range — used by {@code OwnerOverviewService} to fold manager pay into net revenue. Returns
+     * null when there's no clocked data at all in the range (before the feature existed, or a
+     * range no manager has worked yet), which the caller reads as "fall back to a manual entry" —
+     * as opposed to a legitimate zero, which only happens when shifts exist but no manager involved
+     * has a rate configured yet. */
+    public BigDecimal totalLaborCost(LocalDate from, LocalDate to) {
+        Map<Long, Integer> minsById = new HashMap<>();
+        for (ManagerTimeEntry e : entries.findByWorkDateBetween(from, to)) {
+            if (e.getEndAt() == null) continue; // an open shift has no fixed cost yet
+            minsById.merge(e.getUserId(),
+                    (int) Duration.between(e.getStartAt(), e.getEndAt()).toMinutes(), Integer::sum);
+        }
+        if (minsById.isEmpty()) return null;
+
+        BigDecimal total = BigDecimal.ZERO;
+        for (Map.Entry<Long, Integer> en : minsById.entrySet()) {
+            BigDecimal pay = pay(rateOf(en.getKey()), en.getValue());
+            if (pay != null) total = total.add(pay); // no rate set yet — best-effort, skip its cost
+        }
+        return total.setScale(2, RoundingMode.HALF_UP);
+    }
+
     /** Owner sets a manager's hourly rate (USD/hour). */
     @Transactional
     public void setRate(Long userId, BigDecimal usdPerHour, String by) {

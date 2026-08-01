@@ -33,6 +33,7 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
 
   const totalGross   = active.reduce((s, m) => s + (m.grossRevenue ?? 0), 0);
   const totalPayroll = active.reduce((s, m) => s + (m.payrollCost ?? 0), 0);
+  const totalManagerLabor = active.reduce((s, m) => s + (m.managerLaborCost ?? 0), 0);
   const totalExpense = active.reduce((s, m) => s + (m.expenseTotal ?? 0), 0);
   const netMonths = active.filter((m) => m.netRevenue != null);
   const totalNet = netMonths.length > 0 ? netMonths.reduce((s, m) => s + (m.netRevenue ?? 0), 0) : null;
@@ -48,6 +49,7 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
             <th className="px-4 py-3">Month</th>
             <th className="px-4 py-3 text-right">Gross</th>
             <th className="hidden px-4 py-3 text-right sm:table-cell">Payroll</th>
+            <th className="hidden px-4 py-3 text-right sm:table-cell">Manager time</th>
             <th className="hidden px-4 py-3 text-right sm:table-cell">Expenses</th>
             <th className="px-4 py-3 text-right">Net</th>
             <th className="px-4 py-3 text-right">Growth</th>
@@ -70,6 +72,9 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
                   {m.payrollCost != null ? `− ${usd(m.payrollCost)}` : '—'}
                 </td>
                 <td className="hidden px-4 py-3 text-right tabular-nums text-zinc-500 sm:table-cell">
+                  {m.managerLaborCost != null ? `− ${usd(m.managerLaborCost)}` : '—'}
+                </td>
+                <td className="hidden px-4 py-3 text-right tabular-nums text-zinc-500 sm:table-cell">
                   {m.expenseTotal != null ? `− ${usd(m.expenseTotal)}` : '—'}
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums font-semibold text-emerald-700">
@@ -87,6 +92,7 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
             <td className="px-4 py-3">Total</td>
             <td className="px-4 py-3 text-right tabular-nums">{usd(totalGross)}</td>
             <td className="hidden px-4 py-3 text-right tabular-nums sm:table-cell">− {usd(totalPayroll)}</td>
+            <td className="hidden px-4 py-3 text-right tabular-nums sm:table-cell">− {usd(totalManagerLabor)}</td>
             <td className="hidden px-4 py-3 text-right tabular-nums sm:table-cell">− {usd(totalExpense)}</td>
             <td className="px-4 py-3 text-right tabular-nums text-emerald-700">{usd(totalNet)}</td>
             <td className="px-4 py-3 text-right tabular-nums">

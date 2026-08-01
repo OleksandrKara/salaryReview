@@ -82,8 +82,10 @@ class OwnerOverviewServiceTest {
         // simply report 0 clients seen/returning — which these revenue/payroll assertions ignore.
         ManualAdjustmentService manualAdjustments = mock(ManualAdjustmentService.class);
         ExpenseService expenses = mock(ExpenseService.class);
+        ManagerTimeService managerTime = mock(ManagerTimeService.class);
         service     = new OwnerOverviewService(payPeriods, entries, new CommissionCalculator(),
-                salonConfig, aggregator, mock(RetentionAnalyticsService.class), manualAdjustments, expenses);
+                salonConfig, aggregator, mock(RetentionAnalyticsService.class), manualAdjustments, expenses,
+                managerTime);
 
         when(salonConfig.findById(1)).thenReturn(Optional.of(CFG));
         // Default: no periods for any year (overridden per test)
@@ -95,6 +97,9 @@ class OwnerOverviewServiceTest {
                 .thenReturn(0);
         // No expenses by default — individual tests can override to exercise net-revenue math.
         when(expenses.resolveExpenseTotal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(BigDecimal.ZERO);
+        // No manager labor cost by default — individual tests can override to exercise the fold-in.
+        when(managerTime.totalLaborCost(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(BigDecimal.ZERO);
     }
 
@@ -136,17 +141,77 @@ class OwnerOverviewServiceTest {
         ExpenseService expenses = mock(ExpenseService.class);
         when(expenses.resolveExpenseTotal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(new BigDecimal("100.00"));
+        ManagerTimeService managerTime = mock(ManagerTimeService.class);
+        when(managerTime.totalLaborCost(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(BigDecimal.ZERO);
         OwnerOverviewService serviceWithExpenses = new OwnerOverviewService(payPeriods, entries,
                 new CommissionCalculator(), salonConfig, aggregator, mock(RetentionAnalyticsService.class),
-                mock(ManualAdjustmentService.class), expenses);
+                mock(ManualAdjustmentService.class), expenses, managerTime);
 
         MonthSummary jan = serviceWithExpenses.overview(2025, 1, 2025, 12).months().get(0);
 
         assertThat(jan.grossRevenue()).isEqualByComparingTo("1000.00");
         assertThat(jan.payrollCost()).isEqualByComparingTo("450.00");
         assertThat(jan.expenseTotal()).isEqualByComparingTo("100.00");
-        // net = 1000 - 450 - 100 = 450
+        // net = 1000 - 450 - 100 - 0 = 450
         assertThat(jan.netRevenue()).isEqualByComparingTo("450.00");
+    }
+
+    @Test
+    @DisplayName("netRevenue also subtracts manager labor cost, preferring the real clocked total over the manual backfill")
+    void netRevenueSubtractsManagerLaborCost() {
+        Provider anna = provider(1L, "Anna");
+        PayPeriod jan1 = period(1L, 2025, 1, Half.FIRST);
+        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2025)).thenReturn(List.of(jan1));
+        when(entries.findAllByPayPeriodId(1L))
+                .thenReturn(List.of(entry(anna, jan1, "1000.00", "0.00", "0.00", 10)));
+
+        ExpenseService expenses = mock(ExpenseService.class);
+        when(expenses.resolveExpenseTotal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(BigDecimal.ZERO);
+        ManagerTimeService managerTime = mock(ManagerTimeService.class);
+        when(managerTime.totalLaborCost(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new BigDecimal("75.00"));
+        OwnerOverviewService serviceWithManagerTime = new OwnerOverviewService(payPeriods, entries,
+                new CommissionCalculator(), salonConfig, aggregator, mock(RetentionAnalyticsService.class),
+                mock(ManualAdjustmentService.class), expenses, managerTime);
+
+        MonthSummary jan = serviceWithManagerTime.overview(2025, 1, 2025, 12).months().get(0);
+
+        assertThat(jan.managerLaborCost()).isEqualByComparingTo("75.00");
+        // net = 1000 - 450 - 0 - 75 = 475
+        assertThat(jan.netRevenue()).isEqualByComparingTo("475.00");
+        // the manual backfill must never be consulted when real clocked data exists for the month
+        org.mockito.Mockito.verify(expenses, org.mockito.Mockito.never())
+                .resolveManagerLaborManualTotal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("netRevenue falls back to the manual manager-labor backfill when no clocked data exists for the month")
+    void netRevenueFallsBackToManualManagerLaborForMonthsWithoutClockedData() {
+        Provider anna = provider(1L, "Anna");
+        PayPeriod jan1 = period(1L, 2025, 1, Half.FIRST);
+        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2025)).thenReturn(List.of(jan1));
+        when(entries.findAllByPayPeriodId(1L))
+                .thenReturn(List.of(entry(anna, jan1, "1000.00", "0.00", "0.00", 10)));
+
+        ExpenseService expenses = mock(ExpenseService.class);
+        when(expenses.resolveExpenseTotal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(BigDecimal.ZERO);
+        when(expenses.resolveManagerLaborManualTotal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new BigDecimal("50.00"));
+        ManagerTimeService managerTime = mock(ManagerTimeService.class);
+        when(managerTime.totalLaborCost(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(null); // no clocked shifts at all this month (before the feature existed)
+        OwnerOverviewService serviceWithManualBackfill = new OwnerOverviewService(payPeriods, entries,
+                new CommissionCalculator(), salonConfig, aggregator, mock(RetentionAnalyticsService.class),
+                mock(ManualAdjustmentService.class), expenses, managerTime);
+
+        MonthSummary jan = serviceWithManualBackfill.overview(2025, 1, 2025, 12).months().get(0);
+
+        assertThat(jan.managerLaborCost()).isEqualByComparingTo("50.00");
+        // net = 1000 - 450 - 0 - 50 = 500
+        assertThat(jan.netRevenue()).isEqualByComparingTo("500.00");
     }
 
     @Test

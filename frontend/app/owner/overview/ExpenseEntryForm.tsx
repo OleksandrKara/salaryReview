@@ -9,6 +9,7 @@ const CATEGORIES: { value: ExpenseCategory; label: string }[] = [
   { value: 'RENT', label: 'Rent' },
   { value: 'UTILITIES', label: 'Utilities' },
   { value: 'OTHER', label: 'Other' },
+  { value: 'MANAGER_TIME', label: 'Manager time (backfill)' },
 ];
 
 const usdExact = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -188,6 +189,12 @@ export default function ExpenseEntryForm() {
               <option key={c.value} value={c.value}>{c.label}</option>
             ))}
           </select>
+          {category === 'MANAGER_TIME' && (
+            <span className="max-w-[16rem] text-[11px] leading-snug text-zinc-400">
+              Only needed for months before automatic time tracking (clocked hours already cover
+              July 2026 onward).
+            </span>
+          )}
         </label>
 
         <div className="flex flex-col gap-1 text-xs">

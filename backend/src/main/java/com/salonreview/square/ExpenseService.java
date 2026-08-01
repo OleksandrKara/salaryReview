@@ -10,6 +10,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Salon-wide business expenses (materials/supplies today, other categories as they come up) — the
@@ -20,6 +21,13 @@ import java.util.Optional;
 @Service
 public class ExpenseService {
 
+    /** Everything except MANAGER_TIME — that category is a manual backfill of manager labor cost
+     * (see {@link com.salonreview.domain.ExpenseEntry#CATEGORY_MANAGER_TIME}) resolved separately
+     * by {@link #resolveManagerLaborManualTotal}, not folded into the generic expense total. */
+    private static final Set<String> GENERIC_CATEGORIES = Set.of(
+            ExpenseEntry.CATEGORY_MATERIALS, ExpenseEntry.CATEGORY_RENT,
+            ExpenseEntry.CATEGORY_UTILITIES, ExpenseEntry.CATEGORY_OTHER);
+
     private final ExpenseEntryRepository repository;
 
     public ExpenseService(ExpenseEntryRepository repository) {
@@ -27,9 +35,23 @@ public class ExpenseService {
     }
 
     /** Resolves total expenses for [from, to] from the flexible {@code expense_entries} ledger —
-     * see {@link ExpenseResolver}. Used by {@code OwnerOverviewService} to compute net revenue. */
+     * see {@link ExpenseResolver}. Used by {@code OwnerOverviewService} to compute net revenue.
+     * Excludes MANAGER_TIME entries (see {@link #resolveManagerLaborManualTotal}). */
     public BigDecimal resolveExpenseTotal(LocalDate from, LocalDate to) {
-        return ExpenseResolver.resolve(repository.findOverlapping(from, to), from, to);
+        List<ExpenseEntry> generic = repository.findOverlapping(from, to).stream()
+                .filter(e -> GENERIC_CATEGORIES.contains(e.getCategory()))
+                .toList();
+        return ExpenseResolver.resolve(generic, from, to);
+    }
+
+    /** Resolves the manually-entered manager-labor backfill for [from, to] — only meaningful for
+     * months before real clocked data exists (see {@code ManagerTimeService.totalLaborCost}, which
+     * {@code OwnerOverviewService} prefers whenever it has any data for the month). */
+    public BigDecimal resolveManagerLaborManualTotal(LocalDate from, LocalDate to) {
+        List<ExpenseEntry> managerTime = repository.findOverlapping(from, to).stream()
+                .filter(e -> ExpenseEntry.CATEGORY_MANAGER_TIME.equals(e.getCategory()))
+                .toList();
+        return ExpenseResolver.resolve(managerTime, from, to);
     }
 
     /** Records a new expense entry — never upserts; a corrected re-entry is kept alongside the

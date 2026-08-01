@@ -48,11 +48,13 @@ public class OwnerOverviewService {
     private final RetentionAnalyticsService retention;
     private final ManualAdjustmentService manualAdjustments;
     private final ExpenseService expenses;
+    private final ManagerTimeService managerTime;
 
     public OwnerOverviewService(PayPeriodRepository payPeriods, PeriodEntryRepository entries,
                                 CommissionCalculator calculator, SalonConfigRepository salonConfig,
                                 SquareMonthAggregator aggregator, RetentionAnalyticsService retention,
-                                ManualAdjustmentService manualAdjustments, ExpenseService expenses) {
+                                ManualAdjustmentService manualAdjustments, ExpenseService expenses,
+                                ManagerTimeService managerTime) {
         this.payPeriods = payPeriods;
         this.entries = entries;
         this.calculator = calculator;
@@ -61,6 +63,7 @@ public class OwnerOverviewService {
         this.retention = retention;
         this.manualAdjustments = manualAdjustments;
         this.expenses = expenses;
+        this.managerTime = managerTime;
     }
 
     public OwnerOverviewDto overview(int fromYear, int fromMonth, int toYear, int toMonth) {
@@ -166,9 +169,10 @@ public class OwnerOverviewService {
 
         BigDecimal gross = card.add(cash);
         BigDecimal expenseTotal = expenseTotalForMonth(year, month);
+        BigDecimal managerLaborCost = managerLaborCostForMonth(year, month);
         return new MonthSummary(year, month, label(month), card, cash, gross, tips, procedures,
                 avg(gross, procedures), payroll, pct(payroll, gross), true, 0, 0,
-                expenseTotal, netRevenue(gross, payroll, expenseTotal));
+                expenseTotal, managerLaborCost, netRevenue(gross, payroll, expenseTotal, managerLaborCost));
     }
 
     // --- live month from Square ---
@@ -201,9 +205,10 @@ public class OwnerOverviewService {
                     .setScale(2, RoundingMode.HALF_UP);
 
             BigDecimal expenseTotal = expenseTotalForMonth(year, month);
+            BigDecimal managerLaborCost = managerLaborCostForMonth(year, month);
             return new MonthSummary(year, month, label(month), card, cash, gross, tips, procedures,
                     avg(gross, procedures), payroll, pct(payroll, gross), false, 0, 0,
-                    expenseTotal, netRevenue(gross, payroll, expenseTotal));
+                    expenseTotal, managerLaborCost, netRevenue(gross, payroll, expenseTotal, managerLaborCost));
         } catch (RuntimeException e) {
             return emptyMonth(year, month);
         }
@@ -222,9 +227,27 @@ public class OwnerOverviewService {
         }
     }
 
-    private static BigDecimal netRevenue(BigDecimal gross, BigDecimal payroll, BigDecimal expenseTotal) {
-        if (gross == null || payroll == null || expenseTotal == null) return null;
-        return gross.subtract(payroll).subtract(expenseTotal).setScale(2, RoundingMode.HALF_UP);
+    /** Resolves this calendar month's manager labor cost: the real clocked total (see
+     * {@code ManagerTimeService.totalLaborCost}) whenever any clocked data exists for the month,
+     * falling back to the manual MANAGER_TIME expense-entry backfill for months before manager
+     * time tracking existed (see {@code ExpenseService.resolveManagerLaborManualTotal}). Same
+     * best-effort resilience convention as expenseTotalForMonth. */
+    private BigDecimal managerLaborCostForMonth(int year, int month) {
+        try {
+            YearMonth ym = YearMonth.of(year, month);
+            BigDecimal auto = managerTime.totalLaborCost(ym.atDay(1), ym.atEndOfMonth());
+            if (auto != null) return auto;
+            return expenses.resolveManagerLaborManualTotal(ym.atDay(1), ym.atEndOfMonth());
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static BigDecimal netRevenue(BigDecimal gross, BigDecimal payroll, BigDecimal expenseTotal,
+                                          BigDecimal managerLaborCost) {
+        if (gross == null || payroll == null || expenseTotal == null || managerLaborCost == null) return null;
+        return gross.subtract(payroll).subtract(expenseTotal).subtract(managerLaborCost)
+                .setScale(2, RoundingMode.HALF_UP);
     }
 
     /** ymKey → [distinct clients seen, returning clients] for the range, from the visit ledger. */
@@ -289,7 +312,7 @@ public class OwnerOverviewService {
 
     private static MonthSummary emptyMonth(int year, int month) {
         return new MonthSummary(year, month, label(month), null, null, null, null, 0,
-                null, null, null, false, 0, 0, null, null);
+                null, null, null, false, 0, 0, null, null, null);
     }
 
     private static String label(int month) {

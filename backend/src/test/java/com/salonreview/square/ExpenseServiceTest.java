@@ -40,6 +40,34 @@ class ExpenseServiceTest {
     }
 
     @Test
+    @DisplayName("resolveExpenseTotal excludes MANAGER_TIME entries — that's a separate labor-cost figure")
+    void resolveExpenseTotalExcludesManagerTime() {
+        LocalDate from = LocalDate.of(2026, 7, 1);
+        LocalDate to = LocalDate.of(2026, 7, 31);
+        when(repository.findOverlapping(from, to)).thenReturn(List.of(
+                ExpenseEntry.builder().category("MATERIALS").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("200.00")).build(),
+                ExpenseEntry.builder().category("MANAGER_TIME").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("500.00")).build()));
+
+        assertThat(service.resolveExpenseTotal(from, to)).isEqualByComparingTo("200.00");
+    }
+
+    @Test
+    @DisplayName("resolveManagerLaborManualTotal sums only MANAGER_TIME entries")
+    void resolveManagerLaborManualTotalOnlyManagerTime() {
+        LocalDate from = LocalDate.of(2026, 6, 1);
+        LocalDate to = LocalDate.of(2026, 6, 30);
+        when(repository.findOverlapping(from, to)).thenReturn(List.of(
+                ExpenseEntry.builder().category("MATERIALS").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("200.00")).build(),
+                ExpenseEntry.builder().category("MANAGER_TIME").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("500.00")).build()));
+
+        assertThat(service.resolveManagerLaborManualTotal(from, to)).isEqualByComparingTo("500.00");
+    }
+
+    @Test
     @DisplayName("createExpenseEntry saves a new row with the amount scaled to 2 decimals")
     void createExpenseEntrySaves() {
         ExpenseEntry saved = service.createExpenseEntry("MATERIALS", LocalDate.of(2026, 7, 1),
