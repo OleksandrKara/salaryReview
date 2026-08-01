@@ -3,6 +3,7 @@
 import { Fragment, useState } from 'react';
 import type { MarketingContact } from '../../../lib/types';
 import { AppointmentHistoryList, HistoryToggle, SubmissionHistoryList } from '../ContactHistory';
+import VipBadge from './VipBadge';
 
 function ConsentBadge({ label, value }: { label: string; value: boolean | null }) {
   const text = value === null ? 'Unknown' : value ? 'Yes' : 'No';
@@ -108,7 +109,10 @@ export default function ContactsTable({ contacts }: { contacts: MarketingContact
         {contacts.map((c) => (
           <div key={c.id} className="rounded-lg p-4 ring-1 ring-zinc-200">
             <div className="flex items-center justify-between gap-2">
-              <span className="font-medium">{c.givenName ?? '—'}</span>
+              <span className="flex items-center gap-1.5">
+                <span className="font-medium">{c.givenName ?? '—'}</span>
+                {c.vip && <VipBadge visitCount={c.visitCount} />}
+              </span>
               {c.squareProfileUrl && <SquareProfileLink url={c.squareProfileUrl} />}
             </div>
             <div className="mt-1 text-sm text-zinc-600">{c.phoneNumber}</div>
@@ -166,7 +170,10 @@ export default function ContactsTable({ contacts }: { contacts: MarketingContact
                   <tr className="hover:bg-zinc-50">
                     <td className="px-3 py-2">
                       <div className="flex items-start justify-between gap-2">
-                        <div className="font-medium">{c.givenName ?? '—'}</div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="font-medium">{c.givenName ?? '—'}</div>
+                          {c.vip && <VipBadge visitCount={c.visitCount} />}
+                        </div>
                         {c.squareProfileUrl && <SquareProfileLink url={c.squareProfileUrl} />}
                       </div>
                       <div className="text-xs text-zinc-500">{c.phoneNumber}</div>

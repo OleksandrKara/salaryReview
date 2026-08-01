@@ -1276,6 +1276,13 @@ export interface MarketingContact {
    * positive branch — see backend CheckoutReviewLinks). */
   feedbackFormSentAt: string | null;
   feedbackFormClickedAt: string | null;
+  /** True once this Square customer's distinct-day visit count reaches the configured VIP
+   * threshold — strictly data-driven, no manual override (see backend
+   * MarketingContactsService#visitCountsByCustomerId). Always false when no Square customer is
+   * known yet. */
+  vip: boolean;
+  /** The distinct-day visit count backing `vip`, or null when no Square customer is known. */
+  visitCount: number | null;
 }
 
 export interface MarketingContactsData {
