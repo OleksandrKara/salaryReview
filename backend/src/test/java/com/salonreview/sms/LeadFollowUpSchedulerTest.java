@@ -48,6 +48,10 @@ class LeadFollowUpSchedulerTest {
     }
 
     private static RawContact contact(UUID id, String name, String squareCustomerId) {
+        return contact(id, name, squareCustomerId, Instant.now());
+    }
+
+    private static RawContact contact(UUID id, String name, String squareCustomerId, Instant updatedAt) {
         // id, phoneNumber, givenName, emailAddress, originalTrafficSource, marketingTrafficSource,
         // channel, utmSource, utmMedium, utmCampaign, landingPageSlug, variantName, deviceType,
         // osName, osVersion, browserName, browserVersion, smsMarketingConsent,
@@ -55,7 +59,7 @@ class LeadFollowUpSchedulerTest {
         // bookingStartAt, bookingServiceName, bookingPrice, bookingArtistName, createdAt, updatedAt
         return new RawContact(id, PHONE, name, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, squareCustomerId, null, null, null, null, null, null,
-                Instant.now(), Instant.now());
+                updatedAt, updatedAt);
     }
 
     private static SquareClient.Booking booking(String status, String startAt) {
@@ -171,14 +175,36 @@ class LeadFollowUpSchedulerTest {
     @DisplayName("already-processed contact (belt-and-suspenders check) is skipped entirely")
     void alreadyProcessedContactSkipped() {
         UUID id = UUID.randomUUID();
-        RawContact c = contact(id, "Jane", "cust1");
+        Instant touchedAt = Instant.now();
+        RawContact c = contact(id, "Jane", "cust1", touchedAt);
         givenPending(c);
-        when(sendRepository.existsByContactId(id)).thenReturn(true);
+        when(sendRepository.existsByContactIdAndContactUpdatedAtGreaterThanEqual(id, touchedAt)).thenReturn(true);
 
         scheduler.sendDueFollowUps();
 
         verifyNoInteractions(smsService, square);
         verify(sendRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("contact resubmitted since the last processed touch (new updated_at) is eligible again")
+    void resubmittedContactIsEligibleAgain() {
+        UUID id = UUID.randomUUID();
+        Instant newTouch = Instant.now();
+        RawContact c = contact(id, "Jane", "cust1", newTouch);
+        givenPending(c);
+        // The belt-and-suspenders check only matches touches at-or-after what's on file — a
+        // resubmission (newer updated_at) was never recorded, so this returns false, same as a
+        // genuinely first-time contact.
+        when(sendRepository.existsByContactIdAndContactUpdatedAtGreaterThanEqual(id, newTouch)).thenReturn(false);
+        when(square.bookingsForCustomer(eq("cust1"), any())).thenReturn(List.of());
+
+        scheduler.sendDueFollowUps();
+
+        verify(smsService).sendTemplated(eq("lead_follow_up_nudge"), eq(PHONE), any());
+        ArgumentCaptor<LeadFollowUpSend> captor = ArgumentCaptor.forClass(LeadFollowUpSend.class);
+        verify(sendRepository).save(captor.capture());
+        assertThat(captor.getValue().getContactUpdatedAt()).isEqualTo(newTouch);
     }
 
     @Test

@@ -174,12 +174,22 @@ public class MarketingContactsRepository {
      * minutes without ever being picked up. updated_at also does the right thing for a genuinely
      * new contact (INSERT sets both columns to the same instant), so first-time leads are
      * unaffected.
+     *
+     * <p>The {@code NOT EXISTS} below compares against {@code lead_followup_send.contact_updated_at}
+     * (not just {@code contact_id}) for the same reason: a lead who left contact info again after
+     * already getting a nudge is a genuinely new touch (a fresh {@code updated_at}), not a repeat
+     * of the first one — see V60 and {@code LeadFollowUpSend}'s own doc comment. Without this, the
+     * updated_at-based re-eligibility above was only half the fix: the row itself became visible
+     * to this query again, but the old contact_id-only exists-check still silently swallowed it —
+     * confirmed live against a real repeat submission that got exactly one nudge, ever, no matter
+     * how many times contact info was resubmitted afterward.
      */
     public List<RawContact> findPendingFollowUp(Instant olderThan, Instant newerThan) {
         String sql = "SELECT " + CONTACT_COLUMNS + ", " + TrafficSourceSql.contactChannelCase("c") + " AS channel"
                 + " FROM marketing.contacts c"
                 + " WHERE c.updated_at <= ? AND c.updated_at >= ?"
-                + " AND NOT EXISTS (SELECT 1 FROM lead_followup_send lfs WHERE lfs.contact_id = c.id)"
+                + " AND NOT EXISTS (SELECT 1 FROM lead_followup_send lfs"
+                + "     WHERE lfs.contact_id = c.id AND lfs.contact_updated_at >= c.updated_at)"
                 + " ORDER BY c.updated_at ASC";
         return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact,
                 Timestamp.from(olderThan), Timestamp.from(newerThan));
