@@ -4,6 +4,9 @@ import type { MarketingContact, MarketingContactAppointment } from '../../lib/ty
 import SmsConsentIcon from './SmsConsentIcon';
 import NegativeFeedbackIcon from './NegativeFeedbackIcon';
 import VipIcon from './VipIcon';
+import BlockedIcon from './BlockedIcon';
+import GoogleReviewClickedIcon from './GoogleReviewClickedIcon';
+import FeedbackFormClickedIcon from './FeedbackFormClickedIcon';
 
 function formatPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -69,6 +72,9 @@ export default function ContactInfoPanel({
   hasNegativeFeedback,
   vip,
   visitCount,
+  blocked,
+  clickedGoogleReview,
+  clickedFeedbackForm,
   onClose,
 }: {
   phoneNumber: string;
@@ -96,6 +102,16 @@ export default function ContactInfoPanel({
    * (resolves even without a marketing.contacts row). */
   vip?: boolean;
   visitCount?: number | null;
+  /** True if a manager has blocked this number — see BlockedIcon's own doc comment. */
+  blocked?: boolean;
+  /** True if this phone number has *ever* clicked the checkout-review-request automation's
+   * Google review link — see GoogleReviewClickedIcon's own doc comment. Distinct from the fuller
+   * sent/clicked/date detail in the "Review links" section below, which only appears once
+   * `contact` resolves to a real marketing.contacts row; this flag resolves independently of
+   * that, so it can still show here even when that section is hidden. */
+  clickedGoogleReview?: boolean;
+  /** Same as clickedGoogleReview, for the feedback-form link — see FeedbackFormClickedIcon. */
+  clickedFeedbackForm?: boolean;
   onClose: () => void;
 }) {
   const resolvedSquareProfileUrl = squareProfileUrl ?? contact?.squareProfileUrl ?? null;
@@ -156,6 +172,36 @@ export default function ContactInfoPanel({
                   >
                     <NegativeFeedbackIcon size={11} />
                     Negative feedback
+                  </span>
+                ) : null}
+                {blocked ? (
+                  <span
+                    data-testid="contact-info-blocked-badge"
+                    className="flex shrink-0 items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700"
+                    title="Number blocked — TwilioSmsService refuses to send it any further SMS"
+                  >
+                    <BlockedIcon size={11} />
+                    Blocked
+                  </span>
+                ) : null}
+                {clickedGoogleReview ? (
+                  <span
+                    data-testid="contact-info-google-review-badge"
+                    className="flex shrink-0 items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700"
+                    title="Has clicked the Google review link before"
+                  >
+                    <GoogleReviewClickedIcon size={11} />
+                    Clicked Google review
+                  </span>
+                ) : null}
+                {clickedFeedbackForm ? (
+                  <span
+                    data-testid="contact-info-feedback-form-badge"
+                    className="flex shrink-0 items-center gap-1 rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-medium text-teal-700"
+                    title="Has clicked the feedback form link before"
+                  >
+                    <FeedbackFormClickedIcon size={11} />
+                    Clicked feedback form
                   </span>
                 ) : null}
               </div>
