@@ -59,7 +59,8 @@ class SmsActivityControllerTest {
                 null, null, null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null,
                 List.of(), List.of(), Instant.now(), Instant.now(),
-                null, null, null, null);
+                null, null, null, null,
+                false, null);
     }
 
     private record FakeConversationSummary(String phoneNumber, Instant lastMessageAt, String lastMessageBody,

@@ -3,9 +3,11 @@ package com.salonreview.marketing;
 import com.salonreview.config.RebookingProperties;
 import com.salonreview.domain.MarketingContactSquareLink;
 import com.salonreview.domain.MarketingSyncStatus;
+import com.salonreview.domain.ProviderVisit;
 import com.salonreview.domain.SalonConfig;
 import com.salonreview.repo.MarketingContactSquareLinkRepository;
 import com.salonreview.repo.MarketingSyncStatusRepository;
+import com.salonreview.repo.ProviderVisitRepository;
 import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.sms.CheckoutReviewLinks;
 import com.salonreview.sms.SmsMessageLogService;
@@ -22,6 +24,7 @@ import com.salonreview.web.dto.MarketingContactDto.Contact;
 import com.salonreview.web.dto.MarketingContactDto.Submission;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -70,6 +73,8 @@ public class MarketingContactsService {
     private final MarketingSyncStatusRepository syncStatus;
     private final RebookingProperties rebookingProperties;
     private final SmsMessageLogService smsMessageLogService;
+    private final ProviderVisitRepository providerVisits;
+    private final int vipVisitThreshold;
     private final TtlCache cache = new TtlCache();
 
     public MarketingContactsService(MarketingContactsRepository repository,
@@ -79,7 +84,9 @@ public class MarketingContactsService {
                                      SalonConfigRepository salonConfig,
                                      MarketingSyncStatusRepository syncStatus,
                                      RebookingProperties rebookingProperties,
-                                     SmsMessageLogService smsMessageLogService) {
+                                     SmsMessageLogService smsMessageLogService,
+                                     ProviderVisitRepository providerVisits,
+                                     @Value("${vip.visit-threshold:4}") int vipVisitThreshold) {
         this.repository = repository;
         this.squareLinks = squareLinks;
         this.square = square;
@@ -88,6 +95,8 @@ public class MarketingContactsService {
         this.syncStatus = syncStatus;
         this.rebookingProperties = rebookingProperties;
         this.smsMessageLogService = smsMessageLogService;
+        this.providerVisits = providerVisits;
+        this.vipVisitThreshold = vipVisitThreshold;
     }
 
     /** Both link-engagement pairs (Google review + feedback form) for one phone number, in the
@@ -127,7 +136,8 @@ public class MarketingContactsService {
      * no Square customer resolves either way. */
     public Optional<Contact> contactByPhone(String phoneNumber) {
         try {
-            Optional<Contact> tracked = repository.findByPhoneNumber(phoneNumber).map(this::toContact);
+            Optional<Contact> tracked = repository.findByPhoneNumber(phoneNumber)
+                    .map(r -> toContact(r, visitCountsByCustomerId()));
             return tracked.isPresent() ? tracked : contactFromLivePhoneLookup(phoneNumber);
         } catch (DataAccessException ex) {
             log.warn("Marketing schema unavailable while resolving contact for phone {}", phoneNumber, ex);
@@ -159,6 +169,7 @@ public class MarketingContactsService {
         Instant since = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.DAYS).minus(LIVE_LOOKUP_HISTORY_WINDOW);
         List<Appointment> appointments = fetchAppointments(customerId, since);
         ContactLinkEngagement engagement = linkEngagementFor(phoneNumber);
+        long visitCount = visitCountsByCustomerId().getOrDefault(customerId, 0L);
 
         return Optional.of(new Contact(
                 "square:" + customerId, givenName, familyName, phoneNumber, null,
@@ -168,16 +179,18 @@ public class MarketingContactsService {
                 squareProfileUrl, submissions, appointments,
                 null, null,
                 engagement.googleReview().sentAt(), engagement.googleReview().clickedAt(),
-                engagement.feedbackForm().sentAt(), engagement.feedbackForm().clickedAt()
+                engagement.feedbackForm().sentAt(), engagement.feedbackForm().clickedAt(),
+                visitCount >= vipVisitThreshold, (int) visitCount
         ));
     }
 
     public Optional<Contact> contactByCustomerId(String squareCustomerId) {
         try {
+            Map<String, Long> visitCounts = visitCountsByCustomerId();
             return repository.listAll().stream()
                     .filter(r -> squareCustomerId.equals(resolveSquareCustomerId(r)))
                     .findFirst()
-                    .map(this::toContact);
+                    .map(r -> toContact(r, visitCounts));
         } catch (DataAccessException ex) {
             log.warn("Marketing schema unavailable while resolving contact for customer {}", squareCustomerId, ex);
             return Optional.empty();
@@ -287,19 +300,38 @@ public class MarketingContactsService {
 
     private MarketingContactDto computeContacts() {
         try {
+            // Computed once up front (a single query against our own DB, no Square round trip)
+            // rather than per-contact inside the parallelStream below — every contact shares the
+            // same visit ledger, so there's no reason to recount it once per row.
+            Map<String, Long> visitCounts = visitCountsByCustomerId();
             // Each contact with a known Square customer needs its own round trip(s) to Square
             // (toContact -> fetchAppointments) — parallelizing across contacts, on top of the
             // per-customer window fan-out inside SquareClient.bookingsForCustomer, is what keeps
             // this page from taking many seconds to load once there are more than a couple of
             // Square-linked contacts.
             List<Contact> contacts = repository.listAll().parallelStream()
-                    .map(this::toContact)
+                    .map(r -> toContact(r, visitCounts))
                     .collect(Collectors.toList());
             return new MarketingContactDto(true, contacts);
         } catch (DataAccessException ex) {
             log.warn("Marketing schema unavailable while building contacts list", ex);
             return MarketingContactDto.unavailable();
         }
+    }
+
+    /** Distinct-day visit counts per Square customer id, backing the VIP badge/filter (see #toContact
+     * and #vipVisitThreshold) — counted as distinct service dates, not raw provider_visit rows,
+     * since two providers seeing the same customer on the same day (e.g. a 4-hand booking) is one
+     * salon visit, not two. Recomputed on demand rather than cached: it's one cheap in-process
+     * query against our own DB (same "load once, compute in memory" pattern
+     * MarketingAnalyticsService already uses for this table), not a Square round trip. */
+    private Map<String, Long> visitCountsByCustomerId() {
+        return providerVisits.findAllByOrderByServiceDateAsc().stream()
+                .collect(Collectors.groupingBy(
+                        ProviderVisit::getCustomerId,
+                        Collectors.mapping(ProviderVisit::getServiceDate, Collectors.toSet())))
+                .entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> (long) e.getValue().size()));
     }
 
     /**
@@ -484,7 +516,7 @@ public class MarketingContactsService {
         return segments != null && segments.contains(consentSegmentId);
     }
 
-    private Contact toContact(MarketingContactsRepository.RawContact raw) {
+    private Contact toContact(MarketingContactsRepository.RawContact raw, Map<String, Long> visitCounts) {
         String effectiveSquareCustomerId = resolveSquareCustomerId(raw);
 
         String squareProfileUrl = effectiveSquareCustomerId == null
@@ -516,6 +548,11 @@ public class MarketingContactsService {
 
         ContactLinkEngagement engagement = linkEngagementFor(raw.phoneNumber());
 
+        // 0 (not "not applicable") for a contact with no Square customer resolved yet — visitCount
+        // stays null in that case, same rationale as squareProfileUrl/appointments above.
+        Long visitCount = effectiveSquareCustomerId == null ? null : visitCounts.getOrDefault(effectiveSquareCustomerId, 0L);
+        boolean vip = visitCount != null && visitCount >= vipVisitThreshold;
+
         return new Contact(
                 raw.id().toString(),
                 raw.givenName(),
@@ -543,7 +580,8 @@ public class MarketingContactsService {
                 raw.createdAt(),
                 raw.updatedAt(),
                 engagement.googleReview().sentAt(), engagement.googleReview().clickedAt(),
-                engagement.feedbackForm().sentAt(), engagement.feedbackForm().clickedAt()
+                engagement.feedbackForm().sentAt(), engagement.feedbackForm().clickedAt(),
+                vip, visitCount == null ? null : visitCount.intValue()
         );
     }
 

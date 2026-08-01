@@ -82,6 +82,14 @@ rebooking:
   consent-segment-id: ${REBOOKING_CONSENT_SEGMENT_ID:gv2:DN9J6H6X8D4NN9202T6PKWK43C}
   auto-discount-group-id: ${REBOOKING_AUTO_DISCOUNT_GROUP_ID:}
 
+# VIP badge/filter on the Contacts tab (see MarketingContactsService#visitCountsByCustomerId) —
+# a customer with at least this many distinct-day visits (per provider_visit) is flagged VIP.
+# Grounded in real ~13-month history: 4+ visits is the natural cutoff separating the ~17% of
+# repeat customers worth treating specially from one-off/occasional visitors. Strictly data-driven
+# by design — no manual override field, per the owner's own call.
+vip:
+  visit-threshold: ${VIP_VISIT_THRESHOLD:4}
+
 # AI triage (suspicious-booking explainer). Feature flag is off by default; turn on per environment
 # only after ANTHROPIC_API_KEY and LANGSMITH_API_KEY are set. See AiTriageProperties.java.
 ai:

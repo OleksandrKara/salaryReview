@@ -7,8 +7,10 @@ import com.salonreview.domain.SalonConfig;
 import com.salonreview.marketing.MarketingContactsRepository.RawAppointmentSubmission;
 import com.salonreview.marketing.MarketingContactsRepository.RawContact;
 import com.salonreview.marketing.MarketingContactsRepository.RawSubmission;
+import com.salonreview.domain.ProviderVisit;
 import com.salonreview.repo.MarketingContactSquareLinkRepository;
 import com.salonreview.repo.MarketingSyncStatusRepository;
+import com.salonreview.repo.ProviderVisitRepository;
 import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClient.AppointmentSegment;
@@ -48,6 +50,7 @@ class MarketingContactsServiceTest {
     private SalonConfigRepository salonConfig;
     private MarketingSyncStatusRepository syncStatus;
     private com.salonreview.sms.SmsMessageLogService smsMessageLogService;
+    private ProviderVisitRepository providerVisits;
     private MarketingContactsService service;
 
     @BeforeEach
@@ -59,14 +62,16 @@ class MarketingContactsServiceTest {
         salonConfig = mock(SalonConfigRepository.class);
         syncStatus = mock(MarketingSyncStatusRepository.class);
         smsMessageLogService = mock(com.salonreview.sms.SmsMessageLogService.class);
+        providerVisits = mock(ProviderVisitRepository.class);
         service = new MarketingContactsService(repository, squareLinks, square, aggregator, salonConfig, syncStatus,
-                new RebookingProperties(), smsMessageLogService);
+                new RebookingProperties(), smsMessageLogService, providerVisits, 4);
         when(repository.findSubmissionHistory(any())).thenReturn(List.of());
         when(repository.findSubmissionsByBookingIds(any())).thenReturn(Map.of());
         when(squareLinks.findByPhoneNumber(any())).thenReturn(Optional.empty());
         when(salonConfig.findById(1)).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
         when(syncStatus.getSingleton()).thenReturn(MarketingSyncStatus.builder().build());
+        when(providerVisits.findAllByOrderByServiceDateAsc()).thenReturn(List.of());
         // No link engagement by default — individual tests override with a specific stub if they
         // care about the repeat-reviewer/click-status fields.
         when(smsMessageLogService.linkEngagement(any(), any()))
@@ -133,6 +138,60 @@ class MarketingContactsServiceTest {
         assertThat(c.utmMedium()).isEqualTo("cpc");
         assertThat(c.utmCampaign()).isEqualTo("retargeting");
         assertThat(c.updatedAt()).isEqualTo(Instant.parse("2026-07-02T00:00:00Z"));
+    }
+
+    @Test
+    @DisplayName("a customer with visits on 4+ distinct days is flagged VIP, below threshold is not")
+    void vipFlagReflectsDistinctDayVisitCount() {
+        UUID vipId = UUID.randomUUID();
+        UUID regularId = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(vipId, "SQCUST_VIP"), rawContact(regularId, "SQCUST_REGULAR")));
+        when(square.bookingsForCustomer(any(), any())).thenReturn(List.of());
+        when(providerVisits.findAllByOrderByServiceDateAsc()).thenReturn(List.of(
+                visit("SQCUST_VIP", java.time.LocalDate.parse("2026-01-05")),
+                visit("SQCUST_VIP", java.time.LocalDate.parse("2026-02-05")),
+                visit("SQCUST_VIP", java.time.LocalDate.parse("2026-03-05")),
+                visit("SQCUST_VIP", java.time.LocalDate.parse("2026-04-05")),
+                visit("SQCUST_REGULAR", java.time.LocalDate.parse("2026-01-05")),
+                visit("SQCUST_REGULAR", java.time.LocalDate.parse("2026-02-05"))
+        ));
+
+        List<Contact> contacts = service.contacts().contacts();
+
+        Contact vip = contacts.stream().filter(c -> "SQCUST_VIP".equals(c.squareProfileUrl() == null ? null
+                : c.squareProfileUrl().substring(c.squareProfileUrl().lastIndexOf('/') + 1))).findFirst().orElseThrow();
+        Contact regular = contacts.stream().filter(c -> "SQCUST_REGULAR".equals(c.squareProfileUrl() == null ? null
+                : c.squareProfileUrl().substring(c.squareProfileUrl().lastIndexOf('/') + 1))).findFirst().orElseThrow();
+
+        assertThat(vip.vip()).isTrue();
+        assertThat(vip.visitCount()).isEqualTo(4);
+        assertThat(regular.vip()).isFalse();
+        assertThat(regular.visitCount()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("two providers seeing a customer on the same day counts as one visit, not two")
+    void sameDayTwoProvidersCountsAsOneVisit() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST_SAMEDAY")));
+        when(square.bookingsForCustomer(any(), any())).thenReturn(List.of());
+        when(providerVisits.findAllByOrderByServiceDateAsc()).thenReturn(List.of(
+                visit("SQCUST_SAMEDAY", java.time.LocalDate.parse("2026-05-01")),
+                visitWithProvider("SQCUST_SAMEDAY", java.time.LocalDate.parse("2026-05-01"), "PROVIDER_2")
+        ));
+
+        Contact c = service.contacts().contacts().get(0);
+
+        assertThat(c.visitCount()).isEqualTo(1);
+        assertThat(c.vip()).isFalse();
+    }
+
+    private static ProviderVisit visit(String customerId, java.time.LocalDate date) {
+        return visitWithProvider(customerId, date, "PROVIDER_1");
+    }
+
+    private static ProviderVisit visitWithProvider(String customerId, java.time.LocalDate date, String providerRef) {
+        return ProviderVisit.builder().customerId(customerId).providerRef(providerRef).serviceDate(date).build();
     }
 
     @Test

@@ -73,7 +73,17 @@ public record MarketingContactDto(
             /** Same pair, for the private feedback-form link (negative branch, or a repeat
              * reviewer's positive branch — see CheckoutReviewLinks). */
             Instant feedbackFormSentAt,
-            Instant feedbackFormClickedAt
+            Instant feedbackFormClickedAt,
+            /** True once this Square customer's distinct-day visit count (see provider_visit)
+             * reaches the configured vip.visit-threshold — a repeat client worth the owner's
+             * special attention. Strictly data-driven, no manual override (see
+             * MarketingContactsService#visitCountsByCustomerId). Always false when no Square
+             * customer is known yet. */
+            boolean vip,
+            /** The distinct-day visit count backing {@code vip}, or null when no Square customer
+             * is known (there's nothing to count) — distinguishes "0 real visits on record" from
+             * "not applicable" in the UI. */
+            Integer visitCount
     ) {}
 
     public record Submission(

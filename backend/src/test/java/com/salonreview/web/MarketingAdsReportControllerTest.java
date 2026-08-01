@@ -170,7 +170,9 @@ class MarketingAdsReportControllerTest {
                 null,            // googleReviewSentAt
                 null,            // googleReviewClickedAt
                 null,            // feedbackFormSentAt
-                null);           // feedbackFormClickedAt
+                null,            // feedbackFormClickedAt
+                false,           // vip
+                null);           // visitCount
         when(contactsService.contactByCustomerId("cust-1")).thenReturn(java.util.Optional.of(contact));
 
         mvc.perform(get("/api/owner/marketing/ads-report/customer-history").param("customerId", "cust-1"))

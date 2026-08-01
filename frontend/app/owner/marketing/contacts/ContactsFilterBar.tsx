@@ -34,6 +34,9 @@ interface Filters {
   period: PeriodSelection;
   modifiedFrom: string;
   modifiedTo: string;
+  /** Narrows to contacts flagged VIP (see MarketingContact#vip) — off by default, since most
+   * days the owner wants the whole list, not just the repeat-customer subset. */
+  vipOnly: boolean;
 }
 
 function emptyFilters(): Filters {
@@ -50,6 +53,7 @@ function emptyFilters(): Filters {
     period: { period: 'mtd' },
     modifiedFrom: '',
     modifiedTo: '',
+    vipOnly: false,
   };
 }
 
@@ -121,6 +125,7 @@ function applyFilters(contacts: MarketingContact[], f: Filters): MarketingContac
     if (!matchesField(c, f.landingPage, (x) => x.landingPageSlug, (s) => s.landingPageSlug)) return false;
     if (!matchesField(c, f.variant, (x) => x.variantName, (s) => s.variantName)) return false;
     if (f.submissionTypes.size > 0 && !c.submissions.some((s) => f.submissionTypes.has(s.submissionType))) return false;
+    if (f.vipOnly && !c.vip) return false;
     const { from: periodFrom, to: periodTo } = periodToBounds(f.period);
     if ((periodFrom || periodTo) && !withinRange(c.createdAt, periodFrom ?? '', periodTo ?? '')) return false;
     if ((f.modifiedFrom || f.modifiedTo) && !withinRange(c.updatedAt, f.modifiedFrom, f.modifiedTo)) return false;
@@ -216,7 +221,8 @@ export default function ContactsFilterBar({
     filters.submissionTypes.size > 0 ||
     filters.period.period !== 'mtd' ||
     filters.modifiedFrom ||
-    filters.modifiedTo;
+    filters.modifiedTo ||
+    filters.vipOnly;
 
   return (
     <div>
@@ -242,14 +248,22 @@ export default function ContactsFilterBar({
           />
         </div>
 
-        <div className="mt-3">
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
           <input
             type="text"
             value={filters.search}
             onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
             placeholder="Search name, phone, or email…"
-            className="w-full rounded border border-zinc-300 px-3 py-1.5 text-sm"
+            className="w-full rounded border border-zinc-300 px-3 py-1.5 text-sm sm:flex-1"
           />
+          <label className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-zinc-700">
+            <input
+              type="checkbox"
+              checked={filters.vipOnly}
+              onChange={(e) => setFilters((f) => ({ ...f, vipOnly: e.target.checked }))}
+            />
+            VIP only
+          </label>
         </div>
 
         <div className="mt-3">
