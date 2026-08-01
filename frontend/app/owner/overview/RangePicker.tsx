@@ -50,9 +50,12 @@ function MonthYearSelect({
 }
 
 export default function RangePicker({
-  fromYear, fromMonth, toYear, toMonth,
+  fromYear, fromMonth, toYear, toMonth, basePath = '/owner/overview',
 }: {
   fromYear: number; fromMonth: number; toYear: number; toMonth: number;
+  /** Which Revenue tab's route to apply the new range to — each tab (Gross/Net) fetches the same
+   * range-scoped data independently, so this must match wherever RangePicker is actually rendered. */
+  basePath?: string;
 }) {
   const router = useRouter();
   const [fy, setFy] = useState(fromYear);
@@ -61,7 +64,7 @@ export default function RangePicker({
   const [tm, setTm] = useState(toMonth);
 
   function apply() {
-    router.push(`/owner/overview?fromYear=${fy}&fromMonth=${fm}&toYear=${ty}&toMonth=${tm}`);
+    router.push(`${basePath}?fromYear=${fy}&fromMonth=${fm}&toYear=${ty}&toMonth=${tm}`);
   }
 
   const isDirty = fy !== fromYear || fm !== fromMonth || ty !== toYear || tm !== toMonth;
