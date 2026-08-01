@@ -3,6 +3,7 @@
 import type { MarketingContact, MarketingContactAppointment } from '../../lib/types';
 import SmsConsentIcon from './SmsConsentIcon';
 import NegativeFeedbackIcon from './NegativeFeedbackIcon';
+import VipIcon from './VipIcon';
 
 function formatPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -66,6 +67,8 @@ export default function ContactInfoPanel({
   conversationName,
   smsConsent,
   hasNegativeFeedback,
+  vip,
+  visitCount,
   onClose,
 }: {
   phoneNumber: string;
@@ -88,6 +91,11 @@ export default function ContactInfoPanel({
    * request automation — permanent once true. Same phone number is permanently excluded from the
    * same-day-rebooking win-back nudge on the backend, so a manager knows why before reaching out. */
   hasNegativeFeedback?: boolean;
+  /** From the conversation list's own resolution — same distinct-day visit-count threshold as
+   * MarketingContact#vip, preferred over `contact?.vip` for the same reason as smsConsent above
+   * (resolves even without a marketing.contacts row). */
+  vip?: boolean;
+  visitCount?: number | null;
   onClose: () => void;
 }) {
   const resolvedSquareProfileUrl = squareProfileUrl ?? contact?.squareProfileUrl ?? null;
@@ -120,6 +128,16 @@ export default function ContactInfoPanel({
                 <div data-testid="contact-info-name" className="min-w-0 flex-1 truncate text-base font-semibold text-zinc-900">
                   {name ?? formatPhone(phoneNumber)}
                 </div>
+                {vip ? (
+                  <span
+                    data-testid="contact-info-vip-badge"
+                    className="flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700"
+                    title={visitCount != null ? `VIP — ${visitCount} visits on record` : 'VIP customer'}
+                  >
+                    <VipIcon size={11} />
+                    VIP{visitCount != null ? ` · ${visitCount} visits` : ''}
+                  </span>
+                ) : null}
                 {smsConsent ? (
                   <span
                     data-testid="contact-info-consent-badge"
