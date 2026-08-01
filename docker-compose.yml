@@ -1,3 +1,70 @@
+# Blue/green: two replicas each of the backend and frontend, plus a tiny internal nginx load
+# balancer in front of the two backend replicas (backend-lb) — so a deploy never has to take the
+# whole app down for even a few seconds. The rolling-deploy sequence (see
+# .github/workflows/deploy.yml) restarts one backend replica at a time, reloads backend-lb once
+# both are healthy again (so it re-resolves the fresh container IPs — a graceful `nginx -s reload`
+# never drops an in-flight connection), then restarts one frontend replica at a time. The host
+# nginx (deploy/nginx-salon.conf.example is a checked-in mirror of the live config) load-balances
+# across both frontend replicas with retry, and backend-lb load-balances/retries across both
+# backend replicas — so a request that lands on a replica that's mid-restart is transparently
+# retried against its still-live pair instead of surfacing a 502, including a manager's in-flight
+# reply.
+x-backend-env: &backend-env
+  # Override the dev defaults in application.yml — talk to the postgres service via Docker DNS.
+  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/salonreview
+  SPRING_DATASOURCE_USERNAME: salon
+  SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-salon}
+  # Square credentials — read from your shell or the .env file next to this compose file.
+  SQUARE_ENVIRONMENT: ${SQUARE_ENVIRONMENT:-sandbox}
+  SQUARE_ACCESS_TOKEN: ${SQUARE_ACCESS_TOKEN:-}
+  SQUARE_LOCATION_ID: ${SQUARE_LOCATION_ID:-}
+  # Square's payment.updated/payment.created webhook (checkout-review-request automation).
+  # Blank signature-key means every webhook request is rejected — was missing here entirely
+  # until the automation's first real payment revealed no subscription/signature-key existed
+  # on either side.
+  SQUARE_WEBHOOK_SIGNATURE_KEY: ${SQUARE_WEBHOOK_SIGNATURE_KEY:-}
+  SQUARE_WEBHOOK_NOTIFICATION_URL: ${SQUARE_WEBHOOK_NOTIFICATION_URL:-https://salon.akluxnails.com/api/public/webhooks/square}
+  # Twilio's inbound-SMS webhook (reply branching for checkout-review-request/lead_follow_up).
+  # Blank auth-token means every inbound reply is rejected — same "referenced in
+  # application.yml but never actually passed through" gap the Square webhook had.
+  TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+  TWILIO_INBOUND_WEBHOOK_URL: ${TWILIO_INBOUND_WEBHOOK_URL:-https://salon.akluxnails.com/api/public/sms/inbound}
+  # same_day_rebooking_discount automation (openspec/changes/same-day-rebooking-discount).
+  # Blank promo secret means the promo short link can't be signed, so it 404s rather than
+  # emitting an unsigned link. Auto-discount group id is blank until the one-time Square
+  # Catalog/CustomerGroup setup is done — group enrollment simply no-ops until then.
+  REBOOKING_PROMO_SECRET: ${REBOOKING_PROMO_SECRET:-}
+  REBOOKING_CONSENT_SEGMENT_ID: ${REBOOKING_CONSENT_SEGMENT_ID:-}
+  REBOOKING_AUTO_DISCOUNT_GROUP_ID: ${REBOOKING_AUTO_DISCOUNT_GROUP_ID:-}
+  # First owner account, seeded when the user table is empty. Use a strong password on a server.
+  APP_OWNER_USERNAME: ${APP_OWNER_USERNAME:-owner}
+  APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:-changeme}
+  # AI triage (suspicious-booking explainer). Feature flag is off by default —
+  # set AI_TRIAGE_ENABLED=true to expose the Explain button in the UI.
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+  LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-salary-review-suspicious-triage}
+  AI_TRIAGE_ENABLED: ${AI_TRIAGE_ENABLED:-false}
+  # AI funnel analysis ("Analyze Funnel" button). Feature flag is off by default — set
+  # AI_FUNNEL_ANALYSIS_ENABLED=true to expose it. Shares ANTHROPIC_API_KEY with triage above.
+  AI_FUNNEL_ANALYSIS_ENABLED: ${AI_FUNNEL_ANALYSIS_ENABLED:-false}
+  # RAG knowledge assistant. Feature flag is off by default — set RAG_ENABLED=true (and a
+  # VOYAGE_API_KEY for embeddings) to expose the /api/rag endpoints and the chat/admin UI.
+  VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
+  RAG_ENABLED: ${RAG_ENABLED:-false}
+  # Grounded starter prompts in the chat widget. On by default; set false to hide them.
+  RAG_SUGGESTIONS_ENABLED: ${RAG_SUGGESTIONS_ENABLED:-true}
+  # Shared secret for service-to-service calls from mani/akluxnails-home (Telegram
+  # 4-hand-request relay) — blank means every internal call is rejected.
+  INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
+
+x-backend-healthcheck: &backend-healthcheck
+  test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+  interval: 5s
+  timeout: 3s
+  retries: 20
+  start_period: 30s
+
 services:
   postgres:
     # pgvector image is the official postgres:16 plus the `vector` extension — same PGDATA layout,
@@ -19,94 +86,90 @@ services:
       retries: 10
     # No host port published — only reachable by other services on the internal Docker network.
 
-  backend:
+  backend-blue:
     build:
       context: ./backend
-    container_name: salonreview-backend
+    image: salaryreview-backend:latest
+    container_name: salonreview-backend-blue
     restart: unless-stopped
     ports:
-      # Loopback only: never reachable from the public internet (the frontend talks to it over the
-      # internal Docker network at http://backend:8080). Published to localhost so host-side debugging
-      # works — `curl localhost:8080/api/...` on your laptop, or via an SSH tunnel on the server.
+      # Loopback only — never reachable from the public internet. Useful for host-side debugging
+      # (`curl localhost:8080/...`); real traffic reaches this replica via backend-lb (frontend's
+      # server-side calls) or the host nginx's salaryreview_backend upstream (direct webhook/
+      # short-link paths — see deploy/nginx-salon.conf.example).
       - "127.0.0.1:8080:8080"
-    environment:
-      # Override the dev defaults in application.yml — talk to the postgres service via Docker DNS.
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/salonreview
-      SPRING_DATASOURCE_USERNAME: salon
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-salon}
-      # Square credentials — read from your shell or the .env file next to this compose file.
-      SQUARE_ENVIRONMENT: ${SQUARE_ENVIRONMENT:-sandbox}
-      SQUARE_ACCESS_TOKEN: ${SQUARE_ACCESS_TOKEN:-}
-      SQUARE_LOCATION_ID: ${SQUARE_LOCATION_ID:-}
-      # Square's payment.updated/payment.created webhook (checkout-review-request automation).
-      # Blank signature-key means every webhook request is rejected — was missing here entirely
-      # until the automation's first real payment revealed no subscription/signature-key existed
-      # on either side.
-      SQUARE_WEBHOOK_SIGNATURE_KEY: ${SQUARE_WEBHOOK_SIGNATURE_KEY:-}
-      SQUARE_WEBHOOK_NOTIFICATION_URL: ${SQUARE_WEBHOOK_NOTIFICATION_URL:-https://salon.akluxnails.com/api/public/webhooks/square}
-      # Twilio's inbound-SMS webhook (reply branching for checkout-review-request/lead_follow_up).
-      # Blank auth-token means every inbound reply is rejected — same "referenced in
-      # application.yml but never actually passed through" gap the Square webhook had.
-      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
-      TWILIO_INBOUND_WEBHOOK_URL: ${TWILIO_INBOUND_WEBHOOK_URL:-https://salon.akluxnails.com/api/public/sms/inbound}
-      # same_day_rebooking_discount automation (openspec/changes/same-day-rebooking-discount).
-      # Blank promo secret means the promo short link can't be signed, so it 404s rather than
-      # emitting an unsigned link. Auto-discount group id is blank until the one-time Square
-      # Catalog/CustomerGroup setup is done — group enrollment simply no-ops until then.
-      REBOOKING_PROMO_SECRET: ${REBOOKING_PROMO_SECRET:-}
-      REBOOKING_CONSENT_SEGMENT_ID: ${REBOOKING_CONSENT_SEGMENT_ID:-}
-      REBOOKING_AUTO_DISCOUNT_GROUP_ID: ${REBOOKING_AUTO_DISCOUNT_GROUP_ID:-}
-      # First owner account, seeded when the user table is empty. Use a strong password on a server.
-      APP_OWNER_USERNAME: ${APP_OWNER_USERNAME:-owner}
-      APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:-changeme}
-      # AI triage (suspicious-booking explainer). Feature flag is off by default —
-      # set AI_TRIAGE_ENABLED=true to expose the Explain button in the UI.
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
-      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-salary-review-suspicious-triage}
-      AI_TRIAGE_ENABLED: ${AI_TRIAGE_ENABLED:-false}
-      # AI funnel analysis ("Analyze Funnel" button). Feature flag is off by default — set
-      # AI_FUNNEL_ANALYSIS_ENABLED=true to expose it. Shares ANTHROPIC_API_KEY with triage above.
-      AI_FUNNEL_ANALYSIS_ENABLED: ${AI_FUNNEL_ANALYSIS_ENABLED:-false}
-      # RAG knowledge assistant. Feature flag is off by default — set RAG_ENABLED=true (and a
-      # VOYAGE_API_KEY for embeddings) to expose the /api/rag endpoints and the chat/admin UI.
-      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
-      RAG_ENABLED: ${RAG_ENABLED:-false}
-      # Grounded starter prompts in the chat widget. On by default; set false to hide them.
-      RAG_SUGGESTIONS_ENABLED: ${RAG_SUGGESTIONS_ENABLED:-true}
-      # Shared secret for service-to-service calls from mani/akluxnails-home (Telegram
-      # 4-hand-request relay) — blank means every internal call is rejected.
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
+    environment: *backend-env
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck: *backend-healthcheck
+
+  backend-green:
+    image: salaryreview-backend:latest
+    container_name: salonreview-backend-green
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8090:8080"
+    environment: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck: *backend-healthcheck
+
+  # Internal load balancer in front of both backend replicas (see nginx/backend-lb.conf) — the
+  # frontend's server-side calls (BACKEND_URL) go through here instead of a single replica
+  # directly, so one of them being mid-restart never fails a request; it's silently retried
+  # against the other. No host port: only reachable from other containers on this compose network.
+  backend-lb:
+    image: nginx:1.27-alpine
+    container_name: salonreview-backend-lb
+    restart: unless-stopped
+    volumes:
+      - ./nginx/backend-lb.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      backend-blue:
+        condition: service_healthy
+      backend-green:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/actuator/health"]
       interval: 5s
       timeout: 3s
-      retries: 20
-      start_period: 30s
+      retries: 10
+      start_period: 5s
 
-  frontend:
+  frontend-blue:
     build:
       context: ./frontend
-    container_name: salonreview-frontend
+    image: salaryreview-frontend:latest
+    container_name: salonreview-frontend-blue
     restart: unless-stopped
     environment:
-      # Server-side fetches (Node in the container) reach the backend over Docker DNS. The browser
-      # only ever talks to this frontend (same-origin /api/* proxies), so no backend URL is exposed
-      # to the client — nothing hardcoded to localhost, and no public API base to configure.
-      BACKEND_URL: http://backend:8080
+      # Server-side fetches (Node in the container) go through backend-lb, not a single backend
+      # replica directly — see that service's own comment above. The browser only ever talks to
+      # this frontend (same-origin /api/* proxies), so no backend URL is exposed to the client.
+      BACKEND_URL: http://backend-lb:8080
       # Auth cookies are marked Secure automatically when a reverse proxy sends
       # X-Forwarded-Proto: https. Uncomment to force it on (e.g. TLS terminated elsewhere):
       # COOKIE_SECURE: "true"
     ports:
-      # Bound to loopback only: nginx (same host) reverse-proxies HTTPS to it, but the raw IP isn't
-      # reachable from the public internet — forcing all traffic through TLS. See app/api/login/route.ts
-      # for the X-Forwarded-Proto → Secure-cookie handling that nginx enables.
+      # Loopback only: the host nginx's salaryreview_frontend upstream reverse-proxies HTTPS to
+      # both replicas, but the raw IP isn't reachable from the public internet.
       - "127.0.0.1:3000:3000"
     depends_on:
-      backend:
+      backend-lb:
+        condition: service_healthy
+
+  frontend-green:
+    image: salaryreview-frontend:latest
+    container_name: salonreview-frontend-green
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://backend-lb:8080
+    ports:
+      - "127.0.0.1:3010:3000"
+    depends_on:
+      backend-lb:
         condition: service_healthy
 
   # Database admin UI. Bound to loopback only — reach it via an SSH tunnel

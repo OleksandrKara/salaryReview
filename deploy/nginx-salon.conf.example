@@ -1,47 +1,128 @@
-# nginx vhost for salon.spincareer.com → the app (frontend on 127.0.0.1:3000).
-# Copy to /etc/nginx/sites-available/salon.spincareer.com, symlink into sites-enabled, then:
-#   sudo certbot --nginx -d salon.spincareer.com     # provisions TLS + the 443 server block
+# nginx vhost for salon.akluxnails.com — checked-in mirror of the live config at
+# /etc/nginx/sites-available/salon (that file is hand-maintained on the VPS, not deployed by CI;
+# keep this copy in sync when it changes). Install:
+#   sudo cp deploy/nginx-salon.conf.example /etc/nginx/sites-available/salon
+#   sudo ln -s /etc/nginx/sites-available/salon /etc/nginx/sites-enabled/
+#   sudo certbot --nginx -d salon.akluxnails.com    # provisions TLS + rewrites in the 443 block
 #   sudo nginx -t && sudo systemctl reload nginx
 #
-# The X-Forwarded-Proto header is required: the app marks its auth cookies Secure only when it sees
-# https there (see frontend/app/api/login/route.ts).
+# The X-Forwarded-Proto header is required: the app marks its auth cookies Secure only when it
+# sees https there (see frontend/app/api/login/route.ts).
+#
+# Two upstreams, each with two members (blue/green — see docker-compose.yml): nginx retries a
+# request against the other member if the one it picked is mid-restart (rolling deploy, see
+# .github/workflows/deploy.yml), so a deploy never surfaces a 502 to a real visitor — including a
+# manager mid-reply. salaryreview_backend is used directly by the third-party webhook/short-link
+# paths below (bypassing the frontend, same reasoning as before); salaryreview_frontend serves
+# everything else, and the frontend's own server-side calls to the backend go through the
+# internal backend-lb container instead (see nginx/backend-lb.conf) — this host-level upstream is
+# only for requests nginx itself proxies.
+upstream salaryreview_frontend {
+    server 127.0.0.1:3000 max_fails=1 fail_timeout=3s;
+    server 127.0.0.1:3010 max_fails=1 fail_timeout=3s;
+}
+
+upstream salaryreview_backend {
+    server 127.0.0.1:8080 max_fails=1 fail_timeout=3s;
+    server 127.0.0.1:8090 max_fails=1 fail_timeout=3s;
+}
 
 server {
-    listen 80;
-    server_name salon.spincareer.com;
-    # certbot adds the 443 ssl server block + redirects 80→443 when you run it.
+    server_name salon.akluxnails.com;
 
-    # Allow large-ish uploads/responses just in case; tune as needed.
-    client_max_body_size 10m;
+    server_tokens off;
 
-    # Square's payment.updated webhook, Twilio's inbound-SMS webhook, and the click-tracked short
-    # link (checkout-review-request automation — see openspec/changes/sms-automations-hub) are
-    # third-party-called, signature-verified endpoints that live in the backend, not the frontend.
-    # Proxied straight to the backend (bypassing Next.js entirely) so the raw request body reaches
-    # the signature check byte-for-byte — a JSON-parse/re-serialize round trip through a Next.js API
-    # route could otherwise subtly change the bytes the signature was computed over.
-    location ~ ^/(api/public/webhooks/square|api/public/sms/inbound|r/) {
-        proxy_pass http://127.0.0.1:8080;
+    add_header Strict-Transport-Security "max-age=15768000" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Rate-limit the login endpoint per IP (zone defined in conf.d/ratelimit.conf).
+    # burst=10 absorbs legit retries/typos; beyond that returns 429.
+    location = /api/login {
+        limit_req zone=login burst=10 nodelay;
+        limit_req_status 429;
+
+        proxy_pass http://salaryreview_frontend;
         proxy_http_version 1.1;
-        proxy_set_header Host              $host;
-        proxy_set_header X-Real-IP         $remote_addr;
-        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_next_upstream error timeout http_502 http_503 http_504;
+        proxy_next_upstream_tries 2;
+    }
+
+    # Third-party webhooks (Square payment.updated, Twilio inbound SMS/voice), signature-verified
+    # server-side (see SecurityConfig's permitAll list) — called directly by Square/Twilio's own
+    # servers, so this must reach the backend, not fall through to the frontend and 404.
+    location /api/public/ {
+        proxy_pass http://salaryreview_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_next_upstream error timeout http_502 http_503 http_504;
+        proxy_next_upstream_tries 2;
+    }
+
+    # Click-tracked short-link redirects (checkout-review-request reply links, same-day-rebooking
+    # promo link) — same "must reach the backend directly" reasoning as above.
+    location /r/ {
+        proxy_pass http://salaryreview_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_next_upstream error timeout http_502 http_503 http_504;
+        proxy_next_upstream_tries 2;
     }
 
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://salaryreview_frontend;
+
         proxy_http_version 1.1;
 
-        proxy_set_header Host              $host;
-        proxy_set_header X-Real-IP         $remote_addr;
-        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;   # <-- makes the auth cookie Secure over HTTPS
 
-        # Next.js streaming / HMR upgrade support
-        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
 
-        proxy_read_timeout 120s;
+        proxy_next_upstream error timeout http_502 http_503 http_504;
+        proxy_next_upstream_tries 2;
     }
+
+    listen 443 ssl; # managed by Certbot
+    listen [::]:443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/salon.spincareer.com/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/salon.spincareer.com/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+}
+
+# Old domain: permanently redirect everything to the new domain, preserving path/query.
+server {
+    server_name salon.spincareer.com;
+
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    ssl_certificate /etc/letsencrypt/live/salon.spincareer.com/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/salon.spincareer.com/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+    return 301 https://salon.akluxnails.com$request_uri;
+}
+
+# Plain HTTP on either host: send straight to the new domain over HTTPS.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name salon.spincareer.com salon.akluxnails.com;
+    return 301 https://salon.akluxnails.com$request_uri;
 }
