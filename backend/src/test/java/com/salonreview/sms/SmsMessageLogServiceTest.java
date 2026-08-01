@@ -23,12 +23,14 @@ import static org.mockito.Mockito.*;
 class SmsMessageLogServiceTest {
 
     private SmsMessageRepository repository;
+    private SmsEventBroadcaster events;
     private SmsMessageLogService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(SmsMessageRepository.class);
-        service = new SmsMessageLogService(repository);
+        events = mock(SmsEventBroadcaster.class);
+        service = new SmsMessageLogService(repository, events);
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
@@ -39,6 +41,14 @@ class SmsMessageLogServiceTest {
 
         assertThat(logged.getReadAt()).isNull();
         assertThat(logged.getDirection()).isEqualTo("INBOUND");
+    }
+
+    @Test
+    @DisplayName("logInbound broadcasts the normalized phone number so the manager view can live-update")
+    void logInboundBroadcastsChange() {
+        service.logInbound("(555) 123-4567", "hello", null);
+
+        verify(events).broadcast("+15551234567");
     }
 
     @Test

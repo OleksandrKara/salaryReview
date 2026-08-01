@@ -116,6 +116,10 @@ export default function MessagesView({
   // open straight into the contact panel on the same tap, without a race against the effect's own
   // showContactPanel reset (which normally closes it on every fresh selectedPhone).
   const pendingShowContactPanelRef = useRef(false);
+  // Mirrors selectedPhone for the SSE handler below, which is set up once on mount (not re-run on
+  // every selection change — reopening the EventSource per click would be wasteful and would drop
+  // events during the brief reconnect window) and so can't close over selectedPhone directly.
+  const selectedPhoneRef = useRef<string | null>(selectedPhone);
 
   useEffect(() => {
     if (!selectedPhone) return;
@@ -177,6 +181,50 @@ export default function MessagesView({
       clearTimeout(handle);
     };
   }, [query]);
+
+  useEffect(() => {
+    selectedPhoneRef.current = selectedPhone;
+  }, [selectedPhone]);
+
+  // Live updates — an inbound text, a delivery-status change, a read/block toggle from another
+  // tab, etc. all land here as a bare "this phone number changed" ping (see backend
+  // SmsEventBroadcaster's own doc for why it's not a full payload); refetching the already-loaded
+  // conversation list and, if it's the open thread, the thread too, reuses the same well-tested
+  // loading logic as every other refresh in this component instead of hand-rolling incremental
+  // state merges. SSE over polling: customer texts arrive sporadically, so instant push beats
+  // trading off staleness against wasted requests either way; native EventSource also handles
+  // reconnect on a dropped connection with zero code here.
+  useEffect(() => {
+    const source = new EventSource('/api/owner/automations/activity/stream');
+    let debounceHandle: ReturnType<typeof setTimeout> | null = null;
+    source.addEventListener('update', (e: MessageEvent) => {
+      let phoneNumber: string | null = null;
+      try {
+        phoneNumber = (JSON.parse(e.data) as { phoneNumber?: string }).phoneNumber ?? null;
+      } catch {
+        // Malformed payload — still worth a full refresh below.
+      }
+      if (debounceHandle) clearTimeout(debounceHandle);
+      // A short debounce coalesces a burst of near-simultaneous events (e.g. an inbound message
+      // plus an automated reply) into one refetch instead of several back-to-back ones.
+      debounceHandle = setTimeout(() => {
+        api.listSmsConversations().then((fresh) => {
+          setConversations(fresh);
+          dispatchSmsUnreadCountChanged(fresh.reduce((sum, c) => sum + c.unreadCount, 0));
+        });
+        if (phoneNumber && phoneNumber === selectedPhoneRef.current) {
+          api.getSmsThread(phoneNumber).then(setThread);
+          // The manager is already looking at this thread — same "already read" convention as
+          // opening it fresh (see the selectedPhone effect above).
+          api.markSmsThreadRead(phoneNumber).catch(() => {});
+        }
+      }, 250);
+    });
+    return () => {
+      if (debounceHandle) clearTimeout(debounceHandle);
+      source.close();
+    };
+  }, []);
 
   function openThread(phoneNumber: string, openContactPanel = false) {
     pendingShowContactPanelRef.current = openContactPanel;

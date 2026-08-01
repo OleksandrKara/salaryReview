@@ -6,6 +6,7 @@ import com.salonreview.domain.SmsMessage;
 import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.repo.SmsMessageRepository.ConversationSummaryProjection;
+import com.salonreview.sms.SmsEventBroadcaster;
 import com.salonreview.sms.SmsMessageLogService;
 import com.salonreview.sms.SmsMessageLogService.ConversationSearchHit;
 import com.salonreview.sms.TwilioSmsService;
@@ -46,6 +47,7 @@ class SmsActivityControllerTest {
     private TwilioSmsService smsService;
     private MarketingContactsService contactsService;
     private BlockedNumberRepository blockedNumberRepository;
+    private SmsEventBroadcaster events;
     private MockMvc mvc;
 
     @BeforeEach
@@ -54,9 +56,10 @@ class SmsActivityControllerTest {
         smsService = mock(TwilioSmsService.class);
         contactsService = mock(MarketingContactsService.class);
         blockedNumberRepository = mock(BlockedNumberRepository.class);
+        events = mock(SmsEventBroadcaster.class);
         when(blockedNumberRepository.findByPhoneNumberIn(any())).thenReturn(List.of());
         mvc = MockMvcBuilders.standaloneSetup(
-                new SmsActivityController(service, smsService, contactsService, blockedNumberRepository)).build();
+                new SmsActivityController(service, smsService, contactsService, blockedNumberRepository, events)).build();
     }
 
     private static Contact contact(String givenName, String emailAddress) {
@@ -140,6 +143,7 @@ class SmsActivityControllerTest {
         ArgumentCaptor<BlockedNumber> captor = ArgumentCaptor.forClass(BlockedNumber.class);
         verify(blockedNumberRepository).save(captor.capture());
         org.assertj.core.api.Assertions.assertThat(captor.getValue().getPhoneNumber()).isEqualTo(PHONE);
+        verify(events).broadcast(PHONE);
     }
 
     @Test
@@ -149,6 +153,20 @@ class SmsActivityControllerTest {
                 .andExpect(status().isOk());
 
         verify(blockedNumberRepository).deleteById(PHONE);
+        verify(events).broadcast(PHONE);
+    }
+
+    @Test
+    @DisplayName("GET /stream subscribes to the live-update broadcaster")
+    void streamSubscribesToBroadcaster() throws Exception {
+        org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter =
+                new org.springframework.web.servlet.mvc.method.annotation.SseEmitter();
+        when(events.subscribe()).thenReturn(emitter);
+
+        mvc.perform(get("/api/owner/automations/activity/stream"))
+                .andExpect(status().isOk());
+
+        verify(events).subscribe();
     }
 
     @Test
