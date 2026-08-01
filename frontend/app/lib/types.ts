@@ -838,6 +838,12 @@ export interface MonthSummary {
   // Salon-level client counts from the visit ledger (0 when the ledger doesn't yet cover the month).
   clientsSeen: number;
   returningClients: number;
+  /** Resolved from the flexible `expense_entries` ledger (see ExpenseResolver), prorated by
+   * calendar-day overlap for this month — null when not yet resolvable (same conditions as
+   * grossRevenue/payrollCost being null). */
+  expenseTotal: number | null;
+  /** grossRevenue - payrollCost - expenseTotal — null if any of the three is null. */
+  netRevenue: number | null;
 }
 
 export interface ProviderYtd {
@@ -1214,6 +1220,23 @@ export interface AdSpendEntry {
   periodStart: string;
   periodEnd: string;
   amount: number;
+  enteredBy: string | null;
+  /** ISO-8601 instant. */
+  enteredAt: string;
+}
+
+// --- Expense entries (com.salonreview.web.ExpenseController) ---
+
+export type ExpenseCategory = 'MATERIALS' | 'RENT' | 'UTILITIES' | 'OTHER';
+
+export interface ExpenseEntry {
+  id: number;
+  category: ExpenseCategory;
+  /** ISO-8601 dates (yyyy-MM-dd), inclusive on both ends. */
+  periodStart: string;
+  periodEnd: string;
+  amount: number;
+  note: string | null;
   enteredBy: string | null;
   /** ISO-8601 instant. */
   enteredAt: string;
