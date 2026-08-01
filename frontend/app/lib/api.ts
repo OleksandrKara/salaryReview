@@ -248,6 +248,19 @@ export const api = {
   markSmsThreadRead: (phoneNumber: string) =>
     proxyVoid(`/api/owner/automations/activity/conversations/${encodeURIComponent(phoneNumber)}/read`, 'POST'),
 
+  // "Mark as unread" — a manual reminder flag, same convention as Gmail/iMessage/WhatsApp: un-reads
+  // just the most recent inbound message, not the whole thread's read history.
+  markSmsThreadUnread: (phoneNumber: string) =>
+    proxyVoid(`/api/owner/automations/activity/conversations/${encodeURIComponent(phoneNumber)}/unread`, 'POST'),
+
+  // "Block number" — silently stops all future outbound SMS (automated or manual) to this number,
+  // see TwilioSmsService. Idempotent.
+  blockSmsNumber: (phoneNumber: string) =>
+    proxyVoid(`/api/owner/automations/activity/conversations/${encodeURIComponent(phoneNumber)}/block`, 'POST'),
+
+  unblockSmsNumber: (phoneNumber: string) =>
+    proxyVoid(`/api/owner/automations/activity/conversations/${encodeURIComponent(phoneNumber)}/block`, 'DELETE'),
+
   sendSmsReply: (phoneNumber: string, body: string) =>
     proxyJson<SmsReplyResult>(`/api/owner/automations/activity/reply`, 'POST', { phoneNumber, body }),
 

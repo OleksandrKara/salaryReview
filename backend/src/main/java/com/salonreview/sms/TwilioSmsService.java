@@ -1,6 +1,8 @@
 package com.salonreview.sms;
 
 import com.salonreview.domain.TwilioSmsConfig;
+import com.salonreview.repo.BlockedNumberRepository;
+import com.salonreview.util.PhoneNumbers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -34,16 +36,27 @@ public class TwilioSmsService {
     private final SmsAutomationService automationService;
     private final SmsMessageLogService messageLogService;
     private final TwilioSmsClient client;
+    private final BlockedNumberRepository blockedNumberRepository;
 
     public TwilioSmsService(SmsTemplateRegistry templateRegistry, TwilioSmsConfigService configService,
                             SmsConsentRepository consentRepository, SmsAutomationService automationService,
-                            SmsMessageLogService messageLogService, TwilioSmsClient client) {
+                            SmsMessageLogService messageLogService, TwilioSmsClient client,
+                            BlockedNumberRepository blockedNumberRepository) {
         this.templateRegistry = templateRegistry;
         this.configService = configService;
         this.consentRepository = consentRepository;
         this.automationService = automationService;
         this.messageLogService = messageLogService;
         this.client = client;
+        this.blockedNumberRepository = blockedNumberRepository;
+    }
+
+    /** True if a manager has blocked this number from the conversation view (see V61) — checked
+     * first in both {@link #sendTemplated} and {@link #sendManual} so a block silences every
+     * outbound SMS, automated or manual, from this one place rather than needing a special case
+     * in each automation. */
+    private boolean isBlocked(String phoneNumber) {
+        return blockedNumberRepository.existsById(PhoneNumbers.normalize(phoneNumber));
     }
 
     public SmsSendResult sendTemplated(String templateKey, String phoneNumber, Map<String, String> variables) {
@@ -57,6 +70,12 @@ public class TwilioSmsService {
 
         String body = template.render().apply(variables == null ? Map.of() : variables);
         String automationKey = template.automationKey();
+
+        if (isBlocked(phoneNumber)) {
+            log.info("SMS template '{}' skipped — number is blocked", templateKey);
+            messageLogService.logOutbound(templateKey, automationKey, phoneNumber, body, false, "blocked", null);
+            return SmsSendResult.skipped("blocked");
+        }
 
         if (!automationService.isEnabled(automationKey)) {
             log.info("SMS template '{}' skipped — automation '{}' is disabled", templateKey, automationKey);
@@ -93,6 +112,12 @@ public class TwilioSmsService {
      * manager replying to a customer who just texted the salon is a direct conversational reply,
      * not a marketing send, so it's sendable regardless of {@code sms_marketing_consent}. */
     public SmsSendResult sendManual(String phoneNumber, String body) {
+        if (isBlocked(phoneNumber)) {
+            log.info("Manual reply skipped — number is blocked");
+            messageLogService.logOutbound(null, null, phoneNumber, body, false, "blocked", null);
+            return SmsSendResult.skipped("blocked");
+        }
+
         TwilioSmsConfig config = configService.get();
         if (!config.isConfigured()) {
             log.info("Manual reply skipped — Twilio credentials not configured");

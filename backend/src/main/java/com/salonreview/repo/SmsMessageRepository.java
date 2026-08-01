@@ -123,6 +123,18 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
             + "WHERE m.phoneNumber = :phoneNumber AND m.direction = 'INBOUND' AND m.readAt IS NULL")
     void markThreadRead(@Param("phoneNumber") String phoneNumber, @Param("now") Instant now);
 
+    /** "Mark as unread" (see SmsMessageLogService#markThreadUnread) — un-reads only the most
+     * recent inbound message in the thread, same convention as every mainstream messaging client:
+     * the point is a "come back to this" flag on the conversation, not un-reading every message
+     * that was ever read. A no-op (0 rows) for a thread with no inbound messages at all — nothing
+     * sensible to flag unread there. Native, not JPQL: HQL doesn't support a correlated
+     * ORDER BY ... LIMIT 1 subquery, which Postgres does. */
+    @Modifying
+    @Query(value = "UPDATE sms_message SET read_at = NULL WHERE id = ("
+            + "  SELECT id FROM sms_message WHERE phone_number = :phoneNumber AND direction = 'INBOUND'"
+            + "  ORDER BY created_at DESC LIMIT 1)", nativeQuery = true)
+    void markLastInboundUnread(@Param("phoneNumber") String phoneNumber);
+
     /** 30-day "sent count" shown per automation card — real sends only, not blocked attempts. */
     long countByAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
             String automationKey, String direction, String status, Instant since);

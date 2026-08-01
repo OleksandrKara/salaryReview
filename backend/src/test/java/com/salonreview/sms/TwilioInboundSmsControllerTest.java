@@ -4,6 +4,7 @@ import com.salonreview.config.TwilioInboundProperties;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.marketing.MarketingContactsService;
+import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.repo.SmsReplyFlowRepository;
 import com.salonreview.telegram.TelegramNotificationService;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +45,7 @@ class TwilioInboundSmsControllerTest {
     private CheckoutReviewReplyService replyService;
     private TelegramNotificationService telegramService;
     private MarketingContactsService contactsService;
+    private BlockedNumberRepository blockedNumberRepository;
     private MockMvc mvc;
 
     @BeforeEach
@@ -56,9 +58,12 @@ class TwilioInboundSmsControllerTest {
         replyService = mock(CheckoutReviewReplyService.class);
         telegramService = mock(TelegramNotificationService.class);
         contactsService = mock(MarketingContactsService.class);
+        blockedNumberRepository = mock(BlockedNumberRepository.class);
         // No name resolvable by default — individual tests override with a specific stub if they
         // care about the resolved-name path.
         when(contactsService.resolveDisplayNames(any())).thenReturn(java.util.Map.of());
+        // Not blocked by default — individual tests override to verify the alert-skip behavior.
+        when(blockedNumberRepository.existsById(any())).thenReturn(false);
         // thenAnswer (not a fixed thenReturn) so logged.getAutomationKey() reflects whatever
         // automationKey the controller actually passed in, matching the real implementation —
         // needed since the controller forwards logged.getAutomationKey() to the Telegram alert.
@@ -67,7 +72,8 @@ class TwilioInboundSmsControllerTest {
                         .automationKey(inv.getArgument(2)).build());
 
         TwilioInboundSmsController controller = new TwilioInboundSmsController(
-                properties, messageLogService, replyFlowRepository, replyService, telegramService, contactsService);
+                properties, messageLogService, replyFlowRepository, replyService, telegramService, contactsService,
+                blockedNumberRepository);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -237,5 +243,24 @@ class TwilioInboundSmsControllerTest {
                 .andExpect(status().isOk());
 
         verify(telegramService).sendInboundSmsAlert(PHONE, "Jane Doe", p.get("Body"), null);
+    }
+
+    @Test
+    @DisplayName("blocked number: message still logged, Telegram alert skipped")
+    void blockedNumberSkipsTelegramAlertButStillLogs() throws Exception {
+        var p = params(PHONE, "hello?");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.empty());
+        when(blockedNumberRepository.existsById(PHONE)).thenReturn(true);
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        verify(messageLogService).logInbound(PHONE, p.get("Body"), null);
+        verifyNoInteractions(telegramService);
     }
 }
