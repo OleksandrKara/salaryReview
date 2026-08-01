@@ -704,6 +704,9 @@ export default function MessagesView({
             hasNegativeFeedback={selectedConversation?.hasNegativeFeedback ?? false}
             vip={selectedConversation?.vip ?? false}
             visitCount={selectedConversation?.visitCount ?? null}
+            blocked={selectedConversation?.blocked ?? false}
+            clickedGoogleReview={selectedConversation?.clickedGoogleReview ?? false}
+            clickedFeedbackForm={selectedConversation?.clickedFeedbackForm ?? false}
             onClose={() => setShowContactPanel(false)}
           />
         </div>
