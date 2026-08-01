@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import { SESSION_COOKIE_MAX_AGE_SECONDS, secureCookie } from '../../lib/authCookies';
 
 // Validate credentials against the backend and adopt its server session. The backend authenticates
 // (Spring Security form login) and returns a JSESSIONID; we hold that session id in our own httpOnly
@@ -17,14 +18,6 @@ function sessionIdFrom(res: Response): string | null {
     if (m) return m[1];
   }
   return null;
-}
-
-// Cookies must be Secure over HTTPS (or the browser sends them on HTTP downgrades) and must NOT be
-// Secure over plain HTTP (or the browser drops them). Auto-detect HTTPS from the reverse proxy's
-// X-Forwarded-Proto; COOKIE_SECURE=true forces it on regardless.
-function secureCookie(req: Request): boolean {
-  if (process.env.COOKIE_SECURE === 'true') return true;
-  return req.headers.get('x-forwarded-proto') === 'https';
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -54,10 +47,10 @@ export async function POST(req: Request): Promise<Response> {
   const jar = await cookies();
   const opts = {
     // Secure over HTTPS (auto-detected behind a reverse proxy), off on plain HTTP/localhost.
-    secure: secureCookie(req),
+    secure: secureCookie(req.headers.get('x-forwarded-proto')),
     path: '/',
     sameSite: 'lax' as const,
-    maxAge: 60 * 60 * 12, // 12h
+    maxAge: SESSION_COOKIE_MAX_AGE_SECONDS,
   };
   jar.set('sid', sid, { ...opts, httpOnly: true });
   // Readable by the proxy (and harmless to expose) so it can route by role.
