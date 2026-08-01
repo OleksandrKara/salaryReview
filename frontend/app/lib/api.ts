@@ -44,6 +44,8 @@ import type {
   FunnelAnalysisResult,
   FunnelDashboardData,
   AdSpendEntry,
+  ExpenseEntry,
+  ExpenseCategory,
   MarketingAdsReportData,
   MarketingLtvData,
   MarketingAnalyticsData,
@@ -559,6 +561,24 @@ export const api = {
 
   // Removes an outright mistaken entry (duplicate, wrong amount typed in).
   deleteAdSpendEntry: (id: number) => proxyVoid(`/api/owner/marketing/ads-report/spend/${id}`, 'DELETE'),
+
+  // Business-expense ledger (materials/rent/utilities/other) feeding the Overview tab's net
+  // revenue figure — same flexible-period, no-uniqueness-constraint shape as ad spend above, but
+  // salon-wide rather than per-page. Never upserts; a corrected re-entry stays alongside the
+  // original so expense history stays auditable.
+  createExpenseEntry: (category: ExpenseCategory, periodStart: string, periodEnd: string, amount: number, note?: string) =>
+    proxyJson<ExpenseEntry>('/api/owner/expenses', 'POST', { category, periodStart, periodEnd, amount, note: note ?? null }),
+
+  // Every entered expense row, most recent period first.
+  listExpenseEntries: () => proxyGet<ExpenseEntry[]>('/api/owner/expenses'),
+
+  // Edits an existing entry in place — for fixing an outright mistake (wrong amount/dates/category),
+  // not a genuine revision (enter a new row via createExpenseEntry for that, so history stays auditable).
+  updateExpenseEntry: (id: number, category: ExpenseCategory, periodStart: string, periodEnd: string, amount: number, note?: string) =>
+    proxyJson<ExpenseEntry>(`/api/owner/expenses/${id}`, 'PUT', { category, periodStart, periodEnd, amount, note: note ?? null }),
+
+  // Removes an outright mistaken entry (duplicate, wrong amount typed in).
+  deleteExpenseEntry: (id: number) => proxyVoid(`/api/owner/expenses/${id}`, 'DELETE'),
 
   // One Square customer's submission + appointment history — fetched lazily, only when a row on
   // the Ads Report breakdown's Completed/Anticipated lists is expanded.

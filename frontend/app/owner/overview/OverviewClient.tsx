@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { OwnerOverviewData } from '../../lib/types';
+import ExpenseEntryForm from './ExpenseEntryForm';
 import GrowthTable from './GrowthTable';
 import PeriodSummary from './PeriodSummary';
 import RangePicker from './RangePicker';
@@ -39,6 +40,9 @@ export default function OverviewClient({ data }: { data: OwnerOverviewData }) {
 
       {/* Growth table */}
       <GrowthTable months={data.months} />
+
+      {/* Net revenue: business-expense ledger (materials/rent/utilities/other) */}
+      <ExpenseEntryForm />
     </div>
   );
 }

@@ -81,8 +81,9 @@ class OwnerOverviewServiceTest {
         // Retention (client counts) isn't the focus here; an unstubbed mock yields no counts, so months
         // simply report 0 clients seen/returning — which these revenue/payroll assertions ignore.
         ManualAdjustmentService manualAdjustments = mock(ManualAdjustmentService.class);
+        ExpenseService expenses = mock(ExpenseService.class);
         service     = new OwnerOverviewService(payPeriods, entries, new CommissionCalculator(),
-                salonConfig, aggregator, mock(RetentionAnalyticsService.class), manualAdjustments);
+                salonConfig, aggregator, mock(RetentionAnalyticsService.class), manualAdjustments, expenses);
 
         when(salonConfig.findById(1)).thenReturn(Optional.of(CFG));
         // Default: no periods for any year (overridden per test)
@@ -92,6 +93,9 @@ class OwnerOverviewServiceTest {
         when(manualAdjustments.totalGrossForMonth(anyInt(), anyInt())).thenReturn(BigDecimal.ZERO);
         when(manualAdjustments.countedUnitDeltaForMonth(anyInt(), anyInt(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(0);
+        // No expenses by default — individual tests can override to exercise net-revenue math.
+        when(expenses.resolveExpenseTotal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(BigDecimal.ZERO);
     }
 
     @Test
@@ -117,6 +121,32 @@ class OwnerOverviewServiceTest {
         assertThat(jan.grossRevenue()).isEqualByComparingTo("1400.00");
         assertThat(jan.tips()).isEqualByComparingTo("80.00");
         assertThat(jan.procedures()).isEqualTo(13);
+    }
+
+    @Test
+    @DisplayName("netRevenue subtracts both payroll and resolved expenses from gross revenue")
+    void netRevenueSubtractsPayrollAndExpenses() {
+        Provider anna = provider(1L, "Anna");
+        PayPeriod jan1 = period(1L, 2025, 1, Half.FIRST);
+        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2025)).thenReturn(List.of(jan1));
+        // Card-only: gross = 1000, payroll = 1000 * 0.45 = 450
+        when(entries.findAllByPayPeriodId(1L))
+                .thenReturn(List.of(entry(anna, jan1, "1000.00", "0.00", "0.00", 10)));
+
+        ExpenseService expenses = mock(ExpenseService.class);
+        when(expenses.resolveExpenseTotal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new BigDecimal("100.00"));
+        OwnerOverviewService serviceWithExpenses = new OwnerOverviewService(payPeriods, entries,
+                new CommissionCalculator(), salonConfig, aggregator, mock(RetentionAnalyticsService.class),
+                mock(ManualAdjustmentService.class), expenses);
+
+        MonthSummary jan = serviceWithExpenses.overview(2025, 1, 2025, 12).months().get(0);
+
+        assertThat(jan.grossRevenue()).isEqualByComparingTo("1000.00");
+        assertThat(jan.payrollCost()).isEqualByComparingTo("450.00");
+        assertThat(jan.expenseTotal()).isEqualByComparingTo("100.00");
+        // net = 1000 - 450 - 100 = 450
+        assertThat(jan.netRevenue()).isEqualByComparingTo("450.00");
     }
 
     @Test

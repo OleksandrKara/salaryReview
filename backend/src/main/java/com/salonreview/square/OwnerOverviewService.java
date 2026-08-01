@@ -47,11 +47,12 @@ public class OwnerOverviewService {
     private final SquareMonthAggregator aggregator;
     private final RetentionAnalyticsService retention;
     private final ManualAdjustmentService manualAdjustments;
+    private final ExpenseService expenses;
 
     public OwnerOverviewService(PayPeriodRepository payPeriods, PeriodEntryRepository entries,
                                 CommissionCalculator calculator, SalonConfigRepository salonConfig,
                                 SquareMonthAggregator aggregator, RetentionAnalyticsService retention,
-                                ManualAdjustmentService manualAdjustments) {
+                                ManualAdjustmentService manualAdjustments, ExpenseService expenses) {
         this.payPeriods = payPeriods;
         this.entries = entries;
         this.calculator = calculator;
@@ -59,6 +60,7 @@ public class OwnerOverviewService {
         this.aggregator = aggregator;
         this.retention = retention;
         this.manualAdjustments = manualAdjustments;
+        this.expenses = expenses;
     }
 
     public OwnerOverviewDto overview(int fromYear, int fromMonth, int toYear, int toMonth) {
@@ -163,8 +165,10 @@ public class OwnerOverviewService {
         }
 
         BigDecimal gross = card.add(cash);
+        BigDecimal expenseTotal = expenseTotalForMonth(year, month);
         return new MonthSummary(year, month, label(month), card, cash, gross, tips, procedures,
-                avg(gross, procedures), payroll, pct(payroll, gross), true, 0, 0);
+                avg(gross, procedures), payroll, pct(payroll, gross), true, 0, 0,
+                expenseTotal, netRevenue(gross, payroll, expenseTotal));
     }
 
     // --- live month from Square ---
@@ -196,11 +200,31 @@ public class OwnerOverviewService {
                     .add(tips.multiply(BigDecimal.ONE.subtract(feeRate)))
                     .setScale(2, RoundingMode.HALF_UP);
 
+            BigDecimal expenseTotal = expenseTotalForMonth(year, month);
             return new MonthSummary(year, month, label(month), card, cash, gross, tips, procedures,
-                    avg(gross, procedures), payroll, pct(payroll, gross), false, 0, 0);
+                    avg(gross, procedures), payroll, pct(payroll, gross), false, 0, 0,
+                    expenseTotal, netRevenue(gross, payroll, expenseTotal));
         } catch (RuntimeException e) {
             return emptyMonth(year, month);
         }
+    }
+
+    /** Resolves this calendar month's business expenses (see ExpenseService/ExpenseResolver) —
+     * best-effort, same resilience convention as clientCountsByMonth below: a lookup failure here
+     * must not take down the whole Overview dashboard, it just leaves that month's net-revenue
+     * figure unknown. */
+    private BigDecimal expenseTotalForMonth(int year, int month) {
+        try {
+            YearMonth ym = YearMonth.of(year, month);
+            return expenses.resolveExpenseTotal(ym.atDay(1), ym.atEndOfMonth());
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static BigDecimal netRevenue(BigDecimal gross, BigDecimal payroll, BigDecimal expenseTotal) {
+        if (gross == null || payroll == null || expenseTotal == null) return null;
+        return gross.subtract(payroll).subtract(expenseTotal).setScale(2, RoundingMode.HALF_UP);
     }
 
     /** ymKey → [distinct clients seen, returning clients] for the range, from the visit ledger. */
@@ -265,7 +289,7 @@ public class OwnerOverviewService {
 
     private static MonthSummary emptyMonth(int year, int month) {
         return new MonthSummary(year, month, label(month), null, null, null, null, 0,
-                null, null, null, false, 0, 0);
+                null, null, null, false, 0, 0, null, null);
     }
 
     private static String label(int month) {

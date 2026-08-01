@@ -28,10 +28,13 @@ export default function GrowthTable({ months }: { months: MonthSummary[] }) {
   if (active.length === 0) return null;
 
   // Totals row
-  const totalGross = active.reduce((s, m) => s + (m.grossRevenue ?? 0), 0);
-  const totalCard  = active.reduce((s, m) => s + (m.cardRevenue ?? 0), 0);
-  const totalCash  = active.reduce((s, m) => s + (m.cashRevenue ?? 0), 0);
-  const totalSvc   = active.reduce((s, m) => s + m.procedures, 0);
+  const totalGross   = active.reduce((s, m) => s + (m.grossRevenue ?? 0), 0);
+  const totalCard    = active.reduce((s, m) => s + (m.cardRevenue ?? 0), 0);
+  const totalCash    = active.reduce((s, m) => s + (m.cashRevenue ?? 0), 0);
+  const totalSvc     = active.reduce((s, m) => s + m.procedures, 0);
+  const totalExpense = active.reduce((s, m) => s + (m.expenseTotal ?? 0), 0);
+  const netMonths = active.filter((m) => m.netRevenue != null);
+  const totalNet = netMonths.length > 0 ? netMonths.reduce((s, m) => s + (m.netRevenue ?? 0), 0) : null;
 
   let totalPayroll = 0, totalPayrollGross = 0;
   for (const m of active) {
@@ -57,10 +60,12 @@ export default function GrowthTable({ months }: { months: MonthSummary[] }) {
             <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400">
               <th className="px-4 py-3">Month</th>
               <th className="px-4 py-3 text-right">Revenue</th>
+              <th className="px-4 py-3 text-right">Net</th>
               <th className="px-4 py-3 text-right">Growth</th>
               <th className="hidden px-4 py-3 text-right sm:table-cell">Card</th>
               <th className="hidden px-4 py-3 text-right sm:table-cell">Cash</th>
               <th className="hidden px-4 py-3 text-right sm:table-cell">Payroll</th>
+              <th className="hidden px-4 py-3 text-right sm:table-cell">Expenses</th>
               <th className="hidden px-4 py-3 text-right sm:table-cell">Appts</th>
             </tr>
           </thead>
@@ -83,6 +88,9 @@ export default function GrowthTable({ months }: { months: MonthSummary[] }) {
                   <td className="px-4 py-3 text-right tabular-nums font-semibold text-zinc-800">
                     {usd(m.grossRevenue)}
                   </td>
+                  <td className="px-4 py-3 text-right tabular-nums font-semibold text-emerald-700">
+                    {usd(m.netRevenue)}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <MomBadge pct={pct} />
                   </td>
@@ -96,6 +104,9 @@ export default function GrowthTable({ months }: { months: MonthSummary[] }) {
                     {m.payrollPct != null ? `${m.payrollPct}%` : '—'}
                   </td>
                   <td className="hidden px-4 py-3 text-right tabular-nums text-zinc-500 sm:table-cell">
+                    {usd(m.expenseTotal)}
+                  </td>
+                  <td className="hidden px-4 py-3 text-right tabular-nums text-zinc-500 sm:table-cell">
                     {m.procedures > 0 ? m.procedures : '—'}
                   </td>
                 </tr>
@@ -107,6 +118,7 @@ export default function GrowthTable({ months }: { months: MonthSummary[] }) {
             <tr className="border-t-2 border-zinc-200 bg-zinc-50 font-semibold text-zinc-800">
               <td className="px-4 py-3">Total</td>
               <td className="px-4 py-3 text-right tabular-nums">{usd(totalGross)}</td>
+              <td className="px-4 py-3 text-right tabular-nums text-emerald-700">{usd(totalNet)}</td>
               <td className="px-4 py-3 text-right tabular-nums">
                 {overallMom != null && (
                   <span className={overallMom >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
@@ -117,6 +129,7 @@ export default function GrowthTable({ months }: { months: MonthSummary[] }) {
               <td className="hidden px-4 py-3 text-right tabular-nums sm:table-cell">{usd(totalCard)}</td>
               <td className="hidden px-4 py-3 text-right tabular-nums sm:table-cell">{usd(totalCash)}</td>
               <td className="hidden px-4 py-3 text-right tabular-nums sm:table-cell">{avgPayrollPct}</td>
+              <td className="hidden px-4 py-3 text-right tabular-nums sm:table-cell">{usd(totalExpense)}</td>
               <td className="hidden px-4 py-3 text-right tabular-nums sm:table-cell">{totalSvc || '—'}</td>
             </tr>
           </tfoot>
