@@ -1,6 +1,7 @@
 package com.salonreview.sms;
 
 import com.salonreview.domain.TwilioSmsConfig;
+import com.salonreview.repo.BlockedNumberRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,7 @@ class TwilioSmsServiceTest {
     private SmsAutomationService automationService;
     private SmsMessageLogService messageLogService;
     private TwilioSmsClient client;
+    private BlockedNumberRepository blockedNumberRepository;
     private TwilioSmsService service;
 
     @BeforeEach
@@ -34,10 +36,12 @@ class TwilioSmsServiceTest {
         automationService = mock(SmsAutomationService.class);
         messageLogService = mock(SmsMessageLogService.class);
         client = mock(TwilioSmsClient.class);
+        blockedNumberRepository = mock(BlockedNumberRepository.class);
         service = new TwilioSmsService(templateRegistry, configService, consentRepository, automationService,
-                messageLogService, client);
+                messageLogService, client, blockedNumberRepository);
 
         when(automationService.isEnabled(any())).thenReturn(true);
+        when(blockedNumberRepository.existsById(any())).thenReturn(false);
         when(templateRegistry.find(TRANSACTIONAL_KEY))
                 .thenReturn(new SmsTemplate(TRANSACTIONAL_KEY, SmsMessageClass.TRANSACTIONAL, vars -> "transactional body"));
         when(templateRegistry.find(MARKETING_KEY))
@@ -185,5 +189,31 @@ class TwilioSmsServiceTest {
 
         assertThat(result.sent()).isFalse();
         assertThat(result.reason()).isEqualTo("send_failed");
+    }
+
+    @Test
+    @DisplayName("sendTemplated: blocked number → skipped before consent/automation checks, no send attempt")
+    void blockedNumberSkipsTemplatedSend() throws Exception {
+        when(blockedNumberRepository.existsById(PHONE)).thenReturn(true);
+
+        var result = service.sendTemplated(TRANSACTIONAL_KEY, PHONE, Map.of());
+
+        assertThat(result.sent()).isFalse();
+        assertThat(result.reason()).isEqualTo("blocked");
+        verifyNoInteractions(client);
+        verify(messageLogService).logOutbound(eq(TRANSACTIONAL_KEY), any(), eq(PHONE), eq("transactional body"),
+                eq(false), eq("blocked"), eq(null));
+    }
+
+    @Test
+    @DisplayName("sendManual: blocked number → skipped, no send attempt")
+    void blockedNumberSkipsManualSend() throws Exception {
+        when(blockedNumberRepository.existsById(PHONE)).thenReturn(true);
+
+        var result = service.sendManual(PHONE, "hi");
+
+        assertThat(result.sent()).isFalse();
+        assertThat(result.reason()).isEqualTo("blocked");
+        verifyNoInteractions(client, configService);
     }
 }

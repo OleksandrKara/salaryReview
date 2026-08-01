@@ -7,6 +7,8 @@ import ContactInfoPanel from './ContactInfoPanel';
 import SmsConsentIcon from './SmsConsentIcon';
 import NegativeFeedbackIcon from './NegativeFeedbackIcon';
 import VipIcon from './VipIcon';
+import BlockedIcon from './BlockedIcon';
+import ConversationMenu from './ConversationMenu';
 import { dispatchSmsUnreadCountChanged } from '../../lib/smsUnreadEvent';
 
 function formatPhone(phone: string): string {
@@ -189,6 +191,41 @@ export default function MessagesView({
     dispatchSmsUnreadCountChanged(next.reduce((sum, c) => sum + c.unreadCount, 0));
   }
 
+  // "Mark as unread" — same iMessage/Gmail convention as the backend doc comment describes:
+  // marking the *currently open* thread unread also backs out to the conversation list, since
+  // leaving it open would otherwise immediately re-mark it read (see the selectedPhone effect
+  // above, which calls markSmsThreadRead on every open).
+  async function markUnread(phoneNumber: string) {
+    const wasSelected = phoneNumber === selectedPhone;
+    const next = conversations.map((c) =>
+      c.phoneNumber === phoneNumber ? { ...c, unreadCount: Math.max(c.unreadCount, 1) } : c,
+    );
+    setConversations(next);
+    dispatchSmsUnreadCountChanged(next.reduce((sum, c) => sum + c.unreadCount, 0));
+    if (wasSelected) setSelectedPhone(null);
+    try {
+      await api.markSmsThreadUnread(phoneNumber);
+    } catch {
+      // Best-effort — a failure here just means the badge might not stick until the next full
+      // conversations refresh, not worth surfacing to the user.
+    }
+  }
+
+  async function toggleBlock(phoneNumber: string, currentlyBlocked: boolean) {
+    const previous = conversations;
+    setConversations(conversations.map((c) => (c.phoneNumber === phoneNumber ? { ...c, blocked: !currentlyBlocked } : c)));
+    try {
+      if (currentlyBlocked) {
+        await api.unblockSmsNumber(phoneNumber);
+      } else {
+        await api.blockSmsNumber(phoneNumber);
+      }
+    } catch {
+      // Roll back the optimistic flip on failure so the UI doesn't lie about the real state.
+      setConversations(previous);
+    }
+  }
+
   async function sendReply() {
     const body = draft.trim();
     if (!body || !selectedPhone || sending) return;
@@ -318,9 +355,17 @@ export default function MessagesView({
                     {c.vip && <span data-testid="conversation-row-vip-icon"><VipIcon visitCount={c.visitCount} /></span>}
                     {c.smsConsent && <span data-testid="conversation-row-consent-icon"><SmsConsentIcon /></span>}
                     {c.hasNegativeFeedback && <span data-testid="conversation-row-negative-feedback-icon"><NegativeFeedbackIcon /></span>}
+                    {c.blocked && <span data-testid="conversation-row-blocked-icon"><BlockedIcon /></span>}
                   </span>
                   <span className="flex shrink-0 items-center gap-1.5">
                     <span data-testid="conversation-row-time" className="text-xs tabular-nums text-zinc-400">{formatListTime(c.lastMessageAt)}</span>
+                    <ConversationMenu
+                      phoneNumber={c.phoneNumber}
+                      blocked={c.blocked}
+                      onMarkUnread={() => void markUnread(c.phoneNumber)}
+                      onToggleBlock={() => void toggleBlock(c.phoneNumber, c.blocked)}
+                      variant="row"
+                    />
                     <button
                       type="button"
                       data-testid="conversation-row-info-button"
@@ -432,7 +477,18 @@ export default function MessagesView({
                 {selectedConversation?.vip && <span data-testid="thread-header-vip-icon"><VipIcon visitCount={selectedConversation.visitCount} /></span>}
                 {selectedConversation?.smsConsent && <span data-testid="thread-header-consent-icon"><SmsConsentIcon /></span>}
                 {selectedConversation?.hasNegativeFeedback && <span data-testid="thread-header-negative-feedback-icon"><NegativeFeedbackIcon /></span>}
+                {selectedConversation?.blocked && <span data-testid="thread-header-blocked-icon"><BlockedIcon /></span>}
               </span>
+              {/* Visible on both mobile and desktop — unlike the info-panel toggle below (which
+                  only matters on mobile, since desktop always shows that panel inline), unread/
+                  copy/block have no other entry point on desktop. */}
+              <ConversationMenu
+                phoneNumber={selectedPhone}
+                blocked={selectedConversation?.blocked ?? false}
+                onMarkUnread={() => void markUnread(selectedPhone)}
+                onToggleBlock={() => void toggleBlock(selectedPhone, selectedConversation?.blocked ?? false)}
+                variant="header"
+              />
               {/* Desktop always shows the contact panel inline (sm:flex override on the panel
                   itself) — this toggle only matters on mobile, where it opens a full overlay. */}
               <button
@@ -524,36 +580,56 @@ export default function MessagesView({
               )}
             </div>
 
-            <form
-              data-testid="thread-composer"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void sendReply();
-              }}
-              className="flex items-center gap-2 border-t border-zinc-200 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-            >
-              {/* text-base (16px), not text-sm, on mobile — a smaller font on a focused input
-                  makes iOS Safari auto-zoom the whole page, which is jarring here. */}
-              <input
-                data-testid="thread-composer-input"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Type a reply…"
-                className="min-w-0 flex-1 rounded-full border border-zinc-300 px-4 py-2.5 text-base sm:py-2 sm:text-sm"
-              />
-              <button
-                type="submit"
-                data-testid="thread-composer-send-button"
-                disabled={!draft.trim() || sending}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white disabled:opacity-40 sm:h-auto sm:w-auto sm:px-4 sm:py-2"
-                aria-label="Send"
+            {selectedConversation?.blocked ? (
+              // The backend silently refuses to send to a blocked number (see TwilioSmsService) —
+              // surfacing that here explicitly, with a one-tap way out, beats letting a manager
+              // type a reply that quietly never sends.
+              <div
+                data-testid="thread-composer-blocked-banner"
+                className="flex items-center justify-between gap-3 border-t border-zinc-200 bg-red-50 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-sm text-red-700"
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="sm:hidden">
-                  <path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" />
-                </svg>
-                <span className="hidden text-sm font-medium sm:inline">Send</span>
-              </button>
-            </form>
+                <span>This number is blocked — messages won&rsquo;t send.</span>
+                <button
+                  type="button"
+                  data-testid="thread-composer-unblock-button"
+                  onClick={() => void toggleBlock(selectedPhone, true)}
+                  className="shrink-0 rounded-full bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+                >
+                  Unblock
+                </button>
+              </div>
+            ) : (
+              <form
+                data-testid="thread-composer"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void sendReply();
+                }}
+                className="flex items-center gap-2 border-t border-zinc-200 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+              >
+                {/* text-base (16px), not text-sm, on mobile — a smaller font on a focused input
+                    makes iOS Safari auto-zoom the whole page, which is jarring here. */}
+                <input
+                  data-testid="thread-composer-input"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  placeholder="Type a reply…"
+                  className="min-w-0 flex-1 rounded-full border border-zinc-300 px-4 py-2.5 text-base sm:py-2 sm:text-sm"
+                />
+                <button
+                  type="submit"
+                  data-testid="thread-composer-send-button"
+                  disabled={!draft.trim() || sending}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white disabled:opacity-40 sm:h-auto sm:w-auto sm:px-4 sm:py-2"
+                  aria-label="Send"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="sm:hidden">
+                    <path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" />
+                  </svg>
+                  <span className="hidden text-sm font-medium sm:inline">Send</span>
+                </button>
+              </form>
+            )}
           </>
         )}
       </div>

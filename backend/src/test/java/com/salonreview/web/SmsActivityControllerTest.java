@@ -1,8 +1,10 @@
 package com.salonreview.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.salonreview.domain.BlockedNumber;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.marketing.MarketingContactsService;
+import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.repo.SmsMessageRepository.ConversationSummaryProjection;
 import com.salonreview.sms.SmsMessageLogService;
 import com.salonreview.sms.SmsMessageLogService.ConversationSearchHit;
@@ -11,6 +13,7 @@ import com.salonreview.web.dto.MarketingContactDto.Contact;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -19,7 +22,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -39,6 +45,7 @@ class SmsActivityControllerTest {
     private SmsMessageLogService service;
     private TwilioSmsService smsService;
     private MarketingContactsService contactsService;
+    private BlockedNumberRepository blockedNumberRepository;
     private MockMvc mvc;
 
     @BeforeEach
@@ -46,7 +53,10 @@ class SmsActivityControllerTest {
         service = mock(SmsMessageLogService.class);
         smsService = mock(TwilioSmsService.class);
         contactsService = mock(MarketingContactsService.class);
-        mvc = MockMvcBuilders.standaloneSetup(new SmsActivityController(service, smsService, contactsService)).build();
+        blockedNumberRepository = mock(BlockedNumberRepository.class);
+        when(blockedNumberRepository.findByPhoneNumberIn(any())).thenReturn(List.of());
+        mvc = MockMvcBuilders.standaloneSetup(
+                new SmsActivityController(service, smsService, contactsService, blockedNumberRepository)).build();
     }
 
     private static Contact contact(String givenName, String emailAddress) {
@@ -94,7 +104,51 @@ class SmsActivityControllerTest {
                 .andExpect(jsonPath("$[0].smsConsent").value(true))
                 .andExpect(jsonPath("$[0].squareProfileUrl").value("https://app.squareup.com/dashboard/customers/directory/customer/cust-1"))
                 .andExpect(jsonPath("$[0].vip").value(true))
-                .andExpect(jsonPath("$[0].visitCount").value(5));
+                .andExpect(jsonPath("$[0].visitCount").value(5))
+                .andExpect(jsonPath("$[0].blocked").value(false));
+    }
+
+    @Test
+    @DisplayName("GET /conversations marks a row blocked when its phone number is in the blocked-number table")
+    void conversationsMarksBlockedNumbers() throws Exception {
+        when(service.conversations()).thenReturn(List.of(
+                new FakeConversationSummary(PHONE, Instant.now(), "hi", "INBOUND", 0L)));
+        when(contactsService.resolveDisplayNames(List.of(PHONE))).thenReturn(Map.of());
+        when(blockedNumberRepository.findByPhoneNumberIn(List.of(PHONE)))
+                .thenReturn(List.of(BlockedNumber.builder().phoneNumber(PHONE).build()));
+
+        mvc.perform(get("/api/owner/automations/activity/conversations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].blocked").value(true));
+    }
+
+    @Test
+    @DisplayName("POST /conversations/{phoneNumber}/unread delegates to the service")
+    void markThreadUnreadDelegates() throws Exception {
+        mvc.perform(post("/api/owner/automations/activity/conversations/{phoneNumber}/unread", PHONE))
+                .andExpect(status().isOk());
+
+        verify(service).markThreadUnread(PHONE);
+    }
+
+    @Test
+    @DisplayName("POST /conversations/{phoneNumber}/block saves a normalized BlockedNumber row")
+    void blockNumberSavesNormalized() throws Exception {
+        mvc.perform(post("/api/owner/automations/activity/conversations/{phoneNumber}/block", "(555) 123-4567"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<BlockedNumber> captor = ArgumentCaptor.forClass(BlockedNumber.class);
+        verify(blockedNumberRepository).save(captor.capture());
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().getPhoneNumber()).isEqualTo(PHONE);
+    }
+
+    @Test
+    @DisplayName("DELETE /conversations/{phoneNumber}/block removes the normalized phone number")
+    void unblockNumberDeletesNormalized() throws Exception {
+        mvc.perform(delete("/api/owner/automations/activity/conversations/{phoneNumber}/block", "(555) 123-4567"))
+                .andExpect(status().isOk());
+
+        verify(blockedNumberRepository).deleteById(PHONE);
     }
 
     @Test

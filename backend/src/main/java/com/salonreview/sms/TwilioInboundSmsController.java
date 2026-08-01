@@ -4,8 +4,10 @@ import com.salonreview.config.TwilioInboundProperties;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.marketing.MarketingContactsService;
+import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.repo.SmsReplyFlowRepository;
 import com.salonreview.telegram.TelegramNotificationService;
+import com.salonreview.util.PhoneNumbers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -36,16 +38,19 @@ public class TwilioInboundSmsController {
     private final CheckoutReviewReplyService replyService;
     private final TelegramNotificationService telegramService;
     private final MarketingContactsService contactsService;
+    private final BlockedNumberRepository blockedNumberRepository;
 
     public TwilioInboundSmsController(TwilioInboundProperties properties, SmsMessageLogService messageLogService,
                                        SmsReplyFlowRepository replyFlowRepository, CheckoutReviewReplyService replyService,
-                                       TelegramNotificationService telegramService, MarketingContactsService contactsService) {
+                                       TelegramNotificationService telegramService, MarketingContactsService contactsService,
+                                       BlockedNumberRepository blockedNumberRepository) {
         this.properties = properties;
         this.messageLogService = messageLogService;
         this.replyFlowRepository = replyFlowRepository;
         this.replyService = replyService;
         this.telegramService = telegramService;
         this.contactsService = contactsService;
+        this.blockedNumberRepository = blockedNumberRepository;
     }
 
     @PostMapping(value = "/api/public/sms/inbound", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
@@ -75,9 +80,13 @@ public class TwilioInboundSmsController {
         // nobody's actively watching — see openspec/changes/sms-automations-hub proposal.md. Name
         // resolution is best-effort (same ladder resolveDisplayNames already uses for the Messages
         // page itself) — a phone number with nothing resolvable still gets an alert, just without
-        // a name in the header.
-        String customerName = resolveCustomerName(from);
-        telegramService.sendInboundSmsAlert(from, customerName, body, logged.getAutomationKey());
+        // a name in the header. Skipped entirely for a number a manager has blocked (see V61) —
+        // the message itself is still logged above (so it's visible if anyone opens that thread),
+        // just without pinging Telegram for a number already decided not worth engaging with.
+        if (!blockedNumberRepository.existsById(PhoneNumbers.normalize(from))) {
+            String customerName = resolveCustomerName(from);
+            telegramService.sendInboundSmsAlert(from, customerName, body, logged.getAutomationKey());
+        }
 
         if (pending.isPresent()) {
             SmsReplyFlow flow = pending.get();

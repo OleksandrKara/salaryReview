@@ -1,19 +1,24 @@
 package com.salonreview.web;
 
+import com.salonreview.domain.BlockedNumber;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.marketing.MarketingContactsService;
+import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.repo.SmsMessageRepository.ConversationSummaryProjection;
 import com.salonreview.sms.SmsMessageLogService;
 import com.salonreview.sms.TwilioSmsService;
+import com.salonreview.util.PhoneNumbers;
 import com.salonreview.web.dto.MarketingContactDto;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Full SMS activity log (sent + received, regardless of automation) backing the
@@ -31,12 +36,15 @@ public class SmsActivityController {
     private final SmsMessageLogService service;
     private final TwilioSmsService smsService;
     private final MarketingContactsService contactsService;
+    private final BlockedNumberRepository blockedNumberRepository;
 
     public SmsActivityController(SmsMessageLogService service, TwilioSmsService smsService,
-                                  MarketingContactsService contactsService) {
+                                  MarketingContactsService contactsService,
+                                  BlockedNumberRepository blockedNumberRepository) {
         this.service = service;
         this.smsService = smsService;
         this.contactsService = contactsService;
+        this.blockedNumberRepository = blockedNumberRepository;
     }
 
     public record SmsMessageDto(long id, String direction, String automationKey, String phoneNumber,
@@ -49,7 +57,7 @@ public class SmsActivityController {
                                    String givenName, String familyName, boolean smsConsent,
                                    String squareProfileUrl, String lastMessageDeliveryStatus,
                                    String lastMessageDeliveryErrorMessage, boolean hasNegativeFeedback,
-                                   boolean vip, Integer visitCount) {}
+                                   boolean vip, Integer visitCount, boolean blocked) {}
 
     public record ReplyRequest(String phoneNumber, String body) {}
 
@@ -88,8 +96,14 @@ public class SmsActivityController {
         List<ConversationSummaryProjection> summaries = service.conversations();
         List<String> phoneNumbers = summaries.stream().map(ConversationSummaryProjection::getPhoneNumber).toList();
         Map<String, MarketingContactsService.ContactNameInfo> names = contactsService.resolveDisplayNames(phoneNumbers);
+        // One batch lookup for the whole page, not one query per row — see
+        // BlockedNumberRepository#findByPhoneNumberIn's own doc comment.
+        Set<String> blockedPhones = new HashSet<>();
+        for (BlockedNumber b : blockedNumberRepository.findByPhoneNumberIn(phoneNumbers)) {
+            blockedPhones.add(b.getPhoneNumber());
+        }
         return summaries.stream()
-                .map(p -> toConversationDto(p, names.get(p.getPhoneNumber())))
+                .map(p -> toConversationDto(p, names.get(p.getPhoneNumber()), blockedPhones.contains(p.getPhoneNumber())))
                 .toList();
     }
 
@@ -108,6 +122,29 @@ public class SmsActivityController {
     @PostMapping("/conversations/{phoneNumber}/read")
     public void markThreadRead(@PathVariable String phoneNumber) {
         service.markThreadRead(phoneNumber);
+    }
+
+    /** "Mark as unread" — a manual reminder flag on the conversation, matching every mainstream
+     * messaging client's convention (Gmail, iMessage, WhatsApp). See
+     * SmsMessageLogService#markThreadUnread. */
+    @PostMapping("/conversations/{phoneNumber}/unread")
+    public void markThreadUnread(@PathVariable String phoneNumber) {
+        service.markThreadUnread(phoneNumber);
+    }
+
+    /** "Block number" — see TwilioSmsService, the single choke point every outbound SMS
+     * (automated or manual) already goes through, which refuses to send to any number in this
+     * table. Idempotent: blocking an already-blocked number just re-saves the same row. */
+    @PostMapping("/conversations/{phoneNumber}/block")
+    public void blockNumber(@PathVariable String phoneNumber) {
+        blockedNumberRepository.save(BlockedNumber.builder()
+                .phoneNumber(PhoneNumbers.normalize(phoneNumber))
+                .build());
+    }
+
+    @DeleteMapping("/conversations/{phoneNumber}/block")
+    public void unblockNumber(@PathVariable String phoneNumber) {
+        blockedNumberRepository.deleteById(PhoneNumbers.normalize(phoneNumber));
     }
 
     /** This phone number's marketing profile (name, email, submission/appointment history), for
@@ -148,7 +185,8 @@ public class SmsActivityController {
     }
 
     private static ConversationDto toConversationDto(ConversationSummaryProjection p,
-                                                       MarketingContactsService.ContactNameInfo nameInfo) {
+                                                       MarketingContactsService.ContactNameInfo nameInfo,
+                                                       boolean blocked) {
         return new ConversationDto(p.getPhoneNumber(), p.getLastMessageAt(), p.getLastMessageBody(),
                 p.getLastMessageDirection(), p.getUnreadCount(),
                 nameInfo == null ? null : nameInfo.givenName(),
@@ -157,6 +195,7 @@ public class SmsActivityController {
                 nameInfo == null ? null : nameInfo.squareProfileUrl(),
                 p.getLastMessageDeliveryStatus(), p.getLastMessageDeliveryErrorMessage(), p.getHasNegativeFeedback(),
                 nameInfo != null && nameInfo.vip(),
-                nameInfo == null ? null : nameInfo.visitCount());
+                nameInfo == null ? null : nameInfo.visitCount(),
+                blocked);
     }
 }

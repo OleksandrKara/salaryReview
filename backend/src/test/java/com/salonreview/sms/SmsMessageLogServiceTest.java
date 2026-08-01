@@ -95,6 +95,14 @@ class SmsMessageLogServiceTest {
     }
 
     @Test
+    @DisplayName("markThreadUnread normalizes the phone number and delegates to the repository")
+    void markThreadUnreadNormalizesAndDelegates() {
+        service.markThreadUnread("(555) 123-4567");
+
+        verify(repository).markLastInboundUnread(eq("+15551234567"));
+    }
+
+    @Test
     @DisplayName("generateUniqueClickToken re-rolls on a collision and returns the first free candidate")
     void generateUniqueClickTokenRerollsOnCollision() {
         when(repository.existsByClickToken(any()))

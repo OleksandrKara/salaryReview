@@ -143,6 +143,10 @@ export interface SmsConversationDto {
   vip: boolean;
   /** The distinct-day visit count backing `vip`, or null when no Square customer is known. */
   visitCount: number | null;
+  /** True if a manager has blocked this number — TwilioSmsService silently refuses to send it
+   * any further outbound SMS (automated or manual), and inbound texts no longer trigger a
+   * Telegram alert (still logged, just no longer paged). */
+  blocked: boolean;
 }
 
 export interface SmsReplyResult {

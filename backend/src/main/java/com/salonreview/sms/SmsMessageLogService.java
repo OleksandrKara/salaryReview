@@ -227,4 +227,13 @@ public class SmsMessageLogService {
     public void markThreadRead(String phoneNumber) {
         repository.markThreadRead(PhoneNumbers.normalize(phoneNumber), Instant.now());
     }
+
+    /** "Mark as unread" — a manual reminder flag on a conversation, same convention as every
+     * mainstream messaging client (Gmail, iMessage, WhatsApp): un-reads just the most recent
+     * inbound message, not the whole read history, so the conversation shows as needing attention
+     * again next time the inbox is opened. See SmsMessageRepository#markLastInboundUnread. */
+    @Transactional
+    public void markThreadUnread(String phoneNumber) {
+        repository.markLastInboundUnread(PhoneNumbers.normalize(phoneNumber));
+    }
 }
