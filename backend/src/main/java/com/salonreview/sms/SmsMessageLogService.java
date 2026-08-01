@@ -46,14 +46,16 @@ public class SmsMessageLogService {
     );
 
     private final SmsMessageRepository repository;
+    private final SmsEventBroadcaster events;
 
-    public SmsMessageLogService(SmsMessageRepository repository) {
+    public SmsMessageLogService(SmsMessageRepository repository, SmsEventBroadcaster events) {
         this.repository = repository;
+        this.events = events;
     }
 
     public SmsMessage logOutbound(String templateKey, String automationKey, String phoneNumber, String body,
                                    boolean sent, String reason, String twilioMessageSid) {
-        return repository.save(SmsMessage.builder()
+        SmsMessage saved = repository.save(SmsMessage.builder()
                 .direction("OUTBOUND")
                 .automationKey(automationKey)
                 .phoneNumber(PhoneNumbers.normalize(phoneNumber))
@@ -63,6 +65,8 @@ public class SmsMessageLogService {
                 .status(sent ? "SENT" : "NOT_SENT")
                 .reason(reason)
                 .build());
+        events.broadcast(saved.getPhoneNumber());
+        return saved;
     }
 
     /** {@code linkTarget}/{@code clickToken} are set when this outbound message contains a
@@ -71,7 +75,7 @@ public class SmsMessageLogService {
     public SmsMessage logOutboundWithLink(String templateKey, String automationKey, String phoneNumber, String body,
                                            boolean sent, String reason, String twilioMessageSid, String linkTarget,
                                            String clickToken) {
-        return repository.save(SmsMessage.builder()
+        SmsMessage saved = repository.save(SmsMessage.builder()
                 .direction("OUTBOUND")
                 .automationKey(automationKey)
                 .phoneNumber(PhoneNumbers.normalize(phoneNumber))
@@ -83,24 +87,30 @@ public class SmsMessageLogService {
                 .linkTarget(linkTarget)
                 .clickToken(clickToken)
                 .build());
+        events.broadcast(saved.getPhoneNumber());
+        return saved;
     }
 
     /** Logged unconditionally, independent of whether the message matches a pending automation
      * flow — an unmatched text still needs to be visible (see design.md D9). */
     public SmsMessage logInbound(String phoneNumber, String body, String automationKey) {
-        return repository.save(SmsMessage.builder()
+        SmsMessage saved = repository.save(SmsMessage.builder()
                 .direction("INBOUND")
                 .automationKey(automationKey)
                 .phoneNumber(PhoneNumbers.normalize(phoneNumber))
                 .body(body)
                 .status("RECEIVED")
                 .build());
+        events.broadcast(saved.getPhoneNumber());
+        return saved;
     }
 
     /** Used by {@link CheckoutReviewReplyService} to finalize a reserved placeholder row once the
      * real body (containing that row's own short link) and send outcome are known. */
     public SmsMessage save(SmsMessage message) {
-        return repository.save(message);
+        SmsMessage saved = repository.save(message);
+        events.broadcast(saved.getPhoneNumber());
+        return saved;
     }
 
     /** A fresh {@link ClickTokens#generate()} candidate, re-rolled if it happens to collide with
@@ -198,6 +208,7 @@ public class SmsMessageLogService {
                     : DELIVERY_ERROR_MESSAGES.getOrDefault(errorCode, "Delivery error (code " + errorCode + ")"));
             m.setDeliveryUpdatedAt(Instant.now());
             repository.save(m);
+            events.broadcast(m.getPhoneNumber());
         });
     }
 
@@ -213,6 +224,7 @@ public class SmsMessageLogService {
         if (message.getReadAt() == null) {
             message.setReadAt(Instant.now());
             repository.save(message);
+            events.broadcast(message.getPhoneNumber());
         }
     }
 
@@ -225,7 +237,9 @@ public class SmsMessageLogService {
      * it already called the single-message {@link #markRead} endpoint per row on click. */
     @Transactional
     public void markThreadRead(String phoneNumber) {
-        repository.markThreadRead(PhoneNumbers.normalize(phoneNumber), Instant.now());
+        String normalized = PhoneNumbers.normalize(phoneNumber);
+        repository.markThreadRead(normalized, Instant.now());
+        events.broadcast(normalized);
     }
 
     /** "Mark as unread" — a manual reminder flag on a conversation, same convention as every
@@ -234,6 +248,8 @@ public class SmsMessageLogService {
      * again next time the inbox is opened. See SmsMessageRepository#markLastInboundUnread. */
     @Transactional
     public void markThreadUnread(String phoneNumber) {
-        repository.markLastInboundUnread(PhoneNumbers.normalize(phoneNumber));
+        String normalized = PhoneNumbers.normalize(phoneNumber);
+        repository.markLastInboundUnread(normalized);
+        events.broadcast(normalized);
     }
 }

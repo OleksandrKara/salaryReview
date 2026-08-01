@@ -5,13 +5,16 @@ import com.salonreview.domain.SmsMessage;
 import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.repo.SmsMessageRepository.ConversationSummaryProjection;
+import com.salonreview.sms.SmsEventBroadcaster;
 import com.salonreview.sms.SmsMessageLogService;
 import com.salonreview.sms.TwilioSmsService;
 import com.salonreview.util.PhoneNumbers;
 import com.salonreview.web.dto.MarketingContactDto;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Instant;
 import java.util.HashSet;
@@ -37,14 +40,17 @@ public class SmsActivityController {
     private final TwilioSmsService smsService;
     private final MarketingContactsService contactsService;
     private final BlockedNumberRepository blockedNumberRepository;
+    private final SmsEventBroadcaster events;
 
     public SmsActivityController(SmsMessageLogService service, TwilioSmsService smsService,
                                   MarketingContactsService contactsService,
-                                  BlockedNumberRepository blockedNumberRepository) {
+                                  BlockedNumberRepository blockedNumberRepository,
+                                  SmsEventBroadcaster events) {
         this.service = service;
         this.smsService = smsService;
         this.contactsService = contactsService;
         this.blockedNumberRepository = blockedNumberRepository;
+        this.events = events;
     }
 
     public record SmsMessageDto(long id, String direction, String automationKey, String phoneNumber,
@@ -80,6 +86,17 @@ public class SmsActivityController {
     @GetMapping("/unread-count")
     public Map<String, Long> unreadCount() {
         return Map.of("unreadCount", service.unreadCount());
+    }
+
+    /** Live-update feed for the manager conversation view (design "make Messages update itself
+     * instead of needing a page refresh") — see SmsEventBroadcaster's own doc for why this carries
+     * only a phone number, not the full changed state. SSE over polling: customer texts arrive
+     * sporadically, so pushing the instant something changes beats either laggy (long interval) or
+     * wasteful (short interval) polling, and this app already has one SSE precedent (RagController's
+     * token streaming) to follow the same unbuffered-proxy pattern from. */
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream() {
+        return events.subscribe();
     }
 
     @PostMapping("/{id}/read")
@@ -137,14 +154,16 @@ public class SmsActivityController {
      * table. Idempotent: blocking an already-blocked number just re-saves the same row. */
     @PostMapping("/conversations/{phoneNumber}/block")
     public void blockNumber(@PathVariable String phoneNumber) {
-        blockedNumberRepository.save(BlockedNumber.builder()
-                .phoneNumber(PhoneNumbers.normalize(phoneNumber))
-                .build());
+        String normalized = PhoneNumbers.normalize(phoneNumber);
+        blockedNumberRepository.save(BlockedNumber.builder().phoneNumber(normalized).build());
+        events.broadcast(normalized);
     }
 
     @DeleteMapping("/conversations/{phoneNumber}/block")
     public void unblockNumber(@PathVariable String phoneNumber) {
-        blockedNumberRepository.deleteById(PhoneNumbers.normalize(phoneNumber));
+        String normalized = PhoneNumbers.normalize(phoneNumber);
+        blockedNumberRepository.deleteById(normalized);
+        events.broadcast(normalized);
     }
 
     /** This phone number's marketing profile (name, email, submission/appointment history), for
