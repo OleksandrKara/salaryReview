@@ -2,7 +2,9 @@ package com.salonreview.square.webhook;
 
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.repo.SmsReplyFlowRepository;
+import com.salonreview.sms.CheckoutReviewLinks;
 import com.salonreview.sms.SameDayRebookingTriggerService;
+import com.salonreview.sms.SmsMessageLogService;
 import com.salonreview.square.SquareClient;
 import com.salonreview.util.PhoneNumbers;
 import org.slf4j.Logger;
@@ -30,12 +32,15 @@ public class CheckoutReviewTriggerService {
     private final SquareClient square;
     private final SmsReplyFlowRepository repository;
     private final SameDayRebookingTriggerService rebookingTrigger;
+    private final SmsMessageLogService messageLogService;
 
     public CheckoutReviewTriggerService(SquareClient square, SmsReplyFlowRepository repository,
-                                         SameDayRebookingTriggerService rebookingTrigger) {
+                                         SameDayRebookingTriggerService rebookingTrigger,
+                                         SmsMessageLogService messageLogService) {
         this.square = square;
         this.repository = repository;
         this.rebookingTrigger = rebookingTrigger;
+        this.messageLogService = messageLogService;
     }
 
     public void handlePaymentUpdated(SquareWebhookEvent.Payment payment) {
@@ -74,11 +79,28 @@ public class CheckoutReviewTriggerService {
             // com.salonreview.square.SquareClient#customerGivenNames' own doc comment).
             String customerName = square.customerGivenNames(List.of(customerId)).get(customerId);
 
+            // Once this phone number has clicked through *both* reply-branch link types at least
+            // once each — a Google review and the private feedback form — they've given us
+            // everything this automation is for. Repeatedly asking a customer who's already
+            // covered both reads as spammy rather than as care, so stop asking permanently once
+            // both flags are set (mirrors SameDayRebookingScheduler's own permanent-exclusion-on-
+            // prior-behavior pattern for negative feedback). Doesn't affect the independent
+            // same-day-rebooking trigger below — that's a different automation.
+            //
+            // The row is still saved either way (just straight to COMPLETED, which
+            // SmsReplyFlowScheduler never picks up for sending — see its own
+            // findByStateAndSendDueAtBefore(AWAITING_SEND, ...) query) rather than skipped
+            // entirely, so the existsBySquarePaymentId redelivery guard above keeps working for
+            // this payment on a Square retry, and there's still a visible audit row for why no ask
+            // went out.
+            boolean hasCoveredBothReviewChannels =
+                    messageLogService.hasClickedLinkTarget(phoneNumber, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)
+                            && messageLogService.hasClickedLinkTarget(phoneNumber, CheckoutReviewLinks.FEEDBACK_FORM_TARGET);
             repository.save(SmsReplyFlow.builder()
                     .automationKey(AUTOMATION_KEY)
                     .phoneNumber(phoneNumber)
                     .customerName(customerName)
-                    .state(SmsReplyFlow.STATE_AWAITING_SEND)
+                    .state(hasCoveredBothReviewChannels ? SmsReplyFlow.STATE_COMPLETED : SmsReplyFlow.STATE_AWAITING_SEND)
                     .squarePaymentId(payment.id())
                     .sendDueAt(Instant.now().plus(SEND_DELAY))
                     .build());

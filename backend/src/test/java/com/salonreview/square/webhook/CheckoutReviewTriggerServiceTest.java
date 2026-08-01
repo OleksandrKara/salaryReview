@@ -2,7 +2,9 @@ package com.salonreview.square.webhook;
 
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.repo.SmsReplyFlowRepository;
+import com.salonreview.sms.CheckoutReviewLinks;
 import com.salonreview.sms.SameDayRebookingTriggerService;
+import com.salonreview.sms.SmsMessageLogService;
 import com.salonreview.square.SquareClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -28,6 +30,7 @@ class CheckoutReviewTriggerServiceTest {
     private SquareClient square;
     private SmsReplyFlowRepository repository;
     private SameDayRebookingTriggerService rebookingTrigger;
+    private SmsMessageLogService messageLogService;
     private CheckoutReviewTriggerService service;
 
     @BeforeEach
@@ -35,7 +38,8 @@ class CheckoutReviewTriggerServiceTest {
         square = mock(SquareClient.class);
         repository = mock(SmsReplyFlowRepository.class);
         rebookingTrigger = mock(SameDayRebookingTriggerService.class);
-        service = new CheckoutReviewTriggerService(square, repository, rebookingTrigger);
+        messageLogService = mock(SmsMessageLogService.class);
+        service = new CheckoutReviewTriggerService(square, repository, rebookingTrigger, messageLogService);
     }
 
     private static SquareWebhookEvent.Payment payment(String status, String orderId, String customerId) {
@@ -68,6 +72,47 @@ class CheckoutReviewTriggerServiceTest {
         // Second, independent enqueue off the same qualifying event — see
         // openspec/changes/same-day-rebooking-discount design.md D1.
         verify(rebookingTrigger).enqueue("pay_1", "cust_1", PHONE, "Jane");
+    }
+
+    @Test
+    @DisplayName("phone has already clicked both GOOGLE_REVIEW and FEEDBACK_FORM at least once → row saved COMPLETED, not sent")
+    void bothReviewChannelsCoveredSkipsSendButStaysIdempotent() {
+        when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
+        when(square.orderById("order_1")).thenReturn(Optional.of(order("cust_1", null)));
+        when(square.customerPhone("cust_1")).thenReturn(PHONE);
+        when(square.customerGivenNames(List.of("cust_1"))).thenReturn(Map.of("cust_1", "Jane"));
+        when(messageLogService.hasClickedLinkTarget(PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
+        when(messageLogService.hasClickedLinkTarget(PHONE, CheckoutReviewLinks.FEEDBACK_FORM_TARGET)).thenReturn(true);
+
+        service.handlePaymentUpdated(payment("COMPLETED", "order_1", "cust_1"));
+
+        var captor = org.mockito.ArgumentCaptor.forClass(SmsReplyFlow.class);
+        // The row is still saved (not skipped outright) so a later Square redelivery of this same
+        // payment id still hits the existsBySquarePaymentId guard above instead of re-running this
+        // whole method — see the service's own doc comment.
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().getState()).isEqualTo(SmsReplyFlow.STATE_COMPLETED);
+        assertThat(captor.getValue().getSquarePaymentId()).isEqualTo("pay_1");
+
+        // The independent same-day-rebooking trigger is unaffected by review-channel coverage.
+        verify(rebookingTrigger).enqueue("pay_1", "cust_1", PHONE, "Jane");
+    }
+
+    @Test
+    @DisplayName("phone has clicked only one of the two review channels → still enqueues a real ask")
+    void onlyOneReviewChannelCoveredStillEnqueues() {
+        when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
+        when(square.orderById("order_1")).thenReturn(Optional.of(order("cust_1", null)));
+        when(square.customerPhone("cust_1")).thenReturn(PHONE);
+        when(square.customerGivenNames(List.of("cust_1"))).thenReturn(Map.of("cust_1", "Jane"));
+        when(messageLogService.hasClickedLinkTarget(PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
+        when(messageLogService.hasClickedLinkTarget(PHONE, CheckoutReviewLinks.FEEDBACK_FORM_TARGET)).thenReturn(false);
+
+        service.handlePaymentUpdated(payment("COMPLETED", "order_1", "cust_1"));
+
+        var captor = org.mockito.ArgumentCaptor.forClass(SmsReplyFlow.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().getState()).isEqualTo(SmsReplyFlow.STATE_AWAITING_SEND);
     }
 
     @Test
