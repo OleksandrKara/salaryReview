@@ -17,8 +17,14 @@ import static org.mockito.Mockito.when;
  */
 class TelegramNotificationServiceTest {
 
+    private static final String BASE_URL = "https://salon.akluxnails.com";
+
     private static final FourHandRequestNotification NOTIFICATION = new FourHandRequestNotification(
             "mani", "Jane Doe", "+15551234567", "manicure + pedicure", "2026-08-01T18:00:00Z", null, 254.0);
+
+    private static TelegramNotificationService service(TelegramConfigService configService) {
+        return new TelegramNotificationService(configService, BASE_URL);
+    }
 
     @Test
     @DisplayName("blank bot token → false, no exception")
@@ -26,9 +32,8 @@ class TelegramNotificationServiceTest {
         TelegramConfigService configService = mock(TelegramConfigService.class);
         when(configService.get()).thenReturn(
                 TelegramNotificationConfig.builder().botToken(null).chatId("999888777").build());
-        TelegramNotificationService service = new TelegramNotificationService(configService);
 
-        assertThat(service.sendFourHandRequestAlert(NOTIFICATION)).isFalse();
+        assertThat(service(configService).sendFourHandRequestAlert(NOTIFICATION)).isFalse();
     }
 
     @Test
@@ -37,9 +42,8 @@ class TelegramNotificationServiceTest {
         TelegramConfigService configService = mock(TelegramConfigService.class);
         when(configService.get()).thenReturn(
                 TelegramNotificationConfig.builder().botToken("some-token").chatId("").build());
-        TelegramNotificationService service = new TelegramNotificationService(configService);
 
-        assertThat(service.sendFourHandRequestAlert(NOTIFICATION)).isFalse();
+        assertThat(service(configService).sendFourHandRequestAlert(NOTIFICATION)).isFalse();
     }
 
     @Test
@@ -60,7 +64,7 @@ class TelegramNotificationServiceTest {
     @Test
     @DisplayName("message includes the estimated price when present")
     void formatMessageIncludesEstimatedPrice() {
-        TelegramNotificationService service = new TelegramNotificationService(mock(TelegramConfigService.class));
+        TelegramNotificationService service = service(mock(TelegramConfigService.class));
 
         assertThat(service.formatMessage(NOTIFICATION)).contains("Estimated price: $254");
     }
@@ -68,7 +72,7 @@ class TelegramNotificationServiceTest {
     @Test
     @DisplayName("message omits the estimated price line when null")
     void formatMessageOmitsEstimatedPriceWhenAbsent() {
-        TelegramNotificationService service = new TelegramNotificationService(mock(TelegramConfigService.class));
+        TelegramNotificationService service = service(mock(TelegramConfigService.class));
         FourHandRequestNotification withoutPrice = new FourHandRequestNotification(
                 "mani", "Jane Doe", "+15551234567", "manicure + pedicure", "2026-08-01T18:00:00Z", null, null);
 
@@ -81,9 +85,8 @@ class TelegramNotificationServiceTest {
         TelegramConfigService configService = mock(TelegramConfigService.class);
         when(configService.get()).thenReturn(
                 TelegramNotificationConfig.builder().botToken(null).chatId("999888777").build());
-        TelegramNotificationService service = new TelegramNotificationService(configService);
 
-        assertThat(service.sendInboundSmsAlert("+15551234567", "hi", null)).isFalse();
+        assertThat(service(configService).sendInboundSmsAlert("+15551234567", "Jane Doe", "hi", null)).isFalse();
     }
 
     @Test
@@ -92,8 +95,78 @@ class TelegramNotificationServiceTest {
         TelegramConfigService configService = mock(TelegramConfigService.class);
         when(configService.get()).thenReturn(
                 TelegramNotificationConfig.builder().botToken("some-token").chatId("").build());
-        TelegramNotificationService service = new TelegramNotificationService(configService);
 
-        assertThat(service.sendInboundSmsAlert("+15551234567", "hi", "checkout_review_request")).isFalse();
+        assertThat(service(configService).sendInboundSmsAlert("+15551234567", "Jane Doe", "hi", "checkout_review_request"))
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("inbound alert header uses the customer name, bold, when known")
+    void inboundAlertUsesNameWhenKnown() {
+        TelegramNotificationService service = service(mock(TelegramConfigService.class));
+
+        String text = service.formatInboundSmsAlert("+18585550100", "Jane Doe", "Thanks!", null);
+
+        assertThat(text).contains("<b>New message from Jane Doe</b>");
+        assertThat(text).contains("📱 (858) 555-0100");
+    }
+
+    @Test
+    @DisplayName("inbound alert falls back to the formatted phone number when no name is known")
+    void inboundAlertFallsBackToPhoneWhenNoName() {
+        TelegramNotificationService service = service(mock(TelegramConfigService.class));
+
+        String text = service.formatInboundSmsAlert("+18585550100", null, "Thanks!", null);
+
+        assertThat(text).contains("<b>New message from (858) 555-0100</b>");
+        // No separate phone line — it's already the header, showing it twice would be noise.
+        assertThat(text).doesNotContain("📱");
+    }
+
+    @Test
+    @DisplayName("inbound alert includes a tappable deep link straight to that customer's thread")
+    void inboundAlertIncludesChatLink() {
+        TelegramNotificationService service = service(mock(TelegramConfigService.class));
+
+        String text = service.formatInboundSmsAlert("+18585550100", "Jane Doe", "Thanks!", null);
+
+        assertThat(text).contains("<a href=\"https://salon.akluxnails.com/admin/messages?phone=%2B18585550100\">💬 Open chat</a>");
+    }
+
+    @Test
+    @DisplayName("inbound alert shows a friendly automation label when the reply matched one")
+    void inboundAlertShowsAutomationLabel() {
+        TelegramNotificationService service = service(mock(TelegramConfigService.class));
+
+        String text = service.formatInboundSmsAlert("+18585550100", "Jane Doe", "5", "checkout_review_request");
+
+        assertThat(text).contains("↩️ Reply to: checkout review request");
+    }
+
+    @Test
+    @DisplayName("inbound alert HTML-escapes a customer's own message body so it can't break formatting")
+    void inboundAlertEscapesMessageBody() {
+        TelegramNotificationService service = service(mock(TelegramConfigService.class));
+
+        String text = service.formatInboundSmsAlert("+18585550100", "Jane Doe", "5 < 10 & I'm happy", null);
+
+        assertThat(text).contains("5 &lt; 10 &amp; I'm happy"); // apostrophe isn't special in Telegram's HTML mode, left as-is
+        assertThat(text).doesNotContain("5 < 10 & I'm happy");
+    }
+
+    @Test
+    @DisplayName("formatPhoneDisplay renders a plain 10/11-digit US number, falls back otherwise")
+    void formatPhoneDisplayFormatsUsNumbers() {
+        assertThat(TelegramNotificationService.formatPhoneDisplay("+18585550100")).isEqualTo("(858) 555-0100");
+        assertThat(TelegramNotificationService.formatPhoneDisplay("8585550100")).isEqualTo("(858) 555-0100");
+        assertThat(TelegramNotificationService.formatPhoneDisplay("12345")).isEqualTo("12345");
+    }
+
+    @Test
+    @DisplayName("chatLink URL-encodes the phone number into the deep link")
+    void chatLinkEncodesPhoneNumber() {
+        TelegramNotificationService service = service(mock(TelegramConfigService.class));
+
+        assertThat(service.chatLink("+18585550100")).isEqualTo("https://salon.akluxnails.com/admin/messages?phone=%2B18585550100");
     }
 }

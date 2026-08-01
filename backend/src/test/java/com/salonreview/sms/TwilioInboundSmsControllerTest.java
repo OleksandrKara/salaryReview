@@ -3,6 +3,7 @@ package com.salonreview.sms;
 import com.salonreview.config.TwilioInboundProperties;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
+import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.repo.SmsReplyFlowRepository;
 import com.salonreview.telegram.TelegramNotificationService;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,6 +43,7 @@ class TwilioInboundSmsControllerTest {
     private SmsReplyFlowRepository replyFlowRepository;
     private CheckoutReviewReplyService replyService;
     private TelegramNotificationService telegramService;
+    private MarketingContactsService contactsService;
     private MockMvc mvc;
 
     @BeforeEach
@@ -53,6 +55,10 @@ class TwilioInboundSmsControllerTest {
         replyFlowRepository = mock(SmsReplyFlowRepository.class);
         replyService = mock(CheckoutReviewReplyService.class);
         telegramService = mock(TelegramNotificationService.class);
+        contactsService = mock(MarketingContactsService.class);
+        // No name resolvable by default — individual tests override with a specific stub if they
+        // care about the resolved-name path.
+        when(contactsService.resolveDisplayNames(any())).thenReturn(java.util.Map.of());
         // thenAnswer (not a fixed thenReturn) so logged.getAutomationKey() reflects whatever
         // automationKey the controller actually passed in, matching the real implementation —
         // needed since the controller forwards logged.getAutomationKey() to the Telegram alert.
@@ -61,7 +67,7 @@ class TwilioInboundSmsControllerTest {
                         .automationKey(inv.getArgument(2)).build());
 
         TwilioInboundSmsController controller = new TwilioInboundSmsController(
-                properties, messageLogService, replyFlowRepository, replyService, telegramService);
+                properties, messageLogService, replyFlowRepository, replyService, telegramService, contactsService);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -127,7 +133,7 @@ class TwilioInboundSmsControllerTest {
         verify(messageLogService).logInbound(PHONE, p.get("Body"), "checkout_review_request");
         verify(replyService).sendBranchReply(pending, true);
         verify(replyFlowRepository).save(pending);
-        verify(telegramService).sendInboundSmsAlert(PHONE, p.get("Body"), "checkout_review_request");
+        verify(telegramService).sendInboundSmsAlert(PHONE, null, p.get("Body"), "checkout_review_request");
         org.assertj.core.api.Assertions.assertThat(pending.getState()).isEqualTo(SmsReplyFlow.STATE_COMPLETED);
     }
 
@@ -209,8 +215,27 @@ class TwilioInboundSmsControllerTest {
                 .andExpect(status().isOk());
 
         verify(messageLogService).logInbound(PHONE, p.get("Body"), null);
-        verify(telegramService).sendInboundSmsAlert(PHONE, p.get("Body"), null);
+        verify(telegramService).sendInboundSmsAlert(PHONE, null, p.get("Body"), null);
         verifyNoInteractions(replyService);
         verify(replyFlowRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("resolved customer name is forwarded to the Telegram alert")
+    void resolvedCustomerNameForwardedToTelegramAlert() throws Exception {
+        var p = params(PHONE, "hello?");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.empty());
+        when(contactsService.resolveDisplayNames(java.util.List.of(PHONE))).thenReturn(java.util.Map.of(
+                PHONE, new MarketingContactsService.ContactNameInfo("Jane", "Doe", false, null, false, null)));
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        verify(telegramService).sendInboundSmsAlert(PHONE, "Jane Doe", p.get("Body"), null);
     }
 }

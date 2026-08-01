@@ -23,11 +23,19 @@ import MessagesView from './MessagesView';
 // permanent title bar there. Losing AdminMenu access while inside a thread on mobile is the
 // deliberate trade — the thread's own back button gets you out in one tap, same as a normal chat
 // app never keeping its global nav visible over an open conversation.
-export default async function MessagesPage() {
+//
+// ?phone= deep-links straight into that customer's thread — used by the inbound-SMS Telegram
+// alert's "Open chat" link (see TelegramNotificationService#chatLink on the backend), so tapping
+// it lands directly in the conversation instead of the manager having to find it themselves.
+export default async function MessagesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ phone?: string }>;
+}) {
   const me = await serverApi.getMe();
   if (me.role !== 'OWNER' && me.role !== 'MANAGER') redirect('/reports');
 
-  const conversations = await serverApi.listSmsConversations();
+  const [{ phone }, conversations] = await Promise.all([searchParams, serverApi.listSmsConversations()]);
 
   return (
     // w-full is load-bearing, not decorative: `main` is a flex item of `body`'s column flex
@@ -52,7 +60,7 @@ export default async function MessagesPage() {
         <PageHeader title="Messages" role={me.role} language={me.preferredLanguage} />
       </div>
       <div className="min-h-0 flex-1">
-        <MessagesView initialConversations={conversations} />
+        <MessagesView initialConversations={conversations} initialSelectedPhone={phone ?? null} />
       </div>
     </main>
   );
