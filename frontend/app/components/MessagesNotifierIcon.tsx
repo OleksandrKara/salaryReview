@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import type { SmsConversationDto } from '../lib/types';
+import { setFaviconBadge } from '../lib/faviconBadge';
+import { playNotificationSound, primeAudio } from '../lib/notificationSound';
 
 const POLL_INTERVAL_MS = 25_000;
 
@@ -24,9 +26,18 @@ function formatPhone(phone: string): string {
  * (rather than just the plain unread-count endpoint) so it can also fire a browser Notification
  * with the actual sender + preview, not just a number.
  *
- * Foreground-only: no service worker/push registered, so this only notifies while a tab running
- * this app is open — "less chance to miss" during a work session, not a true background push
- * (that would need a push subscription + backend endpoint, out of scope here).
+ * Three independent "a new message arrived" signals, each degrading gracefully on its own if the
+ * browser doesn't support it — no single one is load-bearing for the others:
+ *  - A system Notification (requires permission — requested on mount, best-effort).
+ *  - A short chime via {@link playNotificationSound} (requires no permission at all, but does
+ *    require the page to have seen at least one user gesture first — see {@link primeAudio}).
+ *  - A red badge drawn onto the favicon itself via {@link setFaviconBadge} (requires no permission
+ *    and works even on browsers with no Notification API support at all, e.g. most mobile
+ *    browsers — this is the one signal that reliably "just works" everywhere).
+ *
+ * Foreground-only: no service worker/push registered, so none of these fire while no tab running
+ * this app is open at all — "less chance to miss" during a work session, not a true background
+ * push (that would need a push subscription + backend endpoint, out of scope here).
  *
  * Remounts on every full page navigation (this app has no persistent client-side layout state for
  * this), which resets the polling timer and the "already seen" snapshot below — an accepted
@@ -38,6 +49,30 @@ export default function MessagesNotifierIcon({ initialUnreadCount }: { initialUn
   // phone -> last-seen lastMessageAt. Stays null until the first poll completes, so a page load
   // never fires a notification storm for unread messages that were already sitting there.
   const seenRef = useRef<Map<string, string> | null>(null);
+
+  // Audio autoplay is blocked until the page has seen a real user gesture — primes it on the
+  // very first click/keydown/touch anywhere in the app, so by the time a poll cycle wants to play
+  // a chime (never itself a user gesture), playback is already unlocked.
+  useEffect(() => {
+    function unlock() {
+      primeAudio();
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    }
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
+
+  // Keeps the favicon badge in sync with the same unreadCount already shown in the icon itself —
+  // requires no permission and degrades to "just doesn't show" rather than erroring on a browser
+  // that can't draw/replace favicons.
+  useEffect(() => {
+    void setFaviconBadge(unreadCount);
+  }, [unreadCount]);
 
   useEffect(() => {
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
@@ -58,20 +93,27 @@ export default function MessagesNotifierIcon({ initialUnreadCount }: { initialUn
       setUnreadCount(conversations.reduce((sum, c) => sum + c.unreadCount, 0));
 
       const previouslySeen = seenRef.current;
-      if (previouslySeen && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      let sawNewInbound = false;
+      if (previouslySeen) {
         for (const c of conversations) {
           if (c.lastMessageDirection !== 'INBOUND') continue;
           const lastSeenAt = previouslySeen.get(c.phoneNumber);
           if (lastSeenAt !== undefined && c.lastMessageAt <= lastSeenAt) continue;
-          const notification = new Notification(`New text from ${formatPhone(c.phoneNumber)}`, {
-            body: c.lastMessageBody,
-            tag: c.phoneNumber, // replaces any still-showing notification for the same customer
-          });
-          notification.onclick = () => {
-            window.focus();
-            window.location.href = '/admin/messages';
-          };
+          sawNewInbound = true;
+          if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            const notification = new Notification(`New text from ${formatPhone(c.phoneNumber)}`, {
+              body: c.lastMessageBody,
+              tag: c.phoneNumber, // replaces any still-showing notification for the same customer
+            });
+            notification.onclick = () => {
+              window.focus();
+              window.location.href = '/admin/messages';
+            };
+          }
         }
+        // Once per poll cycle, not once per conversation — several customers texting inside the
+        // same 25s window should still only chime once, not stack into a cacophony.
+        if (sawNewInbound) playNotificationSound();
       }
 
       const nextSeen = new Map<string, string>();
