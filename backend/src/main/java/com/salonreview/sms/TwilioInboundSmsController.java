@@ -3,6 +3,7 @@ package com.salonreview.sms;
 import com.salonreview.config.TwilioInboundProperties;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
+import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.repo.SmsReplyFlowRepository;
 import com.salonreview.telegram.TelegramNotificationService;
 import org.slf4j.Logger;
@@ -34,15 +35,17 @@ public class TwilioInboundSmsController {
     private final SmsReplyFlowRepository replyFlowRepository;
     private final CheckoutReviewReplyService replyService;
     private final TelegramNotificationService telegramService;
+    private final MarketingContactsService contactsService;
 
     public TwilioInboundSmsController(TwilioInboundProperties properties, SmsMessageLogService messageLogService,
                                        SmsReplyFlowRepository replyFlowRepository, CheckoutReviewReplyService replyService,
-                                       TelegramNotificationService telegramService) {
+                                       TelegramNotificationService telegramService, MarketingContactsService contactsService) {
         this.properties = properties;
         this.messageLogService = messageLogService;
         this.replyFlowRepository = replyFlowRepository;
         this.replyService = replyService;
         this.telegramService = telegramService;
+        this.contactsService = contactsService;
     }
 
     @PostMapping(value = "/api/public/sms/inbound", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
@@ -69,8 +72,12 @@ public class TwilioInboundSmsController {
         messageLogService.save(logged);
 
         // A customer reply always needs a human's attention right away, not just a dashboard entry
-        // nobody's actively watching — see openspec/changes/sms-automations-hub proposal.md.
-        telegramService.sendInboundSmsAlert(from, body, logged.getAutomationKey());
+        // nobody's actively watching — see openspec/changes/sms-automations-hub proposal.md. Name
+        // resolution is best-effort (same ladder resolveDisplayNames already uses for the Messages
+        // page itself) — a phone number with nothing resolvable still gets an alert, just without
+        // a name in the header.
+        String customerName = resolveCustomerName(from);
+        telegramService.sendInboundSmsAlert(from, customerName, body, logged.getAutomationKey());
 
         if (pending.isPresent()) {
             SmsReplyFlow flow = pending.get();
@@ -84,6 +91,17 @@ public class TwilioInboundSmsController {
             replyFlowRepository.save(flow);
         }
         return ResponseEntity.ok().build();
+    }
+
+    /** Best-effort given+family name for the Telegram alert header — null (not "—") when nothing
+     * resolves, so the alert falls back to showing just the phone number instead of an empty
+     * name. */
+    private String resolveCustomerName(String phoneNumber) {
+        MarketingContactsService.ContactNameInfo info = contactsService.resolveDisplayNames(java.util.List.of(phoneNumber)).get(phoneNumber);
+        if (info == null || info.givenName() == null || info.givenName().isBlank()) return null;
+        return info.familyName() == null || info.familyName().isBlank()
+                ? info.givenName()
+                : info.givenName() + " " + info.familyName();
     }
 
     /** A reply containing any of 1-4 — a low star rating — permanently excludes this customer

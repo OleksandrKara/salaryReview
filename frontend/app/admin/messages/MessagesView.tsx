@@ -80,9 +80,19 @@ function highlightMatch(text: string, query: string): ReactNode {
   );
 }
 
-export default function MessagesView({ initialConversations }: { initialConversations: SmsConversationDto[] }) {
+export default function MessagesView({
+  initialConversations,
+  initialSelectedPhone,
+}: {
+  initialConversations: SmsConversationDto[];
+  /** From the page's own `?phone=` query param — deep-links straight into that customer's
+   * thread (see page.tsx's doc comment), same as if the manager had tapped that row themselves.
+   * Seeded straight into `selectedPhone`'s initial state so the existing selectedPhone effect
+   * below (fetch thread/contact, mark read) just runs on mount, no separate code path needed. */
+  initialSelectedPhone?: string | null;
+}) {
   const [conversations, setConversations] = useState(initialConversations);
-  const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
+  const [selectedPhone, setSelectedPhone] = useState<string | null>(initialSelectedPhone ?? null);
   const [thread, setThread] = useState<SmsMessageDto[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
   // undefined = still loading, null = resolved but no marketing.contacts profile for this number.
