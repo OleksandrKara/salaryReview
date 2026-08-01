@@ -108,7 +108,9 @@ class SmsActivityControllerTest {
                 .andExpect(jsonPath("$[0].squareProfileUrl").value("https://app.squareup.com/dashboard/customers/directory/customer/cust-1"))
                 .andExpect(jsonPath("$[0].vip").value(true))
                 .andExpect(jsonPath("$[0].visitCount").value(5))
-                .andExpect(jsonPath("$[0].blocked").value(false));
+                .andExpect(jsonPath("$[0].blocked").value(false))
+                .andExpect(jsonPath("$[0].clickedGoogleReview").value(false))
+                .andExpect(jsonPath("$[0].clickedFeedbackForm").value(false));
     }
 
     @Test
@@ -123,6 +125,23 @@ class SmsActivityControllerTest {
         mvc.perform(get("/api/owner/automations/activity/conversations"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].blocked").value(true));
+    }
+
+    @Test
+    @DisplayName("GET /conversations marks a row's clicked-link flags from the batch lookups, independently")
+    void conversationsMarksClickedLinkTargets() throws Exception {
+        when(service.conversations()).thenReturn(List.of(
+                new FakeConversationSummary(PHONE, Instant.now(), "hi", "INBOUND", 0L)));
+        when(contactsService.resolveDisplayNames(List.of(PHONE))).thenReturn(Map.of());
+        when(service.phoneNumbersWithClickedLinkTarget(List.of(PHONE), "GOOGLE_REVIEW"))
+                .thenReturn(java.util.Set.of(PHONE));
+        when(service.phoneNumbersWithClickedLinkTarget(List.of(PHONE), "FEEDBACK_FORM"))
+                .thenReturn(java.util.Set.of());
+
+        mvc.perform(get("/api/owner/automations/activity/conversations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].clickedGoogleReview").value(true))
+                .andExpect(jsonPath("$[0].clickedFeedbackForm").value(false));
     }
 
     @Test

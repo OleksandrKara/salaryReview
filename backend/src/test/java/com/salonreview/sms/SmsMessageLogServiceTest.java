@@ -219,4 +219,15 @@ class SmsMessageLogServiceTest {
 
         assertThat(service.hasNegativeFeedback("(555) 123-4567")).isTrue();
     }
+
+    @Test
+    @DisplayName("phoneNumbersWithClickedLinkTarget delegates to the batch repository query")
+    void phoneNumbersWithClickedLinkTargetDelegates() {
+        List<String> phones = List.of("+15551234567", "+15559876543");
+        when(repository.findPhoneNumbersWithClickedLinkTarget(phones, "GOOGLE_REVIEW"))
+                .thenReturn(List.of("+15551234567"));
+
+        assertThat(service.phoneNumbersWithClickedLinkTarget(phones, "GOOGLE_REVIEW"))
+                .containsExactly("+15551234567");
+    }
 }
