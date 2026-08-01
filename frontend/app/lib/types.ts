@@ -136,6 +136,13 @@ export interface SmsConversationDto {
    * moves on to friendlier messages. Same phone number is permanently excluded from the
    * same-day-rebooking win-back nudge on the backend. */
   hasNegativeFeedback: boolean;
+  /** True once this Square customer's distinct-day visit count reaches the configured VIP
+   * threshold — same computation as MarketingContact#vip, resolved through the same phone ->
+   * customer id ladder as smsConsent/squareProfileUrl above. Always false when no Square
+   * customer could be resolved for this phone number at all. */
+  vip: boolean;
+  /** The distinct-day visit count backing `vip`, or null when no Square customer is known. */
+  visitCount: number | null;
 }
 
 export interface SmsReplyResult {

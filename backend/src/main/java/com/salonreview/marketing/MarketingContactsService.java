@@ -214,7 +214,9 @@ public class MarketingContactsService {
      * to exist at all (a checkout-review text sent purely from Square payment data has none, but
      * can still resolve a customer id here). Best-effort throughout: a phone number with nothing
      * resolvable still gets an entry (all-null/false), so a caller doesn't need a separate
-     * null-check just for consent. */
+     * null-check just for consent. {@code vip} is the same distinct-day visit-count threshold
+     * check as MarketingContactDto.Contact#vip (see #visitCountsByCustomerId) — always false
+     * when no Square customer id was resolved above. */
     public Map<String, ContactNameInfo> resolveDisplayNames(Collection<String> phoneNumbers) {
         if (phoneNumbers.isEmpty()) {
             return Map.of();
@@ -255,6 +257,7 @@ public class MarketingContactsService {
                 segmentsByCustomer = Map.of();
             }
             String consentSegmentId = rebookingProperties.getConsentSegmentId();
+            Map<String, Long> visitCounts = visitCountsByCustomerId();
 
             Map<String, ContactNameInfo> result = new HashMap<>();
             for (String phone : phoneNumbers) {
@@ -274,7 +277,11 @@ public class MarketingContactsService {
                         ? null
                         : String.format(SQUARE_CUSTOMER_PROFILE_URL, customerId);
 
-                result.put(phone, new ContactNameInfo(givenName, familyName, ownConsent || squareConsent, squareProfileUrl));
+                Long visitCount = customerId == null ? null : visitCounts.getOrDefault(customerId, 0L);
+                boolean vip = visitCount != null && visitCount >= vipVisitThreshold;
+
+                result.put(phone, new ContactNameInfo(givenName, familyName, ownConsent || squareConsent, squareProfileUrl,
+                        vip, visitCount == null ? null : visitCount.intValue()));
             }
             return result;
         } catch (DataAccessException ex) {
@@ -285,8 +292,11 @@ public class MarketingContactsService {
     }
 
     /** Nullable given/family name plus merged SMS-marketing-consent and Square profile link for
-     * one phone number — see #resolveDisplayNames. */
-    public record ContactNameInfo(String givenName, String familyName, boolean smsConsent, String squareProfileUrl) {}
+     * one phone number — see #resolveDisplayNames. {@code vip}/{@code visitCount} mirror
+     * MarketingContactDto.Contact's own fields (see #visitCountsByCustomerId) — always
+     * false/null when no Square customer could be resolved for this phone number at all. */
+    public record ContactNameInfo(String givenName, String familyName, boolean smsConsent, String squareProfileUrl,
+                                   boolean vip, Integer visitCount) {}
 
     /** Never throws: same "this app's health must never depend on the other service's
      * schema" guarantee as MarketingDashboardService.dashboard. Submissions and (when a Square

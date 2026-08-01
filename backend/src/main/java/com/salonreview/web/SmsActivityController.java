@@ -48,7 +48,8 @@ public class SmsActivityController {
                                    String lastMessageDirection, long unreadCount,
                                    String givenName, String familyName, boolean smsConsent,
                                    String squareProfileUrl, String lastMessageDeliveryStatus,
-                                   String lastMessageDeliveryErrorMessage, boolean hasNegativeFeedback) {}
+                                   String lastMessageDeliveryErrorMessage, boolean hasNegativeFeedback,
+                                   boolean vip, Integer visitCount) {}
 
     public record ReplyRequest(String phoneNumber, String body) {}
 
@@ -154,6 +155,8 @@ public class SmsActivityController {
                 nameInfo == null ? null : nameInfo.familyName(),
                 nameInfo != null && nameInfo.smsConsent(),
                 nameInfo == null ? null : nameInfo.squareProfileUrl(),
-                p.getLastMessageDeliveryStatus(), p.getLastMessageDeliveryErrorMessage(), p.getHasNegativeFeedback());
+                p.getLastMessageDeliveryStatus(), p.getLastMessageDeliveryErrorMessage(), p.getHasNegativeFeedback(),
+                nameInfo != null && nameInfo.vip(),
+                nameInfo == null ? null : nameInfo.visitCount());
     }
 }

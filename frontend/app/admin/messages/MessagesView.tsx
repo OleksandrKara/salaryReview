@@ -6,6 +6,7 @@ import type { MarketingContact, SmsConversationDto, SmsConversationSearchHitDto,
 import ContactInfoPanel from './ContactInfoPanel';
 import SmsConsentIcon from './SmsConsentIcon';
 import NegativeFeedbackIcon from './NegativeFeedbackIcon';
+import VipIcon from './VipIcon';
 
 function formatPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -297,6 +298,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
                     >
                       {name ? highlightMatch(name, trimmedQuery) : formatPhone(c.phoneNumber)}
                     </span>
+                    {c.vip && <span data-testid="conversation-row-vip-icon"><VipIcon visitCount={c.visitCount} /></span>}
                     {c.smsConsent && <span data-testid="conversation-row-consent-icon"><SmsConsentIcon /></span>}
                     {c.hasNegativeFeedback && <span data-testid="conversation-row-negative-feedback-icon"><NegativeFeedbackIcon /></span>}
                   </span>
@@ -410,6 +412,7 @@ export default function MessagesView({ initialConversations }: { initialConversa
                     contact?.familyName ?? selectedConversation?.familyName,
                   ) ?? formatPhone(selectedPhone)}
                 </span>
+                {selectedConversation?.vip && <span data-testid="thread-header-vip-icon"><VipIcon visitCount={selectedConversation.visitCount} /></span>}
                 {selectedConversation?.smsConsent && <span data-testid="thread-header-consent-icon"><SmsConsentIcon /></span>}
                 {selectedConversation?.hasNegativeFeedback && <span data-testid="thread-header-negative-feedback-icon"><NegativeFeedbackIcon /></span>}
               </span>
@@ -552,6 +555,8 @@ export default function MessagesView({ initialConversations }: { initialConversa
             conversationName={displayName(selectedConversation?.givenName, selectedConversation?.familyName)}
             smsConsent={selectedConversation?.smsConsent ?? false}
             hasNegativeFeedback={selectedConversation?.hasNegativeFeedback ?? false}
+            vip={selectedConversation?.vip ?? false}
+            visitCount={selectedConversation?.visitCount ?? null}
             onClose={() => setShowContactPanel(false)}
           />
         </div>
