@@ -87,6 +87,14 @@ jobs:
             git fetch origin master
             # Match master exactly; the gitignored .env (secrets) and the postgres volume are untouched.
             git reset --hard origin/master
+            # `reset --hard` only touches tracked files — it leaves untracked ones alone. This app
+            # directory doubles as an interactive dev workspace, so a concurrent uncommitted edit
+            # sitting on disk here would otherwise survive the reset and get copied into the Docker
+            # build context below (`COPY src ./src`), shipping unreviewed WIP code to prod. Root
+            # cause of the 2026-08-02 incident: an in-progress, not-yet-fixed entity class leaked
+            # into a build this way. `-fd` removes untracked files/dirs but never touches anything
+            # gitignored (no `-x`), so .env and any local-only state are unaffected.
+            git clean -fd
             # 'ubuntu' needs sudo for docker on this host (passwordless sudo is enabled).
 
             # Rolling deploy: build the shared backend/frontend images once, then recreate
