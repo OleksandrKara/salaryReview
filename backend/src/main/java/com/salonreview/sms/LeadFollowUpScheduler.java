@@ -6,6 +6,7 @@ import com.salonreview.marketing.MarketingContactsRepository.RawContact;
 import com.salonreview.repo.LeadFollowUpSendRepository;
 import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -59,6 +60,7 @@ public class LeadFollowUpScheduler {
     }
 
     @Scheduled(fixedDelay = 15_000)
+    @SchedulerLock(name = "LeadFollowUpScheduler_sendDueFollowUps", lockAtLeastFor = "PT10S", lockAtMostFor = "PT2M")
     public void sendDueFollowUps() {
         Instant now = Instant.now();
         List<RawContact> pending = contactsRepository.findPendingFollowUp(now.minus(MIN_AGE), now.minus(MAX_AGE));

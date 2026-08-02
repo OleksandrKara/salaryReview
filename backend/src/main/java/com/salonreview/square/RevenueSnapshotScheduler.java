@@ -1,5 +1,7 @@
 package com.salonreview.square;
 
+import net.javacrumbs.shedlock.core.LockConfiguration;
+import net.javacrumbs.shedlock.core.LockingTaskExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Configuration;
@@ -8,6 +10,8 @@ import org.springframework.scheduling.config.CronTask;
 import org.springframework.scheduling.config.ScheduledTaskRegistrar;
 import org.springframework.scheduling.support.CronTrigger;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
@@ -25,6 +29,11 @@ import java.util.TimeZone;
  * Uses {@link SchedulingConfigurer} (not {@code @Scheduled}) so the salon timezone is resolved from
  * {@link SquareClient#locationTimeZone()} at startup — the cron annotation only accepts a literal
  * zone string, but we need the live one.
+ *
+ * <p>Locks manually via {@link LockingTaskExecutor} rather than {@code @SchedulerLock} — that
+ * annotation only intercepts {@code @Scheduled} methods, and this class registers its tasks
+ * programmatically instead (see {@link #configureTasks}) — so both backend replicas (blue/green)
+ * don't double-capture the same day's/month's snapshot.
  */
 @Configuration
 public class RevenueSnapshotScheduler implements SchedulingConfigurer {
@@ -34,12 +43,19 @@ public class RevenueSnapshotScheduler implements SchedulingConfigurer {
     static final String DAILY_CAPTURE_CRON       = "0 30 1 * * *";   // 01:30 salon-local
     static final String MONTHLY_ACTUAL_FILL_CRON = "0 0 2 1 * *";    // 02:00 salon-local on day 1
 
+    /** Generous relative to how long a capture actually takes — just a safety net so a crashed
+     * instance doesn't hold the lock forever, not a tuning knob for the job's real duration. */
+    private static final Duration LOCK_AT_MOST_FOR = Duration.ofMinutes(10);
+
     private final RevenueSnapshotService service;
     private final SquareClient square;
+    private final LockingTaskExecutor lockingTaskExecutor;
 
-    public RevenueSnapshotScheduler(RevenueSnapshotService service, SquareClient square) {
+    public RevenueSnapshotScheduler(RevenueSnapshotService service, SquareClient square,
+                                     LockingTaskExecutor lockingTaskExecutor) {
         this.service = service;
         this.square = square;
+        this.lockingTaskExecutor = lockingTaskExecutor;
     }
 
     @Override
@@ -49,19 +65,25 @@ public class RevenueSnapshotScheduler implements SchedulingConfigurer {
         log.info("Revenue snapshot scheduler bound to zone {}", zone);
 
         registrar.addCronTask(new CronTask(
-                () -> {
-                    LocalDate yesterday = LocalDate.now(zone).minusDays(1);
-                    log.info("Daily revenue snapshot job firing for {}", yesterday);
-                    service.captureFor(yesterday);
-                },
+                () -> lockingTaskExecutor.executeWithLock(
+                        (Runnable) () -> {
+                            LocalDate yesterday = LocalDate.now(zone).minusDays(1);
+                            log.info("Daily revenue snapshot job firing for {}", yesterday);
+                            service.captureFor(yesterday);
+                        },
+                        new LockConfiguration(Instant.now(), "RevenueSnapshotScheduler_dailyCapture",
+                                LOCK_AT_MOST_FOR, Duration.ZERO)),
                 new CronTrigger(DAILY_CAPTURE_CRON, tz)));
 
         registrar.addCronTask(new CronTask(
-                () -> {
-                    YearMonth prior = YearMonth.now(zone).minusMonths(1);
-                    log.info("Monthly actual-fill job firing for {}", prior);
-                    service.fillMonthEndActualsFor(prior);
-                },
+                () -> lockingTaskExecutor.executeWithLock(
+                        (Runnable) () -> {
+                            YearMonth prior = YearMonth.now(zone).minusMonths(1);
+                            log.info("Monthly actual-fill job firing for {}", prior);
+                            service.fillMonthEndActualsFor(prior);
+                        },
+                        new LockConfiguration(Instant.now(), "RevenueSnapshotScheduler_monthlyActualFill",
+                                LOCK_AT_MOST_FOR, Duration.ZERO)),
                 new CronTrigger(MONTHLY_ACTUAL_FILL_CRON, tz)));
     }
 
