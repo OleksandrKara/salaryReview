@@ -9,14 +9,19 @@
 # The X-Forwarded-Proto header is required: the app marks its auth cookies Secure only when it
 # sees https there (see frontend/app/api/login/route.ts).
 #
-# Two upstreams, each with two members (blue/green — see docker-compose.yml): nginx retries a
-# request against the other member if the one it picked is mid-restart (rolling deploy, see
-# .github/workflows/deploy.yml), so a deploy never surfaces a 502 to a real visitor — including a
-# manager mid-reply. salaryreview_backend is used directly by the third-party webhook/short-link
-# paths below (bypassing the frontend, same reasoning as before); salaryreview_frontend serves
-# everything else, and the frontend's own server-side calls to the backend go through the
-# internal backend-lb container instead (see nginx/backend-lb.conf) — this host-level upstream is
-# only for requests nginx itself proxies.
+# Two upstreams (blue/green — see docker-compose.yml): nginx retries a request against the other
+# member if the one it picked is mid-restart (rolling deploy, see .github/workflows/deploy.yml),
+# so a deploy never surfaces a 502 to a real visitor — including a manager mid-reply.
+# salaryreview_backend is used directly by the third-party webhook/short-link paths below
+# (bypassing the frontend, same reasoning as before); salaryreview_frontend serves everything
+# else, and the frontend's own server-side calls to the backend go through the internal
+# backend-lb container instead (see nginx/backend-lb.conf) — this host-level upstream is only
+# for requests nginx itself proxies.
+#
+# backend-green (127.0.0.1:8090) is TEMPORARILY OUT of rotation (commented below) — running two
+# permanently-live backend instances raced several @Scheduled jobs with no distributed lock,
+# risking duplicate SMS sends. Re-enable once that's fixed. frontend stays blue/green throughout
+# since it has no scheduled jobs.
 upstream salaryreview_frontend {
     server 127.0.0.1:3000 max_fails=1 fail_timeout=3s;
     server 127.0.0.1:3010 max_fails=1 fail_timeout=3s;
@@ -24,7 +29,7 @@ upstream salaryreview_frontend {
 
 upstream salaryreview_backend {
     server 127.0.0.1:8080 max_fails=1 fail_timeout=3s;
-    server 127.0.0.1:8090 max_fails=1 fail_timeout=3s;
+    # server 127.0.0.1:8090 max_fails=1 fail_timeout=3s;
 }
 
 server {

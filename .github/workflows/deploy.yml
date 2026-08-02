@@ -90,11 +90,16 @@ jobs:
             # 'ubuntu' needs sudo for docker on this host (passwordless sudo is enabled).
 
             # Rolling deploy: build the shared backend/frontend images once, then recreate
-            # backend-blue/green and frontend-blue/green one replica at a time, waiting for each
-            # to report healthy before touching the next. Host nginx (deploy/nginx-salon.conf.example)
-            # and backend-lb (nginx/backend-lb.conf) both retry against the other replica if the
-            # one they picked is mid-restart, so a real request — including a manager's in-flight
+            # backend-blue and frontend-blue/green one replica at a time, waiting for each to
+            # report healthy before touching the next. Host nginx (deploy/nginx-salon.conf.example)
+            # and backend-lb (nginx/backend-lb.conf) retry against the other replica if the one
+            # they picked is mid-restart, so a real request — including a manager's in-flight
             # reply — never sees a dropped connection while one replica is cycling.
+            #
+            # backend-green is TEMPORARILY OUT of rotation (see nginx/backend-lb.conf) — running
+            # two permanently-live backend instances raced several @Scheduled jobs that have no
+            # distributed lock, risking duplicate SMS sends. Only backend-blue is deployed until
+            # that's fixed; frontend stays blue/green throughout since it has no scheduled jobs.
             sudo docker compose build backend-blue frontend-blue
 
             wait_healthy() {
@@ -111,11 +116,8 @@ jobs:
             sudo docker compose up -d --no-deps backend-blue
             wait_healthy salonreview-backend-blue
 
-            sudo docker compose up -d --no-deps backend-green
-            wait_healthy salonreview-backend-green
-
-            # Both backend replicas just got fresh container IPs — make backend-lb re-resolve
-            # them. A graceful reload (not a restart) never drops an in-flight connection.
+            # backend-blue just got a fresh container IP — make backend-lb re-resolve it. A
+            # graceful reload (not a restart) never drops an in-flight connection.
             sudo docker compose exec -T backend-lb nginx -s reload
             sleep 2
 
