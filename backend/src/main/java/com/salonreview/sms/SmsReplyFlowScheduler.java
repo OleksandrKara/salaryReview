@@ -2,6 +2,7 @@ package com.salonreview.sms;
 
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.repo.SmsReplyFlowRepository;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -33,6 +34,7 @@ public class SmsReplyFlowScheduler {
     }
 
     @Scheduled(fixedDelay = 15_000)
+    @SchedulerLock(name = "SmsReplyFlowScheduler_sendDueRatingRequests", lockAtLeastFor = "PT10S", lockAtMostFor = "PT2M")
     public void sendDueRatingRequests() {
         Instant now = Instant.now();
         List<SmsReplyFlow> due = repository.findByStateAndSendDueAtBefore(SmsReplyFlow.STATE_AWAITING_SEND, now);
@@ -55,6 +57,7 @@ public class SmsReplyFlowScheduler {
     }
 
     @Scheduled(fixedDelay = 15_000)
+    @SchedulerLock(name = "SmsReplyFlowScheduler_expireStaleReplyWindows", lockAtLeastFor = "PT10S", lockAtMostFor = "PT2M")
     public void expireStaleReplyWindows() {
         Instant now = Instant.now();
         List<SmsReplyFlow> stale = repository.findByStateAndReplyExpiresAtBefore(SmsReplyFlow.STATE_AWAITING_REPLY, now);

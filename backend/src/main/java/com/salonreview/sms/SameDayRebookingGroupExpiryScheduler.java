@@ -4,6 +4,7 @@ import com.salonreview.config.RebookingProperties;
 import com.salonreview.domain.SameDayRebookingGroupMembership;
 import com.salonreview.repo.SameDayRebookingGroupMembershipRepository;
 import com.salonreview.square.SquareClient;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -37,6 +38,7 @@ public class SameDayRebookingGroupExpiryScheduler {
     }
 
     @Scheduled(fixedDelay = 60_000)
+    @SchedulerLock(name = "SameDayRebookingGroupExpiryScheduler_removeExpiredMemberships", lockAtLeastFor = "PT10S", lockAtMostFor = "PT3M")
     public void removeExpiredMemberships() {
         if (!rebookingProperties.isAutoDiscountConfigured()) {
             return; // one-time Square Catalog/CustomerGroup setup hasn't happened yet

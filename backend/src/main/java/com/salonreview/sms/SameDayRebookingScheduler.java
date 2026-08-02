@@ -7,6 +7,7 @@ import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.SameDayRebookingSendRepository;
 import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -68,6 +69,7 @@ public class SameDayRebookingScheduler {
     }
 
     @Scheduled(fixedDelay = 15_000)
+    @SchedulerLock(name = "SameDayRebookingScheduler_sendDueRebookingNudges", lockAtLeastFor = "PT10S", lockAtMostFor = "PT2M")
     public void sendDueRebookingNudges() {
         Instant now = Instant.now();
         List<SameDayRebookingSend> due = repository.findByStateAndSendDueAtBefore(
