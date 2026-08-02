@@ -31,6 +31,7 @@
 		<testcontainers.version>1.21.3</testcontainers.version>
 		<spring-session.version>4.0.3</spring-session.version>
 		<shedlock.version>7.7.0</shedlock.version>
+		<commons-csv.version>1.10.0</commons-csv.version>
 		<!-- Coverage ratchet floor — see docs/COVERAGE.md. `mvn verify` fails if real coverage
 			 drops below these; bump them upward (never down) in the same PR that raises coverage. -->
 		<jacoco.instruction.minimum>0.53</jacoco.instruction.minimum>
@@ -106,6 +107,14 @@
 			<groupId>net.javacrumbs.shedlock</groupId>
 			<artifactId>shedlock-provider-jdbc-template</artifactId>
 			<version>${shedlock.version}</version>
+		</dependency>
+
+		<!-- Bank-statement CSV parsing for the Expense Import & Reconciliation feature (openspec
+		     change expense-import-reconciliation) — no CSV library existed in this codebase before. -->
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-csv</artifactId>
+			<version>${commons-csv.version}</version>
 		</dependency>
 
 		<dependency>

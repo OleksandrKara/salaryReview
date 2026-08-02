@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -52,6 +53,30 @@ public class ExpenseService {
                 .filter(e -> ExpenseEntry.CATEGORY_MANAGER_TIME.equals(e.getCategory()))
                 .toList();
         return ExpenseResolver.resolve(managerTime, from, to);
+    }
+
+    /** Sums exactly the given {@code expense_entries} ids that carry a generic category — used by
+     * {@code OwnerOverviewService} for a statement-covered month (openspec design.md D11), where
+     * the reconciled import's own linked entries are the *only* source, not the arbitrary-period
+     * proration this class otherwise uses. Each entry is single-day (see design.md D3), so a plain
+     * sum is exactly correct here — no proration needed. */
+    public BigDecimal resolveStatementDerivedExpenseTotal(Collection<Long> linkedExpenseEntryIds) {
+        return sumByCategories(linkedExpenseEntryIds, GENERIC_CATEGORIES);
+    }
+
+    /** Same as {@link #resolveStatementDerivedExpenseTotal} but for the MANAGER_TIME category —
+     * the statement-covered month's manager labor cost (design.md D11). */
+    public BigDecimal resolveStatementDerivedManagerLaborTotal(Collection<Long> linkedExpenseEntryIds) {
+        return sumByCategories(linkedExpenseEntryIds, Set.of(ExpenseEntry.CATEGORY_MANAGER_TIME));
+    }
+
+    private BigDecimal sumByCategories(Collection<Long> ids, Set<String> categories) {
+        if (ids.isEmpty()) return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal total = repository.findAllById(ids).stream()
+                .filter(e -> categories.contains(e.getCategory()))
+                .map(ExpenseEntry::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return total.setScale(2, RoundingMode.HALF_UP);
     }
 
     /** Records a new expense entry — never upserts; a corrected re-entry is kept alongside the
