@@ -46,6 +46,14 @@
       conflict detection + before/after messaging (design.md D6/D9)
 - [ ] 4.5 `MerchantRuleService`: reinforcement on confirm-without-change (`times_applied`/
       `last_applied_at` increment, no new rule)
+- [ ] 4.6 `PayrollDisbursementDetector`: description-pattern match against known manager
+      (`AppUserRepository`, role MANAGER) and provider payee names, suggesting
+      `EXCLUDED / PAYROLL`; unrecognized payees fall through to Unknown/Needs Review, never
+      force-excluded (design.md D11)
+- [ ] 4.7 `OwnerOverviewService.expenseTotalForMonth`/`managerLaborCostForMonth`: for a month with a
+      `COMPLETED` `bank_statement_imports` row overlapping it, source exclusively from that
+      reconciliation's linked `expense_entries` rows and skip `ManagerTimeService`'s auto-computed
+      figure for that month; months without statement coverage are unchanged (design.md D11)
 
 ## 5. Backend — controllers
 
@@ -72,11 +80,21 @@
       (manually-entered ones, other imports')
 - [ ] 6.5 `ExpenseImportControllerTest` / `MerchantRuleControllerTest`: OWNER-only gating
       (mirrors `ExpenseControllerTest`'s existing pattern); malformed CSV → clear 4xx not 500
+- [ ] 6.6 `PayrollDisbursementDetectorTest`: recognized manager/provider payee descriptors suggest
+      `EXCLUDED / PAYROLL`; an unrecognized payee falls through to Unknown, never force-excluded
+      (design.md D11)
+- [ ] 6.7 `OwnerOverviewServiceTest`: a month with a `COMPLETED` import sources
+      expenseTotal/managerLaborCost exclusively from that reconciliation and does not add
+      `ManagerTimeService`'s auto-computed figure on top; a month with no import behaves exactly as
+      before this change (design.md D11)
 
 ## 7. Frontend — upload + entry point
 
 - [ ] 7.1 `frontend/app/owner/overview/expenses/page.tsx`: add an "Import Statement" entry point
-      alongside the existing `ExpenseEntryForm` (not replacing it)
+      alongside the existing `ExpenseEntryForm`
+- [ ] 7.1a `ExpenseEntryForm.tsx`: warn (not block) when the selected period already has a
+      `COMPLETED` statement reconciliation — "already reconciled from an imported statement, entering
+      this here risks double-counting" (design.md D11)
 - [ ] 7.2 `frontend/app/owner/overview/expenses/import/page.tsx` + `StatementUploadForm.tsx`:
       file picker/drag-drop, upload, redirect to the new import's reconciliation screen on success
 
@@ -122,7 +140,8 @@
       complete reconciliation and confirm the new `expense_entries` rows show up on the Net tab →
       revert and confirm they disappear again (clean up any test data per this session's standing
       rule)
-- [ ] 11.3 Owner review of category-list assumptions (no new category invented, §"Non-goals") and
-      of the exclude-reason list before this ships to production data
+- [ ] 11.3 Owner review of category-list assumptions (no new category invented, §"Non-goals"), the
+      exclude-reason list, and the manager/provider payee-name list `PayrollDisbursementDetector`
+      will match against (design.md D11), before this ships to production data
 - [ ] 11.4 Push to a new branch, open a PR, wait for CI, ask for explicit merge/deploy confirmation
       — same as every prior change this session

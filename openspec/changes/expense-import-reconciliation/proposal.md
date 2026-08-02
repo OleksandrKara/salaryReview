@@ -19,11 +19,32 @@ the Gross/Net/Expenses tab split) — the design goal is for every dollar this f
 become an ordinary `expense_entries` row, so `NetSummary`/`NetTable`/`GrowthTable` need **zero**
 changes to pick it up.
 
+The same monthly statement will also carry the real disbursements the salon actually sent to
+managers and to providers (staff) for the prior period — not modeled expense categories, but the
+literal payroll transfers. Net Revenue already subtracts a manager labor cost computed from clocked
+hours (`ManagerTimeService`) and a provider payroll figure computed from the commission formula
+(`gross × rate + tips`) — neither figure comes from the bank statement today. If the same
+disbursement that pays out one of those figures is also allowed to become a categorized expense
+once it's reconciled from the statement, it silently double-subtracts from Net Revenue. The same
+risk applies more generally to ordinary expenses: once a month's real bank activity is available
+and reconciled, continuing to *also* manually enter that same month's materials/rent/utilities via
+`ExpenseEntryForm` risks double-counting the identical real-world payment twice. See design.md D11
+for how this is resolved.
+
 ## What Changes
 
-- **New "Import Statement" flow on the Expenses tab**, alongside (not replacing) the existing
-  manual `ExpenseEntryForm` — some expenses (manager-time backfill, a landlord invoice not yet
-  reflected on the statement) will always be entered by hand.
+- **New "Import Statement" flow on the Expenses tab**, alongside the existing manual
+  `ExpenseEntryForm` for periods the statement doesn't yet cover (an invoice not yet reflected on
+  any statement, a correction). Once a calendar month has a completed statement reconciliation,
+  that month's expenses — including manager labor cost — are sourced **exclusively** from that
+  reconciliation, not from a parallel manual entry or computed backfill for the same month; see
+  design.md D11.
+- **Manager and provider payroll disbursements are recognized and excluded, never expensed.** The
+  real transfer that pays out a manager's tracked hours or a provider's commission period shows up
+  on the statement as an ordinary transaction. It's treated like the existing Payroll/Transfer
+  exclude path (design.md D8/D11): recognized by payee pattern, excluded, confirmed once per payee,
+  and remembered — never turned into a second, duplicate expense on top of `ManagerTimeService`'s
+  clocked-hours total or the commission-formula payroll figure.
 - **CSV parsing** of a single business bank account's monthly statement into individual
   transactions, with cross-import duplicate detection (re-uploading the same or an overlapping
   statement never double-counts).
@@ -72,6 +93,11 @@ changes to pick it up.
 - **No new Expense category.** This reuses the existing `MATERIALS` / `RENT` / `UTILITIES` /
   `OTHER` / `MANAGER_TIME` set exactly as-is; if the owner later wants a `TAXES` category that's a
   separate, owner-driven change, not something this feature invents unilaterally.
+- **No retroactive rework of already-closed months.** The "statement is the exclusive source"
+  rule (design.md D11) only applies going forward, per period, once that period actually has a
+  completed statement reconciliation. A month with no statement import keeps behaving exactly as
+  it does today (manual entry, `ManagerTimeService`'s computed labor cost) — nothing about
+  existing history is recomputed or invalidated by this change.
 
 ## Capabilities
 
@@ -89,9 +115,15 @@ changes to pick it up.
 
 ### Modified Capabilities
 
-*(none — the existing `expense_entries` schema, `ExpenseResolver`, `ExpenseService`, and the
-Net/Gross/Expenses tabs are consumed exactly as they exist today; this change only ever calls
-`ExpenseService.createExpenseEntry`/`deleteExpenseEntry`, it doesn't change their contracts.)*
+- **Owner overview / Net Revenue aggregation** (`OwnerOverviewService`, `ManagerTimeService`,
+  salaryReview backend): for any calendar month with a `COMPLETED` statement reconciliation
+  overlapping it, `expenseTotalForMonth`/`managerLaborCostForMonth` source their totals exclusively
+  from that reconciliation's linked `expense_entries` rows — `ManagerTimeService.totalLaborCost`'s
+  auto-computed figure is no longer added on top for that month, and manual `ExpenseEntryForm`
+  entry for that same month is flagged rather than silently accepted (design.md D11). Months with
+  no statement coverage are entirely unaffected — this does not change `ExpenseResolver`'s
+  proration logic, `ExpenseService`'s existing CRUD methods, or the `expense_entries` schema
+  itself (design.md D3 still holds), only which inputs `OwnerOverviewService` chooses per month.
 
 ## Impact
 
@@ -110,7 +142,10 @@ Net/Gross/Expenses tabs are consumed exactly as they exist today; this change on
   pill styling from `ContactInfoPanel`, the bulk-select pattern from `PrepaidManager`, and
   `InfoTip` for match-reason explanations. `ExpenseEntryForm.tsx` and `expenses/page.tsx` gain an
   entry point to the new flow but are otherwise unchanged.
-- **No changes** to `ExpenseResolver`, `ExpenseService`'s existing methods, `NetSummary`,
-  `NetTable`, `GrowthTable`, or the `expense_entries` table/CHECK constraint — every reconciled,
-  non-excluded transaction becomes an ordinary `expense_entries` row via the existing
-  `createExpenseEntry` call (design.md D3).
+- **No changes** to `ExpenseResolver`'s proration logic, `ExpenseService`'s existing CRUD methods,
+  `NetSummary`, `NetTable`, `GrowthTable`, or the `expense_entries` table/CHECK constraint — every
+  reconciled, non-excluded transaction becomes an ordinary `expense_entries` row via the existing
+  `createExpenseEntry` call (design.md D3). `OwnerOverviewService.expenseTotalForMonth`/
+  `managerLaborCostForMonth` **do** change, but only in which inputs they pick per month, not in
+  their public contracts (design.md D11) — `ManagerTimeService`'s clocked-hours calculation and
+  `ExpenseEntryForm` gain a new "is this month already statement-covered?" check.

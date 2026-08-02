@@ -57,6 +57,30 @@ absolute amount, and SHALL create no such row for any excluded or duplicate tran
 - **THEN** no `expense_entries` row is created for that transaction, and the salon's computed Net
   Revenue for that period is unaffected by its amount
 
+### Requirement: A statement-covered month sources its expenses exclusively from that reconciliation
+The system SHALL, for any calendar month with at least one `COMPLETED` statement import overlapping
+it, resolve that month's expense total and manager labor cost exclusively from that reconciliation's
+linked `expense_entries` rows, without also adding a separately computed or manually entered total
+for the same month. A month with no completed statement import SHALL be unaffected and continue to
+use the existing computed/manual sourcing.
+
+#### Scenario: A statement-covered month excludes the separately computed manager labor cost
+- **WHEN** a calendar month has a `COMPLETED` statement import, and that month's reconciled
+  transactions include manager-time-categorized expense entries
+- **THEN** the month's manager labor cost is the sum of those reconciled expense entries only, and
+  the auto-computed clocked-hours total for that same month is not additionally subtracted
+
+#### Scenario: A month without any statement import is unaffected
+- **WHEN** a calendar month has no statement import at all
+- **THEN** that month's expense total and manager labor cost are resolved exactly as they were
+  before this feature existed
+
+#### Scenario: Manual entry for an already-covered month is flagged, not silently accepted
+- **WHEN** the owner submits a manual expense entry whose period falls within a month that already
+  has a `COMPLETED` statement import
+- **THEN** the owner sees a warning that this month is already reconciled from an imported statement
+  and that entering it here risks double-counting, before the entry is saved
+
 ### Requirement: The reconciliation workspace is fully usable on a phone without horizontal scrolling
 The system SHALL render the transaction list as touch-friendly cards (not a wide table) on small
 viewports, with category assignment reachable in a single tap and no required horizontal scroll.

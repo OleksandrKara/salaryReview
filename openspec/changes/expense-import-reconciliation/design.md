@@ -344,6 +344,7 @@ com.salonreview.expense
 ├── MerchantRuleEngine.java       (§15, D4/D9)
 ├── ExpenseImportService.java     (orchestration: import, complete, revert — D3/D10)
 ├── MerchantRuleService.java      (CRUD + the "remember this" mutation path — D6)
+├── PayrollDisbursementDetector.java  (manager/provider payee-pattern suggestion — D11)
 └── web/
     ├── ExpenseImportController.java   (/api/owner/expenses/imports/**)
     └── MerchantRuleController.java    (/api/owner/expenses/rules/**)
@@ -351,6 +352,10 @@ com.salonreview.expense
 
 Follows this codebase's existing layering exactly (domain → repo → service → controller, same as
 `ExpenseEntry`/`ExpenseService`/`ExpenseController`); no new architectural pattern introduced.
+`PayrollDisbursementDetector` reads existing `AppUserRepository` (managers) and the existing
+provider list (same source `ManagerTimeService`/`SquareMonthAggregator` already use) — no new
+domain table for payees. `OwnerOverviewService.expenseTotalForMonth`/`managerLaborCostForMonth`
+gain a dependency on `BankStatementImportRepository` to check per-month statement coverage (D11).
 
 ## API Design [13]
 
@@ -497,6 +502,44 @@ category through the same `ExpenseService` and, if `linked_expense_entry_id` is 
 `updateExpenseEntry` — the existing "fixing an outright mistake" path — rather than creating a
 duplicate row).
 
+**D11 — a statement-covered month becomes the exclusive source of its expenses; manager/provider
+payroll disbursements are excluded, never expensed.** Two distinct double-counting risks, one
+governing principle: once a real bank statement exists for a period, the same real-world cost must
+never enter Net Revenue twice through two different mechanisms.
+
+- *(a) Payroll disbursements.* Provider payroll (staff commission) is computed today as a formula
+  independent of any bank data (`gross × commission rate + tips`, in `OwnerOverviewService`); it is
+  never modeled as an `expense_entries` row at all. Manager labor cost is computed today from
+  clocked hours × pay rate (`ManagerTimeService.totalLaborCost`), also independent of the bank
+  statement. When the *actual transfer* that pays out either of these shows up as a
+  `bank_transactions` row, it must never additionally become a categorized expense — that would
+  subtract the same real dollar from Net Revenue a second time, on top of the figure already
+  computed. This extends the existing Payroll exclude reason (Edge Cases [20]): the description-
+  pattern heuristic used for Credit Card Payment/Cash Withdrawal suggestions is applied against the
+  known manager (`AppUser`, role MANAGER) and provider (`Provider`) names/payee patterns, suggesting
+  `EXCLUDED / PAYROLL` for a recognized disbursement — confirmed once per payee like any other
+  exclude decision, then remembered (`merchant_rules`/`merchant_aliases`, same mechanism as
+  everything else). A payee pattern that isn't recognized the first time still lands in Needs
+  Review as an ordinary Unknown transaction, so a miss is caught by the owner, not silently wrong.
+- *(b) Ordinary expenses, month by month.* For a calendar month with **no** `COMPLETED`
+  `bank_statement_imports` row overlapping it, nothing changes: manual `ExpenseEntryForm` entry and
+  `ManagerTimeService`'s auto-computed labor cost keep working exactly as they do today. For a month
+  that **does** have one, `OwnerOverviewService.expenseTotalForMonth`/`managerLaborCostForMonth`
+  source their totals exclusively from that reconciliation's linked `expense_entries` rows
+  (identifiable via `bank_transactions.linked_expense_entry_id`) — `ManagerTimeService`'s
+  auto-computed figure is no longer added on top for that month, and a manual entry submitted for an
+  already-covered month is not silently accepted: `ExpenseEntryForm`/`ExpenseController` check
+  whether the target period has statement coverage and, if so, show a plain warning ("This month is
+  already reconciled from an imported statement — entering this here risks double-counting; add or
+  correct it from the reconciliation screen instead") before letting the owner proceed anyway (still
+  allowed — a rare legitimately-uncaptured item — just no longer the silent default path).
+- This is a forward-only, per-period transition, not a retroactive one (proposal.md Non-goals): a
+  month never touched by a statement import is unaffected by any of this.
+
+Formalized as new requirements on `expense-statement-import` (payroll/manager-provider payout
+exclusion) and `expense-reconciliation-workspace` (statement-covered-month exclusivity + the manual
+entry warning) — see their `specs/*.md`.
+
 ## Import History Design [19]
 
 `bank_statement_imports` *is* the import history — no separate table needed. The history screen
@@ -519,7 +562,8 @@ fingerprint, so a full re-upload comes back entirely `DUPLICATE` and completing 
 | Recurring subscriptions | Fixed-amount ones hit the Fingerprint tier natively; variable-amount ones hit plain Merchant — no special modeling needed. |
 | Credit card payments | Suggested (not auto-applied) `EXCLUDED / CREDIT_CARD_PAYMENT` via a description-pattern heuristic (`PAYMENT`, card-issuer names); always confirmed once per merchant like any other decision, then remembered. |
 | Transfers between own accounts | `EXCLUDED / TRANSFER`, same confirm-once-remember-after pattern. |
-| Payroll | `EXCLUDED / PAYROLL` — explicit non-goal (proposal.md) to reconcile against the commission engine; a payroll ACH batch line is excluded, not modeled. |
+| Payroll (provider commission batch) | `EXCLUDED / PAYROLL` — explicit non-goal (proposal.md) to reconcile against the commission engine; a payroll ACH batch line is excluded, not modeled. |
+| Manager/provider payroll payout (D11) | Suggested `EXCLUDED / PAYROLL` by payee-name pattern (`PayrollDisbursementDetector`), confirmed once per payee, then remembered — the real cost is already computed elsewhere (`ManagerTimeService`'s clocked hours, the commission formula), so the disbursement itself must never become a second, duplicate expense. |
 | Tax payments | `EXCLUDED / TAX` — this app doesn't model tax as an expense category today; not invented here either. |
 | Owner contributions | `EXCLUDED / OWNER_CONTRIBUTION`. |
 | Checks | Reference-number-only descriptions skip rule-matching entirely (§16), always manual review; no rule is ever built from a check number. |
@@ -563,6 +607,18 @@ index-backed rather than full-scans.
   and have the upload screen poll or subscribe for completion — without changing the schema, the
   parsing/normalization/rule-engine logic, or any API contract; nothing about the synchronous MVP
   path needs to be undone to add this later.
+- **Payee-detection false negative (D11)**: if `PayrollDisbursementDetector` fails to recognize a
+  manager/provider payout descriptor (an unfamiliar bank formatting of the name, say), it lands in
+  Needs Review as an ordinary Unknown transaction rather than being suggested for exclusion —
+  mitigated by the same human-in-the-loop guarantee as every other tier: nothing auto-excludes
+  without confirmation, so a first-time miss is caught by the owner reviewing the transaction, not
+  silently double-counted forever; once confirmed, `merchant_aliases`/`merchant_rules` catch it on
+  every later import.
+- **Transition-period inconsistency (D11)**: while some months have statement coverage and others
+  don't, the owner sees two different expense-sourcing behaviors depending on the month being
+  viewed. Mitigated by the warning shown on manual entry for an already-covered month (rather than a
+  silent difference) and by this being an explicit, forward-only, per-period rule (proposal.md
+  Non-goals) rather than something that needs a global on/off switch.
 
 ## Testing Strategy [22]
 
@@ -584,6 +640,13 @@ index-backed rather than full-scans.
   state, leaving unrelated `expense_entries` rows (manual ones, other imports) untouched.
 - **Controllers**: OWNER-only gating (mirrors existing `ExpenseControllerTest` pattern); malformed
   CSV returns a clear 4xx, not a 500.
+- **`PayrollDisbursementDetector` / D11 sourcing rules**: a recognized manager-name and
+  provider-name descriptor each suggest `EXCLUDED / PAYROLL`; an unrecognized payee descriptor falls
+  through to Unknown/Needs Review rather than being force-excluded; `OwnerOverviewService` unit
+  tests for a statement-covered month (sources exclusively from reconciled `expense_entries`,
+  `ManagerTimeService`'s auto-computed figure not added) versus a non-covered month (unchanged,
+  today's behavior); `ExpenseEntryForm`/`ExpenseController` test that a manual entry for a covered
+  month surfaces the warning but is still allowed through.
 - **Frontend**: component tests for `ConfidenceBadge` threshold rendering, `BulkActionBar` selection
   math (mirrors any existing `PrepaidManager` test if one exists), and a real click-through
   E2E-style check (per this session's established pattern) before merge: upload a small real fixture,
@@ -594,7 +657,8 @@ index-backed rather than full-scans.
 
 **In scope**: everything in `proposal.md`'s "What Changes" — single-account CSV upload, the
 five-tier rule engine, exclusion path, reconciliation review UI (search/filter/bulk/undo-per-import),
-merchant rules management, import history with revert.
+merchant rules management, import history with revert, manager/provider payroll payout exclusion,
+and statement-covered-month exclusivity for expense sourcing (D11).
 
 **Explicitly deferred** (see §20 for the fuller list): multi-account support, configurable
 CSV column mapping UI, async/background processing, AI-assisted suggestions, per-transaction

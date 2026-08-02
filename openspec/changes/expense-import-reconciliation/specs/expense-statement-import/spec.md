@@ -72,3 +72,26 @@ every manually-entered `expense_entries` row untouched.
 - **WHEN** an OWNER re-reconciles and re-completes a previously `REVERTED` import
 - **THEN** the system creates a fresh set of `expense_entries` rows for the (possibly corrected)
   categorization, exactly as it would for any other completion
+
+### Requirement: Manager and provider payroll disbursements are recognized and excluded, never expensed
+The system SHALL recognize a transaction whose payee matches a known manager or provider name
+pattern and suggest excluding it (`EXCLUDED / PAYROLL`), so that the real disbursement paying out an
+already-computed manager labor cost or provider commission total is never additionally recorded as
+an `expense_entries` row on top of that already-computed figure. An unrecognized payee SHALL NOT be
+force-excluded — it SHALL be routed to Needs Review like any other unmatched transaction.
+
+#### Scenario: A recognized manager payout is suggested for exclusion
+- **WHEN** a transaction's description matches a known manager's payee-name pattern
+- **THEN** the transaction is suggested as `EXCLUDED / PAYROLL`, and confirming the suggestion once
+  causes every future transaction matching that same payee pattern to be excluded automatically
+
+#### Scenario: A recognized provider payout is suggested for exclusion
+- **WHEN** a transaction's description matches a known provider's payee-name pattern
+- **THEN** the transaction is suggested as `EXCLUDED / PAYROLL`, on the same basis as a manager
+  payout — the real cost is already reflected in the commission-based payroll figure, not the bank
+  transaction
+
+#### Scenario: An unrecognized payee is never force-excluded
+- **WHEN** a transaction's description does not match any known manager or provider payee pattern
+- **THEN** the transaction is routed to Needs Review as an ordinary unmatched transaction, and is
+  never automatically excluded
