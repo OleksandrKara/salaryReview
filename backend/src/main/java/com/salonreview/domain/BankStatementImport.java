@@ -31,7 +31,6 @@ public class BankStatementImport {
     @Column(name = "original_filename", nullable = false)
     private String originalFilename;
 
-    @Lob
     @Column(name = "raw_file", nullable = false)
     private byte[] rawFile;
 
