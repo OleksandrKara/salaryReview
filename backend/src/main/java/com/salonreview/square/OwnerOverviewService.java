@@ -49,12 +49,14 @@ public class OwnerOverviewService {
     private final ManualAdjustmentService manualAdjustments;
     private final ExpenseService expenses;
     private final ManagerTimeService managerTime;
+    private final ExpenseImportService expenseImports;
 
     public OwnerOverviewService(PayPeriodRepository payPeriods, PeriodEntryRepository entries,
                                 CommissionCalculator calculator, SalonConfigRepository salonConfig,
                                 SquareMonthAggregator aggregator, RetentionAnalyticsService retention,
                                 ManualAdjustmentService manualAdjustments, ExpenseService expenses,
-                                ManagerTimeService managerTime) {
+                                ManagerTimeService managerTime, ExpenseImportService expenseImports) {
+        this.expenseImports = expenseImports;
         this.payPeriods = payPeriods;
         this.entries = entries;
         this.calculator = calculator;
@@ -217,11 +219,17 @@ public class OwnerOverviewService {
     /** Resolves this calendar month's business expenses (see ExpenseService/ExpenseResolver) —
      * best-effort, same resilience convention as clientCountsByMonth below: a lookup failure here
      * must not take down the whole Overview dashboard, it just leaves that month's net-revenue
-     * figure unknown. */
+     * figure unknown. For a month with a completed statement reconciliation overlapping it, this
+     * sources exclusively from that reconciliation's own linked entries instead (openspec design.md
+     * D11) — manual entries for an already-covered month don't get folded in on top. */
     private BigDecimal expenseTotalForMonth(int year, int month) {
         try {
             YearMonth ym = YearMonth.of(year, month);
-            return expenses.resolveExpenseTotal(ym.atDay(1), ym.atEndOfMonth());
+            LocalDate from = ym.atDay(1), to = ym.atEndOfMonth();
+            if (expenseImports.isPeriodStatementCovered(from, to)) {
+                return expenses.resolveStatementDerivedExpenseTotal(expenseImports.linkedExpenseEntryIds(from, to));
+            }
+            return expenses.resolveExpenseTotal(from, to);
         } catch (RuntimeException e) {
             return null;
         }
@@ -230,14 +238,21 @@ public class OwnerOverviewService {
     /** Resolves this calendar month's manager labor cost: the real clocked total (see
      * {@code ManagerTimeService.totalLaborCost}) whenever any clocked data exists for the month,
      * falling back to the manual MANAGER_TIME expense-entry backfill for months before manager
-     * time tracking existed (see {@code ExpenseService.resolveManagerLaborManualTotal}). Same
-     * best-effort resilience convention as expenseTotalForMonth. */
+     * time tracking existed (see {@code ExpenseService.resolveManagerLaborManualTotal}). For a
+     * month with a completed statement reconciliation, neither of those applies — the
+     * reconciliation's own linked MANAGER_TIME entries are the exclusive source instead (openspec
+     * design.md D11), so the same real disbursement is never subtracted twice. Same best-effort
+     * resilience convention as expenseTotalForMonth. */
     private BigDecimal managerLaborCostForMonth(int year, int month) {
         try {
             YearMonth ym = YearMonth.of(year, month);
-            BigDecimal auto = managerTime.totalLaborCost(ym.atDay(1), ym.atEndOfMonth());
+            LocalDate from = ym.atDay(1), to = ym.atEndOfMonth();
+            if (expenseImports.isPeriodStatementCovered(from, to)) {
+                return expenses.resolveStatementDerivedManagerLaborTotal(expenseImports.linkedExpenseEntryIds(from, to));
+            }
+            BigDecimal auto = managerTime.totalLaborCost(from, to);
             if (auto != null) return auto;
-            return expenses.resolveManagerLaborManualTotal(ym.atDay(1), ym.atEndOfMonth());
+            return expenses.resolveManagerLaborManualTotal(from, to);
         } catch (RuntimeException e) {
             return null;
         }

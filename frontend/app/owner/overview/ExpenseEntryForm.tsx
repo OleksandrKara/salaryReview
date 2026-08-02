@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { api } from '../../lib/api';
-import type { ExpenseCategory, ExpenseEntry } from '../../lib/types';
+import type { BankStatementImportSummary, ExpenseCategory, ExpenseEntry } from '../../lib/types';
 
 const CATEGORIES: { value: ExpenseCategory; label: string }[] = [
   { value: 'MATERIALS', label: 'Materials' },
@@ -63,6 +64,24 @@ function categoryLabel(c: string): string {
   return CATEGORIES.find((x) => x.value === c)?.label ?? c;
 }
 
+// Ranges overlap when neither is entirely before the other — inclusive on both ends, since
+// statement periods and manual entries are both whole-day-inclusive ranges.
+function rangesOverlap(aFrom: string, aTo: string, bFrom: string, bTo: string): boolean {
+  return aFrom <= bTo && bFrom <= aTo;
+}
+
+/** Whether [from, to] overlaps any COMPLETED statement import's period — once true, this month's
+ * expenses are meant to come exclusively from that reconciliation, not a fresh manual entry
+ * (openspec design.md D11). A completed import with no detected date range (rare) is treated as
+ * covering everything, matching the backend's own conservative interpretation. */
+function isStatementCovered(imports: BankStatementImportSummary[], from: string, to: string): boolean {
+  return imports.some((imp) => {
+    if (imp.status !== 'COMPLETED') return false;
+    if (!imp.statementPeriodStart || !imp.statementPeriodEnd) return true;
+    return rangesOverlap(from, to, imp.statementPeriodStart, imp.statementPeriodEnd);
+  });
+}
+
 function PeriodTypeButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
@@ -94,6 +113,11 @@ export default function ExpenseEntryForm() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [rowBusyId, setRowBusyId] = useState<number | null>(null);
   const [rowError, setRowError] = useState('');
+  const [completedImports, setCompletedImports] = useState<BankStatementImportSummary[]>([]);
+  // The exact "from|to" period the owner has explicitly confirmed entering despite statement
+  // coverage — compared against the current period during render instead of reset via an effect,
+  // so picking a new period naturally requires a fresh confirmation with no extra state sync.
+  const [confirmedPeriod, setConfirmedPeriod] = useState<string | null>(null);
 
   async function loadEntries() {
     try {
@@ -107,8 +131,13 @@ export default function ExpenseEntryForm() {
   useEffect(() => {
     let cancelled = false;
     api.listExpenseEntries().then((result) => { if (!cancelled) setEntries(result); }).catch(() => {});
+    // Best-effort — if this fails, the D11 warning below just doesn't show; it never blocks entry.
+    api.listStatementImports().then((result) => { if (!cancelled) setCompletedImports(result); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  const coveredByStatement = from && to && isStatementCovered(completedImports, from, to);
+  const confirmedDespiteCoverage = confirmedPeriod === `${from}|${to}`;
 
   function selectPreset(p: 'week' | 'month' | 'mtd' | 'custom') {
     setPreset(p);
@@ -251,7 +280,7 @@ export default function ExpenseEntryForm() {
 
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || (!!coveredByStatement && !confirmedDespiteCoverage)}
           onClick={submit}
           className="rounded bg-zinc-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
         >
@@ -261,6 +290,27 @@ export default function ExpenseEntryForm() {
       </div>
       {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
       {from && to && <p className="mt-2 text-xs text-zinc-400">{fmtDateRange(from, to)}</p>}
+      {coveredByStatement && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200">
+          <span>
+            This period is already reconciled from an imported statement — entering it here risks
+            double-counting. Add or correct it from the{' '}
+            <Link href="/owner/overview/expenses/history" className="font-medium underline">
+              reconciliation screen
+            </Link>{' '}
+            instead.
+          </span>
+          {!confirmedDespiteCoverage && (
+            <button
+              type="button"
+              onClick={() => setConfirmedPeriod(`${from}|${to}`)}
+              className="ml-auto whitespace-nowrap rounded bg-amber-100 px-2 py-1 font-medium hover:bg-amber-200"
+            >
+              Enter it anyway
+            </button>
+          )}
+        </div>
+      )}
 
       {entries.length > 0 && (
         <div className="mt-4">

@@ -46,6 +46,11 @@ import type {
   AdSpendEntry,
   ExpenseEntry,
   ExpenseCategory,
+  BankStatementImportSummary,
+  BankStatementImportDetail,
+  BankTransaction,
+  ExcludeReason,
+  MerchantRule,
   MarketingAdsReportData,
   MarketingLtvData,
   MarketingAnalyticsData,
@@ -579,6 +584,69 @@ export const api = {
 
   // Removes an outright mistaken entry (duplicate, wrong amount typed in).
   deleteExpenseEntry: (id: number) => proxyVoid(`/api/owner/expenses/${id}`, 'DELETE'),
+
+  // Bank statement import + reconciliation (openspec change expense-import-reconciliation).
+  // Upload is multipart, same reason as uploadRagDocument above.
+  uploadStatementImport: async (file: File): Promise<BankStatementImportSummary> => {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch('/api/owner/expenses/imports', { method: 'POST', body: form });
+    if (!res.ok) throw new Error(await extractErrorMessage(res));
+    return (await res.json()) as BankStatementImportSummary;
+  },
+
+  listStatementImports: () => proxyGet<BankStatementImportSummary[]>('/api/owner/expenses/imports'),
+
+  getStatementImport: (id: number) => proxyGet<BankStatementImportDetail>(`/api/owner/expenses/imports/${id}`),
+
+  // The original uploaded file (re-downloadable at any time, regardless of import status) — a
+  // direct link, not a fetch: the browser should navigate/save it, not hold it in memory.
+  statementImportFileUrl: (id: number) => `/api/owner/expenses/imports/${id}/file`,
+
+  reviewTransaction: (
+    importId: number, transactionId: number,
+    opts: { category?: ExpenseCategory; excludeReason?: ExcludeReason; rememberForMerchant?: boolean; replaceExisting?: boolean },
+  ) =>
+    proxyJson<BankTransaction>(`/api/owner/expenses/imports/${importId}/transactions/${transactionId}`, 'PATCH', {
+      category: opts.category ?? null,
+      excludeReason: opts.excludeReason ?? null,
+      rememberForMerchant: opts.rememberForMerchant ?? false,
+      replaceExisting: opts.replaceExisting ?? false,
+    }),
+
+  bulkReviewTransactions: (
+    importId: number,
+    opts: { transactionIds: number[]; category?: ExpenseCategory; excludeReason?: ExcludeReason; rememberForMerchant?: boolean; replaceExisting?: boolean },
+  ) =>
+    proxyJson<BankTransaction[]>(`/api/owner/expenses/imports/${importId}/transactions/bulk`, 'POST', {
+      transactionIds: opts.transactionIds,
+      category: opts.category ?? null,
+      excludeReason: opts.excludeReason ?? null,
+      rememberForMerchant: opts.rememberForMerchant ?? false,
+      replaceExisting: opts.replaceExisting ?? false,
+    }),
+
+  completeReconciliation: (importId: number) =>
+    proxyJson<BankStatementImportSummary>(`/api/owner/expenses/imports/${importId}/complete`, 'POST', {}),
+
+  revertStatementImport: (importId: number) =>
+    proxyJson<BankStatementImportSummary>(`/api/owner/expenses/imports/${importId}/revert`, 'POST', {}),
+
+  // Merchant rules management — view/edit/delete any learned rule directly.
+  listMerchantRules: () => proxyGet<MerchantRule[]>('/api/owner/expenses/rules'),
+
+  updateMerchantRule: (
+    id: number, opts: { category?: string; keyword?: string; amountMin?: number; amountMax?: number; active?: boolean },
+  ) =>
+    proxyJson<MerchantRule>(`/api/owner/expenses/rules/${id}`, 'PUT', {
+      category: opts.category ?? null,
+      keyword: opts.keyword ?? null,
+      amountMin: opts.amountMin ?? null,
+      amountMax: opts.amountMax ?? null,
+      active: opts.active ?? null,
+    }),
+
+  deleteMerchantRule: (id: number) => proxyVoid(`/api/owner/expenses/rules/${id}`, 'DELETE'),
 
   // One Square customer's submission + appointment history — fetched lazily, only when a row on
   // the Ads Report breakdown's Completed/Anticipated lists is expanded.

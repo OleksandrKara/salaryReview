@@ -68,6 +68,34 @@ class ExpenseServiceTest {
     }
 
     @Test
+    @DisplayName("resolveStatementDerivedExpenseTotal sums only the generic-category entries among the given ids")
+    void resolveStatementDerivedExpenseTotalSumsGenericOnly() {
+        when(repository.findAllById(List.of(1L, 2L))).thenReturn(List.of(
+                ExpenseEntry.builder().id(1L).category("MATERIALS").amount(new BigDecimal("120.00")).build(),
+                ExpenseEntry.builder().id(2L).category("MANAGER_TIME").amount(new BigDecimal("60.00")).build()));
+
+        assertThat(service.resolveStatementDerivedExpenseTotal(List.of(1L, 2L))).isEqualByComparingTo("120.00");
+    }
+
+    @Test
+    @DisplayName("resolveStatementDerivedManagerLaborTotal sums only the MANAGER_TIME entries among the given ids")
+    void resolveStatementDerivedManagerLaborTotalSumsManagerTimeOnly() {
+        when(repository.findAllById(List.of(1L, 2L))).thenReturn(List.of(
+                ExpenseEntry.builder().id(1L).category("MATERIALS").amount(new BigDecimal("120.00")).build(),
+                ExpenseEntry.builder().id(2L).category("MANAGER_TIME").amount(new BigDecimal("60.00")).build()));
+
+        assertThat(service.resolveStatementDerivedManagerLaborTotal(List.of(1L, 2L))).isEqualByComparingTo("60.00");
+    }
+
+    @Test
+    @DisplayName("Statement-derived totals are zero for an empty id list, without querying the repository")
+    void statementDerivedTotalsEmptyIdsIsZero() {
+        assertThat(service.resolveStatementDerivedExpenseTotal(List.of())).isEqualByComparingTo("0.00");
+        assertThat(service.resolveStatementDerivedManagerLaborTotal(List.of())).isEqualByComparingTo("0.00");
+        verify(repository, never()).findAllById(any());
+    }
+
+    @Test
     @DisplayName("createExpenseEntry saves a new row with the amount scaled to 2 decimals")
     void createExpenseEntrySaves() {
         ExpenseEntry saved = service.createExpenseEntry("MATERIALS", LocalDate.of(2026, 7, 1),
