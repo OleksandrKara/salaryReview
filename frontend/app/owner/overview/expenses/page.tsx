@@ -22,7 +22,7 @@ export default async function RevenueExpensesPage() {
         <div className="flex gap-2">
           <Link
             href="/owner/overview/expenses/import"
-            className="rounded bg-zinc-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700"
+            className="rounded bg-zinc-800 px-3 py-1.5 text-xs font-medium !text-white hover:bg-zinc-700"
           >
             Import statement
           </Link>
