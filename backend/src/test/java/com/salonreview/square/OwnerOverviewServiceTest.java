@@ -83,9 +83,13 @@ class OwnerOverviewServiceTest {
         ManualAdjustmentService manualAdjustments = mock(ManualAdjustmentService.class);
         ExpenseService expenses = mock(ExpenseService.class);
         ManagerTimeService managerTime = mock(ManagerTimeService.class);
+        ExpenseImportService expenseImports = mock(ExpenseImportService.class);
+        // No statement-covered months by default — individual D11 tests can override.
+        when(expenseImports.isPeriodStatementCovered(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(false);
         service     = new OwnerOverviewService(payPeriods, entries, new CommissionCalculator(),
                 salonConfig, aggregator, mock(RetentionAnalyticsService.class), manualAdjustments, expenses,
-                managerTime);
+                managerTime, expenseImports);
 
         when(salonConfig.findById(1)).thenReturn(Optional.of(CFG));
         // Default: no periods for any year (overridden per test)
@@ -101,6 +105,16 @@ class OwnerOverviewServiceTest {
         // No manager labor cost by default — individual tests can override to exercise the fold-in.
         when(managerTime.totalLaborCost(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(BigDecimal.ZERO);
+    }
+
+    /** A fresh {@link ExpenseImportService} mock with no statement-covered months — the D11 sourcing
+     * switch is unit-tested separately (see {@code OwnerOverviewServiceD11Test}); every other test
+     * in this class exercises pre-D11 behavior and shouldn't have to know it exists. */
+    private static ExpenseImportService notStatementCovered() {
+        ExpenseImportService mock = mock(ExpenseImportService.class);
+        when(mock.isPeriodStatementCovered(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(false);
+        return mock;
     }
 
     @Test
@@ -146,7 +160,7 @@ class OwnerOverviewServiceTest {
                 .thenReturn(BigDecimal.ZERO);
         OwnerOverviewService serviceWithExpenses = new OwnerOverviewService(payPeriods, entries,
                 new CommissionCalculator(), salonConfig, aggregator, mock(RetentionAnalyticsService.class),
-                mock(ManualAdjustmentService.class), expenses, managerTime);
+                mock(ManualAdjustmentService.class), expenses, managerTime, notStatementCovered());
 
         MonthSummary jan = serviceWithExpenses.overview(2025, 1, 2025, 12).months().get(0);
 
@@ -174,7 +188,7 @@ class OwnerOverviewServiceTest {
                 .thenReturn(new BigDecimal("75.00"));
         OwnerOverviewService serviceWithManagerTime = new OwnerOverviewService(payPeriods, entries,
                 new CommissionCalculator(), salonConfig, aggregator, mock(RetentionAnalyticsService.class),
-                mock(ManualAdjustmentService.class), expenses, managerTime);
+                mock(ManualAdjustmentService.class), expenses, managerTime, notStatementCovered());
 
         MonthSummary jan = serviceWithManagerTime.overview(2025, 1, 2025, 12).months().get(0);
 
@@ -205,7 +219,7 @@ class OwnerOverviewServiceTest {
                 .thenReturn(null); // no clocked shifts at all this month (before the feature existed)
         OwnerOverviewService serviceWithManualBackfill = new OwnerOverviewService(payPeriods, entries,
                 new CommissionCalculator(), salonConfig, aggregator, mock(RetentionAnalyticsService.class),
-                mock(ManualAdjustmentService.class), expenses, managerTime);
+                mock(ManualAdjustmentService.class), expenses, managerTime, notStatementCovered());
 
         MonthSummary jan = serviceWithManualBackfill.overview(2025, 1, 2025, 12).months().get(0);
 

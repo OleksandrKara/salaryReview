@@ -1,0 +1,182 @@
+package com.salonreview.square;
+
+import com.salonreview.domain.BankStatementImport;
+import com.salonreview.domain.BankTransaction;
+import com.salonreview.domain.ExpenseEntry;
+import com.salonreview.repo.BankStatementImportRepository;
+import com.salonreview.repo.BankTransactionRepository;
+import com.salonreview.repo.MerchantRuleRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+
+/** openspec design.md D3/D7/D10, tasks.md 6.4. */
+class ExpenseImportServiceTest {
+
+    private BankStatementImportRepository imports;
+    private BankTransactionRepository transactions;
+    private MerchantRuleRepository merchantRules;
+    private CsvStatementParser parser;
+    private MerchantRuleEngine ruleEngine;
+    private MerchantRuleService merchantRuleService;
+    private PayrollDisbursementDetector payrollDetector;
+    private ExpenseService expenseService;
+    private ExpenseImportService service;
+
+    private final AtomicLong txnIdSeq = new AtomicLong(1);
+
+    @BeforeEach
+    void setUp() {
+        imports = mock(BankStatementImportRepository.class);
+        transactions = mock(BankTransactionRepository.class);
+        merchantRules = mock(MerchantRuleRepository.class);
+        parser = mock(CsvStatementParser.class);
+        ruleEngine = mock(MerchantRuleEngine.class);
+        merchantRuleService = mock(MerchantRuleService.class);
+        payrollDetector = mock(PayrollDisbursementDetector.class);
+        expenseService = mock(ExpenseService.class);
+        service = new ExpenseImportService(imports, transactions, merchantRules, parser, ruleEngine,
+                merchantRuleService, payrollDetector, expenseService);
+
+        when(imports.save(any())).thenAnswer(inv -> {
+            BankStatementImport i = inv.getArgument(0);
+            if (i.getId() == null) i.setId(1L);
+            return i;
+        });
+        when(transactions.save(any())).thenAnswer(inv -> {
+            BankTransaction t = inv.getArgument(0);
+            if (t.getId() == null) t.setId(txnIdSeq.getAndIncrement());
+            return t;
+        });
+        when(payrollDetector.suggest(anyString())).thenReturn(Optional.empty());
+        when(transactions.findNonRevertedDuplicate(anyString(), anyInt())).thenReturn(Optional.empty());
+    }
+
+    private static CsvStatementParser.ParsedTransaction fixture(String merchant, BigDecimal amount, String fp) {
+        return new CsvStatementParser.ParsedTransaction(LocalDate.of(2026, 8, 14), merchant + " raw",
+                amount, merchant, merchant, fp, 0);
+    }
+
+    @Test
+    @DisplayName("importStatement parses, persists the import, and persists one transaction per row")
+    void importStatementPersistsRoundTrip() {
+        List<CsvStatementParser.ParsedTransaction> parsed = List.of(
+                fixture("COSTCO", new BigDecimal("-40.00"), "fp1"),
+                fixture("TARGET", new BigDecimal("-20.00"), "fp2"));
+        when(parser.parse(any())).thenReturn(parsed);
+        when(ruleEngine.evaluate(any())).thenReturn(MerchantRuleEngine.MatchResult.unknown());
+
+        MockMultipartFile file = new MockMultipartFile("file", "statement.csv", "text/csv", "irrelevant".getBytes());
+        BankStatementImport imp = service.importStatement(file, "owner");
+
+        assertThat(imp.getRowCount()).isEqualTo(2);
+        assertThat(imp.getStatus()).isEqualTo(BankStatementImport.STATUS_AWAITING_REVIEW);
+        verify(transactions, times(2)).save(any());
+    }
+
+    @Test
+    @DisplayName("A duplicate against a pre-existing fixture is marked DUPLICATE, not categorized")
+    void duplicateDetectionAgainstExistingFixture() {
+        when(parser.parse(any())).thenReturn(List.of(fixture("COSTCO", new BigDecimal("-40.00"), "fp1")));
+        BankTransaction existing = BankTransaction.builder().id(99L).importId(5L).build();
+        when(transactions.findNonRevertedDuplicate("fp1", 0)).thenReturn(Optional.of(existing));
+
+        MockMultipartFile file = new MockMultipartFile("file", "statement.csv", "text/csv", "irrelevant".getBytes());
+        service.importStatement(file, "owner");
+
+        ArgumentCaptor<BankTransaction> captor = ArgumentCaptor.forClass(BankTransaction.class);
+        verify(transactions).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(BankTransaction.STATUS_DUPLICATE);
+        assertThat(captor.getValue().getDuplicateOfTransactionId()).isEqualTo(99L);
+        verifyNoInteractions(ruleEngine);
+    }
+
+    @Test
+    @DisplayName("completeReconciliation creates exactly one expense_entries row per eligible transaction, with the correct sign")
+    void completeReconciliationCreatesEntriesForEligibleTransactionsOnly() {
+        BankStatementImport imp = BankStatementImport.builder().id(1L).status(BankStatementImport.STATUS_AWAITING_REVIEW).build();
+        when(imports.findById(1L)).thenReturn(Optional.of(imp));
+
+        BankTransaction autoMatched = BankTransaction.builder().id(1L).importId(1L)
+                .transactionDate(LocalDate.of(2026, 8, 14)).normalizedMerchant("COSTCO")
+                .amount(new BigDecimal("-40.00")).status(BankTransaction.STATUS_AUTO_MATCHED).category("MATERIALS").build();
+        BankTransaction excluded = BankTransaction.builder().id(2L).importId(1L)
+                .transactionDate(LocalDate.of(2026, 8, 15)).normalizedMerchant("MANAGERPAYOUT")
+                .amount(new BigDecimal("-500.00")).status(BankTransaction.STATUS_EXCLUDED).excludedReason("PAYROLL").build();
+        BankTransaction duplicate = BankTransaction.builder().id(3L).importId(1L)
+                .transactionDate(LocalDate.of(2026, 8, 16)).normalizedMerchant("NETFLIX")
+                .amount(new BigDecimal("-9.99")).status(BankTransaction.STATUS_DUPLICATE).build();
+        when(transactions.findByImportIdOrderByTransactionDateAsc(1L)).thenReturn(new ArrayList<>(List.of(autoMatched, excluded, duplicate)));
+
+        when(expenseService.createExpenseEntry(eq("MATERIALS"), eq(LocalDate.of(2026, 8, 14)), eq(LocalDate.of(2026, 8, 14)),
+                eq(new BigDecimal("40.00")), eq("COSTCO"), eq("owner")))
+                .thenReturn(ExpenseEntry.builder().id(500L).build());
+
+        BankStatementImport completed = service.completeReconciliation(1L, "owner");
+
+        assertThat(completed.getStatus()).isEqualTo(BankStatementImport.STATUS_COMPLETED);
+        verify(expenseService, times(1)).createExpenseEntry(any(), any(), any(), any(), any(), any());
+        assertThat(autoMatched.getLinkedExpenseEntryId()).isEqualTo(500L);
+        assertThat(excluded.getLinkedExpenseEntryId()).isNull();
+        assertThat(duplicate.getLinkedExpenseEntryId()).isNull();
+    }
+
+    @Test
+    @DisplayName("Completing an already-completed import is rejected")
+    void completingAlreadyCompletedImportRejected() {
+        BankStatementImport imp = BankStatementImport.builder().id(1L).status(BankStatementImport.STATUS_COMPLETED).build();
+        when(imports.findById(1L)).thenReturn(Optional.of(imp));
+
+        assertThatThrownBy(() -> service.completeReconciliation(1L, "owner"))
+                .isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
+    @DisplayName("revertImport deletes only the expense_entries rows it created and resets its own transactions")
+    void revertImportDeletesOnlyItsOwnEntries() {
+        BankStatementImport imp = BankStatementImport.builder().id(1L).status(BankStatementImport.STATUS_COMPLETED).build();
+        when(imports.findById(1L)).thenReturn(Optional.of(imp));
+
+        BankTransaction linked = BankTransaction.builder().id(1L).importId(1L)
+                .status(BankTransaction.STATUS_AUTO_MATCHED).linkedExpenseEntryId(500L).build();
+        when(transactions.findByImportIdAndLinkedExpenseEntryIdIsNotNull(1L)).thenReturn(List.of(linked));
+        when(expenseService.deleteExpenseEntry(500L)).thenReturn(true);
+
+        BankStatementImport reverted = service.revertImport(1L);
+
+        assertThat(reverted.getStatus()).isEqualTo(BankStatementImport.STATUS_REVERTED);
+        verify(expenseService).deleteExpenseEntry(500L);
+        assertThat(linked.getStatus()).isEqualTo(BankTransaction.STATUS_UNMATCHED);
+        assertThat(linked.getLinkedExpenseEntryId()).isNull();
+        // no other import's or manually-entered expense_entries rows are ever touched — this
+        // service only ever deletes ids it finds via findByImportIdAndLinkedExpenseEntryIdIsNotNull
+        verify(expenseService, times(1)).deleteExpenseEntry(any());
+    }
+
+    @Test
+    @DisplayName("Reverting a non-completed import is rejected")
+    void revertingNonCompletedImportRejected() {
+        BankStatementImport imp = BankStatementImport.builder().id(1L).status(BankStatementImport.STATUS_AWAITING_REVIEW).build();
+        when(imports.findById(1L)).thenReturn(Optional.of(imp));
+
+        assertThatThrownBy(() -> service.revertImport(1L)).isInstanceOf(ResponseStatusException.class);
+    }
+}

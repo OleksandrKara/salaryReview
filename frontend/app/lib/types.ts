@@ -1246,6 +1246,81 @@ export interface ExpenseEntry {
   enteredAt: string;
 }
 
+// --- Bank statement import + reconciliation (com.salonreview.web.ExpenseImportController /
+// MerchantRuleController) — openspec change expense-import-reconciliation ---
+
+export type BankStatementImportStatus = 'AWAITING_REVIEW' | 'COMPLETED' | 'REVERTED';
+
+export interface BankStatementImportSummary {
+  id: number;
+  originalFilename: string;
+  rowCount: number;
+  /** ISO-8601 dates (yyyy-MM-dd), or null for an import with no parsed rows. */
+  statementPeriodStart: string | null;
+  statementPeriodEnd: string | null;
+  status: BankStatementImportStatus;
+  uploadedBy: string | null;
+  /** ISO-8601 instants. */
+  uploadedAt: string;
+  completedAt: string | null;
+  revertedAt: string | null;
+}
+
+export type BankTransactionStatus =
+  | 'UNMATCHED' | 'AUTO_MATCHED' | 'NEEDS_REVIEW' | 'REVIEWED' | 'EXCLUDED' | 'DUPLICATE';
+
+export type ExcludeReason =
+  | 'TRANSFER' | 'CREDIT_CARD_PAYMENT' | 'PAYROLL' | 'TAX' | 'OWNER_CONTRIBUTION'
+  | 'CASH_WITHDRAWAL' | 'REFUND' | 'OTHER';
+
+export interface BankTransaction {
+  id: number;
+  importId: number;
+  /** ISO-8601 date (yyyy-MM-dd). */
+  transactionDate: string;
+  rawDescription: string;
+  normalizedMerchant: string;
+  /** Signed; negative = money out. */
+  amount: number;
+  status: BankTransactionStatus;
+  matchReason: string | null;
+  /** 0.00-1.00, null when Unknown. */
+  confidence: number | null;
+  /** An ExpenseCategory value, set once AUTO_MATCHED or REVIEWED (and not excluded). */
+  category: ExpenseCategory | null;
+  excludedReason: ExcludeReason | null;
+  linkedExpenseEntryId: number | null;
+  duplicateOfTransactionId: number | null;
+  reviewedBy: string | null;
+  /** ISO-8601 instant. */
+  reviewedAt: string | null;
+}
+
+export interface BankStatementImportDetail {
+  importSummary: BankStatementImportSummary;
+  transactions: BankTransaction[];
+}
+
+export type MerchantRuleType = 'FINGERPRINT' | 'MERCHANT' | 'MERCHANT_KEYWORD' | 'MERCHANT_AMOUNT_RANGE';
+
+export interface MerchantRule {
+  id: number;
+  ruleType: MerchantRuleType;
+  normalizedMerchant: string;
+  keyword: string | null;
+  amountMin: number | null;
+  amountMax: number | null;
+  /** An ExpenseCategory value, or an `EXCLUDE_<reason>` pseudo-value (see ExcludeReason). */
+  category: string;
+  active: boolean;
+  createdBy: string | null;
+  /** ISO-8601 instants. */
+  createdAt: string;
+  updatedAt: string;
+  timesApplied: number;
+  lastAppliedAt: string | null;
+}
+
 // Shared across the Overview, Contacts, Analytics, and Funnel tabs — see backend TrafficSourceSql.
 export type TrafficSourceKey = 'meta_ads' | 'google_ads' | 'instagram_organic' | 'google_organic' | 'direct';
 
