@@ -134,7 +134,17 @@ jobs:
 
             # Both backend replicas just got fresh container IPs — make backend-lb re-resolve
             # them. A graceful reload (not a restart) never drops an in-flight connection.
-            sudo docker compose exec -T backend-lb nginx -s reload
+            #
+            # `< /dev/null` is load-bearing, not decorative: this whole remote script runs as
+            # `bash -se <<EOF ... EOF` over the SSH channel, so its stdin IS the not-yet-read
+            # remainder of this heredoc. `docker compose exec` without `-d` attaches to that same
+            # stdin by default; the moment it does even one read, it can swallow the rest of the
+            # script (everything below this line, including the closing EOF) in one gulp — bash
+            # then hits real EOF on its own stdin and exits 0, having silently never run the
+            # frontend-blue/frontend-green recreate steps. This is exactly what happened in
+            # production on 2026-08-03: two consecutive deploys rebuilt the frontend image
+            # correctly but never redeployed it, with the job still reporting success throughout.
+            sudo docker compose exec -T backend-lb nginx -s reload < /dev/null
             sleep 2
 
             sudo docker compose up -d --no-deps --force-recreate frontend-blue
