@@ -145,3 +145,17 @@
       will match against (design.md D11), before this ships to production data
 - [x] 11.4 Push to a new branch, open a PR, wait for CI, ask for explicit merge/deploy confirmation
       — same as every prior change this session
+
+## 12. D12 — provider payroll also sourced from the statement (owner-requested amendment)
+
+- [x] 12.1 Migration V66: widen `expense_entries` category check to accept `PROVIDER_PAYROLL`
+- [x] 12.2 `ExpenseEntry.CATEGORY_PROVIDER_PAYROLL` + `ExpenseService.resolveStatementDerivedProviderPayrollTotal`
+- [x] 12.3 `PayrollDisbursementDetector`: suggest `MANAGER_TIME`/`PROVIDER_PAYROLL` (not exclude)
+      for a recognized manager/provider payee
+- [x] 12.4 `OwnerOverviewService.payrollForMonth`: statement-covered month sources provider
+      commission exclusively from linked `PROVIDER_PAYROLL` entries, mirroring `managerLaborCostForMonth`;
+      per-provider YTD breakdown (`ProviderAcc`/`ProviderYtd`) deliberately unchanged (design.md D12)
+- [x] 12.5 Frontend: `PROVIDER_PAYROLL` option in `CategorySelect.tsx`/`ExpenseCategory` type
+- [x] 12.6 Tests: `PayrollDisbursementDetectorTest`, `OwnerOverviewServiceD11Test`, `ExpenseServiceTest`
+      updated/added; `mvn verify` + `tsc`/`eslint`/`next build` clean
+      — same as every prior change this session

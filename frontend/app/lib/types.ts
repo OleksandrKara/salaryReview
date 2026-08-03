@@ -1231,7 +1231,7 @@ export interface AdSpendEntry {
 
 // --- Expense entries (com.salonreview.web.ExpenseController) ---
 
-export type ExpenseCategory = 'MATERIALS' | 'RENT' | 'UTILITIES' | 'OTHER' | 'MANAGER_TIME';
+export type ExpenseCategory = 'MATERIALS' | 'RENT' | 'UTILITIES' | 'OTHER' | 'MANAGER_TIME' | 'PROVIDER_PAYROLL';
 
 export interface ExpenseEntry {
   id: number;

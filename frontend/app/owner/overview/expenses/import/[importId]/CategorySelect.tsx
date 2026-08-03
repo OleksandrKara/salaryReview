@@ -6,6 +6,7 @@ export const CATEGORY_OPTIONS: { value: ExpenseCategory; label: string }[] = [
   { value: 'UTILITIES', label: 'Utilities' },
   { value: 'OTHER', label: 'Other' },
   { value: 'MANAGER_TIME', label: 'Manager time' },
+  { value: 'PROVIDER_PAYROLL', label: 'Provider payroll' },
 ];
 
 export const EXCLUDE_REASON_OPTIONS: { value: ExcludeReason; label: string }[] = [

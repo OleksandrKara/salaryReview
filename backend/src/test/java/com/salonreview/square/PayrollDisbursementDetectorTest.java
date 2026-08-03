@@ -16,8 +16,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/** openspec design.md D11, tasks.md 6.6: a recognized manager/provider payee is suggested for
- * exclusion; an unrecognized one is never force-excluded. */
+/** openspec design.md D11/D12, tasks.md 6.6: a recognized manager payee is suggested as
+ * MANAGER_TIME, a recognized provider payee as PROVIDER_PAYROLL; an unrecognized one is never
+ * force-categorized. */
 class PayrollDisbursementDetectorTest {
 
     private AppUserRepository users;
@@ -38,26 +39,26 @@ class PayrollDisbursementDetectorTest {
     }
 
     @Test
-    @DisplayName("A recognized manager payout is suggested for exclusion")
+    @DisplayName("A recognized manager payout is suggested as manager time")
     void recognizedManagerPayoutIsSuggested() {
         var result = detector.suggest("ZELLE TRANSFER TO JSMITH");
 
         assertThat(result).isPresent();
-        assertThat(result.get().category()).isEqualTo("EXCLUDE_PAYROLL");
+        assertThat(result.get().category()).isEqualTo("MANAGER_TIME");
         assertThat(result.get().autoApply()).isFalse();
     }
 
     @Test
-    @DisplayName("A recognized provider payout is suggested for exclusion")
+    @DisplayName("A recognized provider payout is suggested as provider payroll")
     void recognizedProviderPayoutIsSuggested() {
         var result = detector.suggest("ACH PAYMENT ANNA LEE COMMISSION");
 
         assertThat(result).isPresent();
-        assertThat(result.get().category()).isEqualTo("EXCLUDE_PAYROLL");
+        assertThat(result.get().category()).isEqualTo("PROVIDER_PAYROLL");
     }
 
     @Test
-    @DisplayName("An unrecognized payee is never force-excluded")
+    @DisplayName("An unrecognized payee is never force-categorized")
     void unrecognizedPayeeIsNotSuggested() {
         var result = detector.suggest("AMAZON MARKETPLACE PMTS");
 
