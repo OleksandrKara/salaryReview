@@ -119,10 +119,17 @@ jobs:
               return 1
             }
 
-            sudo docker compose up -d --no-deps backend-blue
+            # --force-recreate on every replica, always: Compose's own "does the image need
+            # updating" check has been observed silently skipping a recreate on this host (2026-08-03
+            # incident — a rebuilt frontend image sat un-deployed across two full deploys, `up -d
+            # --no-deps` produced no "Recreate" log line at all and the running containers kept
+            # serving the old image). Forcing recreation removes the dependency on that check
+            # entirely; the blue/green wait_healthy gating already makes this a zero-downtime no-op
+            # on the rare deploy where nothing actually changed.
+            sudo docker compose up -d --no-deps --force-recreate backend-blue
             wait_healthy salonreview-backend-blue
 
-            sudo docker compose up -d --no-deps backend-green
+            sudo docker compose up -d --no-deps --force-recreate backend-green
             wait_healthy salonreview-backend-green
 
             # Both backend replicas just got fresh container IPs — make backend-lb re-resolve
@@ -130,10 +137,10 @@ jobs:
             sudo docker compose exec -T backend-lb nginx -s reload
             sleep 2
 
-            sudo docker compose up -d --no-deps frontend-blue
+            sudo docker compose up -d --no-deps --force-recreate frontend-blue
             wait_healthy salonreview-frontend-blue
 
-            sudo docker compose up -d --no-deps frontend-green
+            sudo docker compose up -d --no-deps --force-recreate frontend-green
             wait_healthy salonreview-frontend-green
 
             sudo docker image prune -f
