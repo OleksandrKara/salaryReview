@@ -29,6 +29,11 @@ public class ExpenseEntry {
      * clocked data (see OwnerOverviewService) — kept out of the generic expense total so it isn't
      * double-counted against the real clocked figure once that exists for a month. */
     public static final String CATEGORY_MANAGER_TIME = "MANAGER_TIME";
+    /** A real provider-commission payout recognized in an imported bank statement (openspec design.md
+     * D11/D12) — for a month a completed reconciliation covers, this replaces the formula-computed
+     * provider payroll on the Net tab entirely, rather than sitting alongside it. Kept out of the
+     * generic expense total the same way CATEGORY_MANAGER_TIME is. */
+    public static final String CATEGORY_PROVIDER_PAYROLL = "PROVIDER_PAYROLL";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

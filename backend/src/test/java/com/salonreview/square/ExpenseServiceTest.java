@@ -88,10 +88,21 @@ class ExpenseServiceTest {
     }
 
     @Test
+    @DisplayName("resolveStatementDerivedProviderPayrollTotal sums only the PROVIDER_PAYROLL entries among the given ids")
+    void resolveStatementDerivedProviderPayrollTotalSumsProviderPayrollOnly() {
+        when(repository.findAllById(List.of(1L, 2L))).thenReturn(List.of(
+                ExpenseEntry.builder().id(1L).category("MATERIALS").amount(new BigDecimal("120.00")).build(),
+                ExpenseEntry.builder().id(2L).category("PROVIDER_PAYROLL").amount(new BigDecimal("400.00")).build()));
+
+        assertThat(service.resolveStatementDerivedProviderPayrollTotal(List.of(1L, 2L))).isEqualByComparingTo("400.00");
+    }
+
+    @Test
     @DisplayName("Statement-derived totals are zero for an empty id list, without querying the repository")
     void statementDerivedTotalsEmptyIdsIsZero() {
         assertThat(service.resolveStatementDerivedExpenseTotal(List.of())).isEqualByComparingTo("0.00");
         assertThat(service.resolveStatementDerivedManagerLaborTotal(List.of())).isEqualByComparingTo("0.00");
+        assertThat(service.resolveStatementDerivedProviderPayrollTotal(List.of())).isEqualByComparingTo("0.00");
         verify(repository, never()).findAllById(any());
     }
 

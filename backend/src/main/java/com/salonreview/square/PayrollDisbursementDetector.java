@@ -1,7 +1,7 @@
 package com.salonreview.square;
 
 import com.salonreview.domain.AppUser;
-import com.salonreview.domain.BankTransaction;
+import com.salonreview.domain.ExpenseEntry;
 import com.salonreview.domain.Provider;
 import com.salonreview.domain.Role;
 import com.salonreview.repo.AppUserRepository;
@@ -15,13 +15,15 @@ import java.util.Optional;
 
 /**
  * Recognizes a bank transaction whose description matches a known manager's or provider's
- * payee-name pattern and suggests excluding it (openspec design.md D11). Provider payroll
- * (commission) is computed as a formula independent of the bank statement; manager labor cost is
- * computed from clocked hours ({@link ManagerTimeService}) — in both cases the real disbursement
- * must never additionally become a categorized expense on top of that already-computed figure.
- * This is a suggestion only: it never force-excludes on its own, the same human-in-the-loop
- * guarantee as every other exclude reason. An unrecognized payee simply isn't suggested here and
- * falls through to the normal rule-engine/Unknown path.
+ * payee-name pattern and suggests categorizing it as the real cost of that payroll (openspec
+ * design.md D11/D12): a manager match suggests {@code MANAGER_TIME}, a provider match suggests
+ * {@code PROVIDER_PAYROLL}. Once a month is covered by a completed reconciliation, these linked
+ * entries become the *exclusive* source for manager labor cost / provider commission on the Net
+ * tab (see {@code OwnerOverviewService}), replacing the formula/clocked-hours figure for that
+ * month entirely — the real disbursement is the source of truth once it's actually visible in the
+ * bank data, not an addition on top of it. This is a suggestion only: it never auto-applies on its
+ * own, the same human-in-the-loop guarantee as every other rule-engine match. An unrecognized
+ * payee simply isn't suggested here and falls through to the normal rule-engine/Unknown path.
  */
 @Component
 public class PayrollDisbursementDetector {
@@ -44,20 +46,20 @@ public class PayrollDisbursementDetector {
 
         for (AppUser manager : users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER))) {
             if (payeeNameMatches(upper, manager.getUsername())) {
-                return Optional.of(suggestion("manager " + manager.getUsername()));
+                return Optional.of(suggestion(ExpenseEntry.CATEGORY_MANAGER_TIME, "manager " + manager.getUsername()));
             }
         }
         for (Provider provider : providers.findAllByActiveTrue()) {
             if (payeeNameMatches(upper, provider.getDisplayName()) || payeeNameMatches(upper, provider.getName())) {
-                return Optional.of(suggestion("provider " + provider.getDisplayName()));
+                return Optional.of(suggestion(ExpenseEntry.CATEGORY_PROVIDER_PAYROLL, "provider " + provider.getDisplayName()));
             }
         }
         return Optional.empty();
     }
 
-    private static MerchantRuleEngine.MatchResult suggestion(String payeeDescription) {
+    private static MerchantRuleEngine.MatchResult suggestion(String category, String payeeDescription) {
         return new MerchantRuleEngine.MatchResult(
-                "EXCLUDE_" + BankTransaction.EXCLUDE_PAYROLL, SUGGESTION_CONFIDENCE,
+                category, SUGGESTION_CONFIDENCE,
                 "Suggested because: description matches " + payeeDescription + "'s payout pattern",
                 null, false);
     }

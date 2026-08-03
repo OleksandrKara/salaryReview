@@ -540,6 +540,25 @@ Formalized as new requirements on `expense-statement-import` (payroll/manager-pr
 exclusion) and `expense-reconciliation-workspace` (statement-covered-month exclusivity + the manual
 entry warning) — see their `specs/*.md`.
 
+**D12 — once a month is statement-covered, provider payroll is sourced from the real disbursement
+too, not excluded.** Superseding D11(a) for a *statement-covered* month only: rather than treating a
+recognized manager/provider payee transaction as something to exclude-and-ignore (leaving the old
+formula/clocked-hours figure as the sole source), `PayrollDisbursementDetector` now suggests
+categorizing it as the real cost — `MANAGER_TIME` for a manager match (unchanged from D11's own
+later revision), `PROVIDER_PAYROLL` (new `expense_entries` category, migration V66) for a provider
+match. Once the owner confirms and completes reconciliation, `OwnerOverviewService.payrollForMonth`
+mirrors `managerLaborCostForMonth`'s existing statement-covered branch exactly: for a month a
+completed reconciliation covers, provider commission on the Net tab comes exclusively from the sum
+of linked `PROVIDER_PAYROLL` entries (`ExpenseService.resolveStatementDerivedProviderPayrollTotal`),
+not the `gross × commission rate + tips` formula. A month without statement coverage is completely
+unaffected — the formula remains the only source, exactly as before D12.
+
+Deliberately **not** extended to the per-provider YTD breakdown (`ProviderAcc`/`ProviderYtd`, the
+Overview tab's "who earned/was paid what this year" table): an `expense_entries` row has no field
+attributing it to one specific provider, only an aggregate month total, so that breakdown stays
+formula-computed regardless of statement coverage. Only the aggregate `payrollCost` figure on the
+Net tab changes.
+
 ## Import History Design [19]
 
 `bank_statement_imports` *is* the import history — no separate table needed. The history screen
@@ -563,7 +582,7 @@ fingerprint, so a full re-upload comes back entirely `DUPLICATE` and completing 
 | Credit card payments | Suggested (not auto-applied) `EXCLUDED / CREDIT_CARD_PAYMENT` via a description-pattern heuristic (`PAYMENT`, card-issuer names); always confirmed once per merchant like any other decision, then remembered. |
 | Transfers between own accounts | `EXCLUDED / TRANSFER`, same confirm-once-remember-after pattern. |
 | Payroll (provider commission batch) | `EXCLUDED / PAYROLL` — explicit non-goal (proposal.md) to reconcile against the commission engine; a payroll ACH batch line is excluded, not modeled. |
-| Manager/provider payroll payout (D11) | Suggested `EXCLUDED / PAYROLL` by payee-name pattern (`PayrollDisbursementDetector`), confirmed once per payee, then remembered — the real cost is already computed elsewhere (`ManagerTimeService`'s clocked hours, the commission formula), so the disbursement itself must never become a second, duplicate expense. |
+| Manager/provider payroll payout (D11/D12) | Suggested as a real categorized expense by payee-name pattern (`PayrollDisbursementDetector`): `MANAGER_TIME` for a manager match, `PROVIDER_PAYROLL` for a provider match — confirmed once per payee, then remembered. For a statement-covered month, these linked entries *replace* the formula/clocked-hours figure on the Net tab (D12) rather than sitting excluded alongside it. |
 | Tax payments | `EXCLUDED / TAX` — this app doesn't model tax as an expense category today; not invented here either. |
 | Owner contributions | `EXCLUDED / OWNER_CONTRIBUTION`. |
 | Checks | Reference-number-only descriptions skip rule-matching entirely (§16), always manual review; no rule is ever built from a check number. |
@@ -607,9 +626,10 @@ index-backed rather than full-scans.
   and have the upload screen poll or subscribe for completion — without changing the schema, the
   parsing/normalization/rule-engine logic, or any API contract; nothing about the synchronous MVP
   path needs to be undone to add this later.
-- **Payee-detection false negative (D11)**: if `PayrollDisbursementDetector` fails to recognize a
+- **Payee-detection false negative (D11/D12)**: if `PayrollDisbursementDetector` fails to recognize a
   manager/provider payout descriptor (an unfamiliar bank formatting of the name, say), it lands in
-  Needs Review as an ordinary Unknown transaction rather than being suggested for exclusion —
+  Needs Review as an ordinary Unknown transaction rather than being suggested as MANAGER_TIME/
+  PROVIDER_PAYROLL —
   mitigated by the same human-in-the-loop guarantee as every other tier: nothing auto-excludes
   without confirmation, so a first-time miss is caught by the owner reviewing the transaction, not
   silently double-counted forever; once confirmed, `merchant_aliases`/`merchant_rules` catch it on

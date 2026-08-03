@@ -70,6 +70,13 @@ public class ExpenseService {
         return sumByCategories(linkedExpenseEntryIds, Set.of(ExpenseEntry.CATEGORY_MANAGER_TIME));
     }
 
+    /** Same as {@link #resolveStatementDerivedExpenseTotal} but for the PROVIDER_PAYROLL category —
+     * the statement-covered month's real provider-commission payout, replacing the formula-computed
+     * one entirely for that month (design.md D12). */
+    public BigDecimal resolveStatementDerivedProviderPayrollTotal(Collection<Long> linkedExpenseEntryIds) {
+        return sumByCategories(linkedExpenseEntryIds, Set.of(ExpenseEntry.CATEGORY_PROVIDER_PAYROLL));
+    }
+
     private BigDecimal sumByCategories(Collection<Long> ids, Set<String> categories) {
         if (ids.isEmpty()) return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         BigDecimal total = repository.findAllById(ids).stream()

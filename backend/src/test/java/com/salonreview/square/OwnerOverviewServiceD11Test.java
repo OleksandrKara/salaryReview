@@ -26,11 +26,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** openspec design.md D11: a statement-covered month sources its expenses/manager-labor cost
- * exclusively from the reconciliation, never adding the computed/manual figure on top; a month
- * without statement coverage is completely unaffected (proposal.md Non-goals: forward-only,
- * per-period). Kept separate from {@code OwnerOverviewServiceTest} so that file's many pre-D11
- * tests don't all need to know this switch exists. */
+/** openspec design.md D11/D12: a statement-covered month sources its expenses/manager-labor
+ * cost/provider payroll exclusively from the reconciliation, never adding the computed/manual
+ * figure on top; a month without statement coverage is completely unaffected (proposal.md
+ * Non-goals: forward-only, per-period). Kept separate from {@code OwnerOverviewServiceTest} so
+ * that file's many pre-D11 tests don't all need to know this switch exists. */
 class OwnerOverviewServiceD11Test {
 
     private static final SalonConfig CFG = SalonConfig.builder().id(1).baseCommissionRate(new BigDecimal("0.45"))
@@ -68,7 +68,7 @@ class OwnerOverviewServiceD11Test {
     }
 
     @Test
-    @DisplayName("A statement-covered month sources expenses/manager-labor exclusively from the reconciliation")
+    @DisplayName("A statement-covered month sources expenses/manager-labor/payroll exclusively from the reconciliation")
     void statementCoveredMonthSourcesExclusivelyFromReconciliation() {
         ExpenseImportService expenseImports = mock(ExpenseImportService.class);
         when(expenseImports.isPeriodStatementCovered(any(), any())).thenReturn(true);
@@ -77,6 +77,7 @@ class OwnerOverviewServiceD11Test {
         ExpenseService expenses = mock(ExpenseService.class);
         when(expenses.resolveStatementDerivedExpenseTotal(List.of(500L, 501L))).thenReturn(new BigDecimal("120.00"));
         when(expenses.resolveStatementDerivedManagerLaborTotal(List.of(500L, 501L))).thenReturn(new BigDecimal("60.00"));
+        when(expenses.resolveStatementDerivedProviderPayrollTotal(List.of(500L, 501L))).thenReturn(new BigDecimal("400.00"));
         ManagerTimeService managerTime = mock(ManagerTimeService.class);
 
         OwnerOverviewService service = build(expenseImports, expenses, managerTime);
@@ -84,8 +85,10 @@ class OwnerOverviewServiceD11Test {
 
         assertThat(jan.expenseTotal()).isEqualByComparingTo("120.00");
         assertThat(jan.managerLaborCost()).isEqualByComparingTo("60.00");
-        // net = 1000 - 450 - 120 - 60 = 370
-        assertThat(jan.netRevenue()).isEqualByComparingTo("370.00");
+        // the formula would have computed 450 (45% of 1000) — the real reconciled 400 wins instead
+        assertThat(jan.payrollCost()).isEqualByComparingTo("400.00");
+        // net = 1000 - 400 - 120 - 60 = 420
+        assertThat(jan.netRevenue()).isEqualByComparingTo("420.00");
         // the computed/manual paths must never be consulted for a statement-covered month
         verify(managerTime, never()).totalLaborCost(any(), any());
         verify(expenses, never()).resolveExpenseTotal(any(), any());
@@ -108,7 +111,10 @@ class OwnerOverviewServiceD11Test {
 
         assertThat(jan.expenseTotal()).isEqualByComparingTo("100.00");
         assertThat(jan.managerLaborCost()).isEqualByComparingTo("75.00");
+        // formula payroll (45% of 1000 gross) is untouched
+        assertThat(jan.payrollCost()).isEqualByComparingTo("450.00");
         verify(expenses, never()).resolveStatementDerivedExpenseTotal(any());
         verify(expenses, never()).resolveStatementDerivedManagerLaborTotal(any());
+        verify(expenses, never()).resolveStatementDerivedProviderPayrollTotal(any());
     }
 }

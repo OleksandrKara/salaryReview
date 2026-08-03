@@ -170,6 +170,7 @@ public class OwnerOverviewService {
         }
 
         BigDecimal gross = card.add(cash);
+        payroll = payrollForMonth(year, month, payroll);
         BigDecimal expenseTotal = expenseTotalForMonth(year, month);
         BigDecimal managerLaborCost = managerLaborCostForMonth(year, month);
         return new MonthSummary(year, month, label(month), card, cash, gross, tips, procedures,
@@ -205,6 +206,7 @@ public class OwnerOverviewService {
             BigDecimal payroll = gross.multiply(rate)
                     .add(tips.multiply(BigDecimal.ONE.subtract(feeRate)))
                     .setScale(2, RoundingMode.HALF_UP);
+            payroll = payrollForMonth(year, month, payroll);
 
             BigDecimal expenseTotal = expenseTotalForMonth(year, month);
             BigDecimal managerLaborCost = managerLaborCostForMonth(year, month);
@@ -255,6 +257,26 @@ public class OwnerOverviewService {
             return expenses.resolveManagerLaborManualTotal(from, to);
         } catch (RuntimeException e) {
             return null;
+        }
+    }
+
+    /** Resolves this calendar month's provider commission (payroll): the formula/settlement-computed
+     * figure the caller already worked out, unless a completed statement reconciliation covers the
+     * month — in that case the reconciliation's own linked PROVIDER_PAYROLL entries are the
+     * exclusive source instead (openspec design.md D12), the same real-disbursement-replaces-the-
+     * estimate treatment {@link #managerLaborCostForMonth} already gets. Does not affect the
+     * per-provider YTD breakdown ({@code ProviderAcc}/{@code ProviderYtd}), which has no way to
+     * attribute a bank transaction to one specific provider and stays formula-based regardless. */
+    private BigDecimal payrollForMonth(int year, int month, BigDecimal computed) {
+        try {
+            YearMonth ym = YearMonth.of(year, month);
+            LocalDate from = ym.atDay(1), to = ym.atEndOfMonth();
+            if (expenseImports.isPeriodStatementCovered(from, to)) {
+                return expenses.resolveStatementDerivedProviderPayrollTotal(expenseImports.linkedExpenseEntryIds(from, to));
+            }
+            return computed;
+        } catch (RuntimeException e) {
+            return computed;
         }
     }
 
