@@ -1005,6 +1005,11 @@ export interface MarketingUpcomingAppointment {
   serviceName: string;
   /** ISO-8601 instant. */
   startAt: string;
+  /** When this reservation was actually made (Square booking's own created_at) — what period
+   * bucketing (Ads Report weeks/months, and this ledger's own in-period/outside-period split)
+   * keys on, so a booking made late in one period for a visit landing in the next is still
+   * counted in the period it was actually booked in. Falls back to startAt when unresolvable. */
+  bookedAt: string;
   /** Summed catalog list price across the visit's service(s). */
   price: number;
   /** Whether Square's record for this customer was created fresh off this ad touch. */
@@ -1048,6 +1053,9 @@ export interface MarketingCancelledAppointment {
   /** ISO-8601 date (yyyy-MM-dd) — the booking's own start date, any date past or future relative
    * to today (a booking can be cancelled ahead of its own date). */
   date: string;
+  /** Same reasoning as MarketingUpcomingAppointment.bookedAt — what period bucketing keys on
+   * instead of `date` (the cancelled visit's own date). ISO-8601 date (yyyy-MM-dd). */
+  bookedDate: string;
   /** Catalog list-price estimate — there's nothing actually collected to report here. */
   price: number;
   /** Square's own raw booking status. */
