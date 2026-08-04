@@ -81,6 +81,16 @@ public class MarketingAnalyticsService {
     // that far back reasonably counts as a fresh re-acquisition anyway.
     private static final Duration BOOKING_HISTORY_LOOKBACK = Duration.ofDays(400);
 
+    // How far past a period's own end to widen collectServices' aggregator fetch when bucketing by
+    // booking-creation date rather than visit date (see #collectServices, #bookedDateOrFallback) — a
+    // booking made near the end of the requested [from, to] can be for a visit that only lands (and
+    // only becomes a paid AttributedService) some weeks later, in a month this method wouldn't
+    // otherwise fetch. Generous enough for normal salon lead times without fetching arbitrarily far
+    // forward; a visit booked in-period but scheduled further out than this is the one documented
+    // edge case that still falls back to being bucketed by its own visit date (see
+    // #bookedDateOrFallback) rather than silently vanishing from every period.
+    private static final long FUTURE_BOOKING_LEAD_PADDING_DAYS = 90;
+
     // See docs/CACHING.md / MarketingDashboardService's own CACHE_TTL — same 10-min TTL and same
     // "Sync now" escape hatch (see invalidateCache()). Covers both analytics() and adsReport() —
     // this class's two expensive, ads-attributed-customer computations.
@@ -186,16 +196,18 @@ public class MarketingAnalyticsService {
 
         Map<String, List<SquareClient.Booking>> bookingHistory = bookingHistoryByCustomer(adsCustomers.keySet());
         Set<String> freshCustomerIds = freshCustomerIds(adsCustomers, bookingHistory);
+        Map<String, Instant> createdAtByBookingId = createdAtByBookingId(bookingHistory);
         BigDecimal cutoff = priceCutoff();
 
-        List<AttributedService> inRange = collectServices(adsCustomers.keySet(), from, to, cutoff);
+        List<AttributedService> inRange = collectServices(adsCustomers.keySet(), from, to, cutoff, createdAtByBookingId);
         Segment all = segment(inRange, id -> true);
         Segment fresh = segment(inRange, freshCustomerIds::contains);
         Segment returning = segment(inRange, id -> !freshCustomerIds.contains(id));
-        List<CompletedAppointment> completed = new ArrayList<>(buildCompletedAppointments(inRange, freshCustomerIds));
+        List<CompletedAppointment> completed =
+                new ArrayList<>(buildCompletedAppointments(inRange, freshCustomerIds, createdAtByBookingId));
 
-        List<AttributedService> monthToDate =
-                collectServices(adsCustomers.keySet(), today.withDayOfMonth(1), today, cutoff);
+        List<AttributedService> monthToDate = collectServices(
+                adsCustomers.keySet(), today.withDayOfMonth(1), today, cutoff, createdAtByBookingId);
         Segment currentMonthToDate = segment(monthToDate, id -> true);
 
         // Already-paid bookings are excluded from "upcoming" below — this month's aggregation already
@@ -240,7 +252,8 @@ public class MarketingAnalyticsService {
      * list. Requires no extra Square calls — inRange is already fetched for the segment totals.
      */
     private List<CompletedAppointment> buildCompletedAppointments(
-            List<AttributedService> inRange, Set<String> freshCustomerIds) {
+            List<AttributedService> inRange, Set<String> freshCustomerIds,
+            Map<String, Instant> createdAtByBookingId) {
         Map<String, List<AttributedService>> byBooking = inRange.stream()
                 .filter(s -> s.bookingId() != null && !"COMP".equals(s.channel()))
                 .collect(java.util.stream.Collectors.groupingBy(AttributedService::bookingId, LinkedHashMap::new,
@@ -265,6 +278,7 @@ public class MarketingAnalyticsService {
                     customerNames.getOrDefault(first.customerId(), "Customer"),
                     serviceName.isBlank() ? "Service" : serviceName,
                     parseIso(first.date()),
+                    bookedDateOrFallback(first.bookingId(), createdAtByBookingId, first.date()),
                     collected,
                     first.channel(),
                     freshCustomerIds.contains(first.customerId()),
@@ -328,9 +342,11 @@ public class MarketingAnalyticsService {
         Map<String, List<SquareClient.Booking>> bookingHistory =
                 adsCustomers.isEmpty() ? Map.of() : bookingHistoryByCustomer(adsCustomers.keySet());
         Set<String> freshCustomerIds = adsCustomers.isEmpty() ? Set.of() : freshCustomerIds(adsCustomers, bookingHistory);
+        Map<String, Instant> createdAtByBookingId = createdAtByBookingId(bookingHistory);
         List<AttributedService> inRange = adsCustomers.isEmpty()
-                ? List.of() : collectServices(adsCustomers.keySet(), alignedFrom, alignedTo, priceCutoff());
-        List<CompletedAppointment> completed = new ArrayList<>(buildCompletedAppointments(inRange, freshCustomerIds));
+                ? List.of() : collectServices(adsCustomers.keySet(), alignedFrom, alignedTo, priceCutoff(), createdAtByBookingId);
+        List<CompletedAppointment> completed =
+                new ArrayList<>(buildCompletedAppointments(inRange, freshCustomerIds, createdAtByBookingId));
         Set<String> paidBookingIds = inRange.stream()
                 .map(AttributedService::bookingId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
         UpcomingResult upcomingResult = adsCustomers.isEmpty()
@@ -349,7 +365,7 @@ public class MarketingAnalyticsService {
         List<PeriodRow> rows = new ArrayList<>();
         for (LocalDate[] p : periods) {
             rows.add(buildPeriodRow(p[0], p[1], slug, inRange, completed, upcoming, freshCustomerIds, followUps, today,
-                    adsCustomers, bookingHistory));
+                    adsCustomers, bookingHistory, createdAtByBookingId));
         }
         // Same formula as each row above, just against the full aligned span rather than one row's
         // own period — "outside the whole displayed window", not a sum of each row's own figure
@@ -362,10 +378,10 @@ public class MarketingAnalyticsService {
         // double-count them. Computed once against the full aligned span instead, exactly like
         // totalsOutsidePeriod above.
         long totalsCustomersCollected = completed.stream()
-                .filter(c -> withinPeriod(c.date(), alignedFrom, alignedTo))
+                .filter(c -> withinPeriod(c.bookedDate(), alignedFrom, alignedTo))
                 .map(CompletedAppointment::customerId).distinct().count();
         long totalsCustomersAnticipated = upcoming.stream()
-                .filter(u -> withinPeriod(u.startAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), alignedFrom, alignedTo))
+                .filter(u -> withinPeriod(u.bookedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), alignedFrom, alignedTo))
                 .map(UpcomingAppointment::customerId).distinct().count();
         long totalsCustomersCancelled = cancelledBookingsIn(bookingHistory, alignedFrom, alignedTo).customers();
         PeriodRow totals = totalsRow(alignedFrom, alignedTo, rows, totalsOutsidePeriod,
@@ -426,7 +442,13 @@ public class MarketingAnalyticsService {
                 .min(Comparator.naturalOrder())
                 .map(instant -> instant.atZone(zone).toLocalDate())
                 .orElse(today);
-        List<AttributedService> allServices = collectServices(customers.keySet(), earliestFirstTouch, today, priceCutoff());
+        // No booking-history fetch here (unlike analytics()/adsReport()) — ltv() already spans this
+        // page's entire history end to end, so bucketing by booking-creation date vs. visit date only
+        // moves services at the very edges (negligible for an all-time total) and isn't worth another
+        // Square sweep per customer just for this report. Map.of() keeps collectServices' original
+        // visit-date behavior.
+        List<AttributedService> allServices =
+                collectServices(customers.keySet(), earliestFirstTouch, today, priceCutoff(), Map.of());
         log.info("ltv({}): swept [{}, {}] -> {} priced services for {} distinct paying customers",
                 slug, earliestFirstTouch, today, allServices.size(),
                 allServices.stream().map(AttributedService::customerId).distinct().count());
@@ -560,7 +582,10 @@ public class MarketingAnalyticsService {
                             customerId, date, serviceName, a.bookingId());
                     continue;
                 }
-                completed.add(new CompletedAppointment(customerId, customerName, serviceName, date,
+                // A follow-up's underlying Appointment DTO carries no booking-creation date (see
+                // MarketingContactDto.Appointment) — falls back to the visit date itself, same as
+                // any other booking whose createdAt couldn't be resolved (see bookedDateOrFallback).
+                completed.add(new CompletedAppointment(customerId, customerName, serviceName, date, date,
                         a.collectedAmount().setScale(2, RoundingMode.HALF_UP), a.paymentChannel(), fresh,
                         a.bookingId()));
             } else if (!date.isBefore(today)) {
@@ -575,7 +600,9 @@ public class MarketingAnalyticsService {
                             customerId, a.startAt(), serviceName, a.bookingId());
                     continue;
                 }
-                upcoming.add(new UpcomingAppointment(customerId, customerName, serviceName, a.startAt(),
+                // Same fallback reasoning as the completed branch above — no booking-creation date
+                // available for a follow-up, so bookedAt falls back to startAt itself.
+                upcoming.add(new UpcomingAppointment(customerId, customerName, serviceName, a.startAt(), a.startAt(),
                         a.price() == null ? ZERO_MONEY : a.price().setScale(2, RoundingMode.HALF_UP), fresh,
                         capturedInRangeIds != null && capturedInRangeIds.contains(customerId), a.bookingId()));
             }
@@ -587,14 +614,16 @@ public class MarketingAnalyticsService {
             List<AttributedService> inRange, List<CompletedAppointment> completed,
             List<UpcomingAppointment> upcoming, Set<String> freshCustomerIds,
             List<FollowUpAppointment> followUps, LocalDate today,
-            Map<String, AdsCustomer> adsCustomers, Map<String, List<SquareClient.Booking>> bookingHistory) {
+            Map<String, AdsCustomer> adsCustomers, Map<String, List<SquareClient.Booking>> bookingHistory,
+            Map<String, Instant> createdAtByBookingId) {
         List<AttributedService> bucket = inRange.stream()
-                .filter(s -> withinPeriod(parseIso(s.date()), periodStart, periodEnd))
+                .filter(s -> withinPeriod(
+                        bookedDateOrFallback(s.bookingId(), createdAtByBookingId, s.date()), periodStart, periodEnd))
                 .toList();
         long customersCreated = segment(bucket, freshCustomerIds::contains).customerCount();
 
         List<CompletedAppointment> bucketCompleted = completed.stream()
-                .filter(c -> withinPeriod(c.date(), periodStart, periodEnd))
+                .filter(c -> withinPeriod(c.bookedDate(), periodStart, periodEnd))
                 .toList();
         BigDecimal revenueCollected = bucketCompleted.stream().map(CompletedAppointment::collected)
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
@@ -602,7 +631,7 @@ public class MarketingAnalyticsService {
         CountSplit completedAppointmentsSplit = countSplit(bucketCompleted, CompletedAppointment::freshFromAds);
 
         List<UpcomingAppointment> bucketUpcoming = upcoming.stream()
-                .filter(u -> withinPeriod(u.startAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), periodStart, periodEnd))
+                .filter(u -> withinPeriod(u.bookedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), periodStart, periodEnd))
                 .toList();
         BigDecimal anticipatedRevenue = bucketUpcoming.stream().map(UpcomingAppointment::price)
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
@@ -614,6 +643,9 @@ public class MarketingAnalyticsService {
         CancelledIn cancelledIn = cancelledBookingsIn(bookingHistory, periodStart, periodEnd);
         long cancelledBookings = cancelledIn.bookings();
 
+        // Still bucketed by the follow-up's own visit date, not booking-creation date — unlike the
+        // tracked-flow paths above, a manager follow-up's underlying Appointment DTO carries no
+        // created_at (see MarketingContactDto.Appointment), so there's nothing to bucket by here.
         long customersFollowedUp = followUps.stream()
                 .filter(f -> f.appointment().startAt() != null && withinPeriod(
                         f.appointment().startAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), periodStart, periodEnd))
@@ -678,7 +710,7 @@ public class MarketingAnalyticsService {
         Set<String> customerIds = customersCapturedIn(adsCustomers, periodStart, periodEnd);
         List<UpcomingAppointment> outside = upcoming.stream()
                 .filter(u -> customerIds.contains(u.customerId()))
-                .filter(u -> !withinPeriod(u.startAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), periodStart, periodEnd))
+                .filter(u -> !withinPeriod(u.bookedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), periodStart, periodEnd))
                 .toList();
         BigDecimal revenue = outside.stream().map(UpcomingAppointment::price)
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
@@ -712,22 +744,31 @@ public class MarketingAnalyticsService {
     private record CancelledIn(long bookings, long customers) {}
 
     /** Real Square bookings for ads-attributed customers, any status that didn't happen (cancelled,
-     * declined, no-show — see didHappen), whose own start date falls within [periodStart,
-     * periodEnd] — the piece of the completed/cancelled/anticipated breakdown that wasn't tracked
-     * anywhere before (collectServices/upcomingAppointments only ever see bookings that either paid
-     * or are still live). Scoped by appointment date, like completedAppointments/anticipatedRevenue
-     * above, not by customer-capture window — this is "what happened to bookings in this window",
-     * not "what this window's new customers did". */
+     * declined, no-show — see didHappen), whose {@code created_at} (when it was actually booked,
+     * before being cancelled) falls within [periodStart, periodEnd] — the piece of the
+     * completed/cancelled/anticipated breakdown that wasn't tracked anywhere before
+     * (collectServices/upcomingAppointments only ever see bookings that either paid or are still
+     * live). Bucketed the same way as completedAppointments/anticipatedRevenue above (by
+     * booking-creation date, falling back to the booking's own start date when created_at can't be
+     * resolved), not by customer-capture window — this is "what happened to bookings booked in this
+     * window", not "what this window's new customers did". */
     private static CancelledIn cancelledBookingsIn(
             Map<String, List<SquareClient.Booking>> bookingHistory, LocalDate periodStart, LocalDate periodEnd) {
         List<SquareClient.Booking> cancelled = bookingHistory.values().stream()
                 .flatMap(List::stream)
                 .filter(b -> !didHappen(b))
-                .filter(b -> withinPeriod(bookingStartDate(b), periodStart, periodEnd))
+                .filter(b -> withinPeriod(bookedDate(b), periodStart, periodEnd))
                 .toList();
         long customers = cancelled.stream().map(SquareClient.Booking::customerId)
                 .filter(Objects::nonNull).distinct().count();
         return new CancelledIn(cancelled.size(), customers);
+    }
+
+    /** This booking's own {@code created_at} date, falling back to its start (visit) date when
+     * created_at is missing or unparseable. */
+    private static LocalDate bookedDate(SquareClient.Booking b) {
+        Instant createdAt = parseInstantOrNull(b.createdAt());
+        return createdAt != null ? createdAt.atZone(java.time.ZoneOffset.UTC).toLocalDate() : bookingStartDate(b);
     }
 
     private static LocalDate bookingStartDate(SquareClient.Booking b) {
@@ -1028,19 +1069,59 @@ public class MarketingAnalyticsService {
         }
     }
 
+    /** {@code createdAtByBookingId} empty means "bucket by visit date" (the original behavior,
+     * still used by {@link #ltv} which has no booking history handy and doesn't period-bucket
+     * anyway) — non-empty means "bucket by booking-creation date" (see {@link
+     * #bookedDateOrFallback}), which is why the aggregator fetch window widens past {@code to} in
+     * that case: a service whose booking was created within [from, to] can only be found once its
+     * (possibly later) visit has happened and been paid, i.e. in whatever month that later visit
+     * falls in.
+     */
     private List<AttributedService> collectServices(
-            Set<String> customerIds, LocalDate from, LocalDate to, BigDecimal cutoff) {
+            Set<String> customerIds, LocalDate from, LocalDate to, BigDecimal cutoff,
+            Map<String, Instant> createdAtByBookingId) {
+        boolean bucketByCreation = !createdAtByBookingId.isEmpty();
+        LocalDate fetchTo = bucketByCreation ? to.plusDays(FUTURE_BOOKING_LEAD_PADDING_DAYS) : to;
         List<AttributedService> inRange = new ArrayList<>();
-        for (YearMonth ym = YearMonth.from(from); !ym.isAfter(YearMonth.from(to)); ym = ym.plusMonths(1)) {
+        for (YearMonth ym = YearMonth.from(from); !ym.isAfter(YearMonth.from(fetchTo)); ym = ym.plusMonths(1)) {
             SquareMonthAggregator.MonthAggregation agg = aggregator.aggregate(ym.getYear(), ym.getMonthValue(), cutoff);
             for (AttributedService s : agg.services()) {
                 if (!customerIds.contains(s.customerId())) continue;
-                LocalDate day = parseIso(s.date());
+                LocalDate day = bucketByCreation
+                        ? bookedDateOrFallback(s.bookingId(), createdAtByBookingId, s.date())
+                        : parseIso(s.date());
                 if (day == null || day.isBefore(from) || day.isAfter(to)) continue;
                 inRange.add(s);
             }
         }
         return inRange;
+    }
+
+    /** Flattens per-customer booking history into one lookup, {@code bookingId -> createdAt} — no
+     * extra Square calls, since {@code bookingHistory} is already fetched for freshness/upcoming
+     * checks. A booking with no parseable {@code createdAt} is simply absent, which is exactly what
+     * {@link #bookedDateOrFallback} treats as "fall back to the visit date" below.
+     */
+    private static Map<String, Instant> createdAtByBookingId(Map<String, List<SquareClient.Booking>> bookingHistory) {
+        Map<String, Instant> map = new java.util.HashMap<>();
+        for (List<SquareClient.Booking> bookings : bookingHistory.values()) {
+            for (SquareClient.Booking b : bookings) {
+                if (b.id() == null) continue;
+                Instant createdAt = parseInstantOrNull(b.createdAt());
+                if (createdAt != null) map.putIfAbsent(b.id(), createdAt);
+            }
+        }
+        return map;
+    }
+
+    /** The date this booking was actually made (Square's own {@code created_at}), or {@code
+     * fallbackIso} (a visit date, already ISO-8601) when the booking id is null, unknown, or its
+     * creation date couldn't be resolved — the original visit-date bucketing rather than dropping
+     * the row from every period. */
+    private static LocalDate bookedDateOrFallback(
+            String bookingId, Map<String, Instant> createdAtByBookingId, String fallbackIso) {
+        Instant createdAt = bookingId == null ? null : createdAtByBookingId.get(bookingId);
+        return createdAt != null ? createdAt.atZone(ZoneOffset.UTC).toLocalDate() : parseIso(fallbackIso);
     }
 
     private static Segment segment(List<AttributedService> services, Predicate<String> customerFilter) {
@@ -1103,11 +1184,14 @@ public class MarketingAnalyticsService {
                 String name = serviceNames.get(seg.serviceVariationId());
                 if (name != null) names.add(name);
             }
+            Instant startAt = Instant.parse(f.booking().startAt());
+            Instant bookedAt = java.util.Optional.ofNullable(parseInstantOrNull(f.booking().createdAt())).orElse(startAt);
             result.add(new UpcomingAppointment(
                     f.customerId(),
                     customerNames.getOrDefault(f.customerId(), "Customer"),
                     names.isEmpty() ? "Service" : String.join(" + ", names),
-                    Instant.parse(f.booking().startAt()),
+                    startAt,
+                    bookedAt,
                     price.setScale(2, RoundingMode.HALF_UP),
                     freshCustomerIds.contains(f.customerId()),
                     capturedInRangeIds != null && capturedInRangeIds.contains(f.customerId()),
@@ -1166,6 +1250,7 @@ public class MarketingAnalyticsService {
                     customerNames.getOrDefault(c.customerId(), "Customer"),
                     names.isEmpty() ? "Service" : String.join(" + ", names),
                     bookingStartDate(c.booking()),
+                    bookedDate(c.booking()),
                     price.setScale(2, RoundingMode.HALF_UP),
                     c.booking().status(),
                     freshCustomerIds.contains(c.customerId()),

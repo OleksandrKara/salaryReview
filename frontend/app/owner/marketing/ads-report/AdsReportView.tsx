@@ -313,7 +313,11 @@ function buildLedgerRows(data: MarketingAnalyticsData): LedgerRow[] {
   }
   for (const u of data.upcoming) {
     const date = u.startAt.slice(0, 10);
-    const inPeriod = date >= data.from && date <= data.to;
+    // Period membership keys on bookedAt (when the reservation was made), not startAt (when the
+    // visit happens) — matching the Ads Report's own period-row bucketing, so this ledger's split
+    // reconciles with the "Anticipated (period)"/"Anticipated (outside)" headline figures exactly.
+    const bookedDate = u.bookedAt.slice(0, 10);
+    const inPeriod = bookedDate >= data.from && bookedDate <= data.to;
     if (!inPeriod && !u.capturedInRange) continue;
     rows.push({
       key: `upcoming-${u.bookingId ?? `${u.customerId}-${u.startAt}`}`,
@@ -324,7 +328,8 @@ function buildLedgerRows(data: MarketingAnalyticsData): LedgerRow[] {
     });
   }
   for (const c of data.cancelled) {
-    const inPeriod = c.date >= data.from && c.date <= data.to;
+    // Same reasoning as upcoming above — bucket by bookedDate, not the cancelled visit's own date.
+    const inPeriod = c.bookedDate >= data.from && c.bookedDate <= data.to;
     if (!inPeriod && !c.capturedInRange) continue;
     rows.push({
       key: `cancelled-${c.bookingId ?? `${c.customerId}-${c.date}-${c.serviceName}`}`,
