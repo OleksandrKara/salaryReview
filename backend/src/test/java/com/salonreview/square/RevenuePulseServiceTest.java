@@ -1,6 +1,8 @@
 package com.salonreview.square;
 
+import com.salonreview.domain.RevenueSnapshot;
 import com.salonreview.domain.SalonConfig;
+import com.salonreview.repo.RevenueSnapshotRepository;
 import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.square.SquareMonthAggregator.AttributedService;
 import com.salonreview.square.SquareMonthAggregator.MonthAggregation;
@@ -12,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
@@ -34,6 +37,7 @@ class RevenuePulseServiceTest {
     private RevenueForecastService forecaster;
     private SquareMonthAggregator aggregator;
     private SalonConfigRepository salonConfig;
+    private RevenueSnapshotRepository snapshots;
     private RevenuePulseService service;
 
     @BeforeEach
@@ -42,13 +46,15 @@ class RevenuePulseServiceTest {
         forecaster = mock(RevenueForecastService.class);
         aggregator = mock(SquareMonthAggregator.class);
         salonConfig = mock(SalonConfigRepository.class);
+        snapshots = mock(RevenueSnapshotRepository.class);
 
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.bookings(any(), any())).thenReturn(List.of());
         when(salonConfig.findById(1)).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
+        when(snapshots.findBySnapshotDate(any())).thenReturn(Optional.empty());
 
-        service = new RevenuePulseService(square, forecaster, aggregator, salonConfig);
+        service = new RevenuePulseService(square, forecaster, aggregator, salonConfig, snapshots);
     }
 
     private static AttributedService svc(String date, String channel, String gross) {
@@ -101,7 +107,8 @@ class RevenuePulseServiceTest {
     void currentMonthHonoursTimeOfDayCutoff() {
         // Fix 'now' to Aug 15 2026, 12:00 PM UTC. Both months are compared through day 15 at noon.
         Clock clock = Clock.fixed(Instant.parse("2026-08-15T12:00:00Z"), ZoneOffset.UTC);
-        RevenuePulseService timed = new RevenuePulseService(square, forecaster, aggregator, salonConfig, clock);
+        RevenuePulseService timed = new RevenuePulseService(square, forecaster, aggregator, salonConfig,
+                snapshots, clock);
 
         when(aggregator.aggregate(eq(2026), eq(8), any())).thenReturn(aggOf(2026, 8, List.of(
                 svcAt("2026-08-03", "9:00 AM", "CARD", "50.00"),   // earlier day → counted
@@ -113,6 +120,10 @@ class RevenuePulseServiceTest {
                 svcAt("2026-07-15", "3:00 PM", "CARD", "999.00")))); // matching day, after noon → excluded
         when(forecaster.forecast(anyInt(), anyInt(), any(), any()))
                 .thenReturn(new ForecastResult(new BigDecimal("300.00"), null, null, 0, 0));
+        // The real historical record of what the app projected on July 15 — not recomputed.
+        when(snapshots.findBySnapshotDate(LocalDate.of(2026, 7, 15))).thenReturn(Optional.of(
+                RevenueSnapshot.builder().mtdRevenue(new BigDecimal("100.00"))
+                        .upcomingGross(new BigDecimal("50.00")).build()));
 
         RevenuePulseDto p = timed.pulse(2026, 8);
 
@@ -122,25 +133,25 @@ class RevenuePulseServiceTest {
         assertThat(p.asOfTime()).isEqualTo("12:00 PM");
         assertThat(p.currentEndDay()).isEqualTo(15);
         assertThat(p.priorEndDay()).isEqualTo(15);
-        // Last month's $50 through day 15 noon, paced out over July's 31 days from 14.5 elapsed
-        // days (14 full + the noon half of the 15th): 50 * 31 / 14.5 = 106.90.
-        assertThat(p.priorProjected()).isEqualByComparingTo("106.90");
-        // (300.00 forecast mid − 106.90) / 106.90 * 100
-        assertThat(p.projectedDeltaPct()).isEqualByComparingTo("180.6");
+        // July 15's stored snapshot: 100.00 MTD + 50.00 upcoming-gross = 150.00 projected then.
+        assertThat(p.priorProjected()).isEqualByComparingTo("150.00");
+        // (300.00 forecast mid − 150.00) / 150.00 * 100
+        assertThat(p.projectedDeltaPct()).isEqualByComparingTo("100.0");
     }
 
     @Test
-    @DisplayName("too little of the day elapsed to extrapolate sanely → no pace comparison, not a wild number")
-    void paceProjectionSkippedVeryEarlyInMonth() {
-        // 12:01 AM on day 1 — a single sale minutes into the month must not blow up into an absurd figure.
+    @DisplayName("no snapshot exists for that date → no comparison shown, not a guess")
+    void noComparisonWhenSnapshotMissing() {
+        // e.g. before daily snapshotting started, or a genuine gap in the data.
         Clock clock = Clock.fixed(Instant.parse("2026-08-01T00:01:00Z"), ZoneOffset.UTC);
-        RevenuePulseService timed = new RevenuePulseService(square, forecaster, aggregator, salonConfig, clock);
+        RevenuePulseService timed = new RevenuePulseService(square, forecaster, aggregator, salonConfig,
+                snapshots, clock);
 
         when(aggregator.aggregate(eq(2026), eq(8), any())).thenReturn(aggOf(2026, 8, List.of()));
-        when(aggregator.aggregate(eq(2026), eq(7), any())).thenReturn(aggOf(2026, 7, List.of(
-                svcAt("2026-07-01", "12:00 AM", "CARD", "40.00"))));
+        when(aggregator.aggregate(eq(2026), eq(7), any())).thenReturn(aggOf(2026, 7, List.of()));
         when(forecaster.forecast(anyInt(), anyInt(), any(), any()))
                 .thenReturn(new ForecastResult(new BigDecimal("50.00"), null, null, 0, 0));
+        // snapshots.findBySnapshotDate(...) already stubbed to Optional.empty() in setUp().
 
         RevenuePulseDto p = timed.pulse(2026, 8);
 
