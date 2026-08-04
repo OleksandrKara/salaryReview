@@ -70,15 +70,25 @@ public class SquareMonthAggregator {
         List<Booking> bookings = bookingsF.join();
         List<Order> orders = ordersF.join();
 
+        // Square customers who are owner(s)/family: services to them aren't charged (no order), but the
+        // provider is still owed their commission — see the owner-comp pass below. Fetched before the
+        // canonicalization pass so these ids get resolved right alongside every booking/order id.
+        java.util.Set<String> rawOwnerCustomerIds = ownerCustomers.findAll().stream()
+                .map(com.salonreview.domain.OwnerCustomer::getSquareCustomerId)
+                .filter(id -> id != null && !id.isBlank())
+                .collect(java.util.stream.Collectors.toSet());
+
         // Square can silently merge two duplicate customer profiles into one canonical id (e.g. one
         // profile from online booking, one from a register walk-in). An already-written Order keeps
         // whichever id was current when it was created, while a Booking for the very same real visit
         // can carry the other, now-stale-or-canonical id — so the same customer's booking and their
         // paid order can carry two different, permanently un-equal ids. Every customer-keyed lookup
         // below (order-to-booking matching, suspicious/cancellation suppression, owner-comp) assumes
-        // equal ids mean the same person, so resolve every id we've seen through Square's live customer
-        // record once, up front, and rewrite both lists — this makes all of it merge-proof for free.
-        java.util.Set<String> allCustomerIds = new java.util.HashSet<>();
+        // equal ids mean the same person, so resolve every id we've seen — including the manually
+        // configured owner/family ids, which can drift stale the same way — through Square's live
+        // customer record once, up front, and rewrite both lists. This makes all of it merge-proof
+        // for free.
+        java.util.Set<String> allCustomerIds = new java.util.HashSet<>(rawOwnerCustomerIds);
         for (Booking b : bookings) if (b.customerId() != null) allCustomerIds.add(b.customerId());
         for (Order o : orders) if (o.customerId() != null) allCustomerIds.add(o.customerId());
         Map<String, String> canonicalCustomerId = square.canonicalCustomerIds(allCustomerIds);
@@ -90,12 +100,8 @@ public class SquareMonthAggregator {
                 .map(o -> o.customerId() == null ? o
                         : o.withCustomerId(canonicalCustomerId.getOrDefault(o.customerId(), o.customerId())))
                 .toList();
-
-        // Square customers who are owner(s)/family: services to them aren't charged (no order), but the
-        // provider is still owed their commission — see the owner-comp pass below.
-        java.util.Set<String> ownerCustomerIds = ownerCustomers.findAll().stream()
-                .map(com.salonreview.domain.OwnerCustomer::getSquareCustomerId)
-                .filter(id -> id != null && !id.isBlank())
+        java.util.Set<String> ownerCustomerIds = rawOwnerCustomerIds.stream()
+                .map(id -> canonicalCustomerId.getOrDefault(id, id))
                 .collect(java.util.stream.Collectors.toSet());
 
         // --- Index booking segments by (customer|service) for fast order matching, this month only ---
