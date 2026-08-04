@@ -104,17 +104,31 @@ public class ProviderVisitIngestService {
 
     // --- same-day rebook ---
 
-    /** customerId -> the set of days on which they created a future booking (within the horizon). */
+    /**
+     * customerId -> the set of days on which they created a future booking (within the horizon).
+     *
+     * <p>Keyed by canonical Square customer id, same as {@code agg.services()}'s {@code customerId}
+     * (see {@link SquareMonthAggregator}'s own resolution) — Square can silently merge two duplicate
+     * customer profiles into one, and an older booking here can still carry the pre-merge id even
+     * after a newer one settles on the canonical id. Without resolving both to the same id space, a
+     * real same-day rebook could go undetected simply because the two bookings disagree on which of
+     * the customer's ids to use.
+     */
     private Map<String, Set<LocalDate>> sameDayRebookIndex(YearMonth ym, ZoneId zone) {
         Instant from = ym.atDay(1).atStartOfDay(zone).toInstant();
         Instant to = ym.atEndOfMonth().plusDays(REBOOK_HORIZON_DAYS + 1).atStartOfDay(zone).toInstant();
+        List<SquareClient.Booking> bookings = square.bookings(from, to);
+        java.util.Set<String> customerIds = new HashSet<>();
+        for (SquareClient.Booking b : bookings) if (b.customerId() != null) customerIds.add(b.customerId());
+        Map<String, String> canonical = square.canonicalCustomerIds(customerIds);
         Map<String, Set<LocalDate>> index = new HashMap<>();
-        for (SquareClient.Booking b : square.bookings(from, to)) {
+        for (SquareClient.Booking b : bookings) {
             if (b.customerId() == null || b.createdAt() == null || b.startAt() == null) continue;
             LocalDate created = instantDay(b.createdAt(), zone);
             LocalDate start = instantDay(b.startAt(), zone);
             if (created == null || start == null || !start.isAfter(created)) continue; // a future booking
-            index.computeIfAbsent(b.customerId(), k -> new HashSet<>()).add(created);
+            String customerId = canonical.getOrDefault(b.customerId(), b.customerId());
+            index.computeIfAbsent(customerId, k -> new HashSet<>()).add(created);
         }
         return index;
     }

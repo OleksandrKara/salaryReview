@@ -120,6 +120,28 @@ class OwnerCompAggregatorTest {
     }
 
     @Test
+    @DisplayName("Owner-comp still matches when the owner's stored Square id predates a later customer merge")
+    void ownerCompMatchesAcrossStaleMergedId() {
+        // The owner's DB row was configured with the customer's OLD (pre-merge) Square id, but the
+        // booking itself now carries the NEW, canonical id (e.g. captured after Square merged two
+        // duplicate profiles for the same family member) — same failure mode as a client's booking
+        // vs. paid order, just on the owner-comp side. Without resolving the stored id too, this comp
+        // would silently stop matching the moment the merge happened.
+        String oldOwnerId = "OLD-OWNER-ID";
+        ownerCustomers(oldOwnerId);
+        when(square.bookings(any(), any())).thenReturn(List.of(booking(OWNER_CUST)));
+        when(square.canonicalCustomerIds(any())).thenReturn(Map.of(
+                oldOwnerId, OWNER_CUST,
+                OWNER_CUST, OWNER_CUST));
+
+        MonthAggregation agg = aggregator.aggregate(2026, 5, new BigDecimal("50.00"));
+
+        ProviderMonth p = anna(agg);
+        assertThat(p).isNotNull();
+        assertThat(agg.diagnostics().ownerComps).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("An owner booking with no resolvable catalog price is skipped (can't value it)")
     void ownerCompWithoutPriceSkipped() {
         ownerCustomers(OWNER_CUST);

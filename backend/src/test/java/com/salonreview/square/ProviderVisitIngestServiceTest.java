@@ -14,6 +14,7 @@ import org.mockito.ArgumentCaptor;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -72,6 +73,33 @@ class ProviderVisitIngestServiceTest {
         ArgumentCaptor<List<ProviderVisit>> cap = ArgumentCaptor.forClass(List.class);
         verify(repo).saveAll(cap.capture());
         assertThat(cap.getValue()).extracting(ProviderVisit::getCustomerId).containsExactlyInAnyOrder("C1", "C2");
+    }
+
+    @Test
+    @DisplayName("rebook detection still matches when the rebooking's own raw booking carries a stale pre-merge id")
+    void rebookDetectionSurvivesStaleMergedId() {
+        // agg.services() reports the visit under the canonical customer id (SquareMonthAggregator's own
+        // resolution). The candidate rebooking below is fetched independently, straight from Square, and
+        // still carries the OLD pre-merge id — exactly like a real booking created before a later merge.
+        // Without resolving this index to the same canonical id space, the join below would silently
+        // miss the rebook.
+        String canonicalId = "CANON-ID";
+        String staleId = "STALE-PRE-MERGE-ID";
+        when(aggregator.aggregate(eq(2026), eq(5), any())).thenReturn(new MonthAggregation(
+                2026, 5, "UTC", List.of(), new SquareMonthAggregator.Diag(),
+                List.of(svc(canonicalId, "P1", "2026-05-03")),
+                List.of(), List.of()));
+        var futureBooking = new SquareClient.Booking("bk-future", "ACCEPTED",
+                "2026-05-20T10:00:00Z", "2026-05-03T09:00:00Z", null, "LOC", staleId, null, null, List.of());
+        when(square.bookings(any(), any())).thenReturn(List.of(futureBooking));
+        when(square.canonicalCustomerIds(any())).thenReturn(Map.of(staleId, canonicalId));
+
+        service.ingestMonth(2026, 5);
+
+        ArgumentCaptor<List<ProviderVisit>> cap = ArgumentCaptor.forClass(List.class);
+        verify(repo).saveAll(cap.capture());
+        assertThat(cap.getValue()).hasSize(1);
+        assertThat(cap.getValue().get(0).isRebookedSameDay()).isTrue();
     }
 
     @Test

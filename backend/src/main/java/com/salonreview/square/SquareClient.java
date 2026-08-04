@@ -476,6 +476,26 @@ public class SquareClient {
         return createdAts;
     }
 
+    /**
+     * Resolves each given Square customer id to its current, canonical id. Square can silently merge
+     * two duplicate customer profiles (e.g. one created via online booking, one created at the
+     * register) into one surviving record; {@code GET /v2/customers/{id}} transparently redirects
+     * through any such merge and returns the surviving profile (whose own {@code id} may differ from
+     * the id requested). An already-written Booking or Order keeps whichever id was current at the
+     * time it was created, so the very same real customer's booking and paid order can carry two
+     * different, permanently un-equal ids. Resolving both through this once, up front, makes any
+     * customerId-keyed matching downstream immune to that split. Best-effort: an id we can't resolve
+     * maps to itself.
+     */
+    public Map<String, String> canonicalCustomerIds(Collection<String> customerIds) {
+        Map<String, String> canonical = new HashMap<>();
+        for (var e : fetchCustomers(customerIds).entrySet()) {
+            String cid = e.getValue().id();
+            canonical.put(e.getKey(), cid != null && !cid.isBlank() ? cid : e.getKey());
+        }
+        return canonical;
+    }
+
     private Map<String, Customer> fetchCustomers(Collection<String> customerIds) {
         List<String> ids = customerIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
         List<String> missing = ids.stream().filter(id -> !customerCache.containsKey(id)).toList();
@@ -781,7 +801,12 @@ public class SquareClient {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Booking(String id, String status, String startAt, String createdAt, String updatedAt,
                           String locationId, String customerId, String sellerNote, String customerNote,
-                          List<AppointmentSegment> appointmentSegments) {}
+                          List<AppointmentSegment> appointmentSegments) {
+        Booking withCustomerId(String newCustomerId) {
+            return new Booking(id, status, startAt, createdAt, updatedAt, locationId, newCustomerId,
+                    sellerNote, customerNote, appointmentSegments);
+        }
+    }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
@@ -801,7 +826,12 @@ public class SquareClient {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Order(String id, String locationId, String customerId, String state, String closedAt,
                         String createdAt, List<OrderLineItem> lineItems, Money totalTipMoney,
-                        Money totalDiscountMoney, List<Tender> tenders, List<Fulfillment> fulfillments) {}
+                        Money totalDiscountMoney, List<Tender> tenders, List<Fulfillment> fulfillments) {
+        Order withCustomerId(String newCustomerId) {
+            return new Order(id, locationId, newCustomerId, state, closedAt, createdAt, lineItems,
+                    totalTipMoney, totalDiscountMoney, tenders, fulfillments);
+        }
+    }
 
     /** Only present on an order created via an online booking — see {@link #isBookingLinked}. */
     @JsonIgnoreProperties(ignoreUnknown = true)
