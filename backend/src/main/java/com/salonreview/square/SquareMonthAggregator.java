@@ -166,11 +166,14 @@ public class SquareMonthAggregator {
             Map<String, Half> providersOnOrder = new LinkedHashMap<>();
             // Lines created for this order, so the order tip can be spread across them after the loop.
             List<LineRef> orderLineRefs = new ArrayList<>();
+            // The one booking that best explains this whole ticket (if any) — see preferredBooking().
+            String preferredBookingId = preferredBooking(segIndex, o, orderDay);
 
             if (o.lineItems() != null) {
                 for (OrderLineItem li : o.lineItems()) {
                     if (li.catalogObjectId() == null) continue;
-                    Match m = match(segIndex, o.customerId(), li.catalogObjectId(), orderDay, checkoutAt, diag);
+                    Match m = match(segIndex, o.customerId(), li.catalogObjectId(), orderDay, checkoutAt,
+                            preferredBookingId, diag);
                     if (m == null) {
                         // Only this month's unattributed sales. The order query is padded a couple of days
                         // each side so late checkouts / timezone-boundary orders still match a booking; but
@@ -533,12 +536,12 @@ public class SquareMonthAggregator {
      * feature (see docs/ROADMAP.md), not by guessing here.
      */
     private static Match match(Map<String, List<Seg>> index, String customerId, String catalogObjectId,
-                               LocalDate orderDay, Instant checkoutAt, Diag diag) {
+                               LocalDate orderDay, Instant checkoutAt, String preferredBookingId, Diag diag) {
         if (customerId == null || orderDay == null) return null;
         List<Seg> candidates = index.get(key(customerId, catalogObjectId));
         if (candidates == null) return null;
 
-        Seg near = nearestUnused(candidates, orderDay, checkoutAt, 2);
+        Seg near = nearestUnused(candidates, orderDay, checkoutAt, 2, preferredBookingId);
         if (near != null) {
             near.used = true;
             return new Match(near, false);
@@ -550,17 +553,65 @@ public class SquareMonthAggregator {
     private record Match(Seg seg, boolean prepaid) {}
 
     /**
+     * The single booking that best explains an entire order — the one whose segments cover the most of
+     * the order's distinct catalog-object ids — or {@code null} when no one booking clearly dominates.
+     *
+     * <p>Real checkouts almost always trace back to exactly one booking: a customer's own booking can
+     * share a SKU with a sibling booking for the same customer on the same day (e.g. a leftover stub
+     * from a "4-hands" request that got split into two single-provider visits), and per-line matching
+     * alone can then split a single ticket's revenue across two different providers by pure chance of
+     * which sibling's {@code updated_at} happens to land closer to the checkout moment — both bookings
+     * are routinely touched within the same second by whatever edit created the ticket, so that skew
+     * tie-break isn't a reliable signal on its own. Precomputing the one booking that covers the most
+     * (ideally all) of the order's lines and preferring it in {@link #nearestUnused} keeps a real
+     * single-provider checkout attributed to one provider. A genuine multi-provider order (an actual
+     * paid 4-hands ticket) has no single dominating booking, so this returns {@code null} and per-line
+     * matching proceeds exactly as before.
+     */
+    private static String preferredBooking(Map<String, List<Seg>> index, Order o, LocalDate orderDay) {
+        if (o.customerId() == null || o.lineItems() == null || orderDay == null) return null;
+        java.util.Set<String> svids = new java.util.LinkedHashSet<>();
+        for (OrderLineItem li : o.lineItems()) {
+            if (li.catalogObjectId() != null) svids.add(li.catalogObjectId());
+        }
+        if (svids.size() < 2) return null; // nothing to disambiguate with a single line item
+        Map<String, Integer> coverage = new HashMap<>();
+        for (String svid : svids) {
+            List<Seg> candidates = index.get(key(o.customerId(), svid));
+            if (candidates == null) continue;
+            java.util.Set<String> bookingsForThisSvid = new java.util.HashSet<>();
+            for (Seg s : candidates) {
+                if (s.used || s.bookingId == null) continue;
+                if (Math.abs(s.day.toEpochDay() - orderDay.toEpochDay()) > 2) continue;
+                bookingsForThisSvid.add(s.bookingId);
+            }
+            for (String bookingId : bookingsForThisSvid) coverage.merge(bookingId, 1, Integer::sum);
+        }
+        if (coverage.isEmpty()) return null;
+        int max = java.util.Collections.max(coverage.values());
+        if (max < 2) return null; // no single booking covers more than one line — nothing to prefer
+        List<String> best = coverage.entrySet().stream().filter(e -> e.getValue() == max)
+                .map(Map.Entry::getKey).toList();
+        return best.size() == 1 ? best.get(0) : null; // still tied — let normal matching decide
+    }
+
+    /**
      * The booking this checkout paid for, or null if none is within {@code maxDays}.
      *
-     * <p>Day proximity is the primary signal (a checkout matches the visit's day; the small window
-     * absorbs timezone jitter). When several equally-near bookings share a customer + service — a
-     * 4-hands visit where two providers each have a booking for the same SKU — the tie is broken by
-     * <em>checkout skew</em>: Square stamps the booking that was actually checked out with an
-     * {@code updated_at} at the checkout moment, so the booking whose {@code updatedAt} is closest to
-     * the order's close time is the one that took payment. This mirrors what Square's own dashboard
-     * shows (it credits the checked-out provider) without parsing any free-text note.
+     * <p>{@code preferredBookingId} (see {@link #preferredBooking}) wins outright when present among
+     * the in-window candidates — it identifies the one booking that explains the whole order, which is
+     * a stronger signal than any single line's own tie-break. Otherwise, day proximity is the primary
+     * signal (a checkout matches the visit's day; the small window absorbs timezone jitter), and ties
+     * are broken by <em>checkout skew</em>: Square stamps the booking that was actually checked out
+     * with an {@code updated_at} at the checkout moment, so the booking whose {@code updatedAt} is
+     * closest to the order's close time is the one that took payment.
      */
     static Seg nearestUnused(List<Seg> candidates, LocalDate orderDay, Instant checkoutAt, long maxDays) {
+        return nearestUnused(candidates, orderDay, checkoutAt, maxDays, null);
+    }
+
+    static Seg nearestUnused(List<Seg> candidates, LocalDate orderDay, Instant checkoutAt, long maxDays,
+                             String preferredBookingId) {
         Seg best = null;
         long bestDist = Long.MAX_VALUE;
         long bestSkew = Long.MAX_VALUE;
@@ -568,6 +619,7 @@ public class SquareMonthAggregator {
             if (s.used) continue;
             long dist = Math.abs(s.day.toEpochDay() - orderDay.toEpochDay());
             if (dist > maxDays) continue;
+            if (preferredBookingId != null && preferredBookingId.equals(s.bookingId)) return s;
             long skew = (checkoutAt != null && s.updatedAt != null)
                     ? Math.abs(s.updatedAt.toEpochMilli() - checkoutAt.toEpochMilli())
                     : Long.MAX_VALUE;
