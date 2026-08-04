@@ -54,5 +54,13 @@ public record RevenuePulseDto(
         /** Total days in the current month — lets the UI flag when the two months differ in length. */
         int currentMonthLength,
         /** Total days in the prior month — e.g. 31 for May even when only 30 are compared to June. */
-        int priorMonthLength
+        int priorMonthLength,
+        /**
+         * Last month's MTD-through-the-same-cutoff extrapolated at its own pace to a full month — "if
+         * last month had kept going the way it was at this exact point, it would have ended near this."
+         * Null for past-month views (only meaningful relative to "now").
+         */
+        BigDecimal priorProjected,
+        /** (projectedMid − priorProjected) / priorProjected × 100; null when priorProjected is null/zero. */
+        BigDecimal projectedDeltaPct
 ) {}
