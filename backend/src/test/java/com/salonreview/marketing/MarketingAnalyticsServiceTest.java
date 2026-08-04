@@ -1122,6 +1122,77 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
+    @DisplayName("adsReport buckets an upcoming appointment by when it was BOOKED, not when the visit "
+            + "happens — a late-July booking for an August visit is July's anticipated, not August's "
+            + "(real production case: a customer booked at the end of one month for a visit early the next)")
+    void adsReportBucketsAnticipatedByBookingCreationDate() {
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-06-01T00:00:00Z"), "meta_ads")));
+        when(square.customerCreatedAts(Set.of("cust-1")))
+                .thenReturn(Map.of("cust-1", Instant.parse("2026-06-01T00:00:00Z")));
+        // collectServices widens its fetch window forward (FUTURE_BOOKING_LEAD_PADDING_DAYS) once it's
+        // bucketing by booking-creation date, so it pulls every month through ~90 days past August 31.
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
+        when(aggregator.aggregate(2026, 8, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 8, List.of()));
+        when(aggregator.aggregate(2026, 9, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 9, List.of()));
+        when(aggregator.aggregate(2026, 10, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 10, List.of()));
+        when(aggregator.aggregate(2026, 11, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 11, List.of()));
+
+        var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
+        // Booked July 28 (createdAt) — but the visit itself is scheduled for August 15 (startAt).
+        var bookedInJulyForAugust = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-08-15T18:00:00Z",
+                "2026-07-28T10:00:00Z", null, "loc-1", "cust-1", null, null, List.of(seg));
+        when(square.bookingsForCustomer(eq("cust-1"), any())).thenReturn(List.of(bookedInJulyForAugust));
+        when(square.catalogPrices(List.of("var-mani"))).thenReturn(Map.of("var-mani", new BigDecimal("85.00")));
+        when(square.catalogNames(List.of("var-mani"))).thenReturn(Map.of("var-mani", "Manicure"));
+        when(square.customerNames(any())).thenReturn(Map.of("cust-1", "Jane Doe"));
+
+        MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 8, 31),
+                TrafficSourceSql.ADS_ONLY, null, MarketingAnalyticsService.PeriodKind.MONTH);
+
+        assertThat(dto.periods()).hasSize(2);
+        PeriodRow august = dto.periods().get(0); // most-recent-first
+        PeriodRow july = dto.periods().get(1);
+
+        assertThat(july.anticipatedAppointments()).isEqualTo(1);
+        assertThat(july.anticipatedRevenue()).isEqualByComparingTo("85.00");
+        assertThat(august.anticipatedAppointments()).isZero();
+        assertThat(august.anticipatedRevenue()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    @DisplayName("adsReport buckets a completed (paid) appointment by when it was BOOKED, not when the "
+            + "visit happened — a late-July booking for an early-August visit is July's completed, not August's")
+    void adsReportBucketsCompletedByBookingCreationDate() {
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-06-01T00:00:00Z"), "meta_ads")));
+        when(square.customerCreatedAts(Set.of("cust-1")))
+                .thenReturn(Map.of("cust-1", Instant.parse("2026-06-01T00:00:00Z")));
+
+        // Booked July 28 (createdAt) — the visit itself (and its payment) happened August 5. Booking
+        // id matches svc()'s fixed "booking-1" bookingId below.
+        var bookedInJulyForAugust = new SquareClient.Booking("booking-1", "ACCEPTED", "2026-08-05T18:00:00Z",
+                "2026-07-28T10:00:00Z", null, "loc-1", "cust-1", null, null, List.of());
+        when(square.bookingsForCustomer(eq("cust-1"), any())).thenReturn(List.of(bookedInJulyForAugust));
+        when(square.customerNames(any())).thenReturn(Map.of("cust-1", "Jane Doe"));
+
+        // collectServices widens its fetch window forward (FUTURE_BOOKING_LEAD_PADDING_DAYS) once it's
+        // bucketing by booking-creation date, so it pulls every month through ~90 days past July 31.
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
+        when(aggregator.aggregate(2026, 8, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 8, List.of(
+                svc("2026-08-05", "cust-1", "93.00")))); // the real paid visit, only found in August's aggregation
+        when(aggregator.aggregate(2026, 9, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 9, List.of()));
+        when(aggregator.aggregate(2026, 10, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 10, List.of()));
+
+        MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
+                TrafficSourceSql.ADS_ONLY, null, MarketingAnalyticsService.PeriodKind.MONTH);
+
+        assertThat(dto.periods()).hasSize(1);
+        assertThat(dto.periods().get(0).completedAppointments()).isEqualTo(1);
+        assertThat(dto.periods().get(0).revenueCollected()).isEqualByComparingTo("93.00");
+    }
+
+    @Test
     @DisplayName("adsReport counts cancelled/declined/no-show bookings dated within the period, "
             + "separately from completed and anticipated")
     void adsReportCountsCancelledBookings() {

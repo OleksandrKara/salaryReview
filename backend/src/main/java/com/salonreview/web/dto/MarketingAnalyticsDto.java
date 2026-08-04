@@ -67,6 +67,17 @@ public record MarketingAnalyticsDto(
             String customerName,
             String serviceName,
             Instant startAt,
+            /** When this reservation was actually made (the Square booking's own {@code
+             * created_at}) — the field period-bucketing (Ads Report's week/month rows) keys on,
+             * so a customer who books late in one period for a visit that lands in the next
+             * period is still counted in the period they actually booked in, not the one their
+             * visit happens to fall in. {@code startAt} above is kept purely for display ("when
+             * is this appointment"). Falls back to {@code startAt} when the booking's creation
+             * date couldn't be resolved (e.g. a manager follow-up appointment, or Square's own
+             * created_at being unavailable) — the same period {@code startAt} would suggest,
+             * rather than dropping the row from every period's bucket entirely.
+             */
+            Instant bookedAt,
             BigDecimal price,
             boolean freshFromAds,
             boolean capturedInRange,
@@ -90,6 +101,9 @@ public record MarketingAnalyticsDto(
             String customerName,
             String serviceName,
             LocalDate date,
+            /** See {@link UpcomingAppointment#bookedAt}'s doc — same reasoning, this is what
+             * period-bucketing keys on instead of {@code date} (the cancelled visit's own date). */
+            LocalDate bookedDate,
             BigDecimal price,
             String status,
             boolean freshFromAds,
@@ -110,6 +124,9 @@ public record MarketingAnalyticsDto(
             String customerName,
             String serviceName,
             LocalDate date,
+            /** See {@link UpcomingAppointment#bookedAt}'s doc — same reasoning, this is what
+             * period-bucketing keys on instead of {@code date} (the visit's own date). */
+            LocalDate bookedDate,
             BigDecimal collected,
             String paymentChannel,
             boolean freshFromAds,
