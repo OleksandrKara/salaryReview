@@ -91,6 +91,9 @@ class RevenuePulseServiceTest {
         assertThat(p.currentMonthLength()).isEqualTo(31);
         assertThat(p.priorMonthLength()).isEqualTo(30);
         assertThat(p.asOfTime()).isNull(); // past month → whole-day comparison, no time cutoff
+        // Only meaningful relative to "now" — a past-month view has no pace-vs-last-month comparison.
+        assertThat(p.priorProjected()).isNull();
+        assertThat(p.projectedDeltaPct()).isNull();
     }
 
     @Test
@@ -119,6 +122,30 @@ class RevenuePulseServiceTest {
         assertThat(p.asOfTime()).isEqualTo("12:00 PM");
         assertThat(p.currentEndDay()).isEqualTo(15);
         assertThat(p.priorEndDay()).isEqualTo(15);
+        // Last month's $50 through day 15 noon, paced out over July's 31 days from 14.5 elapsed
+        // days (14 full + the noon half of the 15th): 50 * 31 / 14.5 = 106.90.
+        assertThat(p.priorProjected()).isEqualByComparingTo("106.90");
+        // (300.00 forecast mid − 106.90) / 106.90 * 100
+        assertThat(p.projectedDeltaPct()).isEqualByComparingTo("180.6");
+    }
+
+    @Test
+    @DisplayName("too little of the day elapsed to extrapolate sanely → no pace comparison, not a wild number")
+    void paceProjectionSkippedVeryEarlyInMonth() {
+        // 12:01 AM on day 1 — a single sale minutes into the month must not blow up into an absurd figure.
+        Clock clock = Clock.fixed(Instant.parse("2026-08-01T00:01:00Z"), ZoneOffset.UTC);
+        RevenuePulseService timed = new RevenuePulseService(square, forecaster, aggregator, salonConfig, clock);
+
+        when(aggregator.aggregate(eq(2026), eq(8), any())).thenReturn(aggOf(2026, 8, List.of()));
+        when(aggregator.aggregate(eq(2026), eq(7), any())).thenReturn(aggOf(2026, 7, List.of(
+                svcAt("2026-07-01", "12:00 AM", "CARD", "40.00"))));
+        when(forecaster.forecast(anyInt(), anyInt(), any(), any()))
+                .thenReturn(new ForecastResult(new BigDecimal("50.00"), null, null, 0, 0));
+
+        RevenuePulseDto p = timed.pulse(2026, 8);
+
+        assertThat(p.priorProjected()).isNull();
+        assertThat(p.projectedDeltaPct()).isNull();
     }
 
     @Test

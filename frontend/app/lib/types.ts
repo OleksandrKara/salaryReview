@@ -744,6 +744,12 @@ export interface RevenuePulse {
   // June 30), so a clamped like-for-like window is obvious rather than a silent dropped day.
   currentMonthLength: number;
   priorMonthLength: number;
+  // Last month's MTD-through-the-same-cutoff, extrapolated at its own pace to a full month — "if last
+  // month kept going the way it was at this exact point, it would have ended near this." Null for
+  // past-month views (only meaningful relative to "now").
+  priorProjected: number | null;
+  // (projectedMid − priorProjected) / priorProjected × 100; null when priorProjected is null/zero.
+  projectedDeltaPct: number | null;
 }
 
 // What was known/projected as of a specific past date (com.salonreview.web.RevenuePulseController#day),

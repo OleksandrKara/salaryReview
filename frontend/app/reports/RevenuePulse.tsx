@@ -25,11 +25,13 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
     projectedMid, projectedCard, projectedCash, projectedLow, projectedHigh,
     forecastCalibrationDataPoints, forecastHistoryMonths,
     currentMonthLength, priorMonthLength,
+    priorProjected, projectedDeltaPct,
   } = pulse;
   // projectedMonthGross (the transparent naive ceiling) is kept on the DTO for debugging but not
   // shown — the calibrated/pattern projection above replaces it.
 
   const positive = deltaPct != null && deltaPct >= 0;
+  const projPositive = projectedDeltaPct != null && projectedDeltaPct >= 0;
   const hasUpcoming = upcomingBookings > 0;
   const hasRange = projectedLow != null && projectedHigh != null;
   // Calibration state: gray dot = pattern-only or cold-start; green dot = calibration active.
@@ -135,18 +137,31 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
             </span>
           </div>
 
-          <div className="mt-1 flex items-baseline gap-3">
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span className="text-3xl font-semibold tabular-nums text-zinc-900">
               ~{usd(projectedMid)}
             </span>
-            {hasUpcoming && (
-              <span className="text-sm text-zinc-500">
-                · {upcomingBookings} upcoming · {usd(upcomingGross)}
+            {projectedDeltaPct != null && (
+              <span
+                className={`text-base font-semibold ${projPositive ? 'text-green-600' : 'text-red-500'}`}
+                title={`Same time last month was pacing toward ${usd(priorProjected!)}`}
+              >
+                {projPositive ? '↑' : '↓'} {Math.abs(Number(projectedDeltaPct)).toFixed(1)}%
               </span>
             )}
           </div>
+          {hasUpcoming && (
+            <p className="mt-1 text-xs text-zinc-500">
+              {upcomingBookings} upcoming · {usd(upcomingGross)}
+            </p>
+          )}
           {projectedCard + projectedCash > 0 && (
             <TenderSplit card={projectedCard} cash={projectedCash} approx />
+          )}
+          {projectedDeltaPct != null && (
+            <p className="mt-1.5 text-[11px] text-zinc-400">
+              Same time last month, at that pace: <span className="tabular-nums">{usd(priorProjected!)}</span>
+            </p>
           )}
 
           {hasRange ? (

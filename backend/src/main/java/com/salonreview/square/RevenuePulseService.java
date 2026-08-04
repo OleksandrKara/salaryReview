@@ -103,6 +103,16 @@ public class RevenuePulseService {
         // bookings have no tender yet (the mix can only be estimated from realized revenue).
         Split projectedSplit = splitProjection(forecast.projectedMid(), current, prior);
 
+        // "At this same point last month, where was the month pacing to end up?" — a pure run-rate
+        // extrapolation of last month's MTD-through-the-same-cutoff (no pattern/calibration signal,
+        // since that would need historical upcoming-bookings data we can no longer honestly
+        // reconstruct — a booking's status today isn't necessarily what it was back then). Only
+        // meaningful for the current month (there's no "now" to anchor a past month's view to).
+        BigDecimal priorProjected = isCurrentMonth
+                ? paceProjected(prior.total(), priorEndDay, cutoffTime, priorYm.lengthOfMonth())
+                : null;
+        BigDecimal projectedDeltaPct = isCurrentMonth ? delta(forecast.projectedMid(), priorProjected) : null;
+
         return new RevenuePulseDto(
                 year, month, currentEndDay, currentEndDay, priorEndDay, asOfTime,
                 current.total(), current.card(), current.cash(),
@@ -111,7 +121,26 @@ public class RevenuePulseService {
                 forecast.projectedMid(), projectedSplit.card(), projectedSplit.cash(),
                 forecast.projectedLow(), forecast.projectedHigh(),
                 forecast.calibrationDataPoints(), forecast.historyMonths(),
-                ym.lengthOfMonth(), priorYm.lengthOfMonth());
+                ym.lengthOfMonth(), priorYm.lengthOfMonth(),
+                priorProjected, projectedDeltaPct);
+    }
+
+    /**
+     * Extrapolates a partial-month total to a full-month pace: {@code mtdTotal / elapsedDays *
+     * daysInMonth}, where {@code elapsedDays} counts every day before {@code throughDay} as whole and
+     * the {@code throughDay} itself as the wall-clock fraction of {@code cutoffTime} elapsed (assumes
+     * revenue accrues roughly evenly through the day — a deliberately simple estimate, not a forecast).
+     * Null when there's too little of the day elapsed to extrapolate sanely (avoids a single early sale
+     * blowing up into an absurd "$50,000 projected" a few minutes into the month).
+     */
+    private static BigDecimal paceProjected(BigDecimal mtdTotal, int throughDay, LocalTime cutoffTime,
+                                            int daysInMonth) {
+        if (mtdTotal == null || throughDay <= 0 || daysInMonth <= 0) return null;
+        double dayFraction = cutoffTime != null ? cutoffTime.toSecondOfDay() / 86400.0 : 1.0;
+        double elapsedDays = (throughDay - 1) + dayFraction;
+        if (elapsedDays < 0.1) return null; // under ~2.4h into the month — too little to extrapolate
+        return mtdTotal.multiply(BigDecimal.valueOf(daysInMonth))
+                .divide(BigDecimal.valueOf(elapsedDays), 2, RoundingMode.HALF_UP);
     }
 
     /** Split a forecast total into card/cash using the card share of {@code current}, else {@code prior}. */
