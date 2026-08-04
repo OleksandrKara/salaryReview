@@ -144,7 +144,7 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
             {projectedDeltaPct != null && (
               <span
                 className={`text-base font-semibold ${projPositive ? 'text-green-600' : 'text-red-500'}`}
-                title={`Same time last month was pacing toward ${usd(priorProjected!)}`}
+                title={`Same day last month, the app was projecting ${usd(priorProjected!)}`}
               >
                 {projPositive ? '↑' : '↓'} {Math.abs(Number(projectedDeltaPct)).toFixed(1)}%
               </span>
@@ -160,7 +160,7 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
           )}
           {projectedDeltaPct != null && (
             <p className="mt-1.5 text-[11px] text-zinc-400">
-              Same time last month, at that pace: <span className="tabular-nums">{usd(priorProjected!)}</span>
+              Same day last month, projected: <span className="tabular-nums">{usd(priorProjected!)}</span>
             </p>
           )}
 

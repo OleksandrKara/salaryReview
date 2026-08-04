@@ -1,6 +1,8 @@
 package com.salonreview.square;
 
+import com.salonreview.domain.RevenueSnapshot;
 import com.salonreview.domain.SalonConfig;
+import com.salonreview.repo.RevenueSnapshotRepository;
 import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.web.dto.RevenuePulseDto;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,20 +35,24 @@ public class RevenuePulseService {
     private final RevenueForecastService forecaster;
     private final SquareMonthAggregator aggregator;
     private final SalonConfigRepository salonConfig;
+    private final RevenueSnapshotRepository snapshots;
     private final Clock clock;
 
     @Autowired
     public RevenuePulseService(SquareClient square, RevenueForecastService forecaster,
-                               SquareMonthAggregator aggregator, SalonConfigRepository salonConfig) {
-        this(square, forecaster, aggregator, salonConfig, Clock.systemUTC());
+                               SquareMonthAggregator aggregator, SalonConfigRepository salonConfig,
+                               RevenueSnapshotRepository snapshots) {
+        this(square, forecaster, aggregator, salonConfig, snapshots, Clock.systemUTC());
     }
 
     RevenuePulseService(SquareClient square, RevenueForecastService forecaster,
-                        SquareMonthAggregator aggregator, SalonConfigRepository salonConfig, Clock clock) {
+                        SquareMonthAggregator aggregator, SalonConfigRepository salonConfig,
+                        RevenueSnapshotRepository snapshots, Clock clock) {
         this.square = square;
         this.forecaster = forecaster;
         this.aggregator = aggregator;
         this.salonConfig = salonConfig;
+        this.snapshots = snapshots;
         this.clock = clock;
     }
 
@@ -103,13 +109,15 @@ public class RevenuePulseService {
         // bookings have no tender yet (the mix can only be estimated from realized revenue).
         Split projectedSplit = splitProjection(forecast.projectedMid(), current, prior);
 
-        // "At this same point last month, where was the month pacing to end up?" — a pure run-rate
-        // extrapolation of last month's MTD-through-the-same-cutoff (no pattern/calibration signal,
-        // since that would need historical upcoming-bookings data we can no longer honestly
-        // reconstruct — a booking's status today isn't necessarily what it was back then). Only
-        // meaningful for the current month (there's no "now" to anchor a past month's view to).
+        // "At this same point last month, what was the app actually projecting?" — pulled straight from
+        // that day's revenue_snapshot row (mtd_revenue + upcoming_gross), the real naive ceiling as it
+        // was captured at ~1:30 AM the next morning. This is real historical data, not a recomputation:
+        // a from-scratch run-rate extrapolation of last month's MTD (tried first) doesn't account for
+        // bookings that were genuinely on the books ahead, so it can diverge wildly from what was
+        // actually shown back then. Null when no snapshot exists for that date (e.g. before data
+        // collection started, or a gap) or for a past-month view (no "now" to anchor the comparison to).
         BigDecimal priorProjected = isCurrentMonth
-                ? paceProjected(prior.total(), priorEndDay, cutoffTime, priorYm.lengthOfMonth())
+                ? snapshotProjection(priorYm.atDay(priorEndDay))
                 : null;
         BigDecimal projectedDeltaPct = isCurrentMonth ? delta(forecast.projectedMid(), priorProjected) : null;
 
@@ -126,21 +134,14 @@ public class RevenuePulseService {
     }
 
     /**
-     * Extrapolates a partial-month total to a full-month pace: {@code mtdTotal / elapsedDays *
-     * daysInMonth}, where {@code elapsedDays} counts every day before {@code throughDay} as whole and
-     * the {@code throughDay} itself as the wall-clock fraction of {@code cutoffTime} elapsed (assumes
-     * revenue accrues roughly evenly through the day — a deliberately simple estimate, not a forecast).
-     * Null when there's too little of the day elapsed to extrapolate sanely (avoids a single early sale
-     * blowing up into an absurd "$50,000 projected" a few minutes into the month).
+     * The naive projection ceiling ({@code mtd_revenue + upcoming_gross}) as it was actually captured
+     * in that day's {@link RevenueSnapshot} row — the real historical record of what the app knew and
+     * would have projected on that date, not a recomputation from today's data.
      */
-    private static BigDecimal paceProjected(BigDecimal mtdTotal, int throughDay, LocalTime cutoffTime,
-                                            int daysInMonth) {
-        if (mtdTotal == null || throughDay <= 0 || daysInMonth <= 0) return null;
-        double dayFraction = cutoffTime != null ? cutoffTime.toSecondOfDay() / 86400.0 : 1.0;
-        double elapsedDays = (throughDay - 1) + dayFraction;
-        if (elapsedDays < 0.1) return null; // under ~2.4h into the month — too little to extrapolate
-        return mtdTotal.multiply(BigDecimal.valueOf(daysInMonth))
-                .divide(BigDecimal.valueOf(elapsedDays), 2, RoundingMode.HALF_UP);
+    private BigDecimal snapshotProjection(LocalDate date) {
+        return snapshots.findBySnapshotDate(date)
+                .map(s -> s.getMtdRevenue().add(s.getUpcomingGross()).setScale(2, RoundingMode.HALF_UP))
+                .orElse(null);
     }
 
     /** Split a forecast total into card/cash using the card share of {@code current}, else {@code prior}. */

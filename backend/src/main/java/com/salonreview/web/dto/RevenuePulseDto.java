@@ -56,9 +56,10 @@ public record RevenuePulseDto(
         /** Total days in the prior month — e.g. 31 for May even when only 30 are compared to June. */
         int priorMonthLength,
         /**
-         * Last month's MTD-through-the-same-cutoff extrapolated at its own pace to a full month — "if
-         * last month had kept going the way it was at this exact point, it would have ended near this."
-         * Null for past-month views (only meaningful relative to "now").
+         * What the app was actually projecting on the same day last month — pulled from that day's
+         * {@code revenue_snapshot} row (real MTD revenue + real booked-ahead pipeline as they stood
+         * then, not a recomputation). Null for past-month views (only meaningful relative to "now"),
+         * or when no snapshot exists for that date (e.g. before data collection started).
          */
         BigDecimal priorProjected,
         /** (projectedMid − priorProjected) / priorProjected × 100; null when priorProjected is null/zero. */
