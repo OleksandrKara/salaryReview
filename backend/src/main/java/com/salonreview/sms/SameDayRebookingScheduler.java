@@ -7,6 +7,7 @@ import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.SameDayRebookingSendRepository;
 import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
+import com.salonreview.util.Names;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -183,7 +184,8 @@ public class SameDayRebookingScheduler {
      * {@link TechnicianNameResolver}), null if unresolvable — falls back to a technician-less
      * "lock in your next spot" framing rather than an empty mention. The $99-minimum condition
      * lives on the linked promo page, not spelled out here — see the SMS lifecycle audit. */
-    private static String marketingBody(String name, String technician, String shortLink) {
+    private static String marketingBody(String rawName, String technician, String shortLink) {
+        String name = Names.capitalizeFirst(rawName);
         String greeting = (name == null || name.isBlank()) ? "Hi," : "Hi " + name + ",";
         String spotClause = (technician == null || technician.isBlank())
                 ? "want to lock in your next spot" : "want to lock in your next spot with " + technician;
@@ -194,12 +196,13 @@ public class SameDayRebookingScheduler {
     /** Same {@code technician} fallback reasoning as {@link #marketingBody}. Deliberately avoids a
      * gendered pronoun for the technician (no "her"/"his") since the resolved provider's gender
      * isn't known — "the schedule" reads a touch more generic but is never wrong. */
-    private static String transactionalBody(String name, String technician, String shortLink) {
+    private static String transactionalBody(String rawName, String technician, String shortLink) {
+        String name = Names.capitalizeFirst(rawName);
         String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
         String body = (technician == null || technician.isBlank())
-                ? "Your nails are usually ready for a refresh around this time — want me to see what's open on the schedule?"
-                : technician + " said your nails are usually ready for a refresh around this time — "
-                        + "want me to see what's open on the schedule?";
+                ? "Your nails are usually ready for a refresh around this time. Want me to see what's open on the schedule?"
+                : technician + " said your nails are usually ready for a refresh around this time. "
+                        + "Want me to see what's open on the schedule?";
         return greeting + " It's Lucy from AK.LUX.NAILS 💛 " + body + " " + shortLink;
     }
 

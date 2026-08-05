@@ -244,11 +244,11 @@ class SameDayRebookingSchedulerTest {
 
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
         verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
-        assertThat(bodyCaptor.getValue()).contains("Susan").contains("$10");
+        assertThat(bodyCaptor.getValue()).contains("Susan").contains("$10").doesNotContain("—");
     }
 
     @Test
-    @DisplayName("transactional branch: resolved technician name is name-dropped, no gendered pronoun used")
+    @DisplayName("transactional branch: resolved technician name is name-dropped, no gendered pronoun used, no em dash")
     void transactionalBranchNamesResolvedTechnician() throws Exception {
         when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(false);
         when(square.customerSegmentIds(CUSTOMER_ID)).thenReturn(List.of());
@@ -261,6 +261,25 @@ class SameDayRebookingSchedulerTest {
 
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
         verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
-        assertThat(bodyCaptor.getValue()).contains("Tatiana").doesNotContain(" her ").doesNotContain(" his ");
+        assertThat(bodyCaptor.getValue())
+                .contains("Tatiana").doesNotContain(" her ").doesNotContain(" his ").doesNotContain("—");
+    }
+
+    @Test
+    @DisplayName("customer name stored all-lowercase is title-cased in the greeting")
+    void lowercaseCustomerNameIsCapitalized() throws Exception {
+        SameDayRebookingSend s = SameDayRebookingSend.builder()
+                .id(1L).phoneNumber(PHONE).customerName("oleksandr").squareCustomerId(CUSTOMER_ID)
+                .squarePaymentId("pay1").sendDueAt(Instant.now().minusSeconds(5))
+                .promoExpiresAt(Instant.now().plusSeconds(3600)).state(SameDayRebookingSend.STATE_AWAITING_SEND)
+                .build();
+        givenDue(s);
+        when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
+
+        scheduler.sendDueRebookingNudges();
+
+        ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
+        assertThat(bodyCaptor.getValue()).contains("Oleksandr").doesNotContain("oleksandr");
     }
 }
