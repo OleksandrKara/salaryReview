@@ -1,6 +1,5 @@
 package com.salonreview.sms;
 
-import com.salonreview.config.MarketingLandingProperties;
 import com.salonreview.domain.LeadFollowUpSend;
 import com.salonreview.marketing.MarketingContactsRepository;
 import com.salonreview.marketing.MarketingContactsRepository.RawContact;
@@ -47,20 +46,17 @@ public class LeadFollowUpScheduler {
     private final SquareClient square;
     private final SmsAutomationService automationService;
     private final TwilioSmsService smsService;
-    private final MarketingLandingProperties landingProperties;
 
     public LeadFollowUpScheduler(MarketingContactsRepository contactsRepository,
                                   LeadFollowUpSendRepository sendRepository,
                                   SquareClient square,
                                   SmsAutomationService automationService,
-                                  TwilioSmsService smsService,
-                                  MarketingLandingProperties landingProperties) {
+                                  TwilioSmsService smsService) {
         this.contactsRepository = contactsRepository;
         this.sendRepository = sendRepository;
         this.square = square;
         this.automationService = automationService;
         this.smsService = smsService;
-        this.landingProperties = landingProperties;
     }
 
     @Scheduled(fixedDelay = 15_000)
@@ -96,11 +92,7 @@ public class LeadFollowUpScheduler {
             save(contact, LeadFollowUpSend.STATE_SKIPPED_DISABLED);
             return;
         }
-        Map<String, String> vars = new java.util.HashMap<>();
-        if (contact.givenName() != null) {
-            vars.put("name", contact.givenName());
-        }
-        vars.put("bookingLink", landingProperties.baseUrlFor(contact.landingPageSlug()));
+        Map<String, String> vars = contact.givenName() == null ? Map.of() : Map.of("name", contact.givenName());
         var result = smsService.sendTemplated("lead_follow_up_nudge", contact.phoneNumber(), vars);
         if (!result.sent()) {
             log.warn("lead_follow_up_nudge not sent for contact {} ({}): {}",

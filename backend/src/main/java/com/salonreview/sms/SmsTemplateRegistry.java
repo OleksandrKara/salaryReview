@@ -62,23 +62,21 @@ public class SmsTemplateRegistry {
              * with no upcoming appointment — see openspec/changes/lead-followup-and-manager-inbox
              * design.md D4. Purely helpful, no discount/incentive — TRANSACTIONAL, sendable
              * regardless of marketing consent. No {{name}} falls back to a name-less greeting.
-             * {@code bookingLink} is the lead's own landing page (see MarketingLandingProperties) —
-             * always present, never null, so there's no link-less fallback branch needed here
-             * (contrast with the technician-name templates, where the lookup can genuinely miss).
-             * Leads with "when do you actually want to come in" rather than "want me to hold you a
-             * spot" — the real, specific hook is that same-day openings often aren't reflected on
-             * the site, not a vague reservation promise. */
+             * No link, deliberately — everyone who gets this just came from the site itself, so
+             * re-sending its own URL back to them adds nothing; reply-only keeps this short. Leads
+             * with "when do you actually want to come in" rather than "want me to hold you a spot"
+             * — the real, specific hook is that same-day openings often aren't reflected on the
+             * site, not a vague reservation promise. */
             "lead_follow_up_nudge", new SmsTemplate(
                     "lead_follow_up_nudge",
                     SmsMessageClass.TRANSACTIONAL,
                     "lead_follow_up",
                     vars -> {
                         String name = Names.capitalizeFirst(vars == null ? null : vars.get("name"));
-                        String bookingLink = vars == null ? null : vars.get("bookingLink");
                         String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
-                        return greeting + " It's Lucy from AK.LUX.NAILS 💛 We often have last-minute "
-                                + "openings that don't show on our site. When were you hoping to come in "
-                                + "for your nails? " + bookingLink + " (or just reply and I'll find you a time!)";
+                        return greeting + " It's Lucy from AK.LUX.NAILS 💛 We often have openings that "
+                                + "don't show on our site. When were you hoping to come in? Just reply "
+                                + "and I'll find you a time!";
                     }
             )
             // NOTE: "same_day_rebooking_nudge" is NOT registered here — like
