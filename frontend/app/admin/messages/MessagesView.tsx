@@ -54,11 +54,14 @@ function displayName(givenName: string | null | undefined, familyName: string | 
   return parts.length > 0 ? parts.join(' ') : null;
 }
 
-/** Human label for a checkout-review-request message's tracked link — null for a message with no
- * link at all (most messages), which the caller uses to skip rendering the click-status row. */
+/** Human label for a message's tracked link — null for a message with no link at all (most
+ * messages), which the caller uses to skip rendering the click-status row. Covers the
+ * checkout-review-request automation's two fixed targets and the same-day-rebooking-discount
+ * automation's signed promo link (`REBOOK:<epochSeconds>`, see ShortLinkController). */
 function linkTargetLabel(linkTarget: string | null): string | null {
   if (linkTarget === 'GOOGLE_REVIEW') return 'Google review link';
   if (linkTarget === 'FEEDBACK_FORM') return 'Feedback form link';
+  if (linkTarget?.startsWith('REBOOK:')) return 'Booking link';
   return null;
 }
 
