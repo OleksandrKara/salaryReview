@@ -60,16 +60,21 @@ public class SmsTemplateRegistry {
             /** Sent by {@code LeadFollowUpScheduler} 2 minutes after a lead leaves contact info
              * with no upcoming appointment — see openspec/changes/lead-followup-and-manager-inbox
              * design.md D4. Purely helpful, no discount/incentive — TRANSACTIONAL, sendable
-             * regardless of marketing consent. No {{name}} falls back to a name-less greeting. */
+             * regardless of marketing consent. No {{name}} falls back to a name-less greeting.
+             * {@code bookingLink} is the lead's own landing page (see MarketingLandingProperties) —
+             * always present, never null, so there's no link-less fallback branch needed here
+             * (contrast with the technician-name templates, where the lookup can genuinely miss). */
             "lead_follow_up_nudge", new SmsTemplate(
                     "lead_follow_up_nudge",
                     SmsMessageClass.TRANSACTIONAL,
                     "lead_follow_up",
                     vars -> {
                         String name = vars == null ? null : vars.get("name");
-                        String greeting = (name == null || name.isBlank()) ? "Hi" : "Hi " + name + ",";
-                        return greeting + " just checking in — need help finding a time that works? "
-                                + "Reply here and we'll help you book! 💅 — AK.LUX.NAILS";
+                        String bookingLink = vars == null ? null : vars.get("bookingLink");
+                        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
+                        return greeting + " It's Lucy from AK.LUX.NAILS 💛 Saw you were checking us out — "
+                                + "want me to hold you a spot? Easiest way is right here: " + bookingLink
+                                + " (or just reply and I'll help!)";
                     }
             )
             // NOTE: "same_day_rebooking_nudge" is NOT registered here — like
