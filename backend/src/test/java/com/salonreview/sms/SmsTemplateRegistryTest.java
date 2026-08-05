@@ -51,19 +51,20 @@ class SmsTemplateRegistryTest {
     }
 
     @Test
-    @DisplayName("lead_follow_up_nudge title-cases an all-lowercase name, contains the booking link, "
-            + "asks about hidden availability instead of \"hold you a spot\", and has no em dash")
+    @DisplayName("lead_follow_up_nudge title-cases an all-lowercase name, asks about hidden availability "
+            + "instead of \"hold you a spot\", has no em dash, and carries no link — everyone who gets "
+            + "this just came from the site itself")
     void leadFollowUpNudgeNormalizesNameAndAsksAboutOpenings() {
         SmsTemplate template = registry.find("lead_follow_up_nudge");
 
-        String rendered = template.render().apply(Map.of("name", "oleksandr", "bookingLink", "https://mani.akluxnails.com"));
+        String rendered = template.render().apply(Map.of("name", "oleksandr"));
 
         assertThat(rendered)
                 .contains("Hi Oleksandr")
                 .doesNotContain("oleksandr")
-                .contains("https://mani.akluxnails.com")
                 .contains("don't show on our site")
                 .doesNotContain("hold you a spot")
+                .doesNotContain("http")
                 .doesNotContain("—");
     }
 

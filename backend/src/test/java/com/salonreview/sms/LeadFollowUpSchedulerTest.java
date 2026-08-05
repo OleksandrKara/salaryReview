@@ -1,6 +1,5 @@
 package com.salonreview.sms;
 
-import com.salonreview.config.MarketingLandingProperties;
 import com.salonreview.domain.LeadFollowUpSend;
 import com.salonreview.marketing.MarketingContactsRepository;
 import com.salonreview.marketing.MarketingContactsRepository.RawContact;
@@ -27,14 +26,12 @@ import static org.mockito.Mockito.*;
 class LeadFollowUpSchedulerTest {
 
     private static final String PHONE = "+15551234567";
-    private static final String BOOKING_LINK = "https://mani.akluxnails.com";
 
     private MarketingContactsRepository contactsRepository;
     private LeadFollowUpSendRepository sendRepository;
     private SquareClient square;
     private SmsAutomationService automationService;
     private TwilioSmsService smsService;
-    private MarketingLandingProperties landingProperties;
     private LeadFollowUpScheduler scheduler;
 
     @BeforeEach
@@ -44,10 +41,7 @@ class LeadFollowUpSchedulerTest {
         square = mock(SquareClient.class);
         automationService = mock(SmsAutomationService.class);
         smsService = mock(TwilioSmsService.class);
-        landingProperties = mock(MarketingLandingProperties.class);
-        when(landingProperties.baseUrlFor(any())).thenReturn(BOOKING_LINK);
-        scheduler = new LeadFollowUpScheduler(contactsRepository, sendRepository, square, automationService,
-                smsService, landingProperties);
+        scheduler = new LeadFollowUpScheduler(contactsRepository, sendRepository, square, automationService, smsService);
 
         when(automationService.isEnabled("lead_follow_up")).thenReturn(true);
         when(smsService.sendTemplated(any(), any(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
@@ -86,8 +80,7 @@ class LeadFollowUpSchedulerTest {
 
         scheduler.sendDueFollowUps();
 
-        verify(smsService).sendTemplated("lead_follow_up_nudge", PHONE,
-                Map.of("name", "Jane", "bookingLink", BOOKING_LINK));
+        verify(smsService).sendTemplated("lead_follow_up_nudge", PHONE, Map.of("name", "Jane"));
         ArgumentCaptor<LeadFollowUpSend> captor = ArgumentCaptor.forClass(LeadFollowUpSend.class);
         verify(sendRepository).save(captor.capture());
         assertThat(captor.getValue().getState()).isEqualTo(LeadFollowUpSend.STATE_SENT);
@@ -151,7 +144,7 @@ class LeadFollowUpSchedulerTest {
     }
 
     @Test
-    @DisplayName("no name on contact → variables map has no name key, just bookingLink")
+    @DisplayName("no name on contact → variables map is empty, not a name-shaped map with null")
     void noNameSendsEmptyVariables() {
         RawContact c = contact(UUID.randomUUID(), null, "cust1");
         givenPending(c);
@@ -159,7 +152,7 @@ class LeadFollowUpSchedulerTest {
 
         scheduler.sendDueFollowUps();
 
-        verify(smsService).sendTemplated("lead_follow_up_nudge", PHONE, Map.of("bookingLink", BOOKING_LINK));
+        verify(smsService).sendTemplated("lead_follow_up_nudge", PHONE, Map.of());
     }
 
     @Test
