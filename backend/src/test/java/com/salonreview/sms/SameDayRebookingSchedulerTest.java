@@ -13,6 +13,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -37,6 +38,7 @@ class SameDayRebookingSchedulerTest {
     private SmsMessageLogService messageLogService;
     private TwilioSmsConfigService configService;
     private TwilioSmsClient client;
+    private TechnicianNameResolver technicianNameResolver;
     private SameDayRebookingScheduler scheduler;
 
     @BeforeEach
@@ -50,8 +52,11 @@ class SameDayRebookingSchedulerTest {
         messageLogService = mock(SmsMessageLogService.class);
         configService = mock(TwilioSmsConfigService.class);
         client = mock(TwilioSmsClient.class);
+        technicianNameResolver = mock(TechnicianNameResolver.class);
+        when(technicianNameResolver.resolveForCustomer(any(), any())).thenReturn(Optional.empty());
         scheduler = new SameDayRebookingScheduler(repository, square, automationService, consentRepository,
-                rebookingProperties, messageLogService, configService, client, "https://salon.akluxnails.com");
+                rebookingProperties, messageLogService, configService, client, technicianNameResolver,
+                "https://salon.akluxnails.com");
 
         when(automationService.isEnabled("same_day_rebooking_discount")).thenReturn(true);
         when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(true);
@@ -158,7 +163,7 @@ class SameDayRebookingSchedulerTest {
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
         verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
         assertThat(bodyCaptor.getValue())
-                .contains("Thank you for visiting AK.LUX.NAILS")
+                .contains("It's Lucy from AK.LUX.NAILS")
                 .contains("tok123")
                 .doesNotContain("$10")
                 .doesNotContain("discount")
@@ -225,5 +230,37 @@ class SameDayRebookingSchedulerTest {
 
         verifyNoInteractions(client);
         verify(repository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("consented branch: resolved technician name is name-dropped in the body")
+    void consentedBranchNamesResolvedTechnician() throws Exception {
+        when(technicianNameResolver.resolveForCustomer(eq(CUSTOMER_ID), any())).thenReturn(Optional.of("Susan"));
+        SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
+        givenDue(s);
+        when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
+
+        scheduler.sendDueRebookingNudges();
+
+        ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
+        assertThat(bodyCaptor.getValue()).contains("Susan").contains("$10");
+    }
+
+    @Test
+    @DisplayName("transactional branch: resolved technician name is name-dropped, no gendered pronoun used")
+    void transactionalBranchNamesResolvedTechnician() throws Exception {
+        when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(false);
+        when(square.customerSegmentIds(CUSTOMER_ID)).thenReturn(List.of());
+        when(technicianNameResolver.resolveForCustomer(eq(CUSTOMER_ID), any())).thenReturn(Optional.of("Tatiana"));
+        SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
+        givenDue(s);
+        when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
+
+        scheduler.sendDueRebookingNudges();
+
+        ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
+        assertThat(bodyCaptor.getValue()).contains("Tatiana").doesNotContain(" her ").doesNotContain(" his ");
     }
 }

@@ -62,11 +62,18 @@ public class CheckoutReviewReplyService {
         String shortLink = publicBaseUrl + "/r/" + clickToken;
         String body;
         if (!positive) {
-            body = "Thanks for letting us know. We'd love to hear more so we can do better: " + shortLink + " — AK.LUX.NAILS";
+            // Empathy-first, ownership-signed — a service-recovery framing rather than a flat
+            // "we'd love to hear more" (see the SMS lifecycle audit). The review-gating question
+            // (should a low rater ever also get the Google review link, not just this form) is a
+            // routing decision above this method, not a copy one — left untouched deliberately.
+            body = "I'm really sorry today wasn't a 5 for you 💛 I'd love to make it right personally — "
+                    + "reply and tell me what happened, or share details here if that's easier: "
+                    + shortLink + " — Lucy, Manager";
         } else if (repeatReviewer) {
             body = "So glad you loved it again! 💕 You've already shared a review with us — if you have any specific feedback, we'd love to hear it here: " + shortLink + " — AK.LUX.NAILS";
         } else {
-            body = "Thank you so much! 🌟 We'd love it if you could share your experience: " + shortLink + " — AK.LUX.NAILS";
+            body = "Yay, so happy to hear that! 🎉 Since you loved it, mind leaving a quick Google review? "
+                    + "Takes 10 seconds and really helps our small business: " + shortLink + " — Lucy";
         }
 
         TwilioSmsConfig config = configService.get();

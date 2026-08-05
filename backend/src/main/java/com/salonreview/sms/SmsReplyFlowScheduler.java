@@ -27,10 +27,13 @@ public class SmsReplyFlowScheduler {
 
     private final SmsReplyFlowRepository repository;
     private final TwilioSmsService smsService;
+    private final TechnicianNameResolver technicianNameResolver;
 
-    public SmsReplyFlowScheduler(SmsReplyFlowRepository repository, TwilioSmsService smsService) {
+    public SmsReplyFlowScheduler(SmsReplyFlowRepository repository, TwilioSmsService smsService,
+                                  TechnicianNameResolver technicianNameResolver) {
         this.repository = repository;
         this.smsService = smsService;
+        this.technicianNameResolver = technicianNameResolver;
     }
 
     @Scheduled(fixedDelay = 15_000)
@@ -39,8 +42,12 @@ public class SmsReplyFlowScheduler {
         Instant now = Instant.now();
         List<SmsReplyFlow> due = repository.findByStateAndSendDueAtBefore(SmsReplyFlow.STATE_AWAITING_SEND, now);
         for (SmsReplyFlow flow : due) {
-            Map<String, String> vars = flow.getCustomerName() == null
-                    ? Map.of() : Map.of("name", flow.getCustomerName());
+            Map<String, String> vars = new java.util.HashMap<>();
+            if (flow.getCustomerName() != null) {
+                vars.put("name", flow.getCustomerName());
+            }
+            technicianNameResolver.resolveForCustomer(flow.getSquareCustomerId(), now)
+                    .ifPresent(technician -> vars.put("technician", technician));
             var result = smsService.sendTemplated("checkout_rating_request", flow.getPhoneNumber(), vars);
             if (result.sent()) {
                 flow.setState(SmsReplyFlow.STATE_AWAITING_REPLY);

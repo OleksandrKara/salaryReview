@@ -50,12 +50,14 @@ public class SameDayRebookingScheduler {
     private final SmsMessageLogService messageLogService;
     private final TwilioSmsConfigService configService;
     private final TwilioSmsClient client;
+    private final TechnicianNameResolver technicianNameResolver;
     private final String publicBaseUrl;
 
     public SameDayRebookingScheduler(SameDayRebookingSendRepository repository, SquareClient square,
                                       SmsAutomationService automationService, SmsConsentRepository consentRepository,
                                       RebookingProperties rebookingProperties, SmsMessageLogService messageLogService,
                                       TwilioSmsConfigService configService, TwilioSmsClient client,
+                                      TechnicianNameResolver technicianNameResolver,
                                       @Value("${app.public-base-url}") String publicBaseUrl) {
         this.repository = repository;
         this.square = square;
@@ -65,6 +67,7 @@ public class SameDayRebookingScheduler {
         this.messageLogService = messageLogService;
         this.configService = configService;
         this.client = client;
+        this.technicianNameResolver = technicianNameResolver;
         this.publicBaseUrl = publicBaseUrl;
     }
 
@@ -154,7 +157,12 @@ public class SameDayRebookingScheduler {
                 templateKey, AUTOMATION_KEY, send.getPhoneNumber(), "", false, "pending", null, linkTarget, clickToken);
 
         String shortLink = publicBaseUrl + "/r/" + clickToken;
-        String body = consented ? marketingBody(send.getCustomerName(), shortLink) : transactionalBody(shortLink);
+        String technician = technicianNameResolver
+                .resolveForCustomer(send.getSquareCustomerId(), Instant.now())
+                .orElse(null);
+        String body = consented
+                ? marketingBody(send.getCustomerName(), technician, shortLink)
+                : transactionalBody(send.getCustomerName(), technician, shortLink);
 
         TwilioSmsConfig config = configService.get();
         if (!config.isConfigured()) {
@@ -171,18 +179,28 @@ public class SameDayRebookingScheduler {
         }
     }
 
-    private static String marketingBody(String name, String shortLink) {
-        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
-        return greeting + " So glad you loved your visit today 💅 Rebook before midnight and take "
-                + "$10 off your next appointment (min. $99 service total) — grab your spot: " + shortLink
-                + " — AK.LUX.NAILS";
+    /** {@code technician} is the display name of whoever handled this customer's visit (see
+     * {@link TechnicianNameResolver}), null if unresolvable — falls back to a technician-less
+     * "lock in your next spot" framing rather than an empty mention. The $99-minimum condition
+     * lives on the linked promo page, not spelled out here — see the SMS lifecycle audit. */
+    private static String marketingBody(String name, String technician, String shortLink) {
+        String greeting = (name == null || name.isBlank()) ? "Hi," : "Hi " + name + ",";
+        String spotClause = (technician == null || technician.isBlank())
+                ? "want to lock in your next spot" : "want to lock in your next spot with " + technician;
+        return greeting + " it's Lucy 💛 Hope you're loving your nails! Since you're already here today, "
+                + spotClause + "? I'll knock $10 off if you book before midnight: " + shortLink;
     }
 
-    private static String transactionalBody(String shortLink) {
-        return "Thank you for visiting AK.LUX.NAILS!\n\n"
-                + "Based on your technician's recommendation, your next appointment is due in about 4 weeks.\n\n"
-                + "Reserving now gives you the best chance of keeping your preferred technician and appointment time.\n\n"
-                + "Book here: " + shortLink;
+    /** Same {@code technician} fallback reasoning as {@link #marketingBody}. Deliberately avoids a
+     * gendered pronoun for the technician (no "her"/"his") since the resolved provider's gender
+     * isn't known — "the schedule" reads a touch more generic but is never wrong. */
+    private static String transactionalBody(String name, String technician, String shortLink) {
+        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
+        String body = (technician == null || technician.isBlank())
+                ? "Your nails are usually ready for a refresh around this time — want me to see what's open on the schedule?"
+                : technician + " said your nails are usually ready for a refresh around this time — "
+                        + "want me to see what's open on the schedule?";
+        return greeting + " It's Lucy from AK.LUX.NAILS 💛 " + body + " " + shortLink;
     }
 
     private void updateReserved(SmsMessage reserved, String body, boolean sent, String reason, String twilioMessageSid) {

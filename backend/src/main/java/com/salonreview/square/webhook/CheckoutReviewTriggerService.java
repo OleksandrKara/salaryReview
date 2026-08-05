@@ -102,6 +102,7 @@ public class CheckoutReviewTriggerService {
                     .customerName(customerName)
                     .state(hasCoveredBothReviewChannels ? SmsReplyFlow.STATE_COMPLETED : SmsReplyFlow.STATE_AWAITING_SEND)
                     .squarePaymentId(payment.id())
+                    .squareCustomerId(customerId)
                     .sendDueAt(Instant.now().plus(SEND_DELAY))
                     .build());
 
