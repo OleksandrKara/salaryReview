@@ -43,6 +43,11 @@ public class SmsReplyFlow {
     @Column(name = "square_payment_id")
     private String squarePaymentId;
 
+    /** Nullable — rows created before V67 have none, and {@link com.salonreview.sms.SmsReplyFlowScheduler}
+     * falls back to technician-less copy in that case (see {@code TechnicianNameResolver}). */
+    @Column(name = "square_customer_id")
+    private String squareCustomerId;
+
     @Column(name = "send_due_at", nullable = false)
     private Instant sendDueAt;
 

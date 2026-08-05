@@ -23,8 +23,8 @@ public class SmsTemplateRegistry {
                     "four_hand_request_received",
                     SmsMessageClass.TRANSACTIONAL,
                     "four_hand_request",
-                    vars -> render("Hi {{name}}, we got your 4-Hand request for {{preferredTime}}! "
-                            + "We'll call you shortly to confirm the exact time & pricing. — AK.LUX.NAILS", vars)
+                    vars -> render("Hi {{name}}! Got your 4-Hand request for {{preferredTime}} 💛 "
+                            + "I'm Lucy, and I'll call you shortly to confirm timing & pricing — talk soon!", vars)
             ),
             /** One-off operational check, not a customer-facing message — TRANSACTIONAL so it isn't
              * blocked by a marketing-consent lookup that would never find the owner's own number. */
@@ -37,16 +37,24 @@ public class SmsTemplateRegistry {
             /** Sent by {@code SmsReplyFlowScheduler} 2 minutes after an in-salon checkout — see
              * openspec/changes/sms-automations-hub design.md D5 for why this is TRANSACTIONAL (a
              * content-neutral, non-promotional same-day follow-up, not a marketing message). No
-             * {{name}} falls back to a name-less greeting rather than rendering an empty "Hi ,". */
+             * {{name}} falls back to a name-less greeting rather than rendering an empty "Hi ,".
+             * {@code technician} (the display name of whoever handled the customer's most recent
+             * visit — see {@code TechnicianNameResolver}) is optional: a resolution miss falls back
+             * to a technician-less "I personally check in" framing rather than an empty mention. */
             "checkout_rating_request", new SmsTemplate(
                     "checkout_rating_request",
                     SmsMessageClass.TRANSACTIONAL,
                     "checkout_review_request",
                     vars -> {
                         String name = vars == null ? null : vars.get("name");
-                        String greeting = (name == null || name.isBlank()) ? "Hi" : "Hi " + name + ",";
-                        return greeting + " on a scale of 1 to 5, how did you like your nails today? 💅 "
-                                + "Just reply with a number. — AK.LUX.NAILS";
+                        String technician = vars == null ? null : vars.get("technician");
+                        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
+                        if (technician != null && !technician.isBlank()) {
+                            return greeting + " It's Lucy 💛 You were with " + technician
+                                    + " today — how'd we do, 1 to 5?";
+                        }
+                        return greeting + " It's Lucy from AK.LUX.NAILS 💛 I like to personally check in "
+                                + "after every visit — how'd we do today, 1 to 5?";
                     }
             ),
             /** Sent by {@code LeadFollowUpScheduler} 2 minutes after a lead leaves contact info

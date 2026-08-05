@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -25,13 +26,16 @@ class SmsReplyFlowSchedulerTest {
 
     private SmsReplyFlowRepository repository;
     private TwilioSmsService smsService;
+    private TechnicianNameResolver technicianNameResolver;
     private SmsReplyFlowScheduler scheduler;
 
     @BeforeEach
     void setUp() {
         repository = mock(SmsReplyFlowRepository.class);
         smsService = mock(TwilioSmsService.class);
-        scheduler = new SmsReplyFlowScheduler(repository, smsService);
+        technicianNameResolver = mock(TechnicianNameResolver.class);
+        when(technicianNameResolver.resolveForCustomer(any(), any())).thenReturn(Optional.empty());
+        scheduler = new SmsReplyFlowScheduler(repository, smsService, technicianNameResolver);
     }
 
     private static SmsReplyFlow flow(String state) {
@@ -110,6 +114,22 @@ class SmsReplyFlowSchedulerTest {
 
         assertThat(stale.getState()).isEqualTo(SmsReplyFlow.STATE_EXPIRED);
         verify(repository).save(stale);
+    }
+
+    @Test
+    @DisplayName("technician resolves for the flow's customer → threaded into the vars map")
+    void resolvedTechnicianIsThreadedIntoVars() {
+        SmsReplyFlow due = flow(SmsReplyFlow.STATE_AWAITING_SEND);
+        due.setSquareCustomerId("cust1");
+        when(repository.findByStateAndSendDueAtBefore(eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
+                .thenReturn(List.of(due));
+        when(technicianNameResolver.resolveForCustomer(eq("cust1"), any())).thenReturn(Optional.of("Susan"));
+        when(smsService.sendTemplated(eq("checkout_rating_request"), eq(PHONE), any()))
+                .thenReturn(new TwilioSmsService.SmsSendResult(true, null));
+
+        scheduler.sendDueRatingRequests();
+
+        verify(smsService).sendTemplated("checkout_rating_request", PHONE, Map.of("name", "Jane", "technician", "Susan"));
     }
 
     @Test
