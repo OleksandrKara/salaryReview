@@ -72,7 +72,7 @@ class CheckoutReviewReplyServiceTest {
 
         var bodyCaptor = ArgumentCaptor.forClass(String.class);
         verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
-        assertThat(bodyCaptor.getValue()).contains(PUBLIC_BASE_URL + "/r/" + token);
+        assertThat(bodyCaptor.getValue()).contains(PUBLIC_BASE_URL + "/r/" + token).doesNotContain("—");
 
         var savedCaptor = ArgumentCaptor.forClass(SmsMessage.class);
         verify(messageLogService).save(savedCaptor.capture());
@@ -99,7 +99,7 @@ class CheckoutReviewReplyServiceTest {
         var bodyCaptor = ArgumentCaptor.forClass(String.class);
         verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
         assertThat(bodyCaptor.getValue()).contains(PUBLIC_BASE_URL + "/r/" + tokenCaptor.getValue());
-        assertThat(bodyCaptor.getValue()).doesNotContain("share your experience");
+        assertThat(bodyCaptor.getValue()).doesNotContain("share your experience").doesNotContain("—");
     }
 
     @Test
@@ -117,7 +117,7 @@ class CheckoutReviewReplyServiceTest {
 
         var bodyCaptor = ArgumentCaptor.forClass(String.class);
         verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
-        assertThat(bodyCaptor.getValue()).contains(PUBLIC_BASE_URL + "/r/" + tokenCaptor.getValue());
+        assertThat(bodyCaptor.getValue()).contains(PUBLIC_BASE_URL + "/r/" + tokenCaptor.getValue()).doesNotContain("—");
     }
 
     @Test

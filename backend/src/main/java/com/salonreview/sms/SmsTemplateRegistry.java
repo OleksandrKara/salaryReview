@@ -1,5 +1,6 @@
 package com.salonreview.sms;
 
+import com.salonreview.util.Names;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -24,15 +25,15 @@ public class SmsTemplateRegistry {
                     SmsMessageClass.TRANSACTIONAL,
                     "four_hand_request",
                     vars -> render("Hi {{name}}! Got your 4-Hand request for {{preferredTime}} 💛 "
-                            + "I'm Lucy, and I'll call you shortly to confirm timing & pricing — talk soon!", vars)
+                            + "I'm Lucy, and I'll call you shortly to confirm timing & pricing. Talk soon!", vars)
             ),
             /** One-off operational check, not a customer-facing message — TRANSACTIONAL so it isn't
              * blocked by a marketing-consent lookup that would never find the owner's own number. */
             "toll_free_live_test", new SmsTemplate(
                     "toll_free_live_test",
                     SmsMessageClass.TRANSACTIONAL,
-                    vars -> render("This is the first message from AK.LUX.NAILS' new toll-free number "
-                            + "— Twilio verification approved and live!", vars)
+                    vars -> render("This is the first message from AK.LUX.NAILS' new toll-free number. "
+                            + "Twilio verification approved and live!", vars)
             ),
             /** Sent by {@code SmsReplyFlowScheduler} 2 minutes after an in-salon checkout — see
              * openspec/changes/sms-automations-hub design.md D5 for why this is TRANSACTIONAL (a
@@ -46,15 +47,15 @@ public class SmsTemplateRegistry {
                     SmsMessageClass.TRANSACTIONAL,
                     "checkout_review_request",
                     vars -> {
-                        String name = vars == null ? null : vars.get("name");
+                        String name = Names.capitalizeFirst(vars == null ? null : vars.get("name"));
                         String technician = vars == null ? null : vars.get("technician");
                         String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
                         if (technician != null && !technician.isBlank()) {
                             return greeting + " It's Lucy 💛 You were with " + technician
-                                    + " today — how'd we do, 1 to 5?";
+                                    + " today. How'd we do, 1 to 5?";
                         }
                         return greeting + " It's Lucy from AK.LUX.NAILS 💛 I like to personally check in "
-                                + "after every visit — how'd we do today, 1 to 5?";
+                                + "after every visit. How'd we do today, 1 to 5?";
                     }
             ),
             /** Sent by {@code LeadFollowUpScheduler} 2 minutes after a lead leaves contact info
@@ -63,18 +64,21 @@ public class SmsTemplateRegistry {
              * regardless of marketing consent. No {{name}} falls back to a name-less greeting.
              * {@code bookingLink} is the lead's own landing page (see MarketingLandingProperties) —
              * always present, never null, so there's no link-less fallback branch needed here
-             * (contrast with the technician-name templates, where the lookup can genuinely miss). */
+             * (contrast with the technician-name templates, where the lookup can genuinely miss).
+             * Leads with "when do you actually want to come in" rather than "want me to hold you a
+             * spot" — the real, specific hook is that same-day openings often aren't reflected on
+             * the site, not a vague reservation promise. */
             "lead_follow_up_nudge", new SmsTemplate(
                     "lead_follow_up_nudge",
                     SmsMessageClass.TRANSACTIONAL,
                     "lead_follow_up",
                     vars -> {
-                        String name = vars == null ? null : vars.get("name");
+                        String name = Names.capitalizeFirst(vars == null ? null : vars.get("name"));
                         String bookingLink = vars == null ? null : vars.get("bookingLink");
                         String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
-                        return greeting + " It's Lucy from AK.LUX.NAILS 💛 Saw you were checking us out — "
-                                + "want me to hold you a spot? Easiest way is right here: " + bookingLink
-                                + " (or just reply and I'll help!)";
+                        return greeting + " It's Lucy from AK.LUX.NAILS 💛 We often have last-minute "
+                                + "openings that don't show on our site. When were you hoping to come in "
+                                + "for your nails? " + bookingLink + " (or just reply and I'll find you a time!)";
                     }
             )
             // NOTE: "same_day_rebooking_nudge" is NOT registered here — like
@@ -94,7 +98,13 @@ public class SmsTemplateRegistry {
         Matcher matcher = VARIABLE.matcher(template);
         StringBuilder out = new StringBuilder();
         while (matcher.find()) {
-            String value = variables.getOrDefault(matcher.group(1), "");
+            String key = matcher.group(1);
+            String value = variables.getOrDefault(key, "");
+            // Normalized here, once, so every render()-based template gets it for free rather
+            // than each caller remembering to — see Names' own doc comment.
+            if ("name".equals(key)) {
+                value = Names.capitalizeFirst(value);
+            }
             matcher.appendReplacement(out, Matcher.quoteReplacement(value));
         }
         matcher.appendTail(out);
