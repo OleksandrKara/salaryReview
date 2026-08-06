@@ -4,6 +4,7 @@ import com.salonreview.domain.Provider;
 import com.salonreview.repo.ProviderRepository;
 import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
+import com.salonreview.util.Names;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -38,7 +39,9 @@ public class TechnicianNameResolver {
 
     /** {@code empty} if there's no resolvable past booking, no team member on its segments, or no
      * {@link Provider} record mapped to that Square team-member id yet — any of which just means
-     * the caller should use its technician-less copy instead. */
+     * the caller should use its technician-less copy instead. First name only — {@link Provider}'s
+     * {@code displayName} is a free-text admin field (payroll, the dashboard) and isn't guaranteed
+     * to be first-name-only, so it's never appropriate to send a last name to a customer. */
     public Optional<String> resolveForCustomer(String customerId, Instant asOf) {
         if (customerId == null || customerId.isBlank()) {
             return Optional.empty();
@@ -50,7 +53,8 @@ public class TechnicianNameResolver {
                     .findFirst() // list is already sorted most-recent-first
                     .flatMap(TechnicianNameResolver::firstTeamMemberId)
                     .flatMap(providers::findBySquareTeamMemberId)
-                    .map(Provider::getDisplayName);
+                    .map(Provider::getDisplayName)
+                    .map(Names::firstNameOnly);
         } catch (RuntimeException e) {
             log.warn("Technician-name resolution failed for customer {} (falling back to technician-less copy): {}",
                     customerId, e.getMessage());
