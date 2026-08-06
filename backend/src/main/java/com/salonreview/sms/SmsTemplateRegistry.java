@@ -20,12 +20,15 @@ public class SmsTemplateRegistry {
     private static final Pattern VARIABLE = Pattern.compile("\\{\\{(\\w+)}}");
 
     private final Map<String, SmsTemplate> templates = Map.of(
+            /** Team-voiced, not signed by a named individual — this confirmation doesn't promise a
+             * phone call (the salon follows up by text in practice, not by calling), so it says
+             * "text you" rather than the previous "I'll call you". */
             "four_hand_request_received", new SmsTemplate(
                     "four_hand_request_received",
                     SmsMessageClass.TRANSACTIONAL,
                     "four_hand_request",
                     vars -> render("Hi {{name}}! Got your 4-Hand request for {{preferredTime}} 💛 "
-                            + "I'm Lucy, and I'll call you shortly to confirm timing & pricing. Talk soon!", vars)
+                            + "Our team will text you shortly to confirm timing & pricing! -AK.LUX.NAILS", vars)
             ),
             /** One-off operational check, not a customer-facing message — TRANSACTIONAL so it isn't
              * blocked by a marketing-consent lookup that would never find the owner's own number. */
@@ -52,10 +55,10 @@ public class SmsTemplateRegistry {
                         String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
                         if (technician != null && !technician.isBlank()) {
                             return greeting + " It's Lucy 💛 You were with " + technician
-                                    + " today. How'd we do, 1 to 5?";
+                                    + " today. How'd we do? Just reply with a number, 1 to 5!";
                         }
                         return greeting + " It's Lucy from AK.LUX.NAILS 💛 I like to personally check in "
-                                + "after every visit. How'd we do today, 1 to 5?";
+                                + "after every visit. How'd we do? Just reply with a number, 1 to 5!";
                     }
             ),
             /** Sent by {@code LeadFollowUpScheduler} 2 minutes after a lead leaves contact info
@@ -63,10 +66,10 @@ public class SmsTemplateRegistry {
              * design.md D4. Purely helpful, no discount/incentive — TRANSACTIONAL, sendable
              * regardless of marketing consent. No {{name}} falls back to a name-less greeting.
              * No link, deliberately — everyone who gets this just came from the site itself, so
-             * re-sending its own URL back to them adds nothing; reply-only keeps this short. Leads
-             * with "when do you actually want to come in" rather than "want me to hold you a spot"
-             * — the real, specific hook is that same-day openings often aren't reflected on the
-             * site, not a vague reservation promise. */
+             * re-sending its own URL back to them adds nothing; reply-only keeps this short.
+             * Deliberately doesn't guess *why* they didn't book (could be timing, price, wrong
+             * service) — asking two open questions covers all of those without assuming it was
+             * a scheduling problem specifically. */
             "lead_follow_up_nudge", new SmsTemplate(
                     "lead_follow_up_nudge",
                     SmsMessageClass.TRANSACTIONAL,
@@ -74,9 +77,8 @@ public class SmsTemplateRegistry {
                     vars -> {
                         String name = Names.capitalizeFirst(vars == null ? null : vars.get("name"));
                         String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
-                        return greeting + " It's Lucy from AK.LUX.NAILS 💛 We often have openings that "
-                                + "don't show on our site. When were you hoping to come in? Just reply "
-                                + "and I'll find you a time!";
+                        return greeting + " It's Lucy from AK.LUX.NAILS 💛 Do you need help with more "
+                                + "openings or is there anything specific you are looking for?";
                     }
             )
             // NOTE: "same_day_rebooking_nudge" is NOT registered here — like

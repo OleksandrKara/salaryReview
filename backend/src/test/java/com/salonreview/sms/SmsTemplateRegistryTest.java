@@ -41,19 +41,35 @@ class SmsTemplateRegistryTest {
     }
 
     @Test
-    @DisplayName("checkout_rating_request title-cases an all-lowercase name and contains no em dash")
+    @DisplayName("checkout_rating_request title-cases an all-lowercase name, spells out \"reply with a "
+            + "number\" for clarity, and contains no em dash")
     void checkoutRatingRequestNormalizesNameAndAvoidsEmDash() {
         SmsTemplate template = registry.find("checkout_rating_request");
 
         String rendered = template.render().apply(Map.of("name", "oleksandr", "technician", "Susan"));
 
-        assertThat(rendered).contains("Hi Oleksandr").doesNotContain("oleksandr").doesNotContain("—");
+        assertThat(rendered)
+                .contains("Hi Oleksandr")
+                .doesNotContain("oleksandr")
+                .contains("reply with a number")
+                .doesNotContain("—");
     }
 
     @Test
-    @DisplayName("lead_follow_up_nudge title-cases an all-lowercase name, asks about hidden availability "
-            + "instead of \"hold you a spot\", has no em dash, and carries no link — everyone who gets "
-            + "this just came from the site itself")
+    @DisplayName("checkout_rating_request fallback branch (no technician) also spells out "
+            + "\"reply with a number\"")
+    void checkoutRatingRequestFallbackAlsoAsksForNumber() {
+        SmsTemplate template = registry.find("checkout_rating_request");
+
+        String rendered = template.render().apply(Map.of("name", "Jane"));
+
+        assertThat(rendered).contains("reply with a number").doesNotContain("—");
+    }
+
+    @Test
+    @DisplayName("lead_follow_up_nudge title-cases an all-lowercase name, asks two open questions "
+            + "rather than assuming why they didn't book, has no em dash, and carries no link — "
+            + "everyone who gets this just came from the site itself")
     void leadFollowUpNudgeNormalizesNameAndAsksAboutOpenings() {
         SmsTemplate template = registry.find("lead_follow_up_nudge");
 
@@ -62,7 +78,8 @@ class SmsTemplateRegistryTest {
         assertThat(rendered)
                 .contains("Hi Oleksandr")
                 .doesNotContain("oleksandr")
-                .contains("don't show on our site")
+                .contains("more openings")
+                .contains("anything specific")
                 .doesNotContain("hold you a spot")
                 .doesNotContain("http")
                 .doesNotContain("—");
