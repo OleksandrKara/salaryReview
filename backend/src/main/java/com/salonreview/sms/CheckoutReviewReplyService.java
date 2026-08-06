@@ -70,7 +70,12 @@ public class CheckoutReviewReplyService {
                     + "Reply and tell me what happened, or share details here if that's easier: "
                     + shortLink + " -Lucy, Manager";
         } else if (repeatReviewer) {
-            body = "So glad you loved it again! 💕 You've already shared a review with us. If you have any specific feedback, we'd love to hear it here: " + shortLink + " -AK.LUX.NAILS";
+            // "Clicked through" is the only fact hasClickedLinkTarget actually establishes — we
+            // have no way to confirm they went on to submit a review on Google's own page, so the
+            // copy shouldn't claim they definitely left one.
+            body = "So glad you loved it again! 💕 You've already clicked through to leave us a Google "
+                    + "review before. If there's any specific feedback this time, we'd love to hear it "
+                    + "here: " + shortLink + " -AK.LUX.NAILS";
         } else {
             body = "Yay, so happy to hear that! 🎉 Since you loved it, mind leaving a quick Google review? "
                     + "Takes 10 seconds and really helps our small business: " + shortLink + " -Lucy";

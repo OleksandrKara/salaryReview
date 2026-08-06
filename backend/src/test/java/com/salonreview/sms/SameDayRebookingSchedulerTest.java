@@ -164,6 +164,8 @@ class SameDayRebookingSchedulerTest {
         verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
         assertThat(bodyCaptor.getValue())
                 .contains("It's Lucy from AK.LUX.NAILS")
+                .contains("High season")
+                .contains("3-4 week wait")
                 .contains("tok123")
                 .doesNotContain("$10")
                 .doesNotContain("discount")

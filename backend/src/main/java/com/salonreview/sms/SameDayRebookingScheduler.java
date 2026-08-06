@@ -194,16 +194,18 @@ public class SameDayRebookingScheduler {
     }
 
     /** Same {@code technician} fallback reasoning as {@link #marketingBody}. Deliberately avoids a
-     * gendered pronoun for the technician (no "her"/"his") since the resolved provider's gender
-     * isn't known — "the schedule" reads a touch more generic but is never wrong. */
+     * gendered pronoun for the technician (no "her"/"his"). Leads with the high-season urgency
+     * (spots filling fast, the usual 3-4 week wait) rather than a vague "around this time" — the
+     * point is to get the customer booking today instead of waiting, not just to remind them a
+     * refresh is due. */
     private static String transactionalBody(String rawName, String technician, String shortLink) {
         String name = Names.capitalizeFirst(rawName);
         String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
         String body = (technician == null || technician.isBlank())
-                ? "Your nails are usually ready for a refresh around this time. Want me to see what's open on the schedule?"
-                : technician + " said your nails are usually ready for a refresh around this time. "
-                        + "Want me to see what's open on the schedule?";
-        return greeting + " It's Lucy from AK.LUX.NAILS 💛 " + body + " " + shortLink;
+                ? "High season means spots fill fast."
+                : "High season means " + technician + "'s spots fill fast.";
+        return greeting + " It's Lucy from AK.LUX.NAILS 💛 " + body
+                + " Book today, not the usual 3-4 week wait: " + shortLink;
     }
 
     private void updateReserved(SmsMessage reserved, String body, boolean sent, String reason, String twilioMessageSid) {
