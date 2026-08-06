@@ -32,11 +32,22 @@ public class RebookingProperties {
      * enrollment/removal simply no-ops rather than erroring. */
     private String autoDiscountGroupId = "";
 
+    /** Same as {@link #autoDiscountGroupId} but for the $5 {@code lapsed_customer_winback} coupon
+     * — a separate Square customer-group/pricing-rule, deliberately never reusing the $10 group
+     * (pricing rules are amount-specific, not parameterizable per-request) — see
+     * openspec/changes/lapsed-customer-winback-automation design.md D9. Blank until that one-time
+     * Catalog/CustomerGroup setup is done, same no-op-not-error convention as above. */
+    private String winbackAutoDiscountGroupId = "";
+
     public boolean isSigningConfigured() {
         return promoSecret != null && !promoSecret.isBlank();
     }
 
     public boolean isAutoDiscountConfigured() {
         return autoDiscountGroupId != null && !autoDiscountGroupId.isBlank();
+    }
+
+    public boolean isWinbackAutoDiscountConfigured() {
+        return winbackAutoDiscountGroupId != null && !winbackAutoDiscountGroupId.isBlank();
     }
 }

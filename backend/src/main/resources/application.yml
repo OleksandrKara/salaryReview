@@ -90,6 +90,10 @@ rebooking:
   promo-secret: ${REBOOKING_PROMO_SECRET:}
   consent-segment-id: ${REBOOKING_CONSENT_SEGMENT_ID:gv2:DN9J6H6X8D4NN9202T6PKWK43C}
   auto-discount-group-id: ${REBOOKING_AUTO_DISCOUNT_GROUP_ID:}
+  # $5 coupon for lapsed_customer_winback — see openspec/changes/lapsed-customer-winback-automation
+  # design.md D9. Separate Square Catalog group from auto-discount-group-id above (different
+  # amount, same no-op-until-configured convention).
+  winback-auto-discount-group-id: ${REBOOKING_WINBACK_AUTO_DISCOUNT_GROUP_ID:}
 
 # VIP badge/filter on the Contacts tab (see MarketingContactsService#visitCountsByCustomerId) —
 # a customer with at least this many distinct-day visits (per provider_visit) is flagged VIP.

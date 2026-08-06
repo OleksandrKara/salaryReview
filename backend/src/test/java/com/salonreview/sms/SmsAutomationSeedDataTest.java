@@ -47,4 +47,11 @@ class SmsAutomationSeedDataTest {
 
         assertThat(seeded.isEnabled()).isFalse();
     }
+
+    @Test
+    void lapsedCustomerWinbackSeedsDisabled() {
+        SmsAutomation seeded = repository.findById("lapsed_customer_winback").orElseThrow();
+
+        assertThat(seeded.isEnabled()).isFalse();
+    }
 }

@@ -37,6 +37,14 @@ public final class SmsAutomationRegistry {
                     "Every in-salon checkout, 3 hours later, if they haven't already rebooked and have "
                             + "given SMS-marketing consent (in this app or in Square) — a $10-off nudge to "
                             + "rebook before midnight, min. $99 order"
+            ),
+            "lapsed_customer_winback", new AutomationMeta(
+                    "lapsed_customer_winback",
+                    "Lapsed customer win-back",
+                    "Every customer with exactly one all-time visit, 21–35 days after that visit, if they "
+                            + "haven't already rebooked — a one-time nudge naming their technician's own "
+                            + "schedule; consented customers see a $5-off coupon (min. $99 order) valid until "
+                            + "midnight that day, everyone else gets the same link with no discount language"
             )
     );
 
