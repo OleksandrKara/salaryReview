@@ -52,6 +52,17 @@ class TechnicianNameResolverTest {
     }
 
     @Test
+    @DisplayName("provider's display name has a last name → only the first name is returned")
+    void stripsLastNameFromDisplayName() {
+        when(square.bookingsForCustomer(eq(CUSTOMER_ID), any()))
+                .thenReturn(List.of(booking("2026-08-05T17:00:00Z", "ACCEPTED", "TM1")));
+        Provider provider = Provider.builder().id(1L).name("Susan Alieva").displayName("Susan Alieva").build();
+        when(providers.findBySquareTeamMemberId("TM1")).thenReturn(Optional.of(provider));
+
+        assertThat(resolver.resolveForCustomer(CUSTOMER_ID, asOf)).contains("Susan");
+    }
+
+    @Test
     @DisplayName("no bookings at all → empty")
     void noBookingsResolvesEmpty() {
         when(square.bookingsForCustomer(eq(CUSTOMER_ID), any())).thenReturn(List.of());

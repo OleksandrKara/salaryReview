@@ -163,10 +163,11 @@ class SameDayRebookingSchedulerTest {
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
         verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
         assertThat(bodyCaptor.getValue())
-                .contains("It's Lucy from AK.LUX.NAILS")
-                .contains("High season")
+                .contains("this time of year")
                 .contains("3-4 week wait")
                 .contains("tok123")
+                .doesNotContain("Hi ")
+                .doesNotContain("Lucy")
                 .doesNotContain("$10")
                 .doesNotContain("discount")
                 .doesNotContain("off");
@@ -246,7 +247,9 @@ class SameDayRebookingSchedulerTest {
 
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
         verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
-        assertThat(bodyCaptor.getValue()).contains("Susan").contains("$10").doesNotContain("—");
+        assertThat(bodyCaptor.getValue())
+                .contains("Susan").contains("$10")
+                .doesNotContain("Hi ").doesNotContain("Lucy").doesNotContain("—");
     }
 
     @Test
@@ -264,24 +267,7 @@ class SameDayRebookingSchedulerTest {
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
         verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
         assertThat(bodyCaptor.getValue())
-                .contains("Tatiana").doesNotContain(" her ").doesNotContain(" his ").doesNotContain("—");
-    }
-
-    @Test
-    @DisplayName("customer name stored all-lowercase is title-cased in the greeting")
-    void lowercaseCustomerNameIsCapitalized() throws Exception {
-        SameDayRebookingSend s = SameDayRebookingSend.builder()
-                .id(1L).phoneNumber(PHONE).customerName("oleksandr").squareCustomerId(CUSTOMER_ID)
-                .squarePaymentId("pay1").sendDueAt(Instant.now().minusSeconds(5))
-                .promoExpiresAt(Instant.now().plusSeconds(3600)).state(SameDayRebookingSend.STATE_AWAITING_SEND)
-                .build();
-        givenDue(s);
-        when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
-
-        scheduler.sendDueRebookingNudges();
-
-        ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
-        verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
-        assertThat(bodyCaptor.getValue()).contains("Oleksandr").doesNotContain("oleksandr");
+                .contains("Tatiana").doesNotContain(" her ").doesNotContain(" his ")
+                .doesNotContain("Hi ").doesNotContain("Lucy").doesNotContain("—");
     }
 }
