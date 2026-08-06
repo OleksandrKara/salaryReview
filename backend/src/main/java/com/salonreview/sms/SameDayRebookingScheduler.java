@@ -7,7 +7,6 @@ import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.SameDayRebookingSendRepository;
 import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
-import com.salonreview.util.Names;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -162,8 +161,8 @@ public class SameDayRebookingScheduler {
                 .resolveForCustomer(send.getSquareCustomerId(), Instant.now())
                 .orElse(null);
         String body = consented
-                ? marketingBody(send.getCustomerName(), technician, shortLink)
-                : transactionalBody(send.getCustomerName(), technician, shortLink);
+                ? marketingBody(technician, shortLink)
+                : transactionalBody(technician, shortLink);
 
         TwilioSmsConfig config = configService.get();
         if (!config.isConfigured()) {
@@ -183,29 +182,29 @@ public class SameDayRebookingScheduler {
     /** {@code technician} is the display name of whoever handled this customer's visit (see
      * {@link TechnicianNameResolver}), null if unresolvable — falls back to a technician-less
      * "lock in your next spot" framing rather than an empty mention. The $99-minimum condition
-     * lives on the linked promo page, not spelled out here — see the SMS lifecycle audit. */
-    private static String marketingBody(String rawName, String technician, String shortLink) {
-        String name = Names.capitalizeFirst(rawName);
-        String greeting = (name == null || name.isBlank()) ? "Hi," : "Hi " + name + ",";
+     * lives on the linked promo page, not spelled out here — see the SMS lifecycle audit. No
+     * greeting or "It's Lucy" signature — by the time this fires same-day, the customer has
+     * already gotten at least one other automated text (checkout_rating_request, maybe its reply)
+     * establishing the sender, so re-introducing it here reads repetitive rather than personal —
+     * no {@code rawName}/greeting parameter for that reason. */
+    private static String marketingBody(String technician, String shortLink) {
         String spotClause = (technician == null || technician.isBlank())
                 ? "want to lock in your next spot" : "want to lock in your next spot with " + technician;
-        return greeting + " it's Lucy 💛 Hope you're loving your nails! Since you're already here today, "
-                + spotClause + "? I'll knock $10 off if you book before midnight: " + shortLink;
+        return "Hope you're loving your nails 💛 Since you're already here today, " + spotClause
+                + "? I'll knock $10 off if you book before midnight: " + shortLink;
     }
 
-    /** Same {@code technician} fallback reasoning as {@link #marketingBody}. Deliberately avoids a
-     * gendered pronoun for the technician (no "her"/"his"). Leads with the high-season urgency
-     * (spots filling fast, the usual 3-4 week wait) rather than a vague "around this time" — the
-     * point is to get the customer booking today instead of waiting, not just to remind them a
-     * refresh is due. */
-    private static String transactionalBody(String rawName, String technician, String shortLink) {
-        String name = Names.capitalizeFirst(rawName);
-        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
+    /** Same {@code technician} fallback reasoning as {@link #marketingBody}, and the same
+     * no-greeting/no-signature reasoning too. Deliberately avoids a gendered pronoun for the
+     * technician (no "her"/"his"). Leads with the high-season urgency (spots filling fast, the
+     * usual 3-4 week wait) rather than a vague "around this time" — the point is to get the
+     * customer booking today instead of waiting, not just to remind them a refresh is due. */
+    private static String transactionalBody(String technician, String shortLink) {
         String body = (technician == null || technician.isBlank())
-                ? "High season means spots fill fast."
-                : "High season means " + technician + "'s spots fill fast.";
-        return greeting + " It's Lucy from AK.LUX.NAILS 💛 " + body
-                + " Book today, not the usual 3-4 week wait: " + shortLink;
+                ? "Spots are filling up fast this time of year"
+                : technician + "'s spots are filling up fast this time of year";
+        return body + " 💛 Might be worth grabbing your next one today instead of the usual "
+                + "3-4 week wait: " + shortLink;
     }
 
     private void updateReserved(SmsMessage reserved, String body, boolean sent, String reason, String twilioMessageSid) {
