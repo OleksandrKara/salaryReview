@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '../../lib/api';
 import type { MarketingContact, SmsConversationDto, SmsConversationSearchHitDto, SmsMessageDto } from '../../lib/types';
 import ContactInfoPanel from './ContactInfoPanel';
@@ -114,6 +114,10 @@ export default function MessagesView({
   const [showContactPanel, setShowContactPanel] = useState(false);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  // Photos staged for the next send — cleared (and their object URLs revoked) once the send
+  // completes or the composer is abandoned for a different thread.
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   // Search box (conversation list). Name/phone matching is instant and purely client-side, since
   // every conversation is already loaded; `searchHits` is only populated for message-content
   // matches, which need a backend lookup since older messages in a thread aren't loaded until
@@ -130,6 +134,15 @@ export default function MessagesView({
   // events during the brief reconnect window) and so can't close over selectedPhone directly.
   const selectedPhoneRef = useRef<string | null>(selectedPhone);
 
+  // Object URLs for the staged attachment previews — revoked whenever the staged set changes or
+  // the component unmounts, so switching photos (or threads) doesn't leak blob URLs.
+  const attachedPreviews = useMemo(() => attachedFiles.map((f) => URL.createObjectURL(f)), [attachedFiles]);
+  useEffect(() => {
+    return () => {
+      attachedPreviews.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [attachedPreviews]);
+
   useEffect(() => {
     if (!selectedPhone) return;
     let cancelled = false;
@@ -139,6 +152,8 @@ export default function MessagesView({
       setShowContactPanel(pendingShowContactPanelRef.current);
       pendingShowContactPanelRef.current = false;
       setContact(undefined);
+      // Staged photos don't belong to whatever thread comes next.
+      setAttachedFiles([]);
       setThreadLoading(true);
       api.getSmsThread(selectedPhone)
         .then((data) => {
@@ -285,12 +300,17 @@ export default function MessagesView({
 
   async function sendReply() {
     const body = draft.trim();
-    if (!body || !selectedPhone || sending) return;
+    // A pure-photo message (no text) is valid — only a genuinely empty send (no text, no photos)
+    // is blocked.
+    if ((!body && attachedFiles.length === 0) || !selectedPhone || sending) return;
     setSending(true);
     try {
-      const result = await api.sendSmsReply(selectedPhone, body);
+      const result = attachedFiles.length > 0
+        ? await api.sendSmsReplyWithMedia(selectedPhone, body, attachedFiles)
+        : await api.sendSmsReply(selectedPhone, body);
       if (result.sent) {
         setDraft('');
+        setAttachedFiles([]);
         const [freshThread, freshConversations] = await Promise.all([
           api.getSmsThread(selectedPhone),
           api.listSmsConversations(),
@@ -302,6 +322,15 @@ export default function MessagesView({
     } finally {
       setSending(false);
     }
+  }
+
+  function addAttachedFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setAttachedFiles((prev) => [...prev, ...Array.from(files)]);
+  }
+
+  function removeAttachedFile(index: number) {
+    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
   }
 
   // Already in memory from the conversation list — shown immediately in the thread header while
@@ -591,7 +620,19 @@ export default function MessagesView({
                               m.direction === 'OUTBOUND' ? 'bg-sky-600 text-white' : 'bg-zinc-100 text-zinc-900'
                             }`}
                           >
-                            <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                            {m.media.length > 0 && (
+                              <div data-testid="thread-message-media" className={`grid gap-1 ${m.media.length > 1 ? 'grid-cols-2' : ''} ${m.body ? 'mb-1.5' : ''}`}>
+                                {m.media.map((media, mi) => (
+                                  <a key={mi} href={media.url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg">
+                                    {/* eslint-disable-next-line @next/next/no-img-element -- remote,
+                                        opaque-token-served images from our own /api/public/sms-media
+                                        endpoint; next/image's optimizer adds nothing here. */}
+                                    <img src={media.url} alt="" loading="lazy" className="h-full max-h-56 w-full object-cover" />
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                            {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
                             <p className={`mt-1 text-[10px] tabular-nums ${m.direction === 'OUTBOUND' ? 'text-sky-100' : 'text-zinc-400'}`}>
                               {formatBubbleTime(m.createdAt)}
                               {m.direction === 'OUTBOUND' && m.status !== 'SENT' ? ' · Not sent' : ''}
@@ -662,36 +703,83 @@ export default function MessagesView({
                 </button>
               </div>
             ) : (
-              <form
-                data-testid="thread-composer"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void sendReply();
-                }}
-                className="flex items-center gap-2 border-t border-zinc-200 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-              >
-                {/* text-base (16px), not text-sm, on mobile — a smaller font on a focused input
-                    makes iOS Safari auto-zoom the whole page, which is jarring here. */}
-                <input
-                  data-testid="thread-composer-input"
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  placeholder="Type a reply…"
-                  className="min-w-0 flex-1 rounded-full border border-zinc-300 px-4 py-2.5 text-base sm:py-2 sm:text-sm"
-                />
-                <button
-                  type="submit"
-                  data-testid="thread-composer-send-button"
-                  disabled={!draft.trim() || sending}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white disabled:opacity-40 sm:h-auto sm:w-auto sm:px-4 sm:py-2"
-                  aria-label="Send"
+              <div className="border-t border-zinc-200 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                {attachedFiles.length > 0 && (
+                  <div data-testid="thread-composer-attachments" className="flex gap-2 overflow-x-auto px-3 pt-3">
+                    {attachedFiles.map((file, i) => (
+                      <div key={i} className="relative shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element -- a local blob:
+                            object URL for an in-memory File; next/image doesn't apply. */}
+                        <img src={attachedPreviews[i]} alt="" className="h-16 w-16 rounded-lg object-cover ring-1 ring-zinc-200" />
+                        <button
+                          type="button"
+                          data-testid="thread-composer-attachment-remove"
+                          onClick={() => removeAttachedFile(i)}
+                          aria-label={`Remove ${file.name}`}
+                          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-zinc-900 text-white shadow"
+                        >
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                            <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <form
+                  data-testid="thread-composer"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void sendReply();
+                  }}
+                  className="flex items-center gap-2 p-3"
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="sm:hidden">
-                    <path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" />
-                  </svg>
-                  <span className="hidden text-sm font-medium sm:inline">Send</span>
-                </button>
-              </form>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    data-testid="thread-composer-file-input"
+                    className="hidden"
+                    onChange={(e) => {
+                      addAttachedFiles(e.target.files);
+                      e.target.value = '';
+                    }}
+                  />
+                  <button
+                    type="button"
+                    data-testid="thread-composer-attach-button"
+                    onClick={() => fileInputRef.current?.click()}
+                    aria-label="Attach a photo"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 sm:h-9 sm:w-9"
+                  >
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                    </svg>
+                  </button>
+                  {/* text-base (16px), not text-sm, on mobile — a smaller font on a focused input
+                      makes iOS Safari auto-zoom the whole page, which is jarring here. */}
+                  <input
+                    data-testid="thread-composer-input"
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    placeholder={attachedFiles.length > 0 ? 'Add a caption…' : 'Type a reply…'}
+                    className="min-w-0 flex-1 rounded-full border border-zinc-300 px-4 py-2.5 text-base sm:py-2 sm:text-sm"
+                  />
+                  <button
+                    type="submit"
+                    data-testid="thread-composer-send-button"
+                    disabled={(!draft.trim() && attachedFiles.length === 0) || sending}
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white disabled:opacity-40 sm:h-auto sm:w-auto sm:px-4 sm:py-2"
+                    aria-label="Send"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="sm:hidden">
+                      <path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" />
+                    </svg>
+                    <span className="hidden text-sm font-medium sm:inline">Send</span>
+                  </button>
+                </form>
+              </div>
             )}
           </>
         )}

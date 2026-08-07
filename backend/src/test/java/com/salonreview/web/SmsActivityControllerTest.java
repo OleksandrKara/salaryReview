@@ -7,6 +7,7 @@ import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.repo.SmsMessageRepository.ConversationSummaryProjection;
 import com.salonreview.sms.SmsEventBroadcaster;
+import com.salonreview.sms.SmsMediaService;
 import com.salonreview.sms.SmsMessageLogService;
 import com.salonreview.sms.SmsMessageLogService.ConversationSearchHit;
 import com.salonreview.sms.TwilioSmsService;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -48,6 +50,7 @@ class SmsActivityControllerTest {
     private MarketingContactsService contactsService;
     private BlockedNumberRepository blockedNumberRepository;
     private SmsEventBroadcaster events;
+    private SmsMediaService mediaService;
     private MockMvc mvc;
 
     @BeforeEach
@@ -57,9 +60,11 @@ class SmsActivityControllerTest {
         contactsService = mock(MarketingContactsService.class);
         blockedNumberRepository = mock(BlockedNumberRepository.class);
         events = mock(SmsEventBroadcaster.class);
+        mediaService = mock(SmsMediaService.class);
         when(blockedNumberRepository.findByPhoneNumberIn(any())).thenReturn(List.of());
+        when(mediaService.mediaForMessages(any())).thenReturn(Map.of());
         mvc = MockMvcBuilders.standaloneSetup(
-                new SmsActivityController(service, smsService, contactsService, blockedNumberRepository, events)).build();
+                new SmsActivityController(service, smsService, contactsService, blockedNumberRepository, events, mediaService)).build();
     }
 
     private static Contact contact(String givenName, String emailAddress) {
@@ -249,6 +254,38 @@ class SmsActivityControllerTest {
                 .andExpect(jsonPath("$.sent").value(true));
 
         verify(smsService).sendManual(PHONE, "hand-typed reply");
+    }
+
+    @Test
+    @DisplayName("POST /reply-with-media sends via TwilioSmsService.sendManualWithMedia and returns the result")
+    void replyWithMediaSendsManualMessageWithFiles() throws Exception {
+        when(smsService.sendManualWithMedia(eq(PHONE), eq("check this out"), any()))
+                .thenReturn(new TwilioSmsService.SmsSendResult(true, null));
+        MockMultipartFile file = new MockMultipartFile("files", "photo.jpg", "image/jpeg", new byte[]{1, 2, 3});
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .multipart("/api/owner/automations/activity/reply-with-media")
+                        .file(file)
+                        .param("phoneNumber", PHONE)
+                        .param("body", "check this out"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sent").value(true));
+
+        verify(smsService).sendManualWithMedia(eq(PHONE), eq("check this out"), any());
+    }
+
+    @Test
+    @DisplayName("GET /conversations/{phoneNumber} attaches media URLs from the batch lookup")
+    void threadIncludesMedia() throws Exception {
+        when(service.thread(PHONE)).thenReturn(List.of(
+                SmsMessage.builder().id(1L).direction("INBOUND").phoneNumber(PHONE).body("here's a pic").status("RECEIVED").build()));
+        when(mediaService.mediaForMessages(List.of(1L))).thenReturn(Map.of(
+                1L, List.of(new SmsMediaService.MediaInfo("https://salon.akluxnails.com/api/public/sms-media/abc12", "image/jpeg"))));
+
+        mvc.perform(get("/api/owner/automations/activity/conversations/{phoneNumber}", PHONE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].media[0].url").value("https://salon.akluxnails.com/api/public/sms-media/abc12"))
+                .andExpect(jsonPath("$[0].media[0].contentType").value("image/jpeg"));
     }
 
     @Test

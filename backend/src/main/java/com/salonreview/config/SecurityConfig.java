@@ -56,6 +56,11 @@ public class SecurityConfig {
                         .requestMatchers("/api/public/webhooks/square", "/api/public/sms/inbound",
                                 "/api/public/sms/status", "/api/public/voice/inbound", "/r/**")
                                 .permitAll()
+                        // MMS photo serving — same "harmless public endpoint" shape as /r/**, keyed by an
+                        // opaque, unguessable token rather than a session, so both the dashboard's <img>
+                        // tags and Twilio's own outbound-media-fetch requests can retrieve a file with no
+                        // auth header (see SmsMediaController).
+                        .requestMatchers("/api/public/sms-media/**").permitAll()
                         // Retention is read-only visibility for managers too (same data as owners, no
                         // other owner routes). Listed first so it wins over the owner-only catch-all.
                         .requestMatchers(HttpMethod.GET, "/api/owner/retention", "/api/owner/retention/**")

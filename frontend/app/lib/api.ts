@@ -271,6 +271,19 @@ export const api = {
   sendSmsReply: (phoneNumber: string, body: string) =>
     proxyJson<SmsReplyResult>(`/api/owner/automations/activity/reply`, 'POST', { phoneNumber, body }),
 
+  // Same as sendSmsReply, with one or more photo attachments — multipart, not JSON (see
+  // uploadRagDocument above for the same no-Content-Type-header convention; the browser sets the
+  // multipart boundary itself).
+  sendSmsReplyWithMedia: async (phoneNumber: string, body: string, files: File[]): Promise<SmsReplyResult> => {
+    const form = new FormData();
+    form.append('phoneNumber', phoneNumber);
+    if (body) form.append('body', body);
+    for (const file of files) form.append('files', file);
+    const res = await fetch(`/api/owner/automations/activity/reply-with-media`, { method: 'POST', body: form });
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+    return (await res.json()) as SmsReplyResult;
+  },
+
   // Message-content search across every conversation, for the manager conversation view's search
   // box — name/phone matching is done client-side against the already-loaded conversation list
   // (see MessagesView.tsx), this covers matches buried in older message history.
