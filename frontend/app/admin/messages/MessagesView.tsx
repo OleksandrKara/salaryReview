@@ -56,12 +56,15 @@ function displayName(givenName: string | null | undefined, familyName: string | 
 
 /** Human label for a message's tracked link — null for a message with no link at all (most
  * messages), which the caller uses to skip rendering the click-status row. Covers the
- * checkout-review-request automation's two fixed targets and the same-day-rebooking-discount
- * automation's signed promo link (`REBOOK:<epochSeconds>`, see ShortLinkController). */
+ * checkout-review-request automation's two fixed targets, the same-day-rebooking-discount
+ * automation's signed promo link (`REBOOK:<epochSeconds>`), and lapsed-customer-winback's own
+ * signed promo link (`WINBACK:<epochSeconds>`) — both share the same ShortLinkController
+ * click-tracked-redirect mechanism, just a different promo code. Missing the WINBACK: branch
+ * silently hid the click-status row for every lapsed-customer-winback message (fixed 2026-08-07). */
 function linkTargetLabel(linkTarget: string | null): string | null {
   if (linkTarget === 'GOOGLE_REVIEW') return 'Google review link';
   if (linkTarget === 'FEEDBACK_FORM') return 'Feedback form link';
-  if (linkTarget?.startsWith('REBOOK:')) return 'Booking link';
+  if (linkTarget?.startsWith('REBOOK:') || linkTarget?.startsWith('WINBACK:')) return 'Booking link';
   return null;
 }
 
