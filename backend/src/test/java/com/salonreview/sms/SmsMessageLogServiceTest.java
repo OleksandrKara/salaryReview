@@ -230,4 +230,15 @@ class SmsMessageLogServiceTest {
         assertThat(service.phoneNumbersWithClickedLinkTarget(phones, "GOOGLE_REVIEW"))
                 .containsExactly("+15551234567");
     }
+
+    @Test
+    @DisplayName("phoneNumbersFlaggedAsSpam delegates to the batch repository query with the spam/opt-out error codes")
+    void phoneNumbersFlaggedAsSpamDelegates() {
+        List<String> phones = List.of("+15551234567", "+15559876543");
+        when(repository.findPhoneNumbersWithDeliveryErrorCode(eq(phones), any()))
+                .thenReturn(List.of("+15559876543"));
+
+        assertThat(service.phoneNumbersFlaggedAsSpam(phones)).containsExactly("+15559876543");
+        verify(repository).findPhoneNumbersWithDeliveryErrorCode(phones, java.util.Set.of("30007", "21610"));
+    }
 }

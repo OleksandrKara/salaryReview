@@ -107,6 +107,15 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
      * {@code SameDayRebookingScheduler}). {@code phoneNumber} must already be E.164-normalized. */
     boolean existsByPhoneNumberAndNegativeFeedbackAtIsNotNull(String phoneNumber);
 
+    /** Batch form of "has any OUTBOUND message to this number ever come back with one of these
+     * Twilio delivery-status error codes" — same one-query-not-one-per-row pattern as
+     * {@link #findPhoneNumbersWithClickedLinkTarget}. Backs the conversation list's spam-flag icon
+     * — see {@code SmsMessageLogService#phoneNumbersFlaggedAsSpam} for which codes count. */
+    @Query("SELECT DISTINCT m.phoneNumber FROM SmsMessage m "
+            + "WHERE m.phoneNumber IN :phoneNumbers AND m.deliveryErrorCode IN :errorCodes")
+    List<String> findPhoneNumbersWithDeliveryErrorCode(@Param("phoneNumbers") Collection<String> phoneNumbers,
+                                                        @Param("errorCodes") Collection<String> errorCodes);
+
     /** Most recent time this phone number was sent a click-tracked link to the given target
      * (any outbound message with that {@code link_target}, sent or not — "sent" here means
      * "we tried", matching how the contact sidebar wants to distinguish "never sent" from "sent

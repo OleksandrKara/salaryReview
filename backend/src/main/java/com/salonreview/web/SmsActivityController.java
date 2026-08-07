@@ -65,7 +65,8 @@ public class SmsActivityController {
                                    String squareProfileUrl, String lastMessageDeliveryStatus,
                                    String lastMessageDeliveryErrorMessage, boolean hasNegativeFeedback,
                                    boolean vip, Integer visitCount, boolean blocked,
-                                   boolean clickedGoogleReview, boolean clickedFeedbackForm) {}
+                                   boolean clickedGoogleReview, boolean clickedFeedbackForm,
+                                   boolean flaggedAsSpam) {}
 
     public record ReplyRequest(String phoneNumber, String body) {}
 
@@ -129,9 +130,15 @@ public class SmsActivityController {
         // just the at-a-glance version so a manager doesn't have to open that panel to see it.
         Set<String> clickedGoogleReview = service.phoneNumbersWithClickedLinkTarget(phoneNumbers, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET);
         Set<String> clickedFeedbackForm = service.phoneNumbersWithClickedLinkTarget(phoneNumbers, CheckoutReviewLinks.FEEDBACK_FORM_TARGET);
+        // Same batching reasoning as above — "has any outbound message to this number ever come
+        // back flagged as spam or opted-out" (Twilio error 30007/21610), see
+        // SmsMessageLogService#phoneNumbersFlaggedAsSpam. The full reason/date is already visible
+        // on the individual message bubble; this is just the at-a-glance list-row version.
+        Set<String> flaggedAsSpam = service.phoneNumbersFlaggedAsSpam(phoneNumbers);
         return summaries.stream()
                 .map(p -> toConversationDto(p, names.get(p.getPhoneNumber()), blockedPhones.contains(p.getPhoneNumber()),
-                        clickedGoogleReview.contains(p.getPhoneNumber()), clickedFeedbackForm.contains(p.getPhoneNumber())))
+                        clickedGoogleReview.contains(p.getPhoneNumber()), clickedFeedbackForm.contains(p.getPhoneNumber()),
+                        flaggedAsSpam.contains(p.getPhoneNumber())))
                 .toList();
     }
 
@@ -217,7 +224,7 @@ public class SmsActivityController {
     private static ConversationDto toConversationDto(ConversationSummaryProjection p,
                                                        MarketingContactsService.ContactNameInfo nameInfo,
                                                        boolean blocked, boolean clickedGoogleReview,
-                                                       boolean clickedFeedbackForm) {
+                                                       boolean clickedFeedbackForm, boolean flaggedAsSpam) {
         return new ConversationDto(p.getPhoneNumber(), p.getLastMessageAt(), p.getLastMessageBody(),
                 p.getLastMessageDirection(), p.getUnreadCount(),
                 nameInfo == null ? null : nameInfo.givenName(),
@@ -227,6 +234,6 @@ public class SmsActivityController {
                 p.getLastMessageDeliveryStatus(), p.getLastMessageDeliveryErrorMessage(), p.getHasNegativeFeedback(),
                 nameInfo != null && nameInfo.vip(),
                 nameInfo == null ? null : nameInfo.visitCount(),
-                blocked, clickedGoogleReview, clickedFeedbackForm);
+                blocked, clickedGoogleReview, clickedFeedbackForm, flaggedAsSpam);
     }
 }

@@ -45,6 +45,12 @@ public class SmsMessageLogService {
             Map.entry("21610", "Recipient has opted out (replied STOP)")
     );
 
+    /** Subset of {@link #DELIVERY_ERROR_MESSAGES} that means "this customer doesn't want our
+     * texts" — carrier-side spam filtering or an explicit STOP opt-out — as opposed to a merely
+     * technical failure (bad number, unreachable carrier, etc.). Backs the conversation list's
+     * spam-flag icon, see {@link #phoneNumbersFlaggedAsSpam}. */
+    private static final java.util.Set<String> SPAM_ERROR_CODES = java.util.Set.of("30007", "21610");
+
     private final SmsMessageRepository repository;
     private final SmsEventBroadcaster events;
 
@@ -173,6 +179,15 @@ public class SmsMessageLogService {
      * this backs). */
     public java.util.Set<String> phoneNumbersWithClickedLinkTarget(java.util.Collection<String> phoneNumbers, String linkTarget) {
         return new java.util.HashSet<>(repository.findPhoneNumbersWithClickedLinkTarget(phoneNumbers, linkTarget));
+    }
+
+    /** Batch form of "has any outbound message to this number ever come back flagged as spam or
+     * opted-out" ({@link #SPAM_ERROR_CODES}) — same one-query-for-the-whole-list-page pattern as
+     * {@link #phoneNumbersWithClickedLinkTarget}. Backs the conversation list's spam-flag icon —
+     * the full reason and date are already visible on the individual message bubble
+     * ("Not delivered — ..."), this is just the quick-glance version. */
+    public java.util.Set<String> phoneNumbersFlaggedAsSpam(java.util.Collection<String> phoneNumbers) {
+        return new java.util.HashSet<>(repository.findPhoneNumbersWithDeliveryErrorCode(phoneNumbers, SPAM_ERROR_CODES));
     }
 
     /** Whether this phone number has ever left a low-rating reply to the checkout-review-request

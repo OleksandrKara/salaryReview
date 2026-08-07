@@ -155,6 +155,11 @@ export interface SmsConversationDto {
   clickedGoogleReview: boolean;
   /** Same as clickedGoogleReview, for the feedback-form link. */
   clickedFeedbackForm: boolean;
+  /** True if any outbound message to this number has ever come back with Twilio delivery-status
+   * error code 30007 ("Filtered as spam by carrier") or 21610 ("Recipient has opted out — replied
+   * STOP") — quick-glance version of the fuller "Not delivered — <reason>" detail already shown
+   * on the individual message bubble. See SmsMessageLogService#phoneNumbersFlaggedAsSpam. */
+  flaggedAsSpam: boolean;
 }
 
 export interface SmsReplyResult {
