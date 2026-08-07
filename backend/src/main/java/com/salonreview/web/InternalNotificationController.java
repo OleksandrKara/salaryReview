@@ -31,6 +31,9 @@ public class InternalNotificationController {
 
     private static final Logger log = LoggerFactory.getLogger(InternalNotificationController.class);
     private static final String REBOOK_PROMO_CODE = "REBOOK10";
+    /** See openspec/changes/lapsed-customer-winback-automation design.md D9 — the $5 coupon's own
+     * promo code, enrolling into a separate Square group from {@link #REBOOK_PROMO_CODE}'s. */
+    private static final String WINBACK_PROMO_CODE = "WINBACK5";
 
     private final InternalApiProperties internalApi;
     private final TelegramNotificationService telegram;
@@ -89,9 +92,13 @@ public class InternalNotificationController {
      * this endpoint directly with a hand-crafted request, bypassing the UI entirely, so the
      * signature — not "the caller says it verified" — is what actually gates enrollment.
      * {@code customerName}/{@code phoneNumber}/{@code appointmentStartAt} are only used for the
-     * staff Telegram alert (see design.md D7) — never trusted for anything security-relevant. */
+     * staff Telegram alert (see design.md D7) — never trusted for anything security-relevant.
+     * {@code promoCode} is nullable for backward compatibility with callers built before
+     * lapsed-customer-winback-automation existed — {@code null} defaults to {@link #REBOOK_PROMO_CODE}
+     * (see {@link #resolvePromoCode}), the only promo this endpoint supported at first. */
     public record RebookingPromoEnrollRequest(String squareCustomerId, long expEpochSeconds, String signature,
-                                              String customerName, String phoneNumber, String appointmentStartAt) {
+                                              String customerName, String phoneNumber, String appointmentStartAt,
+                                              String promoCode) {
     }
 
     @PostMapping("/rebooking-promo/enroll")
@@ -101,20 +108,22 @@ public class InternalNotificationController {
         if (!keyMatches(key)) {
             return ResponseEntity.status(401).build();
         }
-        if (!promoSigner.verify(REBOOK_PROMO_CODE, body.expEpochSeconds(), body.signature())) {
+        String promoCode = resolvePromoCode(body.promoCode());
+        if (!promoSigner.verify(promoCode, body.expEpochSeconds(), body.signature())) {
             return ResponseEntity.ok(Map.of("enrolled", false, "reason", "invalid_signature"));
         }
         Instant expiresAt = Instant.ofEpochSecond(body.expEpochSeconds());
         if (expiresAt.isBefore(Instant.now())) {
             return ResponseEntity.ok(Map.of("enrolled", false, "reason", "expired"));
         }
-        if (!rebookingProperties.isAutoDiscountConfigured()) {
+        String groupId = groupIdForPromoCode(promoCode);
+        if (groupId == null) {
             return ResponseEntity.ok(Map.of("enrolled", false, "reason", "not_configured"));
         }
         try {
-            square.addCustomerToGroup(body.squareCustomerId(), rebookingProperties.getAutoDiscountGroupId());
+            square.addCustomerToGroup(body.squareCustomerId(), groupId);
         } catch (RuntimeException e) {
-            log.warn("Failed to enroll customer {} in same-day-rebooking group: {}", body.squareCustomerId(), e.getMessage());
+            log.warn("Failed to enroll customer {} in {} group: {}", body.squareCustomerId(), promoCode, e.getMessage());
             return ResponseEntity.ok(Map.of("enrolled", false, "reason", "square_error"));
         }
         groupMembershipRepository.save(SameDayRebookingGroupMembership.builder()
@@ -125,6 +134,26 @@ public class InternalNotificationController {
         // notification in this codebase is decoupled from the primary action it accompanies.
         telegram.sendRebookingPromoAlert(body.customerName(), body.phoneNumber(), body.appointmentStartAt());
         return ResponseEntity.ok(Map.of("enrolled", true));
+    }
+
+    /** {@code null}/blank {@code requested} defaults to {@link #REBOOK_PROMO_CODE} — see the
+     * backward-compatibility note on {@link RebookingPromoEnrollRequest#promoCode}. */
+    private static String resolvePromoCode(String requested) {
+        return (requested == null || requested.isBlank()) ? REBOOK_PROMO_CODE : requested;
+    }
+
+    /** {@code null} for an unrecognized code, or a recognized one whose Square Catalog group
+     * hasn't been set up yet (see openspec/changes/lapsed-customer-winback-automation design.md
+     * D9) — both cases resolve to the same {@code not_configured}/{@code invalid_signature}
+     * (never enrolled) outcome above, never a partial or guessed enrollment. */
+    private String groupIdForPromoCode(String promoCode) {
+        if (REBOOK_PROMO_CODE.equals(promoCode)) {
+            return rebookingProperties.isAutoDiscountConfigured() ? rebookingProperties.getAutoDiscountGroupId() : null;
+        }
+        if (WINBACK_PROMO_CODE.equals(promoCode)) {
+            return rebookingProperties.isWinbackAutoDiscountConfigured() ? rebookingProperties.getWinbackAutoDiscountGroupId() : null;
+        }
+        return null;
     }
 
     private boolean keyMatches(String provided) {

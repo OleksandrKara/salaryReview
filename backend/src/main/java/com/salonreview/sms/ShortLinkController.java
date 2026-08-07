@@ -15,9 +15,10 @@ import java.net.URI;
 
 /**
  * Click-tracked short link for the checkout-review-request automation's two reply branches, and
- * for the same-day-rebooking-discount automation's signed promo link — see
- * openspec/changes/sms-automations-hub design.md D6 and
- * openspec/changes/same-day-rebooking-discount design.md D5/D8/D9. {@code permitAll()} in
+ * for the same-day-rebooking-discount and lapsed-customer-winback automations' signed promo links
+ * — see openspec/changes/sms-automations-hub design.md D6,
+ * openspec/changes/same-day-rebooking-discount design.md D5/D8/D9, and
+ * openspec/changes/lapsed-customer-winback-automation design.md D9. {@code permitAll()} in
  * {@link com.salonreview.config.SecurityConfig} — nothing sensitive here, just a redirect with a
  * click timestamp.
  */
@@ -29,6 +30,12 @@ public class ShortLinkController {
      * it's recomputed here at resolve time (see {@link RebookingPromoSigner}). */
     private static final String REBOOK_PREFIX = "REBOOK:";
     private static final String REBOOK_PROMO_CODE = "REBOOK10";
+
+    /** Same shape, same reasoning, for the lapsed-customer-winback $5 coupon — a distinct prefix/
+     * code so the two promos never collide, see design.md D9. {@link RebookingPromoSigner} needed
+     * no changes to support this — it was already generic over the promo code. */
+    private static final String WINBACK_PREFIX = "WINBACK:";
+    private static final String WINBACK_PROMO_CODE = "WINBACK5";
 
     private final SmsMessageRepository repository;
     private final RebookingPromoSigner promoSigner;
@@ -59,10 +66,14 @@ public class ShortLinkController {
     }
 
     /** {@code null} if {@code linkTarget} isn't a recognized shape (a fixed
-     * {@code CheckoutReviewLinks} target, or {@code REBOOK:<epochSeconds>}). */
+     * {@code CheckoutReviewLinks} target, {@code REBOOK:<epochSeconds>}, or
+     * {@code WINBACK:<epochSeconds>}). */
     private String resolveTarget(String linkTarget) {
         if (linkTarget != null && linkTarget.startsWith(REBOOK_PREFIX)) {
-            return resolveRebookingPromo(linkTarget.substring(REBOOK_PREFIX.length()));
+            return resolveRebookingPromo(REBOOK_PROMO_CODE, linkTarget.substring(REBOOK_PREFIX.length()));
+        }
+        if (linkTarget != null && linkTarget.startsWith(WINBACK_PREFIX)) {
+            return resolveRebookingPromo(WINBACK_PROMO_CODE, linkTarget.substring(WINBACK_PREFIX.length()));
         }
         return CheckoutReviewLinks.resolve(linkTarget);
     }
@@ -70,19 +81,20 @@ public class ShortLinkController {
     /** Builds the signed promo URL on demand — the signature is never stored, only the expiry
      * epoch (see class doc and RebookingPromoSigner). If signing isn't configured (no secret set
      * yet), there's no safe way to produce a valid link, so this resolves to {@code null} (404)
-     * rather than an unsigned/forgeable one. */
-    private String resolveRebookingPromo(String epochSecondsRaw) {
+     * rather than an unsigned/forgeable one. {@code promoCode} distinguishes which promo this is
+     * (REBOOK10 or WINBACK5) — {@link RebookingPromoSigner} is already generic over it. */
+    private String resolveRebookingPromo(String promoCode, String epochSecondsRaw) {
         long expEpochSeconds;
         try {
             expEpochSeconds = Long.parseLong(epochSecondsRaw);
         } catch (NumberFormatException e) {
             return null;
         }
-        String signature = promoSigner.sign(REBOOK_PROMO_CODE, expEpochSeconds);
+        String signature = promoSigner.sign(promoCode, expEpochSeconds);
         if (signature == null) {
             return null;
         }
         String homeBaseUrl = landingProperties.baseUrlFor("home");
-        return homeBaseUrl + "/?promo=" + REBOOK_PROMO_CODE + "&exp=" + expEpochSeconds + "&sig=" + signature;
+        return homeBaseUrl + "/?promo=" + promoCode + "&exp=" + expEpochSeconds + "&sig=" + signature;
     }
 }

@@ -118,4 +118,35 @@ class ShortLinkControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
+
+    @Test
+    @DisplayName("WINBACK target → resolves to the signed WINBACK5 promo URL, independent of REBOOK")
+    void winbackTargetResolvesToSignedPromoUrl() {
+        SmsMessage message = SmsMessage.builder().id(5L).direction("OUTBOUND").phoneNumber("+15551234567")
+                .body("...").status("SENT").linkTarget("WINBACK:1700000000")
+                .clickToken("winback001").build();
+        when(repository.findByClickToken("winback001")).thenReturn(Optional.of(message));
+        when(promoSigner.sign("WINBACK5", 1700000000L)).thenReturn("sig-winback");
+
+        ResponseEntity<Void> response = controller.redirect("winback001");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FOUND);
+        assertThat(response.getHeaders().getLocation())
+                .hasToString("https://akluxnails.com/?promo=WINBACK5&exp=1700000000&sig=sig-winback");
+        verify(promoSigner, never()).sign("REBOOK10", 1700000000L);
+    }
+
+    @Test
+    @DisplayName("WINBACK target with signing not configured (null signature) → 404, never an unsigned link")
+    void winbackTargetWithNoSigningConfigured404s() {
+        SmsMessage message = SmsMessage.builder().id(6L).direction("OUTBOUND").phoneNumber("+15551234567")
+                .body("...").status("SENT").linkTarget("WINBACK:1700000000")
+                .clickToken("winback002").build();
+        when(repository.findByClickToken("winback002")).thenReturn(Optional.of(message));
+        when(promoSigner.sign("WINBACK5", 1700000000L)).thenReturn(null);
+
+        ResponseEntity<Void> response = controller.redirect("winback002");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
 }

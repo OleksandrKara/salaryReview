@@ -51,6 +51,7 @@ class InternalNotificationControllerTest {
         promoSigner = mock(RebookingPromoSigner.class);
         rebookingProperties = new RebookingProperties();
         rebookingProperties.setAutoDiscountGroupId("grp1");
+        rebookingProperties.setWinbackAutoDiscountGroupId("grp2");
         groupMembershipRepository = mock(SameDayRebookingGroupMembershipRepository.class);
         square = mock(SquareClient.class);
         InternalNotificationController controller = new InternalNotificationController(
@@ -221,5 +222,39 @@ class InternalNotificationControllerTest {
 
     private void verifyNoSquareCall() {
         org.mockito.Mockito.verifyNoInteractions(square);
+    }
+
+    @Test
+    @DisplayName("rebooking-promo/enroll: promoCode WINBACK5 → verifies against WINBACK5, enrolls in the winback group")
+    void enrollWinbackPromoCodeUsesWinbackGroup() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        String winbackBody = "{\"squareCustomerId\":\"cust1\",\"expEpochSeconds\":9999999999,"
+                + "\"signature\":\"sig123\",\"promoCode\":\"WINBACK5\"}";
+        when(promoSigner.verify("WINBACK5", 9999999999L, "sig123")).thenReturn(true);
+
+        mvc.perform(post("/api/internal/rebooking-promo/enroll")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content(winbackBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enrolled").value(true));
+
+        verify(square).addCustomerToGroup("cust1", "grp2");
+        verify(promoSigner, org.mockito.Mockito.never())
+                .verify(org.mockito.ArgumentMatchers.eq("REBOOK10"), org.mockito.ArgumentMatchers.anyLong(), anyString());
+    }
+
+    @Test
+    @DisplayName("rebooking-promo/enroll: promoCode omitted → defaults to REBOOK10 (backward compatible)")
+    void enrollMissingPromoCodeDefaultsToRebook10() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        when(promoSigner.verify("REBOOK10", 9999999999L, "sig123")).thenReturn(true);
+
+        mvc.perform(post("/api/internal/rebooking-promo/enroll")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content(ENROLL_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enrolled").value(true));
+
+        verify(square).addCustomerToGroup("cust1", "grp1");
     }
 }
