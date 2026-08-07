@@ -7,6 +7,7 @@ import VipIcon from './VipIcon';
 import BlockedIcon from './BlockedIcon';
 import GoogleReviewClickedIcon from './GoogleReviewClickedIcon';
 import FeedbackFormClickedIcon from './FeedbackFormClickedIcon';
+import SpamFlagIcon from './SpamFlagIcon';
 
 function formatPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -75,6 +76,7 @@ export default function ContactInfoPanel({
   blocked,
   clickedGoogleReview,
   clickedFeedbackForm,
+  flaggedAsSpam,
   onClose,
 }: {
   phoneNumber: string;
@@ -112,6 +114,9 @@ export default function ContactInfoPanel({
   clickedGoogleReview?: boolean;
   /** Same as clickedGoogleReview, for the feedback-form link — see FeedbackFormClickedIcon. */
   clickedFeedbackForm?: boolean;
+  /** True if any outbound message to this number has ever come back flagged as spam by the
+   * carrier or opted-out (replied STOP) — see SpamFlagIcon's own doc comment. */
+  flaggedAsSpam?: boolean;
   onClose: () => void;
 }) {
   const resolvedSquareProfileUrl = squareProfileUrl ?? contact?.squareProfileUrl ?? null;
@@ -182,6 +187,16 @@ export default function ContactInfoPanel({
                   >
                     <BlockedIcon size={11} />
                     Blocked
+                  </span>
+                ) : null}
+                {flaggedAsSpam ? (
+                  <span
+                    data-testid="contact-info-spam-flag-badge"
+                    className="flex shrink-0 items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700"
+                    title="Flagged as spam by carrier, or recipient opted out — see the thread for the specific message"
+                  >
+                    <SpamFlagIcon size={11} />
+                    Spam/opt-out
                   </span>
                 ) : null}
                 {clickedGoogleReview ? (

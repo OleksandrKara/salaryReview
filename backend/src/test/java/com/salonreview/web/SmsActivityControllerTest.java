@@ -110,7 +110,8 @@ class SmsActivityControllerTest {
                 .andExpect(jsonPath("$[0].visitCount").value(5))
                 .andExpect(jsonPath("$[0].blocked").value(false))
                 .andExpect(jsonPath("$[0].clickedGoogleReview").value(false))
-                .andExpect(jsonPath("$[0].clickedFeedbackForm").value(false));
+                .andExpect(jsonPath("$[0].clickedFeedbackForm").value(false))
+                .andExpect(jsonPath("$[0].flaggedAsSpam").value(false));
     }
 
     @Test
@@ -142,6 +143,19 @@ class SmsActivityControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].clickedGoogleReview").value(true))
                 .andExpect(jsonPath("$[0].clickedFeedbackForm").value(false));
+    }
+
+    @Test
+    @DisplayName("GET /conversations marks a row flagged-as-spam when the batch lookup finds it")
+    void conversationsMarksFlaggedAsSpam() throws Exception {
+        when(service.conversations()).thenReturn(List.of(
+                new FakeConversationSummary(PHONE, Instant.now(), "hi", "INBOUND", 0L)));
+        when(contactsService.resolveDisplayNames(List.of(PHONE))).thenReturn(Map.of());
+        when(service.phoneNumbersFlaggedAsSpam(List.of(PHONE))).thenReturn(java.util.Set.of(PHONE));
+
+        mvc.perform(get("/api/owner/automations/activity/conversations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].flaggedAsSpam").value(true));
     }
 
     @Test

@@ -10,6 +10,7 @@ import VipIcon from './VipIcon';
 import BlockedIcon from './BlockedIcon';
 import GoogleReviewClickedIcon from './GoogleReviewClickedIcon';
 import FeedbackFormClickedIcon from './FeedbackFormClickedIcon';
+import SpamFlagIcon from './SpamFlagIcon';
 import ConversationMenu from './ConversationMenu';
 import { dispatchSmsUnreadCountChanged } from '../../lib/smsUnreadEvent';
 
@@ -412,6 +413,7 @@ export default function MessagesView({
                     {c.smsConsent && <span data-testid="conversation-row-consent-icon"><SmsConsentIcon /></span>}
                     {c.hasNegativeFeedback && <span data-testid="conversation-row-negative-feedback-icon"><NegativeFeedbackIcon /></span>}
                     {c.blocked && <span data-testid="conversation-row-blocked-icon"><BlockedIcon /></span>}
+                    {c.flaggedAsSpam && <span data-testid="conversation-row-spam-flag-icon"><SpamFlagIcon /></span>}
                     {c.clickedGoogleReview && <span data-testid="conversation-row-google-review-icon"><GoogleReviewClickedIcon /></span>}
                     {c.clickedFeedbackForm && <span data-testid="conversation-row-feedback-form-icon"><FeedbackFormClickedIcon /></span>}
                   </span>
@@ -536,6 +538,7 @@ export default function MessagesView({
                 {selectedConversation?.smsConsent && <span data-testid="thread-header-consent-icon"><SmsConsentIcon /></span>}
                 {selectedConversation?.hasNegativeFeedback && <span data-testid="thread-header-negative-feedback-icon"><NegativeFeedbackIcon /></span>}
                 {selectedConversation?.blocked && <span data-testid="thread-header-blocked-icon"><BlockedIcon /></span>}
+                {selectedConversation?.flaggedAsSpam && <span data-testid="thread-header-spam-flag-icon"><SpamFlagIcon /></span>}
                 {selectedConversation?.clickedGoogleReview && <span data-testid="thread-header-google-review-icon"><GoogleReviewClickedIcon /></span>}
                 {selectedConversation?.clickedFeedbackForm && <span data-testid="thread-header-feedback-form-icon"><FeedbackFormClickedIcon /></span>}
               </span>
@@ -713,6 +716,7 @@ export default function MessagesView({
             blocked={selectedConversation?.blocked ?? false}
             clickedGoogleReview={selectedConversation?.clickedGoogleReview ?? false}
             clickedFeedbackForm={selectedConversation?.clickedFeedbackForm ?? false}
+            flaggedAsSpam={selectedConversation?.flaggedAsSpam ?? false}
             onClose={() => setShowContactPanel(false)}
           />
         </div>
