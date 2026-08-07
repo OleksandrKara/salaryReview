@@ -78,7 +78,12 @@ public class LapsedCustomerWinbackScheduler {
         this.publicBaseUrl = publicBaseUrl;
     }
 
-    @Scheduled(cron = "0 0 10 * * *")
+    // zone is mandatory — the container runs on UTC (confirmed via `date` on
+    // salonreview-backend-blue), so an unzoned cron fires at 10:00 UTC = 3am Pacific, not 10am
+    // Pacific as intended. This is what actually happened in production on 2026-08-07 (16 real
+    // sends at 10:00:0x UTC). Every future @Scheduled(cron=...) in this codebase must set an
+    // explicit zone for the same reason — never rely on the host's default timezone.
+    @Scheduled(cron = "0 0 10 * * *", zone = "America/Los_Angeles")
     @SchedulerLock(name = "LapsedCustomerWinbackScheduler_sendDueWinbacks", lockAtLeastFor = "PT10S", lockAtMostFor = "PT10M")
     public void sendDueWinbacks() {
         for (LapsedCustomerWinbackEligibilityRepository.EligibleCustomer customer : eligibilityRepository.findEligibleCustomers()) {
@@ -172,9 +177,15 @@ public class LapsedCustomerWinbackScheduler {
 
         String shortLink = publicBaseUrl + "/r/" + clickToken;
         String name = Names.capitalizeFirst(rawGivenName);
+        // provider_visit.provider_name is the free-text Square team-member display name (e.g.
+        // "Susan Alieva") — never send a technician's last name to a customer, same rule
+        // TechnicianNameResolver already enforces for same_day_rebooking_discount. Missed here
+        // originally; caused real sends with full names on 2026-08-07 (see sms_message ids
+        // 109-124) before this fix.
+        String technician = Names.firstNameOnly(customer.technicianName());
         String body = consented
-                ? marketingBody(name, customer.technicianName(), shortLink)
-                : transactionalBody(name, customer.technicianName(), shortLink);
+                ? marketingBody(name, technician, shortLink)
+                : transactionalBody(name, technician, shortLink);
 
         TwilioSmsConfig config = configService.get();
         if (!config.isConfigured()) {
