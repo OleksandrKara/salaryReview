@@ -82,9 +82,13 @@ class LapsedCustomerWinbackSchedulerTest {
     }
 
     @Test
-    @DisplayName("consented, technician known → marketing body naming technician + $5, SENT row with promo_expires_at")
+    @DisplayName("consented, technician known → marketing body naming technician's FIRST name only + $5, SENT row with promo_expires_at")
     void consentedWithTechnicianSendsMarketingBody() throws Exception {
-        givenEligible(eligible("Susan"));
+        // provider_visit.provider_name is the raw Square team-member display name, always
+        // "First Last" — never pre-trimmed. Using the full name here (not just "Susan") is what
+        // actually exercises the last-name-stripping fix; the original version of this test used
+        // an already-first-name-only fixture and so never caught the 2026-08-07 regression.
+        givenEligible(eligible("Susan Alieva"));
         when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(true);
         when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
 
@@ -96,7 +100,7 @@ class LapsedCustomerWinbackSchedulerTest {
                 .contains("Hi Jane!").contains("It's Lucy from AK.LUX.NAILS")
                 .contains("3+ weeks").contains("Susan's schedule").contains("$5")
                 .contains("tok123").contains("-Lucy")
-                .doesNotContain("—");
+                .doesNotContain("—").doesNotContain("Alieva");
         verify(messageLogService).logOutboundWithLink(
                 eq("lapsed_customer_winback_nudge"), eq("lapsed_customer_winback"), eq(PHONE),
                 any(), anyBoolean(), any(), any(), any(), any());
@@ -130,7 +134,7 @@ class LapsedCustomerWinbackSchedulerTest {
     @Test
     @DisplayName("consent via Square segment only (no marketing.contacts consent) → still marketing body")
     void consentOnlyInSquareSegmentSendsMarketingBody() throws Exception {
-        givenEligible(eligible("Tatiana"));
+        givenEligible(eligible("Tatiana Nazirova"));
         when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(false);
         when(square.customerSegmentIds(CUSTOMER_ID)).thenReturn(List.of(SEGMENT_ID));
         when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
@@ -139,7 +143,7 @@ class LapsedCustomerWinbackSchedulerTest {
 
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
         verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
-        assertThat(bodyCaptor.getValue()).contains("$5").contains("Tatiana's schedule");
+        assertThat(bodyCaptor.getValue()).contains("$5").contains("Tatiana's schedule").doesNotContain("Nazirova");
     }
 
     @Test
