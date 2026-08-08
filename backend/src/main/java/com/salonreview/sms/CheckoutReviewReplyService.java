@@ -6,7 +6,11 @@ import com.salonreview.domain.TwilioSmsConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Service;
+
+import java.time.Duration;
+import java.time.Instant;
 
 /**
  * Sends the checkout-review-request automation's two branch replies (Google review link /
@@ -27,19 +31,29 @@ public class CheckoutReviewReplyService {
     private static final Logger log = LoggerFactory.getLogger(CheckoutReviewReplyService.class);
     static final String AUTOMATION_KEY = "checkout_review_request";
 
+    /** A reply that goes out the instant a customer's rating digit arrives reads as an obvious
+     * bot, not a person on the other end — this small, deliberate pause is enough to break that
+     * impression without the customer noticing an actual wait (see owner feedback). */
+    static final Duration REPLY_DELAY = Duration.ofSeconds(3);
+
     private final SmsMessageLogService messageLogService;
     private final TwilioSmsConfigService configService;
     private final TwilioSmsClient client;
     private final String publicBaseUrl;
+    private final TaskScheduler taskScheduler;
 
     public CheckoutReviewReplyService(SmsMessageLogService messageLogService, TwilioSmsConfigService configService,
-                                       TwilioSmsClient client, @Value("${app.public-base-url}") String publicBaseUrl) {
+                                       TwilioSmsClient client, @Value("${app.public-base-url}") String publicBaseUrl,
+                                       TaskScheduler taskScheduler) {
         this.messageLogService = messageLogService;
         this.configService = configService;
         this.client = client;
         this.publicBaseUrl = publicBaseUrl;
+        this.taskScheduler = taskScheduler;
     }
 
+    /** Reserves the row and renders the body immediately (cheap, no external calls), but delays
+     * the actual Twilio send by {@link #REPLY_DELAY} — see that constant's own doc for why. */
     public void sendBranchReply(SmsReplyFlow flow, boolean positive) {
         // A proven repeat 5-star reviewer (already clicked through to Google before) doesn't need
         // to be asked for another public review every single time — that reads as spammy to them
@@ -81,6 +95,10 @@ public class CheckoutReviewReplyService {
                     + "Takes 10 seconds and really helps our small business: " + shortLink + " -Lucy";
         }
 
+        taskScheduler.schedule(() -> sendNow(flow, reserved, body), Instant.now().plus(REPLY_DELAY));
+    }
+
+    private void sendNow(SmsReplyFlow flow, SmsMessage reserved, String body) {
         TwilioSmsConfig config = configService.get();
         if (!config.isConfigured()) {
             log.info("Checkout-review branch reply skipped — Twilio credentials not configured");
