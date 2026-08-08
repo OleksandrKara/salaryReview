@@ -7,6 +7,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.scheduling.TaskScheduler;
+
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -27,6 +30,7 @@ class CheckoutReviewReplyServiceTest {
     private SmsMessageLogService messageLogService;
     private TwilioSmsConfigService configService;
     private TwilioSmsClient client;
+    private TaskScheduler taskScheduler;
     private CheckoutReviewReplyService service;
 
     private static TwilioSmsConfig configured() {
@@ -44,7 +48,8 @@ class CheckoutReviewReplyServiceTest {
         messageLogService = mock(SmsMessageLogService.class);
         configService = mock(TwilioSmsConfigService.class);
         client = mock(TwilioSmsClient.class);
-        service = new CheckoutReviewReplyService(messageLogService, configService, client, PUBLIC_BASE_URL);
+        taskScheduler = mock(TaskScheduler.class);
+        service = new CheckoutReviewReplyService(messageLogService, configService, client, PUBLIC_BASE_URL, taskScheduler);
 
         when(messageLogService.generateUniqueClickToken()).thenReturn("abc12");
         when(messageLogService.logOutboundWithLink(anyString(), eq("checkout_review_request"), eq(PHONE),
@@ -55,13 +60,25 @@ class CheckoutReviewReplyServiceTest {
                         .linkTarget(inv.getArgument(7)).clickToken(inv.getArgument(8)).build());
     }
 
+    /** The actual Twilio send is deliberately delayed by {@link CheckoutReviewReplyService#REPLY_DELAY}
+     * (see that field's own doc) — captures the scheduled task and fires it immediately, so the
+     * rest of each test can assert on the send outcome without a real wait. */
+    private void sendBranchReplyAndFireDelayedTask(SmsReplyFlow flow, boolean positive) {
+        service.sendBranchReply(flow, positive);
+        ArgumentCaptor<Runnable> taskCaptor = ArgumentCaptor.forClass(Runnable.class);
+        ArgumentCaptor<Instant> whenCaptor = ArgumentCaptor.forClass(Instant.class);
+        verify(taskScheduler).schedule(taskCaptor.capture(), whenCaptor.capture());
+        assertThat(whenCaptor.getValue()).isAfterOrEqualTo(Instant.now().plus(CheckoutReviewReplyService.REPLY_DELAY).minusSeconds(1));
+        taskCaptor.getValue().run();
+    }
+
     @Test
     @DisplayName("positive branch: reserves a row, body contains a self-referencing /r/{token} short link to the Google review target, sends via Twilio")
     void positiveBranchSendsGoogleReviewLink() throws Exception {
         when(configService.get()).thenReturn(configured());
         when(client.send(any(), eq(PHONE), anyString())).thenReturn("SM_SID_1");
 
-        service.sendBranchReply(flow(), true);
+        sendBranchReplyAndFireDelayedTask(flow(), true);
 
         var tokenCaptor = ArgumentCaptor.forClass(String.class);
         verify(messageLogService).logOutboundWithLink(eq("checkout_review_positive"), eq("checkout_review_request"),
@@ -89,7 +106,7 @@ class CheckoutReviewReplyServiceTest {
         when(client.send(any(), eq(PHONE), anyString())).thenReturn("SM_SID_3");
         when(messageLogService.hasClickedLinkTarget(PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
 
-        service.sendBranchReply(flow(), true);
+        sendBranchReplyAndFireDelayedTask(flow(), true);
 
         var tokenCaptor = ArgumentCaptor.forClass(String.class);
         verify(messageLogService).logOutboundWithLink(eq("checkout_review_positive_repeat"), eq("checkout_review_request"),
@@ -108,7 +125,7 @@ class CheckoutReviewReplyServiceTest {
         when(configService.get()).thenReturn(configured());
         when(client.send(any(), eq(PHONE), anyString())).thenReturn("SM_SID_2");
 
-        service.sendBranchReply(flow(), false);
+        sendBranchReplyAndFireDelayedTask(flow(), false);
 
         var tokenCaptor = ArgumentCaptor.forClass(String.class);
         verify(messageLogService).logOutboundWithLink(eq("checkout_review_negative"), eq("checkout_review_request"),
@@ -125,7 +142,7 @@ class CheckoutReviewReplyServiceTest {
     void notConfiguredSkipsSend() throws Exception {
         when(configService.get()).thenReturn(TwilioSmsConfig.builder().build());
 
-        service.sendBranchReply(flow(), true);
+        sendBranchReplyAndFireDelayedTask(flow(), true);
 
         verifyNoInteractions(client);
         var savedCaptor = ArgumentCaptor.forClass(SmsMessage.class);
@@ -140,11 +157,22 @@ class CheckoutReviewReplyServiceTest {
         when(configService.get()).thenReturn(configured());
         doThrow(new java.io.IOException("boom")).when(client).send(any(), any(), any());
 
-        service.sendBranchReply(flow(), true);
+        sendBranchReplyAndFireDelayedTask(flow(), true);
 
         var savedCaptor = ArgumentCaptor.forClass(SmsMessage.class);
         verify(messageLogService).save(savedCaptor.capture());
         assertThat(savedCaptor.getValue().getStatus()).isEqualTo("NOT_SENT");
         assertThat(savedCaptor.getValue().getReason()).isEqualTo("send_failed");
+    }
+
+    @Test
+    @DisplayName("sendBranchReply returns before the Twilio send happens — the send only fires once the scheduled task runs")
+    void sendDoesNotHappenSynchronously() throws Exception {
+        when(configService.get()).thenReturn(configured());
+
+        service.sendBranchReply(flow(), true);
+
+        verifyNoInteractions(client);
+        verify(messageLogService, never()).save(any());
     }
 }
