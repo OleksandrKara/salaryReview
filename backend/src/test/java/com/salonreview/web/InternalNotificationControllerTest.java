@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -199,7 +200,13 @@ class InternalNotificationControllerTest {
                 .andExpect(jsonPath("$.enrolled").value(true));
 
         verify(square).addCustomerToGroup("cust1", "grp1");
-        verify(groupMembershipRepository).save(any());
+        org.mockito.ArgumentCaptor<com.salonreview.domain.SameDayRebookingGroupMembership> captor =
+                org.mockito.ArgumentCaptor.forClass(com.salonreview.domain.SameDayRebookingGroupMembership.class);
+        verify(groupMembershipRepository).save(captor.capture());
+        // Regression guard: the expiry scheduler needs the group a membership row actually
+        // enrolled into (see V71) to remove it from the right one later — this was previously
+        // never set at all, silently defaulting to null on every row.
+        assertThat(captor.getValue().getGroupId()).isEqualTo("grp1");
         verify(telegram).sendRebookingPromoAlert(any(), any(), any());
     }
 
@@ -239,6 +246,13 @@ class InternalNotificationControllerTest {
                 .andExpect(jsonPath("$.enrolled").value(true));
 
         verify(square).addCustomerToGroup("cust1", "grp2");
+        org.mockito.ArgumentCaptor<com.salonreview.domain.SameDayRebookingGroupMembership> captor =
+                org.mockito.ArgumentCaptor.forClass(com.salonreview.domain.SameDayRebookingGroupMembership.class);
+        verify(groupMembershipRepository).save(captor.capture());
+        // Regression guard: without this, the expiry scheduler would later try to remove this
+        // customer from the $10 group they were never actually added to, leaving them stuck in
+        // the real $5 winback group forever (see V71 / SameDayRebookingGroupExpiryScheduler).
+        assertThat(captor.getValue().getGroupId()).isEqualTo("grp2");
         verify(promoSigner, org.mockito.Mockito.never())
                 .verify(org.mockito.ArgumentMatchers.eq("REBOOK10"), org.mockito.ArgumentMatchers.anyLong(), anyString());
     }

@@ -128,6 +128,7 @@ public class InternalNotificationController {
         }
         groupMembershipRepository.save(SameDayRebookingGroupMembership.builder()
                 .squareCustomerId(body.squareCustomerId())
+                .groupId(groupId)
                 .expiresAt(expiresAt)
                 .build());
         // Best-effort, doesn't affect the "enrolled" outcome above — matches how every other

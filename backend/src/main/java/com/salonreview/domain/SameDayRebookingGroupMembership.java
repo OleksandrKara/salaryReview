@@ -25,6 +25,13 @@ public class SameDayRebookingGroupMembership {
     @Column(name = "square_customer_id", nullable = false)
     private String squareCustomerId;
 
+    /** Which Square customer group this row actually enrolled into — see V71. Null for rows
+     * written before this column existed, all of which were the original $10
+     * same_day_rebooking_discount group; {@link com.salonreview.sms.SameDayRebookingGroupExpiryScheduler}
+     * falls back to that group id when this is null so old rows keep working unchanged. */
+    @Column(name = "group_id")
+    private String groupId;
+
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 

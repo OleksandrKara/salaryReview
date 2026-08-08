@@ -44,8 +44,17 @@ class SameDayRebookingGroupExpirySchedulerTest {
                 .build();
     }
 
+    private static SameDayRebookingGroupMembership membership(String customerId, Instant expiresAt, String groupId) {
+        return SameDayRebookingGroupMembership.builder()
+                .id(1L)
+                .squareCustomerId(customerId)
+                .groupId(groupId)
+                .expiresAt(expiresAt)
+                .build();
+    }
+
     @Test
-    @DisplayName("expired membership → removed from Square group, removedAt set")
+    @DisplayName("expired legacy membership (no groupId of its own) → falls back to the $10 group, removedAt set")
     void removesExpiredMembership() {
         SameDayRebookingGroupMembership m = membership("cust1", Instant.now().minusSeconds(60));
         when(repository.findByRemovedAtIsNullAndExpiresAtBefore(any())).thenReturn(List.of(m));
@@ -56,6 +65,20 @@ class SameDayRebookingGroupExpirySchedulerTest {
         ArgumentCaptor<SameDayRebookingGroupMembership> captor = ArgumentCaptor.forClass(SameDayRebookingGroupMembership.class);
         verify(repository).save(captor.capture());
         assertThat(captor.getValue().getRemovedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("expired membership with its own groupId (e.g. the $5 winback group) → removed from THAT group, not the $10 default")
+    void removesFromOwnGroupWhenSet() {
+        String winbackGroupId = "grp-winback5";
+        SameDayRebookingGroupMembership m = membership("cust1", Instant.now().minusSeconds(60), winbackGroupId);
+        when(repository.findByRemovedAtIsNullAndExpiresAtBefore(any())).thenReturn(List.of(m));
+
+        scheduler.removeExpiredMemberships();
+
+        verify(square).removeCustomerFromGroup("cust1", winbackGroupId);
+        verify(square, never()).removeCustomerFromGroup("cust1", GROUP_ID);
+        assertThat(m.getRemovedAt()).isNotNull();
     }
 
     @Test
@@ -72,12 +95,16 @@ class SameDayRebookingGroupExpirySchedulerTest {
     }
 
     @Test
-    @DisplayName("auto-discount group not yet configured → no-ops entirely, no Square calls")
-    void noOpsWhenNotConfigured() {
+    @DisplayName("legacy row with no groupId, $10 default not yet configured either → skipped, left for a future run, no Square call")
+    void skipsRowWithNoResolvableGroupId() {
         rebookingProperties.setAutoDiscountGroupId("");
+        SameDayRebookingGroupMembership m = membership("cust1", Instant.now().minusSeconds(60));
+        when(repository.findByRemovedAtIsNullAndExpiresAtBefore(any())).thenReturn(List.of(m));
 
         scheduler.removeExpiredMemberships();
 
-        verifyNoInteractions(square, repository);
+        verifyNoInteractions(square);
+        verify(repository, never()).save(any());
+        assertThat(m.getRemovedAt()).isNull();
     }
 }
