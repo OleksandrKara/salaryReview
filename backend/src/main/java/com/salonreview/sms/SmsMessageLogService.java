@@ -197,6 +197,19 @@ public class SmsMessageLogService {
         return repository.existsByPhoneNumberAndNegativeFeedbackAtIsNotNull(PhoneNumbers.normalize(phoneNumber));
     }
 
+    /** Best-effort automation attribution for an inbound reply that doesn't match a pending
+     * {@link com.salonreview.domain.SmsReplyFlow} (i.e. every automation except
+     * {@code checkout_review_request}) — the automation key of this phone number's single most
+     * recent outbound message, or {@code null} if there isn't one or it was a manual (non-
+     * automated) send. Used by {@code TwilioInboundSmsController} so a reply to, say, the
+     * repeat-customer win-back nudge shows up as a "reply" for that automation on the owner's
+     * automations panel instead of silently going untracked. */
+    public String mostRecentAutomationKey(String phoneNumber) {
+        return repository.findFirstByPhoneNumberAndDirectionOrderByCreatedAtDesc(PhoneNumbers.normalize(phoneNumber), "OUTBOUND")
+                .map(SmsMessage::getAutomationKey)
+                .orElse(null);
+    }
+
     /** {@code sentAt} is null if this link target was never sent to this phone at all — distinct
      * from "sent but not yet clicked" ({@code sentAt} set, {@code clickedAt} null) — so a caller
      * (the contact sidebar) can tell "never asked" apart from "asked, didn't click yet" apart from

@@ -81,6 +81,12 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
      * practice is always one of the salon's most recent sends. */
     List<SmsMessage> findTop20ByPhoneNumberAndDirectionOrderByCreatedAtDesc(String phoneNumber, String direction);
 
+    /** The single most recent outbound message to this phone number, regardless of automation —
+     * used by {@code TwilioInboundSmsController}'s reply-attribution fallback (see
+     * {@code SmsMessageLogService#mostRecentAutomationKey}) for every automation that doesn't open
+     * an {@code SmsReplyFlow} the way {@code checkout_review_request} does. */
+    Optional<SmsMessage> findFirstByPhoneNumberAndDirectionOrderByCreatedAtDesc(String phoneNumber, String direction);
+
     /** Backs the click-tracked {@code /r/{token}} short link — see V53, design.md D6. */
     Optional<SmsMessage> findByClickToken(String clickToken);
 

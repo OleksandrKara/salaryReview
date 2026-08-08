@@ -37,6 +37,11 @@ public class ShortLinkController {
     private static final String WINBACK_PREFIX = "WINBACK:";
     private static final String WINBACK_PROMO_CODE = "WINBACK5";
 
+    /** Plain redirect to the home landing page, no promo params — for {@code repeat_customer_winback},
+     * which carries no discount (see V72). Distinct from {@link #REBOOK_PREFIX}/{@link #WINBACK_PREFIX}
+     * because there's no signature or expiry to verify; it's just a click-tracked booking link. */
+    static final String BOOK_NOW_TARGET = "BOOK_NOW";
+
     private final SmsMessageRepository repository;
     private final RebookingPromoSigner promoSigner;
     private final MarketingLandingProperties landingProperties;
@@ -74,6 +79,9 @@ public class ShortLinkController {
         }
         if (linkTarget != null && linkTarget.startsWith(WINBACK_PREFIX)) {
             return resolveRebookingPromo(WINBACK_PROMO_CODE, linkTarget.substring(WINBACK_PREFIX.length()));
+        }
+        if (BOOK_NOW_TARGET.equals(linkTarget)) {
+            return landingProperties.baseUrlFor("home");
         }
         return CheckoutReviewLinks.resolve(linkTarget);
     }
