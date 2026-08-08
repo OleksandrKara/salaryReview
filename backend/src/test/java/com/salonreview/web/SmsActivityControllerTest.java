@@ -1,9 +1,7 @@
 package com.salonreview.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.domain.BlockedNumber;
-import com.salonreview.domain.Role;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.repo.BlockedNumberRepository;
@@ -15,15 +13,11 @@ import com.salonreview.sms.SmsMessageLogService.ConversationSearchHit;
 import com.salonreview.sms.SmsReactionService;
 import com.salonreview.sms.TwilioSmsService;
 import com.salonreview.web.dto.MarketingContactDto.Contact;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -74,20 +68,7 @@ class SmsActivityControllerTest {
         when(mediaService.mediaForMessages(any())).thenReturn(Map.of());
         when(reactionService.reactionsForMessages(any())).thenReturn(Map.of());
         mvc = MockMvcBuilders.standaloneSetup(
-                        new SmsActivityController(service, smsService, contactsService, blockedNumberRepository, events, mediaService, reactionService))
-                .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
-                .build();
-
-        AppUserPrincipal me = mock(AppUserPrincipal.class);
-        when(me.getRole()).thenReturn(Role.OWNER);
-        when(me.getUsername()).thenReturn("owner1");
-        SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(me, null, List.of()));
-    }
-
-    @AfterEach
-    void tearDown() {
-        SecurityContextHolder.clearContext();
+                new SmsActivityController(service, smsService, contactsService, blockedNumberRepository, events, mediaService, reactionService)).build();
     }
 
     private static Contact contact(String givenName, String emailAddress) {
@@ -312,34 +293,16 @@ class SmsActivityControllerTest {
     }
 
     @Test
-    @DisplayName("POST /{id}/reactions toggles a staff reaction using the authenticated username")
-    void reactTogglesStaffReaction() throws Exception {
-        when(reactionService.toggleStaffReaction(1L, "👍", "owner1")).thenReturn(List.of(
-                new SmsReactionService.ReactionDto("👍", "STAFF", "owner1")));
-
-        mvc.perform(post("/api/owner/automations/activity/1/reactions")
-                        .contentType("application/json")
-                        .content("{\"emoji\":\"👍\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].emoji").value("👍"))
-                .andExpect(jsonPath("$[0].source").value("STAFF"))
-                .andExpect(jsonPath("$[0].reactor").value("owner1"));
-
-        verify(reactionService).toggleStaffReaction(1L, "👍", "owner1");
-    }
-
-    @Test
     @DisplayName("GET /conversations/{phoneNumber} attaches reactions from the batch lookup")
     void threadIncludesReactions() throws Exception {
         when(service.thread(PHONE)).thenReturn(List.of(
                 SmsMessage.builder().id(1L).direction("OUTBOUND").phoneNumber(PHONE).body("hi").status("SENT").build()));
         when(reactionService.reactionsForMessages(List.of(1L))).thenReturn(Map.of(
-                1L, List.of(new SmsReactionService.ReactionDto("❤️", "CUSTOMER", "customer"))));
+                1L, List.of(new SmsReactionService.ReactionDto("❤️"))));
 
         mvc.perform(get("/api/owner/automations/activity/conversations/{phoneNumber}", PHONE))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].reactions[0].emoji").value("❤️"))
-                .andExpect(jsonPath("$[0].reactions[0].source").value("CUSTOMER"));
+                .andExpect(jsonPath("$[0].reactions[0].emoji").value("❤️"));
     }
 
     @Test

@@ -1,6 +1,5 @@
 package com.salonreview.web;
 
-import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.domain.BlockedNumber;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.marketing.MarketingContactsService;
@@ -17,7 +16,6 @@ import com.salonreview.web.dto.MarketingContactDto;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.MediaType;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -68,11 +66,9 @@ public class SmsActivityController {
 
     public record SmsMediaDto(String url, String contentType) {}
 
-    /** {@code source} is {@code "CUSTOMER"} (an Apple tapback-over-SMS text, matched back to this
-     * message) or {@code "STAFF"} (a manager/owner's own internal-only reaction, never sent to the
-     * customer) — see {@code SmsReactionService}. {@code reactor} is the fixed sentinel
-     * {@code "customer"} for CUSTOMER rows, or the staff username for STAFF rows. */
-    public record SmsReactionDto(String emoji, String source, String reactor) {}
+    /** The customer's emoji reaction on this message — an Apple tapback-over-SMS text (e.g.
+     * {@code Loved "..."}), matched back to it — see {@code SmsReactionService}. */
+    public record SmsReactionDto(String emoji) {}
 
     public record SmsMessageDto(long id, String direction, String automationKey, String phoneNumber,
                                  String templateKey, String body, String status, String reason,
@@ -177,19 +173,6 @@ public class SmsActivityController {
         return messages.stream().map(m -> toDto(m, media, reactions)).toList();
     }
 
-    /** A manager/owner's own reaction on a message — internal-only, never sent to the customer.
-     * Toggles off if this staff member already left this exact emoji (tap-to-toggle, same
-     * convention as Slack/iMessage) — see {@code SmsReactionService#toggleStaffReaction}. */
-    @PostMapping("/{id}/reactions")
-    public List<SmsReactionDto> react(@PathVariable long id, @RequestBody ReactRequest request,
-                                       @AuthenticationPrincipal AppUserPrincipal me) {
-        return reactionService.toggleStaffReaction(id, request.emoji(), me.getUsername()).stream()
-                .map(r -> new SmsReactionDto(r.emoji(), r.source(), r.reactor()))
-                .toList();
-    }
-
-    public record ReactRequest(String emoji) {}
-
     /** Marks every unread inbound message in this phone number's thread read — called when the
      * manager conversation view opens a thread, so the unread badge (polled by
      * MessagesNotifierIcon) actually reflects it afterward rather than reverting on the next poll.
@@ -273,7 +256,7 @@ public class SmsActivityController {
                 .map(mi -> new SmsMediaDto(mi.url(), mi.contentType()))
                 .toList();
         List<SmsReactionDto> reactions = reactionsByMessage.getOrDefault(m.getId(), Collections.emptyList()).stream()
-                .map(r -> new SmsReactionDto(r.emoji(), r.source(), r.reactor()))
+                .map(r -> new SmsReactionDto(r.emoji()))
                 .toList();
         return new SmsMessageDto(m.getId(), m.getDirection(), m.getAutomationKey(), m.getPhoneNumber(),
                 m.getTemplateKey(), m.getBody(), m.getStatus(), m.getReason(),

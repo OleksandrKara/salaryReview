@@ -12,8 +12,8 @@ import java.util.Optional;
 public interface SmsMessageReactionRepository extends JpaRepository<SmsMessageReaction, Long> {
 
     /** The natural key from V70's unique index — used by {@code SmsReactionService}'s upsert (a
-     * re-tap or a changed staff reaction updates this row instead of creating a duplicate). */
-    Optional<SmsMessageReaction> findBySmsMessageIdAndSourceAndReactor(Long smsMessageId, String source, String reactor);
+     * re-tap with a different reaction updates this row instead of creating a duplicate). */
+    Optional<SmsMessageReaction> findBySmsMessageId(Long smsMessageId);
 
     /** Batch form for a loaded thread page — one query for every message row, not one per message,
      * same pattern as {@code SmsMediaService#mediaForMessages}. */

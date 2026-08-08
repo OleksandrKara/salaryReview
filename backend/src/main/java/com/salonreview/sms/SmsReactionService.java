@@ -5,7 +5,6 @@ import com.salonreview.domain.SmsMessageReaction;
 import com.salonreview.repo.SmsMessageReactionRepository;
 import com.salonreview.repo.SmsMessageRepository;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -17,19 +16,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Emoji reactions on individual {@code sms_message} rows — see V70. Two independent sources:
- * {@link #tryAttachCustomerReaction} parses Apple's tapback-over-SMS fallback text (sent as a
- * literal SMS when the reacting party isn't on iMessage — e.g. {@code Loved "Thanks so much!"})
- * and matches it back to the salon's own recent outbound message; {@link #toggleStaffReaction} is
- * a manager/owner's own reaction added from the dashboard, purely internal, never sent to the
- * customer.
+ * The customer's emoji reaction on a message — Apple's tapback-over-SMS fallback text (sent as a
+ * literal SMS when the reacting party isn't on iMessage — e.g. {@code Loved "Thanks so much!"}),
+ * parsed and matched back to the salon's own recent outbound message. See V70.
  */
 @Service
 public class SmsReactionService {
-
-    static final String SOURCE_CUSTOMER = "CUSTOMER";
-    static final String SOURCE_STAFF = "STAFF";
-    private static final String CUSTOMER_REACTOR = "customer";
 
     // Smart quotes (U+201C/U+201D) are Apple's own default; straight quotes are included too since
     // some carrier/relay paths normalize them before this app ever sees the text. DOTALL in case a
@@ -57,7 +49,7 @@ public class SmsReactionService {
         this.events = events;
     }
 
-    public record ReactionDto(String emoji, String source, String reactor) {}
+    public record ReactionDto(String emoji) {}
 
     /** Best-effort — never throws, and returns {@code false} for anything that isn't a recognized
      * tapback or doesn't match one of the salon's own recent outbound messages (a normal inbound
@@ -89,7 +81,10 @@ public class SmsReactionService {
             return false;
         }
 
-        upsert(target.get().getId(), emoji, SOURCE_CUSTOMER, CUSTOMER_REACTOR);
+        SmsMessageReaction row = repository.findBySmsMessageId(target.get().getId())
+                .orElseGet(() -> SmsMessageReaction.builder().smsMessageId(target.get().getId()).build());
+        row.setEmoji(emoji);
+        repository.save(row);
         events.broadcast(phoneNumber);
         return true;
     }
@@ -104,38 +99,6 @@ public class SmsReactionService {
         return s;
     }
 
-    /** A manager/owner reacting to a message from the dashboard — toggles off if this staff member
-     * already left this exact emoji on this message (same tap-to-toggle convention as Slack/
-     * iMessage), otherwise adds or replaces their own reaction. Purely internal bookkeeping; never
-     * sent to the customer over SMS. */
-    @Transactional
-    public List<ReactionDto> toggleStaffReaction(long messageId, String emoji, String username) {
-        Optional<SmsMessageReaction> existing =
-                repository.findBySmsMessageIdAndSourceAndReactor(messageId, SOURCE_STAFF, username);
-        if (existing.isPresent() && existing.get().getEmoji().equals(emoji)) {
-            repository.delete(existing.get());
-        } else {
-            upsert(messageId, emoji, SOURCE_STAFF, username);
-        }
-        messageRepository.findById(messageId).ifPresent(m -> events.broadcast(m.getPhoneNumber()));
-        return reactionsFor(messageId);
-    }
-
-    /** The natural key (message, source, reactor) means a re-tap or a changed staff reaction
-     * updates the existing row instead of accumulating duplicates — see V70's unique index. */
-    private void upsert(Long messageId, String emoji, String source, String reactor) {
-        SmsMessageReaction row = repository.findBySmsMessageIdAndSourceAndReactor(messageId, source, reactor)
-                .orElseGet(() -> SmsMessageReaction.builder().smsMessageId(messageId).source(source).reactor(reactor).build());
-        row.setEmoji(emoji);
-        repository.save(row);
-    }
-
-    public List<ReactionDto> reactionsFor(long messageId) {
-        return repository.findBySmsMessageIdIn(List.of(messageId)).stream()
-                .map(r -> new ReactionDto(r.getEmoji(), r.getSource(), r.getReactor()))
-                .toList();
-    }
-
     /** Batch form for a loaded thread/search page — one query for every message row, not one per
      * message, same pattern as {@code SmsMediaService#mediaForMessages}. */
     public Map<Long, List<ReactionDto>> reactionsForMessages(Collection<Long> messageIds) {
@@ -144,8 +107,7 @@ public class SmsReactionService {
         }
         Map<Long, List<ReactionDto>> result = new LinkedHashMap<>();
         for (SmsMessageReaction r : repository.findBySmsMessageIdIn(messageIds)) {
-            result.computeIfAbsent(r.getSmsMessageId(), k -> new ArrayList<>())
-                    .add(new ReactionDto(r.getEmoji(), r.getSource(), r.getReactor()));
+            result.computeIfAbsent(r.getSmsMessageId(), k -> new ArrayList<>()).add(new ReactionDto(r.getEmoji()));
         }
         return result;
     }

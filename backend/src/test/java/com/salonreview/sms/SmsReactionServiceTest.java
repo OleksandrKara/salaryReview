@@ -13,7 +13,6 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class SmsReactionServiceTest {
@@ -32,6 +31,7 @@ class SmsReactionServiceTest {
         events = mock(SmsEventBroadcaster.class);
         service = new SmsReactionService(repository, messageRepository, events);
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(repository.findBySmsMessageId(any())).thenReturn(Optional.empty());
     }
 
     @Test
@@ -40,7 +40,6 @@ class SmsReactionServiceTest {
         SmsMessage sent = SmsMessage.builder().id(42L).direction("OUTBOUND").body("Thanks so much for coming in!").build();
         when(messageRepository.findTop20ByPhoneNumberAndDirectionOrderByCreatedAtDesc(PHONE, "OUTBOUND"))
                 .thenReturn(List.of(sent));
-        when(repository.findBySmsMessageIdAndSourceAndReactor(42L, "CUSTOMER", "customer")).thenReturn(Optional.empty());
 
         boolean attached = service.tryAttachCustomerReaction(PHONE, "Loved “Thanks so much for coming in!”");
 
@@ -49,8 +48,6 @@ class SmsReactionServiceTest {
         verify(repository).save(captor.capture());
         assertThat(captor.getValue().getEmoji()).isEqualTo("❤️");
         assertThat(captor.getValue().getSmsMessageId()).isEqualTo(42L);
-        assertThat(captor.getValue().getSource()).isEqualTo("CUSTOMER");
-        assertThat(captor.getValue().getReactor()).isEqualTo("customer");
         verify(events).broadcast(PHONE);
     }
 
@@ -71,7 +68,7 @@ class SmsReactionServiceTest {
     private String parseEmoji(String body) {
         reset(repository);
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        when(repository.findBySmsMessageIdAndSourceAndReactor(any(), any(), any())).thenReturn(Optional.empty());
+        when(repository.findBySmsMessageId(any())).thenReturn(Optional.empty());
         service.tryAttachCustomerReaction(PHONE, body);
         org.mockito.ArgumentCaptor<SmsMessageReaction> captor = org.mockito.ArgumentCaptor.forClass(SmsMessageReaction.class);
         verify(repository).save(captor.capture());
@@ -85,7 +82,6 @@ class SmsReactionServiceTest {
                 .body("Just a reminder that your appointment is tomorrow at 2pm, see you then!").build();
         when(messageRepository.findTop20ByPhoneNumberAndDirectionOrderByCreatedAtDesc(PHONE, "OUTBOUND"))
                 .thenReturn(List.of(sent));
-        when(repository.findBySmsMessageIdAndSourceAndReactor(any(), any(), any())).thenReturn(Optional.empty());
 
         boolean attached = service.tryAttachCustomerReaction(PHONE, "Liked “Just a reminder that your appointment is…”");
 
@@ -115,46 +111,16 @@ class SmsReactionServiceTest {
     }
 
     @Test
-    @DisplayName("toggleStaffReaction: adds a new reaction when the staff member hasn't reacted yet")
-    void toggleAddsNewReaction() {
-        when(repository.findBySmsMessageIdAndSourceAndReactor(5L, "STAFF", "lucy")).thenReturn(Optional.empty());
-        when(repository.findBySmsMessageIdIn(List.of(5L))).thenReturn(List.of(
-                SmsMessageReaction.builder().smsMessageId(5L).emoji("👍").source("STAFF").reactor("lucy").build()));
-        when(messageRepository.findById(5L)).thenReturn(Optional.of(SmsMessage.builder().id(5L).phoneNumber(PHONE).build()));
+    @DisplayName("tryAttachCustomerReaction: a re-tap on the same message updates the existing row instead of duplicating")
+    void reTapUpdatesExistingRow() {
+        SmsMessage sent = SmsMessage.builder().id(42L).direction("OUTBOUND").body("Thanks so much for coming in!").build();
+        when(messageRepository.findTop20ByPhoneNumberAndDirectionOrderByCreatedAtDesc(PHONE, "OUTBOUND"))
+                .thenReturn(List.of(sent));
+        SmsMessageReaction existing = SmsMessageReaction.builder().id(9L).smsMessageId(42L).emoji("👍").build();
+        when(repository.findBySmsMessageId(42L)).thenReturn(Optional.of(existing));
 
-        List<SmsReactionService.ReactionDto> result = service.toggleStaffReaction(5L, "👍", "lucy");
+        service.tryAttachCustomerReaction(PHONE, "Loved “Thanks so much for coming in!”");
 
-        verify(repository).save(any());
-        assertThat(result).extracting(SmsReactionService.ReactionDto::emoji).containsExactly("👍");
-        verify(events).broadcast(PHONE);
-    }
-
-    @Test
-    @DisplayName("toggleStaffReaction: same emoji again removes the reaction")
-    void toggleSameEmojiRemoves() {
-        SmsMessageReaction existing = SmsMessageReaction.builder().id(9L).smsMessageId(5L).emoji("👍").source("STAFF").reactor("lucy").build();
-        when(repository.findBySmsMessageIdAndSourceAndReactor(5L, "STAFF", "lucy")).thenReturn(Optional.of(existing));
-        when(repository.findBySmsMessageIdIn(List.of(5L))).thenReturn(List.of());
-        when(messageRepository.findById(5L)).thenReturn(Optional.of(SmsMessage.builder().id(5L).phoneNumber(PHONE).build()));
-
-        List<SmsReactionService.ReactionDto> result = service.toggleStaffReaction(5L, "👍", "lucy");
-
-        verify(repository).delete(existing);
-        verify(repository, never()).save(any());
-        assertThat(result).isEmpty();
-    }
-
-    @Test
-    @DisplayName("toggleStaffReaction: a different emoji replaces the existing one")
-    void toggleDifferentEmojiReplaces() {
-        SmsMessageReaction existing = SmsMessageReaction.builder().id(9L).smsMessageId(5L).emoji("👍").source("STAFF").reactor("lucy").build();
-        when(repository.findBySmsMessageIdAndSourceAndReactor(5L, "STAFF", "lucy")).thenReturn(Optional.of(existing));
-        when(repository.findBySmsMessageIdIn(List.of(5L))).thenReturn(List.of(existing));
-        when(messageRepository.findById(5L)).thenReturn(Optional.of(SmsMessage.builder().id(5L).phoneNumber(PHONE).build()));
-
-        service.toggleStaffReaction(5L, "❤️", "lucy");
-
-        verify(repository, never()).delete(any());
         verify(repository).save(existing);
         assertThat(existing.getEmoji()).isEqualTo("❤️");
     }
@@ -170,11 +136,10 @@ class SmsReactionServiceTest {
     @DisplayName("reactionsForMessages: groups by message id")
     void reactionsForMessagesGroupsByMessageId() {
         when(repository.findBySmsMessageIdIn(List.of(1L))).thenReturn(List.of(
-                SmsMessageReaction.builder().smsMessageId(1L).emoji("👍").source("STAFF").reactor("lucy").build(),
-                SmsMessageReaction.builder().smsMessageId(1L).emoji("❤️").source("CUSTOMER").reactor("customer").build()));
+                SmsMessageReaction.builder().smsMessageId(1L).emoji("❤️").build()));
 
         var result = service.reactionsForMessages(List.of(1L));
 
-        assertThat(result.get(1L)).hasSize(2);
+        assertThat(result.get(1L)).extracting(SmsReactionService.ReactionDto::emoji).containsExactly("❤️");
     }
 }
