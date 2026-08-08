@@ -46,6 +46,7 @@ class TwilioInboundSmsControllerTest {
     private TelegramNotificationService telegramService;
     private MarketingContactsService contactsService;
     private BlockedNumberRepository blockedNumberRepository;
+    private SmsMediaService mediaService;
     private MockMvc mvc;
 
     @BeforeEach
@@ -59,6 +60,7 @@ class TwilioInboundSmsControllerTest {
         telegramService = mock(TelegramNotificationService.class);
         contactsService = mock(MarketingContactsService.class);
         blockedNumberRepository = mock(BlockedNumberRepository.class);
+        mediaService = mock(SmsMediaService.class);
         // No name resolvable by default — individual tests override with a specific stub if they
         // care about the resolved-name path.
         when(contactsService.resolveDisplayNames(any())).thenReturn(java.util.Map.of());
@@ -73,7 +75,7 @@ class TwilioInboundSmsControllerTest {
 
         TwilioInboundSmsController controller = new TwilioInboundSmsController(
                 properties, messageLogService, replyFlowRepository, replyService, telegramService, contactsService,
-                blockedNumberRepository);
+                blockedNumberRepository, mediaService);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -262,5 +264,29 @@ class TwilioInboundSmsControllerTest {
 
         verify(messageLogService).logInbound(PHONE, p.get("Body"), null);
         verifyNoInteractions(telegramService);
+    }
+
+    @Test
+    @DisplayName("MMS attachment params are forwarded to SmsMediaService against the logged message's id")
+    void mmsParamsForwardedToMediaService() throws Exception {
+        var p = params(PHONE, "check this out");
+        p.put("NumMedia", "1");
+        p.put("MediaUrl0", "https://api.twilio.com/media/ME123");
+        p.put("MediaContentType0", "image/jpeg");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.empty());
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid"))
+                        .param("NumMedia", p.get("NumMedia")).param("MediaUrl0", p.get("MediaUrl0"))
+                        .param("MediaContentType0", p.get("MediaContentType0")))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<java.util.Map<String, String>> paramsCaptor = ArgumentCaptor.forClass(java.util.Map.class);
+        verify(mediaService).ingestInboundMedia(eq(99L), paramsCaptor.capture());
+        assertThat(paramsCaptor.getValue()).containsEntry("MediaUrl0", "https://api.twilio.com/media/ME123");
     }
 }

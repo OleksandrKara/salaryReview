@@ -6,7 +6,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
+
+import com.salonreview.domain.SmsMessage;
+import com.salonreview.domain.SmsMessageMedia;
+import org.springframework.mock.web.MockMultipartFile;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -26,6 +31,7 @@ class TwilioSmsServiceTest {
     private SmsMessageLogService messageLogService;
     private TwilioSmsClient client;
     private BlockedNumberRepository blockedNumberRepository;
+    private SmsMediaService mediaService;
     private TwilioSmsService service;
 
     @BeforeEach
@@ -37,8 +43,9 @@ class TwilioSmsServiceTest {
         messageLogService = mock(SmsMessageLogService.class);
         client = mock(TwilioSmsClient.class);
         blockedNumberRepository = mock(BlockedNumberRepository.class);
+        mediaService = mock(SmsMediaService.class);
         service = new TwilioSmsService(templateRegistry, configService, consentRepository, automationService,
-                messageLogService, client, blockedNumberRepository);
+                messageLogService, client, blockedNumberRepository, mediaService);
 
         when(automationService.isEnabled(any())).thenReturn(true);
         when(blockedNumberRepository.existsById(any())).thenReturn(false);
@@ -215,5 +222,60 @@ class TwilioSmsServiceTest {
         assertThat(result.sent()).isFalse();
         assertThat(result.reason()).isEqualTo("blocked");
         verifyNoInteractions(client, configService);
+    }
+
+    @Test
+    @DisplayName("sendManualWithMedia: stores each attachment against the reserved row, then sends with media URLs")
+    void sendManualWithMediaStoresThenSends() throws Exception {
+        when(configService.get()).thenReturn(configured());
+        SmsMessage reserved = SmsMessage.builder().id(55L).build();
+        when(messageLogService.logOutbound(eq(null), eq(null), eq(PHONE), eq("here's a photo"), eq(false), eq("pending"), eq(null)))
+                .thenReturn(reserved);
+        SmsMessageMedia media = SmsMessageMedia.builder().id(1L).smsMessageId(55L).accessToken("abc12").build();
+        when(mediaService.store(eq(55L), eq("image/jpeg"), any())).thenReturn(media);
+        when(mediaService.publicUrl(media)).thenReturn("https://salon.akluxnails.com/api/public/sms-media/abc12");
+        when(client.send(any(), eq(PHONE), eq("here's a photo"), eq(List.of("https://salon.akluxnails.com/api/public/sms-media/abc12"))))
+                .thenReturn("MM123");
+        MockMultipartFile file = new MockMultipartFile("file", "photo.jpg", "image/jpeg", new byte[]{1, 2, 3});
+
+        var result = service.sendManualWithMedia(PHONE, "here's a photo", List.of(file));
+
+        assertThat(result.sent()).isTrue();
+        assertThat(reserved.getStatus()).isEqualTo("SENT");
+        assertThat(reserved.getTwilioMessageSid()).isEqualTo("MM123");
+        verify(messageLogService).save(reserved);
+    }
+
+    @Test
+    @DisplayName("sendManualWithMedia: blocked number → skipped, nothing stored or sent")
+    void sendManualWithMediaBlockedSkips() throws Exception {
+        when(blockedNumberRepository.existsById(PHONE)).thenReturn(true);
+        MockMultipartFile file = new MockMultipartFile("file", "photo.jpg", "image/jpeg", new byte[]{1});
+
+        var result = service.sendManualWithMedia(PHONE, "hi", List.of(file));
+
+        assertThat(result.sent()).isFalse();
+        assertThat(result.reason()).isEqualTo("blocked");
+        verifyNoInteractions(client, mediaService);
+    }
+
+    @Test
+    @DisplayName("sendManualWithMedia: Twilio send failure → send_failed, reserved row updated, never throws")
+    void sendManualWithMediaSendFailureReturnsSendFailed() throws Exception {
+        when(configService.get()).thenReturn(configured());
+        SmsMessage reserved = SmsMessage.builder().id(56L).build();
+        when(messageLogService.logOutbound(eq(null), eq(null), eq(PHONE), eq("photo"), eq(false), eq("pending"), eq(null)))
+                .thenReturn(reserved);
+        SmsMessageMedia media = SmsMessageMedia.builder().id(2L).smsMessageId(56L).accessToken("xyz99").build();
+        when(mediaService.store(eq(56L), any(), any())).thenReturn(media);
+        when(mediaService.publicUrl(media)).thenReturn("https://salon.akluxnails.com/api/public/sms-media/xyz99");
+        doThrow(new java.io.IOException("boom")).when(client).send(any(), any(), any(), any());
+        MockMultipartFile file = new MockMultipartFile("file", "photo.jpg", "image/jpeg", new byte[]{1});
+
+        var result = service.sendManualWithMedia(PHONE, "photo", List.of(file));
+
+        assertThat(result.sent()).isFalse();
+        assertThat(result.reason()).isEqualTo("send_failed");
+        assertThat(reserved.getStatus()).isEqualTo("NOT_SENT");
     }
 }

@@ -7,6 +7,7 @@ import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.repo.SmsMessageRepository.ConversationSummaryProjection;
 import com.salonreview.sms.CheckoutReviewLinks;
 import com.salonreview.sms.SmsEventBroadcaster;
+import com.salonreview.sms.SmsMediaService;
 import com.salonreview.sms.SmsMessageLogService;
 import com.salonreview.sms.TwilioSmsService;
 import com.salonreview.util.PhoneNumbers;
@@ -15,9 +16,12 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -42,22 +46,27 @@ public class SmsActivityController {
     private final MarketingContactsService contactsService;
     private final BlockedNumberRepository blockedNumberRepository;
     private final SmsEventBroadcaster events;
+    private final SmsMediaService mediaService;
 
     public SmsActivityController(SmsMessageLogService service, TwilioSmsService smsService,
                                   MarketingContactsService contactsService,
                                   BlockedNumberRepository blockedNumberRepository,
-                                  SmsEventBroadcaster events) {
+                                  SmsEventBroadcaster events, SmsMediaService mediaService) {
         this.service = service;
         this.smsService = smsService;
         this.contactsService = contactsService;
         this.blockedNumberRepository = blockedNumberRepository;
         this.events = events;
+        this.mediaService = mediaService;
     }
+
+    public record SmsMediaDto(String url, String contentType) {}
 
     public record SmsMessageDto(long id, String direction, String automationKey, String phoneNumber,
                                  String templateKey, String body, String status, String reason,
                                  String linkTarget, Instant clickedAt, Instant readAt, Instant createdAt,
-                                 String deliveryStatus, String deliveryErrorMessage, Instant deliveryUpdatedAt) {}
+                                 String deliveryStatus, String deliveryErrorMessage, Instant deliveryUpdatedAt,
+                                 List<SmsMediaDto> media) {}
 
     public record ConversationDto(String phoneNumber, Instant lastMessageAt, String lastMessageBody,
                                    String lastMessageDirection, long unreadCount,
@@ -80,10 +89,11 @@ public class SmsActivityController {
                                        @RequestParam(required = false) String automationKey,
                                        @RequestParam(defaultValue = "100") int limit) {
         int bounded = Math.min(Math.max(limit, 1), 500);
-        return service.search(phoneNumber, direction, automationKey,
+        List<SmsMessage> messages = service.search(phoneNumber, direction, automationKey,
                         PageRequest.of(0, bounded, Sort.by(Sort.Direction.DESC, "createdAt")))
-                .map(SmsActivityController::toDto)
                 .getContent();
+        Map<Long, List<SmsMediaService.MediaInfo>> media = mediaService.mediaForMessages(messages.stream().map(SmsMessage::getId).toList());
+        return messages.stream().map(m -> toDto(m, media)).toList();
     }
 
     @GetMapping("/unread-count")
@@ -146,7 +156,9 @@ public class SmsActivityController {
      * thread panel. */
     @GetMapping("/conversations/{phoneNumber}")
     public List<SmsMessageDto> thread(@PathVariable String phoneNumber) {
-        return service.thread(phoneNumber).stream().map(SmsActivityController::toDto).toList();
+        List<SmsMessage> messages = service.thread(phoneNumber);
+        Map<Long, List<SmsMediaService.MediaInfo>> media = mediaService.mediaForMessages(messages.stream().map(SmsMessage::getId).toList());
+        return messages.stream().map(m -> toDto(m, media)).toList();
     }
 
     /** Marks every unread inbound message in this phone number's thread read — called when the
@@ -214,11 +226,26 @@ public class SmsActivityController {
         return new ReplyResult(result.sent(), result.reason());
     }
 
-    private static SmsMessageDto toDto(SmsMessage m) {
+    /** Same as {@link #reply}, with one or more photo attachments — multipart, not JSON, since a
+     * plain {@code forwardToBackend}/JSON body can't carry file bytes (see the frontend's
+     * hand-written proxy route mirroring {@code /api/owner/staff-documents}). {@code body} is
+     * optional — a pure-photo MMS with no text is valid. */
+    @PostMapping(value = "/reply-with-media", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ReplyResult replyWithMedia(@RequestParam String phoneNumber,
+                                       @RequestParam(required = false) String body,
+                                       @RequestParam("files") List<MultipartFile> files) throws IOException {
+        var result = smsService.sendManualWithMedia(phoneNumber, body, files);
+        return new ReplyResult(result.sent(), result.reason());
+    }
+
+    private static SmsMessageDto toDto(SmsMessage m, Map<Long, List<SmsMediaService.MediaInfo>> mediaByMessage) {
+        List<SmsMediaDto> media = mediaByMessage.getOrDefault(m.getId(), Collections.emptyList()).stream()
+                .map(mi -> new SmsMediaDto(mi.url(), mi.contentType()))
+                .toList();
         return new SmsMessageDto(m.getId(), m.getDirection(), m.getAutomationKey(), m.getPhoneNumber(),
                 m.getTemplateKey(), m.getBody(), m.getStatus(), m.getReason(),
                 m.getLinkTarget(), m.getClickedAt(), m.getReadAt(), m.getCreatedAt(),
-                m.getDeliveryStatus(), m.getDeliveryErrorMessage(), m.getDeliveryUpdatedAt());
+                m.getDeliveryStatus(), m.getDeliveryErrorMessage(), m.getDeliveryUpdatedAt(), media);
     }
 
     private static ConversationDto toConversationDto(ConversationSummaryProjection p,

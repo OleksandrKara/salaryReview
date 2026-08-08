@@ -39,11 +39,12 @@ public class TwilioInboundSmsController {
     private final TelegramNotificationService telegramService;
     private final MarketingContactsService contactsService;
     private final BlockedNumberRepository blockedNumberRepository;
+    private final SmsMediaService mediaService;
 
     public TwilioInboundSmsController(TwilioInboundProperties properties, SmsMessageLogService messageLogService,
                                        SmsReplyFlowRepository replyFlowRepository, CheckoutReviewReplyService replyService,
                                        TelegramNotificationService telegramService, MarketingContactsService contactsService,
-                                       BlockedNumberRepository blockedNumberRepository) {
+                                       BlockedNumberRepository blockedNumberRepository, SmsMediaService mediaService) {
         this.properties = properties;
         this.messageLogService = messageLogService;
         this.replyFlowRepository = replyFlowRepository;
@@ -51,6 +52,7 @@ public class TwilioInboundSmsController {
         this.telegramService = telegramService;
         this.contactsService = contactsService;
         this.blockedNumberRepository = blockedNumberRepository;
+        this.mediaService = mediaService;
     }
 
     @PostMapping(value = "/api/public/sms/inbound", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
@@ -75,6 +77,10 @@ public class TwilioInboundSmsController {
         SmsMessage logged = messageLogService.logInbound(from, body, pending.map(SmsReplyFlow::getAutomationKey).orElse(null));
         logged.setTwilioMessageSid(params.get("MessageSid"));
         messageLogService.save(logged);
+
+        // MMS photos, if any — see SmsMediaService's own doc for why this is best-effort and
+        // never blocks the rest of this handler (the text/thread above is already durable).
+        mediaService.ingestInboundMedia(logged.getId(), params);
 
         // A customer reply always needs a human's attention right away, not just a dashboard entry
         // nobody's actively watching — see openspec/changes/sms-automations-hub proposal.md. Name

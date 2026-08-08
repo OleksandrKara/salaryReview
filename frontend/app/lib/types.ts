@@ -93,6 +93,13 @@ export type SmsMessageDirection = 'OUTBOUND' | 'INBOUND';
 // whether our own send attempt to Twilio succeeded.
 export type SmsDeliveryStatus = string | null;
 
+// One MMS photo attached to a message — see SmsActivityController.SmsMediaDto. url is a public,
+// unauthenticated /api/public/sms-media/{token} link (safe to use directly in an <img src>).
+export interface SmsMediaDto {
+  url: string;
+  contentType: string;
+}
+
 export interface SmsMessageDto {
   id: number;
   direction: SmsMessageDirection;
@@ -109,6 +116,7 @@ export interface SmsMessageDto {
   deliveryStatus: SmsDeliveryStatus;
   deliveryErrorMessage: string | null;
   deliveryUpdatedAt: string | null;
+  media: SmsMediaDto[];
 }
 
 // One conversation (grouped by phone number) in the manager-facing /admin/messages inbox — see

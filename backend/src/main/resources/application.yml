@@ -21,6 +21,15 @@ spring:
     enabled: true
     baseline-on-migrate: true
 
+  # Spring Boot's own default (1MB/file, 10MB/request) is well under a real phone photo — MMS
+  # attachments (staff-document uploads too, though those are usually small PDFs) need real
+  # headroom. Twilio itself caps a single outbound MMS media file at 5MB, so 8MB/file gives margin
+  # without being unbounded.
+  servlet:
+    multipart:
+      max-file-size: 8MB
+      max-request-size: 24MB
+
   # HttpSession backing store: see com.salonreview.config.HttpSessionConfig, NOT this
   # `spring.session.*` block — Spring Boot 4.0.6 ships no auto-configuration for these properties
   # at all (confirmed: spring-boot-autoconfigure-4.0.6 has zero "session" entries in its

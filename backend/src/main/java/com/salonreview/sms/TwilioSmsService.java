@@ -1,12 +1,18 @@
 package com.salonreview.sms;
 
+import com.salonreview.domain.SmsMessage;
+import com.salonreview.domain.SmsMessageMedia;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.util.PhoneNumbers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -37,11 +43,12 @@ public class TwilioSmsService {
     private final SmsMessageLogService messageLogService;
     private final TwilioSmsClient client;
     private final BlockedNumberRepository blockedNumberRepository;
+    private final SmsMediaService mediaService;
 
     public TwilioSmsService(SmsTemplateRegistry templateRegistry, TwilioSmsConfigService configService,
                             SmsConsentRepository consentRepository, SmsAutomationService automationService,
                             SmsMessageLogService messageLogService, TwilioSmsClient client,
-                            BlockedNumberRepository blockedNumberRepository) {
+                            BlockedNumberRepository blockedNumberRepository, SmsMediaService mediaService) {
         this.templateRegistry = templateRegistry;
         this.configService = configService;
         this.consentRepository = consentRepository;
@@ -49,6 +56,7 @@ public class TwilioSmsService {
         this.messageLogService = messageLogService;
         this.client = client;
         this.blockedNumberRepository = blockedNumberRepository;
+        this.mediaService = mediaService;
     }
 
     /** True if a manager has blocked this number from the conversation view (see V61) — checked
@@ -132,6 +140,51 @@ public class TwilioSmsService {
         } catch (Exception e) {
             log.warn("Manual reply send failed (caller unaffected): {}", e.getMessage());
             messageLogService.logOutbound(null, null, phoneNumber, body, false, "send_failed", null);
+            return SmsSendResult.skipped("send_failed");
+        }
+    }
+
+    /** Same as {@link #sendManual}, with one or more photo attachments — a manager sending an MMS
+     * reply. Reserve-then-finalize (same pattern as {@code CheckoutReviewReplyService}'s click-token
+     * reservation): the {@code sms_message} row must exist with a real id before each attachment's
+     * public {@code /api/public/sms-media/{token}} URL can be constructed and handed to Twilio, so
+     * the row is saved first (status {@code NOT_SENT}/"pending"), then updated once the send outcome
+     * is known. {@code files} is never empty — a caller with no photos should use {@link #sendManual}
+     * instead. */
+    public SmsSendResult sendManualWithMedia(String phoneNumber, String body, List<MultipartFile> files) throws IOException {
+        String safeBody = body == null ? "" : body;
+        if (isBlocked(phoneNumber)) {
+            log.info("Manual MMS reply skipped — number is blocked");
+            messageLogService.logOutbound(null, null, phoneNumber, safeBody, false, "blocked", null);
+            return SmsSendResult.skipped("blocked");
+        }
+
+        TwilioSmsConfig config = configService.get();
+        if (!config.isConfigured()) {
+            log.info("Manual MMS reply skipped — Twilio credentials not configured");
+            messageLogService.logOutbound(null, null, phoneNumber, safeBody, false, "not_configured", null);
+            return SmsSendResult.skipped("not_configured");
+        }
+
+        SmsMessage reserved = messageLogService.logOutbound(null, null, phoneNumber, safeBody, false, "pending", null);
+        List<String> mediaUrls = new ArrayList<>();
+        for (MultipartFile file : files) {
+            SmsMessageMedia media = mediaService.store(reserved.getId(), file.getContentType(), file.getBytes());
+            mediaUrls.add(mediaService.publicUrl(media));
+        }
+
+        try {
+            String twilioMessageSid = client.send(config, phoneNumber, safeBody, mediaUrls);
+            reserved.setStatus("SENT");
+            reserved.setReason(null);
+            reserved.setTwilioMessageSid(twilioMessageSid);
+            messageLogService.save(reserved);
+            return SmsSendResult.ok();
+        } catch (Exception e) {
+            log.warn("Manual MMS reply send failed (caller unaffected): {}", e.getMessage());
+            reserved.setStatus("NOT_SENT");
+            reserved.setReason("send_failed");
+            messageLogService.save(reserved);
             return SmsSendResult.skipped("send_failed");
         }
     }
