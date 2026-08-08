@@ -62,6 +62,16 @@ public final class SmsAutomationRegistry {
                             + "schedule; consented customers see a $5-off coupon (min. $99 order) valid until "
                             + "midnight that day, everyone else gets the same link with no discount language",
                     null, true, false
+            ),
+            "repeat_customer_winback", new AutomationMeta(
+                    "repeat_customer_winback",
+                    "Repeat customer win-back",
+                    "Every customer with 2+ all-time visits, 40+ days after their last visit, if they haven't "
+                            + "already rebooked — a plain, no-discount check-in with a booking link; if their "
+                            + "technician changed at their last visit, the text offers to check with their "
+                            + "earlier technician by name instead. Repeats every time a customer re-lapses, "
+                            + "subject to a 60-day cooldown per customer",
+                    null, true, false
             )
     );
 
