@@ -135,6 +135,15 @@ export default function MessagesView({
   const [query, setQuery] = useState('');
   const [searchHits, setSearchHits] = useState<SmsConversationSearchHitDto[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
+  // Gates the auto-scroll-to-latest effect below — without this, every background thread refetch
+  // (an SSE ping for a delivery-status change, a reaction, a click event, none of which the reader
+  // asked to jump away from what they're currently reading) yanked a manager scrolled up into
+  // history straight back down to the newest message. Starts true so a freshly opened thread still
+  // lands at the bottom on first load, same as any other chat app; updated on scroll and forced
+  // back to true right when the manager opens a thread or sends a reply themselves — both cases
+  // where snapping to the bottom is exactly what's wanted.
+  const isNearBottomRef = useRef(true);
   // Read once, inside the debounce effect below, then reset — lets the info-button on a list row
   // open straight into the contact panel on the same tap, without a race against the effect's own
   // showContactPanel reset (which normally closes it on every fresh selectedPhone).
@@ -227,6 +236,9 @@ export default function MessagesView({
       // new customer's composer.
       setAttachedFiles([]);
       setDraft('');
+      // A freshly opened thread should land at the newest message, regardless of where the reader
+      // happened to leave the scroll position of whichever thread they had open before.
+      isNearBottomRef.current = true;
       setThreadLoading(true);
       api.getSmsThread(selectedPhone)
         .then((data) => {
@@ -252,8 +264,21 @@ export default function MessagesView({
   }, [selectedPhone]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' });
+    if (isNearBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ block: 'end' });
+    }
   }, [thread]);
+
+  // Threshold, not an exact ==0 check — scroll position rarely lands on the precise pixel, and a
+  // reader who's basically at the bottom (say, mid-inertial-scroll on mobile) should still count
+  // as "at the bottom" for the auto-scroll-on-new-message behavior above.
+  const NEAR_BOTTOM_THRESHOLD_PX = 120;
+
+  function handleMessageListScroll() {
+    const el = messageListRef.current;
+    if (!el) return;
+    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_THRESHOLD_PX;
+  }
 
   // Debounced message-content search — skipped for very short queries (1 character) so we're not
   // firing a broad, mostly-useless lookup on every keystroke. Name/phone filtering (below, in
@@ -384,6 +409,9 @@ export default function MessagesView({
       if (result.sent) {
         setDraft('');
         setAttachedFiles([]);
+        // A manager sending their own reply always expects to see it land at the bottom, even if
+        // they'd scrolled up to reference something earlier in the thread first.
+        isNearBottomRef.current = true;
         const [freshThread, freshConversations] = await Promise.all([
           api.getSmsThread(selectedPhone),
           api.listSmsConversations(),
@@ -685,7 +713,12 @@ export default function MessagesView({
               </button>
             </div>
 
-            <div data-testid="thread-message-list" className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-3">
+            <div
+              ref={messageListRef}
+              onScroll={handleMessageListScroll}
+              data-testid="thread-message-list"
+              className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-3"
+            >
               {threadLoading ? (
                 <div className="text-center text-sm text-zinc-400">Loading…</div>
               ) : (
