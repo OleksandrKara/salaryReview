@@ -174,24 +174,34 @@ export default function MessagesView({
     el.scrollTop = el.scrollHeight;
   }, [draft]);
 
-  // Guards against the on-screen keyboard covering the composer — the actual, hard-to-pin-down
-  // report of "can't see what I'm typing" on mobile. `100dvh` (see page.tsx) already handles this
-  // in most modern mobile browsers, but not reliably in every in-app webview a manager might open
-  // this page from (e.g. tapping the "Open chat" link in the Telegram inbound-SMS alert opens
-  // Telegram's own in-app browser, which has historically lagged on dvh/keyboard-resize support).
-  // The VisualViewport API fires whenever the keyboard opens/closes/resizes regardless of dvh
-  // support, so re-scrolling the focused composer into view there is a second, independent layer
-  // of defense on top of the CSS fix, not a replacement for it.
+  // THE actual fix for the on-screen keyboard covering the composer on mobile. `100dvh` alone
+  // (the previous attempt — see page.tsx's older comment, still visible in git history) turned
+  // out not to be enough: despite the name, "dynamic viewport" units in most mobile engines only
+  // reliably track browser-chrome changes (the address bar hiding on scroll), not the keyboard —
+  // so `main` stayed sized as if no keyboard was open, and the composer at its bottom ended up
+  // physically underneath it with nothing to scroll into view (nothing overflowed; the layout
+  // just never shrank). `window.visualViewport.height`, unlike dvh, IS reliably shrunk by every
+  // mobile engine's keyboard — so this drives a `--vvh` custom property on the document root that
+  // page.tsx's root container sizes itself from (`h-[var(--vvh,100dvh)]`, dvh only as the
+  // pre-hydration/no-VisualViewport-support fallback). Runs once on mount to set the initial
+  // value, then on every resize (keyboard open/close, browser chrome change, rotation, ...).
   useEffect(() => {
     const viewport = typeof window !== 'undefined' ? window.visualViewport : undefined;
     if (!viewport) return;
-    function keepComposerVisible() {
+    function syncViewportHeight() {
+      document.documentElement.style.setProperty('--vvh', `${viewport!.height}px`);
+      // Belt-and-suspenders: if the composer is mid-focus when the keyboard finishes animating
+      // open, make sure it's still the thing on screen rather than trusting the resize alone.
       if (document.activeElement === draftInputRef.current) {
         draftInputRef.current?.scrollIntoView({ block: 'end' });
       }
     }
-    viewport.addEventListener('resize', keepComposerVisible);
-    return () => viewport.removeEventListener('resize', keepComposerVisible);
+    syncViewportHeight();
+    viewport.addEventListener('resize', syncViewportHeight);
+    return () => {
+      viewport.removeEventListener('resize', syncViewportHeight);
+      document.documentElement.style.removeProperty('--vvh');
+    };
   }, []);
 
   // A second, immediate nudge on focus itself — covers the moment right as the keyboard starts

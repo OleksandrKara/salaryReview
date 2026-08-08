@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import AssistantWidget from "./components/AssistantWidget";
 import LanguagePrompt from "./components/LanguagePrompt";
@@ -23,6 +23,20 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Salary Review",
   description: "Square-sourced salon salary reports",
+};
+
+// interactiveWidget: 'resizes-content' — tells Chromium-based mobile browsers (Chrome/Android
+// WebView 108+, so most in-app browsers built on it too, e.g. Telegram's Android webview) to
+// shrink the actual layout viewport when the on-screen keyboard opens, not just the visual one.
+// Without this, `100dvh` (see /admin/messages/page.tsx) only reliably tracks browser-chrome
+// changes (address bar hide/show) — despite the "dynamic viewport" name, most engines don't tie
+// it to the keyboard by default, which is why the messages composer stayed hidden behind the
+// keyboard even after switching to dvh. iOS Safari ignores this meta value; MessagesView's own
+// VisualViewport-driven --vvh custom property is the cross-browser fix that covers it too.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  interactiveWidget: "resizes-content",
 };
 
 export default async function RootLayout({
