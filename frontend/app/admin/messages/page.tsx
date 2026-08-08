@@ -8,10 +8,17 @@ import MessagesView from './MessagesView';
 // app's existing /admin/redos, /admin/manual-adjustments convention. The automation registry +
 // toggle + activity log now live at /owner/settings/sms.
 //
-// Mobile is edge-to-edge, full dynamic-viewport height (100dvh, not 100vh — dvh tracks the
-// visual viewport as the on-screen keyboard opens/closes, so the composer never ends up hidden
-// behind it) so this reads as a real chat app rather than a bounded card floating in page
-// padding. Desktop keeps the bounded two-column card look (see MessagesView's own sm: classes).
+// Mobile is edge-to-edge, full-height (var(--vvh, 100dvh)) so this reads as a real chat app
+// rather than a bounded card floating in page padding. Desktop keeps the bounded two-column card
+// look (see MessagesView's own sm: classes).
+//
+// `--vvh` over a plain `100dvh`: despite the name, "dynamic viewport" units in most mobile
+// browser engines only reliably track browser-chrome changes (the address bar hiding on scroll),
+// not the on-screen keyboard — dvh staying full-height with the keyboard open was exactly why the
+// composer kept ending up hidden behind it even after switching from 100vh to 100dvh. MessagesView
+// sets `--vvh` on the document root from `window.visualViewport.height`, which every mobile engine
+// *does* shrink for the keyboard; falls back to the dvh value itself (the var's second arg) before
+// that effect has run (first paint, or a browser with no VisualViewport support at all).
 //
 // The title row (and the AdminMenu it renders) is hidden on mobile the instant a thread is open —
 // MessagesView marks its thread column with a `thread-open` class only while one is selected, and
@@ -51,7 +58,7 @@ export default async function MessagesPage({
     // ~950px of horizontal overflow at 320/375/390px viewports; adding it brings overflow to 0.
     <main
       data-testid="messages-page-root"
-      className="group/messages mx-auto flex w-full h-[100dvh] max-w-5xl flex-col sm:h-auto sm:p-8"
+      className="group/messages mx-auto flex w-full h-[var(--vvh,100dvh)] max-w-5xl flex-col sm:h-auto sm:p-8"
     >
       <div
         data-testid="messages-page-title-row"
