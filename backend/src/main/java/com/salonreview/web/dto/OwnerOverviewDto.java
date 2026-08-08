@@ -10,7 +10,12 @@ public record OwnerOverviewDto(
         int toMonth,
         List<MonthSummary> months,
         List<ProviderYtd> providers,
-        YearTotals prevYear
+        YearTotals prevYear,
+        /** When this response was actually computed (ISO instant) — see OwnerOverviewService's own
+         * 30-day cache. Reflects the real last-Square-pull time for the requested range, not the
+         * render time, same "honest synced badge" convention docs/CACHING.md already documents for
+         * SquareClient/SettlementPreviewService. */
+        String syncedAt
 ) {
     public record MonthSummary(
             int year,

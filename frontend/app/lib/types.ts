@@ -912,6 +912,10 @@ export interface OwnerOverviewData {
   months: MonthSummary[];
   providers: ProviderYtd[];
   prevYear: YearTotals | null;
+  /** When this response was actually computed (ISO instant) — the backend caches this dashboard
+   * for 30 days (see docs/CACHING.md), so this is the real last-Square-pull time for the requested
+   * range, not the render time. Drives the SyncBadge on the Overview page. */
+  syncedAt: string;
 }
 
 // --- Marketing dashboard (owner-only, com.salonreview.web.MarketingDashboardController) ---

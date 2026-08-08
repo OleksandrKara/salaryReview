@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { serverApi } from '../../lib/serverApi';
 import PageHeader from '../../components/PageHeader';
+import { SyncBadge } from '../../components/SyncBadge';
 import OverviewClient from './OverviewClient';
 import ProviderTable from './ProviderTable';
 import RevenueTabs from './RevenueTabs';
@@ -37,6 +38,9 @@ export default async function OwnerOverviewPage({
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
       <PageHeader title="Revenue" role={me.role} language={me.preferredLanguage} />
+      <div className="mb-3">
+        <SyncBadge syncedAt={data.syncedAt} language={me.preferredLanguage} />
+      </div>
       <RevenueTabs />
 
       <OverviewClient data={data} />

@@ -8,6 +8,7 @@ import com.salonreview.domain.SalonConfig;
 import com.salonreview.repo.MarketingContactSquareLinkRepository;
 import com.salonreview.repo.MarketingSyncStatusRepository;
 import com.salonreview.repo.ProviderVisitRepository;
+import com.salonreview.util.TtlCache;
 import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.sms.CheckoutReviewLinks;
 import com.salonreview.sms.SmsMessageLogService;
