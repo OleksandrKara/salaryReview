@@ -100,6 +100,16 @@ export interface SmsMediaDto {
   contentType: string;
 }
 
+// One emoji reaction on a message — see SmsActivityController.SmsReactionDto. source is
+// "CUSTOMER" (an Apple tapback-over-SMS text, matched back to this message) or "STAFF" (a
+// manager/owner's own internal-only reaction, never sent to the customer). reactor is the fixed
+// sentinel "customer" for CUSTOMER rows, or the staff username for STAFF rows.
+export interface SmsReactionDto {
+  emoji: string;
+  source: 'CUSTOMER' | 'STAFF';
+  reactor: string;
+}
+
 export interface SmsMessageDto {
   id: number;
   direction: SmsMessageDirection;
@@ -117,6 +127,7 @@ export interface SmsMessageDto {
   deliveryErrorMessage: string | null;
   deliveryUpdatedAt: string | null;
   media: SmsMediaDto[];
+  reactions: SmsReactionDto[];
 }
 
 // One conversation (grouped by phone number) in the manager-facing /admin/messages inbox — see

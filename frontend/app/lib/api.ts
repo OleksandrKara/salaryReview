@@ -31,6 +31,7 @@ import type {
   TwilioSmsSettingsUpdateRequest,
   SmsAutomationSummary,
   SmsMessageDto,
+  SmsReactionDto,
   SmsMessageDirection,
   SmsConversationDto,
   SmsConversationSearchHitDto,
@@ -270,6 +271,12 @@ export const api = {
 
   sendSmsReply: (phoneNumber: string, body: string) =>
     proxyJson<SmsReplyResult>(`/api/owner/automations/activity/reply`, 'POST', { phoneNumber, body }),
+
+  // Staff reaction on a single message — toggles off if this staff member already left this exact
+  // emoji, otherwise adds/replaces it. Internal-only, never sent to the customer. Returns the
+  // message's full updated reaction list.
+  reactToSmsMessage: (messageId: number, emoji: string) =>
+    proxyJson<SmsReactionDto[]>(`/api/owner/automations/activity/${messageId}/reactions`, 'POST', { emoji }),
 
   // Same as sendSmsReply, with one or more photo attachments — multipart, not JSON (see
   // uploadRagDocument above for the same no-Content-Type-header convention; the browser sets the

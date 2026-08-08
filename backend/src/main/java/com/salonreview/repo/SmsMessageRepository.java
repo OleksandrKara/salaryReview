@@ -74,6 +74,13 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
      * selected-thread panel. */
     List<SmsMessage> findByPhoneNumberOrderByCreatedAtAsc(String phoneNumber);
 
+    /** Most-recent-first outbound messages to this phone number, capped at 20 — used by
+     * {@code SmsReactionService} to match an inbound Apple tapback-over-SMS text (e.g.
+     * {@code Loved "message"}) against the message it's reacting to. Capped rather than scanning
+     * the whole thread: a customer only ever taps a message they can currently see, which in
+     * practice is always one of the salon's most recent sends. */
+    List<SmsMessage> findTop20ByPhoneNumberAndDirectionOrderByCreatedAtDesc(String phoneNumber, String direction);
+
     /** Backs the click-tracked {@code /r/{token}} short link — see V53, design.md D6. */
     Optional<SmsMessage> findByClickToken(String clickToken);
 

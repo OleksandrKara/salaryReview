@@ -1,5 +1,6 @@
 package com.salonreview.web;
 
+import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.domain.BlockedNumber;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.marketing.MarketingContactsService;
@@ -9,12 +10,14 @@ import com.salonreview.sms.CheckoutReviewLinks;
 import com.salonreview.sms.SmsEventBroadcaster;
 import com.salonreview.sms.SmsMediaService;
 import com.salonreview.sms.SmsMessageLogService;
+import com.salonreview.sms.SmsReactionService;
 import com.salonreview.sms.TwilioSmsService;
 import com.salonreview.util.PhoneNumbers;
 import com.salonreview.web.dto.MarketingContactDto;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -47,26 +50,35 @@ public class SmsActivityController {
     private final BlockedNumberRepository blockedNumberRepository;
     private final SmsEventBroadcaster events;
     private final SmsMediaService mediaService;
+    private final SmsReactionService reactionService;
 
     public SmsActivityController(SmsMessageLogService service, TwilioSmsService smsService,
                                   MarketingContactsService contactsService,
                                   BlockedNumberRepository blockedNumberRepository,
-                                  SmsEventBroadcaster events, SmsMediaService mediaService) {
+                                  SmsEventBroadcaster events, SmsMediaService mediaService,
+                                  SmsReactionService reactionService) {
         this.service = service;
         this.smsService = smsService;
         this.contactsService = contactsService;
         this.blockedNumberRepository = blockedNumberRepository;
         this.events = events;
         this.mediaService = mediaService;
+        this.reactionService = reactionService;
     }
 
     public record SmsMediaDto(String url, String contentType) {}
+
+    /** {@code source} is {@code "CUSTOMER"} (an Apple tapback-over-SMS text, matched back to this
+     * message) or {@code "STAFF"} (a manager/owner's own internal-only reaction, never sent to the
+     * customer) — see {@code SmsReactionService}. {@code reactor} is the fixed sentinel
+     * {@code "customer"} for CUSTOMER rows, or the staff username for STAFF rows. */
+    public record SmsReactionDto(String emoji, String source, String reactor) {}
 
     public record SmsMessageDto(long id, String direction, String automationKey, String phoneNumber,
                                  String templateKey, String body, String status, String reason,
                                  String linkTarget, Instant clickedAt, Instant readAt, Instant createdAt,
                                  String deliveryStatus, String deliveryErrorMessage, Instant deliveryUpdatedAt,
-                                 List<SmsMediaDto> media) {}
+                                 List<SmsMediaDto> media, List<SmsReactionDto> reactions) {}
 
     public record ConversationDto(String phoneNumber, Instant lastMessageAt, String lastMessageBody,
                                    String lastMessageDirection, long unreadCount,
@@ -92,8 +104,10 @@ public class SmsActivityController {
         List<SmsMessage> messages = service.search(phoneNumber, direction, automationKey,
                         PageRequest.of(0, bounded, Sort.by(Sort.Direction.DESC, "createdAt")))
                 .getContent();
-        Map<Long, List<SmsMediaService.MediaInfo>> media = mediaService.mediaForMessages(messages.stream().map(SmsMessage::getId).toList());
-        return messages.stream().map(m -> toDto(m, media)).toList();
+        List<Long> ids = messages.stream().map(SmsMessage::getId).toList();
+        Map<Long, List<SmsMediaService.MediaInfo>> media = mediaService.mediaForMessages(ids);
+        Map<Long, List<SmsReactionService.ReactionDto>> reactions = reactionService.reactionsForMessages(ids);
+        return messages.stream().map(m -> toDto(m, media, reactions)).toList();
     }
 
     @GetMapping("/unread-count")
@@ -157,9 +171,24 @@ public class SmsActivityController {
     @GetMapping("/conversations/{phoneNumber}")
     public List<SmsMessageDto> thread(@PathVariable String phoneNumber) {
         List<SmsMessage> messages = service.thread(phoneNumber);
-        Map<Long, List<SmsMediaService.MediaInfo>> media = mediaService.mediaForMessages(messages.stream().map(SmsMessage::getId).toList());
-        return messages.stream().map(m -> toDto(m, media)).toList();
+        List<Long> ids = messages.stream().map(SmsMessage::getId).toList();
+        Map<Long, List<SmsMediaService.MediaInfo>> media = mediaService.mediaForMessages(ids);
+        Map<Long, List<SmsReactionService.ReactionDto>> reactions = reactionService.reactionsForMessages(ids);
+        return messages.stream().map(m -> toDto(m, media, reactions)).toList();
     }
+
+    /** A manager/owner's own reaction on a message — internal-only, never sent to the customer.
+     * Toggles off if this staff member already left this exact emoji (tap-to-toggle, same
+     * convention as Slack/iMessage) — see {@code SmsReactionService#toggleStaffReaction}. */
+    @PostMapping("/{id}/reactions")
+    public List<SmsReactionDto> react(@PathVariable long id, @RequestBody ReactRequest request,
+                                       @AuthenticationPrincipal AppUserPrincipal me) {
+        return reactionService.toggleStaffReaction(id, request.emoji(), me.getUsername()).stream()
+                .map(r -> new SmsReactionDto(r.emoji(), r.source(), r.reactor()))
+                .toList();
+    }
+
+    public record ReactRequest(String emoji) {}
 
     /** Marks every unread inbound message in this phone number's thread read — called when the
      * manager conversation view opens a thread, so the unread badge (polled by
@@ -238,14 +267,18 @@ public class SmsActivityController {
         return new ReplyResult(result.sent(), result.reason());
     }
 
-    private static SmsMessageDto toDto(SmsMessage m, Map<Long, List<SmsMediaService.MediaInfo>> mediaByMessage) {
+    private static SmsMessageDto toDto(SmsMessage m, Map<Long, List<SmsMediaService.MediaInfo>> mediaByMessage,
+                                        Map<Long, List<SmsReactionService.ReactionDto>> reactionsByMessage) {
         List<SmsMediaDto> media = mediaByMessage.getOrDefault(m.getId(), Collections.emptyList()).stream()
                 .map(mi -> new SmsMediaDto(mi.url(), mi.contentType()))
+                .toList();
+        List<SmsReactionDto> reactions = reactionsByMessage.getOrDefault(m.getId(), Collections.emptyList()).stream()
+                .map(r -> new SmsReactionDto(r.emoji(), r.source(), r.reactor()))
                 .toList();
         return new SmsMessageDto(m.getId(), m.getDirection(), m.getAutomationKey(), m.getPhoneNumber(),
                 m.getTemplateKey(), m.getBody(), m.getStatus(), m.getReason(),
                 m.getLinkTarget(), m.getClickedAt(), m.getReadAt(), m.getCreatedAt(),
-                m.getDeliveryStatus(), m.getDeliveryErrorMessage(), m.getDeliveryUpdatedAt(), media);
+                m.getDeliveryStatus(), m.getDeliveryErrorMessage(), m.getDeliveryUpdatedAt(), media, reactions);
     }
 
     private static ConversationDto toConversationDto(ConversationSummaryProjection p,

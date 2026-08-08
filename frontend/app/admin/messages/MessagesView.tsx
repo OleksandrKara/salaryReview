@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '../../lib/api';
-import type { MarketingContact, SmsConversationDto, SmsConversationSearchHitDto, SmsMessageDto } from '../../lib/types';
+import type { MarketingContact, SmsConversationDto, SmsConversationSearchHitDto, SmsMessageDto, SmsReactionDto } from '../../lib/types';
 import ContactInfoPanel from './ContactInfoPanel';
 import SmsConsentIcon from './SmsConsentIcon';
 import NegativeFeedbackIcon from './NegativeFeedbackIcon';
@@ -12,7 +12,21 @@ import GoogleReviewClickedIcon from './GoogleReviewClickedIcon';
 import FeedbackFormClickedIcon from './FeedbackFormClickedIcon';
 import SpamFlagIcon from './SpamFlagIcon';
 import ConversationMenu from './ConversationMenu';
+import EmojiPicker from './EmojiPicker';
 import { dispatchSmsUnreadCountChanged } from '../../lib/smsUnreadEvent';
+
+// Mirrors the backend's own tapback-emoji mapping (SmsReactionService.TAPBACK_EMOJI) — the same
+// six options iMessage itself offers, so a staff reaction uses a set the customer would recognize
+// even though staff reactions are never actually sent to them.
+const REACT_EMOJIS = ['❤️', '👍', '👎', '😂', '‼️', '❓'];
+
+// A compact, generally-useful set for the composer's "insert emoji" button — not exhaustive (no
+// full category picker), just enough to cover common reply copy without switching keyboards.
+const COMPOSER_EMOJIS = [
+  '😀', '😂', '🥰', '😊', '😉', '😍', '🙏', '👍', '👎', '💪', '🙌', '👏',
+  '❤️', '💛', '💕', '✨', '🎉', '🔥', '💯', '⭐', '✅', '❌', '⏰', '📅',
+  '💅', '💇', '💆', '💖', '😅', '😢', '😮', '🤔', '👋', '🙋', '😴', '☕',
+];
 
 function formatPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -75,6 +89,23 @@ function deliveryFailed(deliveryStatus: string | null): boolean {
   return deliveryStatus === 'undelivered' || deliveryStatus === 'failed';
 }
 
+// One entry per distinct emoji on a message, with a reactor count and a tooltip label — used by
+// the thread's reaction-badge row. "them" stands in for the customer (the actual phone number is
+// already shown in the thread header, no need to repeat it here); staff reactors show by username.
+function reactionSummary(reactions: SmsReactionDto[]): { emoji: string; count: number; label: string }[] {
+  const byEmoji = new Map<string, string[]>();
+  for (const r of reactions) {
+    const list = byEmoji.get(r.emoji) ?? [];
+    list.push(r.source === 'CUSTOMER' ? 'them' : r.reactor);
+    byEmoji.set(r.emoji, list);
+  }
+  return Array.from(byEmoji.entries()).map(([emoji, reactors]) => ({
+    emoji,
+    count: reactors.length,
+    label: reactors.join(', '),
+  }));
+}
+
 // Wraps the first case-insensitive occurrence of `query` in `text` with a <mark> — used by the
 // conversation list's search box so a match is visually obvious at a glance, not just implied by
 // the row being present in a filtered list.
@@ -118,6 +149,7 @@ export default function MessagesView({
   // completes or the composer is abandoned for a different thread.
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const draftInputRef = useRef<HTMLInputElement>(null);
   // Search box (conversation list). Name/phone matching is instant and purely client-side, since
   // every conversation is already loaded; `searchHits` is only populated for message-content
   // matches, which need a backend lookup since older messages in a thread aren't loaded until
@@ -322,6 +354,32 @@ export default function MessagesView({
     } finally {
       setSending(false);
     }
+  }
+
+  async function reactToMessage(messageId: number, emoji: string) {
+    try {
+      const updated = await api.reactToSmsMessage(messageId, emoji);
+      setThread((prev) => prev.map((m) => (m.id === messageId ? { ...m, reactions: updated } : m)));
+    } catch {
+      // Best-effort, same convention as markUnread/toggleBlock above — a failure here just means
+      // the reaction might not stick until the next thread refresh.
+    }
+  }
+
+  // Inserts at the current cursor position (falling back to the end, if the input never had
+  // focus) rather than always appending — lets a manager drop an emoji mid-sentence without
+  // retyping anything.
+  function insertEmojiIntoDraft(emoji: string) {
+    const el = draftInputRef.current;
+    const start = el?.selectionStart ?? draft.length;
+    const end = el?.selectionEnd ?? draft.length;
+    const next = draft.slice(0, start) + emoji + draft.slice(end);
+    setDraft(next);
+    requestAnimationFrame(() => {
+      el?.focus();
+      const cursor = start + emoji.length;
+      el?.setSelectionRange(cursor, cursor);
+    });
   }
 
   function addAttachedFiles(files: FileList | null) {
@@ -612,7 +670,22 @@ export default function MessagesView({
                             {formatDateSeparator(m.createdAt)}
                           </div>
                         )}
-                        <div className={`flex ${m.direction === 'OUTBOUND' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`flex items-center gap-1 ${m.direction === 'OUTBOUND' ? 'justify-end' : 'justify-start'}`}>
+                          {m.direction === 'INBOUND' && (
+                            <EmojiPicker
+                              emojis={REACT_EMOJIS}
+                              onSelect={(emoji) => void reactToMessage(m.id, emoji)}
+                              ariaLabel="React to this message"
+                              trigger={
+                                <span className="flex h-6 w-6 items-center justify-center rounded-full text-zinc-300 opacity-60 hover:bg-zinc-100 hover:text-zinc-500 hover:opacity-100">
+                                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                    <circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" x2="9.01" y1="9" y2="9" /><line x1="15" x2="15.01" y1="9" y2="9" />
+                                  </svg>
+                                </span>
+                              }
+                            />
+                          )}
+                          <div className={`flex min-w-0 flex-col ${m.direction === 'OUTBOUND' ? 'items-end' : 'items-start'}`}>
                           <div
                             data-testid="thread-message-bubble"
                             data-direction={m.direction}
@@ -675,6 +748,35 @@ export default function MessagesView({
                               </p>
                             ) : null}
                           </div>
+                          {m.reactions.length > 0 && (
+                            <div data-testid="thread-message-reactions" className="mt-0.5 flex flex-wrap gap-1">
+                              {reactionSummary(m.reactions).map(({ emoji, count, label }) => (
+                                <span
+                                  key={emoji}
+                                  title={label}
+                                  className="flex items-center gap-0.5 rounded-full border border-zinc-200 bg-white px-1.5 py-0.5 text-xs shadow-sm"
+                                >
+                                  {emoji}
+                                  {count > 1 && <span className="text-[10px] tabular-nums text-zinc-400">{count}</span>}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          </div>
+                          {m.direction === 'OUTBOUND' && (
+                            <EmojiPicker
+                              emojis={REACT_EMOJIS}
+                              onSelect={(emoji) => void reactToMessage(m.id, emoji)}
+                              ariaLabel="React to this message"
+                              trigger={
+                                <span className="flex h-6 w-6 items-center justify-center rounded-full text-zinc-300 opacity-60 hover:bg-zinc-100 hover:text-zinc-500 hover:opacity-100">
+                                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                    <circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" x2="9.01" y1="9" y2="9" /><line x1="15" x2="15.01" y1="9" y2="9" />
+                                  </svg>
+                                </span>
+                              }
+                            />
+                          )}
                         </div>
                       </div>
                     );
@@ -757,9 +859,25 @@ export default function MessagesView({
                       <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                     </svg>
                   </button>
+                  <EmojiPicker
+                    emojis={COMPOSER_EMOJIS}
+                    onSelect={insertEmojiIntoDraft}
+                    ariaLabel="Insert an emoji"
+                    trigger={
+                      <span
+                        data-testid="thread-composer-emoji-button"
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 sm:h-9 sm:w-9"
+                      >
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                          <circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" x2="9.01" y1="9" y2="9" /><line x1="15" x2="15.01" y1="9" y2="9" />
+                        </svg>
+                      </span>
+                    }
+                  />
                   {/* text-base (16px), not text-sm, on mobile — a smaller font on a focused input
                       makes iOS Safari auto-zoom the whole page, which is jarring here. */}
                   <input
+                    ref={draftInputRef}
                     data-testid="thread-composer-input"
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
