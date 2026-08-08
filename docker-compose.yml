@@ -36,6 +36,11 @@ x-backend-env: &backend-env
   REBOOKING_PROMO_SECRET: ${REBOOKING_PROMO_SECRET:-}
   REBOOKING_CONSENT_SEGMENT_ID: ${REBOOKING_CONSENT_SEGMENT_ID:-}
   REBOOKING_AUTO_DISCOUNT_GROUP_ID: ${REBOOKING_AUTO_DISCOUNT_GROUP_ID:-}
+  # $5 lapsed_customer_winback coupon (openspec/changes/lapsed-customer-winback-automation D9) —
+  # its own separate Square Catalog group, same no-op-until-configured convention as the $10 one
+  # above. Was missing here even though RebookingProperties/application.yml already supported it,
+  # so setting the env var alone (without this line) silently never reached the container.
+  REBOOKING_WINBACK_AUTO_DISCOUNT_GROUP_ID: ${REBOOKING_WINBACK_AUTO_DISCOUNT_GROUP_ID:-}
   # First owner account, seeded when the user table is empty. Use a strong password on a server.
   APP_OWNER_USERNAME: ${APP_OWNER_USERNAME:-owner}
   APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:-changeme}
