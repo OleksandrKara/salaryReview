@@ -165,6 +165,32 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
     long countByAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
             String automationKey, String direction, String status, Instant since);
 
+    /** Same as above, further narrowed to one template — only meaningful for
+     * {@code checkout_review_request} (see {@code SmsAutomationRegistry.AutomationMeta#primaryTemplateKey}),
+     * whose conditional branch reply logs a second template under the same automationKey; without
+     * this filter the "sent" count on that automation's card would double-count a single completed
+     * conversation (the rating ask + the branch reply). */
+    long countByAutomationKeyAndTemplateKeyAndDirectionAndStatusAndCreatedAtAfter(
+            String automationKey, String templateKey, String direction, String status, Instant since);
+
+    /** How many of an automation's 30-day sends carried a click-tracked link at all — the
+     * denominator for the automation card's click-through rate (see
+     * {@code SmsAutomationRegistry.AutomationMeta#tracksClicks}). */
+    long countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
+            String automationKey, String direction, String status, Instant since);
+
+    /** The numerator for the same click-through rate — link-carrying sends that were actually
+     * clicked. */
+    long countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndClickedAtIsNotNullAndCreatedAtAfter(
+            String automationKey, String direction, String status, Instant since);
+
+    /** 30-day inbound-reply count for an automation — only meaningful for automations that open an
+     * {@code SmsReplyFlow} (currently just {@code checkout_review_request}, see
+     * {@code SmsAutomationRegistry.AutomationMeta#tracksReplies}), since that's the only path that
+     * ever tags an INBOUND row with an automationKey in the first place. */
+    long countByAutomationKeyAndDirectionAndCreatedAtAfter(
+            String automationKey, String direction, Instant since);
+
     /** Newest unread inbound rows first, for the inbox view's default sort. */
     List<SmsMessage> findByDirectionAndReadAtIsNullOrderByCreatedAtDesc(String direction);
 

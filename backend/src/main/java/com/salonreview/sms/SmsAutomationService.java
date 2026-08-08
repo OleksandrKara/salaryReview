@@ -17,8 +17,13 @@ import java.util.List;
 @Service
 public class SmsAutomationService {
 
+    /** {@code tracksClicks}/{@code tracksReplies} mirror {@code SmsAutomationRegistry.AutomationMeta}
+     * — when false, the paired count is always 0 and the frontend card omits that stat entirely
+     * rather than showing a misleading "0%" for an automation with no link or reply-ask at all. */
     public record AutomationSummary(String key, String name, String audienceDescription,
-                                     boolean enabled, long sentLast30Days) {}
+                                     boolean enabled, long sentLast30Days,
+                                     boolean tracksClicks, long linkSentLast30Days, long clickedLast30Days,
+                                     boolean tracksReplies, long replyLast30Days) {}
 
     private final SmsAutomationRepository repository;
     private final SmsMessageRepository messageRepository;
@@ -43,9 +48,28 @@ public class SmsAutomationService {
         return SmsAutomationRegistry.all().values().stream()
                 .map(meta -> {
                     boolean enabled = repository.findById(meta.key()).map(SmsAutomation::isEnabled).orElse(false);
-                    long sent = messageRepository.countByAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
-                            meta.key(), "OUTBOUND", "SENT", since);
-                    return new AutomationSummary(meta.key(), meta.name(), meta.audienceDescription(), enabled, sent);
+
+                    long sent = meta.primaryTemplateKey() != null
+                            ? messageRepository.countByAutomationKeyAndTemplateKeyAndDirectionAndStatusAndCreatedAtAfter(
+                                    meta.key(), meta.primaryTemplateKey(), "OUTBOUND", "SENT", since)
+                            : messageRepository.countByAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
+                                    meta.key(), "OUTBOUND", "SENT", since);
+
+                    long linkSent = 0;
+                    long clicked = 0;
+                    if (meta.tracksClicks()) {
+                        linkSent = messageRepository.countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
+                                meta.key(), "OUTBOUND", "SENT", since);
+                        clicked = messageRepository.countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndClickedAtIsNotNullAndCreatedAtAfter(
+                                meta.key(), "OUTBOUND", "SENT", since);
+                    }
+
+                    long replies = meta.tracksReplies()
+                            ? messageRepository.countByAutomationKeyAndDirectionAndCreatedAtAfter(meta.key(), "INBOUND", since)
+                            : 0;
+
+                    return new AutomationSummary(meta.key(), meta.name(), meta.audienceDescription(), enabled, sent,
+                            meta.tracksClicks(), linkSent, clicked, meta.tracksReplies(), replies);
                 })
                 .toList();
     }
