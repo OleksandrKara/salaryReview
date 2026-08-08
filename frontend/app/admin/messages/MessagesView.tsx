@@ -12,7 +12,16 @@ import GoogleReviewClickedIcon from './GoogleReviewClickedIcon';
 import FeedbackFormClickedIcon from './FeedbackFormClickedIcon';
 import SpamFlagIcon from './SpamFlagIcon';
 import ConversationMenu from './ConversationMenu';
+import EmojiPicker from './EmojiPicker';
 import { dispatchSmsUnreadCountChanged } from '../../lib/smsUnreadEvent';
+
+// A compact, generally-useful set for the composer's "insert emoji" button — not exhaustive (no
+// full category picker), just enough to cover common reply copy without switching keyboards.
+const COMPOSER_EMOJIS = [
+  '😀', '😂', '🥰', '😊', '😉', '😍', '🙏', '👍', '👎', '💪', '🙌', '👏',
+  '❤️', '💛', '💕', '✨', '🎉', '🔥', '💯', '⭐', '✅', '❌', '⏰', '📅',
+  '💅', '💇', '💆', '💖', '😅', '😢', '😮', '🤔', '👋', '🙋', '😴', '☕',
+];
 
 function formatPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -118,6 +127,7 @@ export default function MessagesView({
   // completes or the composer is abandoned for a different thread.
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const draftInputRef = useRef<HTMLInputElement>(null);
   // Search box (conversation list). Name/phone matching is instant and purely client-side, since
   // every conversation is already loaded; `searchHits` is only populated for message-content
   // matches, which need a backend lookup since older messages in a thread aren't loaded until
@@ -322,6 +332,22 @@ export default function MessagesView({
     } finally {
       setSending(false);
     }
+  }
+
+  // Inserts at the current cursor position (falling back to the end, if the input never had
+  // focus) rather than always appending — lets a manager drop an emoji mid-sentence without
+  // retyping anything.
+  function insertEmojiIntoDraft(emoji: string) {
+    const el = draftInputRef.current;
+    const start = el?.selectionStart ?? draft.length;
+    const end = el?.selectionEnd ?? draft.length;
+    const next = draft.slice(0, start) + emoji + draft.slice(end);
+    setDraft(next);
+    requestAnimationFrame(() => {
+      el?.focus();
+      const cursor = start + emoji.length;
+      el?.setSelectionRange(cursor, cursor);
+    });
   }
 
   function addAttachedFiles(files: FileList | null) {
@@ -612,7 +638,7 @@ export default function MessagesView({
                             {formatDateSeparator(m.createdAt)}
                           </div>
                         )}
-                        <div className={`flex ${m.direction === 'OUTBOUND' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`flex min-w-0 flex-col ${m.direction === 'OUTBOUND' ? 'items-end' : 'items-start'}`}>
                           <div
                             data-testid="thread-message-bubble"
                             data-direction={m.direction}
@@ -675,6 +701,19 @@ export default function MessagesView({
                               </p>
                             ) : null}
                           </div>
+                          {m.reactions.length > 0 && (
+                            <div data-testid="thread-message-reactions" className="mt-0.5 flex flex-wrap gap-1">
+                              {m.reactions.map((r, ri) => (
+                                <span
+                                  key={ri}
+                                  title="Customer reacted"
+                                  className="flex items-center rounded-full border border-zinc-200 bg-white px-1.5 py-0.5 text-xs shadow-sm"
+                                >
+                                  {r.emoji}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -757,9 +796,25 @@ export default function MessagesView({
                       <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
                     </svg>
                   </button>
+                  <EmojiPicker
+                    emojis={COMPOSER_EMOJIS}
+                    onSelect={insertEmojiIntoDraft}
+                    ariaLabel="Insert an emoji"
+                    trigger={
+                      <span
+                        data-testid="thread-composer-emoji-button"
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 sm:h-9 sm:w-9"
+                      >
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                          <circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" x2="9.01" y1="9" y2="9" /><line x1="15" x2="15.01" y1="9" y2="9" />
+                        </svg>
+                      </span>
+                    }
+                  />
                   {/* text-base (16px), not text-sm, on mobile — a smaller font on a focused input
                       makes iOS Safari auto-zoom the whole page, which is jarring here. */}
                   <input
+                    ref={draftInputRef}
                     data-testid="thread-composer-input"
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}

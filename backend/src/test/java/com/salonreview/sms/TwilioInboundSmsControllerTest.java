@@ -47,6 +47,7 @@ class TwilioInboundSmsControllerTest {
     private MarketingContactsService contactsService;
     private BlockedNumberRepository blockedNumberRepository;
     private SmsMediaService mediaService;
+    private SmsReactionService reactionService;
     private MockMvc mvc;
 
     @BeforeEach
@@ -61,6 +62,7 @@ class TwilioInboundSmsControllerTest {
         contactsService = mock(MarketingContactsService.class);
         blockedNumberRepository = mock(BlockedNumberRepository.class);
         mediaService = mock(SmsMediaService.class);
+        reactionService = mock(SmsReactionService.class);
         // No name resolvable by default — individual tests override with a specific stub if they
         // care about the resolved-name path.
         when(contactsService.resolveDisplayNames(any())).thenReturn(java.util.Map.of());
@@ -75,7 +77,7 @@ class TwilioInboundSmsControllerTest {
 
         TwilioInboundSmsController controller = new TwilioInboundSmsController(
                 properties, messageLogService, replyFlowRepository, replyService, telegramService, contactsService,
-                blockedNumberRepository, mediaService);
+                blockedNumberRepository, mediaService, reactionService);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -288,5 +290,22 @@ class TwilioInboundSmsControllerTest {
         ArgumentCaptor<java.util.Map<String, String>> paramsCaptor = ArgumentCaptor.forClass(java.util.Map.class);
         verify(mediaService).ingestInboundMedia(eq(99L), paramsCaptor.capture());
         assertThat(paramsCaptor.getValue()).containsEntry("MediaUrl0", "https://api.twilio.com/media/ME123");
+    }
+
+    @Test
+    @DisplayName("body and from are forwarded to SmsReactionService for tapback detection")
+    void bodyForwardedToReactionService() throws Exception {
+        var p = params(PHONE, "Loved “Thanks so much!”");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.empty());
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        verify(reactionService).tryAttachCustomerReaction(PHONE, p.get("Body"));
     }
 }

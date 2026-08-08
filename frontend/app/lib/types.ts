@@ -100,6 +100,12 @@ export interface SmsMediaDto {
   contentType: string;
 }
 
+// The customer's emoji reaction on a message — an Apple tapback-over-SMS text (e.g.
+// `Loved "..."`), matched back to it — see SmsActivityController.SmsReactionDto.
+export interface SmsReactionDto {
+  emoji: string;
+}
+
 export interface SmsMessageDto {
   id: number;
   direction: SmsMessageDirection;
@@ -117,6 +123,7 @@ export interface SmsMessageDto {
   deliveryErrorMessage: string | null;
   deliveryUpdatedAt: string | null;
   media: SmsMediaDto[];
+  reactions: SmsReactionDto[];
 }
 
 // One conversation (grouped by phone number) in the manager-facing /admin/messages inbox — see

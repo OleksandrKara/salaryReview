@@ -40,11 +40,13 @@ public class TwilioInboundSmsController {
     private final MarketingContactsService contactsService;
     private final BlockedNumberRepository blockedNumberRepository;
     private final SmsMediaService mediaService;
+    private final SmsReactionService reactionService;
 
     public TwilioInboundSmsController(TwilioInboundProperties properties, SmsMessageLogService messageLogService,
                                        SmsReplyFlowRepository replyFlowRepository, CheckoutReviewReplyService replyService,
                                        TelegramNotificationService telegramService, MarketingContactsService contactsService,
-                                       BlockedNumberRepository blockedNumberRepository, SmsMediaService mediaService) {
+                                       BlockedNumberRepository blockedNumberRepository, SmsMediaService mediaService,
+                                       SmsReactionService reactionService) {
         this.properties = properties;
         this.messageLogService = messageLogService;
         this.replyFlowRepository = replyFlowRepository;
@@ -53,6 +55,7 @@ public class TwilioInboundSmsController {
         this.contactsService = contactsService;
         this.blockedNumberRepository = blockedNumberRepository;
         this.mediaService = mediaService;
+        this.reactionService = reactionService;
     }
 
     @PostMapping(value = "/api/public/sms/inbound", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
@@ -81,6 +84,13 @@ public class TwilioInboundSmsController {
         // MMS photos, if any — see SmsMediaService's own doc for why this is best-effort and
         // never blocks the rest of this handler (the text/thread above is already durable).
         mediaService.ingestInboundMedia(logged.getId(), params);
+
+        // An Apple tapback-over-SMS reaction (e.g. `Loved "..."`) still lands here as an ordinary
+        // text — it's logged above like any other inbound message either way — but if it parses and
+        // matches one of the salon's recent sends, it's also attached as a reaction on that message
+        // (see design context: owner wants to see when a customer reacts to a specific message).
+        // Best-effort, same reasoning as the media ingestion above.
+        reactionService.tryAttachCustomerReaction(from, body);
 
         // A customer reply always needs a human's attention right away, not just a dashboard entry
         // nobody's actively watching — see openspec/changes/sms-automations-hub proposal.md. Name

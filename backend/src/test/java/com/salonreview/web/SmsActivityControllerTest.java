@@ -10,6 +10,7 @@ import com.salonreview.sms.SmsEventBroadcaster;
 import com.salonreview.sms.SmsMediaService;
 import com.salonreview.sms.SmsMessageLogService;
 import com.salonreview.sms.SmsMessageLogService.ConversationSearchHit;
+import com.salonreview.sms.SmsReactionService;
 import com.salonreview.sms.TwilioSmsService;
 import com.salonreview.web.dto.MarketingContactDto.Contact;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +52,7 @@ class SmsActivityControllerTest {
     private BlockedNumberRepository blockedNumberRepository;
     private SmsEventBroadcaster events;
     private SmsMediaService mediaService;
+    private SmsReactionService reactionService;
     private MockMvc mvc;
 
     @BeforeEach
@@ -61,10 +63,12 @@ class SmsActivityControllerTest {
         blockedNumberRepository = mock(BlockedNumberRepository.class);
         events = mock(SmsEventBroadcaster.class);
         mediaService = mock(SmsMediaService.class);
+        reactionService = mock(SmsReactionService.class);
         when(blockedNumberRepository.findByPhoneNumberIn(any())).thenReturn(List.of());
         when(mediaService.mediaForMessages(any())).thenReturn(Map.of());
+        when(reactionService.reactionsForMessages(any())).thenReturn(Map.of());
         mvc = MockMvcBuilders.standaloneSetup(
-                new SmsActivityController(service, smsService, contactsService, blockedNumberRepository, events, mediaService)).build();
+                new SmsActivityController(service, smsService, contactsService, blockedNumberRepository, events, mediaService, reactionService)).build();
     }
 
     private static Contact contact(String givenName, String emailAddress) {
@@ -286,6 +290,19 @@ class SmsActivityControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].media[0].url").value("https://salon.akluxnails.com/api/public/sms-media/abc12"))
                 .andExpect(jsonPath("$[0].media[0].contentType").value("image/jpeg"));
+    }
+
+    @Test
+    @DisplayName("GET /conversations/{phoneNumber} attaches reactions from the batch lookup")
+    void threadIncludesReactions() throws Exception {
+        when(service.thread(PHONE)).thenReturn(List.of(
+                SmsMessage.builder().id(1L).direction("OUTBOUND").phoneNumber(PHONE).body("hi").status("SENT").build()));
+        when(reactionService.reactionsForMessages(List.of(1L))).thenReturn(Map.of(
+                1L, List.of(new SmsReactionService.ReactionDto("❤️"))));
+
+        mvc.perform(get("/api/owner/automations/activity/conversations/{phoneNumber}", PHONE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].reactions[0].emoji").value("❤️"));
     }
 
     @Test
