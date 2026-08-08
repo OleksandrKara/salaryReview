@@ -13,10 +13,13 @@ import com.salonreview.web.dto.OwnerOverviewDto.MonthSummary;
 import com.salonreview.web.dto.RetentionSeries;
 import com.salonreview.web.dto.OwnerOverviewDto.ProviderYtd;
 import com.salonreview.web.dto.OwnerOverviewDto.YearTotals;
+import com.salonreview.util.TtlCache;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Month;
 import java.time.YearMonth;
@@ -39,6 +42,21 @@ public class OwnerOverviewService {
 
     /** Hard cap: refuse ranges longer than 24 months to bound Square API calls. */
     private static final int MAX_MONTHS = 24;
+
+    /** This dashboard is reviewed occasionally (weekly/monthly), not watched live, and each
+     * assembled response already layers a real Square pull (via SquareMonthAggregator) plus
+     * several DB aggregations on top of SquareClient's own much-shorter 10-minute cache — see
+     * docs/CACHING.md. 30 days keeps a normal visit to this page instant indefinitely between
+     * visits; the "Sync now" button (wired through SquareSyncController, same one used elsewhere
+     * in the app) busts it on demand, and the honest {@code syncedAt} badge on the page makes the
+     * staleness visible rather than silent. Restarting/redeploying the backend also clears it
+     * (in-memory, per-instance — same operational note as every other cache in this app). */
+    private static final Duration CACHE_TTL = Duration.ofDays(30);
+    private final TtlCache cache = new TtlCache();
+    /** When the most recent response (for any requested range) was actually computed — mirrors
+     * SquareClient's own single shared lastFetchAt field (see docs/CACHING.md): not per-range,
+     * just "the last time this service actually did real work" for an honest badge. */
+    private volatile Instant lastFetchAt = Instant.now();
 
     private final PayPeriodRepository payPeriods;
     private final PeriodEntryRepository entries;
@@ -69,6 +87,17 @@ public class OwnerOverviewService {
     }
 
     public OwnerOverviewDto overview(int fromYear, int fromMonth, int toYear, int toMonth) {
+        String key = fromYear + "-" + fromMonth + ":" + toYear + "-" + toMonth;
+        return cache.get(key, CACHE_TTL, () -> computeOverview(fromYear, fromMonth, toYear, toMonth));
+    }
+
+    /** Drops every cached range — backs the global "Sync now" button (see SquareSyncController)
+     * so an owner can force a fresh Square pull without waiting out the 30-day TTL. */
+    public void invalidateCache() {
+        cache.invalidateAll();
+    }
+
+    private OwnerOverviewDto computeOverview(int fromYear, int fromMonth, int toYear, int toMonth) {
         SalonConfig cfg = salonConfig.findById(1)
                 .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"));
 
@@ -140,7 +169,9 @@ public class OwnerOverviewService {
         // Prior-period totals: same range shifted back one year (DB only, best-effort).
         YearTotals prevYear = prevPeriodTotals(fromYear - 1, fromMonth, toYear - 1, toMonth);
 
-        return new OwnerOverviewDto(fromYear, fromMonth, toYear, toMonth, months, providers, prevYear);
+        lastFetchAt = Instant.now();
+        return new OwnerOverviewDto(fromYear, fromMonth, toYear, toMonth, months, providers, prevYear,
+                lastFetchAt.toString());
     }
 
     // --- settled month from DB ---

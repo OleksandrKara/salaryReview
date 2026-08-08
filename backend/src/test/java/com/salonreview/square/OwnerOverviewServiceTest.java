@@ -290,4 +290,56 @@ class OwnerOverviewServiceTest {
         assertThat(dto.providers().get(0).name()).isEqualTo("Kate"); // higher gross first
         assertThat(dto.providers().get(1).name()).isEqualTo("Anna");
     }
+
+    @Test
+    @DisplayName("syncedAt is populated on the response")
+    void syncedAtIsPopulated() {
+        OwnerOverviewDto dto = service.overview(2025, 1, 2025, 12);
+
+        assertThat(dto.syncedAt()).isNotNull();
+        assertThat(java.time.Instant.parse(dto.syncedAt())).isNotNull(); // parses as a real ISO instant
+    }
+
+    @Test
+    @DisplayName("30-day cache: identical range is served from cache, not recomputed from the DB")
+    void identicalRangeIsCached() {
+        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2025)).thenReturn(List.of());
+
+        service.overview(2025, 1, 2025, 12);
+        service.overview(2025, 1, 2025, 12);
+
+        // Only one real computation happened — the repository lookup for 2025 fired exactly once,
+        // not twice, even though overview() was called twice with the same range.
+        org.mockito.Mockito.verify(payPeriods, org.mockito.Mockito.times(1))
+                .findAllByYearOrderByMonthAscHalfAsc(2025);
+    }
+
+    @Test
+    @DisplayName("30-day cache: a different range is computed fresh, not served from another range's cache entry")
+    void differentRangeIsNotServedFromCache() {
+        // Years far enough apart that neither range's own prevPeriodTotals() lookup (fromYear - 1)
+        // touches the other range's year — isolates "was this range's own cache entry reused" from
+        // the unrelated prior-year-totals side query every overview() call also makes.
+        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2025)).thenReturn(List.of());
+        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2010)).thenReturn(List.of());
+
+        service.overview(2025, 1, 2025, 12);
+        service.overview(2010, 1, 2010, 12);
+
+        org.mockito.Mockito.verify(payPeriods, org.mockito.Mockito.times(1)).findAllByYearOrderByMonthAscHalfAsc(2025);
+        org.mockito.Mockito.verify(payPeriods, org.mockito.Mockito.times(1)).findAllByYearOrderByMonthAscHalfAsc(2010);
+    }
+
+    @Test
+    @DisplayName("invalidateCache() forces the next call to recompute rather than serving the cached response")
+    void invalidateCacheForcesRecompute() {
+        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2025)).thenReturn(List.of());
+
+        service.overview(2025, 1, 2025, 12);
+        service.invalidateCache();
+        service.overview(2025, 1, 2025, 12);
+
+        org.mockito.Mockito.verify(payPeriods, org.mockito.Mockito.times(2))
+                .findAllByYearOrderByMonthAscHalfAsc(2025);
+    }
 }

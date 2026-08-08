@@ -4,6 +4,7 @@ import com.salonreview.marketing.FunnelAnalyticsService;
 import com.salonreview.marketing.MarketingAnalyticsService;
 import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.marketing.MarketingDashboardService;
+import com.salonreview.square.OwnerOverviewService;
 import com.salonreview.square.SquareClient;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,17 +27,20 @@ public class SquareSyncController {
     private final FunnelAnalyticsService funnelAnalytics;
     private final MarketingContactsService marketingContacts;
     private final MarketingAnalyticsService marketingAnalytics;
+    private final OwnerOverviewService ownerOverview;
 
     public SquareSyncController(SquareClient square,
                                  MarketingDashboardService marketingDashboard,
                                  FunnelAnalyticsService funnelAnalytics,
                                  MarketingContactsService marketingContacts,
-                                 MarketingAnalyticsService marketingAnalytics) {
+                                 MarketingAnalyticsService marketingAnalytics,
+                                 OwnerOverviewService ownerOverview) {
         this.square = square;
         this.marketingDashboard = marketingDashboard;
         this.funnelAnalytics = funnelAnalytics;
         this.marketingContacts = marketingContacts;
         this.marketingAnalytics = marketingAnalytics;
+        this.ownerOverview = ownerOverview;
     }
 
     @PostMapping
@@ -46,6 +50,7 @@ public class SquareSyncController {
         funnelAnalytics.invalidateCache();
         marketingContacts.invalidateCache();
         marketingAnalytics.invalidateCache();
+        ownerOverview.invalidateCache();
         return ResponseEntity.noContent().build();
     }
 }

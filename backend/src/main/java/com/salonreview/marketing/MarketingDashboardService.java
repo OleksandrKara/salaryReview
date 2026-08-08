@@ -2,6 +2,7 @@ package com.salonreview.marketing;
 
 import com.salonreview.config.MarketingLandingProperties;
 import com.salonreview.square.SquareClient;
+import com.salonreview.util.TtlCache;
 import com.salonreview.web.dto.MarketingDashboardDto;
 import com.salonreview.web.dto.MarketingDashboardDto.VariantStat;
 import org.slf4j.Logger;

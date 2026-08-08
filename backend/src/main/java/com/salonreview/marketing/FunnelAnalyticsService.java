@@ -2,6 +2,7 @@ package com.salonreview.marketing;
 
 import com.salonreview.marketing.FunnelAnalyticsRepository.RawFunnelStep;
 import com.salonreview.square.SquareClient;
+import com.salonreview.util.TtlCache;
 import com.salonreview.web.dto.FunnelDashboardDto;
 import com.salonreview.web.dto.FunnelDashboardDto.FunnelStepStat;
 import org.slf4j.Logger;

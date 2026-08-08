@@ -121,6 +121,29 @@ Busted by:
 `FunnelAnalyticsService` has no mutating actions of its own; its cache only clears via "Sync now"
 or naturally expiring after 10 minutes.
 
+(`TtlCache` itself now lives in `com.salonreview.util` — it started as a marketing-only helper but
+is a fully generic key→TTL→loader cache with no marketing-specific logic, so it moved once a second,
+unrelated service needed it too; see below.)
+
+## Owner Overview's 30-day cache
+
+`/owner/overview` is a periodic-review dashboard (checked weekly/monthly, not watched live) whose
+assembled response already layers a real Square pull (`SquareMonthAggregator`, itself sitting on
+top of `SquareClient`'s own 10-minute cache) plus several DB aggregations (payroll, expenses,
+manager labor cost, retention client counts) per requested date range. `OwnerOverviewService` holds
+its own `TtlCache`, keyed by the requested `(fromYear, fromMonth, toYear, toMonth)` range, with a
+**30-day TTL** — much longer than every other cache on this page, because this dashboard doesn't
+need near-real-time numbers the way a same-day settlement review does, and a stale week-old view is
+still perfectly usable for month-over-month trend-watching.
+
+- **Honest badge:** the page shows a `SyncBadge` (same component as `/reports`/`/me`) with the DTO's
+  own `syncedAt` — the real time that range was last computed, not the render time — plus a Sync
+  button.
+- **Busted by:** the same global **"Sync now"** (`POST /api/sync`) as everything else on this page —
+  `SquareSyncController` calls `OwnerOverviewService.invalidateCache()` alongside the other services'.
+- **Also cleared by:** a backend restart/redeploy (in-memory, per-instance, same as every cache in
+  this app).
+
 ## Operational notes
 
 - The cache is **in‑memory per backend instance** — it's empty after a restart/redeploy (first load is
