@@ -1,0 +1,123 @@
+package com.salonreview.sms;
+
+import com.salonreview.domain.SmsAutomation;
+import com.salonreview.repo.SmsAutomationRepository;
+import com.salonreview.repo.SmsMessageRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+/**
+ * Per-automation 30-day metrics on the {@code /owner/settings/sms} automations panel — click-
+ * through and reply rate are only ever queried for automations that {@link SmsAutomationRegistry}
+ * marks as tracking them (see that class's own doc for why: not every automation has a link or
+ * asks for a reply).
+ */
+class SmsAutomationServiceTest {
+
+    private SmsAutomationRepository repository;
+    private SmsMessageRepository messageRepository;
+    private SmsAutomationService service;
+
+    @BeforeEach
+    void setUp() {
+        repository = mock(SmsAutomationRepository.class);
+        messageRepository = mock(SmsMessageRepository.class);
+        service = new SmsAutomationService(repository, messageRepository);
+        when(repository.findById(anyString())).thenReturn(Optional.empty());
+    }
+
+    private SmsAutomationService.AutomationSummary find(String key) {
+        return service.list().stream().filter(a -> a.key().equals(key)).findFirst().orElseThrow();
+    }
+
+    @Test
+    @DisplayName("checkout_review_request: sent count is filtered to the primary template only, not the branch reply")
+    void checkoutReviewSentCountExcludesBranchReply() {
+        when(messageRepository.countByAutomationKeyAndTemplateKeyAndDirectionAndStatusAndCreatedAtAfter(
+                eq("checkout_review_request"), eq("checkout_rating_request"), eq("OUTBOUND"), eq("SENT"), any(Instant.class)))
+                .thenReturn(10L);
+
+        var summary = find("checkout_review_request");
+
+        assertThat(summary.sentLast30Days()).isEqualTo(10);
+    }
+
+    @Test
+    @DisplayName("checkout_review_request: tracks both clicks and replies, using the right count queries")
+    void checkoutReviewTracksClicksAndReplies() {
+        when(messageRepository.countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
+                eq("checkout_review_request"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(8L);
+        when(messageRepository.countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndClickedAtIsNotNullAndCreatedAtAfter(
+                eq("checkout_review_request"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(5L);
+        when(messageRepository.countByAutomationKeyAndDirectionAndCreatedAtAfter(
+                eq("checkout_review_request"), eq("INBOUND"), any(Instant.class))).thenReturn(8L);
+
+        var summary = find("checkout_review_request");
+
+        assertThat(summary.tracksClicks()).isTrue();
+        assertThat(summary.linkSentLast30Days()).isEqualTo(8);
+        assertThat(summary.clickedLast30Days()).isEqualTo(5);
+        assertThat(summary.tracksReplies()).isTrue();
+        assertThat(summary.replyLast30Days()).isEqualTo(8);
+    }
+
+    @Test
+    @DisplayName("same_day_rebooking_discount: tracks clicks but not replies, sent count is unfiltered by template")
+    void sameDayRebookingTracksClicksOnly() {
+        when(messageRepository.countByAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
+                eq("same_day_rebooking_discount"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(20L);
+        when(messageRepository.countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
+                eq("same_day_rebooking_discount"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(20L);
+        when(messageRepository.countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndClickedAtIsNotNullAndCreatedAtAfter(
+                eq("same_day_rebooking_discount"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(6L);
+
+        var summary = find("same_day_rebooking_discount");
+
+        assertThat(summary.sentLast30Days()).isEqualTo(20);
+        assertThat(summary.tracksClicks()).isTrue();
+        assertThat(summary.linkSentLast30Days()).isEqualTo(20);
+        assertThat(summary.clickedLast30Days()).isEqualTo(6);
+        assertThat(summary.tracksReplies()).isFalse();
+        assertThat(summary.replyLast30Days()).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("four_hand_request: tracks neither clicks nor replies")
+    void fourHandRequestTracksNeither() {
+        var summary = find("four_hand_request");
+
+        assertThat(summary.tracksClicks()).isFalse();
+        assertThat(summary.linkSentLast30Days()).isEqualTo(0);
+        assertThat(summary.clickedLast30Days()).isEqualTo(0);
+        assertThat(summary.tracksReplies()).isFalse();
+        assertThat(summary.replyLast30Days()).isEqualTo(0);
+
+        org.mockito.Mockito.verify(messageRepository, org.mockito.Mockito.never())
+                .countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
+                        eq("four_hand_request"), anyString(), anyString(), any(Instant.class));
+        org.mockito.Mockito.verify(messageRepository, org.mockito.Mockito.never())
+                .countByAutomationKeyAndDirectionAndCreatedAtAfter(eq("four_hand_request"), anyString(), any(Instant.class));
+    }
+
+    @Test
+    @DisplayName("enabled state still reflects the DB row, independent of the new metrics")
+    void enabledStateUnaffected() {
+        when(repository.findById("lead_follow_up"))
+                .thenReturn(Optional.of(SmsAutomation.builder().automationKey("lead_follow_up").enabled(true).build()));
+
+        var summary = find("lead_follow_up");
+
+        assertThat(summary.enabled()).isTrue();
+    }
+}

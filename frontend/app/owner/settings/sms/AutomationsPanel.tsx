@@ -30,6 +30,13 @@ export default function AutomationsPanel({ initialAutomations }: { initialAutoma
   );
 }
 
+// undefined (not 0%) when there's nothing to divide yet — an automation that hasn't fired in the
+// last 30 days shouldn't read as "0% clicked", it should just not show a rate at all.
+function formatRate(numerator: number, denominator: number): string | undefined {
+  if (denominator <= 0) return undefined;
+  return `${Math.round((numerator / denominator) * 100)}%`;
+}
+
 function AutomationCard({
   automation,
   onToggle,
@@ -37,6 +44,9 @@ function AutomationCard({
   automation: SmsAutomationSummary;
   onToggle: (enabled: boolean) => void;
 }) {
+  const clickRate = automation.tracksClicks ? formatRate(automation.clickedLast30Days, automation.linkSentLast30Days) : undefined;
+  const replyRate = automation.tracksReplies ? formatRate(automation.replyLast30Days, automation.sentLast30Days) : undefined;
+
   return (
     <div className="flex flex-col gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
       <div className="flex items-start justify-between gap-3">
@@ -73,6 +83,44 @@ function AutomationCard({
         </span>
         <span>{automation.sentLast30Days} sent (30d)</span>
       </div>
+      {/* Click/reply rate — omitted entirely for an automation with no trackable link or reply-ask
+          (see formatRate), and for one that's tracked but simply hasn't fired yet. Counts are
+          spelled out inline (not just a percentage, not just a hover tooltip) so the numbers a
+          manager actually asked for — "количество кликов и ответов" — are visible without a mouse,
+          on a phone screen just as well as a desktop one. */}
+      {(clickRate || replyRate) && (
+        <div className="flex flex-wrap gap-1.5">
+          {clickRate && (
+            <span
+              data-testid="automation-click-rate"
+              className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-1 text-xs font-medium text-sky-700"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+              </svg>
+              {clickRate} clicked
+              <span className="font-normal text-sky-600/70 tabular-nums">
+                · {automation.clickedLast30Days}/{automation.linkSentLast30Days}
+              </span>
+            </span>
+          )}
+          {replyRate && (
+            <span
+              data-testid="automation-reply-rate"
+              className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-1 text-xs font-medium text-violet-700"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+              </svg>
+              {replyRate} replied
+              <span className="font-normal text-violet-600/70 tabular-nums">
+                · {automation.replyLast30Days}/{automation.sentLast30Days}
+              </span>
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

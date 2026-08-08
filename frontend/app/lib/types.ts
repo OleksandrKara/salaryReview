@@ -77,12 +77,21 @@ export interface TwilioSmsSettingsUpdateRequest {
 
 // --- SMS automations hub (com.salonreview.sms / com.salonreview.web.Sms*Controller) ---
 
+// tracksClicks/tracksReplies say whether a click-through / reply rate is even meaningful for this
+// automation (some automations never include a link, or never ask for a reply) — see
+// SmsAutomationRegistry.AutomationMeta's own doc on the backend. When false, the paired count is
+// always 0 and the UI should omit that stat entirely rather than show a misleading "0%".
 export interface SmsAutomationSummary {
   key: string;
   name: string;
   audienceDescription: string;
   enabled: boolean;
   sentLast30Days: number;
+  tracksClicks: boolean;
+  linkSentLast30Days: number;
+  clickedLast30Days: number;
+  tracksReplies: boolean;
+  replyLast30Days: number;
 }
 
 export type SmsMessageDirection = 'OUTBOUND' | 'INBOUND';
