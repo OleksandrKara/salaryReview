@@ -153,6 +153,27 @@ export default function MessagesView({
   // events during the brief reconnect window) and so can't close over selectedPhone directly.
   const selectedPhoneRef = useRef<string | null>(selectedPhone);
 
+  // This whole page is built from internally-scrollable regions (the conversation list, the
+  // thread's own message list, the contact-info panel) — nothing about it is meant to page-scroll
+  // as a whole. Without this, `body` could still scroll (or, on iOS, elastically bounce past its
+  // own edge) whenever its natural height ended up even a pixel taller than the visible viewport
+  // — e.g. `body`'s own `min-h-full` (see layout.tsx) is measured against the *layout* viewport,
+  // which doesn't always exactly match `main`'s `--vvh`-driven height (see page.tsx's own doc
+  // comment on that mismatch). The visible symptom: dragging on what looks like blank space below
+  // the composer actually scrolled the whole page, revealing more blank space that has no content
+  // in it at all. Locking body scroll while this page is mounted closes that off entirely — every
+  // scroll gesture is then unambiguously handled by whichever internal panel it started in.
+  useEffect(() => {
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverscroll = document.documentElement.style.overscrollBehaviorY;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overscrollBehaviorY = 'none';
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overscrollBehaviorY = previousHtmlOverscroll;
+    };
+  }, []);
+
   // Object URLs for the staged attachment previews — revoked whenever the staged set changes or
   // the component unmounts, so switching photos (or threads) doesn't leak blob URLs.
   const attachedPreviews = useMemo(() => attachedFiles.map((f) => URL.createObjectURL(f)), [attachedFiles]);
