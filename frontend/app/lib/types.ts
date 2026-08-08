@@ -77,10 +77,13 @@ export interface TwilioSmsSettingsUpdateRequest {
 
 // --- SMS automations hub (com.salonreview.sms / com.salonreview.web.Sms*Controller) ---
 
-// tracksClicks/tracksReplies say whether a click-through / reply rate is even meaningful for this
-// automation (some automations never include a link, or never ask for a reply) — see
+// tracksClicks/tracksReplies/tracksConversion say whether a click-through / reply / "customer
+// actually came back" rate is even meaningful for this automation (some automations never include
+// a link, never ask for a reply, or have no measurable real-world outcome) — see
 // SmsAutomationRegistry.AutomationMeta's own doc on the backend. When false, the paired count is
 // always 0 and the UI should omit that stat entirely rather than show a misleading "0%".
+// convertedLast30Days is the numerator; sentLast30Days is the shared denominator, same convention
+// as replyLast30Days.
 export interface SmsAutomationSummary {
   key: string;
   name: string;
@@ -92,6 +95,8 @@ export interface SmsAutomationSummary {
   clickedLast30Days: number;
   tracksReplies: boolean;
   replyLast30Days: number;
+  tracksConversion: boolean;
+  convertedLast30Days: number;
 }
 
 export type SmsMessageDirection = 'OUTBOUND' | 'INBOUND';

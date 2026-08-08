@@ -89,7 +89,7 @@ class RepeatCustomerWinbackSchedulerTest {
                 .contains("Hi Jane!").contains("It's Lucy from AK.LUX.NAILS")
                 .contains("It's been a while since your last visit with Susan")
                 .contains("tok123").contains("-Lucy")
-                .doesNotContain("Alieva").doesNotContain("$");
+                .doesNotContain("Alieva").doesNotContain("$").doesNotContain("—");
 
         ArgumentCaptor<RepeatCustomerWinbackSend> captor = ArgumentCaptor.forClass(RepeatCustomerWinbackSend.class);
         verify(sendRepository).save(captor.capture());
@@ -111,7 +111,7 @@ class RepeatCustomerWinbackSchedulerTest {
         verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
         assertThat(bodyCaptor.getValue())
                 .contains("want me to check").contains("if Tatiana has an opening")
-                .doesNotContain("Nazirova").doesNotContain("Bayan").doesNotContain("Dandiyeva");
+                .doesNotContain("Nazirova").doesNotContain("Bayan").doesNotContain("Dandiyeva").doesNotContain("—");
 
         ArgumentCaptor<RepeatCustomerWinbackSend> captor = ArgumentCaptor.forClass(RepeatCustomerWinbackSend.class);
         verify(sendRepository).save(captor.capture());
@@ -244,7 +244,7 @@ class RepeatCustomerWinbackSchedulerTest {
         ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
         verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
         assertThat(bodyCaptor.getValue())
-                .contains("It's been a while since your last visit —")
-                .doesNotContain("$");
+                .contains("It's been a while since your last visit.")
+                .doesNotContain("$").doesNotContain("—");
     }
 }

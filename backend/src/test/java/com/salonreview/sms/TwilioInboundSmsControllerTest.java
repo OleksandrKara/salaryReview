@@ -231,6 +231,26 @@ class TwilioInboundSmsControllerTest {
     }
 
     @Test
+    @DisplayName("no matching AWAITING_REPLY row, but a recent automation send exists → falls back to that automation's key")
+    void noPendingFlowFallsBackToMostRecentAutomationSend() throws Exception {
+        var p = params(PHONE, "sure, book me in!");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.empty());
+        when(messageLogService.mostRecentAutomationKey(PHONE)).thenReturn("repeat_customer_winback");
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        verify(messageLogService).logInbound(PHONE, p.get("Body"), "repeat_customer_winback");
+        verify(telegramService).sendInboundSmsAlert(PHONE, null, p.get("Body"), "repeat_customer_winback");
+        verifyNoInteractions(replyService);
+    }
+
+    @Test
     @DisplayName("resolved customer name is forwarded to the Telegram alert")
     void resolvedCustomerNameForwardedToTelegramAlert() throws Exception {
         var p = params(PHONE, "hello?");

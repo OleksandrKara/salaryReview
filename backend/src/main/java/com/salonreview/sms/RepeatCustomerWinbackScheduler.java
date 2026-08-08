@@ -206,7 +206,11 @@ public class RepeatCustomerWinbackScheduler {
         String body = (technician == null || technician.isBlank())
                 ? "It's been a while since your last visit"
                 : "It's been a while since your last visit with " + technician;
-        return greeting + " It's Lucy from AK.LUX.NAILS 💛 " + body + " — book your next mani here: " + shortLink + " -Lucy";
+        // No em dash (—) in SMS bodies — it's outside the GSM-7 character set, so Twilio silently
+        // switches the whole message to UCS-2 encoding (70 chars/segment instead of 160, and some
+        // older handsets render it as "?" instead) — same rule every other automation's copy
+        // already follows, see e.g. LapsedCustomerWinbackSchedulerTest's own doesNotContain("—").
+        return greeting + " It's Lucy from AK.LUX.NAILS 💛 " + body + ". Book your next mani here: " + shortLink + " -Lucy";
     }
 
     /** Used when the customer's technician changed between their last two visits — offers to check
@@ -215,7 +219,7 @@ public class RepeatCustomerWinbackScheduler {
      * know that technician's actual current availability at send time. */
     private static String previousProviderBody(String name, String previousProvider, String shortLink) {
         String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
-        return greeting + " It's Lucy from AK.LUX.NAILS 💛 It's been a while since we've seen you — want me to check "
+        return greeting + " It's Lucy from AK.LUX.NAILS 💛 It's been a while since we've seen you, want me to check "
                 + "if " + previousProvider + " has an opening for you? Book here: " + shortLink + " -Lucy";
     }
 

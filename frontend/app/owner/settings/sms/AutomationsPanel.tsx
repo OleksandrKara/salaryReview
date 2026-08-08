@@ -46,6 +46,9 @@ function AutomationCard({
 }) {
   const clickRate = automation.tracksClicks ? formatRate(automation.clickedLast30Days, automation.linkSentLast30Days) : undefined;
   const replyRate = automation.tracksReplies ? formatRate(automation.replyLast30Days, automation.sentLast30Days) : undefined;
+  const conversionRate = automation.tracksConversion
+    ? formatRate(automation.convertedLast30Days, automation.sentLast30Days)
+    : undefined;
 
   return (
     <div className="flex flex-col gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
@@ -83,12 +86,13 @@ function AutomationCard({
         </span>
         <span>{automation.sentLast30Days} sent (30d)</span>
       </div>
-      {/* Click/reply rate — omitted entirely for an automation with no trackable link or reply-ask
-          (see formatRate), and for one that's tracked but simply hasn't fired yet. Counts are
-          spelled out inline (not just a percentage, not just a hover tooltip) so the numbers a
-          manager actually asked for — "количество кликов и ответов" — are visible without a mouse,
-          on a phone screen just as well as a desktop one. */}
-      {(clickRate || replyRate) && (
+      {/* Click/reply/conversion rate — omitted entirely for an automation with no trackable link,
+          reply-ask, or measurable outcome (see formatRate), and for one that's tracked but simply
+          hasn't fired yet. Counts are spelled out inline (not just a percentage, not just a hover
+          tooltip) so the numbers a manager actually asked for — "количество кликов и ответов", and
+          whether the customer actually came back — are visible without a mouse, on a phone screen
+          just as well as a desktop one. */}
+      {(clickRate || replyRate || conversionRate) && (
         <div className="flex flex-wrap gap-1.5">
           {clickRate && (
             <span
@@ -116,6 +120,20 @@ function AutomationCard({
               {replyRate} replied
               <span className="font-normal text-violet-600/70 tabular-nums">
                 · {automation.replyLast30Days}/{automation.sentLast30Days}
+              </span>
+            </span>
+          )}
+          {conversionRate && (
+            <span
+              data-testid="automation-conversion-rate"
+              className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+              {conversionRate} returned
+              <span className="font-normal text-emerald-600/70 tabular-nums">
+                · {automation.convertedLast30Days}/{automation.sentLast30Days}
               </span>
             </span>
           )}

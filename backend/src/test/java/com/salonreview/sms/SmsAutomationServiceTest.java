@@ -1,6 +1,7 @@
 package com.salonreview.sms;
 
 import com.salonreview.domain.SmsAutomation;
+import com.salonreview.repo.RepeatCustomerWinbackSendRepository;
 import com.salonreview.repo.SmsAutomationRepository;
 import com.salonreview.repo.SmsMessageRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,13 +28,15 @@ class SmsAutomationServiceTest {
 
     private SmsAutomationRepository repository;
     private SmsMessageRepository messageRepository;
+    private RepeatCustomerWinbackSendRepository repeatCustomerWinbackSendRepository;
     private SmsAutomationService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(SmsAutomationRepository.class);
         messageRepository = mock(SmsMessageRepository.class);
-        service = new SmsAutomationService(repository, messageRepository);
+        repeatCustomerWinbackSendRepository = mock(RepeatCustomerWinbackSendRepository.class);
+        service = new SmsAutomationService(repository, messageRepository, repeatCustomerWinbackSendRepository);
         when(repository.findById(anyString())).thenReturn(Optional.empty());
     }
 
@@ -102,12 +105,38 @@ class SmsAutomationServiceTest {
         assertThat(summary.clickedLast30Days()).isEqualTo(0);
         assertThat(summary.tracksReplies()).isFalse();
         assertThat(summary.replyLast30Days()).isEqualTo(0);
+        assertThat(summary.tracksConversion()).isFalse();
+        assertThat(summary.convertedLast30Days()).isEqualTo(0);
 
         org.mockito.Mockito.verify(messageRepository, org.mockito.Mockito.never())
                 .countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
                         eq("four_hand_request"), anyString(), anyString(), any(Instant.class));
         org.mockito.Mockito.verify(messageRepository, org.mockito.Mockito.never())
                 .countByAutomationKeyAndDirectionAndCreatedAtAfter(eq("four_hand_request"), anyString(), any(Instant.class));
+    }
+
+    @Test
+    @DisplayName("repeat_customer_winback: tracks clicks, replies, AND conversion (did the customer actually come back)")
+    void repeatCustomerWinbackTracksClicksRepliesAndConversion() {
+        when(messageRepository.countByAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
+                eq("repeat_customer_winback"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(15L);
+        when(messageRepository.countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
+                eq("repeat_customer_winback"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(15L);
+        when(messageRepository.countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndClickedAtIsNotNullAndCreatedAtAfter(
+                eq("repeat_customer_winback"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(4L);
+        when(messageRepository.countByAutomationKeyAndDirectionAndCreatedAtAfter(
+                eq("repeat_customer_winback"), eq("INBOUND"), any(Instant.class))).thenReturn(3L);
+        when(repeatCustomerWinbackSendRepository.countConvertedSince(eq("SENT"), any(Instant.class))).thenReturn(6L);
+
+        var summary = find("repeat_customer_winback");
+
+        assertThat(summary.sentLast30Days()).isEqualTo(15);
+        assertThat(summary.tracksClicks()).isTrue();
+        assertThat(summary.clickedLast30Days()).isEqualTo(4);
+        assertThat(summary.tracksReplies()).isTrue();
+        assertThat(summary.replyLast30Days()).isEqualTo(3);
+        assertThat(summary.tracksConversion()).isTrue();
+        assertThat(summary.convertedLast30Days()).isEqualTo(6);
     }
 
     @Test

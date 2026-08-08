@@ -1,6 +1,7 @@
 package com.salonreview.sms;
 
 import com.salonreview.domain.SmsAutomation;
+import com.salonreview.repo.RepeatCustomerWinbackSendRepository;
 import com.salonreview.repo.SmsAutomationRepository;
 import com.salonreview.repo.SmsMessageRepository;
 import org.springframework.stereotype.Service;
@@ -17,20 +18,25 @@ import java.util.List;
 @Service
 public class SmsAutomationService {
 
-    /** {@code tracksClicks}/{@code tracksReplies} mirror {@code SmsAutomationRegistry.AutomationMeta}
-     * — when false, the paired count is always 0 and the frontend card omits that stat entirely
-     * rather than showing a misleading "0%" for an automation with no link or reply-ask at all. */
+    /** {@code tracksClicks}/{@code tracksReplies}/{@code tracksConversion} mirror
+     * {@code SmsAutomationRegistry.AutomationMeta} — when false, the paired count is always 0 and
+     * the frontend card omits that stat entirely rather than showing a misleading "0%" for an
+     * automation with no link, no reply-ask, or no measurable real-world outcome at all. */
     public record AutomationSummary(String key, String name, String audienceDescription,
                                      boolean enabled, long sentLast30Days,
                                      boolean tracksClicks, long linkSentLast30Days, long clickedLast30Days,
-                                     boolean tracksReplies, long replyLast30Days) {}
+                                     boolean tracksReplies, long replyLast30Days,
+                                     boolean tracksConversion, long convertedLast30Days) {}
 
     private final SmsAutomationRepository repository;
     private final SmsMessageRepository messageRepository;
+    private final RepeatCustomerWinbackSendRepository repeatCustomerWinbackSendRepository;
 
-    public SmsAutomationService(SmsAutomationRepository repository, SmsMessageRepository messageRepository) {
+    public SmsAutomationService(SmsAutomationRepository repository, SmsMessageRepository messageRepository,
+                                 RepeatCustomerWinbackSendRepository repeatCustomerWinbackSendRepository) {
         this.repository = repository;
         this.messageRepository = messageRepository;
+        this.repeatCustomerWinbackSendRepository = repeatCustomerWinbackSendRepository;
     }
 
     /** {@code true} for a template with no {@code automationKey} (nothing to gate) or for a
@@ -68,8 +74,20 @@ public class SmsAutomationService {
                             ? messageRepository.countByAutomationKeyAndDirectionAndCreatedAtAfter(meta.key(), "INBOUND", since)
                             : 0;
 
+                    // Conversion (did the customer actually come back for a visit) is computed from
+                    // repeat_customer_winback_send + provider_visit, not sms_message — a different
+                    // source table than clicks/replies, so it's the one stat here that isn't a
+                    // messageRepository count. Only repeat_customer_winback sets tracksConversion
+                    // today; see SmsAutomationRegistry.AutomationMeta's own doc for why. Rate is
+                    // convertedLast30Days / sentLast30Days on the frontend, same denominator
+                    // convention as reply rate — no separate denominator field needed here.
+                    long converted = meta.tracksConversion()
+                            ? repeatCustomerWinbackSendRepository.countConvertedSince("SENT", since)
+                            : 0;
+
                     return new AutomationSummary(meta.key(), meta.name(), meta.audienceDescription(), enabled, sent,
-                            meta.tracksClicks(), linkSent, clicked, meta.tracksReplies(), replies);
+                            meta.tracksClicks(), linkSent, clicked, meta.tracksReplies(), replies,
+                            meta.tracksConversion(), converted);
                 })
                 .toList();
     }

@@ -77,7 +77,14 @@ public class TwilioInboundSmsController {
         // before this endpoint ever sees them, so this only ever handles genuine free-text replies.
         Optional<SmsReplyFlow> pending = replyFlowRepository
                 .findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(from, SmsReplyFlow.STATE_AWAITING_REPLY);
-        SmsMessage logged = messageLogService.logInbound(from, body, pending.map(SmsReplyFlow::getAutomationKey).orElse(null));
+        // Only checkout_review_request opens a durable SmsReplyFlow; every other automation
+        // (lead_follow_up, same_day_rebooking_discount, lapsed_customer_winback,
+        // repeat_customer_winback, ...) falls back to "whatever we most recently texted this
+        // number" so a genuine reply still shows up as a tracked reply for that automation instead
+        // of being silently unattributed — see SmsMessageLogService#mostRecentAutomationKey.
+        String automationKey = pending.map(SmsReplyFlow::getAutomationKey)
+                .orElseGet(() -> messageLogService.mostRecentAutomationKey(from));
+        SmsMessage logged = messageLogService.logInbound(from, body, automationKey);
         logged.setTwilioMessageSid(params.get("MessageSid"));
         messageLogService.save(logged);
 
