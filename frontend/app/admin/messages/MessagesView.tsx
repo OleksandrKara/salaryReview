@@ -127,7 +127,7 @@ export default function MessagesView({
   // completes or the composer is abandoned for a different thread.
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const draftInputRef = useRef<HTMLInputElement>(null);
+  const draftInputRef = useRef<HTMLTextAreaElement>(null);
   // Search box (conversation list). Name/phone matching is instant and purely client-side, since
   // every conversation is already loaded; `searchHits` is only populated for message-content
   // matches, which need a backend lookup since older messages in a thread aren't loaded until
@@ -153,6 +153,56 @@ export default function MessagesView({
     };
   }, [attachedPreviews]);
 
+  // Auto-grow the composer textarea with its content (capped, then it scrolls internally like
+  // any other chat app) — re-runs on every `draft` change, not just typing, so it also shrinks
+  // back down after a programmatic clear (send, thread switch) or grows after an emoji insert.
+  //
+  // The `el.style.height = 'auto'` remeasure step below collapses the box for a tick to read its
+  // true scrollHeight — a normal trick for auto-grow textareas, but it has a side effect: once
+  // content exceeds maxHeightPx and the box is internally scrolling, collapsing/restoring the
+  // height resets scrollTop to 0 without the browser re-syncing it back to wherever the caret is.
+  // Caught this via an isolated repro (typing past the cap silently scrolled the just-typed line
+  // out of view, above the visible box) — exactly the "can't see what I'm typing" shape of bug.
+  // Forcing scrollTop back to the bottom after every resize keeps the most recently typed line
+  // (where the caret almost always is) visible instead of hidden above the fold.
+  useEffect(() => {
+    const el = draftInputRef.current;
+    if (!el) return;
+    const maxHeightPx = 128; // ~5-6 lines at the composer's font size — matches the max-h-32 cap below
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, maxHeightPx)}px`;
+    el.scrollTop = el.scrollHeight;
+  }, [draft]);
+
+  // Guards against the on-screen keyboard covering the composer — the actual, hard-to-pin-down
+  // report of "can't see what I'm typing" on mobile. `100dvh` (see page.tsx) already handles this
+  // in most modern mobile browsers, but not reliably in every in-app webview a manager might open
+  // this page from (e.g. tapping the "Open chat" link in the Telegram inbound-SMS alert opens
+  // Telegram's own in-app browser, which has historically lagged on dvh/keyboard-resize support).
+  // The VisualViewport API fires whenever the keyboard opens/closes/resizes regardless of dvh
+  // support, so re-scrolling the focused composer into view there is a second, independent layer
+  // of defense on top of the CSS fix, not a replacement for it.
+  useEffect(() => {
+    const viewport = typeof window !== 'undefined' ? window.visualViewport : undefined;
+    if (!viewport) return;
+    function keepComposerVisible() {
+      if (document.activeElement === draftInputRef.current) {
+        draftInputRef.current?.scrollIntoView({ block: 'end' });
+      }
+    }
+    viewport.addEventListener('resize', keepComposerVisible);
+    return () => viewport.removeEventListener('resize', keepComposerVisible);
+  }, []);
+
+  // A second, immediate nudge on focus itself — covers the moment right as the keyboard starts
+  // animating open, before any visualViewport resize event has fired yet, and covers browsers
+  // without VisualViewport support at all (scrollIntoView alone still helps there).
+  function scrollComposerIntoView() {
+    requestAnimationFrame(() => {
+      draftInputRef.current?.scrollIntoView({ block: 'end' });
+    });
+  }
+
   useEffect(() => {
     if (!selectedPhone) return;
     let cancelled = false;
@@ -162,8 +212,11 @@ export default function MessagesView({
       setShowContactPanel(pendingShowContactPanelRef.current);
       pendingShowContactPanelRef.current = false;
       setContact(undefined);
-      // Staged photos don't belong to whatever thread comes next.
+      // Staged photos and any half-typed draft don't belong to whatever thread comes next —
+      // without this, switching conversations mid-reply silently carried the old draft into the
+      // new customer's composer.
       setAttachedFiles([]);
+      setDraft('');
       setThreadLoading(true);
       api.getSmsThread(selectedPhone)
         .then((data) => {
@@ -771,7 +824,7 @@ export default function MessagesView({
                     e.preventDefault();
                     void sendReply();
                   }}
-                  className="flex items-center gap-2 p-3"
+                  className="flex items-end gap-2 p-3"
                 >
                   <input
                     ref={fileInputRef}
@@ -812,14 +865,30 @@ export default function MessagesView({
                     }
                   />
                   {/* text-base (16px), not text-sm, on mobile — a smaller font on a focused input
-                      makes iOS Safari auto-zoom the whole page, which is jarring here. */}
-                  <input
+                      makes iOS Safari auto-zoom the whole page, which is jarring here.
+
+                      A <textarea>, not a single-line <input> — inside a <form>, an <input>'s Enter
+                      key submits (sends) instead of adding a line break, which is both a jarring
+                      mobile UX (the "return" key on the on-screen keyboard silently fires a send)
+                      and made a longer reply hard to compose/review since it could never wrap to
+                      more than one visible line. Enter now does what it does in any chat app: adds
+                      a new line, no keydown override needed — that's a plain <textarea>'s default
+                      behavior inside a form. Auto-grows via the `draft` effect above, capped at
+                      max-h-32 with its own scroll past that point. rows=1 keeps the initial/empty
+                      height matched to the surrounding buttons instead of the browser's fallback
+                      2-line default. onFocus's scrollComposerIntoView + the visualViewport effect
+                      above are the fix for "can't see what I'm typing" on mobile: the composer
+                      staying out from under the on-screen keyboard even in mobile browsers/webviews
+                      that handle 100dvh's keyboard-resize behavior inconsistently. */}
+                  <textarea
                     ref={draftInputRef}
                     data-testid="thread-composer-input"
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
+                    onFocus={scrollComposerIntoView}
                     placeholder={attachedFiles.length > 0 ? 'Add a caption…' : 'Type a reply…'}
-                    className="min-w-0 flex-1 rounded-full border border-zinc-300 px-4 py-2.5 text-base sm:py-2 sm:text-sm"
+                    rows={1}
+                    className="max-h-32 min-w-0 flex-1 resize-none overflow-y-auto rounded-2xl border border-zinc-300 px-4 py-2.5 text-base leading-normal sm:py-2 sm:text-sm"
                   />
                   <button
                     type="submit"
