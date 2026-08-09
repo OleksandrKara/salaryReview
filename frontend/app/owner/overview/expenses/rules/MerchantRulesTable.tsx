@@ -61,8 +61,13 @@ function RuleRow({ rule, onChanged }: { rule: MerchantRule; onChanged: () => voi
   return (
     <div className={`rounded-lg p-3 ring-1 ${rule.active ? 'ring-zinc-200' : 'bg-zinc-50 ring-zinc-100'}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <span className="text-sm font-medium text-zinc-800">{rule.normalizedMerchant ?? 'Any merchant'}</span>{' '}
+        <div className="min-w-0">
+          <span
+            className="inline-block max-w-[16rem] truncate align-bottom text-sm font-medium text-zinc-800"
+            title={rule.normalizedMerchant ?? undefined}
+          >
+            {rule.normalizedMerchant ?? 'Any merchant'}
+          </span>{' '}
           <span className="text-xs text-zinc-400">({TYPE_LABEL[rule.ruleType] ?? rule.ruleType})</span>
           {!rule.active && <span className="ml-1.5 text-xs text-zinc-400">— inactive</span>}
           {rule.keyword && (

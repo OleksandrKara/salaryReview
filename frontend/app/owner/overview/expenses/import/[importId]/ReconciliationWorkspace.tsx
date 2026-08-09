@@ -92,7 +92,6 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
       await api.reviewTransaction(importId, txnId, {
         category: selection.category,
         excludeReason: selection.excludeReason,
-        rememberForMerchant: remember.rememberForMerchant,
         rememberKeywords: remember.rememberKeywords,
       });
       await load();
@@ -103,9 +102,6 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
     }
   }
 
-  const selectedTxns = detail ? detail.transactions.filter((t) => selected.has(t.id)) : [];
-  const sameMerchant = selectedTxns.length > 0 && selectedTxns.every((t) => t.normalizedMerchant === selectedTxns[0].normalizedMerchant);
-
   async function applyBulk(selection: CategorySelection, remember: RememberDecision) {
     setBulkBusy(true);
     setError('');
@@ -114,7 +110,7 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
         transactionIds: Array.from(selected),
         category: selection.category,
         excludeReason: selection.excludeReason,
-        rememberForMerchant: remember.rememberForMerchant,
+        rememberKeywords: remember.rememberKeywords,
       });
       setSelected(new Set());
       await load();
@@ -301,8 +297,6 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
       {selected.size > 0 && (
         <BulkActionBar
           count={selected.size}
-          sameMerchant={sameMerchant}
-          merchantName={sameMerchant ? selectedTxns[0]?.normalizedMerchant : undefined}
           onApply={applyBulk}
           onClear={() => setSelected(new Set())}
           busy={bulkBusy}
