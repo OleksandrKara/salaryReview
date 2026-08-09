@@ -654,6 +654,10 @@ export const api = {
   revertStatementImport: (importId: number) =>
     proxyJson<BankStatementImportSummary>(`/api/owner/expenses/imports/${importId}/revert`, 'POST', {}),
 
+  // Permanently removes an import that's never been completed (or was reverted) — for cleaning
+  // up a duplicate/wrong upload without leaving it cluttering the history list.
+  deleteStatementImport: (importId: number) => proxyVoid(`/api/owner/expenses/imports/${importId}`, 'DELETE'),
+
   // Merchant rules management — view/edit/delete any learned rule directly.
   listMerchantRules: () => proxyGet<MerchantRule[]>('/api/owner/expenses/rules'),
 

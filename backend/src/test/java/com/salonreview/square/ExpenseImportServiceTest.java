@@ -203,6 +203,41 @@ class ExpenseImportServiceTest {
     }
 
     @Test
+    @DisplayName("deleteImport removes an AWAITING_REVIEW import's transactions and the import itself")
+    void deleteImportRemovesUnreconciledImport() {
+        BankStatementImport imp = BankStatementImport.builder().id(1L).status(BankStatementImport.STATUS_AWAITING_REVIEW).build();
+        when(imports.findById(1L)).thenReturn(Optional.of(imp));
+
+        service.deleteImport(1L);
+
+        verify(transactions).clearDuplicateReferencesInto(1L);
+        verify(transactions).deleteByImportId(1L);
+        verify(imports).delete(imp);
+    }
+
+    @Test
+    @DisplayName("deleteImport also allows a REVERTED import (no live financial effect left)")
+    void deleteImportAllowsRevertedImport() {
+        BankStatementImport imp = BankStatementImport.builder().id(2L).status(BankStatementImport.STATUS_REVERTED).build();
+        when(imports.findById(2L)).thenReturn(Optional.of(imp));
+
+        service.deleteImport(2L);
+
+        verify(imports).delete(imp);
+    }
+
+    @Test
+    @DisplayName("deleteImport rejects a COMPLETED import — it must be reverted first")
+    void deleteImportRejectsCompletedImport() {
+        BankStatementImport imp = BankStatementImport.builder().id(3L).status(BankStatementImport.STATUS_COMPLETED).build();
+        when(imports.findById(3L)).thenReturn(Optional.of(imp));
+
+        assertThatThrownBy(() -> service.deleteImport(3L)).isInstanceOf(ResponseStatusException.class);
+        verify(imports, never()).delete(any());
+        verify(transactions, never()).deleteByImportId(any());
+    }
+
+    @Test
     @DisplayName("Reviewing with non-empty rememberKeywords creates a keyword rule, not a plain-merchant rule")
     void reviewWithRememberKeywordsCreatesKeywordRule() {
         BankTransaction txn = BankTransaction.builder().id(10L).normalizedMerchant("PAYSEND0630").build();

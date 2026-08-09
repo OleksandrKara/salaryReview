@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { api } from '../../../../../lib/api';
 import type { BankStatementImportDetail, BankTransaction, BankTransactionStatus, ExpenseCategoryDefinition } from '../../../../../lib/types';
 import TransactionRow, { type RememberDecision } from './TransactionRow';
@@ -18,6 +19,7 @@ const GROUPS: { key: GroupKey; label: string; statuses: BankTransactionStatus[] 
 ];
 
 export default function ReconciliationWorkspace({ importId }: { importId: number }) {
+  const router = useRouter();
   const [detail, setDetail] = useState<BankStatementImportDetail | null>(null);
   const [categories, setCategories] = useState<ExpenseCategoryDefinition[]>([]);
   const [loading, setLoading] = useState(true);
@@ -153,6 +155,19 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
     }
   }
 
+  async function remove() {
+    if (!window.confirm('Permanently delete this import and its transactions? This can\'t be undone — use it to clean up a duplicate or wrong upload.')) return;
+    setCompleting(true);
+    setError('');
+    try {
+      await api.deleteStatementImport(importId);
+      router.push('/owner/overview/expenses/history');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete this import.');
+      setCompleting(false);
+    }
+  }
+
   if (loading) return <p className="mt-6 text-sm text-zinc-500">Loading…</p>;
   if (error && !detail) return <p className="mt-6 text-sm text-red-600">{error}</p>;
   if (!detail) return null;
@@ -178,14 +193,24 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
             Download original
           </a>
           {importSummary.status === 'AWAITING_REVIEW' && (
-            <button
-              type="button"
-              disabled={completing}
-              onClick={complete}
-              className="rounded bg-zinc-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-            >
-              {completing ? 'Completing…' : 'Complete Reconciliation'}
-            </button>
+            <>
+              <button
+                type="button"
+                disabled={completing}
+                onClick={complete}
+                className="rounded bg-zinc-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+              >
+                {completing ? 'Completing…' : 'Complete Reconciliation'}
+              </button>
+              <button
+                type="button"
+                disabled={completing}
+                onClick={remove}
+                className="rounded px-2 py-1.5 text-xs font-medium text-red-600 ring-1 ring-red-300 hover:bg-red-50 disabled:opacity-50"
+              >
+                {completing ? 'Deleting…' : 'Delete import'}
+              </button>
+            </>
           )}
           {importSummary.status === 'COMPLETED' && (
             <>
@@ -203,9 +228,19 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
             </>
           )}
           {importSummary.status === 'REVERTED' && (
-            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200">
-              Reverted
-            </span>
+            <>
+              <button
+                type="button"
+                disabled={completing}
+                onClick={remove}
+                className="rounded px-2 py-1 text-xs font-medium text-red-600 ring-1 ring-red-300 hover:bg-red-50 disabled:opacity-50"
+              >
+                {completing ? 'Deleting…' : 'Delete import'}
+              </button>
+              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-inset ring-zinc-200">
+                Reverted
+              </span>
+            </>
           )}
         </div>
       </div>

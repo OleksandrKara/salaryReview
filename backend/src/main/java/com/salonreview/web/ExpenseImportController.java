@@ -89,6 +89,11 @@ public class ExpenseImportController {
         return toImportDto(service.revertImport(id));
     }
 
+    @DeleteMapping("/{id}")
+    public void delete(@PathVariable Long id) {
+        service.deleteImport(id);
+    }
+
     private static ImportDto toImportDto(BankStatementImport i) {
         return new ImportDto(i.getId(), i.getOriginalFilename(), i.getRowCount(), i.getStatementPeriodStart(),
                 i.getStatementPeriodEnd(), i.getStatus(), i.getUploadedBy(), i.getUploadedAt(),
