@@ -281,7 +281,13 @@ public class ExpenseImportService {
     }
 
     /** Creates an ordinary {@code expense_entries} row for every categorized, non-excluded,
-     * non-duplicate transaction (design.md D3) and marks the import COMPLETED. */
+     * non-duplicate transaction (design.md D3) and marks the import COMPLETED. Deliberately trusts
+     * {@code t.getCategory()} unconditionally, with no validation against the live category list
+     * (see {@code ExpenseCategoryService}) — a transaction the owner already reviewed and
+     * categorized shouldn't silently drop out of a completed import with no created entry just
+     * because its category was later renamed/removed; the money left the account regardless. Don't
+     * add a category check here — see {@code ExpenseService.isGenericCategory}'s exclusion-based
+     * handling, which already keeps any category (current or historical) counted correctly. */
     @Transactional
     public BankStatementImport completeReconciliation(Long importId, String completedBy) {
         BankStatementImport imp = imports.findById(importId)

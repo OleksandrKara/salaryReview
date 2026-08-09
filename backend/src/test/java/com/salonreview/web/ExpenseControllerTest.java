@@ -5,16 +5,19 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.domain.ExpenseEntry;
 import com.salonreview.domain.Role;
+import com.salonreview.square.ExpenseCategoryService;
 import com.salonreview.square.ExpenseService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -38,12 +41,14 @@ class ExpenseControllerTest {
     private static final ObjectMapper JSON = new ObjectMapper().registerModule(new JavaTimeModule());
 
     private ExpenseService service;
+    private ExpenseCategoryService categoryService;
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
         service = mock(ExpenseService.class);
-        mvc = MockMvcBuilders.standaloneSetup(new ExpenseController(service))
+        categoryService = mock(ExpenseCategoryService.class);
+        mvc = MockMvcBuilders.standaloneSetup(new ExpenseController(service, categoryService))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
 
@@ -76,6 +81,51 @@ class ExpenseControllerTest {
                 .andExpect(jsonPath("$.category").value("MATERIALS"))
                 .andExpect(jsonPath("$.amount").value(200.00))
                 .andExpect(jsonPath("$.enteredBy").value("owner"));
+    }
+
+    @Test
+    @DisplayName("POST accepts an owner-added custom category")
+    void createAcceptsKnownCustomCategory() throws Exception {
+        when(service.createExpenseEntry(eq("CONTRACTORS"), eq(LocalDate.of(2026, 7, 1)), eq(LocalDate.of(2026, 7, 31)),
+                eq(new BigDecimal("350.00")), any(), eq("owner")))
+                .thenReturn(ExpenseEntry.builder().id(2L).category("CONTRACTORS")
+                        .periodStart(LocalDate.of(2026, 7, 1)).periodEnd(LocalDate.of(2026, 7, 31))
+                        .amount(new BigDecimal("350.00")).enteredBy("owner").build());
+
+        String body = JSON.writeValueAsString(new ExpenseController.ExpenseEntryRequest(
+                "CONTRACTORS", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), new BigDecimal("350.00"), null));
+
+        mvc.perform(post("/api/owner/expenses").contentType("application/json").content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.category").value("CONTRACTORS"));
+    }
+
+    @Test
+    @DisplayName("POST rejects an unknown category with 400")
+    void createRejectsUnknownCategory() throws Exception {
+        doThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST, "'BOGUS' isn't a known expense category"))
+                .when(categoryService).assertValidCode("BOGUS");
+
+        String body = JSON.writeValueAsString(new ExpenseController.ExpenseEntryRequest(
+                "BOGUS", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), new BigDecimal("200.00"), null));
+
+        mvc.perform(post("/api/owner/expenses").contentType("application/json").content(body))
+                .andExpect(status().isBadRequest());
+        verify(service, never()).createExpenseEntry(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("PUT rejects an unknown category with 400")
+    void updateRejectsUnknownCategory() throws Exception {
+        doThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST, "'BOGUS' isn't a known expense category"))
+                .when(categoryService).assertValidCode("BOGUS");
+
+        String body = JSON.writeValueAsString(new ExpenseController.ExpenseEntryRequest(
+                "BOGUS", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), new BigDecimal("150.00"), null));
+
+        mvc.perform(put("/api/owner/expenses/{id}", 1L).contentType("application/json").content(body))
+                .andExpect(status().isBadRequest());
+        verify(service, never()).updateExpenseEntry(any(), any(), any(), any(), any(), any());
     }
 
     @Test

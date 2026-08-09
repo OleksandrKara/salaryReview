@@ -40,7 +40,7 @@ class ExpenseServiceTest {
     }
 
     @Test
-    @DisplayName("resolveExpenseTotal excludes MANAGER_TIME entries — that's a separate labor-cost figure")
+    @DisplayName("resolveExpenseTotal excludes MANAGER_TIME and PROVIDER_PAYROLL entries — those are separate figures")
     void resolveExpenseTotalExcludesManagerTime() {
         LocalDate from = LocalDate.of(2026, 7, 1);
         LocalDate to = LocalDate.of(2026, 7, 31);
@@ -48,9 +48,25 @@ class ExpenseServiceTest {
                 ExpenseEntry.builder().category("MATERIALS").periodStart(from).periodEnd(to)
                         .amount(new BigDecimal("200.00")).build(),
                 ExpenseEntry.builder().category("MANAGER_TIME").periodStart(from).periodEnd(to)
-                        .amount(new BigDecimal("500.00")).build()));
+                        .amount(new BigDecimal("500.00")).build(),
+                ExpenseEntry.builder().category("PROVIDER_PAYROLL").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("900.00")).build()));
 
         assertThat(service.resolveExpenseTotal(from, to)).isEqualByComparingTo("200.00");
+    }
+
+    @Test
+    @DisplayName("resolveExpenseTotal includes owner-added custom categories — not just the original 4")
+    void resolveExpenseTotalIncludesCustomCategories() {
+        LocalDate from = LocalDate.of(2026, 7, 1);
+        LocalDate to = LocalDate.of(2026, 7, 31);
+        when(repository.findOverlapping(from, to)).thenReturn(List.of(
+                ExpenseEntry.builder().category("MATERIALS").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("200.00")).build(),
+                ExpenseEntry.builder().category("CONTRACTORS").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("350.00")).build()));
+
+        assertThat(service.resolveExpenseTotal(from, to)).isEqualByComparingTo("550.00");
     }
 
     @Test
@@ -70,11 +86,22 @@ class ExpenseServiceTest {
     @Test
     @DisplayName("resolveStatementDerivedExpenseTotal sums only the generic-category entries among the given ids")
     void resolveStatementDerivedExpenseTotalSumsGenericOnly() {
+        when(repository.findAllById(List.of(1L, 2L, 3L))).thenReturn(List.of(
+                ExpenseEntry.builder().id(1L).category("MATERIALS").amount(new BigDecimal("120.00")).build(),
+                ExpenseEntry.builder().id(2L).category("MANAGER_TIME").amount(new BigDecimal("60.00")).build(),
+                ExpenseEntry.builder().id(3L).category("PROVIDER_PAYROLL").amount(new BigDecimal("400.00")).build()));
+
+        assertThat(service.resolveStatementDerivedExpenseTotal(List.of(1L, 2L, 3L))).isEqualByComparingTo("120.00");
+    }
+
+    @Test
+    @DisplayName("resolveStatementDerivedExpenseTotal includes owner-added custom categories")
+    void resolveStatementDerivedExpenseTotalIncludesCustomCategories() {
         when(repository.findAllById(List.of(1L, 2L))).thenReturn(List.of(
                 ExpenseEntry.builder().id(1L).category("MATERIALS").amount(new BigDecimal("120.00")).build(),
-                ExpenseEntry.builder().id(2L).category("MANAGER_TIME").amount(new BigDecimal("60.00")).build()));
+                ExpenseEntry.builder().id(2L).category("CONTRACTORS").amount(new BigDecimal("350.00")).build()));
 
-        assertThat(service.resolveStatementDerivedExpenseTotal(List.of(1L, 2L))).isEqualByComparingTo("120.00");
+        assertThat(service.resolveStatementDerivedExpenseTotal(List.of(1L, 2L))).isEqualByComparingTo("470.00");
     }
 
     @Test

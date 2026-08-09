@@ -128,7 +128,11 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
   async function complete() {
     if (!detail) return;
     const eligible = detail.transactions.filter((t) => t.status === 'AUTO_MATCHED' || t.status === 'REVIEWED').length;
-    if (!window.confirm(`This will create ${eligible} expense entries from this import. Continue?`)) return;
+    const needsReview = detail.transactions.filter((t) => t.status === 'NEEDS_REVIEW').length;
+    const skippedWarning = needsReview > 0
+      ? `\n\n${needsReview} transaction${needsReview === 1 ? '' : 's'} still need review and will be permanently skipped — they won't be included now or later.`
+      : '';
+    if (!window.confirm(`This will create ${eligible} expense entries from this import.${skippedWarning} Continue?`)) return;
     setCompleting(true);
     setError('');
     try {

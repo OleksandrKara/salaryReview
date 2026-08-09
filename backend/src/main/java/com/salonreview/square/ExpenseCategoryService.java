@@ -44,6 +44,20 @@ public class ExpenseCategoryService {
         return categories.findAllByOrderBySortOrderAscLabelAsc();
     }
 
+    /** Throws 400 if {@code code} isn't a currently-valid category — used by
+     * {@code ExpenseController}'s manual-entry endpoints to reject a typo'd/unknown category up
+     * front with a friendly message, instead of it hitting a raw DB error (or, now that
+     * expense_entries has no category constraint, silently succeeding with a value that never
+     * shows up in any Net-revenue total). Not used by the statement-reconciliation path
+     * ({@code ExpenseImportService.completeReconciliation}), which trusts
+     * {@code BankTransaction.category} — already constrained to this same list at review time. */
+    public void assertValidCode(String code) {
+        if (code == null || !categories.existsByCode(code)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    code == null ? "Category is required" : "'" + code + "' isn't a known expense category");
+        }
+    }
+
     @Transactional
     public ExpenseCategoryDefinition create(String label) {
         String trimmedLabel = label == null ? "" : label.trim();

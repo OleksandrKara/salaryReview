@@ -892,6 +892,10 @@ export interface MonthSummary {
   managerLaborCost: number | null;
   /** grossRevenue - payrollCost - expenseTotal - managerLaborCost — null if any of the four is null. */
   netRevenue: number | null;
+  /** Whether a COMPLETED bank-statement reconciliation overlaps this month — when true,
+   * payrollCost/managerLaborCost/expenseTotal are real bank-linked figures; when false, they're
+   * estimates (manual entries / clocked time / commission formula). */
+  statementCovered: boolean;
 }
 
 export interface ProviderYtd {

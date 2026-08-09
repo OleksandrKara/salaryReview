@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { MonthSummary, OwnerOverviewData } from '../../lib/types';
 import { InfoTip } from '../../components/InfoTip';
 
@@ -66,6 +67,7 @@ export default function NetSummary({ data }: { data: OwnerOverviewData }) {
     n === 1
       ? `${netMonths[0].label} ${netMonths[0].year}`
       : `${netMonths[0].label} ${netMonths[0].year} – ${netMonths[n - 1].label} ${netMonths[n - 1].year}`;
+  const uncoveredCount = netMonths.filter((m) => !m.statementCovered).length;
 
   return (
     <div className="rounded-lg p-4 ring-1 ring-zinc-200 sm:p-6">
@@ -76,6 +78,19 @@ export default function NetSummary({ data }: { data: OwnerOverviewData }) {
           {usd(totalNet)}
         </span>
       </div>
+
+      {uncoveredCount > 0 && (
+        <div
+          data-testid="net-summary-estimate-banner"
+          className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200"
+        >
+          Payroll, manager time, and expenses for {uncoveredCount} of {netMonths.length} month{netMonths.length === 1 ? '' : 's'} shown
+          {' '}are estimates until that month&apos;s bank statement is reconciled.{' '}
+          <Link href="/owner/overview/expenses/history" className="font-medium underline">
+            Review imports →
+          </Link>
+        </div>
+      )}
 
       {netGrowth && (
         <div data-testid="net-summary-growth" className="mt-2.5 flex flex-wrap items-center gap-2 sm:gap-3">

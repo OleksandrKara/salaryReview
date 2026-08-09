@@ -46,13 +46,20 @@ public record OwnerOverviewDto(
             /** grossRevenue - payrollCost - expenseTotal - managerLaborCost — the bottom-line figure
              * this salon actually keeps, not just what came in the door. Null if any of the four is
              * null. */
-            BigDecimal netRevenue
+            BigDecimal netRevenue,
+            /** Whether a COMPLETED bank-statement reconciliation overlaps this month (see
+             * ExpenseImportService.isPeriodStatementCovered) — when true, expenseTotal/
+             * managerLaborCost/payrollCost above are real bank-linked figures (design.md D11/D12);
+             * when false, they're estimates (manual entries / clocked time / commission formula).
+             * Distinct from {@code finalized}, which means "from settled PayPeriod rows" and has
+             * nothing to do with statement reconciliation. */
+            boolean statementCovered
     ) {
         /** Copy with the visit-ledger client counts filled in. */
         public MonthSummary withClients(int seen, int returning) {
             return new MonthSummary(year, month, label, cardRevenue, cashRevenue, grossRevenue, tips,
                     procedures, avgPerAppt, payrollCost, payrollPct, finalized, seen, returning,
-                    expenseTotal, managerLaborCost, netRevenue);
+                    expenseTotal, managerLaborCost, netRevenue, statementCovered);
         }
     }
 
