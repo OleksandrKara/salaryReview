@@ -206,7 +206,8 @@ public class OwnerOverviewService {
         BigDecimal managerLaborCost = managerLaborCostForMonth(year, month);
         return new MonthSummary(year, month, label(month), card, cash, gross, tips, procedures,
                 avg(gross, procedures), payroll, pct(payroll, gross), true, 0, 0,
-                expenseTotal, managerLaborCost, netRevenue(gross, payroll, expenseTotal, managerLaborCost));
+                expenseTotal, managerLaborCost, netRevenue(gross, payroll, expenseTotal, managerLaborCost),
+                statementCoveredForMonth(year, month));
     }
 
     // --- live month from Square ---
@@ -243,7 +244,8 @@ public class OwnerOverviewService {
             BigDecimal managerLaborCost = managerLaborCostForMonth(year, month);
             return new MonthSummary(year, month, label(month), card, cash, gross, tips, procedures,
                     avg(gross, procedures), payroll, pct(payroll, gross), false, 0, 0,
-                    expenseTotal, managerLaborCost, netRevenue(gross, payroll, expenseTotal, managerLaborCost));
+                    expenseTotal, managerLaborCost, netRevenue(gross, payroll, expenseTotal, managerLaborCost),
+                    statementCoveredForMonth(year, month));
         } catch (RuntimeException e) {
             return emptyMonth(year, month);
         }
@@ -380,7 +382,21 @@ public class OwnerOverviewService {
 
     private static MonthSummary emptyMonth(int year, int month) {
         return new MonthSummary(year, month, label(month), null, null, null, null, 0,
-                null, null, null, false, 0, 0, null, null, null);
+                null, null, null, false, 0, 0, null, null, null, false);
+    }
+
+    /** Whether a COMPLETED bank-statement reconciliation overlaps this month (see
+     * ExpenseImportService.isPeriodStatementCovered) — surfaced on MonthSummary so the Net tab can
+     * tell the owner which months are real bank-statement numbers vs. estimates. Same best-effort
+     * resilience convention as expenseTotalForMonth/managerLaborCostForMonth: a lookup failure just
+     * means this month is treated as not-covered (estimates shown), not a dashboard-wide failure. */
+    private boolean statementCoveredForMonth(int year, int month) {
+        try {
+            YearMonth ym = YearMonth.of(year, month);
+            return expenseImports.isPeriodStatementCovered(ym.atDay(1), ym.atEndOfMonth());
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     private static String label(int month) {

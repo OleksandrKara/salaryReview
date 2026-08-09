@@ -11,7 +11,7 @@ import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * Salon-wide business expenses (materials/supplies today, other categories as they come up) — the
@@ -22,17 +22,23 @@ import java.util.Set;
 @Service
 public class ExpenseService {
 
-    /** Everything except MANAGER_TIME — that category is a manual backfill of manager labor cost
-     * (see {@link com.salonreview.domain.ExpenseEntry#CATEGORY_MANAGER_TIME}) resolved separately
-     * by {@link #resolveManagerLaborManualTotal}, not folded into the generic expense total. */
-    private static final Set<String> GENERIC_CATEGORIES = Set.of(
-            ExpenseEntry.CATEGORY_MATERIALS, ExpenseEntry.CATEGORY_RENT,
-            ExpenseEntry.CATEGORY_UTILITIES, ExpenseEntry.CATEGORY_OTHER);
-
     private final ExpenseEntryRepository repository;
 
     public ExpenseService(ExpenseEntryRepository repository) {
         this.repository = repository;
+    }
+
+    /** "Generic" = every category except MANAGER_TIME and PROVIDER_PAYROLL, the only two with
+     * dedicated resolvers ({@link #resolveManagerLaborManualTotal},
+     * {@link #resolveStatementDerivedManagerLaborTotal}/{@link #resolveStatementDerivedProviderPayrollTotal}).
+     * Exclusion-based rather than a hardcoded allowlist so any category the owner adds via the
+     * category picker (see {@code ExpenseCategoryService}) is automatically generic with no code
+     * change here, and a category later deleted from that picker still counts correctly against
+     * historical entries that reference it. */
+    private static boolean isGenericCategory(String category) {
+        return category != null
+                && !ExpenseEntry.CATEGORY_MANAGER_TIME.equals(category)
+                && !ExpenseEntry.CATEGORY_PROVIDER_PAYROLL.equals(category);
     }
 
     /** Resolves total expenses for [from, to] from the flexible {@code expense_entries} ledger —
@@ -40,7 +46,7 @@ public class ExpenseService {
      * Excludes MANAGER_TIME entries (see {@link #resolveManagerLaborManualTotal}). */
     public BigDecimal resolveExpenseTotal(LocalDate from, LocalDate to) {
         List<ExpenseEntry> generic = repository.findOverlapping(from, to).stream()
-                .filter(e -> GENERIC_CATEGORIES.contains(e.getCategory()))
+                .filter(e -> isGenericCategory(e.getCategory()))
                 .toList();
         return ExpenseResolver.resolve(generic, from, to);
     }
@@ -61,26 +67,26 @@ public class ExpenseService {
      * proration this class otherwise uses. Each entry is single-day (see design.md D3), so a plain
      * sum is exactly correct here — no proration needed. */
     public BigDecimal resolveStatementDerivedExpenseTotal(Collection<Long> linkedExpenseEntryIds) {
-        return sumByCategories(linkedExpenseEntryIds, GENERIC_CATEGORIES);
+        return sumByCategories(linkedExpenseEntryIds, ExpenseService::isGenericCategory);
     }
 
     /** Same as {@link #resolveStatementDerivedExpenseTotal} but for the MANAGER_TIME category —
      * the statement-covered month's manager labor cost (design.md D11). */
     public BigDecimal resolveStatementDerivedManagerLaborTotal(Collection<Long> linkedExpenseEntryIds) {
-        return sumByCategories(linkedExpenseEntryIds, Set.of(ExpenseEntry.CATEGORY_MANAGER_TIME));
+        return sumByCategories(linkedExpenseEntryIds, ExpenseEntry.CATEGORY_MANAGER_TIME::equals);
     }
 
     /** Same as {@link #resolveStatementDerivedExpenseTotal} but for the PROVIDER_PAYROLL category —
      * the statement-covered month's real provider-commission payout, replacing the formula-computed
      * one entirely for that month (design.md D12). */
     public BigDecimal resolveStatementDerivedProviderPayrollTotal(Collection<Long> linkedExpenseEntryIds) {
-        return sumByCategories(linkedExpenseEntryIds, Set.of(ExpenseEntry.CATEGORY_PROVIDER_PAYROLL));
+        return sumByCategories(linkedExpenseEntryIds, ExpenseEntry.CATEGORY_PROVIDER_PAYROLL::equals);
     }
 
-    private BigDecimal sumByCategories(Collection<Long> ids, Set<String> categories) {
+    private BigDecimal sumByCategories(Collection<Long> ids, Predicate<String> categoryMatch) {
         if (ids.isEmpty()) return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         BigDecimal total = repository.findAllById(ids).stream()
-                .filter(e -> categories.contains(e.getCategory()))
+                .filter(e -> categoryMatch.test(e.getCategory()))
                 .map(ExpenseEntry::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         return total.setScale(2, RoundingMode.HALF_UP);

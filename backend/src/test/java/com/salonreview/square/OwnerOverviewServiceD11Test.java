@@ -89,6 +89,7 @@ class OwnerOverviewServiceD11Test {
         assertThat(jan.payrollCost()).isEqualByComparingTo("400.00");
         // net = 1000 - 400 - 120 - 60 = 420
         assertThat(jan.netRevenue()).isEqualByComparingTo("420.00");
+        assertThat(jan.statementCovered()).isTrue();
         // the computed/manual paths must never be consulted for a statement-covered month
         verify(managerTime, never()).totalLaborCost(any(), any());
         verify(expenses, never()).resolveExpenseTotal(any(), any());
@@ -113,6 +114,7 @@ class OwnerOverviewServiceD11Test {
         assertThat(jan.managerLaborCost()).isEqualByComparingTo("75.00");
         // formula payroll (45% of 1000 gross) is untouched
         assertThat(jan.payrollCost()).isEqualByComparingTo("450.00");
+        assertThat(jan.statementCovered()).isFalse();
         verify(expenses, never()).resolveStatementDerivedExpenseTotal(any());
         verify(expenses, never()).resolveStatementDerivedManagerLaborTotal(any());
         verify(expenses, never()).resolveStatementDerivedProviderPayrollTotal(any());

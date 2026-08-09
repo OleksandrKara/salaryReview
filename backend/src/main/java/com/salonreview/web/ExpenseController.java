@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.domain.ExpenseEntry;
+import com.salonreview.square.ExpenseCategoryService;
 import com.salonreview.square.ExpenseService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -24,13 +25,16 @@ import java.util.List;
 public class ExpenseController {
 
     private final ExpenseService service;
+    private final ExpenseCategoryService categoryService;
 
-    public ExpenseController(ExpenseService service) {
+    public ExpenseController(ExpenseService service, ExpenseCategoryService categoryService) {
         this.service = service;
+        this.categoryService = categoryService;
     }
 
     @PostMapping
     public ExpenseEntryDto create(@RequestBody ExpenseEntryRequest req, @AuthenticationPrincipal AppUserPrincipal me) {
+        categoryService.assertValidCode(req.category());
         ExpenseEntry saved = service.createExpenseEntry(
                 req.category(), req.periodStart(), req.periodEnd(), req.amount(), req.note(), me.getUsername());
         return toDto(saved);
@@ -43,6 +47,7 @@ public class ExpenseController {
 
     @PutMapping("/{id}")
     public ResponseEntity<ExpenseEntryDto> update(@PathVariable Long id, @RequestBody ExpenseEntryRequest req) {
+        categoryService.assertValidCode(req.category());
         return service.updateExpenseEntry(id, req.category(), req.periodStart(), req.periodEnd(), req.amount(), req.note())
                 .map(ExpenseController::toDto)
                 .map(ResponseEntity::ok)
