@@ -3,15 +3,11 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '../../lib/api';
-import type { BankStatementImportSummary, ExpenseCategory, ExpenseEntry } from '../../lib/types';
+import type { BankStatementImportSummary, ExpenseCategory, ExpenseCategoryDefinition, ExpenseEntry } from '../../lib/types';
 
-const CATEGORIES: { value: ExpenseCategory; label: string }[] = [
-  { value: 'MATERIALS', label: 'Materials' },
-  { value: 'RENT', label: 'Rent' },
-  { value: 'UTILITIES', label: 'Utilities' },
-  { value: 'OTHER', label: 'Other' },
-  { value: 'MANAGER_TIME', label: 'Manager time (backfill)' },
-];
+// PROVIDER_PAYROLL is reconciliation-only (a real bank-statement-derived commission payout) — the
+// manual entry form never offers it, matching the previous hardcoded list's own scope.
+const MANUAL_ENTRY_EXCLUDED_CODE = 'PROVIDER_PAYROLL';
 
 const usdExact = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
@@ -60,8 +56,8 @@ function fmtDateRange(fromIso: string, toIso: string): string {
   return `${from} – ${to}`;
 }
 
-function categoryLabel(c: string): string {
-  return CATEGORIES.find((x) => x.value === c)?.label ?? c;
+function categoryLabel(c: string, categories: ExpenseCategoryDefinition[]): string {
+  return categories.find((x) => x.code === c)?.label ?? c;
 }
 
 // Ranges overlap when neither is entirely before the other — inclusive on both ends, since
@@ -101,6 +97,7 @@ function PeriodTypeButton({ label, active, onClick }: { label: string; active: b
  * the per-page scoping (expenses are salon-wide, see the backend migration's own comment). */
 export default function ExpenseEntryForm() {
   const [category, setCategory] = useState<ExpenseCategory>('MATERIALS');
+  const [categories, setCategories] = useState<ExpenseCategoryDefinition[]>([]);
   const [preset, setPreset] = useState<'week' | 'month' | 'mtd' | 'custom'>('week');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -133,6 +130,9 @@ export default function ExpenseEntryForm() {
     api.listExpenseEntries().then((result) => { if (!cancelled) setEntries(result); }).catch(() => {});
     // Best-effort — if this fails, the D11 warning below just doesn't show; it never blocks entry.
     api.listStatementImports().then((result) => { if (!cancelled) setCompletedImports(result); }).catch(() => {});
+    api.listExpenseCategories()
+      .then((result) => { if (!cancelled) setCategories(result.filter((c) => c.code !== MANUAL_ENTRY_EXCLUDED_CODE)); })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -214,8 +214,8 @@ export default function ExpenseEntryForm() {
             onChange={(e) => setCategory(e.target.value as ExpenseCategory)}
             className="rounded border border-zinc-300 px-2 py-1.5 text-xs"
           >
-            {CATEGORIES.map((c) => (
-              <option key={c.value} value={c.value}>{c.label}</option>
+            {categories.map((c) => (
+              <option key={c.code} value={c.code}>{c.label}</option>
             ))}
           </select>
           {category === 'MANAGER_TIME' && (
@@ -327,6 +327,7 @@ export default function ExpenseEntryForm() {
                 onCancelEdit={() => setEditingId(null)}
                 onSaveEdit={(c, f, t, amt, n) => saveEdit(e.id, c, f, t, amt, n)}
                 onDelete={() => deleteEntry(e.id)}
+                categories={categories}
               />
             ))}
           </div>
@@ -340,7 +341,7 @@ export default function ExpenseEntryForm() {
  * (category + period + amount + note, same fields as the create form above) when its Edit button
  * is clicked. */
 function ExpenseEntryRow({
-  entry, editing, busy, onEdit, onCancelEdit, onSaveEdit, onDelete,
+  entry, editing, busy, onEdit, onCancelEdit, onSaveEdit, onDelete, categories,
 }: {
   entry: ExpenseEntry;
   editing: boolean;
@@ -349,6 +350,7 @@ function ExpenseEntryRow({
   onCancelEdit: () => void;
   onSaveEdit: (category: ExpenseCategory, from: string, to: string, amount: number, note: string) => void;
   onDelete: () => void;
+  categories: ExpenseCategoryDefinition[];
 }) {
   const [editCategory, setEditCategory] = useState<ExpenseCategory>(entry.category);
   const [editFrom, setEditFrom] = useState(entry.periodStart);
@@ -360,7 +362,7 @@ function ExpenseEntryRow({
     return (
       <div className="flex items-center justify-between gap-2 rounded px-2 py-1 ring-1 ring-zinc-100">
         <span>
-          <span className="font-medium text-zinc-700">{categoryLabel(entry.category)}</span>{' '}
+          <span className="font-medium text-zinc-700">{categoryLabel(entry.category, categories)}</span>{' '}
           {fmtDateRange(entry.periodStart, entry.periodEnd)}
           {entry.note ? <span className="text-zinc-400"> — {entry.note}</span> : null}
         </span>
@@ -381,8 +383,8 @@ function ExpenseEntryRow({
         <span className="text-zinc-500">Category</span>
         <select value={editCategory} onChange={(e) => setEditCategory(e.target.value as ExpenseCategory)}
           className="rounded border border-zinc-300 px-1.5 py-1">
-          {CATEGORIES.map((c) => (
-            <option key={c.value} value={c.value}>{c.label}</option>
+          {categories.map((c) => (
+            <option key={c.code} value={c.code}>{c.label}</option>
           ))}
         </select>
       </label>

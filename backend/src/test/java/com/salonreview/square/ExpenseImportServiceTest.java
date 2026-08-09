@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -178,5 +179,35 @@ class ExpenseImportServiceTest {
         when(imports.findById(1L)).thenReturn(Optional.of(imp));
 
         assertThatThrownBy(() -> service.revertImport(1L)).isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
+    @DisplayName("Reviewing with non-empty rememberKeywords creates a keyword rule, not a plain-merchant rule")
+    void reviewWithRememberKeywordsCreatesKeywordRule() {
+        BankTransaction txn = BankTransaction.builder().id(10L).normalizedMerchant("PAYSEND0630").build();
+        when(transactions.findById(10L)).thenReturn(Optional.of(txn));
+        com.salonreview.domain.MerchantRule createdRule = com.salonreview.domain.MerchantRule.builder().id(77L).build();
+        when(merchantRuleService.rememberKeywords(any(), eq("OTHER"), eq(10L), eq("owner"))).thenReturn(createdRule);
+
+        service.reviewTransaction(10L, "OTHER", null, false, false, List.of("PAYSEND", "DEBIT CARD"), "owner");
+
+        verify(merchantRuleService).rememberKeywords(List.of("PAYSEND", "DEBIT CARD"), "OTHER", 10L, "owner");
+        verify(merchantRuleService, never()).rememberForMerchant(any(), any(), any(), anyBoolean(), any());
+        assertThat(txn.getMatchedRuleId()).isEqualTo(77L);
+    }
+
+    @Test
+    @DisplayName("Reviewing with rememberForMerchant and no keywords still creates a plain-merchant rule")
+    void reviewWithRememberForMerchantCreatesMerchantRule() {
+        BankTransaction txn = BankTransaction.builder().id(11L).normalizedMerchant("COSTCO").build();
+        when(transactions.findById(11L)).thenReturn(Optional.of(txn));
+        com.salonreview.domain.MerchantRule createdRule = com.salonreview.domain.MerchantRule.builder().id(78L).build();
+        when(merchantRuleService.rememberForMerchant("COSTCO", "MATERIALS", 11L, false, "owner")).thenReturn(createdRule);
+
+        service.reviewTransaction(11L, "MATERIALS", null, true, false, List.of(), "owner");
+
+        verify(merchantRuleService).rememberForMerchant("COSTCO", "MATERIALS", 11L, false, "owner");
+        verify(merchantRuleService, never()).rememberKeywords(any(), any(), any(), any());
+        assertThat(txn.getMatchedRuleId()).isEqualTo(78L);
     }
 }

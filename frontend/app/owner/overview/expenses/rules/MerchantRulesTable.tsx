@@ -9,6 +9,7 @@ const TYPE_LABEL: Record<string, string> = {
   MERCHANT: 'Merchant',
   MERCHANT_KEYWORD: 'Merchant + keyword',
   MERCHANT_AMOUNT_RANGE: 'Merchant + amount range',
+  KEYWORD: 'Keyword (any merchant)',
 };
 
 function RuleRow({ rule, onChanged }: { rule: MerchantRule; onChanged: () => void }) {
@@ -45,7 +46,7 @@ function RuleRow({ rule, onChanged }: { rule: MerchantRule; onChanged: () => voi
   }
 
   async function remove() {
-    if (!window.confirm(`Delete this rule for ${rule.normalizedMerchant}?`)) return;
+    if (!window.confirm(`Delete this rule${rule.normalizedMerchant ? ` for ${rule.normalizedMerchant}` : ''}?`)) return;
     setBusy(true);
     setError('');
     try {
@@ -61,10 +62,15 @@ function RuleRow({ rule, onChanged }: { rule: MerchantRule; onChanged: () => voi
     <div className={`rounded-lg p-3 ring-1 ${rule.active ? 'ring-zinc-200' : 'bg-zinc-50 ring-zinc-100'}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <span className="text-sm font-medium text-zinc-800">{rule.normalizedMerchant}</span>{' '}
+          <span className="text-sm font-medium text-zinc-800">{rule.normalizedMerchant ?? 'Any merchant'}</span>{' '}
           <span className="text-xs text-zinc-400">({TYPE_LABEL[rule.ruleType] ?? rule.ruleType})</span>
           {!rule.active && <span className="ml-1.5 text-xs text-zinc-400">— inactive</span>}
-          {rule.keyword && <div className="text-xs text-zinc-500">Keyword: {rule.keyword}</div>}
+          {rule.keyword && (
+            <div className="text-xs text-zinc-500">
+              {rule.ruleType === 'KEYWORD' ? 'Requires all of: ' : 'Keyword: '}
+              {rule.keyword.split('\n').join(', ')}
+            </div>
+          )}
           {(rule.amountMin !== null || rule.amountMax !== null) && (
             <div className="text-xs text-zinc-500">Amount: {rule.amountMin ?? '—'} to {rule.amountMax ?? '—'}</div>
           )}

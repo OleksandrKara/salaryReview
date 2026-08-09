@@ -187,7 +187,8 @@ public class ExpenseImportService {
      * (design.md D6/D9). */
     @Transactional
     public BankTransaction reviewTransaction(Long transactionId, String category, String excludeReason,
-                                              boolean rememberForMerchant, boolean replaceExisting, String reviewedBy) {
+                                              boolean rememberForMerchant, boolean replaceExisting,
+                                              List<String> rememberKeywords, String reviewedBy) {
         BankTransaction txn = transactions.findById(transactionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such transaction"));
 
@@ -201,7 +202,10 @@ public class ExpenseImportService {
                         return true;
                     }).orElse(false);
         }
-        if (!reinforced && rememberForMerchant) {
+        if (!reinforced && rememberKeywords != null && !rememberKeywords.isEmpty()) {
+            var rule = merchantRuleService.rememberKeywords(rememberKeywords, resolvedCategory, txn.getId(), reviewedBy);
+            txn.setMatchedRuleId(rule.getId());
+        } else if (!reinforced && rememberForMerchant) {
             var rule = merchantRuleService.rememberForMerchant(
                     txn.getNormalizedMerchant(), resolvedCategory, txn.getId(), replaceExisting, reviewedBy);
             txn.setMatchedRuleId(rule.getId());
@@ -217,9 +221,11 @@ public class ExpenseImportService {
 
     @Transactional
     public List<BankTransaction> bulkReviewTransactions(List<Long> transactionIds, String category, String excludeReason,
-                                                         boolean rememberForMerchant, boolean replaceExisting, String reviewedBy) {
+                                                         boolean rememberForMerchant, boolean replaceExisting,
+                                                         List<String> rememberKeywords, String reviewedBy) {
         return transactionIds.stream()
-                .map(id -> reviewTransaction(id, category, excludeReason, rememberForMerchant, replaceExisting, reviewedBy))
+                .map(id -> reviewTransaction(id, category, excludeReason, rememberForMerchant, replaceExisting,
+                        rememberKeywords, reviewedBy))
                 .toList();
     }
 

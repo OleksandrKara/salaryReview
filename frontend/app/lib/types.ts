@@ -1283,7 +1283,22 @@ export interface AdSpendEntry {
 
 // --- Expense entries (com.salonreview.web.ExpenseController) ---
 
-export type ExpenseCategory = 'MATERIALS' | 'RENT' | 'UTILITIES' | 'OTHER' | 'MANAGER_TIME' | 'PROVIDER_PAYROLL';
+/** A category's `code` (see ExpenseCategoryDefinition below) — owner-editable, so no longer a
+ * closed set at the type level; MATERIALS/RENT/UTILITIES/OTHER/MANAGER_TIME/PROVIDER_PAYROLL are
+ * just the seeded defaults, not the only valid values. */
+export type ExpenseCategory = string;
+
+/** Owner-editable expense category (com.salonreview.web.ExpenseCategoryController). `code` is
+ * the stable value stored on ExpenseEntry/BankTransaction/MerchantRule and never changes after
+ * creation; `label` is the display name and can be freely renamed. `locked` categories
+ * (MANAGER_TIME, PROVIDER_PAYROLL) carry hardcoded backend behavior and can't be deleted. */
+export interface ExpenseCategoryDefinition {
+  id: number;
+  code: string;
+  label: string;
+  locked: boolean;
+  sortOrder: number;
+}
 
 export interface ExpenseEntry {
   id: number;
@@ -1353,12 +1368,15 @@ export interface BankStatementImportDetail {
   transactions: BankTransaction[];
 }
 
-export type MerchantRuleType = 'FINGERPRINT' | 'MERCHANT' | 'MERCHANT_KEYWORD' | 'MERCHANT_AMOUNT_RANGE';
+export type MerchantRuleType = 'FINGERPRINT' | 'MERCHANT' | 'MERCHANT_KEYWORD' | 'MERCHANT_AMOUNT_RANGE' | 'KEYWORD';
 
 export interface MerchantRule {
   id: number;
   ruleType: MerchantRuleType;
-  normalizedMerchant: string;
+  /** Null only for KEYWORD (merchant-agnostic) rules. */
+  normalizedMerchant: string | null;
+  /** MERCHANT_KEYWORD: a single substring. KEYWORD: one or more required substrings joined by
+   * "\n" (all must be present in the description — AND semantics). */
   keyword: string | null;
   amountMin: number | null;
   amountMax: number | null;

@@ -65,7 +65,8 @@ public class ExpenseImportController {
     public TransactionDto reviewTransaction(@PathVariable Long id, @PathVariable Long txnId,
                                              @RequestBody ReviewRequest req, @AuthenticationPrincipal AppUserPrincipal me) {
         BankTransaction txn = service.reviewTransaction(txnId, req.category(), req.excludeReason(),
-                Boolean.TRUE.equals(req.rememberForMerchant()), Boolean.TRUE.equals(req.replaceExisting()), me.getUsername());
+                Boolean.TRUE.equals(req.rememberForMerchant()), Boolean.TRUE.equals(req.replaceExisting()),
+                req.rememberKeywords(), me.getUsername());
         return toTransactionDto(txn);
     }
 
@@ -73,7 +74,8 @@ public class ExpenseImportController {
     public List<TransactionDto> bulkReview(@PathVariable Long id, @RequestBody BulkReviewRequest req,
                                             @AuthenticationPrincipal AppUserPrincipal me) {
         return service.bulkReviewTransactions(req.transactionIds(), req.category(), req.excludeReason(),
-                        Boolean.TRUE.equals(req.rememberForMerchant()), Boolean.TRUE.equals(req.replaceExisting()), me.getUsername())
+                        Boolean.TRUE.equals(req.rememberForMerchant()), Boolean.TRUE.equals(req.replaceExisting()),
+                        req.rememberKeywords(), me.getUsername())
                 .stream().map(ExpenseImportController::toTransactionDto).toList();
     }
 
@@ -112,8 +114,10 @@ public class ExpenseImportController {
                                   Long linkedExpenseEntryId, Long duplicateOfTransactionId, String reviewedBy,
                                   Instant reviewedAt) {}
 
-    public record ReviewRequest(String category, String excludeReason, Boolean rememberForMerchant, Boolean replaceExisting) {}
+    public record ReviewRequest(String category, String excludeReason, Boolean rememberForMerchant,
+                                 Boolean replaceExisting, List<String> rememberKeywords) {}
 
     public record BulkReviewRequest(List<Long> transactionIds, String category, String excludeReason,
-                                     Boolean rememberForMerchant, Boolean replaceExisting) {}
+                                     Boolean rememberForMerchant, Boolean replaceExisting,
+                                     List<String> rememberKeywords) {}
 }

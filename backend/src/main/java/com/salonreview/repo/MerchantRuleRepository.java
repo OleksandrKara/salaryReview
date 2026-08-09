@@ -24,4 +24,11 @@ public interface MerchantRuleRepository extends JpaRepository<MerchantRule, Long
 
     /** Full roster for the Merchant Rules management screen. */
     List<MerchantRule> findAllByOrderByNormalizedMerchantAscRuleTypeAsc();
+
+    /** Every active merchant-agnostic KEYWORD rule — not scoped by normalized_merchant, since this
+     * tier exists specifically for descriptors whose normalized merchant is never stable (e.g. it
+     * embeds a per-transaction reference number). */
+    List<MerchantRule> findAllByRuleTypeAndActiveTrueOrderByIdAsc(String ruleType);
+
+    boolean existsByCategory(String category);
 }

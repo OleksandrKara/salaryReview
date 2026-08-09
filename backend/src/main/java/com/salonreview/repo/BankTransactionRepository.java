@@ -71,4 +71,6 @@ public interface BankTransactionRepository extends JpaRepository<BankTransaction
             """)
     List<Long> findLinkedExpenseEntryIdsForCompletedImportsOverlapping(@Param("from") LocalDate from,
                                                                         @Param("to") LocalDate to);
+
+    boolean existsByCategory(String category);
 }

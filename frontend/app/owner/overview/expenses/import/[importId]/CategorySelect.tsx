@@ -1,13 +1,4 @@
-import type { ExcludeReason, ExpenseCategory } from '../../../../../lib/types';
-
-export const CATEGORY_OPTIONS: { value: ExpenseCategory; label: string }[] = [
-  { value: 'MATERIALS', label: 'Materials' },
-  { value: 'RENT', label: 'Rent' },
-  { value: 'UTILITIES', label: 'Utilities' },
-  { value: 'OTHER', label: 'Other' },
-  { value: 'MANAGER_TIME', label: 'Manager time' },
-  { value: 'PROVIDER_PAYROLL', label: 'Provider payroll' },
-];
+import type { ExcludeReason, ExpenseCategory, ExpenseCategoryDefinition } from '../../../../../lib/types';
 
 export const EXCLUDE_REASON_OPTIONS: { value: ExcludeReason; label: string }[] = [
   { value: 'TRANSFER', label: 'Transfer between own accounts' },
@@ -27,14 +18,16 @@ export interface CategorySelection {
   excludeReason?: ExcludeReason;
 }
 
-/** The existing ExpenseCategory list, plus an Exclude option with its own reason sub-select
- * (openspec design.md §9/D8) — reused by both the per-row picker and the bulk action bar. */
+/** The owner's editable category list (see /owner/overview/expenses/categories), plus an Exclude
+ * option with its own reason sub-select (openspec design.md §9/D8) — reused by both the per-row
+ * picker and the bulk action bar. */
 export default function CategorySelect({
-  value, onChange, disabled,
+  value, onChange, disabled, categories,
 }: {
   value: CategorySelection;
   onChange: (value: CategorySelection) => void;
   disabled?: boolean;
+  categories: ExpenseCategoryDefinition[];
 }) {
   const mainValue = value.excludeReason ? EXCLUDE_SENTINEL : (value.category ?? '');
 
@@ -53,8 +46,8 @@ export default function CategorySelect({
         className="rounded border border-zinc-300 px-1.5 py-1 text-xs"
       >
         <option value="" disabled>Choose category…</option>
-        {CATEGORY_OPTIONS.map((c) => (
-          <option key={c.value} value={c.value}>{c.label}</option>
+        {categories.map((c) => (
+          <option key={c.code} value={c.code}>{c.label}</option>
         ))}
         <option value={EXCLUDE_SENTINEL}>Exclude…</option>
       </select>
