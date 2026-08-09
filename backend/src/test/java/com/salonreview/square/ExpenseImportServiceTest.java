@@ -266,4 +266,34 @@ class ExpenseImportServiceTest {
         verify(merchantRuleService, never()).rememberKeywords(any(), any(), any(), any());
         assertThat(txn.getMatchedRuleId()).isEqualTo(78L);
     }
+
+    @Test
+    @DisplayName("Creating a new rule via review immediately auto-categorizes other NEEDS_REVIEW siblings in the same import that now match it")
+    void reviewWithRememberForMerchantReapliesToSiblingsInSameImport() {
+        BankTransaction reviewed = BankTransaction.builder().id(20L).importId(500L)
+                .normalizedMerchant("AMAZON").status(BankTransaction.STATUS_NEEDS_REVIEW).build();
+        BankTransaction siblingMatches = BankTransaction.builder().id(21L).importId(500L)
+                .normalizedMerchant("AMAZON").status(BankTransaction.STATUS_NEEDS_REVIEW)
+                .transactionDate(LocalDate.of(2026, 8, 1)).rawDescription("AMAZON.COM*ABC123")
+                .amount(new BigDecimal("-15.00")).fingerprint("fp-21").occurrenceIndex(0).build();
+        BankTransaction siblingAlreadyReviewed = BankTransaction.builder().id(22L).importId(500L)
+                .normalizedMerchant("AMAZON").status(BankTransaction.STATUS_REVIEWED).build();
+
+        when(transactions.findById(20L)).thenReturn(Optional.of(reviewed));
+        when(transactions.findByImportIdOrderByTransactionDateAsc(500L))
+                .thenReturn(List.of(reviewed, siblingMatches, siblingAlreadyReviewed));
+        com.salonreview.domain.MerchantRule createdRule = com.salonreview.domain.MerchantRule.builder().id(90L).build();
+        when(merchantRuleService.rememberForMerchant("AMAZON", "SUPPLIES", 20L, false, "owner")).thenReturn(createdRule);
+        when(ruleEngine.evaluate(any())).thenReturn(
+                new MerchantRuleEngine.MatchResult("SUPPLIES", new BigDecimal("0.90"), "Matched because: Normalized Merchant = AMAZON", 90L, true));
+
+        service.reviewTransaction(20L, "SUPPLIES", null, true, false, List.of(), "owner");
+
+        assertThat(siblingMatches.getStatus()).isEqualTo(BankTransaction.STATUS_AUTO_MATCHED);
+        assertThat(siblingMatches.getCategory()).isEqualTo("SUPPLIES");
+        assertThat(siblingMatches.getMatchedRuleId()).isEqualTo(90L);
+        // Already-reviewed sibling and rows from other imports must never be touched.
+        assertThat(siblingAlreadyReviewed.getStatus()).isEqualTo(BankTransaction.STATUS_REVIEWED);
+        verify(transactions, never()).findByImportIdOrderByTransactionDateAsc(999L);
+    }
 }
