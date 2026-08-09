@@ -116,4 +116,46 @@ class CsvStatementParserTest {
         assertThat(rows.get(0).date()).isEqualTo(LocalDate.of(2026, 8, 14));
         assertThat(rows.get(0).normalizedMerchant()).isEqualTo("AKLUXNAILS");
     }
+
+    @Test
+    @DisplayName("A leading Account Summary preamble is skipped and the real transaction header is found")
+    void skipsAccountSummaryPreamble() {
+        var rows = parser.parse(csv(
+                "Description,,Summary Amt.",
+                "Beginning balance as of 08/01/2026,,\"1,000.00\"",
+                "Total credits,,\"500.00\"",
+                "Total debits,,\"-200.00\"",
+                "Ending balance as of 08/31/2026,,\"1,300.00\"",
+                "",
+                "Date,Description,Amount,Running Bal.",
+                "08/01/2026,Beginning balance as of 08/01/2026,,\"1,000.00\"",
+                "08/01/2026,COSTCO WHSE #123,\"-84.12\",\"915.88\""));
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).date()).isEqualTo(LocalDate.of(2026, 8, 1));
+        assertThat(rows.get(0).amount()).isEqualByComparingTo("-84.12");
+    }
+
+    @Test
+    @DisplayName("A blank-Amount balance-marker row is skipped rather than throwing")
+    void skipsBlankAmountRow() {
+        var rows = parser.parse(csv(
+                "Date,Description,Amount,Running Bal.",
+                "08/01/2026,Beginning balance as of 08/01/2026,,\"1,000.00\"",
+                "08/02/2026,COSTCO WHSE #123,\"-84.12\",\"915.88\""));
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).rawDescription()).isEqualTo("COSTCO WHSE #123");
+    }
+
+    @Test
+    @DisplayName("A Description with an unescaped nested quote still parses")
+    void handlesNestedQuoteInDescription() {
+        var rows = parser.parse(csv(
+                "Date,Description,Amount,Running Bal.",
+                "08/01/2026,\"Zelle payment to Jane for \"Payment for service\"; Conf# abc123\",\"-100.00\",\"900.00\""));
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).amount()).isEqualByComparingTo("-100.00");
+    }
 }
