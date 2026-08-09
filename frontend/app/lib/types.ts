@@ -176,6 +176,10 @@ export interface SmsConversationDto {
    * any further outbound SMS (automated or manual), and inbound texts no longer trigger a
    * Telegram alert (still logged, just no longer paged). */
   blocked: boolean;
+  /** True if `blocked` is true *because* the customer texted a standard opt-out keyword
+   * (STOP/UNSUBSCRIBE/...), as opposed to a manager choosing "Block number" — see
+   * BlockedNumber#SOURCE_STOP_REQUEST on the backend. Always false when `blocked` is false. */
+  optedOut: boolean;
   /** True if this phone number has *ever* clicked through the checkout-review-request
    * automation's Google review link — quick-glance version of the fuller sent/clicked/date
    * detail already shown in the contact info panel (see MarketingContact's own

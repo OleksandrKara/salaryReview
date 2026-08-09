@@ -1,6 +1,7 @@
 package com.salonreview.sms;
 
 import com.salonreview.config.TwilioInboundProperties;
+import com.salonreview.domain.BlockedNumber;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.marketing.MarketingContactsService;
@@ -18,8 +19,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Receives Twilio's inbound-SMS webhook and branches the checkout-review-request automation's
@@ -31,6 +34,16 @@ import java.util.Optional;
 public class TwilioInboundSmsController {
 
     private static final Logger log = LoggerFactory.getLogger(TwilioInboundSmsController.class);
+
+    /** The standard CTIA/Twilio opt-out keyword set (see Twilio's Advanced Opt-Out docs) — an
+     * exact, whole-body match (case-insensitive, trimmed) only, never a substring match, so a
+     * message that merely mentions "stop" mid-sentence ("please stop calling me at night") is
+     * never mistaken for a legal opt-out request. This account's Twilio number does not have
+     * Advanced Opt-Out intercepting these before they reach this webhook, so without this check
+     * they were logged as ordinary free-text replies with no marking and no effect on future
+     * sends — exactly the gap that was reported. */
+    private static final Set<String> OPT_OUT_KEYWORDS =
+            Set.of("STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT");
 
     private final TwilioInboundProperties properties;
     private final SmsMessageLogService messageLogService;
@@ -72,9 +85,10 @@ public class TwilioInboundSmsController {
             return ResponseEntity.ok().build();
         }
 
-        // Log unconditionally — even a reply that matches no pending flow needs to be visible in
-        // the hub's inbox (see design.md D9). Twilio itself already intercepts STOP/HELP/START
-        // before this endpoint ever sees them, so this only ever handles genuine free-text replies.
+        boolean isOptOut = OPT_OUT_KEYWORDS.contains(body.trim().toUpperCase(Locale.US));
+
+        // Log unconditionally — even a reply that matches no pending flow (or is itself an
+        // opt-out) needs to be visible in the hub's inbox (see design.md D9).
         Optional<SmsReplyFlow> pending = replyFlowRepository
                 .findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(from, SmsReplyFlow.STATE_AWAITING_REPLY);
         // Only checkout_review_request opens a durable SmsReplyFlow; every other automation
@@ -87,6 +101,19 @@ public class TwilioInboundSmsController {
         SmsMessage logged = messageLogService.logInbound(from, body, automationKey);
         logged.setTwilioMessageSid(params.get("MessageSid"));
         messageLogService.save(logged);
+
+        // A STOP-style reply is a legally binding opt-out (TCPA/CTIA) — block the number right
+        // away so every later step in this handler (and every future automation/manual send, via
+        // TwilioSmsService's single choke point) already sees it as blocked. Insert-if-absent
+        // rather than always re-saving (unlike the manual "Block number" action's own doc comment)
+        // so a customer who already blocked themselves, then texts STOP again, doesn't churn
+        // blocked_at or downgrade an existing manual block's source.
+        String normalizedFrom = PhoneNumbers.normalize(from);
+        if (isOptOut && !blockedNumberRepository.existsById(normalizedFrom)) {
+            blockedNumberRepository.save(BlockedNumber.builder()
+                    .phoneNumber(normalizedFrom).source(BlockedNumber.SOURCE_STOP_REQUEST).build());
+            log.info("Number blocked — replied with opt-out keyword");
+        }
 
         // MMS photos, if any — see SmsMediaService's own doc for why this is best-effort and
         // never blocks the rest of this handler (the text/thread above is already durable).
@@ -106,12 +133,15 @@ public class TwilioInboundSmsController {
         // a name in the header. Skipped entirely for a number a manager has blocked (see V61) —
         // the message itself is still logged above (so it's visible if anyone opens that thread),
         // just without pinging Telegram for a number already decided not worth engaging with.
-        if (!blockedNumberRepository.existsById(PhoneNumbers.normalize(from))) {
+        if (!blockedNumberRepository.existsById(normalizedFrom)) {
             String customerName = resolveCustomerName(from);
             telegramService.sendInboundSmsAlert(from, customerName, body, logged.getAutomationKey());
         }
 
-        if (pending.isPresent()) {
+        // A STOP-style reply isn't a satisfaction-rating reply — the block above already stops
+        // any branch reply this would otherwise trigger from ever actually sending, but skip the
+        // branching/negative-feedback logic entirely rather than relying on that as a backstop.
+        if (pending.isPresent() && !isOptOut) {
             SmsReplyFlow flow = pending.get();
             boolean positive = body.contains("5"); // digits only — "Five" spelled out doesn't match, see design.md D4
             if (containsLowRatingDigit(body)) {

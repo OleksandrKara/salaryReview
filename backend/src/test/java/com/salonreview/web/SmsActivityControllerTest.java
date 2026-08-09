@@ -118,6 +118,7 @@ class SmsActivityControllerTest {
                 .andExpect(jsonPath("$[0].vip").value(true))
                 .andExpect(jsonPath("$[0].visitCount").value(5))
                 .andExpect(jsonPath("$[0].blocked").value(false))
+                .andExpect(jsonPath("$[0].optedOut").value(false))
                 .andExpect(jsonPath("$[0].clickedGoogleReview").value(false))
                 .andExpect(jsonPath("$[0].clickedFeedbackForm").value(false))
                 .andExpect(jsonPath("$[0].flaggedAsSpam").value(false));
@@ -134,7 +135,23 @@ class SmsActivityControllerTest {
 
         mvc.perform(get("/api/owner/automations/activity/conversations"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].blocked").value(true));
+                .andExpect(jsonPath("$[0].blocked").value(true))
+                .andExpect(jsonPath("$[0].optedOut").value(false));
+    }
+
+    @Test
+    @DisplayName("GET /conversations marks a row optedOut (and blocked) when the block was source STOP_REQUEST")
+    void conversationsMarksOptedOutForStopRequestSource() throws Exception {
+        when(service.conversations()).thenReturn(List.of(
+                new FakeConversationSummary(PHONE, Instant.now(), "STOP", "INBOUND", 0L)));
+        when(contactsService.resolveDisplayNames(List.of(PHONE))).thenReturn(Map.of());
+        when(blockedNumberRepository.findByPhoneNumberIn(List.of(PHONE))).thenReturn(List.of(
+                BlockedNumber.builder().phoneNumber(PHONE).source(BlockedNumber.SOURCE_STOP_REQUEST).build()));
+
+        mvc.perform(get("/api/owner/automations/activity/conversations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].blocked").value(true))
+                .andExpect(jsonPath("$[0].optedOut").value(true));
     }
 
     @Test
@@ -185,6 +202,7 @@ class SmsActivityControllerTest {
         ArgumentCaptor<BlockedNumber> captor = ArgumentCaptor.forClass(BlockedNumber.class);
         verify(blockedNumberRepository).save(captor.capture());
         org.assertj.core.api.Assertions.assertThat(captor.getValue().getPhoneNumber()).isEqualTo(PHONE);
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().getSource()).isEqualTo(BlockedNumber.SOURCE_MANUAL);
         verify(events).broadcast(PHONE);
     }
 

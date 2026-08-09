@@ -1,6 +1,7 @@
 package com.salonreview.sms;
 
 import com.salonreview.config.TwilioInboundProperties;
+import com.salonreview.domain.BlockedNumber;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.marketing.MarketingContactsService;
@@ -327,5 +328,87 @@ class TwilioInboundSmsControllerTest {
                 .andExpect(status().isOk());
 
         verify(reactionService).tryAttachCustomerReaction(PHONE, p.get("Body"));
+    }
+
+    @Test
+    @DisplayName("reply is exactly 'STOP' (any case/whitespace) → number is blocked with source STOP_REQUEST, still logged, Telegram alert skipped")
+    void stopReplyBlocksNumber() throws Exception {
+        var p = params(PHONE, "  stop  ");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.empty());
+        // Mirrors real DB behavior: not yet blocked when the handler checks before inserting, then
+        // blocked by the time it checks again just before the Telegram-alert gate.
+        when(blockedNumberRepository.existsById(PHONE)).thenReturn(false, true);
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        verify(messageLogService).logInbound(PHONE, p.get("Body"), null);
+        ArgumentCaptor<BlockedNumber> captor = ArgumentCaptor.forClass(BlockedNumber.class);
+        verify(blockedNumberRepository).save(captor.capture());
+        assertThat(captor.getValue().getPhoneNumber()).isEqualTo(PHONE);
+        assertThat(captor.getValue().getSource()).isEqualTo(BlockedNumber.SOURCE_STOP_REQUEST);
+        verifyNoInteractions(telegramService);
+    }
+
+    @Test
+    @DisplayName("reply merely mentions 'stop' mid-sentence → not treated as an opt-out, not blocked")
+    void stopMentionedMidSentenceDoesNotBlock() throws Exception {
+        var p = params(PHONE, "please stop calling me at night");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.empty());
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        verify(blockedNumberRepository, never()).save(any());
+        verify(telegramService).sendInboundSmsAlert(eq(PHONE), any(), eq(p.get("Body")), any());
+    }
+
+    @Test
+    @DisplayName("an already-blocked number replying STOP again does not re-save (insert-if-absent)")
+    void stopReplyFromAlreadyBlockedNumberDoesNotResave() throws Exception {
+        var p = params(PHONE, "STOP");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.empty());
+        when(blockedNumberRepository.existsById(PHONE)).thenReturn(true);
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        verify(blockedNumberRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("STOP reply to a pending checkout-review-request flow does not trigger the branch reply")
+    void stopReplyDoesNotTriggerPendingReplyFlowBranch() throws Exception {
+        var p = params(PHONE, "STOP");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        SmsReplyFlow pending = SmsReplyFlow.builder().id(11L).automationKey("checkout_review_request")
+                .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
+        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.of(pending));
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        verifyNoInteractions(replyService);
+        verify(replyFlowRepository, never()).save(any());
+        assertThat(pending.getState()).isEqualTo(SmsReplyFlow.STATE_AWAITING_REPLY);
     }
 }
