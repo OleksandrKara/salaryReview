@@ -19,28 +19,28 @@ export default async function RevenueExpensesPage() {
           Import a bank statement to auto-categorize most of a month&apos;s expenses at once,
           instead of entering each one by hand below.
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link
             href="/owner/overview/expenses/import"
-            className="rounded bg-zinc-800 px-3 py-1.5 text-xs font-medium !text-white hover:bg-zinc-700"
+            className="rounded bg-zinc-800 px-3 py-2 text-xs font-medium !text-white hover:bg-zinc-700"
           >
             Import statement
           </Link>
           <Link
             href="/owner/overview/expenses/history"
-            className="rounded px-3 py-1.5 text-xs font-medium text-zinc-600 ring-1 ring-zinc-300 hover:bg-white"
+            className="rounded px-3 py-2 text-xs font-medium text-zinc-600 ring-1 ring-zinc-300 hover:bg-white"
           >
             History
           </Link>
           <Link
             href="/owner/overview/expenses/rules"
-            className="rounded px-3 py-1.5 text-xs font-medium text-zinc-600 ring-1 ring-zinc-300 hover:bg-white"
+            className="rounded px-3 py-2 text-xs font-medium text-zinc-600 ring-1 ring-zinc-300 hover:bg-white"
           >
             Merchant rules
           </Link>
           <Link
             href="/owner/overview/expenses/categories"
-            className="rounded px-3 py-1.5 text-xs font-medium text-zinc-600 ring-1 ring-zinc-300 hover:bg-white"
+            className="rounded px-3 py-2 text-xs font-medium text-zinc-600 ring-1 ring-zinc-300 hover:bg-white"
           >
             Categories
           </Link>

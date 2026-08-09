@@ -7,6 +7,7 @@ import { api } from '../../../../../lib/api';
 import type { BankStatementImportDetail, BankTransaction, BankTransactionStatus, ExpenseCategoryDefinition } from '../../../../../lib/types';
 import TransactionRow, { type RememberDecision } from './TransactionRow';
 import BulkActionBar from './BulkActionBar';
+import CategoryBreakdown from './CategoryBreakdown';
 import type { CategorySelection } from './CategorySelect';
 
 type GroupKey = 'NEEDS_REVIEW' | 'CATEGORIZED' | 'EXCLUDED' | 'DUPLICATE';
@@ -185,10 +186,10 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
             · {counts.EXCLUDED} excluded · {counts.DUPLICATE} duplicates skipped
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <a
             href={api.statementImportFileUrl(importId)}
-            className="rounded px-2 py-1 text-xs font-medium text-zinc-600 ring-1 ring-zinc-300 hover:bg-white"
+            className="rounded px-2 py-2 text-xs font-medium text-zinc-600 ring-1 ring-zinc-300 hover:bg-white"
           >
             Download original
           </a>
@@ -198,7 +199,7 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
                 type="button"
                 disabled={completing}
                 onClick={complete}
-                className="rounded bg-zinc-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+                className="rounded bg-zinc-800 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
               >
                 {completing ? 'Completing…' : 'Complete Reconciliation'}
               </button>
@@ -206,7 +207,7 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
                 type="button"
                 disabled={completing}
                 onClick={remove}
-                className="rounded px-2 py-1.5 text-xs font-medium text-red-600 ring-1 ring-red-300 hover:bg-red-50 disabled:opacity-50"
+                className="rounded px-2 py-2 text-xs font-medium text-red-600 ring-1 ring-red-300 hover:bg-red-50 disabled:opacity-50"
               >
                 {completing ? 'Deleting…' : 'Delete import'}
               </button>
@@ -221,7 +222,7 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
                 type="button"
                 disabled={completing}
                 onClick={revert}
-                className="rounded px-2 py-1 text-xs font-medium text-red-600 ring-1 ring-red-300 hover:bg-red-50 disabled:opacity-50"
+                className="rounded px-2 py-2 text-xs font-medium text-red-600 ring-1 ring-red-300 hover:bg-red-50 disabled:opacity-50"
               >
                 Revert
               </button>
@@ -233,7 +234,7 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
                 type="button"
                 disabled={completing}
                 onClick={remove}
-                className="rounded px-2 py-1 text-xs font-medium text-red-600 ring-1 ring-red-300 hover:bg-red-50 disabled:opacity-50"
+                className="rounded px-2 py-2 text-xs font-medium text-red-600 ring-1 ring-red-300 hover:bg-red-50 disabled:opacity-50"
               >
                 {completing ? 'Deleting…' : 'Delete import'}
               </button>
@@ -244,6 +245,8 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
           )}
         </div>
       </div>
+
+      <CategoryBreakdown transactions={detail.transactions} categories={categories} />
 
       <div className="mt-3">
         <input

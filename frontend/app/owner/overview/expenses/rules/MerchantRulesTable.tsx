@@ -81,7 +81,7 @@ function RuleRow({ rule, onChanged }: { rule: MerchantRule; onChanged: () => voi
           )}
           <div className="text-xs text-zinc-400">Applied {rule.timesApplied} time{rule.timesApplied === 1 ? '' : 's'}</div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {editing ? (
             <>
               <input
@@ -90,23 +90,26 @@ function RuleRow({ rule, onChanged }: { rule: MerchantRule; onChanged: () => voi
                 onChange={(e) => setCategory(e.target.value)}
                 className="w-40 rounded border border-zinc-300 px-1.5 py-1 text-xs"
               />
-              <button type="button" disabled={busy} onClick={save} className="rounded bg-zinc-800 px-2 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
+              <button type="button" disabled={busy} onClick={save} className="rounded bg-zinc-800 px-2 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
                 Save
               </button>
-              <button type="button" disabled={busy} onClick={() => { setEditing(false); setCategory(rule.category); }} className="text-xs text-zinc-500 hover:underline">
+              <button type="button" disabled={busy} onClick={() => { setEditing(false); setCategory(rule.category); }} className="-m-1 p-1 text-xs text-zinc-500 hover:underline">
                 Cancel
               </button>
             </>
           ) : (
             <>
-              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600 ring-1 ring-inset ring-zinc-200">
+              <span
+                className="max-w-[9rem] truncate rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600 ring-1 ring-inset ring-zinc-200"
+                title={rule.category}
+              >
                 {rule.category}
               </span>
-              <button type="button" onClick={() => setEditing(true)} className="text-xs text-blue-600 hover:underline">Edit</button>
-              <button type="button" disabled={busy} onClick={toggleActive} className="text-xs text-zinc-500 hover:underline disabled:opacity-50">
+              <button type="button" onClick={() => setEditing(true)} className="-m-1 p-1 text-xs text-blue-600 hover:underline">Edit</button>
+              <button type="button" disabled={busy} onClick={toggleActive} className="-m-1 p-1 text-xs text-zinc-500 hover:underline disabled:opacity-50">
                 {rule.active ? 'Deactivate' : 'Activate'}
               </button>
-              <button type="button" disabled={busy} onClick={remove} className="text-xs text-red-600 hover:underline disabled:opacity-50">
+              <button type="button" disabled={busy} onClick={remove} className="-m-1 p-1 text-xs text-red-600 hover:underline disabled:opacity-50">
                 Delete
               </button>
             </>
