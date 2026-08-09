@@ -20,7 +20,9 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 /** Every uploaded statement, most recent first — reopen (still `AWAITING_REVIEW`), revert (if
- * `COMPLETED`), or re-download the original file at any time (openspec design.md §19). */
+ * `COMPLETED`), delete (any non-`COMPLETED` import — a duplicate re-upload or the wrong file,
+ * with no financial effect to undo), or re-download the original file at any time (openspec
+ * design.md §19). */
 export default function ImportHistoryList() {
   const [imports, setImports] = useState<BankStatementImportSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,6 +60,20 @@ export default function ImportHistoryList() {
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to revert this import.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function remove(id: number) {
+    if (!window.confirm('Permanently delete this import and its transactions? This can\'t be undone — use it to clean up a duplicate or wrong upload.')) return;
+    setBusyId(id);
+    setError('');
+    try {
+      await api.deleteStatementImport(id);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete this import.');
     } finally {
       setBusyId(null);
     }
@@ -110,6 +126,16 @@ export default function ImportHistoryList() {
                     className="rounded px-2 py-1 text-xs font-medium text-red-600 ring-1 ring-red-300 hover:bg-red-50 disabled:opacity-50"
                   >
                     {busyId === imp.id ? 'Reverting…' : 'Revert'}
+                  </button>
+                )}
+                {imp.status !== 'COMPLETED' && (
+                  <button
+                    type="button"
+                    disabled={busyId === imp.id}
+                    onClick={() => remove(imp.id)}
+                    className="rounded px-2 py-1 text-xs font-medium text-red-600 ring-1 ring-red-300 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    {busyId === imp.id ? 'Deleting…' : 'Delete'}
                   </button>
                 )}
               </div>

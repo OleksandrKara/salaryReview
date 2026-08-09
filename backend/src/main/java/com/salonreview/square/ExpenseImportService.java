@@ -281,4 +281,23 @@ public class ExpenseImportService {
         imp.setRevertedAt(Instant.now());
         return imports.save(imp);
     }
+
+    /** Permanently removes an import and its transactions — for cleaning up an upload that never
+     * needs to be reconciled (a duplicate re-upload, a wrong file). Restricted to imports that
+     * never carried a real financial effect: COMPLETED imports must be reverted first, which
+     * safely undoes the expense_entries it created — deleting one directly would orphan those
+     * rows. Nulls out any other import's duplicate_of_transaction_id pointing into this one first,
+     * so a later import that was marked as a duplicate of a row here doesn't dangle. */
+    @Transactional
+    public void deleteImport(Long importId) {
+        BankStatementImport imp = imports.findById(importId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such import"));
+        if (BankStatementImport.STATUS_COMPLETED.equals(imp.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "A completed import must be reverted before it can be deleted");
+        }
+        transactions.clearDuplicateReferencesInto(importId);
+        transactions.deleteByImportId(importId);
+        imports.delete(imp);
+    }
 }

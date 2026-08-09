@@ -2,6 +2,7 @@ package com.salonreview.repo;
 
 import com.salonreview.domain.BankTransaction;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -73,4 +74,14 @@ public interface BankTransactionRepository extends JpaRepository<BankTransaction
                                                                         @Param("to") LocalDate to);
 
     boolean existsByCategory(String category);
+
+    /** Deleting an unreconciled import (openspec follow-up, D19-adjacent) must not leave a dangling
+     * {@code duplicate_of_transaction_id} FK on some other import's rows that were marked as
+     * duplicates of a transaction that's about to disappear — null those references out first. */
+    @Modifying
+    @Query("UPDATE BankTransaction t SET t.duplicateOfTransactionId = NULL " +
+            "WHERE t.duplicateOfTransactionId IN (SELECT t2.id FROM BankTransaction t2 WHERE t2.importId = :importId)")
+    void clearDuplicateReferencesInto(@Param("importId") Long importId);
+
+    void deleteByImportId(Long importId);
 }
