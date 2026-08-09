@@ -192,7 +192,10 @@ public class ExpenseImportService {
     /** Sets/changes a single transaction's category or exclude reason. Reinforces the already-
      * matched rule (times_applied/last_applied_at) if the owner confirmed it unchanged; otherwise
      * creates/replaces the merchant's plain rule when {@code rememberForMerchant} is set
-     * (design.md D6/D9). */
+     * (design.md D6/D9). When a new rule is created this way, immediately re-evaluates every other
+     * still-NEEDS_REVIEW transaction in the same import against it, so the rest of a statement's
+     * matching rows (e.g. every other Amazon charge) categorize themselves without the owner
+     * reviewing each one individually. */
     @Transactional
     public BankTransaction reviewTransaction(Long transactionId, String category, String excludeReason,
                                               boolean rememberForMerchant, boolean replaceExisting,
@@ -210,13 +213,16 @@ public class ExpenseImportService {
                         return true;
                     }).orElse(false);
         }
+        boolean ruleCreated = false;
         if (!reinforced && rememberKeywords != null && !rememberKeywords.isEmpty()) {
             var rule = merchantRuleService.rememberKeywords(rememberKeywords, resolvedCategory, txn.getId(), reviewedBy);
             txn.setMatchedRuleId(rule.getId());
+            ruleCreated = true;
         } else if (!reinforced && rememberForMerchant) {
             var rule = merchantRuleService.rememberForMerchant(
                     txn.getNormalizedMerchant(), resolvedCategory, txn.getId(), replaceExisting, reviewedBy);
             txn.setMatchedRuleId(rule.getId());
+            ruleCreated = true;
         }
 
         txn.setCategory(excludeReason != null ? null : category);
@@ -224,7 +230,44 @@ public class ExpenseImportService {
         txn.setStatus(excludeReason != null ? BankTransaction.STATUS_EXCLUDED : BankTransaction.STATUS_REVIEWED);
         txn.setReviewedBy(reviewedBy);
         txn.setReviewedAt(Instant.now());
-        return transactions.save(txn);
+        BankTransaction saved = transactions.save(txn);
+        if (ruleCreated) {
+            reapplyNeedsReviewInImport(saved.getImportId(), saved.getId());
+        }
+        return saved;
+    }
+
+    /** Re-runs the rule engine against every other NEEDS_REVIEW transaction in {@code importId}
+     * (skipping the one just reviewed) and auto-applies any that now clear the auto-apply
+     * threshold — the sibling-row half of the "remember this" flow above. Rows that still don't
+     * match anything, or only match at suggestion-confidence, are left for manual review as before. */
+    private void reapplyNeedsReviewInImport(Long importId, Long excludeTransactionId) {
+        for (BankTransaction t : transactions.findByImportIdOrderByTransactionDateAsc(importId)) {
+            if (t.getId().equals(excludeTransactionId) || !BankTransaction.STATUS_NEEDS_REVIEW.equals(t.getStatus())) {
+                continue;
+            }
+            CsvStatementParser.ParsedTransaction p = new CsvStatementParser.ParsedTransaction(
+                    t.getTransactionDate(), t.getRawDescription(), t.getAmount(), t.getNormalizedMerchant(),
+                    t.getMerchantKey(), t.getFingerprint(), t.getOccurrenceIndex());
+            MerchantRuleEngine.MatchResult result = ruleEngine.evaluate(p);
+            boolean autoApply = result.category() != null && result.autoApply() && result.confidence() != null
+                    && result.confidence().compareTo(MerchantRuleEngine.AUTO_APPLY_THRESHOLD) >= 0;
+            if (!autoApply) continue;
+
+            t.setMatchReason(result.matchReason());
+            t.setConfidence(result.confidence());
+            t.setMatchedRuleId(result.matchedRuleId());
+            if (result.category().startsWith("EXCLUDE_")) {
+                t.setStatus(BankTransaction.STATUS_EXCLUDED);
+                t.setExcludedReason(excludeReasonOf(result.category()));
+                t.setCategory(null);
+            } else {
+                t.setStatus(BankTransaction.STATUS_AUTO_MATCHED);
+                t.setCategory(result.category());
+                t.setExcludedReason(null);
+            }
+            transactions.save(t);
+        }
     }
 
     @Transactional
