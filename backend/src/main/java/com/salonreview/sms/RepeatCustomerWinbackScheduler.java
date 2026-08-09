@@ -1,5 +1,6 @@
 package com.salonreview.sms;
 
+import com.salonreview.config.RebookingProperties;
 import com.salonreview.domain.RepeatCustomerWinbackSend;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.TwilioSmsConfig;
@@ -20,6 +21,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
@@ -31,9 +33,17 @@ import java.util.Objects;
  * 40-day threshold comes from an independent test of 30/35/40/45/50/60-day alternatives against
  * this salon's real visit #2 → #3 churn behavior: by day 40, roughly 81% of customers who return
  * naturally already have, without waiting so long that the trigger reads as an "already-lost"
- * formality. Unlike {@code lapsed_customer_winback}, this send carries no discount
- * — it's a plain, friendly check-in — so it's TRANSACTIONAL by nature and doesn't need a
- * marketing-consent gate (same reasoning as {@code lead_follow_up_nudge}/{@code checkout_rating_request}).
+ * formality.
+ *
+ * <p>Reuses {@code lapsed_customer_winback}'s own $5-off/$99-minimum WINBACK5 promo (same Square
+ * customer-group/pricing-rule, same {@code WINBACK:<epochSeconds>} link-target shape resolved by
+ * {@link ShortLinkController}) rather than standing up a separate one — the two automations offer
+ * an identical coupon, and Square pricing rules are amount-specific, not parameterizable per
+ * automation, so there's nothing to gain from a second group/rule for the same $5/$99 terms. Like
+ * {@code lapsed_customer_winback}, marketing-consent-gated: a consented customer's text mentions
+ * the $5 off, an unconsented one gets a plain "want a spot?" nudge with no discount language, but
+ * the link is identical either way and the coupon silently applies on click regardless — see
+ * {@link #hasConsent}.
  *
  * <p>Daily cron, not a fast poll — same reasoning as {@link LapsedCustomerWinbackScheduler}: the
  * eligibility window only moves day-to-day, nowhere near the minutes-scale deadlines the reply-flow
@@ -52,6 +62,11 @@ public class RepeatCustomerWinbackScheduler {
     private static final Logger log = LoggerFactory.getLogger(RepeatCustomerWinbackScheduler.class);
     static final String AUTOMATION_KEY = "repeat_customer_winback";
     static final String TEMPLATE_KEY = "repeat_customer_winback_nudge";
+    /** Sent instead of {@link #TEMPLATE_KEY} when the customer has no marketing consent on file —
+     * no discount language, same reasoning/pattern as {@code LapsedCustomerWinbackScheduler}'s own
+     * transactional variant. The link is identical either way; the $5 coupon still silently
+     * applies on click — see class doc. */
+    static final String TEMPLATE_KEY_TRANSACTIONAL = "repeat_customer_winback_reminder";
 
     /** No SENT row within this many days of "now" is what makes a customer eligible again — see
      * the eligibility query's own matching 60-day window. Kept here too as the belt-and-suspenders
@@ -67,6 +82,8 @@ public class RepeatCustomerWinbackScheduler {
     private final RepeatCustomerWinbackSendRepository sendRepository;
     private final SquareClient square;
     private final SmsAutomationService automationService;
+    private final SmsConsentRepository consentRepository;
+    private final RebookingProperties rebookingProperties;
     private final SmsMessageLogService messageLogService;
     private final BlockedNumberRepository blockedNumberRepository;
     private final TwilioSmsConfigService configService;
@@ -75,13 +92,16 @@ public class RepeatCustomerWinbackScheduler {
 
     public RepeatCustomerWinbackScheduler(RepeatCustomerWinbackEligibilityRepository eligibilityRepository,
                                            RepeatCustomerWinbackSendRepository sendRepository, SquareClient square,
-                                           SmsAutomationService automationService, SmsMessageLogService messageLogService,
+                                           SmsAutomationService automationService, SmsConsentRepository consentRepository,
+                                           RebookingProperties rebookingProperties, SmsMessageLogService messageLogService,
                                            BlockedNumberRepository blockedNumberRepository, TwilioSmsConfigService configService,
                                            TwilioSmsClient client, @Value("${app.public-base-url}") String publicBaseUrl) {
         this.eligibilityRepository = eligibilityRepository;
         this.sendRepository = sendRepository;
         this.square = square;
         this.automationService = automationService;
+        this.consentRepository = consentRepository;
+        this.rebookingProperties = rebookingProperties;
         this.messageLogService = messageLogService;
         this.blockedNumberRepository = blockedNumberRepository;
         this.configService = configService;
@@ -111,17 +131,17 @@ public class RepeatCustomerWinbackScheduler {
 
         String phoneNumber = square.customerPhone(customer.squareCustomerId());
         if (phoneNumber == null || phoneNumber.isBlank()) {
-            save(customer, null, daysSinceLastVisit, providerChanged, null, RepeatCustomerWinbackSend.STATE_SKIPPED_UNRESOLVED);
+            save(customer, null, daysSinceLastVisit, providerChanged, null, null, RepeatCustomerWinbackSend.STATE_SKIPPED_UNRESOLVED);
             return;
         }
 
         if (blockedNumberRepository.existsById(PhoneNumbers.normalize(phoneNumber))) {
-            save(customer, phoneNumber, daysSinceLastVisit, providerChanged, null, RepeatCustomerWinbackSend.STATE_SKIPPED_BLOCKED);
+            save(customer, phoneNumber, daysSinceLastVisit, providerChanged, null, null, RepeatCustomerWinbackSend.STATE_SKIPPED_BLOCKED);
             return;
         }
 
         if (messageLogService.hasNegativeFeedback(phoneNumber)) {
-            save(customer, phoneNumber, daysSinceLastVisit, providerChanged, null, RepeatCustomerWinbackSend.STATE_SKIPPED_NEGATIVE_FEEDBACK);
+            save(customer, phoneNumber, daysSinceLastVisit, providerChanged, null, null, RepeatCustomerWinbackSend.STATE_SKIPPED_NEGATIVE_FEEDBACK);
             return;
         }
 
@@ -137,18 +157,39 @@ public class RepeatCustomerWinbackScheduler {
             return;
         }
         if (upcoming) {
-            save(customer, phoneNumber, daysSinceLastVisit, providerChanged, null, RepeatCustomerWinbackSend.STATE_SKIPPED_BOOKED);
+            save(customer, phoneNumber, daysSinceLastVisit, providerChanged, null, null, RepeatCustomerWinbackSend.STATE_SKIPPED_BOOKED);
             return;
         }
 
         if (!automationService.isEnabled(AUTOMATION_KEY)) {
-            save(customer, phoneNumber, daysSinceLastVisit, providerChanged, null, RepeatCustomerWinbackSend.STATE_SKIPPED_DISABLED);
+            save(customer, phoneNumber, daysSinceLastVisit, providerChanged, null, null, RepeatCustomerWinbackSend.STATE_SKIPPED_DISABLED);
             return;
         }
 
+        Instant promoExpiresAt = endOfTodayInSalonZone();
         String givenName = square.customerGivenNames(List.of(customer.squareCustomerId())).get(customer.squareCustomerId());
-        String variant = sendNudge(customer, phoneNumber, givenName, providerChanged);
-        save(customer, phoneNumber, daysSinceLastVisit, providerChanged, variant, RepeatCustomerWinbackSend.STATE_SENT);
+        String variant = sendNudge(customer, phoneNumber, givenName, providerChanged, promoExpiresAt);
+        save(customer, phoneNumber, daysSinceLastVisit, providerChanged, promoExpiresAt, variant, RepeatCustomerWinbackSend.STATE_SENT);
+    }
+
+    /** Consent from *either* source is sufficient — same dual-source check
+     * {@code LapsedCustomerWinbackScheduler.hasConsent}/{@code SameDayRebookingScheduler.hasConsent}
+     * use, reusing the same consent-segment id (no new Square segment needed). */
+    private boolean hasConsent(String phoneNumber, String squareCustomerId) {
+        if (consentRepository.hasMarketingConsent(phoneNumber)) {
+            return true;
+        }
+        String segmentId = rebookingProperties.getConsentSegmentId();
+        if (segmentId == null || segmentId.isBlank()) {
+            return false;
+        }
+        return square.customerSegmentIds(squareCustomerId).contains(segmentId);
+    }
+
+    /** End of "today" (start of tomorrow) in the salon's local zone — same helper
+     * {@code LapsedCustomerWinbackScheduler} uses. Computed fresh at send time. */
+    private static Instant endOfTodayInSalonZone() {
+        return ZonedDateTime.now(SALON_ZONE).toLocalDate().plusDays(1).atStartOfDay(SALON_ZONE).toInstant();
     }
 
     /** Live check for any not-cancelled, not-yet-happened Square appointment — same helper every
@@ -163,10 +204,17 @@ public class RepeatCustomerWinbackScheduler {
     /** Returns the message variant actually used ("default" or "previous_provider"), for the
      * caller to record. */
     private String sendNudge(RepeatCustomerWinbackEligibilityRepository.EligibleCustomer customer, String phoneNumber,
-                              String rawGivenName, boolean providerChanged) {
+                              String rawGivenName, boolean providerChanged, Instant promoExpiresAt) {
         String clickToken = messageLogService.generateUniqueClickToken();
+        // Reconstructed deterministically by ShortLinkController at click time — see
+        // RebookingPromoSigner and class doc. No signature stored here; it's recomputed. Identical
+        // regardless of consent — the coupon is applied on click either way, it's only the SMS
+        // wording that differs (see class doc).
+        String linkTarget = "WINBACK:" + promoExpiresAt.getEpochSecond();
+        boolean consented = hasConsent(phoneNumber, customer.squareCustomerId());
+        String templateKey = consented ? TEMPLATE_KEY : TEMPLATE_KEY_TRANSACTIONAL;
         SmsMessage reserved = messageLogService.logOutboundWithLink(
-                TEMPLATE_KEY, AUTOMATION_KEY, phoneNumber, "", false, "pending", null, ShortLinkController.BOOK_NOW_TARGET, clickToken);
+                templateKey, AUTOMATION_KEY, phoneNumber, "", false, "pending", null, linkTarget, clickToken);
 
         String shortLink = publicBaseUrl + "/r/" + clickToken;
         String name = Names.capitalizeFirst(rawGivenName);
@@ -177,13 +225,20 @@ public class RepeatCustomerWinbackScheduler {
 
         String variant = (providerChanged && previousProviderFirstName != null && !previousProviderFirstName.isBlank())
                 ? "previous_provider" : "default";
-        String body = "previous_provider".equals(variant)
-                ? previousProviderBody(name, previousProviderFirstName, shortLink)
-                : defaultBody(name, lastProviderFirstName, shortLink);
+        String body;
+        if ("previous_provider".equals(variant)) {
+            body = consented
+                    ? previousProviderMarketingBody(name, previousProviderFirstName, shortLink)
+                    : previousProviderTransactionalBody(name, previousProviderFirstName, shortLink);
+        } else {
+            body = consented
+                    ? defaultMarketingBody(name, lastProviderFirstName, shortLink)
+                    : defaultTransactionalBody(name, lastProviderFirstName, shortLink);
+        }
 
         TwilioSmsConfig config = configService.get();
         if (!config.isConfigured()) {
-            log.info("{} skipped — Twilio credentials not configured", TEMPLATE_KEY);
+            log.info("{} skipped — Twilio credentials not configured", templateKey);
             updateReserved(reserved, body, false, "not_configured", null);
             return variant;
         }
@@ -191,33 +246,55 @@ public class RepeatCustomerWinbackScheduler {
             String twilioMessageSid = client.send(config, phoneNumber, body);
             updateReserved(reserved, body, true, null, twilioMessageSid);
         } catch (Exception e) {
-            log.warn("{} send failed (caller unaffected): {}", TEMPLATE_KEY, e.getMessage());
+            log.warn("{} send failed (caller unaffected): {}", templateKey, e.getMessage());
             updateReserved(reserved, body, false, "send_failed", null);
         }
         return variant;
     }
 
     /** Used when the customer stayed with the same technician across their last two visits, or
-     * when no technician name is available at all — names {@code technician} (their apparent
-     * regular) if known, otherwise a technician-less fallback. No discount language: this
-     * automation carries no coupon (see class doc). */
-    private static String defaultBody(String name, String technician, String shortLink) {
+     * when no technician name is available at all, AND the customer has marketing consent —
+     * names {@code technician} (their apparent regular) if known, otherwise a technician-less
+     * fallback, and mentions the $5-off coupon (see class doc). No em dash (—) in SMS bodies —
+     * it's outside the GSM-7 character set, so Twilio silently switches the whole message to
+     * UCS-2 encoding (70 chars/segment instead of 160, and some older handsets render it as "?"
+     * instead) — same rule every other automation's copy already follows, see e.g.
+     * LapsedCustomerWinbackSchedulerTest's own doesNotContain("—"). */
+    private static String defaultMarketingBody(String name, String technician, String shortLink) {
         String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
         String body = (technician == null || technician.isBlank())
                 ? "It's been a while since your last visit"
                 : "It's been a while since your last visit with " + technician;
-        // No em dash (—) in SMS bodies — it's outside the GSM-7 character set, so Twilio silently
-        // switches the whole message to UCS-2 encoding (70 chars/segment instead of 160, and some
-        // older handsets render it as "?" instead) — same rule every other automation's copy
-        // already follows, see e.g. LapsedCustomerWinbackSchedulerTest's own doesNotContain("—").
+        return greeting + " It's Lucy from AK.LUX.NAILS 💛 " + body + ". Grabbed you $5 off if you book today: "
+                + shortLink + " -Lucy";
+    }
+
+    /** Same as {@link #defaultMarketingBody}, no discount language — the unconsented/transactional
+     * variant (see class doc). This was the automation's only body before the $5 coupon was added. */
+    private static String defaultTransactionalBody(String name, String technician, String shortLink) {
+        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
+        String body = (technician == null || technician.isBlank())
+                ? "It's been a while since your last visit"
+                : "It's been a while since your last visit with " + technician;
         return greeting + " It's Lucy from AK.LUX.NAILS 💛 " + body + ". Book your next mani here: " + shortLink + " -Lucy";
     }
 
-    /** Used when the customer's technician changed between their last two visits — offers to check
-     * with the earlier/previous technician by name, per design.md's "may personalize using the
-     * previous provider name" guidance. Deliberately offers to "check," not a guarantee — we don't
-     * know that technician's actual current availability at send time. */
-    private static String previousProviderBody(String name, String previousProvider, String shortLink) {
+    /** Used when the customer's technician changed between their last two visits AND the customer
+     * has marketing consent — offers to check with the earlier/previous technician by name, per
+     * design.md's "may personalize using the previous provider name" guidance, and mentions the
+     * $5-off coupon. Deliberately offers to "check," not a guarantee — we don't know that
+     * technician's actual current availability at send time. */
+    private static String previousProviderMarketingBody(String name, String previousProvider, String shortLink) {
+        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
+        return greeting + " It's Lucy from AK.LUX.NAILS 💛 It's been a while since we've seen you, want me to check "
+                + "if " + previousProvider + " has an opening for you? Grabbed you $5 off if you book today: "
+                + shortLink + " -Lucy";
+    }
+
+    /** Same as {@link #previousProviderMarketingBody}, no discount language — the unconsented/
+     * transactional variant (see class doc). This was the automation's only body before the $5
+     * coupon was added. */
+    private static String previousProviderTransactionalBody(String name, String previousProvider, String shortLink) {
         String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
         return greeting + " It's Lucy from AK.LUX.NAILS 💛 It's been a while since we've seen you, want me to check "
                 + "if " + previousProvider + " has an opening for you? Book here: " + shortLink + " -Lucy";
@@ -232,7 +309,8 @@ public class RepeatCustomerWinbackScheduler {
     }
 
     private void save(RepeatCustomerWinbackEligibilityRepository.EligibleCustomer customer, String phoneNumber,
-                       int daysSinceLastVisit, boolean providerChanged, String messageVariant, String state) {
+                       int daysSinceLastVisit, boolean providerChanged, Instant promoExpiresAt, String messageVariant,
+                       String state) {
         sendRepository.save(RepeatCustomerWinbackSend.builder()
                 .squareCustomerId(customer.squareCustomerId())
                 .phoneNumber(phoneNumber)
@@ -244,6 +322,7 @@ public class RepeatCustomerWinbackScheduler {
                 .providerChanged(providerChanged)
                 .rebookedSameDay(customer.rebookedSameDay())
                 .messageVariant(messageVariant)
+                .promoExpiresAt(promoExpiresAt)
                 .state(state)
                 .build());
     }
