@@ -8,6 +8,7 @@ export const EXCLUDE_REASON_OPTIONS: { value: ExcludeReason; label: string }[] =
   { value: 'OWNER_CONTRIBUTION', label: 'Owner contribution' },
   { value: 'CASH_WITHDRAWAL', label: 'Cash withdrawal' },
   { value: 'REFUND', label: 'Refund' },
+  { value: 'DEPOSIT', label: 'Deposit (money in)' },
   { value: 'OTHER', label: 'Other (not an expense)' },
 ];
 
