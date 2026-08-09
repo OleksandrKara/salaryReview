@@ -74,6 +74,7 @@ export default function ContactInfoPanel({
   vip,
   visitCount,
   blocked,
+  optedOut,
   clickedGoogleReview,
   clickedFeedbackForm,
   flaggedAsSpam,
@@ -104,8 +105,12 @@ export default function ContactInfoPanel({
    * (resolves even without a marketing.contacts row). */
   vip?: boolean;
   visitCount?: number | null;
-  /** True if a manager has blocked this number — see BlockedIcon's own doc comment. */
+  /** True if a manager has blocked this number, or the customer texted a STOP-style opt-out
+   * keyword — see BlockedIcon's own doc comment. */
   blocked?: boolean;
+  /** True if `blocked` is true because the customer opted out via STOP, not a manual block —
+   * see BlockedIcon's own doc comment. */
+  optedOut?: boolean;
   /** True if this phone number has *ever* clicked the checkout-review-request automation's
    * Google review link — see GoogleReviewClickedIcon's own doc comment. Distinct from the fuller
    * sent/clicked/date detail in the "Review links" section below, which only appears once
@@ -183,10 +188,12 @@ export default function ContactInfoPanel({
                   <span
                     data-testid="contact-info-blocked-badge"
                     className="flex shrink-0 items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700"
-                    title="Number blocked — TwilioSmsService refuses to send it any further SMS"
+                    title={optedOut
+                      ? 'Customer replied STOP — TwilioSmsService refuses to send it any further SMS'
+                      : 'Number blocked — TwilioSmsService refuses to send it any further SMS'}
                   >
-                    <BlockedIcon size={11} />
-                    Blocked
+                    <BlockedIcon optedOut={optedOut} size={11} />
+                    {optedOut ? 'Opted out' : 'Blocked'}
                   </span>
                 ) : null}
                 {flaggedAsSpam ? (

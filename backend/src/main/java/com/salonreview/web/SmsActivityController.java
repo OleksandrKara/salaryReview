@@ -23,7 +23,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -81,7 +80,7 @@ public class SmsActivityController {
                                    String givenName, String familyName, boolean smsConsent,
                                    String squareProfileUrl, String lastMessageDeliveryStatus,
                                    String lastMessageDeliveryErrorMessage, boolean hasNegativeFeedback,
-                                   boolean vip, Integer visitCount, boolean blocked,
+                                   boolean vip, Integer visitCount, boolean blocked, boolean optedOut,
                                    boolean clickedGoogleReview, boolean clickedFeedbackForm,
                                    boolean flaggedAsSpam) {}
 
@@ -137,10 +136,12 @@ public class SmsActivityController {
         List<String> phoneNumbers = summaries.stream().map(ConversationSummaryProjection::getPhoneNumber).toList();
         Map<String, MarketingContactsService.ContactNameInfo> names = contactsService.resolveDisplayNames(phoneNumbers);
         // One batch lookup for the whole page, not one query per row — see
-        // BlockedNumberRepository#findByPhoneNumberIn's own doc comment.
-        Set<String> blockedPhones = new HashSet<>();
+        // BlockedNumberRepository#findByPhoneNumberIn's own doc comment. Keyed to source (not just
+        // a Set<String>) so the list can distinguish a manager's manual block from an automatic
+        // one triggered by the customer replying STOP — see BlockedNumber#SOURCE_STOP_REQUEST.
+        Map<String, String> blockedSources = new java.util.HashMap<>();
         for (BlockedNumber b : blockedNumberRepository.findByPhoneNumberIn(phoneNumbers)) {
-            blockedPhones.add(b.getPhoneNumber());
+            blockedSources.put(b.getPhoneNumber(), b.getSource());
         }
         // Same batching reasoning as blockedPhones above — see
         // SmsMessageLogService#phoneNumbersWithClickedLinkTarget's own doc comment. Quick-glance
@@ -156,7 +157,8 @@ public class SmsActivityController {
         // on the individual message bubble; this is just the at-a-glance list-row version.
         Set<String> flaggedAsSpam = service.phoneNumbersFlaggedAsSpam(phoneNumbers);
         return summaries.stream()
-                .map(p -> toConversationDto(p, names.get(p.getPhoneNumber()), blockedPhones.contains(p.getPhoneNumber()),
+                .map(p -> toConversationDto(p, names.get(p.getPhoneNumber()), blockedSources.containsKey(p.getPhoneNumber()),
+                        BlockedNumber.SOURCE_STOP_REQUEST.equals(blockedSources.get(p.getPhoneNumber())),
                         clickedGoogleReview.contains(p.getPhoneNumber()), clickedFeedbackForm.contains(p.getPhoneNumber()),
                         flaggedAsSpam.contains(p.getPhoneNumber())))
                 .toList();
@@ -266,7 +268,7 @@ public class SmsActivityController {
 
     private static ConversationDto toConversationDto(ConversationSummaryProjection p,
                                                        MarketingContactsService.ContactNameInfo nameInfo,
-                                                       boolean blocked, boolean clickedGoogleReview,
+                                                       boolean blocked, boolean optedOut, boolean clickedGoogleReview,
                                                        boolean clickedFeedbackForm, boolean flaggedAsSpam) {
         return new ConversationDto(p.getPhoneNumber(), p.getLastMessageAt(), p.getLastMessageBody(),
                 p.getLastMessageDirection(), p.getUnreadCount(),
@@ -277,6 +279,6 @@ public class SmsActivityController {
                 p.getLastMessageDeliveryStatus(), p.getLastMessageDeliveryErrorMessage(), p.getHasNegativeFeedback(),
                 nameInfo != null && nameInfo.vip(),
                 nameInfo == null ? null : nameInfo.visitCount(),
-                blocked, clickedGoogleReview, clickedFeedbackForm, flaggedAsSpam);
+                blocked, optedOut, clickedGoogleReview, clickedFeedbackForm, flaggedAsSpam);
     }
 }

@@ -404,7 +404,7 @@ export default function MessagesView({
 
   async function toggleBlock(phoneNumber: string, currentlyBlocked: boolean) {
     const previous = conversations;
-    setConversations(conversations.map((c) => (c.phoneNumber === phoneNumber ? { ...c, blocked: !currentlyBlocked } : c)));
+    setConversations(conversations.map((c) => (c.phoneNumber === phoneNumber ? { ...c, blocked: !currentlyBlocked, optedOut: false } : c)));
     try {
       if (currentlyBlocked) {
         await api.unblockSmsNumber(phoneNumber);
@@ -579,7 +579,7 @@ export default function MessagesView({
                     {c.vip && <span data-testid="conversation-row-vip-icon"><VipIcon visitCount={c.visitCount} /></span>}
                     {c.smsConsent && <span data-testid="conversation-row-consent-icon"><SmsConsentIcon /></span>}
                     {c.hasNegativeFeedback && <span data-testid="conversation-row-negative-feedback-icon"><NegativeFeedbackIcon /></span>}
-                    {c.blocked && <span data-testid="conversation-row-blocked-icon"><BlockedIcon /></span>}
+                    {c.blocked && <span data-testid="conversation-row-blocked-icon"><BlockedIcon optedOut={c.optedOut} /></span>}
                     {c.flaggedAsSpam && <span data-testid="conversation-row-spam-flag-icon"><SpamFlagIcon /></span>}
                     {c.clickedGoogleReview && <span data-testid="conversation-row-google-review-icon"><GoogleReviewClickedIcon /></span>}
                     {c.clickedFeedbackForm && <span data-testid="conversation-row-feedback-form-icon"><FeedbackFormClickedIcon /></span>}
@@ -704,7 +704,7 @@ export default function MessagesView({
                 {selectedConversation?.vip && <span data-testid="thread-header-vip-icon"><VipIcon visitCount={selectedConversation.visitCount} /></span>}
                 {selectedConversation?.smsConsent && <span data-testid="thread-header-consent-icon"><SmsConsentIcon /></span>}
                 {selectedConversation?.hasNegativeFeedback && <span data-testid="thread-header-negative-feedback-icon"><NegativeFeedbackIcon /></span>}
-                {selectedConversation?.blocked && <span data-testid="thread-header-blocked-icon"><BlockedIcon /></span>}
+                {selectedConversation?.blocked && <span data-testid="thread-header-blocked-icon"><BlockedIcon optedOut={selectedConversation?.optedOut} /></span>}
                 {selectedConversation?.flaggedAsSpam && <span data-testid="thread-header-spam-flag-icon"><SpamFlagIcon /></span>}
                 {selectedConversation?.clickedGoogleReview && <span data-testid="thread-header-google-review-icon"><GoogleReviewClickedIcon /></span>}
                 {selectedConversation?.clickedFeedbackForm && <span data-testid="thread-header-feedback-form-icon"><FeedbackFormClickedIcon /></span>}
@@ -990,6 +990,7 @@ export default function MessagesView({
             vip={selectedConversation?.vip ?? false}
             visitCount={selectedConversation?.visitCount ?? null}
             blocked={selectedConversation?.blocked ?? false}
+            optedOut={selectedConversation?.optedOut ?? false}
             clickedGoogleReview={selectedConversation?.clickedGoogleReview ?? false}
             clickedFeedbackForm={selectedConversation?.clickedFeedbackForm ?? false}
             flaggedAsSpam={selectedConversation?.flaggedAsSpam ?? false}
