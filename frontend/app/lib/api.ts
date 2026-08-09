@@ -46,6 +46,7 @@ import type {
   AdSpendEntry,
   ExpenseEntry,
   ExpenseCategory,
+  ExpenseCategoryDefinition,
   BankStatementImportSummary,
   BankStatementImportDetail,
   BankTransaction,
@@ -618,18 +619,25 @@ export const api = {
 
   reviewTransaction: (
     importId: number, transactionId: number,
-    opts: { category?: ExpenseCategory; excludeReason?: ExcludeReason; rememberForMerchant?: boolean; replaceExisting?: boolean },
+    opts: {
+      category?: ExpenseCategory; excludeReason?: ExcludeReason; rememberForMerchant?: boolean;
+      replaceExisting?: boolean; rememberKeywords?: string[];
+    },
   ) =>
     proxyJson<BankTransaction>(`/api/owner/expenses/imports/${importId}/transactions/${transactionId}`, 'PATCH', {
       category: opts.category ?? null,
       excludeReason: opts.excludeReason ?? null,
       rememberForMerchant: opts.rememberForMerchant ?? false,
       replaceExisting: opts.replaceExisting ?? false,
+      rememberKeywords: opts.rememberKeywords ?? null,
     }),
 
   bulkReviewTransactions: (
     importId: number,
-    opts: { transactionIds: number[]; category?: ExpenseCategory; excludeReason?: ExcludeReason; rememberForMerchant?: boolean; replaceExisting?: boolean },
+    opts: {
+      transactionIds: number[]; category?: ExpenseCategory; excludeReason?: ExcludeReason;
+      rememberForMerchant?: boolean; replaceExisting?: boolean; rememberKeywords?: string[];
+    },
   ) =>
     proxyJson<BankTransaction[]>(`/api/owner/expenses/imports/${importId}/transactions/bulk`, 'POST', {
       transactionIds: opts.transactionIds,
@@ -637,6 +645,7 @@ export const api = {
       excludeReason: opts.excludeReason ?? null,
       rememberForMerchant: opts.rememberForMerchant ?? false,
       replaceExisting: opts.replaceExisting ?? false,
+      rememberKeywords: opts.rememberKeywords ?? null,
     }),
 
   completeReconciliation: (importId: number) =>
@@ -660,6 +669,18 @@ export const api = {
     }),
 
   deleteMerchantRule: (id: number) => proxyVoid(`/api/owner/expenses/rules/${id}`, 'DELETE'),
+
+  // Owner-editable expense categories — used by both the manual expense entry form and the
+  // reconciliation workspace's category picker.
+  listExpenseCategories: () => proxyGet<ExpenseCategoryDefinition[]>('/api/owner/expenses/categories'),
+
+  createExpenseCategory: (label: string) =>
+    proxyJson<ExpenseCategoryDefinition>('/api/owner/expenses/categories', 'POST', { label }),
+
+  renameExpenseCategory: (id: number, label: string) =>
+    proxyJson<ExpenseCategoryDefinition>(`/api/owner/expenses/categories/${id}`, 'PUT', { label }),
+
+  deleteExpenseCategory: (id: number) => proxyVoid(`/api/owner/expenses/categories/${id}`, 'DELETE'),
 
   // One Square customer's submission + appointment history — fetched lazily, only when a row on
   // the Ads Report breakdown's Completed/Anticipated lists is expanded.

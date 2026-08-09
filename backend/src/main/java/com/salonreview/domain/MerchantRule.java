@@ -23,6 +23,17 @@ public class MerchantRule {
     public static final String TYPE_MERCHANT = "MERCHANT";
     public static final String TYPE_MERCHANT_KEYWORD = "MERCHANT_KEYWORD";
     public static final String TYPE_MERCHANT_AMOUNT_RANGE = "MERCHANT_AMOUNT_RANGE";
+    /** Merchant-agnostic: matches purely on one or more required substrings (all must be present)
+     * in the raw description, stored newline-joined in {@link #keyword}. See {@code
+     * MerchantRuleEngine} — needed because some bank descriptors embed a per-transaction reference
+     * number with no separator, making normalized_merchant unique per transaction and useless as a
+     * lookup key for this tier. */
+    public static final String TYPE_KEYWORD = "KEYWORD";
+
+    /** Delimiter joining the one or more required substrings stored in {@link #keyword} for a
+     * {@link #TYPE_KEYWORD} rule — a literal newline can't appear in a bank descriptor or an
+     * owner-typed keyword phrase, so it's a safe, simple choice. */
+    public static final String KEYWORD_DELIMITER = "\n";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -31,10 +42,12 @@ public class MerchantRule {
     @Column(name = "rule_type", nullable = false)
     private String ruleType;
 
-    @Column(name = "normalized_merchant", nullable = false)
+    /** Null only for {@link #TYPE_KEYWORD} — every other tier is scoped to a specific merchant. */
+    @Column(name = "normalized_merchant")
     private String normalizedMerchant;
 
-    /** MERCHANT_KEYWORD only. */
+    /** MERCHANT_KEYWORD: a single required substring. KEYWORD: one or more required substrings
+     * joined by {@link #KEYWORD_DELIMITER} (all must be present — AND semantics). */
     @Column
     private String keyword;
 

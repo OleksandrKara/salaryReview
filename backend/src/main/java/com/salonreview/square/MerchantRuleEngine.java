@@ -14,10 +14,11 @@ import java.util.Locale;
 import java.util.Optional;
 
 /**
- * The five-tier priority rule engine (openspec design.md §16, D4/D9): Fingerprint →
- * Merchant+Keyword → Merchant+AmountRange → plain Merchant → fuzzy similarity → manual. Every
- * match records a human-readable {@code match_reason} so no automatic decision is ever silent.
- * Reference-number-only descriptions (bare check/ACH/wire numbers) skip evaluation entirely.
+ * The six-tier priority rule engine (openspec design.md §16, D4/D9, extended with a merchant-
+ * agnostic keyword tier): Fingerprint → Keyword (merchant-agnostic) → Merchant+Keyword →
+ * Merchant+AmountRange → plain Merchant → fuzzy similarity → manual. Every match records a
+ * human-readable {@code match_reason} so no automatic decision is ever silent. Reference-number-
+ * only descriptions (bare check/ACH/wire numbers) skip evaluation entirely.
  */
 @Component
 public class MerchantRuleEngine {
@@ -26,6 +27,7 @@ public class MerchantRuleEngine {
     public static final BigDecimal AUTO_APPLY_THRESHOLD = new BigDecimal("0.75");
 
     private static final BigDecimal CONF_FINGERPRINT = new BigDecimal("0.99");
+    private static final BigDecimal CONF_KEYWORD_ONLY = new BigDecimal("0.85");
     private static final BigDecimal CONF_KEYWORD = new BigDecimal("0.85");
     private static final BigDecimal CONF_AMOUNT_RANGE = new BigDecimal("0.75");
     private static final BigDecimal CONF_MERCHANT_CLEAN = new BigDecimal("0.90");
@@ -66,6 +68,26 @@ public class MerchantRuleEngine {
             MerchantRule r = fingerprintRule.get();
             return new MatchResult(r.getCategory(), CONF_FINGERPRINT,
                     "Matched because: identical fingerprint" + ruleProvenance(r), r.getId(), true);
+        }
+
+        List<MerchantRule> keywordOnlyRules =
+                rules.findAllByRuleTypeAndActiveTrueOrderByIdAsc(MerchantRule.TYPE_KEYWORD);
+        String descriptionUpper = txn.rawDescription().toUpperCase(Locale.US);
+        for (MerchantRule r : keywordOnlyRules) {
+            if (r.getKeyword() == null) continue;
+            String[] required = r.getKeyword().split(MerchantRule.KEYWORD_DELIMITER);
+            boolean allPresent = required.length > 0;
+            for (String part : required) {
+                if (!descriptionUpper.contains(part.toUpperCase(Locale.US))) {
+                    allPresent = false;
+                    break;
+                }
+            }
+            if (allPresent) {
+                return new MatchResult(r.getCategory(), CONF_KEYWORD_ONLY,
+                        "Matched because: description contains all of "
+                                + String.join(", ", required) + ruleProvenance(r), r.getId(), true);
+            }
         }
 
         String merchant = txn.normalizedMerchant();

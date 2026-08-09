@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { api } from '../../../../../lib/api';
-import type { BankStatementImportDetail, BankTransaction, BankTransactionStatus } from '../../../../../lib/types';
-import TransactionRow from './TransactionRow';
+import type { BankStatementImportDetail, BankTransaction, BankTransactionStatus, ExpenseCategoryDefinition } from '../../../../../lib/types';
+import TransactionRow, { type RememberDecision } from './TransactionRow';
 import BulkActionBar from './BulkActionBar';
 import type { CategorySelection } from './CategorySelect';
 
@@ -19,6 +19,7 @@ const GROUPS: { key: GroupKey; label: string; statuses: BankTransactionStatus[] 
 
 export default function ReconciliationWorkspace({ importId }: { importId: number }) {
   const [detail, setDetail] = useState<BankStatementImportDetail | null>(null);
+  const [categories, setCategories] = useState<ExpenseCategoryDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
@@ -50,6 +51,7 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
       .then((result) => { if (!cancelled) setDetail(result); })
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load this import.'); })
       .finally(() => { if (!cancelled) setLoading(false); });
+    api.listExpenseCategories().then((result) => { if (!cancelled) setCategories(result); }).catch(() => {});
     return () => { cancelled = true; };
   }, [importId]);
 
@@ -82,13 +84,14 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
     });
   }
 
-  async function reviewOne(txnId: number, selection: CategorySelection, remember: boolean) {
+  async function reviewOne(txnId: number, selection: CategorySelection, remember: RememberDecision) {
     setRowBusyId(txnId);
     try {
       await api.reviewTransaction(importId, txnId, {
         category: selection.category,
         excludeReason: selection.excludeReason,
-        rememberForMerchant: remember,
+        rememberForMerchant: remember.rememberForMerchant,
+        rememberKeywords: remember.rememberKeywords,
       });
       await load();
     } catch (e) {
@@ -101,7 +104,7 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
   const selectedTxns = detail ? detail.transactions.filter((t) => selected.has(t.id)) : [];
   const sameMerchant = selectedTxns.length > 0 && selectedTxns.every((t) => t.normalizedMerchant === selectedTxns[0].normalizedMerchant);
 
-  async function applyBulk(selection: CategorySelection, remember: boolean) {
+  async function applyBulk(selection: CategorySelection, remember: RememberDecision) {
     setBulkBusy(true);
     setError('');
     try {
@@ -109,7 +112,7 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
         transactionIds: Array.from(selected),
         category: selection.category,
         excludeReason: selection.excludeReason,
-        rememberForMerchant: remember,
+        rememberForMerchant: remember.rememberForMerchant,
       });
       setSelected(new Set());
       await load();
@@ -246,6 +249,7 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
                       onToggleSelect={() => toggleSelect(t.id)}
                       onReview={(selection, remember) => reviewOne(t.id, selection, remember)}
                       busy={rowBusyId === t.id}
+                      categories={categories}
                     />
                   ))}
                 </div>
@@ -263,6 +267,7 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
           onApply={applyBulk}
           onClear={() => setSelected(new Set())}
           busy={bulkBusy}
+          categories={categories}
         />
       )}
 

@@ -9,8 +9,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * CRUD for learned {@link MerchantRule}s, plus the "remember this for {merchant}" mutation path
@@ -68,6 +70,34 @@ public class MerchantRuleService {
         return rules.save(MerchantRule.builder()
                 .ruleType(MerchantRule.TYPE_MERCHANT)
                 .normalizedMerchant(normalizedMerchant)
+                .category(category)
+                .active(true)
+                .createdBy(createdBy)
+                .sourceTransactionId(sourceTransactionId)
+                .build());
+    }
+
+    /** Creates a new merchant-agnostic {@code KEYWORD} rule requiring every one of {@code keywords}
+     * to appear (case-insensitive) in a transaction's raw description — no merchant scoping, no
+     * conflict-replace logic, since (like MERCHANT_KEYWORD/MERCHANT_AMOUNT_RANGE) several of these
+     * rules may coexist rather than being mutually exclusive per merchant. Blank/duplicate entries
+     * are dropped and the rest trimmed before saving. */
+    @Transactional
+    public MerchantRule rememberKeywords(List<String> keywords, String category, Long sourceTransactionId,
+                                          String createdBy) {
+        Set<String> distinct = new LinkedHashSet<>();
+        for (String raw : keywords) {
+            if (raw == null) continue;
+            String trimmed = raw.trim();
+            if (!trimmed.isEmpty()) distinct.add(trimmed);
+        }
+        if (distinct.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one non-blank keyword is required");
+        }
+        String joined = String.join(MerchantRule.KEYWORD_DELIMITER, distinct);
+        return rules.save(MerchantRule.builder()
+                .ruleType(MerchantRule.TYPE_KEYWORD)
+                .keyword(joined)
                 .category(category)
                 .active(true)
                 .createdBy(createdBy)

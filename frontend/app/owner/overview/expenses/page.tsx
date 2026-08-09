@@ -38,6 +38,12 @@ export default async function RevenueExpensesPage() {
           >
             Merchant rules
           </Link>
+          <Link
+            href="/owner/overview/expenses/categories"
+            className="rounded px-3 py-1.5 text-xs font-medium text-zinc-600 ring-1 ring-zinc-300 hover:bg-white"
+          >
+            Categories
+          </Link>
         </div>
       </div>
 

@@ -35,6 +35,7 @@ class MerchantRuleEngineTest {
         when(rules.findByFingerprintAndRuleTypeAndActiveTrue(anyString(), anyString())).thenReturn(Optional.empty());
         when(rules.findAllByNormalizedMerchantAndRuleTypeAndActiveTrueOrderByIdAsc(anyString(), anyString())).thenReturn(List.of());
         when(rules.findByNormalizedMerchantAndRuleTypeAndActiveTrue(anyString(), anyString())).thenReturn(Optional.empty());
+        when(rules.findAllByRuleTypeAndActiveTrueOrderByIdAsc(MerchantRule.TYPE_KEYWORD)).thenReturn(List.of());
         when(transactions.findClosestMerchantByTrigram(anyString())).thenReturn(List.of());
     }
 
@@ -152,6 +153,34 @@ class MerchantRuleEngineTest {
         assertThat(result.category()).isNull();
         assertThat(result.confidence()).isNull();
         verifyNoInteractions(transactions);
+    }
+
+    @Test
+    @DisplayName("A merchant-agnostic KEYWORD rule matches when every required substring is present")
+    void keywordOnlyTierMatchesWhenAllSubstringsPresent() {
+        MerchantRule keywordOnly = rule(MerchantRule.TYPE_KEYWORD, null, "OTHER");
+        keywordOnly.setKeyword("PAYSEND" + MerchantRule.KEYWORD_DELIMITER + "DEBIT CARD");
+        when(rules.findAllByRuleTypeAndActiveTrueOrderByIdAsc(MerchantRule.TYPE_KEYWORD)).thenReturn(List.of(keywordOnly));
+
+        var result = engine.evaluate(txn("PAYSEND0630", "PAYSEND 06/30 PMNT SENT Texas TX DEBIT CARD *1072",
+                new BigDecimal("-395.00"), "fp9"));
+
+        assertThat(result.category()).isEqualTo("OTHER");
+        assertThat(result.confidence()).isEqualByComparingTo("0.85");
+        assertThat(result.autoApply()).isTrue();
+    }
+
+    @Test
+    @DisplayName("A merchant-agnostic KEYWORD rule does not match when only some required substrings are present")
+    void keywordOnlyTierRequiresAllSubstrings() {
+        MerchantRule keywordOnly = rule(MerchantRule.TYPE_KEYWORD, null, "OTHER");
+        keywordOnly.setKeyword("PAYSEND" + MerchantRule.KEYWORD_DELIMITER + "SOMETHING ELSE ENTIRELY");
+        when(rules.findAllByRuleTypeAndActiveTrueOrderByIdAsc(MerchantRule.TYPE_KEYWORD)).thenReturn(List.of(keywordOnly));
+
+        var result = engine.evaluate(txn("PAYSEND0701", "PAYSEND 07/01 PMNT SENT Texas TX DEBIT CARD *1072",
+                new BigDecimal("-395.00"), "fp10"));
+
+        assertThat(result.category()).isNull();
     }
 
     @Test

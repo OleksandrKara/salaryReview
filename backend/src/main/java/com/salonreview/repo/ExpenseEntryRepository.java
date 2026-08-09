@@ -21,4 +21,6 @@ public interface ExpenseEntryRepository extends JpaRepository<ExpenseEntry, Long
     List<ExpenseEntry> findOverlapping(@Param("from") LocalDate from, @Param("to") LocalDate to);
 
     List<ExpenseEntry> findAllByOrderByPeriodStartDesc();
+
+    boolean existsByCategory(String category);
 }
