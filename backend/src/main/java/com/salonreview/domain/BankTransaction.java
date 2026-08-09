@@ -36,6 +36,9 @@ public class BankTransaction {
     public static final String EXCLUDE_CASH_WITHDRAWAL = "CASH_WITHDRAWAL";
     public static final String EXCLUDE_REFUND = "REFUND";
     public static final String EXCLUDE_OTHER = "OTHER";
+    /** A positive-amount row (money in) — never a real expense by definition, auto-excluded on
+     * import before it ever reaches the rule engine (see ExpenseImportService). */
+    public static final String EXCLUDE_DEPOSIT = "DEPOSIT";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

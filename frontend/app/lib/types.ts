@@ -1338,7 +1338,7 @@ export type BankTransactionStatus =
 
 export type ExcludeReason =
   | 'TRANSFER' | 'CREDIT_CARD_PAYMENT' | 'PAYROLL' | 'TAX' | 'OWNER_CONTRIBUTION'
-  | 'CASH_WITHDRAWAL' | 'REFUND' | 'OTHER';
+  | 'CASH_WITHDRAWAL' | 'REFUND' | 'OTHER' | 'DEPOSIT';
 
 export interface BankTransaction {
   id: number;

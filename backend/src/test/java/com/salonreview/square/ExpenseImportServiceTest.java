@@ -94,6 +94,27 @@ class ExpenseImportServiceTest {
     }
 
     @Test
+    @DisplayName("A positive-amount row (money in) is auto-excluded as DEPOSIT without ever reaching the rule engine")
+    void positiveAmountRowIsAutoExcludedAsDeposit() {
+        List<CsvStatementParser.ParsedTransaction> parsed = List.of(
+                fixture("SQUAREINC", new BigDecimal("544.39"), "fp-deposit"),
+                fixture("COSTCO", new BigDecimal("-40.00"), "fp-expense"));
+        when(parser.parse(any())).thenReturn(parsed);
+        when(ruleEngine.evaluate(any())).thenReturn(MerchantRuleEngine.MatchResult.unknown());
+
+        MockMultipartFile file = new MockMultipartFile("file", "statement.csv", "text/csv", "irrelevant".getBytes());
+        service.importStatement(file, "owner");
+
+        ArgumentCaptor<BankTransaction> captor = ArgumentCaptor.forClass(BankTransaction.class);
+        verify(transactions, times(2)).save(captor.capture());
+        BankTransaction deposit = captor.getAllValues().get(0);
+        assertThat(deposit.getStatus()).isEqualTo(BankTransaction.STATUS_EXCLUDED);
+        assertThat(deposit.getExcludedReason()).isEqualTo(BankTransaction.EXCLUDE_DEPOSIT);
+        // the rule engine is never even asked about the deposit row — only the expense row
+        verify(ruleEngine, times(1)).evaluate(any());
+    }
+
+    @Test
     @DisplayName("A duplicate against a pre-existing fixture is marked DUPLICATE, not categorized")
     void duplicateDetectionAgainstExistingFixture() {
         when(parser.parse(any())).thenReturn(List.of(fixture("COSTCO", new BigDecimal("-40.00"), "fp1")));

@@ -97,6 +97,14 @@ public class ExpenseImportService {
     }
 
     private void applyCategorization(BankTransaction.BankTransactionBuilder b, CsvStatementParser.ParsedTransaction p) {
+        if (p.amount().signum() > 0) {
+            // Money in is never an expense by definition — a deterministic override that bypasses
+            // the rule engine entirely, rather than a fuzzy suggestion an owner has to confirm.
+            b.status(BankTransaction.STATUS_EXCLUDED).excludedReason(BankTransaction.EXCLUDE_DEPOSIT)
+                    .confidence(new BigDecimal("1.00"))
+                    .matchReason("Matched because: positive amount (money in) is never an expense");
+            return;
+        }
         MerchantRuleEngine.MatchResult result = ruleEngine.evaluate(p);
         if (result.category() == null) {
             result = payrollDetector.suggest(p.rawDescription())
