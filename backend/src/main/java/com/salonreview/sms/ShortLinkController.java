@@ -37,8 +37,11 @@ public class ShortLinkController {
     private static final String WINBACK_PREFIX = "WINBACK:";
     private static final String WINBACK_PROMO_CODE = "WINBACK5";
 
-    /** Plain redirect to the home landing page, no promo params — for {@code repeat_customer_winback},
-     * which carries no discount (see V72). Distinct from {@link #REBOOK_PREFIX}/{@link #WINBACK_PREFIX}
+    /** Plain redirect to the home landing page, no promo params. {@code repeat_customer_winback}
+     * sent this before it started reusing {@link #WINBACK_PREFIX} for its own $5 coupon (see V72,
+     * V78/V79) — kept only so any surviving historical {@code sms_message} row with this exact
+     * link_target (if one somehow wasn't caught by the V79 backfill) still resolves to something
+     * sane instead of a dead link. Distinct from {@link #REBOOK_PREFIX}/{@link #WINBACK_PREFIX}
      * because there's no signature or expiry to verify; it's just a click-tracked booking link. */
     static final String BOOK_NOW_TARGET = "BOOK_NOW";
 

@@ -1,5 +1,6 @@
 package com.salonreview.sms;
 
+import com.salonreview.config.RebookingProperties;
 import com.salonreview.domain.RepeatCustomerWinbackSend;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.TwilioSmsConfig;
@@ -14,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -33,6 +35,8 @@ class RepeatCustomerWinbackSchedulerTest {
     private RepeatCustomerWinbackSendRepository sendRepository;
     private SquareClient square;
     private SmsAutomationService automationService;
+    private SmsConsentRepository consentRepository;
+    private RebookingProperties rebookingProperties;
     private SmsMessageLogService messageLogService;
     private BlockedNumberRepository blockedNumberRepository;
     private TwilioSmsConfigService configService;
@@ -45,13 +49,15 @@ class RepeatCustomerWinbackSchedulerTest {
         sendRepository = mock(RepeatCustomerWinbackSendRepository.class);
         square = mock(SquareClient.class);
         automationService = mock(SmsAutomationService.class);
+        consentRepository = mock(SmsConsentRepository.class);
+        rebookingProperties = new RebookingProperties();
         messageLogService = mock(SmsMessageLogService.class);
         blockedNumberRepository = mock(BlockedNumberRepository.class);
         configService = mock(TwilioSmsConfigService.class);
         client = mock(TwilioSmsClient.class);
         scheduler = new RepeatCustomerWinbackScheduler(eligibilityRepository, sendRepository, square,
-                automationService, messageLogService, blockedNumberRepository, configService, client,
-                "https://salon.akluxnails.com");
+                automationService, consentRepository, rebookingProperties, messageLogService,
+                blockedNumberRepository, configService, client, "https://salon.akluxnails.com");
 
         when(automationService.isEnabled("repeat_customer_winback")).thenReturn(true);
         when(square.customerPhone(CUSTOMER_ID)).thenReturn(PHONE);
@@ -68,6 +74,10 @@ class RepeatCustomerWinbackSchedulerTest {
         when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
     }
 
+    private static Instant expectedEndOfTodaySalonZone() {
+        return ZonedDateTime.now(SALON_ZONE).toLocalDate().plusDays(1).atStartOfDay(SALON_ZONE).toInstant();
+    }
+
     private static RepeatCustomerWinbackEligibilityRepository.EligibleCustomer eligible(
             String lastProvider, String previousProvider, boolean rebookedSameDay) {
         return new RepeatCustomerWinbackEligibilityRepository.EligibleCustomer(
@@ -79,9 +89,10 @@ class RepeatCustomerWinbackSchedulerTest {
     }
 
     @Test
-    @DisplayName("same technician on last two visits → default body naming that technician, no discount language")
+    @DisplayName("not consented, same technician on last two visits → default body naming that technician, no discount language, WINBACK link")
     void sameTechnicianSendsDefaultBody() throws Exception {
         givenEligible(eligible("Susan Alieva", "Susan Alieva", false));
+        when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(false);
 
         scheduler.sendDueWinbacks();
 
@@ -93,6 +104,12 @@ class RepeatCustomerWinbackSchedulerTest {
                 .contains("tok123").contains("-Lucy")
                 .doesNotContain("Alieva").doesNotContain("$").doesNotContain("—");
 
+        ArgumentCaptor<String> linkTargetCaptor = ArgumentCaptor.forClass(String.class);
+        verify(messageLogService).logOutboundWithLink(
+                eq("repeat_customer_winback_reminder"), eq("repeat_customer_winback"), eq(PHONE),
+                any(), anyBoolean(), any(), any(), linkTargetCaptor.capture(), any());
+        assertThat(linkTargetCaptor.getValue()).startsWith("WINBACK:");
+
         ArgumentCaptor<RepeatCustomerWinbackSend> captor = ArgumentCaptor.forClass(RepeatCustomerWinbackSend.class);
         verify(sendRepository).save(captor.capture());
         assertThat(captor.getValue().getState()).isEqualTo(RepeatCustomerWinbackSend.STATE_SENT);
@@ -100,12 +117,14 @@ class RepeatCustomerWinbackSchedulerTest {
         assertThat(captor.getValue().getProviderChanged()).isFalse();
         assertThat(captor.getValue().getTotalVisitCount()).isEqualTo(3);
         assertThat(captor.getValue().getDaysSinceLastVisit()).isEqualTo(45);
+        assertThat(captor.getValue().getPromoExpiresAt()).isEqualTo(expectedEndOfTodaySalonZone());
     }
 
     @Test
-    @DisplayName("technician changed on last visit → personalized body naming the PREVIOUS technician, offering to check")
+    @DisplayName("not consented, technician changed on last visit → personalized body naming the PREVIOUS technician, offering to check, no discount language")
     void technicianChangedSendsPreviousProviderBody() throws Exception {
         givenEligible(eligible("Bayan Dandiyeva", "Tatiana Nazirova", true));
+        when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(false);
 
         scheduler.sendDueWinbacks();
 
@@ -113,13 +132,70 @@ class RepeatCustomerWinbackSchedulerTest {
         verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
         assertThat(bodyCaptor.getValue())
                 .contains("want me to check").contains("if Tatiana has an opening")
-                .doesNotContain("Nazirova").doesNotContain("Bayan").doesNotContain("Dandiyeva").doesNotContain("—");
+                .doesNotContain("Nazirova").doesNotContain("Bayan").doesNotContain("Dandiyeva")
+                .doesNotContain("$").doesNotContain("—");
 
         ArgumentCaptor<RepeatCustomerWinbackSend> captor = ArgumentCaptor.forClass(RepeatCustomerWinbackSend.class);
         verify(sendRepository).save(captor.capture());
         assertThat(captor.getValue().getMessageVariant()).isEqualTo("previous_provider");
         assertThat(captor.getValue().getProviderChanged()).isTrue();
         assertThat(captor.getValue().getRebookedSameDay()).isTrue();
+    }
+
+    @Test
+    @DisplayName("consented, same technician → marketing body mentions $5 off, WINBACK link")
+    void consentedSameTechnicianSendsMarketingBody() throws Exception {
+        givenEligible(eligible("Susan Alieva", "Susan Alieva", false));
+        when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(true);
+
+        scheduler.sendDueWinbacks();
+
+        ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
+        assertThat(bodyCaptor.getValue())
+                .contains("It's been a while since your last visit with Susan")
+                .contains("Grabbed you $5 off if you book today")
+                .doesNotContain("Alieva").doesNotContain("—");
+
+        verify(messageLogService).logOutboundWithLink(
+                eq("repeat_customer_winback_nudge"), eq("repeat_customer_winback"), eq(PHONE),
+                any(), anyBoolean(), any(), any(), any(), any());
+
+        ArgumentCaptor<RepeatCustomerWinbackSend> captor = ArgumentCaptor.forClass(RepeatCustomerWinbackSend.class);
+        verify(sendRepository).save(captor.capture());
+        assertThat(captor.getValue().getPromoExpiresAt()).isEqualTo(expectedEndOfTodaySalonZone());
+    }
+
+    @Test
+    @DisplayName("consented, technician changed → previous-provider marketing body mentions $5 off")
+    void consentedTechnicianChangedSendsMarketingBody() throws Exception {
+        givenEligible(eligible("Bayan Dandiyeva", "Tatiana Nazirova", true));
+        when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(true);
+
+        scheduler.sendDueWinbacks();
+
+        ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
+        assertThat(bodyCaptor.getValue())
+                .contains("want me to check").contains("if Tatiana has an opening")
+                .contains("Grabbed you $5 off if you book today")
+                .doesNotContain("Nazirova").doesNotContain("Bayan").doesNotContain("Dandiyeva").doesNotContain("—");
+    }
+
+    @Test
+    @DisplayName("consent via Square segment only (no marketing.contacts consent) → still marketing body")
+    void consentOnlyInSquareSegmentSendsMarketingBody() throws Exception {
+        String segmentId = "gv2:TEXT_SUBSCRIBERS";
+        rebookingProperties.setConsentSegmentId(segmentId);
+        givenEligible(eligible("Susan Alieva", "Susan Alieva", false));
+        when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(false);
+        when(square.customerSegmentIds(CUSTOMER_ID)).thenReturn(List.of(segmentId));
+
+        scheduler.sendDueWinbacks();
+
+        ArgumentCaptor<String> bodyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
+        assertThat(bodyCaptor.getValue()).contains("$5");
     }
 
     @Test
@@ -136,6 +212,7 @@ class RepeatCustomerWinbackSchedulerTest {
         verify(sendRepository).save(captor.capture());
         assertThat(captor.getValue().getState()).isEqualTo(RepeatCustomerWinbackSend.STATE_SKIPPED_UNRESOLVED);
         assertThat(captor.getValue().getPhoneNumber()).isNull();
+        assertThat(captor.getValue().getPromoExpiresAt()).isNull();
     }
 
     @Test

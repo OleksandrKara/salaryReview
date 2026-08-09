@@ -67,6 +67,12 @@ public class RepeatCustomerWinbackSend {
     @Column(name = "message_variant")
     private String messageVariant;
 
+    /** End of the Pacific-time day this promo was sent on — the same instant baked into this
+     * send's {@code sms_message.link_target} as {@code WINBACK:<epochSeconds>}, kept here too
+     * purely for audit/reporting (see V78). Null for every {@code SKIPPED_*} state. */
+    @Column(name = "promo_expires_at")
+    private Instant promoExpiresAt;
+
     @Column(name = "state", nullable = false)
     private String state;
 
