@@ -360,16 +360,16 @@ function ExpenseEntryRow({
 
   if (!editing) {
     return (
-      <div className="flex items-center justify-between gap-2 rounded px-2 py-1 ring-1 ring-zinc-100">
-        <span>
+      <div className="flex flex-col gap-1.5 rounded px-2 py-1.5 ring-1 ring-zinc-100 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+        <div className="min-w-0">
           <span className="font-medium text-zinc-700">{categoryLabel(entry.category, categories)}</span>{' '}
           {fmtDateRange(entry.periodStart, entry.periodEnd)}
           {entry.note ? <span className="text-zinc-400"> — {entry.note}</span> : null}
-        </span>
-        <div className="flex items-center gap-2">
-          <span className="font-medium tabular-nums">{usdExact(entry.amount)}</span>
-          <button type="button" onClick={onEdit} className="text-blue-600 hover:underline">Edit</button>
-          <button type="button" onClick={onDelete} disabled={busy} className="text-red-600 hover:underline disabled:opacity-50">
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <span className="mr-1 font-medium tabular-nums">{usdExact(entry.amount)}</span>
+          <button type="button" onClick={onEdit} className="-m-1 p-1 text-blue-600 hover:underline">Edit</button>
+          <button type="button" onClick={onDelete} disabled={busy} className="-m-1 p-1 text-red-600 hover:underline disabled:opacity-50">
             Delete
           </button>
         </div>

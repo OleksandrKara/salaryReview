@@ -90,10 +90,12 @@ export default function ImportHistoryList() {
         <div className="flex flex-col gap-2">
           {imports.map((imp) => (
             <div key={imp.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg p-3 ring-1 ring-zinc-200">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-zinc-800">{imp.originalFilename}</span>
-                  <StatusBadge status={imp.status} />
+              <div className="min-w-0">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="truncate text-sm font-medium text-zinc-800" title={imp.originalFilename}>
+                    {imp.originalFilename}
+                  </span>
+                  <span className="shrink-0"><StatusBadge status={imp.status} /></span>
                 </div>
                 <div className="text-xs text-zinc-500">
                   {imp.rowCount} transactions
@@ -106,14 +108,14 @@ export default function ImportHistoryList() {
               <div className="flex items-center gap-2">
                 <a
                   href={api.statementImportFileUrl(imp.id)}
-                  className="rounded px-2 py-1 text-xs font-medium text-zinc-600 ring-1 ring-zinc-300 hover:bg-zinc-50"
+                  className="rounded px-2 py-1.5 text-xs font-medium text-zinc-600 ring-1 ring-zinc-300 hover:bg-zinc-50"
                 >
                   Download
                 </a>
                 {imp.status !== 'REVERTED' && (
                   <Link
                     href={`/owner/overview/expenses/import/${imp.id}`}
-                    className="rounded px-2 py-1 text-xs font-medium text-blue-600 ring-1 ring-blue-200 hover:bg-blue-50"
+                    className="rounded px-2 py-1.5 text-xs font-medium text-blue-600 ring-1 ring-blue-200 hover:bg-blue-50"
                   >
                     {imp.status === 'AWAITING_REVIEW' ? 'Reopen' : 'View'}
                   </Link>
@@ -123,7 +125,7 @@ export default function ImportHistoryList() {
                     type="button"
                     disabled={busyId === imp.id}
                     onClick={() => revert(imp.id)}
-                    className="rounded px-2 py-1 text-xs font-medium text-red-600 ring-1 ring-red-300 hover:bg-red-50 disabled:opacity-50"
+                    className="rounded px-2 py-1.5 text-xs font-medium text-red-600 ring-1 ring-red-300 hover:bg-red-50 disabled:opacity-50"
                   >
                     {busyId === imp.id ? 'Reverting…' : 'Revert'}
                   </button>
@@ -133,7 +135,7 @@ export default function ImportHistoryList() {
                     type="button"
                     disabled={busyId === imp.id}
                     onClick={() => remove(imp.id)}
-                    className="rounded px-2 py-1 text-xs font-medium text-red-600 ring-1 ring-red-300 hover:bg-red-50 disabled:opacity-50"
+                    className="rounded px-2 py-1.5 text-xs font-medium text-red-600 ring-1 ring-red-300 hover:bg-red-50 disabled:opacity-50"
                   >
                     {busyId === imp.id ? 'Deleting…' : 'Delete'}
                   </button>

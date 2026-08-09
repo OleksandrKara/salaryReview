@@ -40,7 +40,7 @@ function CategoryRow({ category, onChanged }: { category: ExpenseCategoryDefinit
   return (
     <div className="rounded-lg p-3 ring-1 ring-zinc-200">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
+        <div className="min-w-0">
           {editing ? (
             <input
               type="text"
@@ -58,21 +58,21 @@ function CategoryRow({ category, onChanged }: { category: ExpenseCategoryDefinit
           )}
           <div className="text-xs text-zinc-400">{category.code}</div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {editing ? (
             <>
-              <button type="button" disabled={busy} onClick={save} className="rounded bg-zinc-800 px-2 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
+              <button type="button" disabled={busy} onClick={save} className="rounded bg-zinc-800 px-2 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
                 Save
               </button>
-              <button type="button" disabled={busy} onClick={() => { setEditing(false); setLabel(category.label); }} className="text-xs text-zinc-500 hover:underline">
+              <button type="button" disabled={busy} onClick={() => { setEditing(false); setLabel(category.label); }} className="-m-1 p-1 text-xs text-zinc-500 hover:underline">
                 Cancel
               </button>
             </>
           ) : (
             <>
-              <button type="button" onClick={() => setEditing(true)} className="text-xs text-blue-600 hover:underline">Rename</button>
+              <button type="button" onClick={() => setEditing(true)} className="-m-1 p-1 text-xs text-blue-600 hover:underline">Rename</button>
               {!category.locked && (
-                <button type="button" disabled={busy} onClick={remove} className="text-xs text-red-600 hover:underline disabled:opacity-50">
+                <button type="button" disabled={busy} onClick={remove} className="-m-1 p-1 text-xs text-red-600 hover:underline disabled:opacity-50">
                   Delete
                 </button>
               )}
@@ -134,20 +134,20 @@ export default function ExpenseCategoriesTable() {
 
   return (
     <div className="mt-4 flex flex-col gap-3">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <input
           type="text"
           value={newLabel}
           onChange={(e) => setNewLabel(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void create(); } }}
           placeholder="New category name…"
-          className="w-56 rounded border border-zinc-300 px-2 py-1.5 text-sm"
+          className="w-full rounded border border-zinc-300 px-2 py-1.5 text-sm sm:w-56"
         />
         <button
           type="button"
           disabled={creating || !newLabel.trim()}
           onClick={create}
-          className="rounded bg-zinc-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+          className="rounded bg-zinc-800 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
         >
           {creating ? 'Adding…' : 'Add category'}
         </button>
