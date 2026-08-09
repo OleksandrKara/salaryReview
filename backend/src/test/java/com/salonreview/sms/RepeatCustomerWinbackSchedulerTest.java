@@ -13,6 +13,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 
@@ -26,6 +27,7 @@ class RepeatCustomerWinbackSchedulerTest {
 
     private static final String CUSTOMER_ID = "cust1";
     private static final String PHONE = "+15551234567";
+    private static final ZoneId SALON_ZONE = ZoneId.of("America/Los_Angeles");
 
     private RepeatCustomerWinbackEligibilityRepository eligibilityRepository;
     private RepeatCustomerWinbackSendRepository sendRepository;
@@ -69,7 +71,7 @@ class RepeatCustomerWinbackSchedulerTest {
     private static RepeatCustomerWinbackEligibilityRepository.EligibleCustomer eligible(
             String lastProvider, String previousProvider, boolean rebookedSameDay) {
         return new RepeatCustomerWinbackEligibilityRepository.EligibleCustomer(
-                CUSTOMER_ID, LocalDate.now().minusDays(45), 3, lastProvider, previousProvider, rebookedSameDay);
+                CUSTOMER_ID, LocalDate.now(SALON_ZONE).minusDays(45), 3, lastProvider, previousProvider, rebookedSameDay);
     }
 
     private void givenEligible(RepeatCustomerWinbackEligibilityRepository.EligibleCustomer... customers) {
