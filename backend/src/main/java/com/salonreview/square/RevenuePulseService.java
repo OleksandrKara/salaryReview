@@ -36,23 +36,25 @@ public class RevenuePulseService {
     private final SquareMonthAggregator aggregator;
     private final SalonConfigRepository salonConfig;
     private final RevenueSnapshotRepository snapshots;
+    private final ManualAdjustmentService manualAdjustments;
     private final Clock clock;
 
     @Autowired
     public RevenuePulseService(SquareClient square, RevenueForecastService forecaster,
                                SquareMonthAggregator aggregator, SalonConfigRepository salonConfig,
-                               RevenueSnapshotRepository snapshots) {
-        this(square, forecaster, aggregator, salonConfig, snapshots, Clock.systemUTC());
+                               RevenueSnapshotRepository snapshots, ManualAdjustmentService manualAdjustments) {
+        this(square, forecaster, aggregator, salonConfig, snapshots, manualAdjustments, Clock.systemUTC());
     }
 
     RevenuePulseService(SquareClient square, RevenueForecastService forecaster,
                         SquareMonthAggregator aggregator, SalonConfigRepository salonConfig,
-                        RevenueSnapshotRepository snapshots, Clock clock) {
+                        RevenueSnapshotRepository snapshots, ManualAdjustmentService manualAdjustments, Clock clock) {
         this.square = square;
         this.forecaster = forecaster;
         this.aggregator = aggregator;
         this.salonConfig = salonConfig;
         this.snapshots = snapshots;
+        this.manualAdjustments = manualAdjustments;
         this.clock = clock;
     }
 
@@ -159,7 +161,12 @@ public class RevenuePulseService {
     /**
      * Card vs cash for {@code year}-{@code month}, days 1 → {@code throughDay}, via the month
      * aggregator. Cash = the CASH and CASH-NOTE channels (cash-tender Square orders + manual cash
-     * notes), so it matches what the /overview and the daily snapshot report.
+     * notes), so it matches what the /overview and the daily snapshot report. Also folds in Manual
+     * Adjustments (redos, comps, refunds) dated on or before {@code throughDay} — the same fold-in
+     * OwnerOverviewService's live-month Gross Revenue does — so this widget's Gross always agrees
+     * with /owner/overview's for the same month instead of silently omitting real revenue
+     * corrections. Adjustments have no time-of-day, so (like a same-day service with no known time)
+     * they're always included in full on the cutoff day, never split by {@code cutoffTime}.
      */
     private Split mtdSplit(int year, int month, int throughDay, LocalTime cutoffTime, BigDecimal cutoff) {
         SquareMonthAggregator.MonthAggregation agg = aggregator.aggregate(year, month, cutoff);
@@ -180,6 +187,7 @@ public class RevenuePulseService {
                 card = card.add(s.gross());
             }
         }
+        card = card.add(manualAdjustments.totalGrossThrough(cutoffDay));
         return new Split(card.setScale(2, RoundingMode.HALF_UP), cash.setScale(2, RoundingMode.HALF_UP));
     }
 
