@@ -9,10 +9,13 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 /**
  * Salon-wide business expenses (materials/supplies today, other categories as they come up) — the
@@ -92,6 +95,56 @@ public class ExpenseService {
                 .filter(e -> isGenericCategory(e.getCategory(), personalCodes) && e.isPaidInCash())
                 .toList();
         return ExpenseResolver.resolve(cash, from, to);
+    }
+
+    /** Category-by-category breakdown of {@link #resolveExpenseTotal} for [from, to] — same
+     * inclusion/exclusion rules (generic categories, not paid-in-cash), grouped and prorated per
+     * category via the same {@link ExpenseResolver} so the breakdown always sums to exactly that
+     * total. Categories with a zero prorated total are omitted. Powers the "Spending by category"
+     * view on the Net tab, so an owner can see what a given month's Bank Business Expenses figure
+     * is actually made of. */
+    public Map<String, BigDecimal> resolveExpenseBreakdownByCategory(LocalDate from, LocalDate to) {
+        Set<String> personalCodes = categories.personalCategoryCodes();
+        List<ExpenseEntry> generic = repository.findOverlapping(from, to).stream()
+                .filter(e -> isGenericCategory(e.getCategory(), personalCodes) && !e.isPaidInCash())
+                .toList();
+        return breakdownByCategory(generic, from, to);
+    }
+
+    /** Same as {@link #resolveExpenseBreakdownByCategory} but for {@link
+     * #resolveCashBusinessExpenseTotal} (generic categories flagged paid-in-cash). */
+    public Map<String, BigDecimal> resolveCashBusinessExpenseBreakdownByCategory(LocalDate from, LocalDate to) {
+        Set<String> personalCodes = categories.personalCategoryCodes();
+        List<ExpenseEntry> cash = repository.findOverlapping(from, to).stream()
+                .filter(e -> isGenericCategory(e.getCategory(), personalCodes) && e.isPaidInCash())
+                .toList();
+        return breakdownByCategory(cash, from, to);
+    }
+
+    /** Same as {@link #resolveStatementDerivedExpenseTotal} but grouped by category — each linked
+     * entry is single-day (design.md D3), so a plain per-category sum is exactly correct here, no
+     * proration needed. */
+    public Map<String, BigDecimal> resolveStatementDerivedExpenseBreakdownByCategory(Collection<Long> linkedExpenseEntryIds) {
+        if (linkedExpenseEntryIds.isEmpty()) return Map.of();
+        Set<String> personalCodes = categories.personalCategoryCodes();
+        Map<String, BigDecimal> result = new LinkedHashMap<>();
+        for (ExpenseEntry e : repository.findAllById(linkedExpenseEntryIds)) {
+            if (!isGenericCategory(e.getCategory(), personalCodes)) continue;
+            result.merge(e.getCategory(), e.getAmount(), BigDecimal::add);
+        }
+        result.replaceAll((k, v) -> v.setScale(2, RoundingMode.HALF_UP));
+        return result;
+    }
+
+    private static Map<String, BigDecimal> breakdownByCategory(List<ExpenseEntry> entries, LocalDate from, LocalDate to) {
+        Map<String, List<ExpenseEntry>> byCategory = entries.stream()
+                .collect(Collectors.groupingBy(ExpenseEntry::getCategory, LinkedHashMap::new, Collectors.toList()));
+        Map<String, BigDecimal> result = new LinkedHashMap<>();
+        for (Map.Entry<String, List<ExpenseEntry>> e : byCategory.entrySet()) {
+            BigDecimal amt = ExpenseResolver.resolve(e.getValue(), from, to);
+            if (amt != null && amt.signum() != 0) result.put(e.getKey(), amt);
+        }
+        return result;
     }
 
     /** Sums exactly the given {@code expense_entries} ids that carry a generic category — used by

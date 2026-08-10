@@ -9,10 +9,12 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -130,6 +132,72 @@ class ExpenseServiceTest {
                         .amount(new BigDecimal("150.00")).paidInCash(true).build()));
 
         assertThat(service.resolveCashBusinessExpenseTotal(from, to)).isEqualByComparingTo("150.00");
+    }
+
+    @Test
+    @DisplayName("resolveExpenseBreakdownByCategory groups by category and excludes generic/personal exclusions")
+    void resolveExpenseBreakdownByCategoryGroups() {
+        LocalDate from = LocalDate.of(2026, 7, 1);
+        LocalDate to = LocalDate.of(2026, 7, 31);
+        when(categories.personalCategoryCodes()).thenReturn(Set.of("PERSONAL"));
+        when(repository.findOverlapping(from, to)).thenReturn(List.of(
+                ExpenseEntry.builder().category("MATERIALS").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("200.00")).build(),
+                ExpenseEntry.builder().category("MATERIALS").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("50.00")).build(),
+                ExpenseEntry.builder().category("CONTRACTORS").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("350.00")).build(),
+                ExpenseEntry.builder().category("MANAGER_TIME").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("500.00")).build(),
+                ExpenseEntry.builder().category("PERSONAL").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("2364.02")).build(),
+                ExpenseEntry.builder().category("CONTRACTORS").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("40.00")).paidInCash(true).build()));
+
+        Map<String, BigDecimal> breakdown = service.resolveExpenseBreakdownByCategory(from, to);
+
+        assertThat(breakdown).hasSize(2);
+        assertThat(breakdown.get("MATERIALS")).isEqualByComparingTo("250.00");
+        assertThat(breakdown.get("CONTRACTORS")).isEqualByComparingTo("350.00"); // cash-paid row excluded
+        BigDecimal total = breakdown.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(total).isEqualByComparingTo(service.resolveExpenseTotal(from, to));
+    }
+
+    @Test
+    @DisplayName("resolveCashBusinessExpenseBreakdownByCategory groups only paid-in-cash generic entries")
+    void resolveCashBusinessExpenseBreakdownByCategoryGroups() {
+        LocalDate from = LocalDate.of(2026, 7, 1);
+        LocalDate to = LocalDate.of(2026, 7, 31);
+        when(repository.findOverlapping(from, to)).thenReturn(List.of(
+                ExpenseEntry.builder().category("MATERIALS").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("200.00")).paidInCash(false).build(),
+                ExpenseEntry.builder().category("CONTRACTORS").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("150.00")).paidInCash(true).build()));
+
+        Map<String, BigDecimal> breakdown = service.resolveCashBusinessExpenseBreakdownByCategory(from, to);
+
+        assertThat(breakdown).containsOnly(entry("CONTRACTORS", new BigDecimal("150.00")));
+    }
+
+    @Test
+    @DisplayName("resolveStatementDerivedExpenseBreakdownByCategory groups the linked ids by category, no proration")
+    void resolveStatementDerivedExpenseBreakdownByCategoryGroups() {
+        when(repository.findAllById(List.of(1L, 2L, 3L, 4L))).thenReturn(List.of(
+                ExpenseEntry.builder().id(1L).category("MATERIALS").amount(new BigDecimal("120.00")).build(),
+                ExpenseEntry.builder().id(2L).category("MATERIALS").amount(new BigDecimal("30.00")).build(),
+                ExpenseEntry.builder().id(3L).category("MANAGER_TIME").amount(new BigDecimal("60.00")).build(),
+                ExpenseEntry.builder().id(4L).category("PROVIDER_PAYROLL").amount(new BigDecimal("400.00")).build()));
+
+        Map<String, BigDecimal> breakdown = service.resolveStatementDerivedExpenseBreakdownByCategory(List.of(1L, 2L, 3L, 4L));
+
+        assertThat(breakdown).containsOnly(entry("MATERIALS", new BigDecimal("150.00")));
+    }
+
+    @Test
+    @DisplayName("resolveStatementDerivedExpenseBreakdownByCategory is empty for an empty id list, no repository call")
+    void resolveStatementDerivedExpenseBreakdownByCategoryEmptyIds() {
+        assertThat(service.resolveStatementDerivedExpenseBreakdownByCategory(List.of())).isEmpty();
+        verify(repository, never()).findAllById(any());
     }
 
     @Test

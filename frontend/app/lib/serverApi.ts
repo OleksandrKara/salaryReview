@@ -23,6 +23,7 @@ import type {
   MarketingLandingPage,
   OwnerCustomer,
   OwnerOverviewData,
+  ExpenseCategoryDefinition,
   PrepaidPackage,
   Provider,
   ProviderDetail,
@@ -211,6 +212,10 @@ export const serverApi = {
     serverFetch<OwnerOverviewData>(
       `/api/owner/overview?fromYear=${fromYear}&fromMonth=${fromMonth}&toYear=${toYear}&toMonth=${toMonth}`
     ),
+
+  // Category labels for the Net tab's "Spending by category" breakdown — the browser-side
+  // equivalent (api.listExpenseCategories) hits the same backend route through the /api proxy.
+  listExpenseCategories: () => serverFetch<ExpenseCategoryDefinition[]>('/api/owner/expenses/categories'),
 
   // sources is the same comma-separated traffic-source list the client-side api.ts sends (see
   // TrafficSourceFilter) — omitted here on every current call site, so the backend's own "Ads

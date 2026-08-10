@@ -233,7 +233,7 @@ public class OwnerOverviewService {
                 expenseTotal, managerLaborCost, netProfit,
                 statementCoveredForMonth(year, month), cashProviderCompensation, personalBankTotal,
                 ownerDrawsTotal, profitAfterPersonal(netProfit, personalBankTotal, ownerDrawsTotal),
-                cashBusinessExpenseTotal);
+                cashBusinessExpenseTotal, expenseCategoryBreakdownForMonth(year, month));
     }
 
     // --- live month from Square ---
@@ -283,7 +283,7 @@ public class OwnerOverviewService {
                     expenseTotal, managerLaborCost, netProfit,
                     statementCoveredForMonth(year, month), cashProviderCompensation, personalBankTotal,
                     ownerDrawsTotal, profitAfterPersonal(netProfit, personalBankTotal, ownerDrawsTotal),
-                    cashBusinessExpenseTotal);
+                    cashBusinessExpenseTotal, expenseCategoryBreakdownForMonth(year, month));
         } catch (RuntimeException e) {
             return emptyMonth(year, month);
         }
@@ -408,6 +408,30 @@ public class OwnerOverviewService {
         }
     }
 
+    /** Category breakdown of "Business Expenses" (Bank + Other Cash combined) for a calendar
+     * month — same statement-covered/manual split as {@link #expenseTotalForMonth} for the bank
+     * side, and the same always-manual cash side as {@link #cashBusinessExpenseTotalForMonth}, so
+     * the two together always sum to exactly {@code expenseTotal + cashBusinessExpenseTotal}.
+     * Provider compensation and manager time aren't "categories" in this ledger — they already
+     * have their own dedicated P&L lines — so they never appear in this map. Best-effort, same
+     * resilience convention as expenseTotalForMonth: a lookup failure leaves this month's
+     * breakdown unknown rather than taking down the whole dashboard. */
+    private Map<String, BigDecimal> expenseCategoryBreakdownForMonth(int year, int month) {
+        try {
+            YearMonth ym = YearMonth.of(year, month);
+            LocalDate from = ym.atDay(1), to = ym.atEndOfMonth();
+            Map<String, BigDecimal> breakdown = new LinkedHashMap<>(
+                    expenseImports.isPeriodStatementCovered(from, to)
+                            ? expenses.resolveStatementDerivedExpenseBreakdownByCategory(expenseImports.linkedExpenseEntryIds(from, to))
+                            : expenses.resolveExpenseBreakdownByCategory(from, to));
+            expenses.resolveCashBusinessExpenseBreakdownByCategory(from, to)
+                    .forEach((k, v) -> breakdown.merge(k, v, BigDecimal::add));
+            return breakdown;
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     private static BigDecimal netRevenue(BigDecimal gross, BigDecimal cardPayroll, BigDecimal cashPayroll,
                                           BigDecimal expenseTotal, BigDecimal cashBusinessExpenseTotal,
                                           BigDecimal managerLaborCost) {
@@ -487,7 +511,7 @@ public class OwnerOverviewService {
     private static MonthSummary emptyMonth(int year, int month) {
         return new MonthSummary(year, month, label(month), null, null, null, null, 0,
                 null, null, null, false, 0, 0, null, null, null, false,
-                null, null, null, null, null);
+                null, null, null, null, null, null);
     }
 
     /** Whether a COMPLETED bank-statement reconciliation overlaps this month (see
