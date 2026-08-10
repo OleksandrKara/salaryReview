@@ -56,7 +56,7 @@ export default async function RevenueNetPage({
         <NetSummary data={data} categories={categories} />
       </div>
 
-      <NetTable months={data.months} />
+      <NetTable months={data.months} categories={categories} />
     </main>
   );
 }

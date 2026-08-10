@@ -1,4 +1,8 @@
-import type { MonthSummary } from '../../lib/types';
+'use client';
+
+import { Fragment, useState } from 'react';
+import type { ExpenseCategoryDefinition, MonthSummary } from '../../lib/types';
+import CategorySpendingBreakdown from './CategorySpendingBreakdown';
 
 const usd = (n: number | null | undefined) =>
   n == null
@@ -59,6 +63,10 @@ function SourceBadge({ statementCovered }: { statementCovered: boolean }) {
   );
 }
 
+function hasBreakdown(m: MonthSummary): boolean {
+  return m.categoryBreakdown != null && Object.keys(m.categoryBreakdown).length > 0;
+}
+
 /** Monthly Gross → Provider Compensation (card + cash) → Expenses → Net breakdown — the cost side
  * split out of GrowthTable (see that component's own doc comment) into its own Revenue tab, since
  * "what's the gross number" and "what's actually left after payroll and expenses" are different
@@ -67,8 +75,20 @@ function SourceBadge({ statementCovered }: { statementCovered: boolean }) {
  * on mobile — hidden table columns with no fallback), a table at `sm` and up, matching this
  * codebase's established `TransactionRow`/`ContactsTable` convention. Every row/card also carries
  * a Statement/Estimate badge so it's clear at a glance whether that month's cost figures are real
- * bank-statement numbers or estimates, not just an aggregate banner elsewhere on the page. */
-export default function NetTable({ months }: { months: MonthSummary[] }) {
+ * bank-statement numbers or estimates, not just an aggregate banner elsewhere on the page.
+ *
+ * Each month with any categorized spend also gets a collapsed-by-default "Category breakdown"
+ * toggle (only that month's own CategorySpendingBreakdown, not the whole range's — see
+ * NetSummary's aggregate version above this table) — so "which expense drove this month's Net"
+ * is a click away without a permanently wider table or a second always-visible breakdown per row. */
+export default function NetTable({ months, categories }: { months: MonthSummary[]; categories: ExpenseCategoryDefinition[] }) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggle = (key: string) => setExpanded((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+
   const active = months.filter((m) => m.grossRevenue != null);
   if (active.length === 0) return null;
 
@@ -91,10 +111,13 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
         {active.map((m, i) => {
           const mom = momPct(active, i, 'netRevenue');
           const isLive = !m.finalized;
+          const key = `${m.year}-${m.month}`;
+          const canExpand = hasBreakdown(m);
+          const isOpen = canExpand && expanded.has(key);
           return (
             <div
-              key={`${m.year}-${m.month}`}
-              data-testid={`net-row-mobile-${m.year}-${m.month}`}
+              key={key}
+              data-testid={`net-row-mobile-${key}`}
               className="rounded-lg p-3 ring-1 ring-zinc-200"
             >
               <div className="flex items-start justify-between gap-2">
@@ -139,6 +162,22 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
                   <span className="tabular-nums text-zinc-600">{m.cashBusinessExpenseTotal != null ? `− ${usd(m.cashBusinessExpenseTotal)}` : '—'}</span>
                 </div>
               </div>
+              {canExpand && (
+                <div className="mt-2 border-t border-zinc-100 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => toggle(key)}
+                    className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-700"
+                  >
+                    <span>{isOpen ? '▾' : '▸'}</span> Category breakdown
+                  </button>
+                  {isOpen && (
+                    <div className="mt-2">
+                      <CategorySpendingBreakdown breakdown={m.categoryBreakdown!} categories={categories} />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
@@ -200,40 +239,63 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
             {active.map((m, i) => {
               const mom = momPct(active, i, 'netRevenue');
               const isLive = !m.finalized;
+              const key = `${m.year}-${m.month}`;
+              const canExpand = hasBreakdown(m);
+              const isOpen = canExpand && expanded.has(key);
               return (
-                <tr key={`${m.year}-${m.month}`} data-testid={`net-row-${m.year}-${m.month}`} className="hover:bg-zinc-50">
-                  <td className="px-4 py-3 font-medium text-zinc-800">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span>{m.label} <span className="text-zinc-400">&apos;{String(m.year).slice(2)}</span></span>
-                      {isLive && (
-                        <span className="rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-zinc-300">live</span>
-                      )}
-                      <SourceBadge statementCovered={m.statementCovered} />
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-zinc-500">{usd(m.grossRevenue)}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-zinc-500">
-                    {m.payrollCost != null ? `− ${usd(m.payrollCost)}` : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-zinc-500">
-                    {m.cashProviderCompensation != null ? `− ${usd(m.cashProviderCompensation)}` : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-zinc-500">
-                    {m.managerLaborCost != null ? `− ${usd(m.managerLaborCost)}` : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-zinc-500">
-                    {m.expenseTotal != null ? `− ${usd(m.expenseTotal)}` : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-zinc-500">
-                    {m.cashBusinessExpenseTotal != null ? `− ${usd(m.cashBusinessExpenseTotal)}` : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums font-semibold text-emerald-700">
-                    {usd(m.netRevenue)}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <MomBadge mom={mom} />
-                  </td>
-                </tr>
+                <Fragment key={key}>
+                  <tr data-testid={`net-row-${key}`} className="hover:bg-zinc-50">
+                    <td className="px-4 py-3 font-medium text-zinc-800">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {canExpand ? (
+                          <button
+                            type="button"
+                            onClick={() => toggle(key)}
+                            className="flex items-center gap-1 hover:text-zinc-600"
+                          >
+                            <span className="text-xs text-zinc-400">{isOpen ? '▾' : '▸'}</span>
+                            <span>{m.label} <span className="text-zinc-400">&apos;{String(m.year).slice(2)}</span></span>
+                          </button>
+                        ) : (
+                          <span>{m.label} <span className="text-zinc-400">&apos;{String(m.year).slice(2)}</span></span>
+                        )}
+                        {isLive && (
+                          <span className="rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 ring-1 ring-zinc-300">live</span>
+                        )}
+                        <SourceBadge statementCovered={m.statementCovered} />
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-zinc-500">{usd(m.grossRevenue)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-zinc-500">
+                      {m.payrollCost != null ? `− ${usd(m.payrollCost)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-zinc-500">
+                      {m.cashProviderCompensation != null ? `− ${usd(m.cashProviderCompensation)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-zinc-500">
+                      {m.managerLaborCost != null ? `− ${usd(m.managerLaborCost)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-zinc-500">
+                      {m.expenseTotal != null ? `− ${usd(m.expenseTotal)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-zinc-500">
+                      {m.cashBusinessExpenseTotal != null ? `− ${usd(m.cashBusinessExpenseTotal)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums font-semibold text-emerald-700">
+                      {usd(m.netRevenue)}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <MomBadge mom={mom} />
+                    </td>
+                  </tr>
+                  {isOpen && (
+                    <tr className="bg-zinc-50/60">
+                      <td colSpan={9} className="px-4 pb-4 pt-0">
+                        <CategorySpendingBreakdown breakdown={m.categoryBreakdown!} categories={categories} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
           </tbody>
