@@ -183,6 +183,36 @@ const STRINGS = {
   },
   timeNoManagers: { EN: 'No managers yet.', RU: 'Пока нет менеджеров.' },
 
+  // Owner daily-schedule timeline (anomaly detection)
+  scheduleTabSummary: { EN: 'Summary', RU: 'Итого' },
+  scheduleTabSchedule: { EN: 'Schedule', RU: 'График' },
+  scheduleSubtitle: {
+    EN: 'Daily coverage for each manager. Expected: {start}–{end}, with about {overlap} of handoff overlap.',
+    RU: 'Ежедневное покрытие по каждому менеджеру. Ожидается: {start}–{end}, с пересечением ~{overlap} для передачи смены.',
+  },
+  scheduleAnomaliesOnly: { EN: 'Show only days needing review', RU: 'Показывать только дни, требующие проверки' },
+  scheduleAllClear: { EN: 'No anomalies this month — every day looks normal.', RU: 'За этот месяц аномалий нет — все дни выглядят нормально.' },
+  scheduleNoDaysMatch: { EN: 'No days need review this month.', RU: 'В этом месяце нет дней, требующих проверки.' },
+  scheduleCoverage: { EN: 'Coverage', RU: 'Покрытие' },
+  scheduleOverlap: { EN: 'Overlap', RU: 'Пересечение' },
+  scheduleOngoing: { EN: 'ongoing', RU: 'идёт сейчас' },
+  scheduleNoShiftsDay: { EN: 'No shifts logged', RU: 'Смены не отмечены' },
+
+  flag_gap_in_coverage: { EN: 'Coverage gap', RU: 'Пробел в покрытии' },
+  flag_no_overlap: { EN: 'No handoff overlap', RU: 'Нет пересечения для передачи' },
+  flag_overlap_low: { EN: 'Overlap shorter than usual', RU: 'Пересечение короче обычного' },
+  flag_overlap_high: { EN: 'Overlap longer than usual', RU: 'Пересечение длиннее обычного' },
+  flag_no_shifts: { EN: 'No shifts logged', RU: 'Нет отмеченных смен' },
+  flag_start_way_off: { EN: 'Start time looks wrong — check AM/PM', RU: 'Время начала выглядит неверным — проверьте АМ/PM' },
+  flag_start_late: { EN: 'Started later than usual', RU: 'Начало позже обычного' },
+  flag_start_early: { EN: 'Started earlier than usual', RU: 'Начало раньше обычного' },
+  flag_end_way_off: { EN: 'End time looks wrong — check AM/PM', RU: 'Время окончания выглядит неверным — проверьте АМ/PM' },
+  flag_end_late: { EN: 'Ended later than usual', RU: 'Окончание позже обычного' },
+  flag_end_early: { EN: 'Ended earlier than usual', RU: 'Окончание раньше обычного' },
+  flag_too_short: { EN: 'Unusually short shift', RU: 'Необычно короткая смена' },
+  flag_too_long: { EN: 'Unusually long shift', RU: 'Необычно длинная смена' },
+  flag_still_open: { EN: 'Forgot to clock out?', RU: 'Забыли завершить смену?' },
+
   // Provider pay (/me)
   meNoActivityMonth: { EN: 'No activity for this month.', RU: 'Нет активности за этот месяц.' },
   meFellback: {
@@ -368,6 +398,24 @@ export function monthName(lang: Language | null, idx0: number): string {
 /** Localized 3-letter month abbreviation for a 0-based index. */
 export function monthShort(lang: Language | null, idx0: number): string {
   return MONTHS_ABBR[lang ?? 'EN'][((idx0 % 12) + 12) % 12];
+}
+
+const WEEKDAYS_ABBR: Record<Language, string[]> = {
+  EN: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+  RU: ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
+};
+
+/** Localized 3-letter weekday abbreviation for a JS Date.getDay() index (0 = Sunday). */
+export function weekdayShort(lang: Language | null, dow0Sunday: number): string {
+  return WEEKDAYS_ABBR[lang ?? 'EN'][((dow0Sunday % 7) + 7) % 7];
+}
+
+/** Localized label for a manager-schedule anomaly flag code (see ManagerTimeService, backend) —
+ * falls back to the raw code if a translation is ever missing, so an unrecognized future flag
+ * degrades to something inspectable rather than crashing. */
+export function flagLabel(lang: Language | null, code: string): string {
+  const entry = (STRINGS as Record<string, Record<Language, string> | undefined>)[`flag_${code}`];
+  return entry ? entry[lang ?? 'EN'] : code;
 }
 
 /** Picks the Russian variant of a user-authored bilingual field (SOP/KB title, body, etc.) when

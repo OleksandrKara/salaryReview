@@ -7,6 +7,7 @@ import com.salonreview.domain.Role;
 import com.salonreview.repo.AppUserRepository;
 import com.salonreview.repo.ManagerPayRateRepository;
 import com.salonreview.repo.ManagerTimeEntryRepository;
+import com.salonreview.web.dto.AdminDailyScheduleDto;
 import com.salonreview.web.dto.AdminTimesheetDto;
 import com.salonreview.web.dto.ManagerTimesheetDto;
 import com.salonreview.web.dto.TimeEntryDto;
@@ -29,11 +30,13 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 /**
@@ -48,6 +51,24 @@ public class ManagerTimeService {
 
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("h:mm a", Locale.US);
     private static final long MAX_SHIFT_MINUTES = 24 * 60;
+
+    // --- daily schedule anomaly-detection policy (salon staffing rule: 8am-8pm coverage, ~1h
+    // manager-to-manager overlap for handoff) — see adminDailySchedule() below.
+    private static final LocalTime EXPECTED_START = LocalTime.of(8, 0);
+    private static final LocalTime EXPECTED_END = LocalTime.of(20, 0);
+    private static final int EXPECTED_OVERLAP_MINUTES = 60;
+    /** A start/end within this many minutes of the expected boundary isn't worth flagging. */
+    private static final int START_END_TOLERANCE_MINUTES = 20;
+    /** Beyond this, it's flagged more strongly — most often an AM/PM mix-up (e.g. 8:00 PM typed for
+     * 8:00 AM is a 12h/720min deviation) rather than just running a bit early/late. */
+    private static final int WAY_OFF_TOLERANCE_MINUTES = 180;
+    private static final int MIN_REASONABLE_SHIFT_MINUTES = 120;
+    private static final int MAX_REASONABLE_SHIFT_MINUTES = 14 * 60;
+    /** An open shift this old (or from a past day at all) almost certainly means a forgotten clock-out. */
+    private static final int STALE_OPEN_SHIFT_MINUTES = 14 * 60;
+    private static final int MEANINGFUL_GAP_MINUTES = 15;
+    private static final int LOW_OVERLAP_MINUTES = 20;
+    private static final int HIGH_OVERLAP_MINUTES = 150;
 
     private final ManagerTimeEntryRepository entries;
     private final ManagerPayRateRepository rates;
@@ -189,6 +210,164 @@ public class ManagerTimeService {
                     monthMin, pay(rate, monthMin), clockedIn.contains(u.getId()));
         }).toList();
         return new AdminTimesheetDto(year, month, z.getId(), rows);
+    }
+
+    /** Owner's day-by-day schedule view for one calendar month: every manager's shifts on a timeline
+     * for each day, plus computed anomaly flags (mistyped clock-in/out, coverage gaps, missing
+     * handoff overlap). {@code days} is newest-first so a mistake from today or yesterday surfaces
+     * without scrolling. */
+    public AdminDailyScheduleDto adminDailySchedule(int year, int month) {
+        ZoneId z = zone();
+        YearMonth ym = YearMonth.of(year, month);
+        LocalDate today = LocalDate.ofInstant(clock.instant(), z);
+
+        Map<Long, String> usernameById = users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER))
+                .stream().collect(Collectors.toMap(AppUser::getId, AppUser::getUsername));
+
+        Map<LocalDate, List<ManagerTimeEntry>> byDate = entries
+                .findByWorkDateBetween(ym.atDay(1), ym.atEndOfMonth()).stream()
+                .collect(Collectors.groupingBy(ManagerTimeEntry::getWorkDate));
+
+        List<AdminDailyScheduleDto.Day> days = new ArrayList<>();
+        for (LocalDate d = ym.atEndOfMonth(); !d.isBefore(ym.atDay(1)); d = d.minusDays(1)) {
+            List<ManagerTimeEntry> dayEntries = byDate.getOrDefault(d, List.of()).stream()
+                    .sorted(Comparator.comparing(ManagerTimeEntry::getStartAt)).toList();
+            days.add(buildDay(d, dayEntries, usernameById, z, today));
+        }
+        return new AdminDailyScheduleDto(year, month, z.getId(),
+                EXPECTED_START.format(TIME_FMT), EXPECTED_END.format(TIME_FMT), EXPECTED_OVERLAP_MINUTES, days);
+    }
+
+    private AdminDailyScheduleDto.Day buildDay(LocalDate d, List<ManagerTimeEntry> dayEntries,
+                                                Map<Long, String> usernameById, ZoneId z, LocalDate today) {
+        boolean isToday = d.equals(today);
+        LocalTime nowTime = isToday ? clock.instant().atZone(z).toLocalTime() : null;
+
+        // Pass 1: compute each shift's raw start/end/duration, and find which one is expected to
+        // "open" (earliest start) and which is expected to "close" (latest end, completed shifts
+        // only — an in-progress open shift hasn't closed yet so it's never the closer). Only the
+        // opener's start is compared against EXPECTED_START and only the closer's end against
+        // EXPECTED_END: a mid-day handoff shift naturally starts/ends far from those boundaries
+        // (e.g. the opener's own shift ends mid-afternoon) and shouldn't be flagged for that alone.
+        record Raw(ManagerTimeEntry e, boolean open, LocalTime startTime, LocalTime endTime,
+                   int startMin, int endMin, int minutes) {}
+        List<Raw> raw = new ArrayList<>();
+        int openerIdx = -1, minStart = Integer.MAX_VALUE;
+        int closerIdx = -1, maxEnd = Integer.MIN_VALUE;
+        for (ManagerTimeEntry e : dayEntries) {
+            boolean open = e.getEndAt() == null;
+            LocalTime startTime = e.getStartAt().atZone(z).toLocalTime();
+            int startMin = startTime.toSecondOfDay() / 60;
+
+            LocalTime endTime;
+            int endMin;
+            int minutes;
+            if (!open) {
+                endTime = e.getEndAt().atZone(z).toLocalTime();
+                endMin = Math.max(startMin, endTime.toSecondOfDay() / 60);
+                minutes = (int) Duration.between(e.getStartAt(), e.getEndAt()).toMinutes();
+            } else if (isToday) {
+                endTime = null;
+                endMin = Math.max(startMin, nowTime.toSecondOfDay() / 60);
+                minutes = 0;
+            } else {
+                endTime = null; // stale open shift from a past day — assume it ran through day's end
+                endMin = 1440;
+                minutes = 0;
+            }
+            int i = raw.size();
+            raw.add(new Raw(e, open, startTime, endTime, startMin, endMin, minutes));
+            if (startMin < minStart) { minStart = startMin; openerIdx = i; }
+            if (!open && endMin > maxEnd) { maxEnd = endMin; closerIdx = i; }
+        }
+
+        List<AdminDailyScheduleDto.Shift> shifts = new ArrayList<>();
+        List<int[]> intervals = new ArrayList<>(); // [startMin, endMin) clipped to this day
+        for (int i = 0; i < raw.size(); i++) {
+            Raw r = raw.get(i);
+            intervals.add(new int[]{r.startMin(), r.endMin()});
+            int openMinutes = r.open() ? r.endMin() - r.startMin() : 0;
+            List<String> flags = shiftFlags(r.startTime(), r.endTime(), r.minutes(), r.open(), isToday,
+                    openMinutes, i == openerIdx, i == closerIdx);
+            shifts.add(new AdminDailyScheduleDto.Shift(r.e().getId(), r.e().getUserId(),
+                    usernameById.getOrDefault(r.e().getUserId(), "?"), r.e().getStartAt(), r.e().getEndAt(),
+                    r.startTime().format(TIME_FMT), r.endTime() == null ? null : r.endTime().format(TIME_FMT),
+                    r.minutes(), r.open(), flags));
+        }
+
+        int[] sweep = sweepCoverageAndOverlap(intervals);
+        int coverageMinutes = sweep[0];
+        int overlapMinutes = sweep[1];
+
+        List<String> dayFlags = new ArrayList<>();
+        if (shifts.isEmpty()) {
+            dayFlags.add("no_shifts");
+        } else {
+            int businessWindowMinutes = (int) Duration.between(EXPECTED_START, EXPECTED_END).toMinutes();
+            if (businessWindowMinutes - coverageMinutes > MEANINGFUL_GAP_MINUTES) dayFlags.add("gap_in_coverage");
+            if (overlapMinutes == 0) dayFlags.add("no_overlap");
+            else if (overlapMinutes < LOW_OVERLAP_MINUTES) dayFlags.add("overlap_low");
+            else if (overlapMinutes > HIGH_OVERLAP_MINUTES) dayFlags.add("overlap_high");
+        }
+
+        return new AdminDailyScheduleDto.Day(d.toString(), shifts, coverageMinutes, overlapMinutes, dayFlags);
+    }
+
+    /** Per-shift anomaly flags against the 8am-8pm/reasonable-duration policy. {@code endTime} is
+     * null for an open shift. {@code isOpener}/{@code isCloser} mark whichever shift is actually
+     * expected to bound the business day — see the caller's comment for why boundary checks are
+     * scoped to just those two rather than applied to every shift. */
+    private static List<String> shiftFlags(LocalTime startTime, LocalTime endTime, int minutes,
+                                            boolean open, boolean isToday, int openMinutes,
+                                            boolean isOpener, boolean isCloser) {
+        List<String> flags = new ArrayList<>();
+
+        if (isOpener) {
+            int startDelta = (int) Duration.between(EXPECTED_START, startTime).toMinutes(); // + = later
+            if (Math.abs(startDelta) > WAY_OFF_TOLERANCE_MINUTES) flags.add("start_way_off");
+            else if (Math.abs(startDelta) > START_END_TOLERANCE_MINUTES) flags.add(startDelta > 0 ? "start_late" : "start_early");
+        }
+
+        if (!open) {
+            if (isCloser) {
+                int endDelta = (int) Duration.between(EXPECTED_END, endTime).toMinutes();
+                if (Math.abs(endDelta) > WAY_OFF_TOLERANCE_MINUTES) flags.add("end_way_off");
+                else if (Math.abs(endDelta) > START_END_TOLERANCE_MINUTES) flags.add(endDelta > 0 ? "end_late" : "end_early");
+            }
+            if (minutes < MIN_REASONABLE_SHIFT_MINUTES) flags.add("too_short");
+            else if (minutes > MAX_REASONABLE_SHIFT_MINUTES) flags.add("too_long");
+        } else if (!isToday || openMinutes > STALE_OPEN_SHIFT_MINUTES) {
+            flags.add("still_open");
+        }
+        return flags;
+    }
+
+    /** Sweep-line over the day's shift intervals, clipped to the [8am,8pm) business window, returning
+     * {@code [coverageMinutes, overlapMinutes]} — minutes with >=1 and >=2 managers concurrently
+     * clocked in, respectively. */
+    private static int[] sweepCoverageAndOverlap(List<int[]> intervals) {
+        int businessStart = EXPECTED_START.toSecondOfDay() / 60;
+        int businessEnd = EXPECTED_END.toSecondOfDay() / 60;
+        if (intervals.isEmpty()) return new int[]{0, 0};
+
+        TreeMap<Integer, Integer> delta = new TreeMap<>();
+        for (int[] iv : intervals) {
+            int s = Math.max(iv[0], businessStart);
+            int e = Math.min(iv[1], businessEnd);
+            if (e <= s) continue;
+            delta.merge(s, 1, Integer::sum);
+            delta.merge(e, -1, Integer::sum);
+        }
+
+        int coverage = 0, overlap = 0, count = 0, prev = businessStart;
+        for (Map.Entry<Integer, Integer> en : delta.entrySet()) {
+            int t = en.getKey();
+            if (count >= 1) coverage += t - prev;
+            if (count >= 2) overlap += t - prev;
+            count += en.getValue();
+            prev = t;
+        }
+        return new int[]{coverage, overlap};
     }
 
     /** Total labor cost (worked minutes x rate) across every manager for an arbitrary [from, to]

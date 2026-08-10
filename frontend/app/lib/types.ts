@@ -442,6 +442,40 @@ export interface AdminTimesheet {
   managers: AdminTimesheetRow[];
 }
 
+// Owner's day-by-day schedule view: every manager's shifts on a timeline per day, plus computed
+// anomaly flags (mistyped clock-in/out, coverage gaps, missing handoff overlap). See
+// ManagerTimeService.adminDailySchedule (backend) for the flag codes' exact meaning.
+export interface AdminScheduleShift {
+  id: number;
+  userId: number;
+  username: string;
+  startAt: string;            // ISO instant
+  endAt: string | null;       // null while open
+  startLabel: string;         // "8:00 AM" salon-local
+  endLabel: string | null;
+  minutes: number;            // 0 while open
+  open: boolean;
+  flags: string[];            // e.g. "start_way_off", "too_short", "still_open"
+}
+
+export interface AdminScheduleDay {
+  date: string;                // yyyy-MM-dd
+  shifts: AdminScheduleShift[]; // start-time ascending
+  coverageMinutes: number;      // minutes in [8am,8pm) with >=1 manager clocked in
+  overlapMinutes: number;       // minutes in [8am,8pm) with >=2 managers clocked in concurrently
+  flags: string[];              // e.g. "gap_in_coverage", "no_overlap", "no_shifts"
+}
+
+export interface AdminDailySchedule {
+  year: number;
+  month: number;
+  timezone: string;
+  expectedStartLabel: string;   // "8:00 AM"
+  expectedEndLabel: string;     // "8:00 PM"
+  expectedOverlapMinutes: number; // 60
+  days: AdminScheduleDay[];     // newest date first
+}
+
 // --- Accounts & roles (Phase 2) ---
 
 export type Role = 'OWNER' | 'MANAGER' | 'PROVIDER' | 'ADS_MANAGER';
