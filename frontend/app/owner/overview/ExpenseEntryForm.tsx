@@ -391,52 +391,60 @@ function ExpenseEntryRow({
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-2 rounded px-2 py-1.5 ring-1 ring-blue-200">
+    // Full-width stacked fields on mobile, wrapped inline row from sm: up — a bare <select> sizes
+    // to its longest option text with no width cap, which on a narrow phone can sit wider than the
+    // card even inside a flex-wrap row, so each field gets `w-full sm:w-auto` to actually fill or
+    // shrink to the available width instead.
+    <div className="flex flex-col gap-2 rounded px-2 py-1.5 ring-1 ring-blue-200 sm:flex-row sm:flex-wrap sm:items-end sm:gap-2">
       <label className="flex flex-col gap-0.5">
         <span className="text-zinc-500">Category</span>
         <select value={editCategory} onChange={(e) => setEditCategory(e.target.value as ExpenseCategory)}
-          className="rounded border border-zinc-300 px-1.5 py-1">
+          className="w-full min-w-0 rounded border border-zinc-300 px-1.5 py-1 sm:w-auto sm:max-w-[13rem]">
           {categories.map((c) => (
             <option key={c.code} value={c.code}>{c.label}</option>
           ))}
         </select>
       </label>
-      <label className="flex flex-col gap-0.5">
-        <span className="text-zinc-500">From</span>
-        <input type="date" value={editFrom} max={editTo} onChange={(e) => setEditFrom(e.target.value)}
-          className="rounded border border-zinc-300 px-1.5 py-1" />
-      </label>
-      <label className="flex flex-col gap-0.5">
-        <span className="text-zinc-500">To</span>
-        <input type="date" value={editTo} min={editFrom} onChange={(e) => setEditTo(e.target.value)}
-          className="rounded border border-zinc-300 px-1.5 py-1" />
-      </label>
+      <div className="flex gap-2">
+        <label className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-none">
+          <span className="text-zinc-500">From</span>
+          <input type="date" value={editFrom} max={editTo} onChange={(e) => setEditFrom(e.target.value)}
+            className="w-full min-w-0 rounded border border-zinc-300 px-1.5 py-1 sm:w-auto" />
+        </label>
+        <label className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-none">
+          <span className="text-zinc-500">To</span>
+          <input type="date" value={editTo} min={editFrom} onChange={(e) => setEditTo(e.target.value)}
+            className="w-full min-w-0 rounded border border-zinc-300 px-1.5 py-1 sm:w-auto" />
+        </label>
+      </div>
       <label className="flex flex-col gap-0.5">
         <span className="text-zinc-500">Amount</span>
         <input type="number" min="0" step="0.01" inputMode="decimal" value={editAmount}
-          onChange={(e) => setEditAmount(e.target.value)} className="w-24 rounded border border-zinc-300 px-1.5 py-1" />
+          onChange={(e) => setEditAmount(e.target.value)} className="w-full rounded border border-zinc-300 px-1.5 py-1 sm:w-24" />
       </label>
       <label className="flex flex-col gap-0.5">
         <span className="text-zinc-500">Note</span>
         <input type="text" value={editNote} onChange={(e) => setEditNote(e.target.value)}
-          className="w-32 rounded border border-zinc-300 px-1.5 py-1" />
+          className="w-full rounded border border-zinc-300 px-1.5 py-1 sm:w-32" />
       </label>
-      <label className="flex items-center gap-1.5 pb-1 text-zinc-600">
+      <label className="flex items-center gap-1.5 text-zinc-600 sm:pb-1">
         <input type="checkbox" checked={editPaidInCash} onChange={(e) => setEditPaidInCash(e.target.checked)}
           className="h-3.5 w-3.5 rounded border-zinc-300" />
         Paid in cash
       </label>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => onSaveEdit(editCategory, editFrom, editTo, Number(editAmount), editNote, editPaidInCash)}
-        className="rounded bg-zinc-800 px-2 py-1 font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-      >
-        {busy ? 'Saving…' : 'Save'}
-      </button>
-      <button type="button" disabled={busy} onClick={onCancelEdit} className="text-zinc-500 hover:underline disabled:opacity-50">
-        Cancel
-      </button>
+      <div className="flex gap-3">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onSaveEdit(editCategory, editFrom, editTo, Number(editAmount), editNote, editPaidInCash)}
+          className="rounded bg-zinc-800 px-2 py-1 font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+        >
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        <button type="button" disabled={busy} onClick={onCancelEdit} className="text-zinc-500 hover:underline disabled:opacity-50">
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
