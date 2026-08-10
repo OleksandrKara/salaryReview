@@ -3,6 +3,7 @@ package com.salonreview.web;
 import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.square.ManagerTimeService;
 import com.salonreview.square.ManagerTimeService.ManualEntry;
+import com.salonreview.web.dto.AdminDailyScheduleDto;
 import com.salonreview.web.dto.AdminTimesheetDto;
 import com.salonreview.web.dto.ManagerTimesheetDto;
 import com.salonreview.web.dto.TimeEntryDto;
@@ -77,6 +78,15 @@ public class ManagerTimeController {
         int y = year != null ? year : today.getYear();
         int m = month != null ? month : today.getMonthValue();
         return service.adminTimesheets(y, m);
+    }
+
+    @GetMapping("/admin/daily")
+    public AdminDailyScheduleDto adminDaily(@RequestParam(required = false) Integer year,
+                                            @RequestParam(required = false) Integer month) {
+        LocalDate today = LocalDate.now();
+        int y = year != null ? year : today.getYear();
+        int m = month != null ? month : today.getMonthValue();
+        return service.adminDailySchedule(y, m);
     }
 
     @PutMapping("/admin/rate/{userId}")

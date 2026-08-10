@@ -7,6 +7,7 @@ import com.salonreview.domain.Role;
 import com.salonreview.repo.AppUserRepository;
 import com.salonreview.repo.ManagerPayRateRepository;
 import com.salonreview.repo.ManagerTimeEntryRepository;
+import com.salonreview.web.dto.AdminDailyScheduleDto;
 import com.salonreview.web.dto.ManagerTimesheetDto;
 import com.salonreview.web.dto.TimeEntryDto;
 import org.junit.jupiter.api.BeforeEach;
@@ -186,5 +187,119 @@ class ManagerTimeServiceTest {
         // but the range isn't empty of entries, so this is a legitimate zero, not "no data at all".
         assertThat(service.totalLaborCost(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
                 .isEqualByComparingTo("0.00");
+    }
+
+    // --- adminDailySchedule() ---
+
+    private static AdminDailyScheduleDto.Day dayOf(AdminDailyScheduleDto dto, String date) {
+        return dto.days().stream().filter(d -> d.date().equals(date)).findFirst()
+                .orElseThrow(() -> new AssertionError("no day " + date));
+    }
+
+    @Test
+    void dailyScheduleDaysAreNewestFirst() {
+        when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+                .thenReturn(List.of());
+        when(users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER))).thenReturn(List.of());
+
+        AdminDailyScheduleDto dto = service.adminDailySchedule(2026, 7);
+
+        assertThat(dto.days()).hasSize(31);
+        assertThat(dto.days().get(0).date()).isEqualTo("2026-07-31");
+        assertThat(dto.days().get(30).date()).isEqualTo("2026-07-01");
+    }
+
+    @Test
+    void dailyScheduleNormalHandoffDayHasNoAnomalies() {
+        // Susan opens 8:00-14:30, Tatiana closes 13:30-20:00 — a clean 60-minute handoff overlap.
+        ManagerTimeEntry susan = ManagerTimeEntry.builder().id(1L).userId(7L)
+                .workDate(LocalDate.of(2026, 7, 1))
+                .startAt(Instant.parse("2026-07-01T08:00:00Z")).endAt(Instant.parse("2026-07-01T14:30:00Z")).build();
+        ManagerTimeEntry tatiana = ManagerTimeEntry.builder().id(2L).userId(8L)
+                .workDate(LocalDate.of(2026, 7, 1))
+                .startAt(Instant.parse("2026-07-01T13:30:00Z")).endAt(Instant.parse("2026-07-01T20:00:00Z")).build();
+        when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+                .thenReturn(List.of(susan, tatiana));
+        when(users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER))).thenReturn(List.of(
+                AppUser.builder().id(7L).username("Susan").role(Role.MANAGER).active(true).build(),
+                AppUser.builder().id(8L).username("Tatiana").role(Role.MANAGER).active(true).build()));
+
+        AdminDailyScheduleDto.Day day = dayOf(service.adminDailySchedule(2026, 7), "2026-07-01");
+
+        assertThat(day.flags()).isEmpty();
+        assertThat(day.coverageMinutes()).isEqualTo(12 * 60);
+        assertThat(day.overlapMinutes()).isEqualTo(60);
+        assertThat(day.shifts()).hasSize(2);
+        assertThat(day.shifts()).allSatisfy(s -> assertThat(s.flags()).isEmpty());
+    }
+
+    @Test
+    void dailyScheduleFlagsLikelyAmPmMistake() {
+        // Typed 8:00 PM-9:00 PM instead of 8:00 AM-9:00 AM — a 12h/720min start deviation.
+        ManagerTimeEntry mistake = ManagerTimeEntry.builder().id(1L).userId(7L)
+                .workDate(LocalDate.of(2026, 7, 5))
+                .startAt(Instant.parse("2026-07-05T20:00:00Z")).endAt(Instant.parse("2026-07-05T21:00:00Z")).build();
+        when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+                .thenReturn(List.of(mistake));
+        when(users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER))).thenReturn(List.of(
+                AppUser.builder().id(7L).username("Susan").role(Role.MANAGER).active(true).build()));
+
+        AdminDailyScheduleDto.Day day = dayOf(service.adminDailySchedule(2026, 7), "2026-07-05");
+
+        assertThat(day.shifts()).hasSize(1);
+        assertThat(day.shifts().get(0).flags()).contains("start_way_off", "too_short");
+    }
+
+    @Test
+    void dailyScheduleFlagsCoverageGapAndMissingOverlap() {
+        // 8:00-11:00 then 15:00-20:00 — a 4h gap with no handoff overlap at all.
+        ManagerTimeEntry morning = ManagerTimeEntry.builder().id(1L).userId(7L)
+                .workDate(LocalDate.of(2026, 7, 8))
+                .startAt(Instant.parse("2026-07-08T08:00:00Z")).endAt(Instant.parse("2026-07-08T11:00:00Z")).build();
+        ManagerTimeEntry evening = ManagerTimeEntry.builder().id(2L).userId(8L)
+                .workDate(LocalDate.of(2026, 7, 8))
+                .startAt(Instant.parse("2026-07-08T15:00:00Z")).endAt(Instant.parse("2026-07-08T20:00:00Z")).build();
+        when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+                .thenReturn(List.of(morning, evening));
+        when(users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER))).thenReturn(List.of(
+                AppUser.builder().id(7L).username("Susan").role(Role.MANAGER).active(true).build(),
+                AppUser.builder().id(8L).username("Tatiana").role(Role.MANAGER).active(true).build()));
+
+        AdminDailyScheduleDto.Day day = dayOf(service.adminDailySchedule(2026, 7), "2026-07-08");
+
+        assertThat(day.flags()).contains("gap_in_coverage", "no_overlap");
+        assertThat(day.overlapMinutes()).isZero();
+    }
+
+    @Test
+    void dailyScheduleFlagsStaleOpenShiftFromAPastDay() {
+        ManagerTimeEntry forgotten = ManagerTimeEntry.builder().id(1L).userId(7L)
+                .workDate(LocalDate.of(2026, 6, 30))
+                .startAt(Instant.parse("2026-06-30T08:00:00Z")).build(); // never clocked out
+        when(entries.findByWorkDateBetween(LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30)))
+                .thenReturn(List.of(forgotten));
+        when(users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER))).thenReturn(List.of(
+                AppUser.builder().id(7L).username("Susan").role(Role.MANAGER).active(true).build()));
+
+        AdminDailyScheduleDto.Day day = dayOf(service.adminDailySchedule(2026, 6), "2026-06-30");
+
+        assertThat(day.shifts().get(0).open()).isTrue();
+        assertThat(day.shifts().get(0).flags()).contains("still_open");
+    }
+
+    @Test
+    void dailyScheduleDoesNotFlagARecentlyOpenedShiftToday() {
+        // NOW is fixed at 2026-07-02T17:00:00Z; clocked in at 09:00 the same day — 8h in, not stale yet.
+        ManagerTimeEntry openToday = ManagerTimeEntry.builder().id(1L).userId(7L)
+                .workDate(LocalDate.of(2026, 7, 2)).startAt(Instant.parse("2026-07-02T09:00:00Z")).build();
+        when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+                .thenReturn(List.of(openToday));
+        when(users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER))).thenReturn(List.of(
+                AppUser.builder().id(7L).username("Susan").role(Role.MANAGER).active(true).build()));
+
+        AdminDailyScheduleDto.Day day = dayOf(service.adminDailySchedule(2026, 7), "2026-07-02");
+
+        assertThat(day.shifts().get(0).open()).isTrue();
+        assertThat(day.shifts().get(0).flags()).doesNotContain("still_open");
     }
 }

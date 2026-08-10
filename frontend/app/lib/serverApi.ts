@@ -38,6 +38,7 @@ import type {
   CancelledAppointment,
   ManagerTimesheet,
   AdminTimesheet,
+  AdminDailySchedule,
   StaffDocument,
 } from './types';
 
@@ -190,6 +191,8 @@ export const serverApi = {
     serverFetch<ManagerTimesheet>(`/api/time/me?year=${year}&month=${month}`),
   getAdminTimesheet: (year: number, month: number) =>
     serverFetch<AdminTimesheet>(`/api/time/admin?year=${year}&month=${month}`),
+  getAdminDailySchedule: (year: number, month: number) =>
+    serverFetch<AdminDailySchedule>(`/api/time/admin/daily?year=${year}&month=${month}`),
 
   // Owner-only: cancelled appointments (CANCELLED_BY_SELLER) for one provider × half, for review.
   listCancellations: (year: number, month: number, half: 'FIRST' | 'SECOND', providerId: number) =>
