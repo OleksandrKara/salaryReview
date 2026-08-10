@@ -33,7 +33,11 @@ export default function CategorySelect({
   const mainValue = value.excludeReason ? EXCLUDE_SENTINEL : (value.category ?? '');
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    // Stacked full-width on mobile, side by side from sm: up — a native <select> sizes its box to
+    // its selected option's text and never wraps, so laid out with `flex-wrap` alone a long
+    // category/exclude-reason label could push this wider than its mobile card (the classic
+    // flex-item min-width:auto overflow). min-w-0 lets each select actually shrink to fit instead.
+    <div className="flex w-full min-w-0 flex-col gap-1.5 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
       <select
         value={mainValue}
         disabled={disabled}
@@ -44,7 +48,7 @@ export default function CategorySelect({
             onChange({ category: (e.target.value || undefined) as ExpenseCategory | undefined });
           }
         }}
-        className="rounded border border-zinc-300 px-1.5 py-1 text-xs"
+        className="w-full min-w-0 rounded border border-zinc-300 px-1.5 py-1 text-xs sm:w-auto sm:max-w-[13rem]"
       >
         <option value="" disabled>Choose category…</option>
         {categories.map((c) => (
@@ -57,7 +61,7 @@ export default function CategorySelect({
           value={value.excludeReason}
           disabled={disabled}
           onChange={(e) => onChange({ excludeReason: e.target.value as ExcludeReason })}
-          className="rounded border border-amber-300 bg-amber-50 px-1.5 py-1 text-xs text-amber-800"
+          className="w-full min-w-0 rounded border border-amber-300 bg-amber-50 px-1.5 py-1 text-xs text-amber-800 sm:w-auto sm:max-w-[13rem]"
         >
           {EXCLUDE_REASON_OPTIONS.map((r) => (
             <option key={r.value} value={r.value}>{r.label}</option>
