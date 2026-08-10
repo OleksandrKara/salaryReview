@@ -82,7 +82,13 @@ public record OwnerOverviewDto(
              * 84.00}. Provider compensation and manager time aren't categories in this ledger, so
              * they never appear here — see their own dedicated fields. Null when unknown (same
              * conditions as expenseTotal); an empty map means genuinely zero categorized spend. */
-            Map<String, BigDecimal> categoryBreakdown
+            Map<String, BigDecimal> categoryBreakdown,
+            /** Category-by-category breakdown of personalBankTotal — keyed by expense category code.
+             * The owner can flag more than one category personal, so this can genuinely have more
+             * than one row, e.g. {"PERSONAL": 1200.00, "OWNER_MEALS": 340.50}. Never subtracted from
+             * netRevenue, same as personalBankTotal itself. Null when unknown (same conditions as
+             * personalBankTotal); an empty map means genuinely zero personal spend. */
+            Map<String, BigDecimal> personalBreakdown
     ) {
         /** Copy with the visit-ledger client counts filled in. */
         public MonthSummary withClients(int seen, int returning) {
@@ -90,7 +96,7 @@ public record OwnerOverviewDto(
                     procedures, avgPerAppt, payrollCost, payrollPct, finalized, seen, returning,
                     expenseTotal, managerLaborCost, netRevenue, statementCovered, cashProviderCompensation,
                     personalBankTotal, ownerDrawsTotal, profitAfterPersonal, cashBusinessExpenseTotal,
-                    categoryBreakdown);
+                    categoryBreakdown, personalBreakdown);
         }
     }
 

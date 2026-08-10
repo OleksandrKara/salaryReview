@@ -233,7 +233,8 @@ public class OwnerOverviewService {
                 expenseTotal, managerLaborCost, netProfit,
                 statementCoveredForMonth(year, month), cashProviderCompensation, personalBankTotal,
                 ownerDrawsTotal, profitAfterPersonal(netProfit, personalBankTotal, ownerDrawsTotal),
-                cashBusinessExpenseTotal, expenseCategoryBreakdownForMonth(year, month));
+                cashBusinessExpenseTotal, expenseCategoryBreakdownForMonth(year, month),
+                personalBreakdownForMonth(year, month));
     }
 
     // --- live month from Square ---
@@ -283,7 +284,8 @@ public class OwnerOverviewService {
                     expenseTotal, managerLaborCost, netProfit,
                     statementCoveredForMonth(year, month), cashProviderCompensation, personalBankTotal,
                     ownerDrawsTotal, profitAfterPersonal(netProfit, personalBankTotal, ownerDrawsTotal),
-                    cashBusinessExpenseTotal, expenseCategoryBreakdownForMonth(year, month));
+                    cashBusinessExpenseTotal, expenseCategoryBreakdownForMonth(year, month),
+                    personalBreakdownForMonth(year, month));
         } catch (RuntimeException e) {
             return emptyMonth(year, month);
         }
@@ -432,6 +434,22 @@ public class OwnerOverviewService {
         }
     }
 
+    /** Category breakdown of {@link #personalBankTotalForMonth} for a calendar month — same
+     * statement-covered/manual split. Powers a per-month "what does Personal consist of" view on
+     * the Net tab, since the owner can flag more than one category personal. Best-effort, same
+     * resilience convention as expenseCategoryBreakdownForMonth. */
+    private Map<String, BigDecimal> personalBreakdownForMonth(int year, int month) {
+        try {
+            YearMonth ym = YearMonth.of(year, month);
+            LocalDate from = ym.atDay(1), to = ym.atEndOfMonth();
+            return expenseImports.isPeriodStatementCovered(from, to)
+                    ? expenses.resolveStatementDerivedPersonalBreakdownByCategory(expenseImports.linkedExpenseEntryIds(from, to))
+                    : expenses.resolvePersonalBreakdownByCategory(from, to);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     private static BigDecimal netRevenue(BigDecimal gross, BigDecimal cardPayroll, BigDecimal cashPayroll,
                                           BigDecimal expenseTotal, BigDecimal cashBusinessExpenseTotal,
                                           BigDecimal managerLaborCost) {
@@ -511,7 +529,7 @@ public class OwnerOverviewService {
     private static MonthSummary emptyMonth(int year, int month) {
         return new MonthSummary(year, month, label(month), null, null, null, null, 0,
                 null, null, null, false, 0, 0, null, null, null, false,
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null);
     }
 
     /** Whether a COMPLETED bank-statement reconciliation overlaps this month (see

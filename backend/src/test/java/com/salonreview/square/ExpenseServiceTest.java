@@ -180,6 +180,50 @@ class ExpenseServiceTest {
     }
 
     @Test
+    @DisplayName("resolvePersonalBreakdownByCategory groups by category, can span more than one personal category")
+    void resolvePersonalBreakdownByCategoryGroups() {
+        LocalDate from = LocalDate.of(2026, 7, 1);
+        LocalDate to = LocalDate.of(2026, 7, 31);
+        when(categories.personalCategoryCodes()).thenReturn(Set.of("PERSONAL", "OWNER_MEALS"));
+        when(repository.findOverlapping(from, to)).thenReturn(List.of(
+                ExpenseEntry.builder().category("MATERIALS").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("200.00")).build(),
+                ExpenseEntry.builder().category("PERSONAL").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("2364.02")).build(),
+                ExpenseEntry.builder().category("OWNER_MEALS").periodStart(from).periodEnd(to)
+                        .amount(new BigDecimal("65.00")).build()));
+
+        Map<String, BigDecimal> breakdown = service.resolvePersonalBreakdownByCategory(from, to);
+
+        assertThat(breakdown).hasSize(2);
+        assertThat(breakdown.get("PERSONAL")).isEqualByComparingTo("2364.02");
+        assertThat(breakdown.get("OWNER_MEALS")).isEqualByComparingTo("65.00");
+        BigDecimal total = breakdown.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(total).isEqualByComparingTo(service.resolvePersonalTotal(from, to));
+    }
+
+    @Test
+    @DisplayName("resolveStatementDerivedPersonalBreakdownByCategory groups the linked ids by personal category, no proration")
+    void resolveStatementDerivedPersonalBreakdownByCategoryGroups() {
+        when(categories.personalCategoryCodes()).thenReturn(Set.of("PERSONAL"));
+        when(repository.findAllById(List.of(1L, 2L, 3L))).thenReturn(List.of(
+                ExpenseEntry.builder().id(1L).category("MATERIALS").amount(new BigDecimal("120.00")).build(),
+                ExpenseEntry.builder().id(2L).category("PERSONAL").amount(new BigDecimal("180.00")).build(),
+                ExpenseEntry.builder().id(3L).category("PERSONAL").amount(new BigDecimal("20.00")).build()));
+
+        Map<String, BigDecimal> breakdown = service.resolveStatementDerivedPersonalBreakdownByCategory(List.of(1L, 2L, 3L));
+
+        assertThat(breakdown).containsOnly(entry("PERSONAL", new BigDecimal("200.00")));
+    }
+
+    @Test
+    @DisplayName("resolveStatementDerivedPersonalBreakdownByCategory is empty for an empty id list, no repository call")
+    void resolveStatementDerivedPersonalBreakdownByCategoryEmptyIds() {
+        assertThat(service.resolveStatementDerivedPersonalBreakdownByCategory(List.of())).isEmpty();
+        verify(repository, never()).findAllById(any());
+    }
+
+    @Test
     @DisplayName("resolveStatementDerivedExpenseBreakdownByCategory groups the linked ids by category, no proration")
     void resolveStatementDerivedExpenseBreakdownByCategoryGroups() {
         when(repository.findAllById(List.of(1L, 2L, 3L, 4L))).thenReturn(List.of(
