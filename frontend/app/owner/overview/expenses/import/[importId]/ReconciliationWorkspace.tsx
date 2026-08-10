@@ -19,6 +19,39 @@ const GROUPS: { key: GroupKey; label: string; statuses: BankTransactionStatus[] 
   { key: 'DUPLICATE', label: 'Duplicates', statuses: ['DUPLICATE'] },
 ];
 
+const UNCATEGORIZED = 'UNCATEGORIZED';
+
+function categoryLabel(code: string, categories: ExpenseCategoryDefinition[]): string {
+  return categories.find((c) => c.code === code)?.label ?? code;
+}
+
+type SortKey = 'DEFAULT' | 'DATE_DESC' | 'DATE_ASC' | 'AMOUNT_DESC' | 'AMOUNT_ASC' | 'MERCHANT_ASC';
+
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: 'DEFAULT', label: 'Sort: Default' },
+  { key: 'DATE_DESC', label: 'Date (newest first)' },
+  { key: 'DATE_ASC', label: 'Date (oldest first)' },
+  { key: 'AMOUNT_DESC', label: 'Amount (highest first)' },
+  { key: 'AMOUNT_ASC', label: 'Amount (lowest first)' },
+  { key: 'MERCHANT_ASC', label: 'Merchant (A–Z)' },
+];
+
+/** DEFAULT leaves the backend's own order untouched — every other option re-sorts a copy.
+ * Amount compares magnitude (not sign) so "highest first" means biggest expense first regardless
+ * of the signed in/out convention, matching how CategoryBreakdown already treats amounts. */
+function sortTransactions(rows: BankTransaction[], key: SortKey): BankTransaction[] {
+  if (key === 'DEFAULT') return rows;
+  const sorted = [...rows];
+  switch (key) {
+    case 'DATE_DESC': sorted.sort((a, b) => b.transactionDate.localeCompare(a.transactionDate)); break;
+    case 'DATE_ASC': sorted.sort((a, b) => a.transactionDate.localeCompare(b.transactionDate)); break;
+    case 'AMOUNT_DESC': sorted.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount)); break;
+    case 'AMOUNT_ASC': sorted.sort((a, b) => Math.abs(a.amount) - Math.abs(b.amount)); break;
+    case 'MERCHANT_ASC': sorted.sort((a, b) => a.normalizedMerchant.localeCompare(b.normalizedMerchant)); break;
+  }
+  return sorted;
+}
+
 export default function ReconciliationWorkspace({ importId }: { importId: number }) {
   const router = useRouter();
   const [detail, setDetail] = useState<BankStatementImportDetail | null>(null);
@@ -26,6 +59,8 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+  const [sortBy, setSortBy] = useState<SortKey>('DEFAULT');
   // Needs Review expanded by default; everything else collapsed (openspec design.md §8/§10).
   const [collapsed, setCollapsed] = useState<Set<GroupKey>>(new Set(['CATEGORIZED', 'EXCLUDED', 'DUPLICATE']));
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -60,12 +95,36 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
 
   const filtered = useMemo(() => {
     if (!detail) return [];
+    let rows = detail.transactions;
     const q = search.trim().toLowerCase();
-    if (!q) return detail.transactions;
-    return detail.transactions.filter(
-      (t) => t.rawDescription.toLowerCase().includes(q) || t.normalizedMerchant.toLowerCase().includes(q),
-    );
-  }, [detail, search]);
+    if (q) {
+      rows = rows.filter(
+        (t) => t.rawDescription.toLowerCase().includes(q) || t.normalizedMerchant.toLowerCase().includes(q),
+      );
+    }
+    if (categoryFilter !== 'ALL') {
+      rows = rows.filter((t) => (categoryFilter === UNCATEGORIZED ? t.category == null : t.category === categoryFilter));
+    }
+    return rows;
+  }, [detail, search, categoryFilter]);
+
+  // Every category that actually appears among this import's transactions (plus a synthetic
+  // "Uncategorized" bucket for Needs Review/uncategorized Excluded rows) — not the full category
+  // picker list, so the dropdown only ever offers choices that will actually show something.
+  const categoryOptions = useMemo(() => {
+    if (!detail) return [];
+    const counts = new Map<string, number>();
+    let uncategorized = 0;
+    for (const t of detail.transactions) {
+      if (t.category) counts.set(t.category, (counts.get(t.category) ?? 0) + 1);
+      else uncategorized += 1;
+    }
+    const opts = Array.from(counts.entries())
+      .map(([code, count]) => ({ code, label: categoryLabel(code, categories), count }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    if (uncategorized > 0) opts.push({ code: UNCATEGORIZED, label: 'Uncategorized', count: uncategorized });
+    return opts;
+  }, [detail, categories]);
 
   function groupOf(t: BankTransaction): GroupKey {
     return GROUPS.find((g) => g.statuses.includes(t.status))?.key ?? 'NEEDS_REVIEW';
@@ -250,7 +309,7 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
 
       <CategoryBreakdown transactions={detail.transactions} categories={categories} />
 
-      <div className="mt-3">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         <input
           type="text"
           value={search}
@@ -258,13 +317,47 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
           placeholder="Search merchant/description…"
           className="w-full max-w-sm rounded border border-zinc-300 px-2 py-1.5 text-sm"
         />
+        <select
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          className="rounded border border-zinc-300 px-2 py-1.5 text-sm text-zinc-700"
+          data-testid="reconciliation-category-filter"
+        >
+          <option value="ALL">All categories</option>
+          {categoryOptions.map((o) => (
+            <option key={o.code} value={o.code}>{o.label} ({o.count})</option>
+          ))}
+        </select>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as SortKey)}
+          className="rounded border border-zinc-300 px-2 py-1.5 text-sm text-zinc-700"
+          data-testid="reconciliation-sort"
+        >
+          {SORT_OPTIONS.map((o) => (
+            <option key={o.key} value={o.key}>{o.label}</option>
+          ))}
+        </select>
+        {(categoryFilter !== 'ALL' || sortBy !== 'DEFAULT' || search) && (
+          <button
+            type="button"
+            onClick={() => { setSearch(''); setCategoryFilter('ALL'); setSortBy('DEFAULT'); }}
+            className="text-xs font-medium text-zinc-500 underline hover:text-zinc-800"
+          >
+            Reset
+          </button>
+        )}
       </div>
 
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
 
+      {filtered.length === 0 && (
+        <p className="mt-3 text-sm text-zinc-500">No transactions match the current search/filter.</p>
+      )}
+
       <div className="mt-3 flex flex-col gap-4">
         {GROUPS.map((g) => {
-          const rows = filtered.filter((t) => groupOf(t) === g.key);
+          const rows = sortTransactions(filtered.filter((t) => groupOf(t) === g.key), sortBy);
           if (rows.length === 0) return null;
           const isOpen = !collapsed.has(g.key);
           const selectable = g.key === 'NEEDS_REVIEW' || g.key === 'CATEGORIZED';
