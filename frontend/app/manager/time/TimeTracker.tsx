@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
-import { t } from '../../lib/i18n';
+import { t, tf } from '../../lib/i18n';
 import type { Language, ManagerTimesheet, TimeEntry, TimeEntryInput } from '../../lib/types';
 
 const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -13,6 +13,35 @@ function fmtHM(minutes: number) {
   const m = minutes % 60;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
+
+/** "09:00" -> 540, or null if not a full HH:mm value yet. */
+function toMinutes(hhmm: string): number | null {
+  const m = /^(\d{2}):(\d{2})$/.exec(hhmm);
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+/** "09:00" -> "9:00 AM" — a locale-independent readback so a manager can catch a native
+ * time-picker AM/PM slip (a scroll-wheel picker on mobile is very easy to fumble) before saving,
+ * regardless of how their browser/OS happens to render the <input type="time"> control itself. */
+function fmt12(hhmm: string): string {
+  const mins = toMinutes(hhmm);
+  if (mins == null) return '';
+  const h24 = Math.floor(mins / 60);
+  const mm = mins % 60;
+  const period = h24 < 12 ? 'AM' : 'PM';
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${String(mm).padStart(2, '0')} ${period}`;
+}
+
+// A shift outside this range is almost always a mistyped time (most often an AM/PM slip on a
+// native time picker's scroll-wheel) rather than a real shift. Deliberately tighter than
+// ManagerTimeService's own MAX_REASONABLE_SHIFT_MINUTES (14h) on the backend: this gate exists to
+// catch the mistake *before* it's saved, so it's fine to nudge on a merely-unusual 12-13h shift a
+// manager can just re-confirm, where the backend's after-the-fact owner-facing anomaly view can
+// afford to be less sensitive (it's reviewing history, not blocking entry).
+const MIN_REASONABLE_MINUTES = 120;
+const MAX_REASONABLE_MINUTES = 12 * 60;
 
 /** Live elapsed "H:MM:SS" from an ISO start to now. */
 function elapsed(startIso: string, nowMs: number) {
@@ -271,7 +300,26 @@ function ShiftForm({
 }) {
   const label = 'block text-xs text-zinc-500';
   const input = 'mt-0.5 w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm focus:border-zinc-500 focus:outline-none';
-  const valid = draft.date && draft.startTime && draft.endTime;
+
+  const startMin = toMinutes(draft.startTime);
+  const endMin = toMinutes(draft.endTime);
+  const hasBothTimes = startMin != null && endMin != null;
+  const endBeforeStart = hasBothTimes && endMin <= startMin;
+  const durationMin = hasBothTimes && !endBeforeStart ? endMin - startMin : null;
+  const suspicious = durationMin != null && (durationMin < MIN_REASONABLE_MINUTES || durationMin > MAX_REASONABLE_MINUTES);
+
+  // Re-required every time the actual times change, so a manager can't confirm once and then
+  // silently edit the field back into a mistake. Adjusted during render (React's documented
+  // pattern for resetting state when an input changes) rather than in an effect, which would
+  // cause an extra render pass.
+  const timeKey = `${draft.startTime}|${draft.endTime}`;
+  const [ackState, setAckState] = useState({ key: timeKey, ack: false });
+  if (ackState.key !== timeKey) setAckState({ key: timeKey, ack: false });
+  const ack = ackState.ack;
+  const setAck = (v: boolean) => setAckState({ key: timeKey, ack: v });
+
+  const valid = Boolean(draft.date && draft.startTime && draft.endTime && !endBeforeStart && (!suspicious || ack));
+
   return (
     <div className="rounded-lg bg-zinc-50 p-3 ring-1 ring-zinc-200">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -281,17 +329,52 @@ function ShiftForm({
         </label>
         <label>
           <span className={label}>{t(language, 'timeStart')}</span>
-          <input type="time" value={draft.startTime} onChange={(e) => setDraft({ ...draft, startTime: e.target.value })} className={input} />
+          <input type="time" value={draft.startTime} onChange={(e) => setDraft({ ...draft, startTime: e.target.value })} className={input} data-testid="shift-start" />
         </label>
         <label>
           <span className={label}>{t(language, 'timeEnd')}</span>
-          <input type="time" value={draft.endTime} onChange={(e) => setDraft({ ...draft, endTime: e.target.value })} className={input} />
+          <input type="time" value={draft.endTime} onChange={(e) => setDraft({ ...draft, endTime: e.target.value })} className={input} data-testid="shift-end" />
         </label>
         <label className="col-span-2 sm:col-span-4">
           <span className={label}>{t(language, 'timeNote')}</span>
           <input type="text" value={draft.note} maxLength={255} onChange={(e) => setDraft({ ...draft, note: e.target.value })} className={input} />
         </label>
       </div>
+
+      {/* Always-visible 12h readback + duration — the native time picker's own AM/PM control can be
+          fumbled on mobile (a scroll-wheel is easy to nudge one notch), so this line is the one
+          place a manager can catch that mistake regardless of how their browser renders the input. */}
+      {hasBothTimes && !endBeforeStart && (
+        <p className="mt-2 text-xs text-zinc-500" data-testid="shift-readback">
+          {fmt12(draft.startTime)} – {fmt12(draft.endTime)} · {t(language, 'timeDuration')}: <span className="tabular-nums font-medium text-zinc-700">{fmtHM(durationMin ?? 0)}</span>
+        </p>
+      )}
+      {endBeforeStart && (
+        <p className="mt-2 text-xs text-red-600">{t(language, 'timeEndBeforeStart')}</p>
+      )}
+
+      {suspicious && !endBeforeStart && (
+        <div className="mt-2 rounded-md bg-amber-50 p-2.5 ring-1 ring-amber-300">
+          <p className="text-xs text-amber-800">
+            {tf(language, 'timeCheckAmPm', {
+              dur: fmtHM(durationMin ?? 0),
+              start: fmt12(draft.startTime),
+              end: fmt12(draft.endTime),
+            })}
+          </p>
+          <label className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-amber-900">
+            <input
+              type="checkbox"
+              checked={ack}
+              onChange={(e) => setAck(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-amber-400"
+              data-testid="shift-ampm-ack"
+            />
+            {t(language, 'timeConfirmAmPm')}
+          </label>
+        </div>
+      )}
+
       <div className="mt-3 flex items-center gap-2">
         <button
           onClick={onSubmit}
