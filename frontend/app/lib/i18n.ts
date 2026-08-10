@@ -164,6 +164,13 @@ const STRINGS = {
   timeCancel: { EN: 'Cancel', RU: 'Отмена' },
   timeNoEntries: { EN: 'No shifts logged this month yet.', RU: 'В этом месяце ещё нет смен.' },
   timeShifts: { EN: 'Shifts', RU: 'Смены' },
+  timeEndBeforeStart: { EN: 'End time must be after start time.', RU: 'Время окончания должно быть позже времени начала.' },
+  timeDuration: { EN: 'Duration', RU: 'Длительность' },
+  timeCheckAmPm: {
+    EN: 'That looks like a {dur} shift ({start} – {end}). Double-check AM/PM before saving.',
+    RU: 'Похоже, это смена на {dur} ({start} – {end}). Проверьте АМ/PM перед сохранением.',
+  },
+  timeConfirmAmPm: { EN: 'Yes, this time is correct', RU: 'Да, это время верное' },
   // Owner payroll view
   timeOwnerTitle: { EN: 'Manager time', RU: 'Время менеджеров' },
   timeOwnerSubtitle: {
