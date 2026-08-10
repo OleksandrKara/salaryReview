@@ -21,6 +21,15 @@ function weightedPayrollPct(months: MonthSummary[]): string | null {
   return gross > 0 ? ((payroll / gross) * 100).toFixed(1) + '%' : null;
 }
 
+// Below this, the first-window average is too close to zero for a percentage to mean anything —
+// dollars and raw counts need different floors, since "2 services" and "$2" are both noise-level
+// but by very different absolute amounts.
+const MIN_BASE: Record<'grossRevenue' | 'procedures' | 'returningClients', number> = {
+  grossRevenue: 100,
+  procedures: 5,
+  returningClients: 3,
+};
+
 // Growth across the selected range, comparing the AVERAGE of the first N months to the average of the
 // last N months (N up to 3, never overlapping). Endpoint-averaging is the fix for the old first-vs-last
 // month formula, which swung wildly whenever one endpoint month happened to be high or low — e.g. adding
@@ -39,12 +48,20 @@ function smoothedGrowth(active: MonthSummary[], key: 'grossRevenue' | 'procedure
   };
   const firstAvg = avg(active.slice(0, w));
   const lastAvg = avg(active.slice(active.length - w));
-  if (firstAvg == null || lastAvg == null || firstAvg === 0) return null;
+  if (firstAvg == null || lastAvg == null) return null;
+  // Below the floor, a percentage is arithmetic noise (a tiny prior average can produce a
+  // thousands-of-percent swing) — show the absolute change instead so the badge stays honest.
+  if (Math.abs(firstAvg) < MIN_BASE[key]) {
+    const delta = lastAvg - firstAvg;
+    if (delta === 0) return null;
+    const deltaLabel = key === 'grossRevenue' ? usd(Math.round(Math.abs(delta))) : String(Math.round(Math.abs(delta)));
+    return { w, positive: delta >= 0, label: `${delta >= 0 ? '↑ +' : '↓ '}${deltaLabel}` };
+  }
   const d = ((lastAvg - firstAvg) / firstAvg) * 100;
-  return { d, w, positive: d >= 0, label: `${d >= 0 ? '↑ +' : '↓ '}${Math.abs(d).toFixed(1)}%` };
+  return { w, positive: d >= 0, label: `${d >= 0 ? '↑ +' : '↓ '}${Math.abs(d).toFixed(1)}%` };
 }
 
-type Growth = { d: number; w: number; positive: boolean; label: string };
+type Growth = { w: number; positive: boolean; label: string };
 
 function GrowthChip({ name, growth, what }: { name: string; growth: Growth | null; what: string }) {
   if (!growth) return null;
