@@ -484,7 +484,7 @@ export default function MessagesView({
       setDraft(result.body);
       requestAnimationFrame(() => draftInputRef.current?.focus());
     } catch {
-      setDraftError('Could not generate a draft. The AI reply feature may not be enabled — write a reply manually.');
+      setDraftError('Could not generate a draft right now — please write a reply manually, or try again.');
     } finally {
       setDrafting(false);
     }
