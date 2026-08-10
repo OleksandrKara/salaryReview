@@ -35,6 +35,7 @@ import type {
   SmsConversationDto,
   SmsConversationSearchHitDto,
   SmsReplyResult,
+  SmsDraftResult,
   MarketingContact,
   Me,
   RagAnswer,
@@ -248,6 +249,12 @@ export const api = {
   // null when this phone number never went through the tracked marketing.contacts capture flow.
   getSmsContact: (phoneNumber: string) =>
     proxyGet<MarketingContact | null>(`/api/owner/automations/activity/conversations/${encodeURIComponent(phoneNumber)}/contact`),
+
+  // AI-drafted reply suggestion ("Generate" button in the composer) — fills the draft textarea for
+  // the manager to review/edit before sending; never sends on its own. 404s if ai.sms-draft.enabled
+  // is off on the backend, same ships-dark convention as analyzeFunnel above.
+  draftSmsReply: (phoneNumber: string) =>
+    proxyJson<SmsDraftResult>(`/api/owner/automations/activity/conversations/${encodeURIComponent(phoneNumber)}/draft-reply`, 'POST', {}),
 
   // Marks every unread inbound message in this thread read in one call — see MessagesView.tsx's
   // openThread, which calls this alongside its own optimistic local unread-badge reset so the two

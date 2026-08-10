@@ -124,6 +124,12 @@ ai:
   # ANTHROPIC_API_KEY with triage above. See AiFunnelAnalysisProperties.java.
   funnel-analysis:
     enabled: ${AI_FUNNEL_ANALYSIS_ENABLED:false}
+  # AI-drafted SMS reply ("Generate" button in the /admin/messages conversation view). Feature
+  # flag is off by default; shares ANTHROPIC_API_KEY with triage above. Also uses RAG retrieval
+  # for grounding when rag.enabled is also on — gracefully skipped otherwise. See
+  # AiSmsDraftProperties.java.
+  sms-draft:
+    enabled: ${AI_SMS_DRAFT_ENABLED:false}
 
 # RAG knowledge assistant. Feature flag is off by default; turn on per environment only after
 # ANTHROPIC_API_KEY (answers, shared with triage) and VOYAGE_API_KEY (embeddings) are set.

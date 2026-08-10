@@ -127,6 +127,11 @@ export default function MessagesView({
   const [showContactPanel, setShowContactPanel] = useState(false);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  // AI "Generate" button state — see generateDraft below. draftError is cleared on the next
+  // attempt/thread switch, not on a timer, so it stays visible until the manager either retries or
+  // moves on.
+  const [drafting, setDrafting] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
   // Photos staged for the next send — cleared (and their object URLs revoked) once the send
   // completes or the composer is abandoned for a different thread.
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
@@ -261,6 +266,7 @@ export default function MessagesView({
       // new customer's composer.
       setAttachedFiles([]);
       setDraft('');
+      setDraftError(null);
       // A freshly opened thread should land at the newest message, regardless of where the reader
       // happened to leave the scroll position of whichever thread they had open before.
       isNearBottomRef.current = true;
@@ -464,6 +470,24 @@ export default function MessagesView({
       const cursor = start + emoji.length;
       el?.setSelectionRange(cursor, cursor);
     });
+  }
+
+  // AI-drafted reply suggestion ("Generate" button) — fills the composer for the manager to review
+  // and edit, never sends on its own. Overwrites whatever's already typed, same as clicking any
+  // other "insert" control in this composer (attach photo, emoji).
+  async function generateDraft() {
+    if (!selectedPhone || drafting) return;
+    setDrafting(true);
+    setDraftError(null);
+    try {
+      const result = await api.draftSmsReply(selectedPhone);
+      setDraft(result.body);
+      requestAnimationFrame(() => draftInputRef.current?.focus());
+    } catch {
+      setDraftError('Could not generate a draft. The AI reply feature may not be enabled — write a reply manually.');
+    } finally {
+      setDrafting(false);
+    }
   }
 
   function addAttachedFiles(files: FileList | null) {
@@ -886,6 +910,11 @@ export default function MessagesView({
                     ))}
                   </div>
                 )}
+                {draftError && (
+                  <p data-testid="thread-composer-draft-error" className="px-3 pt-2 text-xs text-red-600">
+                    {draftError}
+                  </p>
+                )}
                 <form
                   data-testid="thread-composer"
                   onSubmit={(e) => {
@@ -932,6 +961,27 @@ export default function MessagesView({
                       </span>
                     }
                   />
+                  <button
+                    type="button"
+                    data-testid="thread-composer-generate-button"
+                    onClick={() => void generateDraft()}
+                    disabled={drafting}
+                    aria-label="Generate an AI reply suggestion"
+                    title="Generate an AI reply suggestion"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 disabled:opacity-40 sm:h-9 sm:w-9"
+                  >
+                    {drafting ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="animate-spin" aria-hidden>
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                      </svg>
+                    ) : (
+                      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                        <path d="m12 3-1.4 3.6L7 8l3.6 1.4L12 13l1.4-3.6L17 8l-3.6-1.4Z" />
+                        <path d="M5 17l-.8 2-2 .8 2 .8.8 2 .8-2 2-.8-2-.8Z" />
+                        <path d="M19 15l-.6 1.4-1.4.6 1.4.6.6 1.4.6-1.4 1.4-.6-1.4-.6Z" />
+                      </svg>
+                    )}
+                  </button>
                   {/* text-base (16px), not text-sm, on mobile — a smaller font on a focused input
                       makes iOS Safari auto-zoom the whole page, which is jarring here.
 

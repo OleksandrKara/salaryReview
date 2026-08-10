@@ -200,6 +200,14 @@ export interface SmsReplyResult {
   reason: string | null;
 }
 
+// AI-drafted reply suggestion for the manager conversation view's "Generate" button — see
+// SmsActivityController#draftReply. A draft only; the manager reviews/edits it in the composer
+// before actually sending via api.sendSmsReply.
+export interface SmsDraftResult {
+  body: string;
+  model: string;
+}
+
 // One phone number's most-recent matching message for the manager conversation view's search
 // box — content matches only; name/phone matches are found client-side against the already-
 // loaded conversation list (see MessagesView.tsx).
