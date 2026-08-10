@@ -148,20 +148,28 @@ export default function TransactionRow({
       {/* Mobile card */}
       <div className="min-w-0 rounded-lg p-3 ring-1 ring-zinc-200 sm:hidden">
         <div className="flex items-start justify-between gap-2">
-          <label className="flex items-start gap-2">
+          <label className="flex min-w-0 items-start gap-2">
             {selectable && (
-              <input type="checkbox" checked={selected} onChange={onToggleSelect} className="mt-0.5 h-4 w-4" />
+              <input type="checkbox" checked={selected} onChange={onToggleSelect} className="mt-0.5 h-4 w-4 shrink-0" />
             )}
             <span className="min-w-0">
               <div className="text-sm font-medium text-zinc-800">{txn.transactionDate}</div>
               <div className="truncate text-xs text-zinc-500" title={txn.rawDescription}>{txn.rawDescription}</div>
             </span>
           </label>
-          <span className="whitespace-nowrap text-sm font-medium tabular-nums text-zinc-800">{usdExact(txn.amount)}</span>
+          <span className="shrink-0 whitespace-nowrap text-sm font-medium tabular-nums text-zinc-800">{usdExact(txn.amount)}</span>
         </div>
-        <div className="mt-2 flex items-center gap-1.5">
+        {/* flex-wrap + truncate — a long category label (e.g. "Software Subscriptions") next to the
+            confidence badge and info tip has no room to sit on one line on a narrow phone; without
+            wrap this row silently pushed the whole card wider than the viewport, which is what
+            forces the browser to zoom the entire page out (tiny text, "wide" blocks). */}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <ConfidenceBadge txn={txn} />
-          {txn.category && <span className="text-xs text-zinc-500">{categoryLabel(txn.category, categories)}</span>}
+          {txn.category && (
+            <span className="max-w-[12rem] truncate text-xs text-zinc-500" title={categoryLabel(txn.category, categories)}>
+              {categoryLabel(txn.category, categories)}
+            </span>
+          )}
           {infoTip}
         </div>
         <div className="mt-2">{editor}</div>
