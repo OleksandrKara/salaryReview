@@ -97,7 +97,7 @@ public class ExpenseImportController {
     private static ImportDto toImportDto(BankStatementImport i) {
         return new ImportDto(i.getId(), i.getOriginalFilename(), i.getRowCount(), i.getStatementPeriodStart(),
                 i.getStatementPeriodEnd(), i.getStatus(), i.getUploadedBy(), i.getUploadedAt(),
-                i.getCompletedAt(), i.getRevertedAt());
+                i.getCompletedAt(), i.getRevertedAt(), i.getOpeningBalance(), i.getClosingBalance());
     }
 
     private static TransactionDto toTransactionDto(BankTransaction t) {
@@ -109,7 +109,8 @@ public class ExpenseImportController {
 
     public record ImportDto(Long id, String originalFilename, int rowCount, LocalDate statementPeriodStart,
                              LocalDate statementPeriodEnd, String status, String uploadedBy, Instant uploadedAt,
-                             Instant completedAt, Instant revertedAt) {}
+                             Instant completedAt, Instant revertedAt,
+                             java.math.BigDecimal openingBalance, java.math.BigDecimal closingBalance) {}
 
     public record ImportDetailDto(ImportDto importSummary, List<TransactionDto> transactions) {}
 

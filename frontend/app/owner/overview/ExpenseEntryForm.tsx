@@ -103,6 +103,7 @@ export default function ExpenseEntryForm() {
   const [to, setTo] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  const [paidInCash, setPaidInCash] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -158,9 +159,10 @@ export default function ExpenseEntryForm() {
     setBusy(true);
     setError('');
     try {
-      await api.createExpenseEntry(category, from, to, value, note || undefined);
+      await api.createExpenseEntry(category, from, to, value, note || undefined, paidInCash);
       setAmount('');
       setNote('');
+      setPaidInCash(false);
       setSavedAt(Date.now());
       void loadEntries();
     } catch (e) {
@@ -170,11 +172,14 @@ export default function ExpenseEntryForm() {
     }
   }
 
-  async function saveEdit(id: number, editCategory: ExpenseCategory, editFrom: string, editTo: string, editAmount: number, editNote: string) {
+  async function saveEdit(
+    id: number, editCategory: ExpenseCategory, editFrom: string, editTo: string, editAmount: number,
+    editNote: string, editPaidInCash: boolean,
+  ) {
     setRowBusyId(id);
     setRowError('');
     try {
-      await api.updateExpenseEntry(id, editCategory, editFrom, editTo, editAmount, editNote || undefined);
+      await api.updateExpenseEntry(id, editCategory, editFrom, editTo, editAmount, editNote || undefined, editPaidInCash);
       setEditingId(null);
       void loadEntries();
     } catch (e) {
@@ -278,6 +283,12 @@ export default function ExpenseEntryForm() {
           />
         </label>
 
+        <label className="flex items-center gap-1.5 pb-1.5 text-xs text-zinc-600">
+          <input type="checkbox" checked={paidInCash} onChange={(e) => setPaidInCash(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-zinc-300" />
+          Paid in cash
+        </label>
+
         <button
           type="button"
           disabled={busy || (!!coveredByStatement && !confirmedDespiteCoverage)}
@@ -325,7 +336,7 @@ export default function ExpenseEntryForm() {
                 busy={rowBusyId === e.id}
                 onEdit={() => { setEditingId(e.id); setRowError(''); }}
                 onCancelEdit={() => setEditingId(null)}
-                onSaveEdit={(c, f, t, amt, n) => saveEdit(e.id, c, f, t, amt, n)}
+                onSaveEdit={(c, f, t, amt, n, cash) => saveEdit(e.id, c, f, t, amt, n, cash)}
                 onDelete={() => deleteEntry(e.id)}
                 categories={categories}
               />
@@ -348,7 +359,7 @@ function ExpenseEntryRow({
   busy: boolean;
   onEdit: () => void;
   onCancelEdit: () => void;
-  onSaveEdit: (category: ExpenseCategory, from: string, to: string, amount: number, note: string) => void;
+  onSaveEdit: (category: ExpenseCategory, from: string, to: string, amount: number, note: string, paidInCash: boolean) => void;
   onDelete: () => void;
   categories: ExpenseCategoryDefinition[];
 }) {
@@ -357,6 +368,7 @@ function ExpenseEntryRow({
   const [editTo, setEditTo] = useState(entry.periodEnd);
   const [editAmount, setEditAmount] = useState(String(entry.amount));
   const [editNote, setEditNote] = useState(entry.note ?? '');
+  const [editPaidInCash, setEditPaidInCash] = useState(entry.paidInCash);
 
   if (!editing) {
     return (
@@ -364,6 +376,7 @@ function ExpenseEntryRow({
         <div className="min-w-0">
           <span className="font-medium text-zinc-700">{categoryLabel(entry.category, categories)}</span>{' '}
           {fmtDateRange(entry.periodStart, entry.periodEnd)}
+          {entry.paidInCash ? <span className="ml-1 rounded bg-emerald-50 px-1 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-200">Cash</span> : null}
           {entry.note ? <span className="text-zinc-400"> — {entry.note}</span> : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -408,10 +421,15 @@ function ExpenseEntryRow({
         <input type="text" value={editNote} onChange={(e) => setEditNote(e.target.value)}
           className="w-32 rounded border border-zinc-300 px-1.5 py-1" />
       </label>
+      <label className="flex items-center gap-1.5 pb-1 text-zinc-600">
+        <input type="checkbox" checked={editPaidInCash} onChange={(e) => setEditPaidInCash(e.target.checked)}
+          className="h-3.5 w-3.5 rounded border-zinc-300" />
+        Paid in cash
+      </label>
       <button
         type="button"
         disabled={busy}
-        onClick={() => onSaveEdit(editCategory, editFrom, editTo, Number(editAmount), editNote)}
+        onClick={() => onSaveEdit(editCategory, editFrom, editTo, Number(editAmount), editNote, editPaidInCash)}
         className="rounded bg-zinc-800 px-2 py-1 font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
       >
         {busy ? 'Saving…' : 'Save'}

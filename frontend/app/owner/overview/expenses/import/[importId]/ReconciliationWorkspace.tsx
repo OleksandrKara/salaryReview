@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api } from '../../../../../lib/api';
-import type { BankStatementImportDetail, BankTransaction, BankTransactionStatus, ExpenseCategoryDefinition } from '../../../../../lib/types';
+import type { BankStatementImportDetail, BankStatementImportSummary, BankTransaction, BankTransactionStatus, ExpenseCategoryDefinition } from '../../../../../lib/types';
 import TransactionRow, { type RememberDecision } from './TransactionRow';
 import BulkActionBar from './BulkActionBar';
 import CategoryBreakdown from './CategoryBreakdown';
@@ -246,6 +246,8 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
         </div>
       </div>
 
+      <BalanceReconciliationBanner importSummary={importSummary} transactions={detail.transactions} />
+
       <CategoryBreakdown transactions={detail.transactions} categories={categories} />
 
       <div className="mt-3">
@@ -311,6 +313,49 @@ export default function ReconciliationWorkspace({ importId }: { importId: number
         <Link href="/owner/overview/expenses/history" className="text-blue-600 hover:underline">← Import history</Link>
         <Link href="/owner/overview/expenses" className="text-blue-600 hover:underline">Back to Expenses</Link>
       </div>
+    </div>
+  );
+}
+
+const usd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+
+/** Opening + Σ imported transactions = Closing, verified against the statement's own printed
+ * closing balance — catches missing/duplicated rows. Hidden entirely when either balance is
+ * null (imports uploaded before this was captured, or an export whose format doesn't include the
+ * balance block) — a bank-account check, distinct from salon cash-on-hand, which this schema has
+ * no source for. */
+function BalanceReconciliationBanner({
+  importSummary, transactions,
+}: {
+  importSummary: BankStatementImportSummary;
+  transactions: BankTransaction[];
+}) {
+  const { openingBalance, closingBalance } = importSummary;
+  if (openingBalance === null || closingBalance === null) return null;
+
+  const transactionsSum = transactions.reduce((sum, t) => sum + t.amount, 0);
+  const expectedClosing = openingBalance + transactionsSum;
+  // Cents-level float noise from summing many amounts — a cent or two shouldn't read as a mismatch.
+  const matches = Math.abs(expectedClosing - closingBalance) < 0.01;
+
+  return (
+    <div
+      className={`mt-3 flex flex-wrap items-center gap-2 rounded-md px-3 py-2 text-xs ring-1 ${
+        matches ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-amber-50 text-amber-800 ring-amber-200'
+      }`}
+    >
+      <span className="font-medium">{matches ? '✓' : '⚠'} Bank-account reconciliation:</span>
+      <span className="tabular-nums">
+        {usd(openingBalance)} opening → {transactions.length} transactions ({usd(transactionsSum)}) → {usd(expectedClosing)}
+      </span>
+      {matches ? (
+        <span>matches the statement&apos;s printed closing balance of {usd(closingBalance)}.</span>
+      ) : (
+        <span>
+          doesn&apos;t match the statement&apos;s printed closing balance of {usd(closingBalance)} — off by{' '}
+          {usd(Math.abs(expectedClosing - closingBalance))}. A transaction may be missing or duplicated.
+        </span>
+      )}
     </div>
   );
 }

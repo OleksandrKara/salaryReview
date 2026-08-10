@@ -3,6 +3,7 @@ package com.salonreview.domain;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 
@@ -42,6 +43,17 @@ public class BankStatementImport {
 
     @Column(name = "statement_period_end")
     private LocalDate statementPeriodEnd;
+
+    /** The statement's own printed opening/closing balance, best-effort extracted from the CSV
+     * (see {@code CsvStatementParser.extractBalances}) — null for imports uploaded before this was
+     * captured, or when the export's format doesn't include it. Enables a bank-account
+     * reconciliation check (opening + imported transactions = closing) that catches missing or
+     * duplicated rows; distinct from salon cash-on-hand, which this schema has no source for. */
+    @Column(name = "opening_balance", precision = 12, scale = 2)
+    private BigDecimal openingBalance;
+
+    @Column(name = "closing_balance", precision = 12, scale = 2)
+    private BigDecimal closingBalance;
 
     @Column(nullable = false)
     @Builder.Default

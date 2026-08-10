@@ -13,4 +13,6 @@ public interface ExpenseCategoryRepository extends JpaRepository<ExpenseCategory
     Optional<ExpenseCategoryDefinition> findByCode(String code);
 
     boolean existsByCode(String code);
+
+    List<ExpenseCategoryDefinition> findByPersonalTrue();
 }

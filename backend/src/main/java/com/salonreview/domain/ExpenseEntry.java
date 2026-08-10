@@ -57,6 +57,13 @@ public class ExpenseEntry {
     @Column(name = "entered_by", length = 100)
     private String enteredBy;
 
+    /** Manual entries only — flags a business expense as paid in cash rather than drawn from the
+     * bank, so it can be surfaced separately as "Other Cash Business Expenses" in the P&L. Always
+     * false for reconciliation-derived entries, which are bank-sourced by definition. */
+    @Column(name = "paid_in_cash", nullable = false)
+    @Builder.Default
+    private boolean paidInCash = false;
+
     @Column(name = "entered_at", nullable = false)
     private Instant enteredAt;
 

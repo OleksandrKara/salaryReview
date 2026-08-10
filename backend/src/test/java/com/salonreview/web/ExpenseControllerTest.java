@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -68,13 +69,14 @@ class ExpenseControllerTest {
     @DisplayName("POST creates a new expense entry using the caller's username")
     void createSavesEntry() throws Exception {
         when(service.createExpenseEntry(eq("MATERIALS"), eq(LocalDate.of(2026, 7, 1)), eq(LocalDate.of(2026, 7, 31)),
-                eq(new BigDecimal("200.00")), eq("OPI restock"), eq("owner")))
+                eq(new BigDecimal("200.00")), eq("OPI restock"), eq("owner"), eq(false)))
                 .thenReturn(ExpenseEntry.builder().id(1L).category("MATERIALS")
                         .periodStart(LocalDate.of(2026, 7, 1)).periodEnd(LocalDate.of(2026, 7, 31))
                         .amount(new BigDecimal("200.00")).note("OPI restock").enteredBy("owner").build());
 
         String body = JSON.writeValueAsString(new ExpenseController.ExpenseEntryRequest(
-                "MATERIALS", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), new BigDecimal("200.00"), "OPI restock"));
+                "MATERIALS", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), new BigDecimal("200.00"),
+                "OPI restock", null));
 
         mvc.perform(post("/api/owner/expenses").contentType("application/json").content(body))
                 .andExpect(status().isOk())
@@ -87,17 +89,33 @@ class ExpenseControllerTest {
     @DisplayName("POST accepts an owner-added custom category")
     void createAcceptsKnownCustomCategory() throws Exception {
         when(service.createExpenseEntry(eq("CONTRACTORS"), eq(LocalDate.of(2026, 7, 1)), eq(LocalDate.of(2026, 7, 31)),
-                eq(new BigDecimal("350.00")), any(), eq("owner")))
+                eq(new BigDecimal("350.00")), any(), eq("owner"), anyBoolean()))
                 .thenReturn(ExpenseEntry.builder().id(2L).category("CONTRACTORS")
                         .periodStart(LocalDate.of(2026, 7, 1)).periodEnd(LocalDate.of(2026, 7, 31))
                         .amount(new BigDecimal("350.00")).enteredBy("owner").build());
 
         String body = JSON.writeValueAsString(new ExpenseController.ExpenseEntryRequest(
-                "CONTRACTORS", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), new BigDecimal("350.00"), null));
+                "CONTRACTORS", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), new BigDecimal("350.00"), null, null));
 
         mvc.perform(post("/api/owner/expenses").contentType("application/json").content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.category").value("CONTRACTORS"));
+    }
+
+    @Test
+    @DisplayName("POST with paidInCash=true saves a cash-flagged entry")
+    void createSavesCashFlag() throws Exception {
+        when(service.createExpenseEntry(eq("CONTRACTORS"), any(), any(), any(), any(), eq("owner"), eq(true)))
+                .thenReturn(ExpenseEntry.builder().id(3L).category("CONTRACTORS")
+                        .amount(new BigDecimal("150.00")).paidInCash(true).build());
+
+        String body = JSON.writeValueAsString(new ExpenseController.ExpenseEntryRequest(
+                "CONTRACTORS", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), new BigDecimal("150.00"),
+                null, true));
+
+        mvc.perform(post("/api/owner/expenses").contentType("application/json").content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paidInCash").value(true));
     }
 
     @Test
@@ -107,11 +125,11 @@ class ExpenseControllerTest {
                 .when(categoryService).assertValidCode("BOGUS");
 
         String body = JSON.writeValueAsString(new ExpenseController.ExpenseEntryRequest(
-                "BOGUS", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), new BigDecimal("200.00"), null));
+                "BOGUS", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), new BigDecimal("200.00"), null, null));
 
         mvc.perform(post("/api/owner/expenses").contentType("application/json").content(body))
                 .andExpect(status().isBadRequest());
-        verify(service, never()).createExpenseEntry(any(), any(), any(), any(), any(), any());
+        verify(service, never()).createExpenseEntry(any(), any(), any(), any(), any(), any(), anyBoolean());
     }
 
     @Test
@@ -121,11 +139,11 @@ class ExpenseControllerTest {
                 .when(categoryService).assertValidCode("BOGUS");
 
         String body = JSON.writeValueAsString(new ExpenseController.ExpenseEntryRequest(
-                "BOGUS", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), new BigDecimal("150.00"), null));
+                "BOGUS", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), new BigDecimal("150.00"), null, null));
 
         mvc.perform(put("/api/owner/expenses/{id}", 1L).contentType("application/json").content(body))
                 .andExpect(status().isBadRequest());
-        verify(service, never()).updateExpenseEntry(any(), any(), any(), any(), any(), any());
+        verify(service, never()).updateExpenseEntry(any(), any(), any(), any(), any(), any(), anyBoolean());
     }
 
     @Test
@@ -144,13 +162,13 @@ class ExpenseControllerTest {
     @Test
     @DisplayName("PUT updates an existing entry")
     void updateReturnsUpdatedEntry() throws Exception {
-        when(service.updateExpenseEntry(eq(1L), eq("RENT"), any(), any(), eq(new BigDecimal("150.00")), any()))
+        when(service.updateExpenseEntry(eq(1L), eq("RENT"), any(), any(), eq(new BigDecimal("150.00")), any(), anyBoolean()))
                 .thenReturn(Optional.of(ExpenseEntry.builder().id(1L).category("RENT")
                         .periodStart(LocalDate.of(2026, 8, 1)).periodEnd(LocalDate.of(2026, 8, 31))
                         .amount(new BigDecimal("150.00")).build()));
 
         String body = JSON.writeValueAsString(new ExpenseController.ExpenseEntryRequest(
-                "RENT", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), new BigDecimal("150.00"), null));
+                "RENT", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), new BigDecimal("150.00"), null, null));
 
         mvc.perform(put("/api/owner/expenses/{id}", 1L).contentType("application/json").content(body))
                 .andExpect(status().isOk())
@@ -160,10 +178,10 @@ class ExpenseControllerTest {
     @Test
     @DisplayName("PUT on an unknown id returns 404")
     void updateUnknownIdReturns404() throws Exception {
-        when(service.updateExpenseEntry(eq(999L), any(), any(), any(), any(), any())).thenReturn(Optional.empty());
+        when(service.updateExpenseEntry(eq(999L), any(), any(), any(), any(), any(), anyBoolean())).thenReturn(Optional.empty());
 
         String body = JSON.writeValueAsString(new ExpenseController.ExpenseEntryRequest(
-                "RENT", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), new BigDecimal("150.00"), null));
+                "RENT", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 31), new BigDecimal("150.00"), null, null));
 
         mvc.perform(put("/api/owner/expenses/{id}", 999L).contentType("application/json").content(body))
                 .andExpect(status().isNotFound());

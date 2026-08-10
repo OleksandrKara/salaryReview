@@ -37,6 +37,19 @@ function CategoryRow({ category, onChanged }: { category: ExpenseCategoryDefinit
     }
   }
 
+  async function togglePersonal(next: boolean) {
+    setBusy(true);
+    setError('');
+    try {
+      await api.setExpenseCategoryPersonal(category.id, next);
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="rounded-lg p-3 ring-1 ring-zinc-200">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -56,9 +69,26 @@ function CategoryRow({ category, onChanged }: { category: ExpenseCategoryDefinit
               Built in
             </span>
           )}
+          {category.isPersonal && (
+            <span className="ml-1.5 rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 ring-1 ring-inset ring-violet-200">
+              Personal
+            </span>
+          )}
           <div className="text-xs text-zinc-400">{category.code}</div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {!category.locked && (
+            <label className="flex items-center gap-1.5 text-xs text-zinc-600">
+              <input
+                type="checkbox"
+                checked={category.isPersonal}
+                disabled={busy}
+                onChange={(e) => togglePersonal(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-zinc-300"
+              />
+              Personal
+            </label>
+          )}
           {editing ? (
             <>
               <button type="button" disabled={busy} onClick={save} className="rounded bg-zinc-800 px-2 py-1.5 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50">

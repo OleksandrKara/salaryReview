@@ -1,8 +1,10 @@
 package com.salonreview.square;
 
+import com.salonreview.domain.BankTransaction;
 import com.salonreview.domain.PayPeriod;
 import com.salonreview.domain.PeriodEntry;
 import com.salonreview.domain.SalonConfig;
+import com.salonreview.repo.BankTransactionRepository;
 import com.salonreview.repo.PayPeriodRepository;
 import com.salonreview.repo.PeriodEntryRepository;
 import com.salonreview.repo.SalonConfigRepository;
@@ -58,6 +60,10 @@ public class OwnerOverviewService {
      * just "the last time this service actually did real work" for an honest badge. */
     private volatile Instant lastFetchAt = Instant.now();
 
+    /** Owner-draw exclude reasons — see {@code BankTransactionRepository.sumOwnerDrawsForCompletedImportsOverlapping}. */
+    private static final List<String> OWNER_DRAW_REASONS =
+            List.of(BankTransaction.EXCLUDE_OWNER_CONTRIBUTION, BankTransaction.EXCLUDE_CASH_WITHDRAWAL);
+
     private final PayPeriodRepository payPeriods;
     private final PeriodEntryRepository entries;
     private final CommissionCalculator calculator;
@@ -68,12 +74,15 @@ public class OwnerOverviewService {
     private final ExpenseService expenses;
     private final ManagerTimeService managerTime;
     private final ExpenseImportService expenseImports;
+    private final SettlementPreviewService settlementPreview;
+    private final BankTransactionRepository bankTransactions;
 
     public OwnerOverviewService(PayPeriodRepository payPeriods, PeriodEntryRepository entries,
                                 CommissionCalculator calculator, SalonConfigRepository salonConfig,
                                 SquareMonthAggregator aggregator, RetentionAnalyticsService retention,
                                 ManualAdjustmentService manualAdjustments, ExpenseService expenses,
-                                ManagerTimeService managerTime, ExpenseImportService expenseImports) {
+                                ManagerTimeService managerTime, ExpenseImportService expenseImports,
+                                SettlementPreviewService settlementPreview, BankTransactionRepository bankTransactions) {
         this.expenseImports = expenseImports;
         this.payPeriods = payPeriods;
         this.entries = entries;
@@ -84,6 +93,8 @@ public class OwnerOverviewService {
         this.manualAdjustments = manualAdjustments;
         this.expenses = expenses;
         this.managerTime = managerTime;
+        this.settlementPreview = settlementPreview;
+        this.bankTransactions = bankTransactions;
     }
 
     public OwnerOverviewDto overview(int fromYear, int fromMonth, int toYear, int toMonth) {
@@ -201,13 +212,28 @@ public class OwnerOverviewService {
         }
 
         BigDecimal gross = card.add(cash);
-        payroll = payrollForMonth(year, month, payroll);
+        ProviderCompensation comp = providerCompensationForMonth(year, month);
+        payroll = comp.card() != null ? comp.card() : payroll;
+        // When SettlementPreviewService has no data for the month (e.g. Square lookup failed), the
+        // fallback `payroll` above is a *combined* card+cash commission estimate (see the
+        // zelleToProvider + (cashTotal - cashToSalon) loop above / the flat-rate formula in
+        // fromSquare) — so cashProviderCompensation must default to zero, not propagate null, or
+        // the same cash commission would either double-count (if summed) or null out netRevenue.
+        BigDecimal cashProviderCompensation = comp.cash() != null
+                ? comp.cash() : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         BigDecimal expenseTotal = expenseTotalForMonth(year, month);
         BigDecimal managerLaborCost = managerLaborCostForMonth(year, month);
+        BigDecimal cashBusinessExpenseTotal = cashBusinessExpenseTotalForMonth(year, month);
+        BigDecimal personalBankTotal = personalBankTotalForMonth(year, month);
+        BigDecimal ownerDrawsTotal = ownerDrawsTotalForMonth(year, month);
+        BigDecimal netProfit = netRevenue(gross, payroll, cashProviderCompensation, expenseTotal,
+                cashBusinessExpenseTotal, managerLaborCost);
         return new MonthSummary(year, month, label(month), card, cash, gross, tips, procedures,
                 avg(gross, procedures), payroll, pct(payroll, gross), true, 0, 0,
-                expenseTotal, managerLaborCost, netRevenue(gross, payroll, expenseTotal, managerLaborCost),
-                statementCoveredForMonth(year, month));
+                expenseTotal, managerLaborCost, netProfit,
+                statementCoveredForMonth(year, month), cashProviderCompensation, personalBankTotal,
+                ownerDrawsTotal, profitAfterPersonal(netProfit, personalBankTotal, ownerDrawsTotal),
+                cashBusinessExpenseTotal);
     }
 
     // --- live month from Square ---
@@ -238,14 +264,26 @@ public class OwnerOverviewService {
             BigDecimal payroll = gross.multiply(rate)
                     .add(tips.multiply(BigDecimal.ONE.subtract(feeRate)))
                     .setScale(2, RoundingMode.HALF_UP);
-            payroll = payrollForMonth(year, month, payroll);
+            ProviderCompensation comp = providerCompensationForMonth(year, month);
+            payroll = comp.card() != null ? comp.card() : payroll;
+            // See fromEntries()'s identical fallback: the flat-rate estimate above already combines
+            // card+cash commission, so a missing Square figure must default cash comp to zero.
+            BigDecimal cashProviderCompensation = comp.cash() != null
+                    ? comp.cash() : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
 
             BigDecimal expenseTotal = expenseTotalForMonth(year, month);
             BigDecimal managerLaborCost = managerLaborCostForMonth(year, month);
+            BigDecimal cashBusinessExpenseTotal = cashBusinessExpenseTotalForMonth(year, month);
+            BigDecimal personalBankTotal = personalBankTotalForMonth(year, month);
+            BigDecimal ownerDrawsTotal = ownerDrawsTotalForMonth(year, month);
+            BigDecimal netProfit = netRevenue(gross, payroll, cashProviderCompensation, expenseTotal,
+                    cashBusinessExpenseTotal, managerLaborCost);
             return new MonthSummary(year, month, label(month), card, cash, gross, tips, procedures,
                     avg(gross, procedures), payroll, pct(payroll, gross), false, 0, 0,
-                    expenseTotal, managerLaborCost, netRevenue(gross, payroll, expenseTotal, managerLaborCost),
-                    statementCoveredForMonth(year, month));
+                    expenseTotal, managerLaborCost, netProfit,
+                    statementCoveredForMonth(year, month), cashProviderCompensation, personalBankTotal,
+                    ownerDrawsTotal, profitAfterPersonal(netProfit, personalBankTotal, ownerDrawsTotal),
+                    cashBusinessExpenseTotal);
         } catch (RuntimeException e) {
             return emptyMonth(year, month);
         }
@@ -293,31 +331,97 @@ public class OwnerOverviewService {
         }
     }
 
-    /** Resolves this calendar month's provider commission (payroll): the formula/settlement-computed
-     * figure the caller already worked out, unless a completed statement reconciliation covers the
-     * month — in that case the reconciliation's own linked PROVIDER_PAYROLL entries are the
-     * exclusive source instead (openspec design.md D12), the same real-disbursement-replaces-the-
-     * estimate treatment {@link #managerLaborCostForMonth} already gets. Does not affect the
-     * per-provider YTD breakdown ({@code ProviderAcc}/{@code ProviderYtd}), which has no way to
-     * attribute a bank transaction to one specific provider and stays formula-based regardless. */
-    private BigDecimal payrollForMonth(int year, int month, BigDecimal computed) {
+    /** Provider compensation for a calendar month, card and cash, sourced exclusively from {@link
+     * SettlementPreviewService} — the same engine that drives the Salary/Commission Report
+     * (/reports, /me), so there is exactly one source of truth for provider pay and no risk of a
+     * second, divergent computation. {@code preview(year, month)} attributes every dollar to the
+     * calendar month the underlying service happened (via Square booking/order dates), never to
+     * whenever the Zelle transfer or cash handoff actually settles — this is what prevents e.g.
+     * July 16-31 provider comp (typically settled in August) from ever being counted in August's
+     * P&L too: August's own {@code preview(2026, 8)} call only ever sees August's services.
+     * Bank-categorized {@code PROVIDER_PAYROLL} transactions are deliberately NOT used here (see
+     * {@code ExpenseService.resolveStatementDerivedProviderPayrollTotal}'s doc comment) — using both
+     * would double-count the same disbursement and reintroduce the same settlement-timing bug this
+     * method exists to close. Best-effort: a Square-side failure returns null for both figures
+     * rather than taking down the whole dashboard; callers fall back to the formula-computed
+     * card figure they already have (cash has no such fallback — it was never computed anywhere
+     * else). */
+    private ProviderCompensation providerCompensationForMonth(int year, int month) {
+        try {
+            SettlementPreviewService.SettlementPreview preview = settlementPreview.preview(year, month);
+            BigDecimal card = BigDecimal.ZERO, cash = BigDecimal.ZERO;
+            for (SettlementPreviewService.ProviderPayout p : preview.providers()) {
+                BigDecimal cashCollected = p.firstHalf().cashCollected().add(p.secondHalf().cashCollected());
+                card = card.add(p.monthZelleToProvider());
+                cash = cash.add(cashCollected.subtract(p.monthCashToSalon()));
+            }
+            return new ProviderCompensation(card.setScale(2, RoundingMode.HALF_UP), cash.setScale(2, RoundingMode.HALF_UP));
+        } catch (RuntimeException e) {
+            return new ProviderCompensation(null, null);
+        }
+    }
+
+    private record ProviderCompensation(BigDecimal card, BigDecimal cash) {}
+
+    /** "Personal Bank Transactions" for a calendar month — categorized (not excluded) transactions
+     * in a personal-flagged category (see {@code ExpenseCategoryDefinition.personal}). Reported
+     * separately; never subtracted from Net Profit. Same statement-covered-vs-manual split as
+     * {@link #expenseTotalForMonth}. */
+    private BigDecimal personalBankTotalForMonth(int year, int month) {
         try {
             YearMonth ym = YearMonth.of(year, month);
             LocalDate from = ym.atDay(1), to = ym.atEndOfMonth();
             if (expenseImports.isPeriodStatementCovered(from, to)) {
-                return expenses.resolveStatementDerivedProviderPayrollTotal(expenseImports.linkedExpenseEntryIds(from, to));
+                return expenses.resolveStatementDerivedPersonalTotal(expenseImports.linkedExpenseEntryIds(from, to));
             }
-            return computed;
+            return expenses.resolvePersonalTotal(from, to);
         } catch (RuntimeException e) {
-            return computed;
+            return null;
         }
     }
 
-    private static BigDecimal netRevenue(BigDecimal gross, BigDecimal payroll, BigDecimal expenseTotal,
+    /** "Owner Draws" for a calendar month — bank transactions excluded as OWNER_CONTRIBUTION or
+     * CASH_WITHDRAWAL for any COMPLETED import overlapping the month. These never produce an
+     * {@code expense_entries} row at all, so there's no statement-covered/manual split here, just a
+     * direct sum. Reported separately; never subtracted from Net Profit. */
+    private BigDecimal ownerDrawsTotalForMonth(int year, int month) {
+        try {
+            YearMonth ym = YearMonth.of(year, month);
+            LocalDate from = ym.atDay(1), to = ym.atEndOfMonth();
+            BigDecimal sum = bankTransactions.sumOwnerDrawsForCompletedImportsOverlapping(OWNER_DRAW_REASONS, from, to);
+            return sum == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : sum.abs().setScale(2, RoundingMode.HALF_UP);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** "Other Cash Business Expenses" for a calendar month — manually-entered generic-category
+     * expenses flagged paid-in-cash (see {@code ExpenseService.resolveCashBusinessExpenseTotal}).
+     * No statement-covered gating: these are cash-paid by definition, so they can never be part of
+     * a bank reconciliation's linked entries in the first place. */
+    private BigDecimal cashBusinessExpenseTotalForMonth(int year, int month) {
+        try {
+            YearMonth ym = YearMonth.of(year, month);
+            return expenses.resolveCashBusinessExpenseTotal(ym.atDay(1), ym.atEndOfMonth());
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static BigDecimal netRevenue(BigDecimal gross, BigDecimal cardPayroll, BigDecimal cashPayroll,
+                                          BigDecimal expenseTotal, BigDecimal cashBusinessExpenseTotal,
                                           BigDecimal managerLaborCost) {
-        if (gross == null || payroll == null || expenseTotal == null || managerLaborCost == null) return null;
-        return gross.subtract(payroll).subtract(expenseTotal).subtract(managerLaborCost)
+        if (gross == null || cardPayroll == null || cashPayroll == null || expenseTotal == null
+                || cashBusinessExpenseTotal == null || managerLaborCost == null) return null;
+        return gross.subtract(cardPayroll).subtract(cashPayroll).subtract(expenseTotal)
+                .subtract(cashBusinessExpenseTotal).subtract(managerLaborCost)
                 .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal profitAfterPersonal(BigDecimal netProfit, BigDecimal personalBankTotal,
+                                                   BigDecimal ownerDrawsTotal) {
+        if (netProfit == null || personalBankTotal == null || ownerDrawsTotal == null) return null;
+        return netProfit.subtract(personalBankTotal).subtract(ownerDrawsTotal).setScale(2, RoundingMode.HALF_UP);
     }
 
     /** ymKey → [distinct clients seen, returning clients] for the range, from the visit ledger. */
@@ -382,7 +486,8 @@ public class OwnerOverviewService {
 
     private static MonthSummary emptyMonth(int year, int month) {
         return new MonthSummary(year, month, label(month), null, null, null, null, 0,
-                null, null, null, false, 0, 0, null, null, null, false);
+                null, null, null, false, 0, 0, null, null, null, false,
+                null, null, null, null, null);
     }
 
     /** Whether a COMPLETED bank-statement reconciliation overlaps this month (see

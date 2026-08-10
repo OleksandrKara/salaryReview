@@ -75,6 +75,26 @@ public interface BankTransactionRepository extends JpaRepository<BankTransaction
 
     boolean existsByCategory(String category);
 
+    /** Sum of EXCLUDED transactions with an owner-draw exclude reason (OWNER_CONTRIBUTION,
+     * CASH_WITHDRAWAL) for any COMPLETED import whose transactions fall in [from, to] — "Owner
+     * Draws" on the P&L (see the P&L redesign). Excluded transactions never produce an
+     * {@code expense_entries} row, so this reads {@code bank_transactions} directly rather than
+     * going through the linked-entry pattern above — purely additive, doesn't touch the
+     * exclude/reconciliation pipeline. Amounts are signed (negative = money out); callers take the
+     * absolute value. Same COMPLETED-import gating as
+     * {@link #findLinkedExpenseEntryIdsForCompletedImportsOverlapping}. */
+    @Query("""
+            SELECT COALESCE(SUM(t.amount), 0) FROM BankTransaction t, BankStatementImport i
+            WHERE t.importId = i.id
+            AND i.status = 'COMPLETED'
+            AND t.status = 'EXCLUDED'
+            AND t.excludedReason IN :reasons
+            AND t.transactionDate BETWEEN :from AND :to
+            """)
+    java.math.BigDecimal sumOwnerDrawsForCompletedImportsOverlapping(@Param("reasons") List<String> reasons,
+                                                                       @Param("from") LocalDate from,
+                                                                       @Param("to") LocalDate to);
+
     /** Deleting an unreconciled import (openspec follow-up, D19-adjacent) must not leave a dangling
      * {@code duplicate_of_transaction_id} FK on some other import's rows that were marked as
      * duplicates of a transaction that's about to disappear — null those references out first. */

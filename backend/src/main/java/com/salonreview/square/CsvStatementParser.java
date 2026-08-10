@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -56,6 +57,61 @@ public class CsvStatementParser {
     public record ParsedTransaction(LocalDate date, String rawDescription, BigDecimal amount,
                                      String normalizedMerchant, String merchantKey,
                                      String fingerprint, int occurrenceIndex) {}
+
+    /** The statement's own printed opening/closing balance — either may be {@code null} if the
+     * export doesn't carry the expected marker text. See {@link #extractBalances}. */
+    public record Balances(BigDecimal opening, BigDecimal closing) {}
+
+    private static final String BEGINNING_BALANCE_PREFIX = "beginning balance as of";
+    private static final String ENDING_BALANCE_PREFIX = "ending balance as of";
+
+    /** Best-effort extraction of the statement's own printed Beginning/Ending balance — this
+     * business's bank export prints a leading "Account Summary" block with exactly these two
+     * figures, and the transaction table's own first row often restates the opening balance again
+     * as a non-transaction marker (see the no-amount-data skip in {@link #parse}). Scans every
+     * cell of every row for text starting with either phrase and reads the row's own last
+     * non-empty cell as the amount — position-agnostic, since the two occurrences have different
+     * column layouts (a bare "Description,,Summary Amt." block vs. the full
+     * "Date,Description,Amount,Running Bal." transaction table). Never throws: an unrecognized
+     * export format just means no reconciliation check is shown for this import, not a failed
+     * upload. */
+    public Balances extractBalances(byte[] csvBytes) {
+        List<CSVRecord> records;
+        try {
+            String repaired = repairUnescapedQuotes(new String(csvBytes, StandardCharsets.UTF_8));
+            try (CSVParser rawParser = CSVFormat.DEFAULT.builder().setAllowMissingColumnNames(true).build().parse(new StringReader(repaired))) {
+                records = rawParser.getRecords();
+            }
+        } catch (IOException | RuntimeException e) {
+            return new Balances(null, null);
+        }
+
+        BigDecimal opening = null;
+        BigDecimal closing = null;
+        for (CSVRecord record : records) {
+            String lastNonEmpty = null;
+            boolean isOpeningRow = false;
+            boolean isClosingRow = false;
+            for (String raw : record) {
+                String value = raw.trim();
+                if (value.isEmpty()) continue;
+                lastNonEmpty = value;
+                String lower = value.toLowerCase(Locale.US);
+                if (lower.startsWith(BEGINNING_BALANCE_PREFIX)) isOpeningRow = true;
+                if (lower.startsWith(ENDING_BALANCE_PREFIX)) isClosingRow = true;
+            }
+            if (!isOpeningRow && !isClosingRow) continue;
+            if (lastNonEmpty == null) continue;
+            try {
+                BigDecimal amount = parseAmount(lastNonEmpty);
+                if (isOpeningRow && opening == null) opening = amount;
+                if (isClosingRow && closing == null) closing = amount;
+            } catch (ResponseStatusException ignored) {
+                // the matched row's own amount cell wasn't parseable — skip, keep scanning
+            }
+        }
+        return new Balances(opening, closing);
+    }
 
     public List<ParsedTransaction> parse(byte[] csvBytes) {
         String repaired = repairUnescapedQuotes(new String(csvBytes, StandardCharsets.UTF_8));
