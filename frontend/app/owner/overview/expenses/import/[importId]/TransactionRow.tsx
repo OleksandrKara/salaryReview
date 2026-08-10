@@ -66,16 +66,16 @@ function RememberControl({ onChange }: { onChange: (decision: RememberDecision) 
               </span>
             ))}
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex min-w-0 items-center gap-1">
             <input
               type="text"
               value={keywordInput}
               onChange={(e) => setKeywordInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addKeyword(); } }}
               placeholder="e.g. PAYSEND"
-              className="w-40 rounded border border-zinc-300 px-1.5 py-1 text-[11px]"
+              className="min-w-0 flex-1 rounded border border-zinc-300 px-1.5 py-1 text-[11px] sm:w-40 sm:flex-none"
             />
-            <button type="button" onClick={addKeyword} className="rounded border border-zinc-300 px-1.5 py-1 text-[11px] text-zinc-600 hover:bg-zinc-50">
+            <button type="button" onClick={addKeyword} className="shrink-0 rounded border border-zinc-300 px-1.5 py-1 text-[11px] text-zinc-600 hover:bg-zinc-50">
               Add
             </button>
           </div>
@@ -123,7 +123,7 @@ export default function TransactionRow({
   ) : null;
 
   const editor = editable ? (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1.5">
       <CategorySelect value={selection} onChange={setSelection} disabled={busy} categories={categories} />
       <RememberControl onChange={setRemember} />
       {changed && canApply && (
@@ -146,7 +146,7 @@ export default function TransactionRow({
   return (
     <>
       {/* Mobile card */}
-      <div className="rounded-lg p-3 ring-1 ring-zinc-200 sm:hidden">
+      <div className="min-w-0 rounded-lg p-3 ring-1 ring-zinc-200 sm:hidden">
         <div className="flex items-start justify-between gap-2">
           <label className="flex items-start gap-2">
             {selectable && (
