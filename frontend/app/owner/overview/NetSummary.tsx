@@ -1,6 +1,7 @@
 import Link from 'next/link';
-import type { MonthSummary, OwnerOverviewData } from '../../lib/types';
+import type { ExpenseCategoryDefinition, MonthSummary, OwnerOverviewData } from '../../lib/types';
 import { InfoTip } from '../../components/InfoTip';
+import CategorySpendingBreakdown from './CategorySpendingBreakdown';
 
 const usd = (n: number | null | undefined) =>
   n == null
@@ -44,18 +45,34 @@ function Kpi({ label, value, sub, tip }: { label: string; value: string; sub?: s
   );
 }
 
+/** Sums each month's categoryBreakdown into one map across the whole selected range — mirrors the
+ * plain-number sum() above, just per-category instead of a single total. */
+function mergeCategoryBreakdown(months: MonthSummary[]): Record<string, number> {
+  const merged: Record<string, number> = {};
+  for (const m of months) {
+    if (!m.categoryBreakdown) continue;
+    for (const [category, amount] of Object.entries(m.categoryBreakdown)) {
+      merged[category] = (merged[category] ?? 0) + amount;
+    }
+  }
+  return merged;
+}
+
 /** Net-revenue hero for the Net tab — mirrors PeriodSummary's visual weight (a big headline number
  * plus a KPI row), but for what's actually left after payroll and business expenses instead of the
  * top-line gross figure.
  *
  * Structured per the P&L redesign: Revenue (Card/Cash/Gross), Business Expenses (Provider
- * Compensation — Card/Cash, Bank Business Expenses, Other Cash Business Expenses, Manager Time),
- * Net Profit, then Personal/Owner (Personal Bank Transactions, Owner Draws, Profit Remaining After
- * Personal). Provider compensation is sourced from the same engine as the Salary/Commission Report
- * (see OwnerOverviewService.providerCompensationForMonth) — one source of truth, never duplicated
- * here. Personal spend and owner draws are reported for visibility only; neither reduces Net
- * Profit itself. */
-export default function NetSummary({ data }: { data: OwnerOverviewData }) {
+ * Compensation — Card/Cash, Bank Business Expenses, Other Cash Business Expenses, Manager Time)
+ * with a "Spending by category" breakdown right under it so the expense total is never just an
+ * opaque number, Net Profit, then a receipt-style "What's left after personal" waterfall ending in
+ * a prominent Remaining figure, and finally Cash Position tucked behind a closed-by-default
+ * disclosure (a secondary, nuanced figure — see its own InfoTip — that doesn't need to compete for
+ * attention with everything above it). Provider compensation is sourced from the same engine as the
+ * Salary/Commission Report (see OwnerOverviewService.providerCompensationForMonth) — one source of
+ * truth, never duplicated here. Personal spend and owner draws are reported for visibility only;
+ * neither reduces Net Profit itself. */
+export default function NetSummary({ data, categories }: { data: OwnerOverviewData; categories: ExpenseCategoryDefinition[] }) {
   const active = data.months.filter((m) => m.grossRevenue != null);
   if (active.length === 0) return null;
   const netMonths = active.filter((m) => m.netRevenue != null);
@@ -81,6 +98,7 @@ export default function NetSummary({ data }: { data: OwnerOverviewData }) {
   const totalProfitAfterPersonal = sum(netMonths, 'profitAfterPersonal');
   const netMargin = totalGross > 0 ? ((totalNet / totalGross) * 100).toFixed(1) + '%' : null;
   const netGrowth = smoothedNetGrowth(active);
+  const categoryBreakdown = mergeCategoryBreakdown(netMonths);
 
   const n = netMonths.length;
   const periodLabel =
@@ -160,47 +178,70 @@ export default function NetSummary({ data }: { data: OwnerOverviewData }) {
         <div data-testid="net-summary-manager-labor"><Kpi label="Manager Time" value={`− ${usd(totalManagerLabor)}`} /></div>
       </div>
 
+      <CategorySpendingBreakdown breakdown={categoryBreakdown} categories={categories} />
+
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 pt-3">
         <span className="text-sm font-semibold text-zinc-700">Net Profit</span>
         <span className="text-lg font-semibold tabular-nums text-emerald-700">{usd(totalNet)}</span>
       </div>
 
-      <p className="mt-4 border-t border-zinc-100 pt-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">Personal / Owner</p>
-      <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
-        <div><Kpi
-          label="Personal Bank Transactions"
-          value={usd(totalPersonal)}
-          tip="Categorized bank transactions in a personal-flagged category — reported for visibility only, never subtracted from Net Profit."
-        /></div>
-        <div><Kpi
-          label="Owner Draws"
-          value={usd(totalOwnerDraws)}
-          tip="Bank transactions excluded as owner contribution or cash withdrawal — reported for visibility only, never subtracted from Net Profit."
-        /></div>
-        <div><Kpi
-          label="Profit Remaining After Personal"
-          value={usd(totalProfitAfterPersonal)}
-          sub="Net Profit − personal spend − owner draws"
-        /></div>
+      {/* Receipt-style waterfall, not a 3-up KPI grid — the point of this section is answering
+          "how much of Net Profit is personal spend vs. what's actually left", so the arithmetic
+          itself (Net → − Personal → − Owner Draws → = Remaining) needs to read top-to-bottom as a
+          single line of reasoning, ending in one unmissable answer. */}
+      <div className="mt-4 border-t border-zinc-100 pt-3" data-testid="net-summary-personal-waterfall">
+        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+          What&apos;s left after personal
+          <InfoTip
+            text="Personal spend and owner draws are reported here for visibility only — they never reduce Net Profit itself above. This waterfall shows what backing them out separately actually leaves you with."
+            label="About this section"
+          />
+        </p>
+        <div className="mt-2.5 flex flex-col gap-1.5 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-zinc-500">Net Profit</span>
+            <span className="tabular-nums font-medium text-zinc-700">{usd(totalNet)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-zinc-500" title="Categorized bank transactions in a personal-flagged category">
+              − Personal Bank Transactions
+            </span>
+            <span className="tabular-nums text-zinc-600">− {usd(totalPersonal)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-zinc-500" title="Bank transactions excluded as owner contribution or cash withdrawal">
+              − Owner Draws
+            </span>
+            <span className="tabular-nums text-zinc-600">− {usd(totalOwnerDraws)}</span>
+          </div>
+          <div className="mt-1 flex items-center justify-between border-t border-zinc-200 pt-2">
+            <span className="text-base font-semibold text-zinc-800">Remaining</span>
+            <span data-testid="net-summary-remaining" className="text-xl font-semibold tabular-nums text-emerald-700">
+              {usd(totalProfitAfterPersonal)}
+            </span>
+          </div>
+        </div>
       </div>
 
-      <p className="mt-4 border-t border-zinc-100 pt-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-        Cash Position
-        <InfoTip
-          text="Cash flows for the period only — not a running cash-on-hand balance. This schema has no source for physical cash on hand (cash that's never deposited never touches the bank), so this deliberately shows only what can be calculated reliably: revenue in, the provider's share, and cash-paid business expenses."
-          label="About Cash Position"
-        />
-      </p>
-      <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
-        <div><Kpi label="Cash Revenue" value={usd(totalCash)} /></div>
-        <div><Kpi label="Provider Cash Share" value={`− ${usd(totalPayrollCash)}`} /></div>
-        <div><Kpi label="Cash Business Expenses" value={`− ${usd(totalCashExpense)}`} /></div>
-        <div><Kpi
-          label="Salon's Cash Retained"
-          value={usd(totalCash - totalPayrollCash - totalCashExpense)}
-          sub="Cash revenue − provider share − cash expenses"
-        /></div>
-      </div>
+      <details className="mt-4 border-t border-zinc-100 pt-3" data-testid="net-summary-cash-position">
+        <summary className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-zinc-400 hover:text-zinc-600">
+          Cash Position
+          <InfoTip
+            text="Cash flows for the period only — not a running cash-on-hand balance. This schema has no source for physical cash on hand (cash that's never deposited never touches the bank), so this deliberately shows only what can be calculated reliably: revenue in, the provider's share, and cash-paid business expenses."
+            label="About Cash Position"
+          />
+        </summary>
+        <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+          <div><Kpi label="Cash Revenue" value={usd(totalCash)} /></div>
+          <div><Kpi label="Provider Cash Share" value={`− ${usd(totalPayrollCash)}`} /></div>
+          <div><Kpi label="Cash Business Expenses" value={`− ${usd(totalCashExpense)}`} /></div>
+          <div><Kpi
+            label="Salon's Cash Retained"
+            value={usd(totalCash - totalPayrollCash - totalCashExpense)}
+            sub="Cash revenue − provider share − cash expenses"
+          /></div>
+        </div>
+      </details>
 
       <div className="mt-4 border-t border-zinc-100 pt-4">
         <div data-testid="net-summary-margin"><Kpi

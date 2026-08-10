@@ -18,14 +18,18 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -72,6 +76,8 @@ class OwnerOverviewServicePAndLTest {
         when(expenses.resolveExpenseTotal(any(), any())).thenReturn(BigDecimal.ZERO);
         when(expenses.resolveCashBusinessExpenseTotal(any(), any())).thenReturn(BigDecimal.ZERO);
         when(expenses.resolvePersonalTotal(any(), any())).thenReturn(BigDecimal.ZERO);
+        when(expenses.resolveExpenseBreakdownByCategory(any(), any())).thenReturn(Map.of());
+        when(expenses.resolveCashBusinessExpenseBreakdownByCategory(any(), any())).thenReturn(Map.of());
 
         managerTime = mock(ManagerTimeService.class);
         when(managerTime.totalLaborCost(any(), any())).thenReturn(BigDecimal.ZERO);
@@ -252,5 +258,42 @@ class OwnerOverviewServicePAndLTest {
         assertThat(mar.cashProviderCompensation()).isEqualByComparingTo("250.00");
         // net = 800 - 0(card) - 250(cash comp) = 550
         assertThat(mar.netRevenue()).isEqualByComparingTo("550.00");
+    }
+
+    @Test
+    @DisplayName("categoryBreakdown merges the manual bank breakdown with the cash breakdown when the month isn't statement-covered")
+    void categoryBreakdownMergesManualAndCash() {
+        stubSquareMonth(2026, 3, "1000.00", "0.00", "0.00");
+        when(settlementPreview.preview(2026, 3)).thenReturn(preview(2026, 3, new BigDecimal("450.00"), BigDecimal.ZERO));
+        LocalDate from = LocalDate.of(2026, 3, 1), to = LocalDate.of(2026, 3, 31);
+        when(expenseImports.isPeriodStatementCovered(from, to)).thenReturn(false);
+        when(expenses.resolveExpenseBreakdownByCategory(from, to))
+                .thenReturn(Map.of("MATERIALS", new BigDecimal("120.00")));
+        when(expenses.resolveCashBusinessExpenseBreakdownByCategory(from, to))
+                .thenReturn(Map.of("CONTRACTORS", new BigDecimal("40.00")));
+
+        MonthSummary mar = monthFor(2026, 3);
+
+        assertThat(mar.categoryBreakdown()).containsOnly(
+                entry("MATERIALS", new BigDecimal("120.00")), entry("CONTRACTORS", new BigDecimal("40.00")));
+    }
+
+    @Test
+    @DisplayName("categoryBreakdown sources the bank side from the statement-derived breakdown when reconciled, summing with the same-category cash side rather than overwriting it")
+    void categoryBreakdownUsesStatementDerivedWhenCovered() {
+        stubSquareMonth(2026, 3, "1000.00", "0.00", "0.00");
+        when(settlementPreview.preview(2026, 3)).thenReturn(preview(2026, 3, new BigDecimal("450.00"), BigDecimal.ZERO));
+        LocalDate from = LocalDate.of(2026, 3, 1), to = LocalDate.of(2026, 3, 31);
+        when(expenseImports.isPeriodStatementCovered(from, to)).thenReturn(true);
+        when(expenseImports.linkedExpenseEntryIds(from, to)).thenReturn(List.of(1L, 2L));
+        when(expenses.resolveStatementDerivedExpenseBreakdownByCategory(List.of(1L, 2L)))
+                .thenReturn(Map.of("MATERIALS", new BigDecimal("300.00")));
+        when(expenses.resolveCashBusinessExpenseBreakdownByCategory(from, to))
+                .thenReturn(Map.of("MATERIALS", new BigDecimal("10.00")));
+
+        MonthSummary mar = monthFor(2026, 3);
+
+        assertThat(mar.categoryBreakdown()).containsOnly(entry("MATERIALS", new BigDecimal("310.00")));
+        verify(expenses, never()).resolveExpenseBreakdownByCategory(any(), any());
     }
 }

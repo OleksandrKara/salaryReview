@@ -29,9 +29,10 @@ export default async function RevenueNetPage({
   const toYear    = Number(sp.toYear)    || defToYear;
   const toMonth   = Number(sp.toMonth)   || defToMonth;
 
-  const [me, data] = await Promise.all([
+  const [me, data, categories] = await Promise.all([
     serverApi.getMe(),
     serverApi.getOwnerOverview(fromYear, fromMonth, toYear, toMonth),
+    serverApi.listExpenseCategories(),
   ]);
 
   if (me?.role !== 'OWNER') redirect(me?.role === 'ADS_MANAGER' ? '/owner/marketing' : '/reports');
@@ -52,7 +53,7 @@ export default async function RevenueNetPage({
       </div>
 
       <div className="mb-4" data-testid="net-summary">
-        <NetSummary data={data} />
+        <NetSummary data={data} categories={categories} />
       </div>
 
       <NetTable months={data.months} />

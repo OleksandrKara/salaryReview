@@ -2,6 +2,7 @@ package com.salonreview.web.dto;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 public record OwnerOverviewDto(
         int fromYear,
@@ -75,14 +76,21 @@ public record OwnerOverviewDto(
             /** "Other Cash Business Expenses" — manually-entered generic-category expenses flagged
              * paid-in-cash. Already subtracted into netRevenue; broken out here so the P&L can show
              * it as its own line. Null when unknown. */
-            BigDecimal cashBusinessExpenseTotal
+            BigDecimal cashBusinessExpenseTotal,
+            /** Category-by-category breakdown of expenseTotal + cashBusinessExpenseTotal combined —
+             * keyed by expense category code, e.g. {"MATERIALS": 412.30, "SOFTWARE_SUBSCRIPTIONS":
+             * 84.00}. Provider compensation and manager time aren't categories in this ledger, so
+             * they never appear here — see their own dedicated fields. Null when unknown (same
+             * conditions as expenseTotal); an empty map means genuinely zero categorized spend. */
+            Map<String, BigDecimal> categoryBreakdown
     ) {
         /** Copy with the visit-ledger client counts filled in. */
         public MonthSummary withClients(int seen, int returning) {
             return new MonthSummary(year, month, label, cardRevenue, cashRevenue, grossRevenue, tips,
                     procedures, avgPerAppt, payrollCost, payrollPct, finalized, seen, returning,
                     expenseTotal, managerLaborCost, netRevenue, statementCovered, cashProviderCompensation,
-                    personalBankTotal, ownerDrawsTotal, profitAfterPersonal, cashBusinessExpenseTotal);
+                    personalBankTotal, ownerDrawsTotal, profitAfterPersonal, cashBusinessExpenseTotal,
+                    categoryBreakdown);
         }
     }
 

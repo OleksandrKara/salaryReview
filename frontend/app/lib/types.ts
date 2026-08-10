@@ -954,6 +954,11 @@ export interface MonthSummary {
   /** "Other Cash Business Expenses" — manually-entered generic-category expenses flagged
    * paid-in-cash. Already subtracted into netRevenue; broken out here as its own P&L line. */
   cashBusinessExpenseTotal: number | null;
+  /** Category-by-category breakdown of expenseTotal + cashBusinessExpenseTotal combined, keyed by
+   * expense category code (e.g. "MATERIALS"). Provider compensation/manager time aren't
+   * categories in this ledger, so they never appear here. Null when unknown; an empty object
+   * means genuinely zero categorized spend. */
+  categoryBreakdown: Record<string, number> | null;
 }
 
 export interface ProviderYtd {
