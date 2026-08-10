@@ -38,6 +38,7 @@ class RevenuePulseServiceTest {
     private SquareMonthAggregator aggregator;
     private SalonConfigRepository salonConfig;
     private RevenueSnapshotRepository snapshots;
+    private ManualAdjustmentService manualAdjustments;
     private RevenuePulseService service;
 
     @BeforeEach
@@ -47,14 +48,17 @@ class RevenuePulseServiceTest {
         aggregator = mock(SquareMonthAggregator.class);
         salonConfig = mock(SalonConfigRepository.class);
         snapshots = mock(RevenueSnapshotRepository.class);
+        manualAdjustments = mock(ManualAdjustmentService.class);
 
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.bookings(any(), any())).thenReturn(List.of());
         when(salonConfig.findById(1)).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
         when(snapshots.findBySnapshotDate(any())).thenReturn(Optional.empty());
+        // No manual adjustments by default — individual tests override to exercise the fold-in.
+        when(manualAdjustments.totalGrossThrough(any())).thenReturn(BigDecimal.ZERO);
 
-        service = new RevenuePulseService(square, forecaster, aggregator, salonConfig, snapshots);
+        service = new RevenuePulseService(square, forecaster, aggregator, salonConfig, snapshots, manualAdjustments);
     }
 
     private static AttributedService svc(String date, String channel, String gross) {
@@ -108,7 +112,7 @@ class RevenuePulseServiceTest {
         // Fix 'now' to Aug 15 2026, 12:00 PM UTC. Both months are compared through day 15 at noon.
         Clock clock = Clock.fixed(Instant.parse("2026-08-15T12:00:00Z"), ZoneOffset.UTC);
         RevenuePulseService timed = new RevenuePulseService(square, forecaster, aggregator, salonConfig,
-                snapshots, clock);
+                snapshots, manualAdjustments, clock);
 
         when(aggregator.aggregate(eq(2026), eq(8), any())).thenReturn(aggOf(2026, 8, List.of(
                 svcAt("2026-08-03", "9:00 AM", "CARD", "50.00"),   // earlier day → counted
@@ -145,7 +149,7 @@ class RevenuePulseServiceTest {
         // e.g. before daily snapshotting started, or a genuine gap in the data.
         Clock clock = Clock.fixed(Instant.parse("2026-08-01T00:01:00Z"), ZoneOffset.UTC);
         RevenuePulseService timed = new RevenuePulseService(square, forecaster, aggregator, salonConfig,
-                snapshots, clock);
+                snapshots, manualAdjustments, clock);
 
         when(aggregator.aggregate(eq(2026), eq(8), any())).thenReturn(aggOf(2026, 8, List.of()));
         when(aggregator.aggregate(eq(2026), eq(7), any())).thenReturn(aggOf(2026, 7, List.of()));
@@ -157,6 +161,26 @@ class RevenuePulseServiceTest {
 
         assertThat(p.priorProjected()).isNull();
         assertThat(p.projectedDeltaPct()).isNull();
+    }
+
+    @Test
+    @DisplayName("Manual Adjustments are folded into card revenue, matching /owner/overview's Gross")
+    void manualAdjustmentsFoldedIntoCard() {
+        // Past month so the window is the full month (deterministic, no 'today' dependency).
+        when(aggregator.aggregate(eq(2026), eq(7), any())).thenReturn(aggOf(2026, 7, List.of(
+                svc("2026-07-03", "CARD", "100.00"))));
+        when(aggregator.aggregate(eq(2026), eq(6), any())).thenReturn(aggOf(2026, 6, List.of()));
+        // A redo credit + a refund, same shape as the real production data that exposed this gap.
+        when(manualAdjustments.totalGrossThrough(LocalDate.of(2026, 7, 31))).thenReturn(new BigDecimal("192.80"));
+        when(forecaster.forecast(anyInt(), anyInt(), any(), any()))
+                .thenReturn(new ForecastResult(new BigDecimal("300.00"), null, null, 0, 0));
+
+        RevenuePulseDto p = service.pulse(2026, 7);
+
+        // 100.00 (Square) + 192.80 (manual adjustments) — previously this widget silently omitted
+        // the adjustment, so its Gross diverged from /owner/overview's for the same month.
+        assertThat(p.currentCard()).isEqualByComparingTo("292.80");
+        assertThat(p.currentGross()).isEqualByComparingTo("292.80");
     }
 
     @Test
