@@ -5,20 +5,32 @@ const usd = (n: number | null | undefined) =>
     ? '—'
     : n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
-function momPct(months: MonthSummary[], i: number): number | null {
+// Below this, the prior month's dollar figure is too close to zero for a percentage to mean
+// anything — e.g. $1,300 vs a $10 prior month is a real "+13,000%" arithmetically, but useless as
+// a signal. Show the dollar swing instead so the badge stays honest without a nonsensical number.
+const MIN_BASE_USD = 100;
+
+type Mom = { kind: 'pct'; value: number } | { kind: 'delta'; value: number };
+
+function momPct(months: MonthSummary[], i: number): Mom | null {
   if (i === 0) return null;
   const cur  = months[i].grossRevenue;
   const prev = months[i - 1].grossRevenue;
-  if (cur == null || prev == null || prev === 0) return null;
-  return ((cur - prev) / prev) * 100;
+  if (cur == null || prev == null) return null;
+  if (prev === 0) return cur === 0 ? null : { kind: 'delta', value: cur };
+  if (Math.abs(prev) < MIN_BASE_USD) return { kind: 'delta', value: cur - prev };
+  return { kind: 'pct', value: ((cur - prev) / prev) * 100 };
 }
 
-function MomBadge({ pct }: { pct: number | null }) {
-  if (pct == null) return <span className="text-zinc-300">—</span>;
-  const pos = pct >= 0;
+function MomBadge({ mom }: { mom: Mom | null }) {
+  if (mom == null) return <span className="text-zinc-300">—</span>;
+  const pos = mom.value >= 0;
   return (
-    <span className={`font-semibold tabular-nums ${pos ? 'text-emerald-600' : 'text-rose-500'}`}>
-      {pos ? '↑ +' : '↓ '}{Math.abs(pct).toFixed(1)}%
+    <span
+      className={`font-semibold tabular-nums ${pos ? 'text-emerald-600' : 'text-rose-500'}`}
+      title={mom.kind === 'delta' ? "Prior month's figure was too small for a percentage to be meaningful — showing the dollar change instead." : undefined}
+    >
+      {pos ? '↑ +' : '↓ '}{mom.kind === 'pct' ? `${Math.abs(mom.value).toFixed(1)}%` : usd(Math.abs(mom.value))}
     </span>
   );
 }
@@ -68,7 +80,7 @@ export default function GrowthTable({ months }: { months: MonthSummary[] }) {
           </thead>
           <tbody className="divide-y divide-zinc-100">
             {active.map((m, i) => {
-              const pct    = momPct(active, i);
+              const mom    = momPct(active, i);
               const isLive = !m.finalized;
               return (
                 <tr
@@ -86,7 +98,7 @@ export default function GrowthTable({ months }: { months: MonthSummary[] }) {
                     {usd(m.grossRevenue)}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <MomBadge pct={pct} />
+                    <MomBadge mom={mom} />
                   </td>
                   <td className="hidden px-4 py-3 text-right tabular-nums text-zinc-500 sm:table-cell">
                     {usd(m.cardRevenue)}
@@ -110,11 +122,7 @@ export default function GrowthTable({ months }: { months: MonthSummary[] }) {
               <td className="px-4 py-3">Total</td>
               <td className="px-4 py-3 text-right tabular-nums">{usd(totalGross)}</td>
               <td className="px-4 py-3 text-right tabular-nums">
-                {overallMom != null && (
-                  <span className={overallMom >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
-                    {overallMom >= 0 ? '↑ +' : '↓ '}{Math.abs(overallMom).toFixed(1)}%
-                  </span>
-                )}
+                <MomBadge mom={overallMom} />
               </td>
               <td className="hidden px-4 py-3 text-right tabular-nums sm:table-cell">{usd(totalCard)}</td>
               <td className="hidden px-4 py-3 text-right tabular-nums sm:table-cell">{usd(totalCash)}</td>

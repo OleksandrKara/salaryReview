@@ -5,20 +5,32 @@ const usd = (n: number | null | undefined) =>
     ? '—'
     : n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
-function momPct(months: MonthSummary[], i: number, key: 'netRevenue' | 'grossRevenue'): number | null {
+// Below this, the prior month's dollar figure is too close to zero for a percentage to mean
+// anything — e.g. $1,300 vs a $10 prior month is a real "+13,000%" arithmetically, but useless as
+// a signal. Show the dollar swing instead so the badge stays honest without a nonsensical number.
+const MIN_BASE_USD = 100;
+
+type Mom = { kind: 'pct'; value: number } | { kind: 'delta'; value: number };
+
+function momPct(months: MonthSummary[], i: number, key: 'netRevenue' | 'grossRevenue'): Mom | null {
   if (i === 0) return null;
   const cur  = months[i][key];
   const prev = months[i - 1][key];
-  if (cur == null || prev == null || prev === 0) return null;
-  return ((cur - prev) / prev) * 100;
+  if (cur == null || prev == null) return null;
+  if (prev === 0) return cur === 0 ? null : { kind: 'delta', value: cur };
+  if (Math.abs(prev) < MIN_BASE_USD) return { kind: 'delta', value: cur - prev };
+  return { kind: 'pct', value: ((cur - prev) / prev) * 100 };
 }
 
-function MomBadge({ pct }: { pct: number | null }) {
-  if (pct == null) return <span className="text-zinc-300">—</span>;
-  const pos = pct >= 0;
+function MomBadge({ mom }: { mom: Mom | null }) {
+  if (mom == null) return <span className="text-zinc-300">—</span>;
+  const pos = mom.value >= 0;
   return (
-    <span className={`font-semibold tabular-nums ${pos ? 'text-emerald-600' : 'text-rose-500'}`}>
-      {pos ? '↑ +' : '↓ '}{Math.abs(pct).toFixed(1)}%
+    <span
+      className={`font-semibold tabular-nums ${pos ? 'text-emerald-600' : 'text-rose-500'}`}
+      title={mom.kind === 'delta' ? "Prior month's figure was too small for a percentage to be meaningful — showing the dollar change instead." : undefined}
+    >
+      {pos ? '↑ +' : '↓ '}{mom.kind === 'pct' ? `${Math.abs(mom.value).toFixed(1)}%` : usd(Math.abs(mom.value))}
     </span>
   );
 }
@@ -77,7 +89,7 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
       {/* Mobile cards */}
       <div className="flex flex-col gap-2 sm:hidden" data-testid="net-table-mobile">
         {active.map((m, i) => {
-          const pct = momPct(active, i, 'netRevenue');
+          const mom = momPct(active, i, 'netRevenue');
           const isLive = !m.finalized;
           return (
             <div
@@ -95,7 +107,7 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
                   )}
                   <SourceBadge statementCovered={m.statementCovered} />
                 </div>
-                <MomBadge pct={pct} />
+                <MomBadge mom={mom} />
               </div>
               <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
                 <div className="flex items-center justify-between">
@@ -133,11 +145,7 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
         <div className="rounded-lg bg-zinc-50 p-3 ring-1 ring-zinc-300">
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-zinc-800">Total</span>
-            {overallMom != null && (
-              <span className={`text-xs font-semibold ${overallMom >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                {overallMom >= 0 ? '↑ +' : '↓ '}{Math.abs(overallMom).toFixed(1)}%
-              </span>
-            )}
+            <span className="text-xs"><MomBadge mom={overallMom} /></span>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
             <div className="flex items-center justify-between">
@@ -190,7 +198,7 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
           </thead>
           <tbody className="divide-y divide-zinc-100">
             {active.map((m, i) => {
-              const pct = momPct(active, i, 'netRevenue');
+              const mom = momPct(active, i, 'netRevenue');
               const isLive = !m.finalized;
               return (
                 <tr key={`${m.year}-${m.month}`} data-testid={`net-row-${m.year}-${m.month}`} className="hover:bg-zinc-50">
@@ -223,7 +231,7 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
                     {usd(m.netRevenue)}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <MomBadge pct={pct} />
+                    <MomBadge mom={mom} />
                   </td>
                 </tr>
               );
@@ -240,11 +248,7 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
               <td className="px-4 py-3 text-right tabular-nums">− {usd(totalCashExpense)}</td>
               <td className="px-4 py-3 text-right tabular-nums text-emerald-700">{usd(totalNet)}</td>
               <td className="px-4 py-3 text-right tabular-nums">
-                {overallMom != null && (
-                  <span className={overallMom >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
-                    {overallMom >= 0 ? '↑ +' : '↓ '}{Math.abs(overallMom).toFixed(1)}%
-                  </span>
-                )}
+                <MomBadge mom={overallMom} />
               </td>
             </tr>
           </tfoot>

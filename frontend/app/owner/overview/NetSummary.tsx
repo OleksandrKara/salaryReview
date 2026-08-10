@@ -17,9 +17,15 @@ function sum(months: MonthSummary[], key: SumKey): number {
   return months.reduce((acc, m) => acc + (m[key] ?? 0), 0);
 }
 
+// Below this, the first-window average is too close to zero for a percentage to mean anything —
+// e.g. a $1,300 last window vs a $10 first-window average is a real "+13,000%" arithmetically, but
+// useless as a signal. Same guard as GrowthTable/NetTable's momPct, applied to the averaged
+// endpoints instead of a single prior month.
+const MIN_BASE_USD = 100;
+
 // Same endpoint-averaging approach as PeriodSummary's smoothedGrowth, applied to net revenue
 // instead of gross — one noisy month at either end of the range shouldn't swing the headline.
-function smoothedNetGrowth(months: MonthSummary[]): { d: number; w: number; positive: boolean; label: string } | null {
+function smoothedNetGrowth(months: MonthSummary[]): { w: number; positive: boolean; label: string } | null {
   const active = months.filter((m) => m.netRevenue != null);
   if (active.length < 2) return null;
   const w = Math.max(1, Math.min(3, Math.floor(active.length / 2)));
@@ -30,9 +36,14 @@ function smoothedNetGrowth(months: MonthSummary[]): { d: number; w: number; posi
   };
   const firstAvg = avg(active.slice(0, w));
   const lastAvg = avg(active.slice(active.length - w));
-  if (firstAvg == null || lastAvg == null || firstAvg === 0) return null;
+  if (firstAvg == null || lastAvg == null) return null;
+  if (Math.abs(firstAvg) < MIN_BASE_USD) {
+    const delta = lastAvg - firstAvg;
+    if (delta === 0) return null;
+    return { w, positive: delta >= 0, label: `${delta >= 0 ? '↑ +' : '↓ '}${usd(Math.abs(delta))}` };
+  }
   const d = ((lastAvg - firstAvg) / firstAvg) * 100;
-  return { d, w, positive: d >= 0, label: `${d >= 0 ? '↑ +' : '↓ '}${Math.abs(d).toFixed(1)}%` };
+  return { w, positive: d >= 0, label: `${d >= 0 ? '↑ +' : '↓ '}${Math.abs(d).toFixed(1)}%` };
 }
 
 function Kpi({ label, value, sub, tip }: { label: string; value: string; sub?: string; tip?: string }) {
