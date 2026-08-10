@@ -61,6 +61,7 @@ public class ExpenseImportService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not read uploaded file", e);
         }
         List<CsvStatementParser.ParsedTransaction> parsed = parser.parse(bytes);
+        CsvStatementParser.Balances balances = parser.extractBalances(bytes);
 
         BankStatementImport imp = imports.save(BankStatementImport.builder()
                 .originalFilename(file.getOriginalFilename() == null ? "statement.csv" : file.getOriginalFilename())
@@ -70,6 +71,8 @@ public class ExpenseImportService {
                         .min(Comparator.naturalOrder()).orElse(null))
                 .statementPeriodEnd(parsed.stream().map(CsvStatementParser.ParsedTransaction::date)
                         .max(Comparator.naturalOrder()).orElse(null))
+                .openingBalance(balances.opening())
+                .closingBalance(balances.closing())
                 .status(BankStatementImport.STATUS_AWAITING_REVIEW)
                 .uploadedBy(uploadedBy)
                 .build());

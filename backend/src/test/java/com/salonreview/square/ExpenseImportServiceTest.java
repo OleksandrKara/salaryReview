@@ -50,6 +50,10 @@ class ExpenseImportServiceTest {
         transactions = mock(BankTransactionRepository.class);
         merchantRules = mock(MerchantRuleRepository.class);
         parser = mock(CsvStatementParser.class);
+        // No opening/closing balance by default (mirrors extractBalances()'s own graceful-null
+        // behavior for a CSV export whose format doesn't include the balance block) — individual
+        // tests can override to exercise the balance-capture path.
+        when(parser.extractBalances(any())).thenReturn(new CsvStatementParser.Balances(null, null));
         ruleEngine = mock(MerchantRuleEngine.class);
         merchantRuleService = mock(MerchantRuleService.class);
         payrollDetector = mock(PayrollDisbursementDetector.class);

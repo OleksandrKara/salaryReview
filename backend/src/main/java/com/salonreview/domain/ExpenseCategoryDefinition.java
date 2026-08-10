@@ -37,6 +37,13 @@ public class ExpenseCategoryDefinition {
     @Builder.Default
     private int sortOrder = 0;
 
+    /** Excludes this category from Net Profit's business-expense total — the owner uses it for
+     * genuinely personal spending run through the business account (see design.md's P&L redesign).
+     * Reported separately (Personal Bank Transactions), never subtracted from Net Profit. */
+    @Column(name = "is_personal", nullable = false)
+    @Builder.Default
+    private boolean personal = false;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 

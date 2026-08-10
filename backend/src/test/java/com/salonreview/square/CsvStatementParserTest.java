@@ -158,4 +158,48 @@ class CsvStatementParserTest {
         assertThat(rows).hasSize(1);
         assertThat(rows.get(0).amount()).isEqualByComparingTo("-100.00");
     }
+
+    @Test
+    @DisplayName("extractBalances reads opening/closing from the real bank export's leading "
+            + "Account Summary block")
+    void extractBalancesReadsAccountSummaryBlock() {
+        var balances = parser.extractBalances(csv(
+                "Description,,Summary Amt.",
+                "Beginning balance as of 07/01/2026,,\"8,550.84\"",
+                "Total credits,,\"22,899.26\"",
+                "Total debits,,\"-20,149.32\"",
+                "Ending balance as of 07/31/2026,,\"11,300.78\"",
+                "",
+                "Date,Description,Amount,Running Bal.",
+                "07/01/2026,Beginning balance as of 07/01/2026,,\"8,550.84\"",
+                "07/02/2026,COSTCO WHSE #123,\"-84.12\",\"8,466.72\""));
+
+        assertThat(balances.opening()).isEqualByComparingTo("8550.84");
+        assertThat(balances.closing()).isEqualByComparingTo("11300.78");
+    }
+
+    @Test
+    @DisplayName("extractBalances also matches the transaction table's own restated opening-balance "
+            + "marker row when there's no separate Account Summary block")
+    void extractBalancesReadsTransactionTableMarkerRow() {
+        var balances = parser.extractBalances(csv(
+                "Date,Description,Amount,Running Bal.",
+                "08/01/2026,Beginning balance as of 08/01/2026,,\"1,000.00\"",
+                "08/02/2026,COSTCO WHSE #123,\"-84.12\",\"915.88\""));
+
+        assertThat(balances.opening()).isEqualByComparingTo("1000.00");
+        assertThat(balances.closing()).isNull();
+    }
+
+    @Test
+    @DisplayName("extractBalances degrades gracefully to nulls for a CSV export with no balance "
+            + "marker rows at all, never throwing")
+    void extractBalancesGracefullyReturnsNullsWhenNoMarkerFound() {
+        var balances = parser.extractBalances(csv(
+                "Date,Description,Amount",
+                "2026-08-14,COSTCO WHSE #123,-84.12"));
+
+        assertThat(balances.opening()).isNull();
+        assertThat(balances.closing()).isNull();
+    }
 }

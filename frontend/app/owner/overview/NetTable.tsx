@@ -23,45 +23,49 @@ function MomBadge({ pct }: { pct: number | null }) {
   );
 }
 
-/** Whether this month's Payroll/Manager time/Expenses are real bank-statement figures or
+/** Whether this month's Bank Business Expenses/Manager time are real bank-statement figures or
  * formula/clocked-time estimates — the exact question the owner asked about after the numbers
- * changed source without any visible explanation. Same color convention as `StatusBadge` in
+ * changed source without any visible explanation. Provider compensation (card + cash) always
+ * comes from the Salary/Commission Report regardless of this flag (see
+ * OwnerOverviewService.providerCompensationForMonth). Same color convention as `StatusBadge` in
  * `ImportHistoryList.tsx` (emerald = completed/real, amber = still pending/estimated). */
 function SourceBadge({ statementCovered }: { statementCovered: boolean }) {
   return statementCovered ? (
     <span
       className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200"
-      title="Payroll, manager time, and expenses are real numbers from a completed bank-statement reconciliation for this month."
+      title="Bank business expenses and manager time are real numbers from a completed bank-statement reconciliation for this month."
     >
       Statement
     </span>
   ) : (
     <span
       className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200"
-      title="Payroll, manager time, and expenses are estimates (commission formula / clocked time / manual entries) — complete this month's bank-statement reconciliation for real numbers."
+      title="Bank business expenses and manager time are estimates (manual entries / clocked time) — complete this month's bank-statement reconciliation for real numbers."
     >
       Estimate
     </span>
   );
 }
 
-/** Monthly Gross → Payroll → Expenses → Net breakdown — the cost side split out of GrowthTable
- * (see that component's own doc comment) into its own Revenue tab, since "what's the gross number"
- * and "what's actually left after payroll and expenses" are different questions a manager asks at
- * different times, not one row each in an increasingly wide table. Dual-rendered: a stacked card
- * per month below `sm` (Payroll/Manager time/Expenses used to be entirely invisible on mobile —
- * hidden table columns with no fallback), a table at `sm` and up, matching this codebase's
- * established `TransactionRow`/`ContactsTable` convention. Every row/card also carries a
- * Statement/Estimate badge so it's clear at a glance whether that month's cost figures are real
+/** Monthly Gross → Provider Compensation (card + cash) → Expenses → Net breakdown — the cost side
+ * split out of GrowthTable (see that component's own doc comment) into its own Revenue tab, since
+ * "what's the gross number" and "what's actually left after payroll and expenses" are different
+ * questions a manager asks at different times, not one row each in an increasingly wide table.
+ * Dual-rendered: a stacked card per month below `sm` (these figures used to be entirely invisible
+ * on mobile — hidden table columns with no fallback), a table at `sm` and up, matching this
+ * codebase's established `TransactionRow`/`ContactsTable` convention. Every row/card also carries
+ * a Statement/Estimate badge so it's clear at a glance whether that month's cost figures are real
  * bank-statement numbers or estimates, not just an aggregate banner elsewhere on the page. */
 export default function NetTable({ months }: { months: MonthSummary[] }) {
   const active = months.filter((m) => m.grossRevenue != null);
   if (active.length === 0) return null;
 
   const totalGross   = active.reduce((s, m) => s + (m.grossRevenue ?? 0), 0);
-  const totalPayroll = active.reduce((s, m) => s + (m.payrollCost ?? 0), 0);
+  const totalPayrollCard = active.reduce((s, m) => s + (m.payrollCost ?? 0), 0);
+  const totalPayrollCash = active.reduce((s, m) => s + (m.cashProviderCompensation ?? 0), 0);
   const totalManagerLabor = active.reduce((s, m) => s + (m.managerLaborCost ?? 0), 0);
   const totalExpense = active.reduce((s, m) => s + (m.expenseTotal ?? 0), 0);
+  const totalCashExpense = active.reduce((s, m) => s + (m.cashBusinessExpenseTotal ?? 0), 0);
   const netMonths = active.filter((m) => m.netRevenue != null);
   const totalNet = netMonths.length > 0 ? netMonths.reduce((s, m) => s + (m.netRevenue ?? 0), 0) : null;
   const overallMom = netMonths.length > 1
@@ -103,16 +107,24 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
                   <span className="tabular-nums font-semibold text-emerald-700">{usd(m.netRevenue)}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-400">Payroll</span>
+                  <span className="text-zinc-400">Provider Comp (card)</span>
                   <span className="tabular-nums text-zinc-600">{m.payrollCost != null ? `− ${usd(m.payrollCost)}` : '—'}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-400">Provider Comp (cash)</span>
+                  <span className="tabular-nums text-zinc-600">{m.cashProviderCompensation != null ? `− ${usd(m.cashProviderCompensation)}` : '—'}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-zinc-400">Manager time</span>
                   <span className="tabular-nums text-zinc-600">{m.managerLaborCost != null ? `− ${usd(m.managerLaborCost)}` : '—'}</span>
                 </div>
-                <div className="col-span-2 flex items-center justify-between">
-                  <span className="text-zinc-400">Expenses</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-400">Bank expenses</span>
                   <span className="tabular-nums text-zinc-600">{m.expenseTotal != null ? `− ${usd(m.expenseTotal)}` : '—'}</span>
+                </div>
+                <div className="col-span-2 flex items-center justify-between">
+                  <span className="text-zinc-400">Cash business expenses</span>
+                  <span className="tabular-nums text-zinc-600">{m.cashBusinessExpenseTotal != null ? `− ${usd(m.cashBusinessExpenseTotal)}` : '—'}</span>
                 </div>
               </div>
             </div>
@@ -137,16 +149,24 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
               <span className="tabular-nums font-semibold text-emerald-700">{usd(totalNet)}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400">Payroll</span>
-              <span className="tabular-nums font-medium text-zinc-700">− {usd(totalPayroll)}</span>
+              <span className="text-zinc-400">Provider Comp (card)</span>
+              <span className="tabular-nums font-medium text-zinc-700">− {usd(totalPayrollCard)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-400">Provider Comp (cash)</span>
+              <span className="tabular-nums font-medium text-zinc-700">− {usd(totalPayrollCash)}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-zinc-400">Manager time</span>
               <span className="tabular-nums font-medium text-zinc-700">− {usd(totalManagerLabor)}</span>
             </div>
-            <div className="col-span-2 flex items-center justify-between">
-              <span className="text-zinc-400">Expenses</span>
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-400">Bank expenses</span>
               <span className="tabular-nums font-medium text-zinc-700">− {usd(totalExpense)}</span>
+            </div>
+            <div className="col-span-2 flex items-center justify-between">
+              <span className="text-zinc-400">Cash business expenses</span>
+              <span className="tabular-nums font-medium text-zinc-700">− {usd(totalCashExpense)}</span>
             </div>
           </div>
         </div>
@@ -159,9 +179,11 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
             <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wide text-zinc-400">
               <th className="px-4 py-3">Month</th>
               <th className="px-4 py-3 text-right">Gross</th>
-              <th className="px-4 py-3 text-right">Payroll</th>
+              <th className="px-4 py-3 text-right">Comp (card)</th>
+              <th className="px-4 py-3 text-right">Comp (cash)</th>
               <th className="px-4 py-3 text-right">Manager time</th>
-              <th className="px-4 py-3 text-right">Expenses</th>
+              <th className="px-4 py-3 text-right">Bank exp.</th>
+              <th className="px-4 py-3 text-right">Cash exp.</th>
               <th className="px-4 py-3 text-right">Net</th>
               <th className="px-4 py-3 text-right">Growth</th>
             </tr>
@@ -186,10 +208,16 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
                     {m.payrollCost != null ? `− ${usd(m.payrollCost)}` : '—'}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-zinc-500">
+                    {m.cashProviderCompensation != null ? `− ${usd(m.cashProviderCompensation)}` : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-zinc-500">
                     {m.managerLaborCost != null ? `− ${usd(m.managerLaborCost)}` : '—'}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-zinc-500">
                     {m.expenseTotal != null ? `− ${usd(m.expenseTotal)}` : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums text-zinc-500">
+                    {m.cashBusinessExpenseTotal != null ? `− ${usd(m.cashBusinessExpenseTotal)}` : '—'}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums font-semibold text-emerald-700">
                     {usd(m.netRevenue)}
@@ -205,9 +233,11 @@ export default function NetTable({ months }: { months: MonthSummary[] }) {
             <tr className="border-t-2 border-zinc-200 bg-zinc-50 font-semibold text-zinc-800">
               <td className="px-4 py-3">Total</td>
               <td className="px-4 py-3 text-right tabular-nums">{usd(totalGross)}</td>
-              <td className="px-4 py-3 text-right tabular-nums">− {usd(totalPayroll)}</td>
+              <td className="px-4 py-3 text-right tabular-nums">− {usd(totalPayrollCard)}</td>
+              <td className="px-4 py-3 text-right tabular-nums">− {usd(totalPayrollCash)}</td>
               <td className="px-4 py-3 text-right tabular-nums">− {usd(totalManagerLabor)}</td>
               <td className="px-4 py-3 text-right tabular-nums">− {usd(totalExpense)}</td>
+              <td className="px-4 py-3 text-right tabular-nums">− {usd(totalCashExpense)}</td>
               <td className="px-4 py-3 text-right tabular-nums text-emerald-700">{usd(totalNet)}</td>
               <td className="px-4 py-3 text-right tabular-nums">
                 {overallMom != null && (

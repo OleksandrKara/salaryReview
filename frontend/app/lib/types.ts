@@ -893,9 +893,25 @@ export interface MonthSummary {
   /** grossRevenue - payrollCost - expenseTotal - managerLaborCost — null if any of the four is null. */
   netRevenue: number | null;
   /** Whether a COMPLETED bank-statement reconciliation overlaps this month — when true,
-   * payrollCost/managerLaborCost/expenseTotal are real bank-linked figures; when false, they're
-   * estimates (manual entries / clocked time / commission formula). */
+   * expenseTotal/managerLaborCost are real bank-linked figures; when false, they're estimates
+   * (manual entries / clocked time). payrollCost/cashProviderCompensation are sourced from the
+   * Salary/Commission Report engine (SettlementPreviewService) regardless of this flag. */
   statementCovered: boolean;
+  /** The provider's share of cash revenue for this month, sourced from the same engine that
+   * drives the Salary/Commission Report — never a fake bank transaction. Null when unknown. */
+  cashProviderCompensation: number | null;
+  /** "Personal Bank Transactions" — categorized bank transactions in a personal-flagged expense
+   * category. Reported separately; never subtracted from netRevenue. Null when unknown. */
+  personalBankTotal: number | null;
+  /** "Owner Draws" — bank transactions excluded as owner-contribution/cash-withdrawal. Reported
+   * separately; never subtracted from netRevenue. Null when unknown. */
+  ownerDrawsTotal: number | null;
+  /** netRevenue - personalBankTotal - ownerDrawsTotal — a secondary "what's left after the
+   * owner's own money movements" figure. Null if any input is null. */
+  profitAfterPersonal: number | null;
+  /** "Other Cash Business Expenses" — manually-entered generic-category expenses flagged
+   * paid-in-cash. Already subtracted into netRevenue; broken out here as its own P&L line. */
+  cashBusinessExpenseTotal: number | null;
 }
 
 export interface ProviderYtd {
@@ -1306,6 +1322,8 @@ export interface ExpenseCategoryDefinition {
   label: string;
   locked: boolean;
   sortOrder: number;
+  /** Personal (non-business) spend — excluded from Net Profit, reported separately on the P&L. */
+  isPersonal: boolean;
 }
 
 export interface ExpenseEntry {
@@ -1319,6 +1337,8 @@ export interface ExpenseEntry {
   enteredBy: string | null;
   /** ISO-8601 instant. */
   enteredAt: string;
+  /** Manual entries only — reconciliation-derived entries are always bank-sourced. */
+  paidInCash: boolean;
 }
 
 // --- Bank statement import + reconciliation (com.salonreview.web.ExpenseImportController /
@@ -1339,6 +1359,11 @@ export interface BankStatementImportSummary {
   uploadedAt: string;
   completedAt: string | null;
   revertedAt: string | null;
+  /** The statement's own printed opening/closing balance, best-effort extracted from the CSV —
+   * null for imports uploaded before this was captured, or when the export doesn't include it.
+   * Powers the reconciliation workspace's "Opening → Closing" bank-account check. */
+  openingBalance: number | null;
+  closingBalance: number | null;
 }
 
 export type BankTransactionStatus =

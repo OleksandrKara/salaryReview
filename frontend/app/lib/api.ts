@@ -585,16 +585,24 @@ export const api = {
   // revenue figure — same flexible-period, no-uniqueness-constraint shape as ad spend above, but
   // salon-wide rather than per-page. Never upserts; a corrected re-entry stays alongside the
   // original so expense history stays auditable.
-  createExpenseEntry: (category: ExpenseCategory, periodStart: string, periodEnd: string, amount: number, note?: string) =>
-    proxyJson<ExpenseEntry>('/api/owner/expenses', 'POST', { category, periodStart, periodEnd, amount, note: note ?? null }),
+  createExpenseEntry: (
+    category: ExpenseCategory, periodStart: string, periodEnd: string, amount: number, note?: string, paidInCash?: boolean,
+  ) =>
+    proxyJson<ExpenseEntry>('/api/owner/expenses', 'POST', {
+      category, periodStart, periodEnd, amount, note: note ?? null, paidInCash: paidInCash ?? false,
+    }),
 
   // Every entered expense row, most recent period first.
   listExpenseEntries: () => proxyGet<ExpenseEntry[]>('/api/owner/expenses'),
 
   // Edits an existing entry in place — for fixing an outright mistake (wrong amount/dates/category),
   // not a genuine revision (enter a new row via createExpenseEntry for that, so history stays auditable).
-  updateExpenseEntry: (id: number, category: ExpenseCategory, periodStart: string, periodEnd: string, amount: number, note?: string) =>
-    proxyJson<ExpenseEntry>(`/api/owner/expenses/${id}`, 'PUT', { category, periodStart, periodEnd, amount, note: note ?? null }),
+  updateExpenseEntry: (
+    id: number, category: ExpenseCategory, periodStart: string, periodEnd: string, amount: number, note?: string, paidInCash?: boolean,
+  ) =>
+    proxyJson<ExpenseEntry>(`/api/owner/expenses/${id}`, 'PUT', {
+      category, periodStart, periodEnd, amount, note: note ?? null, paidInCash: paidInCash ?? false,
+    }),
 
   // Removes an outright mistaken entry (duplicate, wrong amount typed in).
   deleteExpenseEntry: (id: number) => proxyVoid(`/api/owner/expenses/${id}`, 'DELETE'),
@@ -685,6 +693,11 @@ export const api = {
     proxyJson<ExpenseCategoryDefinition>(`/api/owner/expenses/categories/${id}`, 'PUT', { label }),
 
   deleteExpenseCategory: (id: number) => proxyVoid(`/api/owner/expenses/categories/${id}`, 'DELETE'),
+
+  // Flags/unflags a category as personal (non-business) spend — excluded from Net Profit,
+  // reported separately on the P&L (see the P&L redesign).
+  setExpenseCategoryPersonal: (id: number, isPersonal: boolean) =>
+    proxyJson<ExpenseCategoryDefinition>(`/api/owner/expenses/categories/${id}/personal`, 'PATCH', { isPersonal }),
 
   // One Square customer's submission + appointment history — fetched lazily, only when a row on
   // the Ads Report breakdown's Completed/Anticipated lists is expanded.

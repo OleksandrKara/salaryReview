@@ -86,6 +86,26 @@ public class ExpenseCategoryService {
         return categories.save(c);
     }
 
+    /** Flags whether this category's spend is personal (excluded from Net Profit — see the P&L
+     * redesign) or a normal business expense. Any category can be flagged, including {@code
+     * protected} ones — there's no reason to forbid it, and {@code isGenericCategory}'s exclusion
+     * logic already treats MANAGER_TIME/PROVIDER_PAYROLL specially regardless of this flag. */
+    @Transactional
+    public ExpenseCategoryDefinition setPersonal(Long id, boolean isPersonal) {
+        ExpenseCategoryDefinition c = categories.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such category"));
+        c.setPersonal(isPersonal);
+        return categories.save(c);
+    }
+
+    /** The codes of every category currently flagged personal — used by {@code ExpenseService} to
+     * exclude personal spend from the business-expense total. */
+    public java.util.Set<String> personalCategoryCodes() {
+        return categories.findByPersonalTrue().stream()
+                .map(ExpenseCategoryDefinition::getCode)
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
     @Transactional
     public void delete(Long id) {
         ExpenseCategoryDefinition c = categories.findById(id)

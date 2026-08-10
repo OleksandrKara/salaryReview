@@ -35,8 +35,8 @@ public class ExpenseController {
     @PostMapping
     public ExpenseEntryDto create(@RequestBody ExpenseEntryRequest req, @AuthenticationPrincipal AppUserPrincipal me) {
         categoryService.assertValidCode(req.category());
-        ExpenseEntry saved = service.createExpenseEntry(
-                req.category(), req.periodStart(), req.periodEnd(), req.amount(), req.note(), me.getUsername());
+        ExpenseEntry saved = service.createExpenseEntry(req.category(), req.periodStart(), req.periodEnd(),
+                req.amount(), req.note(), me.getUsername(), Boolean.TRUE.equals(req.paidInCash()));
         return toDto(saved);
     }
 
@@ -48,7 +48,8 @@ public class ExpenseController {
     @PutMapping("/{id}")
     public ResponseEntity<ExpenseEntryDto> update(@PathVariable Long id, @RequestBody ExpenseEntryRequest req) {
         categoryService.assertValidCode(req.category());
-        return service.updateExpenseEntry(id, req.category(), req.periodStart(), req.periodEnd(), req.amount(), req.note())
+        return service.updateExpenseEntry(id, req.category(), req.periodStart(), req.periodEnd(), req.amount(),
+                req.note(), Boolean.TRUE.equals(req.paidInCash()))
                 .map(ExpenseController::toDto)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
@@ -61,12 +62,13 @@ public class ExpenseController {
 
     private static ExpenseEntryDto toDto(ExpenseEntry e) {
         return new ExpenseEntryDto(e.getId(), e.getCategory(), e.getPeriodStart(), e.getPeriodEnd(),
-                e.getAmount(), e.getNote(), e.getEnteredBy(), e.getEnteredAt());
+                e.getAmount(), e.getNote(), e.getEnteredBy(), e.getEnteredAt(), e.isPaidInCash());
     }
 
     public record ExpenseEntryRequest(String category, LocalDate periodStart, LocalDate periodEnd,
-                                       BigDecimal amount, String note) {}
+                                       BigDecimal amount, String note, Boolean paidInCash) {}
 
     public record ExpenseEntryDto(Long id, String category, LocalDate periodStart, LocalDate periodEnd,
-                                   BigDecimal amount, String note, String enteredBy, Instant enteredAt) {}
+                                   BigDecimal amount, String note, String enteredBy, Instant enteredAt,
+                                   boolean paidInCash) {}
 }

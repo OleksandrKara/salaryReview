@@ -5,6 +5,7 @@ import com.salonreview.domain.PayPeriod;
 import com.salonreview.domain.PeriodEntry;
 import com.salonreview.domain.Provider;
 import com.salonreview.domain.SalonConfig;
+import com.salonreview.repo.BankTransactionRepository;
 import com.salonreview.repo.PayPeriodRepository;
 import com.salonreview.repo.PeriodEntryRepository;
 import com.salonreview.repo.SalonConfigRepository;
@@ -31,6 +32,8 @@ class OwnerOverviewServiceTest {
     private PeriodEntryRepository entries;
     private SalonConfigRepository salonConfig;
     private SquareMonthAggregator aggregator;
+    private SettlementPreviewService settlementPreview;
+    private BankTransactionRepository bankTransactions;
     private OwnerOverviewService service;
 
     private static final SalonConfig CFG = SalonConfig.builder()
@@ -78,6 +81,13 @@ class OwnerOverviewServiceTest {
         entries     = mock(PeriodEntryRepository.class);
         salonConfig = mock(SalonConfigRepository.class);
         aggregator  = mock(SquareMonthAggregator.class);
+        // Unstubbed (returns null from preview()) by default — providerCompensationForMonth treats
+        // that as "no Square data for this month" and falls back to the formula/PeriodEntry-computed
+        // combined payroll figure, with cash comp defaulting to zero (see OwnerOverviewService's own
+        // doc comment on that fallback). Individual tests can stub preview() to exercise the new
+        // card/cash-split behavior explicitly.
+        settlementPreview = mock(SettlementPreviewService.class);
+        bankTransactions = mock(BankTransactionRepository.class);
         // Retention (client counts) isn't the focus here; an unstubbed mock yields no counts, so months
         // simply report 0 clients seen/returning — which these revenue/payroll assertions ignore.
         ManualAdjustmentService manualAdjustments = mock(ManualAdjustmentService.class);
@@ -89,7 +99,7 @@ class OwnerOverviewServiceTest {
                 .thenReturn(false);
         service     = new OwnerOverviewService(payPeriods, entries, new CommissionCalculator(),
                 salonConfig, aggregator, mock(RetentionAnalyticsService.class), manualAdjustments, expenses,
-                managerTime, expenseImports);
+                managerTime, expenseImports, settlementPreview, bankTransactions);
 
         when(salonConfig.findById(1)).thenReturn(Optional.of(CFG));
         // Default: no periods for any year (overridden per test)
@@ -101,6 +111,8 @@ class OwnerOverviewServiceTest {
                 .thenReturn(0);
         // No expenses by default — individual tests can override to exercise net-revenue math.
         when(expenses.resolveExpenseTotal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(BigDecimal.ZERO);
+        when(expenses.resolveCashBusinessExpenseTotal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(BigDecimal.ZERO);
         // No manager labor cost by default — individual tests can override to exercise the fold-in.
         when(managerTime.totalLaborCost(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
@@ -155,12 +167,15 @@ class OwnerOverviewServiceTest {
         ExpenseService expenses = mock(ExpenseService.class);
         when(expenses.resolveExpenseTotal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(new BigDecimal("100.00"));
+        when(expenses.resolveCashBusinessExpenseTotal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(BigDecimal.ZERO);
         ManagerTimeService managerTime = mock(ManagerTimeService.class);
         when(managerTime.totalLaborCost(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(BigDecimal.ZERO);
         OwnerOverviewService serviceWithExpenses = new OwnerOverviewService(payPeriods, entries,
                 new CommissionCalculator(), salonConfig, aggregator, mock(RetentionAnalyticsService.class),
-                mock(ManualAdjustmentService.class), expenses, managerTime, notStatementCovered());
+                mock(ManualAdjustmentService.class), expenses, managerTime, notStatementCovered(),
+                settlementPreview, bankTransactions);
 
         MonthSummary jan = serviceWithExpenses.overview(2025, 1, 2025, 12).months().get(0);
 
@@ -183,12 +198,15 @@ class OwnerOverviewServiceTest {
         ExpenseService expenses = mock(ExpenseService.class);
         when(expenses.resolveExpenseTotal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(BigDecimal.ZERO);
+        when(expenses.resolveCashBusinessExpenseTotal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(BigDecimal.ZERO);
         ManagerTimeService managerTime = mock(ManagerTimeService.class);
         when(managerTime.totalLaborCost(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(new BigDecimal("75.00"));
         OwnerOverviewService serviceWithManagerTime = new OwnerOverviewService(payPeriods, entries,
                 new CommissionCalculator(), salonConfig, aggregator, mock(RetentionAnalyticsService.class),
-                mock(ManualAdjustmentService.class), expenses, managerTime, notStatementCovered());
+                mock(ManualAdjustmentService.class), expenses, managerTime, notStatementCovered(),
+                settlementPreview, bankTransactions);
 
         MonthSummary jan = serviceWithManagerTime.overview(2025, 1, 2025, 12).months().get(0);
 
@@ -212,6 +230,8 @@ class OwnerOverviewServiceTest {
         ExpenseService expenses = mock(ExpenseService.class);
         when(expenses.resolveExpenseTotal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(BigDecimal.ZERO);
+        when(expenses.resolveCashBusinessExpenseTotal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(BigDecimal.ZERO);
         when(expenses.resolveManagerLaborManualTotal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(new BigDecimal("50.00"));
         ManagerTimeService managerTime = mock(ManagerTimeService.class);
@@ -219,7 +239,8 @@ class OwnerOverviewServiceTest {
                 .thenReturn(null); // no clocked shifts at all this month (before the feature existed)
         OwnerOverviewService serviceWithManualBackfill = new OwnerOverviewService(payPeriods, entries,
                 new CommissionCalculator(), salonConfig, aggregator, mock(RetentionAnalyticsService.class),
-                mock(ManualAdjustmentService.class), expenses, managerTime, notStatementCovered());
+                mock(ManualAdjustmentService.class), expenses, managerTime, notStatementCovered(),
+                settlementPreview, bankTransactions);
 
         MonthSummary jan = serviceWithManualBackfill.overview(2025, 1, 2025, 12).months().get(0);
 

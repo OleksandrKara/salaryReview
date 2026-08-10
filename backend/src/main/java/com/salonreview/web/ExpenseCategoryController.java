@@ -36,16 +36,24 @@ public class ExpenseCategoryController {
         return toDto(service.rename(id, req.label()));
     }
 
+    @PatchMapping("/{id}/personal")
+    public CategoryDto setPersonal(@PathVariable Long id, @RequestBody PersonalRequest req) {
+        return toDto(service.setPersonal(id, req.isPersonal()));
+    }
+
     @DeleteMapping("/{id}")
     public void delete(@PathVariable Long id) {
         service.delete(id);
     }
 
     private static CategoryDto toDto(ExpenseCategoryDefinition c) {
-        return new CategoryDto(c.getId(), c.getCode(), c.getLabel(), c.isProtectedCategory(), c.getSortOrder());
+        return new CategoryDto(c.getId(), c.getCode(), c.getLabel(), c.isProtectedCategory(),
+                c.isPersonal(), c.getSortOrder());
     }
 
-    public record CategoryDto(Long id, String code, String label, boolean locked, int sortOrder) {}
+    public record CategoryDto(Long id, String code, String label, boolean locked, boolean isPersonal, int sortOrder) {}
 
     public record CategoryRequest(String label) {}
+
+    public record PersonalRequest(boolean isPersonal) {}
 }
