@@ -1,6 +1,7 @@
 package com.salonreview.web;
 
 import com.salonreview.ai.FunnelAnalysisService.AnalysisFailedException;
+import com.salonreview.ai.SmsDraftService.DraftFailedException;
 import com.salonreview.ai.SuspiciousBookingTriageService.TriageFailedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,6 +47,13 @@ public class TriageExceptionHandler {
     @ExceptionHandler(AnalysisFailedException.class)
     public ResponseEntity<Map<String, String>> handleAnalysisFailed(AnalysisFailedException e) {
         log.error("Funnel analysis failed (502 to client): {}", e.toString(), e);
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(Map.of("error", userMessageFor(e)));
+    }
+
+    @ExceptionHandler(DraftFailedException.class)
+    public ResponseEntity<Map<String, String>> handleDraftFailed(DraftFailedException e) {
+        log.error("SMS draft failed (502 to client): {}", e.toString(), e);
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(Map.of("error", userMessageFor(e)));
     }

@@ -1,8 +1,13 @@
 package com.salonreview.web;
 
+import com.salonreview.ai.SmsDraftService;
+import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.domain.AppUser;
 import com.salonreview.domain.BlockedNumber;
+import com.salonreview.domain.Language;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.marketing.MarketingContactsService;
+import com.salonreview.repo.AppUserRepository;
 import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.repo.SmsMessageRepository.ConversationSummaryProjection;
 import com.salonreview.sms.CheckoutReviewLinks;
@@ -15,7 +20,10 @@ import com.salonreview.util.PhoneNumbers;
 import com.salonreview.web.dto.MarketingContactDto;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -48,12 +56,15 @@ public class SmsActivityController {
     private final SmsEventBroadcaster events;
     private final SmsMediaService mediaService;
     private final SmsReactionService reactionService;
+    private final SmsDraftService draftService;
+    private final AppUserRepository users;
 
     public SmsActivityController(SmsMessageLogService service, TwilioSmsService smsService,
                                   MarketingContactsService contactsService,
                                   BlockedNumberRepository blockedNumberRepository,
                                   SmsEventBroadcaster events, SmsMediaService mediaService,
-                                  SmsReactionService reactionService) {
+                                  SmsReactionService reactionService, SmsDraftService draftService,
+                                  AppUserRepository users) {
         this.service = service;
         this.smsService = smsService;
         this.contactsService = contactsService;
@@ -61,6 +72,8 @@ public class SmsActivityController {
         this.events = events;
         this.mediaService = mediaService;
         this.reactionService = reactionService;
+        this.draftService = draftService;
+        this.users = users;
     }
 
     public record SmsMediaDto(String url, String contentType) {}
@@ -89,6 +102,8 @@ public class SmsActivityController {
     public record ReplyResult(boolean sent, String reason) {}
 
     public record ConversationSearchHitDto(String phoneNumber, String snippet, String direction, Instant matchedAt) {}
+
+    public record DraftReplyResult(String body, String model) {}
 
     @GetMapping
     public List<SmsMessageDto> search(@RequestParam(required = false) String phoneNumber,
@@ -219,6 +234,27 @@ public class SmsActivityController {
     @GetMapping("/conversations/{phoneNumber}/contact")
     public Optional<MarketingContactDto.Contact> contact(@PathVariable String phoneNumber) {
         return contactsService.contactByPhone(phoneNumber);
+    }
+
+    /** AI-drafted reply suggestion ("Generate" button in the manager conversation view) — see
+     * {@link SmsDraftService}. Returns a draft only; the manager reviews/edits it in the composer
+     * before actually sending via {@link #reply}. 404 when the feature is disabled (ships-dark
+     * convention, same as every other AI feature), 502 if the Claude call itself fails. */
+    @PostMapping("/conversations/{phoneNumber}/draft-reply")
+    public ResponseEntity<DraftReplyResult> draftReply(@PathVariable String phoneNumber,
+                                                         @AuthenticationPrincipal AppUserPrincipal me) {
+        return draftService.draft(phoneNumber, language(me))
+                .map(d -> ResponseEntity.ok(new DraftReplyResult(d.body(), d.model())))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /** The caller's preferred language, read fresh from the DB; English when unset — same pattern
+     * as {@code RagController#language}. */
+    private Language language(AppUserPrincipal me) {
+        if (me == null) return Language.EN;
+        return users.findById(me.getUserId())
+                .map(AppUser::getPreferredLanguage)
+                .orElse(Language.EN) == Language.RU ? Language.RU : Language.EN;
     }
 
     /** Message-content search across every conversation — backs the manager conversation view's

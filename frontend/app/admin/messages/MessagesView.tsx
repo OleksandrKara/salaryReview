@@ -127,6 +127,11 @@ export default function MessagesView({
   const [showContactPanel, setShowContactPanel] = useState(false);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  // AI "Generate" button state — see generateDraft below. draftError is cleared on the next
+  // attempt/thread switch, not on a timer, so it stays visible until the manager either retries or
+  // moves on.
+  const [drafting, setDrafting] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
   // Photos staged for the next send — cleared (and their object URLs revoked) once the send
   // completes or the composer is abandoned for a different thread.
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
@@ -261,6 +266,7 @@ export default function MessagesView({
       // new customer's composer.
       setAttachedFiles([]);
       setDraft('');
+      setDraftError(null);
       // A freshly opened thread should land at the newest message, regardless of where the reader
       // happened to leave the scroll position of whichever thread they had open before.
       isNearBottomRef.current = true;
@@ -464,6 +470,24 @@ export default function MessagesView({
       const cursor = start + emoji.length;
       el?.setSelectionRange(cursor, cursor);
     });
+  }
+
+  // AI-drafted reply suggestion ("Generate" button) — fills the composer for the manager to review
+  // and edit, never sends on its own. Overwrites whatever's already typed, same as clicking any
+  // other "insert" control in this composer (attach photo, emoji).
+  async function generateDraft() {
+    if (!selectedPhone || drafting) return;
+    setDrafting(true);
+    setDraftError(null);
+    try {
+      const result = await api.draftSmsReply(selectedPhone);
+      setDraft(result.body);
+      requestAnimationFrame(() => draftInputRef.current?.focus());
+    } catch {
+      setDraftError('Could not generate a draft. The AI reply feature may not be enabled — write a reply manually.');
+    } finally {
+      setDrafting(false);
+    }
   }
 
   function addAttachedFiles(files: FileList | null) {
@@ -886,6 +910,11 @@ export default function MessagesView({
                     ))}
                   </div>
                 )}
+                {draftError && (
+                  <p data-testid="thread-composer-draft-error" className="px-3 pt-2 text-xs text-red-600">
+                    {draftError}
+                  </p>
+                )}
                 <form
                   data-testid="thread-composer"
                   onSubmit={(e) => {
@@ -947,17 +976,48 @@ export default function MessagesView({
                       2-line default. onFocus's scrollComposerIntoView + the visualViewport effect
                       above are the fix for "can't see what I'm typing" on mobile: the composer
                       staying out from under the on-screen keyboard even in mobile browsers/webviews
-                      that handle 100dvh's keyboard-resize behavior inconsistently. */}
-                  <textarea
-                    ref={draftInputRef}
-                    data-testid="thread-composer-input"
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onFocus={scrollComposerIntoView}
-                    placeholder={attachedFiles.length > 0 ? 'Add a caption…' : 'Type a reply…'}
-                    rows={1}
-                    className="max-h-32 min-w-0 flex-1 resize-none overflow-y-auto rounded-2xl border border-zinc-300 px-4 py-2.5 text-base leading-normal sm:py-2 sm:text-sm"
-                  />
+                      that handle 100dvh's keyboard-resize behavior inconsistently.
+
+                      The AI "Generate" button lives inside this wrapper, floated in the textarea's
+                      own top-right corner, rather than as a 5th icon in the outer row — on a narrow
+                      phone (≤375px) four 44px touch-target buttons plus this textarea in one flex
+                      row left barely 100px for actual typing. The textarea's pr-11/sm:pr-9 reserves
+                      that corner on every line (CSS padding applies to the whole box, not just the
+                      first line), so typed text can never run under the button regardless of how
+                      many lines the draft grows to. */}
+                  <div className="relative min-w-0 flex-1">
+                    <textarea
+                      ref={draftInputRef}
+                      data-testid="thread-composer-input"
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onFocus={scrollComposerIntoView}
+                      placeholder={attachedFiles.length > 0 ? 'Add a caption…' : 'Type a reply…'}
+                      rows={1}
+                      className="max-h-32 w-full resize-none overflow-y-auto rounded-2xl border border-zinc-300 py-2.5 pl-4 pr-11 text-base leading-normal sm:py-2 sm:pr-9 sm:text-sm"
+                    />
+                    <button
+                      type="button"
+                      data-testid="thread-composer-generate-button"
+                      onClick={() => void generateDraft()}
+                      disabled={drafting}
+                      aria-label="Generate an AI reply suggestion"
+                      title="Generate an AI reply suggestion"
+                      className="absolute right-1 top-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 disabled:opacity-40 sm:h-7 sm:w-7"
+                    >
+                      {drafting ? (
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="animate-spin" aria-hidden>
+                          <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                        </svg>
+                      ) : (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                          <path d="m12 3-1.4 3.6L7 8l3.6 1.4L12 13l1.4-3.6L17 8l-3.6-1.4Z" />
+                          <path d="M5 17l-.8 2-2 .8 2 .8.8 2 .8-2 2-.8-2-.8Z" />
+                          <path d="M19 15l-.6 1.4-1.4.6 1.4.6.6 1.4.6-1.4 1.4-.6-1.4-.6Z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                   <button
                     type="submit"
                     data-testid="thread-composer-send-button"

@@ -1,9 +1,13 @@
 package com.salonreview.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.salonreview.ai.SmsDraftService;
+import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.domain.AppUser;
 import com.salonreview.domain.BlockedNumber;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.marketing.MarketingContactsService;
+import com.salonreview.repo.AppUserRepository;
 import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.repo.SmsMessageRepository.ConversationSummaryProjection;
 import com.salonreview.sms.SmsEventBroadcaster;
@@ -53,6 +57,8 @@ class SmsActivityControllerTest {
     private SmsEventBroadcaster events;
     private SmsMediaService mediaService;
     private SmsReactionService reactionService;
+    private SmsDraftService draftService;
+    private AppUserRepository users;
     private MockMvc mvc;
 
     @BeforeEach
@@ -64,11 +70,13 @@ class SmsActivityControllerTest {
         events = mock(SmsEventBroadcaster.class);
         mediaService = mock(SmsMediaService.class);
         reactionService = mock(SmsReactionService.class);
+        draftService = mock(SmsDraftService.class);
+        users = mock(AppUserRepository.class);
         when(blockedNumberRepository.findByPhoneNumberIn(any())).thenReturn(List.of());
         when(mediaService.mediaForMessages(any())).thenReturn(Map.of());
         when(reactionService.reactionsForMessages(any())).thenReturn(Map.of());
         mvc = MockMvcBuilders.standaloneSetup(
-                new SmsActivityController(service, smsService, contactsService, blockedNumberRepository, events, mediaService, reactionService)).build();
+                new SmsActivityController(service, smsService, contactsService, blockedNumberRepository, events, mediaService, reactionService, draftService, users)).build();
     }
 
     private static Contact contact(String givenName, String emailAddress) {
