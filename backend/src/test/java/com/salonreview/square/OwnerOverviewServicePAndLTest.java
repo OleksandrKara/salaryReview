@@ -78,6 +78,7 @@ class OwnerOverviewServicePAndLTest {
         when(expenses.resolvePersonalTotal(any(), any())).thenReturn(BigDecimal.ZERO);
         when(expenses.resolveExpenseBreakdownByCategory(any(), any())).thenReturn(Map.of());
         when(expenses.resolveCashBusinessExpenseBreakdownByCategory(any(), any())).thenReturn(Map.of());
+        when(expenses.resolvePersonalBreakdownByCategory(any(), any())).thenReturn(Map.of());
 
         managerTime = mock(ManagerTimeService.class);
         when(managerTime.totalLaborCost(any(), any())).thenReturn(BigDecimal.ZERO);
@@ -295,5 +296,39 @@ class OwnerOverviewServicePAndLTest {
 
         assertThat(mar.categoryBreakdown()).containsOnly(entry("MATERIALS", new BigDecimal("310.00")));
         verify(expenses, never()).resolveExpenseBreakdownByCategory(any(), any());
+    }
+
+    @Test
+    @DisplayName("personalBreakdown sources from the manual resolver when the month isn't statement-covered")
+    void personalBreakdownUsesManualWhenNotCovered() {
+        stubSquareMonth(2026, 3, "1000.00", "0.00", "0.00");
+        when(settlementPreview.preview(2026, 3)).thenReturn(preview(2026, 3, new BigDecimal("450.00"), BigDecimal.ZERO));
+        LocalDate from = LocalDate.of(2026, 3, 1), to = LocalDate.of(2026, 3, 31);
+        when(expenseImports.isPeriodStatementCovered(from, to)).thenReturn(false);
+        when(expenses.resolvePersonalBreakdownByCategory(from, to))
+                .thenReturn(Map.of("PERSONAL", new BigDecimal("300.00")));
+
+        MonthSummary mar = monthFor(2026, 3);
+
+        assertThat(mar.personalBreakdown()).containsOnly(entry("PERSONAL", new BigDecimal("300.00")));
+        verify(expenses, never()).resolveStatementDerivedPersonalBreakdownByCategory(any());
+    }
+
+    @Test
+    @DisplayName("personalBreakdown sources from the statement-derived resolver when reconciled, can span multiple personal categories")
+    void personalBreakdownUsesStatementDerivedWhenCovered() {
+        stubSquareMonth(2026, 3, "1000.00", "0.00", "0.00");
+        when(settlementPreview.preview(2026, 3)).thenReturn(preview(2026, 3, new BigDecimal("450.00"), BigDecimal.ZERO));
+        LocalDate from = LocalDate.of(2026, 3, 1), to = LocalDate.of(2026, 3, 31);
+        when(expenseImports.isPeriodStatementCovered(from, to)).thenReturn(true);
+        when(expenseImports.linkedExpenseEntryIds(from, to)).thenReturn(List.of(1L, 2L));
+        when(expenses.resolveStatementDerivedPersonalBreakdownByCategory(List.of(1L, 2L)))
+                .thenReturn(Map.of("PERSONAL", new BigDecimal("180.00"), "OWNER_MEALS", new BigDecimal("65.00")));
+
+        MonthSummary mar = monthFor(2026, 3);
+
+        assertThat(mar.personalBreakdown()).containsOnly(
+                entry("PERSONAL", new BigDecimal("180.00")), entry("OWNER_MEALS", new BigDecimal("65.00")));
+        verify(expenses, never()).resolvePersonalBreakdownByCategory(any(), any());
     }
 }

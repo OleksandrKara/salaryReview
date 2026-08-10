@@ -959,6 +959,11 @@ export interface MonthSummary {
    * categories in this ledger, so they never appear here. Null when unknown; an empty object
    * means genuinely zero categorized spend. */
   categoryBreakdown: Record<string, number> | null;
+  /** Category-by-category breakdown of personalBankTotal, keyed by expense category code — the
+   * owner can flag more than one category personal, so this can genuinely have more than one row.
+   * Null when unknown (same conditions as personalBankTotal); an empty object means genuinely
+   * zero personal spend. */
+  personalBreakdown: Record<string, number> | null;
 }
 
 export interface ProviderYtd {

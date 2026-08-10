@@ -180,6 +180,34 @@ public class ExpenseService {
         return sumByCategories(linkedExpenseEntryIds, personalCodes::contains);
     }
 
+    /** Category-by-category breakdown of {@link #resolvePersonalTotal} for [from, to] — the owner
+     * can flag more than one category personal, so this can genuinely have multiple rows (e.g.
+     * "Personal" and "Owner Meals"), not just a single total. Same grouped/prorated shape as
+     * {@link #resolveExpenseBreakdownByCategory}, powering a per-month "what does Personal consist
+     * of" view on the Net tab. */
+    public Map<String, BigDecimal> resolvePersonalBreakdownByCategory(LocalDate from, LocalDate to) {
+        Set<String> personalCodes = categories.personalCategoryCodes();
+        List<ExpenseEntry> personal = repository.findOverlapping(from, to).stream()
+                .filter(e -> personalCodes.contains(e.getCategory()))
+                .toList();
+        return breakdownByCategory(personal, from, to);
+    }
+
+    /** Same as {@link #resolvePersonalBreakdownByCategory} but for a statement-covered month's
+     * linked entries (see {@link #resolveStatementDerivedPersonalTotal}) — each entry is
+     * single-day, so a plain per-category sum is exactly correct, no proration needed. */
+    public Map<String, BigDecimal> resolveStatementDerivedPersonalBreakdownByCategory(Collection<Long> linkedExpenseEntryIds) {
+        if (linkedExpenseEntryIds.isEmpty()) return Map.of();
+        Set<String> personalCodes = categories.personalCategoryCodes();
+        Map<String, BigDecimal> result = new LinkedHashMap<>();
+        for (ExpenseEntry e : repository.findAllById(linkedExpenseEntryIds)) {
+            if (!personalCodes.contains(e.getCategory())) continue;
+            result.merge(e.getCategory(), e.getAmount(), BigDecimal::add);
+        }
+        result.replaceAll((k, v) -> v.setScale(2, RoundingMode.HALF_UP));
+        return result;
+    }
+
     private BigDecimal sumByCategories(Collection<Long> ids, Predicate<String> categoryMatch) {
         if (ids.isEmpty()) return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         BigDecimal total = repository.findAllById(ids).stream()

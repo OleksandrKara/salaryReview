@@ -63,8 +63,73 @@ function SourceBadge({ statementCovered }: { statementCovered: boolean }) {
   );
 }
 
-function hasBreakdown(m: MonthSummary): boolean {
+function hasCategoryBreakdown(m: MonthSummary): boolean {
   return m.categoryBreakdown != null && Object.keys(m.categoryBreakdown).length > 0;
+}
+
+function hasPersonalBreakdown(m: MonthSummary): boolean {
+  return m.personalBreakdown != null && Object.keys(m.personalBreakdown).length > 0;
+}
+
+/** Cash revenue minus the provider's cash-comp share minus cash-paid business expenses — what's
+ * left in the salon's own pocket from this month's cash, the same formula NetSummary's aggregate
+ * "Cash Position" section already uses, just run for a single month instead of summed over the
+ * whole range. Null if any input is unknown. */
+function cashRemaining(m: MonthSummary): number | null {
+  if (m.cashRevenue == null || m.cashProviderCompensation == null || m.cashBusinessExpenseTotal == null) return null;
+  return m.cashRevenue - m.cashProviderCompensation - m.cashBusinessExpenseTotal;
+}
+
+function hasDetails(m: MonthSummary): boolean {
+  return hasCategoryBreakdown(m) || hasPersonalBreakdown(m) || cashRemaining(m) != null;
+}
+
+/** The expandable "Details" panel for one month — category-of-expense breakdown, what "Personal"
+ * consisted of, and how much of this month's cash revenue is left after the provider's cash share
+ * and cash-paid expenses. Shared between the mobile card and desktop detail row so the two never
+ * drift apart. Each section only renders when it actually has something to show. */
+function MonthDetails({ m, categories }: { m: MonthSummary; categories: ExpenseCategoryDefinition[] }) {
+  const cash = cashRemaining(m);
+  return (
+    <div className="flex flex-col gap-3">
+      {hasCategoryBreakdown(m) && (
+        <div>
+          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Category breakdown</h4>
+          <CategorySpendingBreakdown breakdown={m.categoryBreakdown!} categories={categories} />
+        </div>
+      )}
+      {hasPersonalBreakdown(m) && (
+        <div>
+          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Personal spending</h4>
+          <p className="mt-0.5 text-[11px] text-zinc-400">Never subtracted from Net — shown here so it&apos;s clear what it&apos;s made of.</p>
+          <CategorySpendingBreakdown breakdown={m.personalBreakdown!} categories={categories} />
+        </div>
+      )}
+      {cash != null && (
+        <div className="rounded-lg bg-zinc-50/60 p-3 ring-1 ring-zinc-200">
+          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Cash position</h4>
+          <div className="mt-2 flex flex-col gap-1 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-500">Cash revenue</span>
+              <span className="tabular-nums text-zinc-700">{usd(m.cashRevenue)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-500">Provider cash comp</span>
+              <span className="tabular-nums text-zinc-700">− {usd(m.cashProviderCompensation)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-500">Cash business expenses</span>
+              <span className="tabular-nums text-zinc-700">− {usd(m.cashBusinessExpenseTotal)}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between border-t border-zinc-200 pt-1">
+              <span className="font-semibold text-zinc-700">Cash remaining</span>
+              <span className="font-semibold tabular-nums text-emerald-700">{usd(cash)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** Monthly Gross → Provider Compensation (card + cash) → Expenses → Net breakdown — the cost side
@@ -77,10 +142,13 @@ function hasBreakdown(m: MonthSummary): boolean {
  * a Statement/Estimate badge so it's clear at a glance whether that month's cost figures are real
  * bank-statement numbers or estimates, not just an aggregate banner elsewhere on the page.
  *
- * Each month with any categorized spend also gets a collapsed-by-default "Category breakdown"
- * toggle (only that month's own CategorySpendingBreakdown, not the whole range's — see
- * NetSummary's aggregate version above this table) — so "which expense drove this month's Net"
- * is a click away without a permanently wider table or a second always-visible breakdown per row. */
+ * Each month with anything to drill into also gets a collapsed-by-default "Details" toggle
+ * revealing up to three sections scoped to just that month (not the whole range's — see
+ * NetSummary's aggregate versions above this table): its own category-of-expense breakdown, what
+ * "Personal" spending was actually made of, and a Cash Position mini-summary (cash revenue minus
+ * the provider's cash share minus cash-paid expenses = cash remaining) — so "which expense drove
+ * this month's Net" and "where did the cash go" are a click away without a permanently wider
+ * table or an always-visible breakdown per row. */
 export default function NetTable({ months, categories }: { months: MonthSummary[]; categories: ExpenseCategoryDefinition[] }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toggle = (key: string) => setExpanded((prev) => {
@@ -112,7 +180,7 @@ export default function NetTable({ months, categories }: { months: MonthSummary[
           const mom = momPct(active, i, 'netRevenue');
           const isLive = !m.finalized;
           const key = `${m.year}-${m.month}`;
-          const canExpand = hasBreakdown(m);
+          const canExpand = hasDetails(m);
           const isOpen = canExpand && expanded.has(key);
           return (
             <div
@@ -169,11 +237,11 @@ export default function NetTable({ months, categories }: { months: MonthSummary[
                     onClick={() => toggle(key)}
                     className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-700"
                   >
-                    <span>{isOpen ? '▾' : '▸'}</span> Category breakdown
+                    <span>{isOpen ? '▾' : '▸'}</span> Details
                   </button>
                   {isOpen && (
                     <div className="mt-2">
-                      <CategorySpendingBreakdown breakdown={m.categoryBreakdown!} categories={categories} />
+                      <MonthDetails m={m} categories={categories} />
                     </div>
                   )}
                 </div>
@@ -240,7 +308,7 @@ export default function NetTable({ months, categories }: { months: MonthSummary[
               const mom = momPct(active, i, 'netRevenue');
               const isLive = !m.finalized;
               const key = `${m.year}-${m.month}`;
-              const canExpand = hasBreakdown(m);
+              const canExpand = hasDetails(m);
               const isOpen = canExpand && expanded.has(key);
               return (
                 <Fragment key={key}>
@@ -291,7 +359,7 @@ export default function NetTable({ months, categories }: { months: MonthSummary[
                   {isOpen && (
                     <tr className="bg-zinc-50/60">
                       <td colSpan={9} className="px-4 pb-4 pt-0">
-                        <CategorySpendingBreakdown breakdown={m.categoryBreakdown!} categories={categories} />
+                        <MonthDetails m={m} categories={categories} />
                       </td>
                     </tr>
                   )}
