@@ -300,4 +300,40 @@ class ExpenseImportServiceTest {
         assertThat(siblingAlreadyReviewed.getStatus()).isEqualTo(BankTransaction.STATUS_REVIEWED);
         verify(transactions, never()).findByImportIdOrderByTransactionDateAsc(999L);
     }
+
+    @Test
+    @DisplayName("bankBalanceForMonth uses the earliest overlapping import's opening balance and the latest's closing balance")
+    void bankBalanceForMonthUsesEarliestOpeningAndLatestClosing() {
+        LocalDate from = LocalDate.of(2026, 6, 1), to = LocalDate.of(2026, 6, 30);
+        BankStatementImport earlier = BankStatementImport.builder().id(1L)
+                .openingBalance(new BigDecimal("9192.33")).closingBalance(new BigDecimal("9000.00")).build();
+        BankStatementImport later = BankStatementImport.builder().id(2L)
+                .openingBalance(new BigDecimal("9000.00")).closingBalance(new BigDecimal("8550.84")).build();
+        when(imports.findCompletedOverlapping(from, to)).thenReturn(List.of(earlier, later));
+
+        ExpenseImportService.BankBalance balance = service.bankBalanceForMonth(from, to);
+
+        assertThat(balance).isNotNull();
+        assertThat(balance.opening()).isEqualByComparingTo("9192.33");
+        assertThat(balance.closing()).isEqualByComparingTo("8550.84");
+    }
+
+    @Test
+    @DisplayName("bankBalanceForMonth is null when nothing overlapping captured a balance")
+    void bankBalanceForMonthNullWhenNoBalanceCaptured() {
+        LocalDate from = LocalDate.of(2025, 1, 1), to = LocalDate.of(2025, 1, 31);
+        BankStatementImport noBalance = BankStatementImport.builder().id(3L).build();
+        when(imports.findCompletedOverlapping(from, to)).thenReturn(List.of(noBalance));
+
+        assertThat(service.bankBalanceForMonth(from, to)).isNull();
+    }
+
+    @Test
+    @DisplayName("bankBalanceForMonth is null when there's no overlapping completed import at all")
+    void bankBalanceForMonthNullWhenNoOverlap() {
+        LocalDate from = LocalDate.of(2025, 1, 1), to = LocalDate.of(2025, 1, 31);
+        when(imports.findCompletedOverlapping(from, to)).thenReturn(List.of());
+
+        assertThat(service.bankBalanceForMonth(from, to)).isNull();
+    }
 }

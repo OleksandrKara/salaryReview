@@ -964,6 +964,14 @@ export interface MonthSummary {
    * Null when unknown (same conditions as personalBankTotal); an empty object means genuinely
    * zero personal spend. */
   personalBreakdown: Record<string, number> | null;
+  /** The bank account's own printed opening/closing balance for this calendar month — real cash
+   * movement, best-effort extracted from the statement CSV at upload time. Deliberately does NOT
+   * reconcile against netRevenue (provider payroll is paid out whenever the Zelle transfer lands,
+   * not necessarily within the calendar month the commission was earned) — a distinct "did the
+   * account grow or shrink" signal, not a decomposition of Net. Null when no completed statement
+   * overlapping this month captured a balance. */
+  bankOpeningBalance: number | null;
+  bankClosingBalance: number | null;
 }
 
 export interface ProviderYtd {

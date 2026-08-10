@@ -228,13 +228,15 @@ public class OwnerOverviewService {
         BigDecimal ownerDrawsTotal = ownerDrawsTotalForMonth(year, month);
         BigDecimal netProfit = netRevenue(gross, payroll, cashProviderCompensation, expenseTotal,
                 cashBusinessExpenseTotal, managerLaborCost);
+        ExpenseImportService.BankBalance bankBalance = bankBalanceForMonth(year, month);
         return new MonthSummary(year, month, label(month), card, cash, gross, tips, procedures,
                 avg(gross, procedures), payroll, pct(payroll, gross), true, 0, 0,
                 expenseTotal, managerLaborCost, netProfit,
                 statementCoveredForMonth(year, month), cashProviderCompensation, personalBankTotal,
                 ownerDrawsTotal, profitAfterPersonal(netProfit, personalBankTotal, ownerDrawsTotal),
                 cashBusinessExpenseTotal, expenseCategoryBreakdownForMonth(year, month),
-                personalBreakdownForMonth(year, month));
+                personalBreakdownForMonth(year, month),
+                bankBalance == null ? null : bankBalance.opening(), bankBalance == null ? null : bankBalance.closing());
     }
 
     // --- live month from Square ---
@@ -279,13 +281,15 @@ public class OwnerOverviewService {
             BigDecimal ownerDrawsTotal = ownerDrawsTotalForMonth(year, month);
             BigDecimal netProfit = netRevenue(gross, payroll, cashProviderCompensation, expenseTotal,
                     cashBusinessExpenseTotal, managerLaborCost);
+            ExpenseImportService.BankBalance bankBalance = bankBalanceForMonth(year, month);
             return new MonthSummary(year, month, label(month), card, cash, gross, tips, procedures,
                     avg(gross, procedures), payroll, pct(payroll, gross), false, 0, 0,
                     expenseTotal, managerLaborCost, netProfit,
                     statementCoveredForMonth(year, month), cashProviderCompensation, personalBankTotal,
                     ownerDrawsTotal, profitAfterPersonal(netProfit, personalBankTotal, ownerDrawsTotal),
                     cashBusinessExpenseTotal, expenseCategoryBreakdownForMonth(year, month),
-                    personalBreakdownForMonth(year, month));
+                    personalBreakdownForMonth(year, month),
+                    bankBalance == null ? null : bankBalance.opening(), bankBalance == null ? null : bankBalance.closing());
         } catch (RuntimeException e) {
             return emptyMonth(year, month);
         }
@@ -450,6 +454,20 @@ public class OwnerOverviewService {
         }
     }
 
+    /** The bank account's real opening/closing balance for a calendar month (see {@code
+     * ExpenseImportService.bankBalanceForMonth}) — actual cash movement, deliberately not expected
+     * to reconcile against netRevenue (see that method's own doc comment on the payroll-timing
+     * gap). Null when no completed import overlapping this month captured a balance. Best-effort,
+     * same resilience convention as the other per-month resolvers. */
+    private ExpenseImportService.BankBalance bankBalanceForMonth(int year, int month) {
+        try {
+            YearMonth ym = YearMonth.of(year, month);
+            return expenseImports.bankBalanceForMonth(ym.atDay(1), ym.atEndOfMonth());
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     private static BigDecimal netRevenue(BigDecimal gross, BigDecimal cardPayroll, BigDecimal cashPayroll,
                                           BigDecimal expenseTotal, BigDecimal cashBusinessExpenseTotal,
                                           BigDecimal managerLaborCost) {
@@ -529,7 +547,7 @@ public class OwnerOverviewService {
     private static MonthSummary emptyMonth(int year, int month) {
         return new MonthSummary(year, month, label(month), null, null, null, null, 0,
                 null, null, null, false, 0, 0, null, null, null, false,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
     }
 
     /** Whether a COMPLETED bank-statement reconciliation overlaps this month (see

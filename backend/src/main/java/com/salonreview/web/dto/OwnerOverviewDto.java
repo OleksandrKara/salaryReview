@@ -88,7 +88,16 @@ public record OwnerOverviewDto(
              * than one row, e.g. {"PERSONAL": 1200.00, "OWNER_MEALS": 340.50}. Never subtracted from
              * netRevenue, same as personalBankTotal itself. Null when unknown (same conditions as
              * personalBankTotal); an empty map means genuinely zero personal spend. */
-            Map<String, BigDecimal> personalBreakdown
+            Map<String, BigDecimal> personalBreakdown,
+            /** The bank account's own printed opening/closing balance for this calendar month —
+             * real cash movement through the account (best-effort extracted from the statement CSV
+             * at upload time), not the accrual-based netRevenue figure. Deliberately NOT expected to
+             * reconcile against Net: provider payroll is paid out whenever the Zelle transfer
+             * actually lands, not necessarily within the calendar month the commission was earned.
+             * Null when no completed statement overlapping this month captured a balance (older
+             * imports, or an export format the parser couldn't extract balances from). */
+            BigDecimal bankOpeningBalance,
+            BigDecimal bankClosingBalance
     ) {
         /** Copy with the visit-ledger client counts filled in. */
         public MonthSummary withClients(int seen, int returning) {
@@ -96,7 +105,7 @@ public record OwnerOverviewDto(
                     procedures, avgPerAppt, payrollCost, payrollPct, finalized, seen, returning,
                     expenseTotal, managerLaborCost, netRevenue, statementCovered, cashProviderCompensation,
                     personalBankTotal, ownerDrawsTotal, profitAfterPersonal, cashBusinessExpenseTotal,
-                    categoryBreakdown, personalBreakdown);
+                    categoryBreakdown, personalBreakdown, bankOpeningBalance, bankClosingBalance);
         }
     }
 

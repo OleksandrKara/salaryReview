@@ -331,4 +331,33 @@ class OwnerOverviewServicePAndLTest {
                 entry("PERSONAL", new BigDecimal("180.00")), entry("OWNER_MEALS", new BigDecimal("65.00")));
         verify(expenses, never()).resolvePersonalBreakdownByCategory(any(), any());
     }
+
+    @Test
+    @DisplayName("bankOpeningBalance/bankClosingBalance are threaded through from ExpenseImportService.bankBalanceForMonth")
+    void bankBalanceIsThreadedThrough() {
+        stubSquareMonth(2026, 3, "1000.00", "0.00", "0.00");
+        when(settlementPreview.preview(2026, 3)).thenReturn(preview(2026, 3, new BigDecimal("450.00"), BigDecimal.ZERO));
+        LocalDate from = LocalDate.of(2026, 3, 1), to = LocalDate.of(2026, 3, 31);
+        when(expenseImports.bankBalanceForMonth(from, to))
+                .thenReturn(new ExpenseImportService.BankBalance(new BigDecimal("9192.33"), new BigDecimal("8550.84")));
+
+        MonthSummary mar = monthFor(2026, 3);
+
+        assertThat(mar.bankOpeningBalance()).isEqualByComparingTo("9192.33");
+        assertThat(mar.bankClosingBalance()).isEqualByComparingTo("8550.84");
+    }
+
+    @Test
+    @DisplayName("bankOpeningBalance/bankClosingBalance are null when ExpenseImportService has no balance for the month")
+    void bankBalanceIsNullWhenUnavailable() {
+        stubSquareMonth(2026, 3, "1000.00", "0.00", "0.00");
+        when(settlementPreview.preview(2026, 3)).thenReturn(preview(2026, 3, new BigDecimal("450.00"), BigDecimal.ZERO));
+        LocalDate from = LocalDate.of(2026, 3, 1), to = LocalDate.of(2026, 3, 31);
+        when(expenseImports.bankBalanceForMonth(from, to)).thenReturn(null);
+
+        MonthSummary mar = monthFor(2026, 3);
+
+        assertThat(mar.bankOpeningBalance()).isNull();
+        assertThat(mar.bankClosingBalance()).isNull();
+    }
 }

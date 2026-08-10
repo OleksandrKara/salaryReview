@@ -80,16 +80,22 @@ function cashRemaining(m: MonthSummary): number | null {
   return m.cashRevenue - m.cashProviderCompensation - m.cashBusinessExpenseTotal;
 }
 
+function hasBankBalance(m: MonthSummary): boolean {
+  return m.bankOpeningBalance != null && m.bankClosingBalance != null;
+}
+
 function hasDetails(m: MonthSummary): boolean {
-  return hasCategoryBreakdown(m) || hasPersonalBreakdown(m) || cashRemaining(m) != null;
+  return hasCategoryBreakdown(m) || hasPersonalBreakdown(m) || cashRemaining(m) != null || hasBankBalance(m);
 }
 
 /** The expandable "Details" panel for one month — category-of-expense breakdown, what "Personal"
- * consisted of, and how much of this month's cash revenue is left after the provider's cash share
- * and cash-paid expenses. Shared between the mobile card and desktop detail row so the two never
- * drift apart. Each section only renders when it actually has something to show. */
+ * consisted of, how much of this month's cash revenue is left after the provider's cash share and
+ * cash-paid expenses, and the bank account's own real opening/closing balance for the month.
+ * Shared between the mobile card and desktop detail row so the two never drift apart. Each
+ * section only renders when it actually has something to show. */
 function MonthDetails({ m, categories }: { m: MonthSummary; categories: ExpenseCategoryDefinition[] }) {
   const cash = cashRemaining(m);
+  const bankDelta = hasBankBalance(m) ? m.bankClosingBalance! - m.bankOpeningBalance! : null;
   return (
     <div className="flex flex-col gap-3">
       {hasCategoryBreakdown(m) && (
@@ -124,6 +130,31 @@ function MonthDetails({ m, categories }: { m: MonthSummary; categories: ExpenseC
             <div className="mt-1 flex items-center justify-between border-t border-zinc-200 pt-1">
               <span className="font-semibold text-zinc-700">Cash remaining</span>
               <span className="font-semibold tabular-nums text-emerald-700">{usd(cash)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+      {bankDelta != null && (
+        <div className="rounded-lg bg-zinc-50/60 p-3 ring-1 ring-zinc-200">
+          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Bank account balance</h4>
+          <p className="mt-0.5 text-[11px] text-zinc-400">
+            Real cash movement from the statement itself — doesn&apos;t reconcile against Net (provider
+            payroll is paid out whenever the transfer clears, not always the same month it was earned).
+          </p>
+          <div className="mt-2 flex flex-col gap-1 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-500">Opening balance</span>
+              <span className="tabular-nums text-zinc-700">{usd(m.bankOpeningBalance)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-500">Closing balance</span>
+              <span className="tabular-nums text-zinc-700">{usd(m.bankClosingBalance)}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between border-t border-zinc-200 pt-1">
+              <span className="font-semibold text-zinc-700">Change</span>
+              <span className={`font-semibold tabular-nums ${bankDelta >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                {bankDelta >= 0 ? '↑ +' : '↓ '}{usd(Math.abs(bankDelta))}
+              </span>
             </div>
           </div>
         </div>
