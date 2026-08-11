@@ -180,6 +180,29 @@ public class ExpenseImportService {
         return transactions.findLinkedExpenseEntryIdsForCompletedImportsOverlapping(from, to);
     }
 
+    /** The real bank-account opening/closing balance for [from, to] — the earliest overlapping
+     * COMPLETED import's printed opening balance and the latest overlapping import's printed
+     * closing balance (best-effort extracted at upload time, see {@code CsvStatementParser}).
+     * This is actual cash movement through the account, not the accrual-based Net figure — it
+     * will not reconcile exactly against Net (provider payroll is paid out whenever the Zelle
+     * transfer actually lands, not necessarily within the calendar month the commission was
+     * earned). Null when no overlapping import has a captured balance (older imports predating
+     * this feature, or an export format the parser couldn't extract balances from). */
+    public BankBalance bankBalanceForMonth(LocalDate from, LocalDate to) {
+        List<BankStatementImport> overlapping = imports.findCompletedOverlapping(from, to);
+        BigDecimal opening = overlapping.stream()
+                .map(BankStatementImport::getOpeningBalance).filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        BigDecimal closing = null;
+        for (int i = overlapping.size() - 1; i >= 0; i--) {
+            BigDecimal c = overlapping.get(i).getClosingBalance();
+            if (c != null) { closing = c; break; }
+        }
+        if (opening == null || closing == null) return null;
+        return new BankBalance(opening, closing);
+    }
+
+    public record BankBalance(BigDecimal opening, BigDecimal closing) {}
+
     public List<BankStatementImport> listImports() {
         return imports.findAllByOrderByUploadedAtDesc();
     }

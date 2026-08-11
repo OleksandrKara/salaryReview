@@ -23,4 +23,17 @@ public interface BankStatementImportRepository extends JpaRepository<BankStateme
             AND (i.statementPeriodEnd IS NULL OR i.statementPeriodEnd >= :from)
             """)
     boolean existsCompletedOverlapping(@Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /** Every COMPLETED import overlapping [from, to], earliest statement period first — used to
+     * derive a month's real bank-account opening/closing balance (the earliest overlapping
+     * import's opening balance, the latest's closing balance), same overlap semantics as {@link
+     * #existsCompletedOverlapping}. */
+    @Query("""
+            SELECT i FROM BankStatementImport i
+            WHERE i.status = 'COMPLETED'
+            AND (i.statementPeriodStart IS NULL OR i.statementPeriodStart <= :to)
+            AND (i.statementPeriodEnd IS NULL OR i.statementPeriodEnd >= :from)
+            ORDER BY i.statementPeriodStart ASC NULLS FIRST
+            """)
+    List<BankStatementImport> findCompletedOverlapping(@Param("from") LocalDate from, @Param("to") LocalDate to);
 }
