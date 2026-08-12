@@ -14,6 +14,7 @@ import type {
   SmsAutomationSummary,
   SmsMessageDto,
   SmsConversationDto,
+  SmsConversationPageDto,
   FunnelDashboardData,
   MarketingAdsReportData,
   MarketingLtvData,
@@ -140,6 +141,12 @@ export const serverApi = {
 
   listSmsConversations: () =>
     serverFetch<SmsConversationDto[]>(`/api/owner/automations/activity/conversations`),
+
+  // First page of the cursor-paginated conversations list (default 10) — the manager conversation
+  // view's initial server-side load, so opening the page doesn't pay for every conversation the
+  // salon has ever had; MessagesView fetches subsequent pages client-side via api.ts.
+  listSmsConversationsPage: (limit = 10) =>
+    serverFetch<SmsConversationPageDto>(`/api/owner/automations/activity/conversations/paged?limit=${limit}`),
 
   // Unread-count badge on the nav entry, fetched from every OWNER page via PageHeader — same
   // never-throws-except-session-redirect shape as getKbRequestOpenCount, so a hiccup here can't

@@ -162,6 +162,17 @@ public class SmsMessageLogService {
         return repository.conversationSummaries();
     }
 
+    /** Cursor-paginated form of {@link #conversations()} — see
+     * {@link SmsMessageRepository#conversationSummariesPage} for why cursor, not offset. */
+    public java.util.List<SmsMessageRepository.ConversationSummaryProjection> conversationsPage(Instant cursor, int limit) {
+        return repository.conversationSummariesPage(cursor, limit);
+    }
+
+    /** Single-conversation form of {@link #conversations()}, for one phone number. */
+    public Optional<SmsMessageRepository.ConversationSummaryProjection> conversationSummary(String phoneNumber) {
+        return repository.conversationSummaryForPhone(PhoneNumbers.normalize(phoneNumber));
+    }
+
     /** Full chronological thread for one phone number. */
     public java.util.List<SmsMessage> thread(String phoneNumber) {
         return repository.findByPhoneNumberOrderByCreatedAtAsc(PhoneNumbers.normalize(phoneNumber));

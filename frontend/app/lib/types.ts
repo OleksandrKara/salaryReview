@@ -195,6 +195,16 @@ export interface SmsConversationDto {
   flaggedAsSpam: boolean;
 }
 
+// One cursor-paginated page of SmsConversationDto — see SmsActivityController.ConversationPageDto.
+// nextCursor is the ISO-8601 lastMessageAt of the last item, to pass back as the next request's
+// cursor; null when items is empty. hasMore is a hint, exact in the common case (true only when a
+// full page came back).
+export interface SmsConversationPageDto {
+  items: SmsConversationDto[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
 export interface SmsReplyResult {
   sent: boolean;
   reason: string | null;

@@ -33,6 +33,7 @@ import type {
   SmsMessageDto,
   SmsMessageDirection,
   SmsConversationDto,
+  SmsConversationPageDto,
   SmsConversationSearchHitDto,
   SmsReplyResult,
   SmsDraftResult,
@@ -242,6 +243,28 @@ export const api = {
 
   // Manager conversation view (/admin/messages): grouped-by-phone-number inbox + reply.
   listSmsConversations: () => proxyGet<SmsConversationDto[]>(`/api/owner/automations/activity/conversations`),
+
+  // Cursor-paginated conversations list (default 10/page) — the manager conversation view's
+  // initial load + "load more" on scroll, so opening the page doesn't pay for every conversation
+  // the salon has ever had. cursor is the previous page's nextCursor; omit for the first page.
+  listSmsConversationsPage: (cursor?: string | null, limit?: number) => {
+    const params = new URLSearchParams();
+    if (cursor) params.set('cursor', cursor);
+    if (limit !== undefined) params.set('limit', String(limit));
+    const qs = params.toString();
+    return proxyGet<SmsConversationPageDto>(`/api/owner/automations/activity/conversations/paged${qs ? `?${qs}` : ''}`);
+  },
+
+  // Single-conversation refresh for one phone number — used to update just the conversation a
+  // live SSE event or a just-sent reply touched, instead of re-fetching a whole (possibly
+  // paginated) page. null when this phone number has no messages at all (404) — a benign race,
+  // not an error.
+  getSmsConversationSummary: async (phoneNumber: string): Promise<SmsConversationDto | null> => {
+    const res = await fetch(`/api/owner/automations/activity/conversations/${encodeURIComponent(phoneNumber)}/summary`, { cache: 'no-store' });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(await extractErrorMessage(res));
+    return (await res.json()) as SmsConversationDto;
+  },
 
   getSmsThread: (phoneNumber: string) =>
     proxyGet<SmsMessageDto[]>(`/api/owner/automations/activity/conversations/${encodeURIComponent(phoneNumber)}`),

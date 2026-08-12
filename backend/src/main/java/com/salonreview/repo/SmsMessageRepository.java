@@ -70,6 +70,90 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
             """, nativeQuery = true)
     List<ConversationSummaryProjection> conversationSummaries();
 
+    /** Cursor-paginated form of {@link #conversationSummaries()} — backs the manager conversation
+     * view's initial page load + "load more on scroll" (see MessagesView). One page of
+     * conversations strictly older than {@code cursor} (the previous page's last
+     * {@code lastMessageAt}), or the newest page when {@code cursor} is {@code null}. Cursor, not
+     * OFFSET: an OFFSET-based page 2 silently shifts every time someone texts in between page
+     * loads (a brand-new conversation pushes everything down by one), which this list — sorted by
+     * recency and constantly reordering itself — hits far more than a typical paginated table
+     * would. {@code cursor} is explicitly CAST to avoid the same "Postgres can't infer NULL's
+     * type" issue documented on {@link #search}. */
+    @Query(value = """
+            SELECT latest.phone_number AS phoneNumber,
+                   latest.last_message_at AS lastMessageAt,
+                   latest.last_message_body AS lastMessageBody,
+                   latest.last_message_direction AS lastMessageDirection,
+                   COALESCE(unread.unread_count, 0) AS unreadCount,
+                   latest.last_message_delivery_status AS lastMessageDeliveryStatus,
+                   latest.last_message_delivery_error_message AS lastMessageDeliveryErrorMessage,
+                   COALESCE(negative.has_negative_feedback, false) AS hasNegativeFeedback
+            FROM (
+                SELECT DISTINCT ON (phone_number) phone_number,
+                       created_at AS last_message_at,
+                       body AS last_message_body,
+                       direction AS last_message_direction,
+                       delivery_status AS last_message_delivery_status,
+                       delivery_error_message AS last_message_delivery_error_message
+                FROM sms_message
+                ORDER BY phone_number, created_at DESC
+            ) latest
+            LEFT JOIN (
+                SELECT phone_number, COUNT(*) AS unread_count
+                FROM sms_message
+                WHERE direction = 'INBOUND' AND read_at IS NULL
+                GROUP BY phone_number
+            ) unread ON unread.phone_number = latest.phone_number
+            LEFT JOIN (
+                SELECT phone_number, true AS has_negative_feedback
+                FROM sms_message
+                WHERE negative_feedback_at IS NOT NULL
+                GROUP BY phone_number
+            ) negative ON negative.phone_number = latest.phone_number
+            WHERE (CAST(:cursor AS timestamptz) IS NULL OR latest.last_message_at < CAST(:cursor AS timestamptz))
+            ORDER BY latest.last_message_at DESC
+            LIMIT :limit
+            """, nativeQuery = true)
+    List<ConversationSummaryProjection> conversationSummariesPage(@Param("cursor") Instant cursor, @Param("limit") int limit);
+
+    /** Single-conversation form of {@link #conversationSummaries()}, for one phone number — used
+     * to refresh just the one conversation a live SSE event or a just-sent reply touched, instead
+     * of re-fetching (and truncating) the manager's already-scrolled-open paginated list. Empty
+     * when this phone number has no messages at all. */
+    @Query(value = """
+            SELECT latest.phone_number AS phoneNumber,
+                   latest.last_message_at AS lastMessageAt,
+                   latest.last_message_body AS lastMessageBody,
+                   latest.last_message_direction AS lastMessageDirection,
+                   COALESCE(unread.unread_count, 0) AS unreadCount,
+                   latest.last_message_delivery_status AS lastMessageDeliveryStatus,
+                   latest.last_message_delivery_error_message AS lastMessageDeliveryErrorMessage,
+                   COALESCE(negative.has_negative_feedback, false) AS hasNegativeFeedback
+            FROM (
+                SELECT phone_number, created_at AS last_message_at, body AS last_message_body,
+                       direction AS last_message_direction,
+                       delivery_status AS last_message_delivery_status,
+                       delivery_error_message AS last_message_delivery_error_message
+                FROM sms_message
+                WHERE phone_number = :phoneNumber
+                ORDER BY created_at DESC
+                LIMIT 1
+            ) latest
+            LEFT JOIN (
+                SELECT phone_number, COUNT(*) AS unread_count
+                FROM sms_message
+                WHERE direction = 'INBOUND' AND read_at IS NULL AND phone_number = :phoneNumber
+                GROUP BY phone_number
+            ) unread ON unread.phone_number = latest.phone_number
+            LEFT JOIN (
+                SELECT phone_number, true AS has_negative_feedback
+                FROM sms_message
+                WHERE negative_feedback_at IS NOT NULL AND phone_number = :phoneNumber
+                GROUP BY phone_number
+            ) negative ON negative.phone_number = latest.phone_number
+            """, nativeQuery = true)
+    Optional<ConversationSummaryProjection> conversationSummaryForPhone(@Param("phoneNumber") String phoneNumber);
+
     /** Full chronological thread for one phone number — backs the manager conversation view's
      * selected-thread panel. */
     List<SmsMessage> findByPhoneNumberOrderByCreatedAtAsc(String phoneNumber);

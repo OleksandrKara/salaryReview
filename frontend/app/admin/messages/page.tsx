@@ -42,7 +42,7 @@ export default async function MessagesPage({
   const me = await serverApi.getMe();
   if (me.role !== 'OWNER' && me.role !== 'MANAGER') redirect('/reports');
 
-  const [{ phone }, conversations] = await Promise.all([searchParams, serverApi.listSmsConversations()]);
+  const [{ phone }, conversationsPage] = await Promise.all([searchParams, serverApi.listSmsConversationsPage()]);
 
   return (
     // w-full is load-bearing, not decorative: `main` is a flex item of `body`'s column flex
@@ -67,7 +67,12 @@ export default async function MessagesPage({
         <PageHeader title="Messages" role={me.role} language={me.preferredLanguage} />
       </div>
       <div className="min-h-0 flex-1">
-        <MessagesView initialConversations={conversations} initialSelectedPhone={phone ?? null} />
+        <MessagesView
+          initialConversations={conversationsPage.items}
+          initialNextCursor={conversationsPage.nextCursor}
+          initialHasMore={conversationsPage.hasMore}
+          initialSelectedPhone={phone ?? null}
+        />
       </div>
     </main>
   );

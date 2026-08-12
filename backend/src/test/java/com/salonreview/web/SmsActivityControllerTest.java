@@ -193,6 +193,76 @@ class SmsActivityControllerTest {
     }
 
     @Test
+    @DisplayName("GET /conversations/paged returns items + nextCursor + hasMore=true when a full page comes back")
+    void conversationsPagedReturnsFullPageWithHasMoreTrue() throws Exception {
+        Instant t1 = Instant.parse("2026-08-01T10:00:00Z");
+        when(service.conversationsPage(null, 2)).thenReturn(List.of(
+                new FakeConversationSummary(PHONE, t1, "hi", "INBOUND", 1L),
+                new FakeConversationSummary("+15559998877", t1.minusSeconds(60), "yo", "OUTBOUND", 0L)));
+        when(contactsService.resolveDisplayNames(any())).thenReturn(Map.of());
+
+        mvc.perform(get("/api/owner/automations/activity/conversations/paged").param("limit", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.items[0].phoneNumber").value(PHONE))
+                .andExpect(jsonPath("$.nextCursor").value(t1.minusSeconds(60).toString()))
+                .andExpect(jsonPath("$.hasMore").value(true));
+
+        verify(service).conversationsPage(null, 2);
+    }
+
+    @Test
+    @DisplayName("GET /conversations/paged returns hasMore=false and null nextCursor for a short/empty final page")
+    void conversationsPagedReturnsHasMoreFalseForShortPage() throws Exception {
+        when(service.conversationsPage(any(), eq(10))).thenReturn(List.of());
+        when(contactsService.resolveDisplayNames(any())).thenReturn(Map.of());
+
+        mvc.perform(get("/api/owner/automations/activity/conversations/paged")
+                        .param("cursor", "2026-08-01T10:00:00Z"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(0))
+                .andExpect(jsonPath("$.nextCursor").doesNotExist())
+                .andExpect(jsonPath("$.hasMore").value(false));
+    }
+
+    @Test
+    @DisplayName("GET /conversations/paged clamps an out-of-range limit into [1, 50]")
+    void conversationsPagedClampsLimit() throws Exception {
+        when(service.conversationsPage(null, 50)).thenReturn(List.of());
+        when(contactsService.resolveDisplayNames(any())).thenReturn(Map.of());
+
+        mvc.perform(get("/api/owner/automations/activity/conversations/paged").param("limit", "9999"))
+                .andExpect(status().isOk());
+
+        verify(service).conversationsPage(null, 50);
+    }
+
+    @Test
+    @DisplayName("GET /conversations/{phoneNumber}/summary returns the enriched single-conversation DTO")
+    void conversationSummaryReturnsEnrichedDto() throws Exception {
+        when(service.conversationSummary(PHONE)).thenReturn(Optional.of(
+                new FakeConversationSummary(PHONE, Instant.now(), "hi", "INBOUND", 3L)));
+        when(contactsService.resolveDisplayNames(List.of(PHONE)))
+                .thenReturn(Map.of(PHONE, new MarketingContactsService.ContactNameInfo(
+                        "Jane", "Doe", true, null, false, null)));
+
+        mvc.perform(get("/api/owner/automations/activity/conversations/{phoneNumber}/summary", PHONE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.phoneNumber").value(PHONE))
+                .andExpect(jsonPath("$.unreadCount").value(3))
+                .andExpect(jsonPath("$.givenName").value("Jane"));
+    }
+
+    @Test
+    @DisplayName("GET /conversations/{phoneNumber}/summary 404s when the phone number has no messages")
+    void conversationSummaryReturns404WhenNotFound() throws Exception {
+        when(service.conversationSummary(PHONE)).thenReturn(Optional.empty());
+
+        mvc.perform(get("/api/owner/automations/activity/conversations/{phoneNumber}/summary", PHONE))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     @DisplayName("POST /conversations/{phoneNumber}/unread delegates to the service")
     void markThreadUnreadDelegates() throws Exception {
         mvc.perform(post("/api/owner/automations/activity/conversations/{phoneNumber}/unread", PHONE))
