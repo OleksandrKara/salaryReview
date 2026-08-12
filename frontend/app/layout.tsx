@@ -1,10 +1,8 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
-import AssistantWidget from "./components/AssistantWidget";
-import LanguagePrompt from "./components/LanguagePrompt";
-import OnboardingGate from "./components/OnboardingGate";
-import SopAckGate from "./components/SopAckGate";
-import { loadOnboardingGate } from "./lib/serverGate";
+import GateCheck from "./components/GateCheck";
+import { LoadingScreen } from "./components/Spinner";
 import "./globals.css";
 // The salon's AK.LUX.STUDIO theme (paper background, serif headings) — imported app-wide so /reports
 // and /me share the landing's look, consistently on every load (not just when arriving from the landing).
@@ -39,36 +37,26 @@ export const viewport: Viewport = {
   interactiveWidget: "resizes-content",
 };
 
-export default async function RootLayout({
+// Not async, deliberately: GateCheck's own onboarding-gate fetch lives inside a Suspense boundary
+// below rather than a top-level await here. An await right in the layout would block the entire
+// <html>/<body> shell from streaming — on a slow/flaky backend round trip, the browser shows a
+// completely blank tab (no spinner at all, since no route's own loading.tsx gets a chance to run)
+// until it resolves, which is exactly the "occasionally just blank, then it loads" bug this fixes.
+// Wrapping GateCheck in Suspense lets Next.js stream the shell + this fallback immediately instead.
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // Decide onboarding on the server so a blocked manager/provider gets ONLY the gate in the initial
-  // HTML — the app is never rendered or sent, so it can't flash before the gate appears. Null for
-  // owners/anonymous visitors, who pass through untouched.
-  const gate = await loadOnboardingGate();
-
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        {gate?.blocked ? (
-          // Hard gate: language, then SOPs. The app below is intentionally not rendered until cleared.
-          <OnboardingGate me={gate.me} pending={gate.pending} />
-        ) : (
-          <>
-            {children}
-            {/* Global assistant — self-gates to OWNER/MANAGER, renders nothing otherwise. */}
-            <AssistantWidget />
-            {/* One-time language setup for owners who haven't chosen yet (z-60, sits above). */}
-            <LanguagePrompt />
-            {/* Safety net: catches SOPs published mid-session, when the layout doesn't re-run. */}
-            <SopAckGate />
-          </>
-        )}
+        <Suspense fallback={<LoadingScreen />}>
+          <GateCheck>{children}</GateCheck>
+        </Suspense>
       </body>
     </html>
   );
