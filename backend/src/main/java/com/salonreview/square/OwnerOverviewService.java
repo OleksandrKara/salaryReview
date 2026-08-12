@@ -315,22 +315,31 @@ public class OwnerOverviewService {
     }
 
     /** Resolves this calendar month's manager labor cost: the real clocked total (see
-     * {@code ManagerTimeService.totalLaborCost}) whenever any clocked data exists for the month,
-     * falling back to the manual MANAGER_TIME expense-entry backfill for months before manager
-     * time tracking existed (see {@code ExpenseService.resolveManagerLaborManualTotal}). For a
-     * month with a completed statement reconciliation, neither of those applies — the
-     * reconciliation's own linked MANAGER_TIME entries are the exclusive source instead (openspec
-     * design.md D11), so the same real disbursement is never subtracted twice. Same best-effort
-     * resilience convention as expenseTotalForMonth. */
+     * {@code ManagerTimeService.totalLaborCost}) whenever any clocked data exists for the month —
+     * checked first and preferred even for a statement-covered month, the same
+     * always-real-work-timing-wins precedence {@link #providerCompensationForMonth} already uses
+     * for provider payroll, for the identical reason: clocked hours are attributed to the calendar
+     * month the manager actually worked, never to whenever their pay happens to get disbursed (and
+     * therefore bank-categorized) — which can easily land in a different statement period. Originally
+     * (openspec design.md D11) a statement-covered month sourced this exclusively from the
+     * reconciliation's own linked MANAGER_TIME entries; that undercounted real July-2026 labor cost
+     * to $0 the first month clock-in tracking went live but that month's payroll disbursement wasn't
+     * categorized MANAGER_TIME within the statement, so flipped the precedence to match provider
+     * comp's already-correct pattern. Falls back to the reconciliation's linked entries for a
+     * statement-covered month with no clocked data at all (the original D11 case — no clock-in
+     * feature existed yet), then to the manual MANAGER_TIME expense-entry backfill for a
+     * non-covered month with neither. No double-counting risk: exactly one of the three sources is
+     * ever used for a given month, never blended. Same best-effort resilience convention as
+     * expenseTotalForMonth. */
     private BigDecimal managerLaborCostForMonth(int year, int month) {
         try {
             YearMonth ym = YearMonth.of(year, month);
             LocalDate from = ym.atDay(1), to = ym.atEndOfMonth();
+            BigDecimal auto = managerTime.totalLaborCost(from, to);
+            if (auto != null) return auto;
             if (expenseImports.isPeriodStatementCovered(from, to)) {
                 return expenses.resolveStatementDerivedManagerLaborTotal(expenseImports.linkedExpenseEntryIds(from, to));
             }
-            BigDecimal auto = managerTime.totalLaborCost(from, to);
-            if (auto != null) return auto;
             return expenses.resolveManagerLaborManualTotal(from, to);
         } catch (RuntimeException e) {
             return null;

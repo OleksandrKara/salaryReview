@@ -133,12 +133,44 @@ class OwnerOverviewServiceD11Test {
         // net = 1000 - 450 - 30 - 120 - 0 - 60 = 340
         assertThat(jan.netRevenue()).isEqualByComparingTo("340.00");
         assertThat(jan.statementCovered()).isTrue();
-        // the computed/manual paths must never be consulted for a statement-covered month
-        verify(managerTime, never()).totalLaborCost(any(), any());
+        // managerTime is checked first (returns null here — no clocked data, an unstubbed mock's
+        // default), so the reconciliation figure is only reached because that check came up empty —
+        // see managerLaborCostForMonth's real-work-timing-wins precedence.
+        verify(managerTime).totalLaborCost(any(), any());
         verify(expenses, never()).resolveExpenseTotal(any(), any());
         verify(expenses, never()).resolveManagerLaborManualTotal(any(), any());
         // the bank-derived provider-payroll figure is never used to compute the P&L's payroll line
         verify(expenses, never()).resolveStatementDerivedProviderPayrollTotal(any());
+    }
+
+    @Test
+    @DisplayName("A statement-covered month with real clocked manager time prefers that over the "
+            + "reconciliation's linked MANAGER_TIME entries — the bug this test guards: a manager's July "
+            + "labor cost silently read as $0 because that month's pay disbursement wasn't bank-categorized "
+            + "MANAGER_TIME within the statement, even though the real clocked cost was nonzero")
+    void statementCoveredMonthPrefersRealClockedManagerTimeOverReconciliation() {
+        ExpenseImportService expenseImports = mock(ExpenseImportService.class);
+        when(expenseImports.isPeriodStatementCovered(any(), any())).thenReturn(true);
+        when(expenseImports.linkedExpenseEntryIds(any(), any())).thenReturn(List.of(500L, 501L));
+
+        ExpenseService expenses = mock(ExpenseService.class);
+        when(expenses.resolveStatementDerivedExpenseTotal(List.of(500L, 501L))).thenReturn(new BigDecimal("120.00"));
+        // The reconciliation has no linked MANAGER_TIME entry this month (e.g. pay disbursed the
+        // following month) — if this were still consulted it would silently read as zero.
+        when(expenses.resolveStatementDerivedManagerLaborTotal(List.of(500L, 501L))).thenReturn(BigDecimal.ZERO);
+        when(expenses.resolveCashBusinessExpenseTotal(any(), any())).thenReturn(BigDecimal.ZERO);
+        ManagerTimeService managerTime = mock(ManagerTimeService.class);
+        when(managerTime.totalLaborCost(any(), any())).thenReturn(new BigDecimal("2105.33"));
+        SettlementPreviewService settlementPreview = mock(SettlementPreviewService.class);
+        when(settlementPreview.preview(2025, 1)).thenReturn(preview(new BigDecimal("450.00"), new BigDecimal("30.00")));
+
+        OwnerOverviewService service = build(expenseImports, expenses, managerTime, settlementPreview);
+        MonthSummary jan = service.overview(2025, 1, 2025, 12).months().get(0);
+
+        assertThat(jan.managerLaborCost()).isEqualByComparingTo("2105.33");
+        // net = 1000 - 450 - 30 - 120 - 0 - 2105.33 = -1705.33
+        assertThat(jan.netRevenue()).isEqualByComparingTo("-1705.33");
+        verify(expenses, never()).resolveStatementDerivedManagerLaborTotal(any());
     }
 
     @Test
