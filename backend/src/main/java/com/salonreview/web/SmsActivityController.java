@@ -105,6 +105,19 @@ public class SmsActivityController {
 
     public record DraftReplyResult(String body, String model) {}
 
+    /** One page of {@link #conversations}, cursor-paginated for the manager conversation view's
+     * "load more on scroll" — see {@link SmsMessageLogService#conversationsPage}.
+     * {@code nextCursor} is the ISO-8601 {@code lastMessageAt} of the last item in {@code items},
+     * to be passed back as the next request's {@code cursor}; {@code null} when {@code items} is
+     * empty. {@code hasMore} is only a hint (there may be another page even further back with zero
+     * conversations older than any remaining cursor) but is exact in the common case: {@code true}
+     * only when a full page came back, so the client stops paging the instant a short page proves
+     * there's nothing left. */
+    public record ConversationPageDto(List<ConversationDto> items, String nextCursor, boolean hasMore) {}
+
+    private static final int DEFAULT_CONVERSATIONS_PAGE_SIZE = 10;
+    private static final int MAX_CONVERSATIONS_PAGE_SIZE = 50;
+
     @GetMapping
     public List<SmsMessageDto> search(@RequestParam(required = false) String phoneNumber,
                                        @RequestParam(required = false) String direction,
@@ -147,7 +160,41 @@ public class SmsActivityController {
      * method's own docs for the phone -> name resolution ladder. */
     @GetMapping("/conversations")
     public List<ConversationDto> conversations() {
-        List<ConversationSummaryProjection> summaries = service.conversations();
+        return enrich(service.conversations());
+    }
+
+    /** Cursor-paginated form of {@link #conversations()} — the manager conversation view's initial
+     * page load and "load more" on scroll, kept small (default 10) so opening the page doesn't pay
+     * for every conversation the salon has ever had. The unbounded {@link #conversations()} above
+     * is left as-is for {@code MessagesNotifierIcon}'s unread-badge polling, which genuinely needs
+     * every conversation to sum a total unread count — only this new endpoint is size-limited. */
+    @GetMapping("/conversations/paged")
+    public ConversationPageDto conversationsPaged(@RequestParam(required = false) Instant cursor,
+                                                    @RequestParam(defaultValue = "" + DEFAULT_CONVERSATIONS_PAGE_SIZE) int limit) {
+        int bounded = Math.min(Math.max(limit, 1), MAX_CONVERSATIONS_PAGE_SIZE);
+        List<ConversationSummaryProjection> summaries = service.conversationsPage(cursor, bounded);
+        List<ConversationDto> items = enrich(summaries);
+        String nextCursor = items.isEmpty() ? null : items.get(items.size() - 1).lastMessageAt().toString();
+        boolean hasMore = items.size() == bounded;
+        return new ConversationPageDto(items, nextCursor, hasMore);
+    }
+
+    /** Single-conversation refresh for one phone number — used by the manager conversation view to
+     * update just the conversation a live SSE event or a just-sent reply touched, instead of
+     * re-fetching (and truncating) its already-scrolled-open paginated list. 404 when this phone
+     * number has no messages at all. */
+    @GetMapping("/conversations/{phoneNumber}/summary")
+    public ResponseEntity<ConversationDto> conversationSummary(@PathVariable String phoneNumber) {
+        return service.conversationSummary(phoneNumber)
+                .map(p -> enrich(List.of(p)).get(0))
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /** Shared enrichment for every conversation-summary endpoint above: batch-resolves display
+     * names, block status, spam flags, and clicked-link flags in one query each for the whole
+     * batch (never one query per row — see the field-level batch-lookup doc comments below). */
+    private List<ConversationDto> enrich(List<ConversationSummaryProjection> summaries) {
         List<String> phoneNumbers = summaries.stream().map(ConversationSummaryProjection::getPhoneNumber).toList();
         Map<String, MarketingContactsService.ContactNameInfo> names = contactsService.resolveDisplayNames(phoneNumbers);
         // One batch lookup for the whole page, not one query per row — see

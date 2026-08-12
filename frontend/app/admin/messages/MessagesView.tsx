@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '../../lib/api';
 import type { MarketingContact, SmsConversationDto, SmsConversationSearchHitDto, SmsMessageDto } from '../../lib/types';
+import { Spinner } from '../../components/Spinner';
 import ContactInfoPanel from './ContactInfoPanel';
 import SmsConsentIcon from './SmsConsentIcon';
 import NegativeFeedbackIcon from './NegativeFeedbackIcon';
@@ -106,9 +107,21 @@ function highlightMatch(text: string, query: string): ReactNode {
 
 export default function MessagesView({
   initialConversations,
+  initialNextCursor,
+  initialHasMore,
   initialSelectedPhone,
 }: {
+  /** First page only (default 10) — see page.tsx, which now fetches via
+   * serverApi.listSmsConversationsPage instead of the old unbounded listSmsConversations, so
+   * opening this page doesn't pay for every conversation the salon has ever had. */
   initialConversations: SmsConversationDto[];
+  /** Cursor for the next page (this page's oldest lastMessageAt), or null if this first page was
+   * already the whole list — passed straight to api.listSmsConversationsPage by loadMoreConversations. */
+  initialNextCursor: string | null;
+  /** Hint, not a guarantee (see ConversationPageDto's own doc on the backend) — true only when the
+   * first page came back full, so the "load more" sentinel below only renders when there's
+   * actually more to fetch. */
+  initialHasMore: boolean;
   /** From the page's own `?phone=` query param — deep-links straight into that customer's
    * thread (see page.tsx's doc comment), same as if the manager had tapped that row themselves.
    * Seeded straight into `selectedPhone`'s initial state so the existing selectedPhone effect
@@ -116,6 +129,19 @@ export default function MessagesView({
   initialSelectedPhone?: string | null;
 }) {
   const [conversations, setConversations] = useState(initialConversations);
+  // Cursor pagination for the conversation list — see loadMoreConversations/the IntersectionObserver
+  // effect below. Mirrored into refs so the observer (set up once on mount) always reads the
+  // latest values without needing to be torn down/recreated on every page load, same convention as
+  // selectedPhoneRef below.
+  const [nextCursor, setNextCursor] = useState(initialNextCursor);
+  const [hasMore, setHasMore] = useState(initialHasMore);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const nextCursorRef = useRef(nextCursor);
+  const hasMoreRef = useRef(hasMore);
+  const loadingMoreRef = useRef(loadingMore);
+  useEffect(() => { nextCursorRef.current = nextCursor; }, [nextCursor]);
+  useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
+  useEffect(() => { loadingMoreRef.current = loadingMore; }, [loadingMore]);
   const [selectedPhone, setSelectedPhone] = useState<string | null>(initialSelectedPhone ?? null);
   const [thread, setThread] = useState<SmsMessageDto[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
@@ -339,14 +365,114 @@ export default function MessagesView({
     selectedPhoneRef.current = selectedPhone;
   }, [selectedPhone]);
 
+  // Inserts/moves a single conversation to the top of the list (its lastMessageAt just became the
+  // newest) — the single-conversation refresh used by both the SSE handler and sendReply below, so
+  // a live update or a just-sent reply never has to re-fetch (and truncate) the whole, possibly
+  // paginated, list. A phone number not yet loaded (e.g. a dormant conversation that just got a
+  // new text) is simply prepended, same as if it had always been the most recent row.
+  function upsertConversation(fresh: SmsConversationDto) {
+    setConversations((prev) => {
+      const idx = prev.findIndex((c) => c.phoneNumber === fresh.phoneNumber);
+      if (idx === -1) return [fresh, ...prev];
+      return [fresh, ...prev.slice(0, idx), ...prev.slice(idx + 1)];
+    });
+  }
+
+  // Authoritative total-unread count for the header's MessagesNotifierIcon badge (see
+  // smsUnreadEvent) — a direct backend count, not summed from `conversations`, since that array
+  // only ever holds the currently-loaded page(s) once pagination is in play and would otherwise
+  // silently under-count once the salon has more conversations than fit on one page.
+  function refreshUnreadBadge() {
+    api.getSmsUnreadCount().then(({ unreadCount }) => dispatchSmsUnreadCountChanged(unreadCount)).catch(() => {});
+  }
+
+  // Fetches the next page and appends it — guarded via refs (not the state values directly) so the
+  // IntersectionObserver below can call this without needing to be recreated every time a page
+  // loads. Dedupes against whatever's already loaded: a conversation that moved via upsertConversation
+  // in between page loads (a live SSE event bumping it to the top) could otherwise show up twice.
+  async function loadMoreConversations() {
+    if (loadingMoreRef.current || !hasMoreRef.current) return;
+    setLoadingMore(true);
+    try {
+      const page = await api.listSmsConversationsPage(nextCursorRef.current);
+      setConversations((prev) => {
+        const seen = new Set(prev.map((c) => c.phoneNumber));
+        return [...prev, ...page.items.filter((c) => !seen.has(c.phoneNumber))];
+      });
+      setNextCursor(page.nextCursor);
+      setHasMore(page.hasMore);
+    } catch {
+      // Leave hasMore/nextCursor untouched — the sentinel stays visible/in view, so the next
+      // scroll tick (or the observer re-firing) retries automatically; not worth a dedicated
+      // error UI for a background "load more" this minor.
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
+
+  // Infinite scroll — observes a sentinel div rendered at the bottom of the (already internally
+  // scrollable) conversation list; scrolling it into view fetches the next page. Set up once
+  // (empty deps): the callback reads current cursor/hasMore/loading state through the refs above
+  // rather than closing over the component's own state, so this never needs to be torn down and
+  // recreated as more pages load — matches selectedPhoneRef's own ref-mirroring convention above.
+  useEffect(() => {
+    const el = loadMoreSentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) void loadMoreConversations();
+      },
+      // rootMargin fires the fetch a couple hundred px before the sentinel is actually visible —
+      // the next page is already loading by the time a reader finishes scrolling to the bottom,
+      // rather than them seeing a loading spinner appear only once they get there.
+      { root: el.parentElement, rootMargin: '200px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // A conversation deep-linked via ?phone= (see page.tsx) may not be on the first loaded page —
+  // fetch and prepend it so the thread header/list row can show its name/VIP/consent badges
+  // immediately instead of only the bare phone number until enough "load more" scrolling reaches it.
+  useEffect(() => {
+    if (initialSelectedPhone && !initialConversations.some((c) => c.phoneNumber === initialSelectedPhone)) {
+      api.getSmsConversationSummary(initialSelectedPhone).then((fresh) => {
+        if (fresh) upsertConversation(fresh);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Search covers message-content matches across every conversation regardless of what's loaded
+  // (see the debounced effect above, which hits the backend), but the *name/phone* filter just
+  // below is purely client-side against `conversations` — so a query would otherwise only ever
+  // match already-loaded rows. Loading the rest of the pages the moment a query starts typed keeps
+  // that filter's old (pre-pagination) behavior of covering every conversation, not just the first
+  // page; clearing the query leaves whatever got loaded in place rather than discarding it.
+  useEffect(() => {
+    if (query.trim() === '') return;
+    let cancelled = false;
+    (async () => {
+      while (!cancelled && hasMoreRef.current) {
+        await loadMoreConversations();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [query]);
+
   // Live updates — an inbound text, a delivery-status change, a read/block toggle from another
   // tab, etc. all land here as a bare "this phone number changed" ping (see backend
-  // SmsEventBroadcaster's own doc for why it's not a full payload); refetching the already-loaded
-  // conversation list and, if it's the open thread, the thread too, reuses the same well-tested
-  // loading logic as every other refresh in this component instead of hand-rolling incremental
-  // state merges. SSE over polling: customer texts arrive sporadically, so instant push beats
-  // trading off staleness against wasted requests either way; native EventSource also handles
-  // reconnect on a dropped connection with zero code here.
+  // SmsEventBroadcaster's own doc for why it's not a full payload). Refreshes just that one
+  // conversation (upsertConversation) rather than the old "refetch the whole conversations list"
+  // — with pagination in play, a full-list refetch would silently truncate/reorder whatever the
+  // manager had already scrolled to load further down the list. SSE over polling: customer texts
+  // arrive sporadically, so instant push beats trading off staleness against wasted requests
+  // either way; native EventSource also handles reconnect on a dropped connection with zero code
+  // here.
   useEffect(() => {
     const source = new EventSource('/api/owner/automations/activity/stream');
     let debounceHandle: ReturnType<typeof setTimeout> | null = null;
@@ -355,16 +481,26 @@ export default function MessagesView({
       try {
         phoneNumber = (JSON.parse(e.data) as { phoneNumber?: string }).phoneNumber ?? null;
       } catch {
-        // Malformed payload — still worth a full refresh below.
+        // Malformed payload — falls through to the "unknown phone number" branch below.
       }
       if (debounceHandle) clearTimeout(debounceHandle);
       // A short debounce coalesces a burst of near-simultaneous events (e.g. an inbound message
       // plus an automated reply) into one refetch instead of several back-to-back ones.
       debounceHandle = setTimeout(() => {
-        api.listSmsConversations().then((fresh) => {
-          setConversations(fresh);
-          dispatchSmsUnreadCountChanged(fresh.reduce((sum, c) => sum + c.unreadCount, 0));
-        });
+        if (phoneNumber) {
+          api.getSmsConversationSummary(phoneNumber).then((fresh) => {
+            if (fresh) upsertConversation(fresh);
+          });
+        } else {
+          // No phone number to target (malformed payload) — can't upsert a single row, so refresh
+          // just the first page instead of the old unbounded full-list fetch.
+          api.listSmsConversationsPage().then((page) => {
+            setConversations(page.items);
+            setNextCursor(page.nextCursor);
+            setHasMore(page.hasMore);
+          });
+        }
+        refreshUnreadBadge();
         if (phoneNumber && phoneNumber === selectedPhoneRef.current) {
           api.getSmsThread(phoneNumber).then(setThread);
           // The manager is already looking at this thread — same "already read" convention as
@@ -384,12 +520,11 @@ export default function MessagesView({
     setSelectedPhone(phoneNumber);
     // Optimistic — the unread badge for this contact clears the moment they open it, same
     // instant-feedback convention as SmsActivityLog's mark-read-on-click.
-    const next = conversations.map((c) => (c.phoneNumber === phoneNumber ? { ...c, unreadCount: 0 } : c));
-    setConversations(next);
+    setConversations((prev) => prev.map((c) => (c.phoneNumber === phoneNumber ? { ...c, unreadCount: 0 } : c)));
     // Tells the header's MessagesNotifierIcon (a separate component tree — see
     // smsUnreadEvent's own doc comment) about the new total immediately, instead of leaving it
     // stuck showing the old count until its own next poll cycle or a full page refresh.
-    dispatchSmsUnreadCountChanged(next.reduce((sum, c) => sum + c.unreadCount, 0));
+    refreshUnreadBadge();
   }
 
   // "Mark as unread" — same iMessage/Gmail convention as the backend doc comment describes:
@@ -398,11 +533,10 @@ export default function MessagesView({
   // above, which calls markSmsThreadRead on every open).
   async function markUnread(phoneNumber: string) {
     const wasSelected = phoneNumber === selectedPhone;
-    const next = conversations.map((c) =>
-      c.phoneNumber === phoneNumber ? { ...c, unreadCount: Math.max(c.unreadCount, 1) } : c,
+    setConversations((prev) =>
+      prev.map((c) => (c.phoneNumber === phoneNumber ? { ...c, unreadCount: Math.max(c.unreadCount, 1) } : c)),
     );
-    setConversations(next);
-    dispatchSmsUnreadCountChanged(next.reduce((sum, c) => sum + c.unreadCount, 0));
+    refreshUnreadBadge();
     if (wasSelected) setSelectedPhone(null);
     try {
       await api.markSmsThreadUnread(phoneNumber);
@@ -443,13 +577,13 @@ export default function MessagesView({
         // A manager sending their own reply always expects to see it land at the bottom, even if
         // they'd scrolled up to reference something earlier in the thread first.
         isNearBottomRef.current = true;
-        const [freshThread, freshConversations] = await Promise.all([
+        const [freshThread, freshSummary] = await Promise.all([
           api.getSmsThread(selectedPhone),
-          api.listSmsConversations(),
+          api.getSmsConversationSummary(selectedPhone),
         ]);
         setThread(freshThread);
-        setConversations(freshConversations);
-        dispatchSmsUnreadCountChanged(freshConversations.reduce((sum, c) => sum + c.unreadCount, 0));
+        if (freshSummary) upsertConversation(freshSummary);
+        refreshUnreadBadge();
       }
     } finally {
       setSending(false);
@@ -688,6 +822,18 @@ export default function MessagesView({
               </div>
             );
           })
+        )}
+        {/* Infinite-scroll sentinel — invisible, just an IntersectionObserver target (see the
+            effect above). Only rendered once there's confirmed more to fetch, so it never lingers
+            as a dead scroll-target once the whole list is loaded. */}
+        {hasMore && visibleConversations.length > 0 && (
+          <div ref={loadMoreSentinelRef} data-testid="conversation-list-load-more-sentinel" className="h-1" />
+        )}
+        {loadingMore && (
+          <div data-testid="conversation-list-loading-more" className="flex items-center justify-center gap-2 py-4 text-xs text-zinc-400">
+            <Spinner className="h-4 w-4" />
+            <span>Loading more…</span>
+          </div>
         )}
         </div>
       </div>
