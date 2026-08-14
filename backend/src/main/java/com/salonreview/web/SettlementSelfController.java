@@ -58,7 +58,8 @@ public class SettlementSelfController {
     /**
      * The provider's own line-level breakdown (appointments, discounts, prepaid, cash notes) plus the
      * {@code #salary} blocks — so they can trace their own numbers. The salon-wide unattributed lines
-     * are withheld here (they reference other customers); that view stays owner/manager-only.
+     * and orphan payments are withheld here (they reference other customers); that view stays
+     * owner/manager-only.
      */
     @GetMapping("/detail")
     public ResponseEntity<ProviderDetail> myDetail(
@@ -70,10 +71,10 @@ public class SettlementSelfController {
         int y = year != null ? year : today.getYear();
         int m = month != null ? month : today.getMonthValue();
         ProviderDetail d = previews.providerDetail(y, m, providerId);
-        // Strip the salon-wide unattributed lines for the provider's own view.
+        // Strip the salon-wide unattributed lines and orphan payments for the provider's own view.
         ProviderDetail scoped = new ProviderDetail(d.year(), d.month(), d.providerId(), d.name(),
-                d.payout(), d.services(), List.of(), d.firstHalfMessage(), d.secondHalfMessage(), d.priceCutoff(),
-                d.timezone(), d.syncedAt(), d.noShows());
+                d.payout(), d.services(), List.of(), List.of(), d.firstHalfMessage(), d.secondHalfMessage(),
+                d.priceCutoff(), d.timezone(), d.syncedAt(), d.noShows());
         return ResponseEntity.ok(scoped);
     }
 

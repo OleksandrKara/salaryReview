@@ -644,6 +644,21 @@ export interface UnmatchedLine {
   customerName: string | null;
 }
 
+// A completed Square payment with no linked Order at all (e.g. a card charged directly against a
+// customer's card on file, bypassing the booking checkout) — the order-based reconciliation never
+// sees these. Never folded into revenue/commission automatically; `suggested*` is a starting point
+// for the owner/manager to confirm via a Manual Adjustment, not an attribution.
+export interface OrphanPayment {
+  date: string;
+  amount: number;
+  customerId: string | null;
+  customerName: string | null;
+  suggestedProviderId: string | null;
+  suggestedProviderName: string | null;
+  suggestedBookingId: string | null;
+  note: string;
+}
+
 export interface ProviderDetail {
   year: number;
   month: number;
@@ -652,6 +667,7 @@ export interface ProviderDetail {
   payout: ProviderPayout | null;
   services: AttributedService[];
   unmatched: UnmatchedLine[];
+  orphanPayments: OrphanPayment[];
   firstHalfMessage: string | null;
   secondHalfMessage: string | null;
   priceCutoff: number; // a "main service" is gross >= this (e.g. $60)
@@ -670,6 +686,8 @@ export interface SettlementDiagnostics {
   cashNotesSkipped: number; // notes ignored because the appointment was checked out as cash
   ownerComps: number; // services to an owner/family customer credited at menu price (no order)
   ownerCompsSkipped: number; // owner bookings we couldn't value (no catalog price)
+  orphanPayments: number; // completed payments with no linked order at all
+  orphanPaymentRevenue: number;
 }
 
 // --- Owner/family customers (owner/manager) ---

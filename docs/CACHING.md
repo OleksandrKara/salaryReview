@@ -22,6 +22,7 @@ keep it from ever silently going stale.
 |------|--------|-----|
 | Bookings (per window) | `bookings(start,end)` | **10 min** |
 | Completed orders (per window) | `completedOrders(start,end)` | **10 min** |
+| Payments (per window, incl. order-less charges) | `payments(start,end)` | **10 min** |
 | Team members | `allTeamMembers` / `activeTeamMembers` | 5 min |
 | Catalog prices / names (per id set) | `catalogPrices` / `catalogNames` | 10 min |
 | Location timezone | `locationTimeZone` | 1 h |

@@ -414,7 +414,8 @@ public class SettlementPreviewService {
             if (manual.get(providerId) != null) extra.addAll(manual.get(providerId));
             if (noShow.get(providerId) != null) extra.addAll(noShow.get(providerId));
             if (extra.isEmpty()) {
-                return new ProviderDetail(year, month, providerId, null, null, List.of(), agg.unmatched(), null, null,
+                return new ProviderDetail(year, month, providerId, null, null, List.of(), agg.unmatched(),
+                        agg.orphanPayments(), null, null,
                         sc.getServicePriceCutoff(), agg.timezone(), syncedAt(), myNoShows);
             }
             m = new Merged(providerId, extra.get(0).providerName());
@@ -474,8 +475,8 @@ public class SettlementPreviewService {
                 redo.getOrDefault(providerId, List.of()), noShow.getOrDefault(providerId, List.of()),
                 suspiciousAll, suspiciousNoNotes, cancellations);
         return new ProviderDetail(year, month, providerId, m.name, payout, lines, agg.unmatched(),
-                payout.firstHalfMessage(), payout.secondHalfMessage(), sc.getServicePriceCutoff(),
-                agg.timezone(), syncedAt(), myNoShows);
+                agg.orphanPayments(), payout.firstHalfMessage(), payout.secondHalfMessage(),
+                sc.getServicePriceCutoff(), agg.timezone(), syncedAt(), myNoShows);
     }
 
     /** The copy-pasteable {@code #salary} block for one half, matching the salon's manual format. */
@@ -675,6 +676,7 @@ public class SettlementPreviewService {
                                  ProviderPayout payout,
                                  List<SquareMonthAggregator.AttributedService> services,
                                  List<SquareMonthAggregator.UnmatchedLine> unmatched,
+                                 List<SquareMonthAggregator.OrphanPayment> orphanPayments,
                                  String firstHalfMessage, String secondHalfMessage,
                                  BigDecimal priceCutoff, String timezone, String syncedAt,
                                  List<NoShowFeeService.NoShowRow> noShows) {}
