@@ -5,6 +5,7 @@ import com.salonreview.domain.Half;
 import com.salonreview.square.SquareClient.Booking;
 import com.salonreview.square.SquareClient.Order;
 import com.salonreview.square.SquareClient.OrderLineItem;
+import com.salonreview.square.SquareClient.Payment;
 import com.salonreview.square.SquareClient.TeamMember;
 import org.springframework.stereotype.Service;
 
@@ -64,11 +65,16 @@ public class SquareMonthAggregator {
         Map<String, String> nameById = new HashMap<>();
         for (TeamMember tm : square.allTeamMembers()) nameById.put(tm.id(), tm.fullName());
 
-        // Bookings and orders are independent Square reads; fetch them concurrently to halve cold latency.
+        // Bookings, orders, and payments are independent Square reads; fetch them concurrently to
+        // halve cold latency. Payments (not just Orders) are needed to catch a charge taken directly
+        // against a customer's card on file, bypassing the booking checkout and so never producing an
+        // Order at all — see detectOrphanPayments().
         var bookingsF = java.util.concurrent.CompletableFuture.supplyAsync(() -> square.bookings(from, to));
         var ordersF = java.util.concurrent.CompletableFuture.supplyAsync(() -> square.completedOrders(from, to));
+        var paymentsF = java.util.concurrent.CompletableFuture.supplyAsync(() -> square.payments(from, to));
         List<Booking> bookings = bookingsF.join();
         List<Order> orders = ordersF.join();
+        List<Payment> payments = paymentsF.join();
 
         // Square customers who are owner(s)/family: services to them aren't charged (no order), but the
         // provider is still owed their commission — see the owner-comp pass below. Fetched before the
@@ -109,6 +115,10 @@ public class SquareMonthAggregator {
         List<String> variationIds = new ArrayList<>();
         List<CashBooking> cashEntries = new ArrayList<>();
         List<CompCandidate> compCandidates = new ArrayList<>();
+        // Best-guess "which appointment might this belong to" hints for orphan-payment detection —
+        // deliberately looser than segIndex (doesn't require a resolved service/provider), since a
+        // suggestion is a starting point for a human to confirm via Manual Adjustment, not a payout.
+        Map<String, List<BookingHint>> bookingHintsByCustomer = new HashMap<>();
         for (Booking b : bookings) {
             if (b.appointmentSegments() == null) continue;
             // Cancelled / declined / no-show appointments must never be paid on — not even when a
@@ -117,6 +127,13 @@ public class SquareMonthAggregator {
             if (didNotHappen(b.status())) continue;
             LocalDate day = localDate(b.startAt(), zone);
             if (day == null || day.getYear() != year || day.getMonthValue() != month) continue;
+
+            if (b.customerId() != null) {
+                String hintProvider = b.appointmentSegments().stream()
+                        .map(s -> s.teamMemberId()).filter(java.util.Objects::nonNull).findFirst().orElse(null);
+                bookingHintsByCustomer.computeIfAbsent(b.customerId(), k -> new ArrayList<>())
+                        .add(new BookingHint(b.id(), hintProvider, day));
+            }
 
             boolean ownerCustomer = b.customerId() != null && ownerCustomerIds.contains(b.customerId());
             String firstProvider = null;
@@ -171,9 +188,18 @@ public class SquareMonthAggregator {
 
             if (o.lineItems() != null) {
                 for (OrderLineItem li : o.lineItems()) {
-                    if (li.catalogObjectId() == null) continue;
-                    Match m = match(segIndex, o.customerId(), li.catalogObjectId(), orderDay, checkoutAt,
-                            preferredBookingId, diag);
+                    // A line item with no catalog id at all (Square's "Custom Amount" / type-an-amount
+                    // charge — e.g. a split-payment remainder rung up by hand instead of picking the
+                    // actual service) can never be matched by SKU below — match() looks candidates up
+                    // by (customer, catalogObjectId). Previously this was silently `continue`d before
+                    // ever reaching the unmatched-tracking below, so the money vanished entirely —
+                    // neither paid to a provider nor visible as "unattributed" for the owner to review.
+                    // Confirmed against two real cases (a $19 custom-amount card charge, and a $45 +
+                    // $65 pair) that had a genuine COMPLETED order and payment but no catalog line —
+                    // routing them into the same unmatched path as a failed-SKU-match line fixes it.
+                    Match m = li.catalogObjectId() == null ? null
+                            : match(segIndex, o.customerId(), li.catalogObjectId(), orderDay, checkoutAt,
+                                    preferredBookingId, diag);
                     if (m == null) {
                         // Only this month's unattributed sales. The order query is padded a couple of days
                         // each side so late checkouts / timezone-boundary orders still match a booking; but
@@ -183,7 +209,9 @@ public class SquareMonthAggregator {
                             diag.unmatchedLineItems++;
                             BigDecimal gross = lineRevenue(li);
                             diag.unmatchedRevenue = diag.unmatchedRevenue.add(gross);
-                            unmatched.add(new UnmatchedLine(str(orderDay), li.name(), gross,
+                            String serviceName = li.name() != null ? li.name()
+                                    : li.catalogObjectId() == null ? "Custom amount (no catalog item)" : "?";
+                            unmatched.add(new UnmatchedLine(str(orderDay), serviceName, gross,
                                     cashOrder ? "CASH" : "CARD", o.customerId(), null));
                         }
                         continue;
@@ -317,6 +345,18 @@ public class SquareMonthAggregator {
         // Label the (small) set of unattributed lines with their customer name for the trace view.
         List<UnmatchedLine> namedUnmatched = withCustomerNames(unmatched);
 
+        // --- Orphan payments: completed Square payments with no linked Order at all, so the
+        // order-based matching above never saw them (a card charged directly against a customer's
+        // card on file, bypassing the booking checkout, leaves a Payment but no Order). Never folded
+        // into revenue/commission automatically — see OrphanPayment's doc comment.
+        java.util.Set<String> knownOrderIds = orders.stream().map(Order::id)
+                .filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        List<OrphanPayment> orphanPayments = detectOrphanPayments(
+                payments, knownOrderIds, bookingHintsByCustomer, nameById, zone, year, month);
+        diag.orphanPayments = orphanPayments.size();
+        for (OrphanPayment op : orphanPayments) diag.orphanPaymentRevenue = diag.orphanPaymentRevenue.add(op.amount());
+        List<OrphanPayment> namedOrphanPayments = withOrphanCustomerNames(orphanPayments);
+
         // A completed order from the same customer near the appointment day means the visit WAS paid —
         // even when our strict payout matcher (customer + exact service SKU, within 2 days) couldn't tie
         // a line to this specific booking. That miss is common: the front desk rings up a custom amount,
@@ -416,7 +456,68 @@ public class SquareMonthAggregator {
         }
 
         return new MonthAggregation(year, month, zone.getId(), providers, diag, services,
-                namedUnmatched, suspicious, cancellations);
+                namedUnmatched, suspicious, cancellations, namedOrphanPayments);
+    }
+
+    /**
+     * Completed payments in {@code year}/{@code month} with no linked Order the pipeline already
+     * accounts for — either {@code orderId} is null (charged directly, no Order ever existed) or it
+     * points at an Order outside this month's {@code knownOrderIds} (already handled through the
+     * normal matched/unmatched path, so not double-listed here). For each, suggest the nearest booking
+     * (same customer, within 2 days — the same tolerance the order matcher uses) as a starting point
+     * for a human to confirm; never auto-attributed. Package-private (not private) for unit testing.
+     */
+    static List<OrphanPayment> detectOrphanPayments(List<Payment> payments,
+            java.util.Set<String> knownOrderIds, Map<String, List<BookingHint>> bookingHintsByCustomer,
+            Map<String, String> providerNameById, ZoneId zone, int year, int month) {
+        List<OrphanPayment> out = new ArrayList<>();
+        if (payments == null) return out;
+        for (Payment p : payments) {
+            if (p == null || !"COMPLETED".equals(p.status())) continue;
+            if (p.orderId() != null && knownOrderIds.contains(p.orderId())) continue; // already accounted for
+            LocalDate day = localDate(p.createdAt(), zone);
+            if (day == null || day.getYear() != year || day.getMonthValue() != month) continue;
+            BigDecimal amount = SquareClient.toDollars(p.totalMoney());
+            if (amount.signum() <= 0) continue;
+
+            BookingHint best = null;
+            long bestDist = Long.MAX_VALUE;
+            if (p.customerId() != null) {
+                List<BookingHint> hints = bookingHintsByCustomer.get(p.customerId());
+                if (hints != null) {
+                    for (BookingHint h : hints) {
+                        long dist = Math.abs(h.day().toEpochDay() - day.toEpochDay());
+                        if (dist <= 2 && dist < bestDist) { best = h; bestDist = dist; }
+                    }
+                }
+            }
+            String note = p.orderId() != null
+                    ? "Linked to an order outside this month's paid orders (" + p.orderId() + ")"
+                    : "No linked order — charged directly (e.g. card on file)";
+            out.add(new OrphanPayment(str(day), amount, p.customerId(), null,
+                    best == null ? null : best.providerId(),
+                    best == null || best.providerId() == null ? null
+                            : providerNameById.getOrDefault(best.providerId(), "?"),
+                    best == null ? null : best.bookingId(), note));
+        }
+        return out;
+    }
+
+    /** Resolve customer names for orphan payments (one bulk Square call); best-effort. */
+    private List<OrphanPayment> withOrphanCustomerNames(List<OrphanPayment> payments) {
+        if (payments.isEmpty()) return payments;
+        Map<String, String> names;
+        try {
+            names = square.customerNames(payments.stream().map(OrphanPayment::customerId).toList());
+        } catch (RuntimeException e) {
+            return payments; // names are a nicety; don't fail the whole report if the lookup hiccups
+        }
+        List<OrphanPayment> out = new ArrayList<>(payments.size());
+        for (OrphanPayment p : payments) {
+            out.add(new OrphanPayment(p.date(), p.amount(), p.customerId(), names.get(p.customerId()),
+                    p.suggestedProviderId(), p.suggestedProviderName(), p.suggestedBookingId(), p.note()));
+        }
+        return out;
     }
 
     /** Resolve customer names for the unattributed lines (one bulk Square call); best-effort. */
@@ -719,13 +820,28 @@ public class SquareMonthAggregator {
     private record CompCandidate(String providerId, LocalDate day, String serviceVariationId,
                                  String bookingId, String customerId, String startAt) {}
 
+    /** A loose "this customer had an appointment around here" hint for orphan-payment suggestions —
+     * unlike {@link Seg}, doesn't require a resolved service, so it covers every booking.
+     * Package-private (not private) so {@link #detectOrphanPayments} is unit-testable. */
+    record BookingHint(String bookingId, String providerId, LocalDate day) {}
+
     // --- result types ---
 
     public record MonthAggregation(int year, int month, String timezone,
                                    List<ProviderMonth> providers, Diag diagnostics,
                                    List<AttributedService> services, List<UnmatchedLine> unmatched,
                                    List<SuspiciousCandidate> suspicious,
-                                   List<CancelledCandidate> cancellations) {
+                                   List<CancelledCandidate> cancellations,
+                                   List<OrphanPayment> orphanPayments) {
+        /** Back-compat constructor for callers (and tests) that predate the orphan-payments list. */
+        public MonthAggregation(int year, int month, String timezone, List<ProviderMonth> providers,
+                                Diag diagnostics, List<AttributedService> services,
+                                List<UnmatchedLine> unmatched, List<SuspiciousCandidate> suspicious,
+                                List<CancelledCandidate> cancellations) {
+            this(year, month, timezone, providers, diagnostics, services, unmatched, suspicious,
+                    cancellations, List.of());
+        }
+
         /** Back-compat constructor for callers (and tests) that predate the cancellations list. */
         public MonthAggregation(int year, int month, String timezone, List<ProviderMonth> providers,
                                 Diag diagnostics, List<AttributedService> services,
@@ -782,6 +898,18 @@ public class SquareMonthAggregator {
     public record UnmatchedLine(String date, String service, BigDecimal gross, String channel,
                                 String customerId, String customerName) {}
 
+    /**
+     * A completed Square payment with no linked Order the reconciliation pipeline ever sees — e.g. a
+     * card charged directly against a customer's card on file, bypassing the booking checkout. Unlike
+     * {@link UnmatchedLine} (a paid order line that couldn't be tied to a booking), there is no order
+     * here at all, so there's no service/catalog line to attribute — only a best-guess suggestion from
+     * the nearest booking for the same customer. Never included in revenue/commission automatically;
+     * surfaced for the owner/manager to confirm via a Manual Adjustment.
+     */
+    public record OrphanPayment(String date, BigDecimal amount, String customerId, String customerName,
+                                String suggestedProviderId, String suggestedProviderName,
+                                String suggestedBookingId, String note) {}
+
     /** What was actually collected for one booking, and how — CASH (checked out as cash in
      * Square), CARD, or CASH-NOTE (a provider's note, no Square checkout); COMP bookings are
      * excluded by {@link #paymentsByBookingId} since nothing was actually collected for them. */
@@ -821,6 +949,8 @@ public class SquareMonthAggregator {
         public int cashNotesSkipped = 0; // notes ignored because the appointment was checked out as cash
         public int ownerComps = 0;        // services to owner/family credited at menu price (no order)
         public int ownerCompsSkipped = 0; // owner bookings we couldn't value (no catalog price)
+        public int orphanPayments = 0;              // completed payments with no linked Order at all
+        public BigDecimal orphanPaymentRevenue = BigDecimal.ZERO;
 
         public int getOrders() { return orders; }
         public int getMatchedLineItems() { return matchedLineItems; }
@@ -831,5 +961,7 @@ public class SquareMonthAggregator {
         public int getCashNotesSkipped() { return cashNotesSkipped; }
         public int getOwnerComps() { return ownerComps; }
         public int getOwnerCompsSkipped() { return ownerCompsSkipped; }
+        public int getOrphanPayments() { return orphanPayments; }
+        public BigDecimal getOrphanPaymentRevenue() { return orphanPaymentRevenue; }
     }
 }

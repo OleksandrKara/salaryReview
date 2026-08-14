@@ -332,6 +332,42 @@ public class SquareClient {
         return all;
     }
 
+    /**
+     * Payments recorded in [start, end) for the configured location, following pagination — including
+     * any payment not linked to an Order (e.g. a card charged directly against a customer's card on
+     * file from their profile, bypassing the booking checkout flow). The Orders API never sees these;
+     * this is the only Square read that does. Used to detect "orphan" payments the order-based
+     * reconciliation in {@link SquareMonthAggregator} would otherwise silently miss — see
+     * {@code openspec/changes/multi-tenant-salon-platform/} P0 payment-accounting findings.
+     */
+    public List<Payment> payments(Instant start, Instant end) {
+        return cached("payments:" + start + ":" + end, Duration.ofMinutes(10), () -> paymentsUncached(start, end));
+    }
+
+    private List<Payment> paymentsUncached(Instant start, Instant end) {
+        List<Payment> all = new ArrayList<>();
+        String cursor = null;
+        do {
+            final String c = cursor;
+            PaymentsListResponse resp = throttled(() -> http.get()
+                    .uri(b -> {
+                        b.path("/v2/payments")
+                                .queryParam("location_id", locationId)
+                                .queryParam("begin_time", start.toString())
+                                .queryParam("end_time", end.toString())
+                                .queryParam("sort_order", "ASC")
+                                .queryParam("limit", PAGE_LIMIT);
+                        if (c != null) b.queryParam("cursor", c);
+                        return b.build();
+                    })
+                    .retrieve()
+                    .body(PaymentsListResponse.class));
+            if (resp != null && resp.payments() != null) all.addAll(resp.payments());
+            cursor = resp == null ? null : resp.cursor();
+        } while (cursor != null && !cursor.isBlank());
+        return all;
+    }
+
     /** Catalog list price per service-variation id, for the price-cutoff counting. */
     public Map<String, BigDecimal> catalogPrices(Collection<String> variationIds) {
         List<String> ids = variationIds.stream().filter(id -> id != null && !id.isBlank()).distinct().sorted().toList();
@@ -853,6 +889,18 @@ public class SquareClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record OrderSearchResponse(List<Order> orders, String cursor) {}
+
+    /** A Square Payment — {@code orderId} is null when the charge was taken directly (e.g. "charge
+     * card on file" from a customer profile) rather than through an Order/checkout, which is exactly
+     * the case the order-based reconciliation pipeline can't see on its own. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record Payment(String id, String orderId, String customerId, String status,
+                          String createdAt, Money totalMoney, Money tipMoney) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record PaymentsListResponse(List<Payment> payments, String cursor) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)

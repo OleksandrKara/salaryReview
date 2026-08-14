@@ -286,6 +286,7 @@ export default async function ReportsPage({
         {report.diagnostics.cashNotesSkipped > 0 && ` (${report.diagnostics.cashNotesSkipped} skipped — already checked out as cash)`}
         {report.diagnostics.ownerComps > 0 && `, ${report.diagnostics.ownerComps} owner comp${report.diagnostics.ownerComps > 1 ? 's' : ''}`}
         {report.diagnostics.unmatchedLineItems > 0 && ` · ${report.diagnostics.unmatchedLineItems} unmatched (${usd(report.diagnostics.unmatchedRevenue)})`}
+        {report.diagnostics.orphanPayments > 0 && ` · ${report.diagnostics.orphanPayments} orphan payment${report.diagnostics.orphanPayments > 1 ? 's' : ''} (${usd(report.diagnostics.orphanPaymentRevenue)}, no linked order)`}
       </p>
 
       <NoShowFeesPanel year={year} month={month} />

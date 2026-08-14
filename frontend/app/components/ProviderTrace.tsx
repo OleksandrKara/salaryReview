@@ -90,6 +90,65 @@ export default function ProviderTrace({
           )}
         </section>
       )}
+
+      {showUnmatched && (
+        <section className="mt-5">
+          <h2 className="mb-1 text-sm font-semibold">Orphan payments ({detail.orphanPayments.length})</h2>
+          <p className="mb-2 text-xs text-zinc-500">
+            Completed Square payments with no linked order at all — e.g. a card charged directly against
+            a customer&apos;s card on file, bypassing the booking checkout. Not included in any provider&apos;s
+            revenue or commission automatically. If &ldquo;Suggested&rdquo; looks right, confirm it with a
+            Manual Adjustment; otherwise ask the provider who this belongs to.
+          </p>
+          {detail.orphanPayments.length === 0 ? (
+            <p className="text-xs text-zinc-400">None — every completed payment has a matching order.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-lg ring-1 ring-zinc-200">
+              <table className="w-full text-sm">
+                <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+                  <tr>
+                    <th className="px-3 py-2">Date</th>
+                    <th className="px-3 py-2 text-right">Amount</th>
+                    <th className="px-3 py-2">Customer</th>
+                    <th className="px-3 py-2">Suggested</th>
+                    <th className="px-3 py-2">Note</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100">
+                  {detail.orphanPayments.map((p, i) => (
+                    <tr key={i} className="hover:bg-zinc-50">
+                      <td className="px-3 py-2 tabular-nums text-zinc-600">{p.date}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{usd(p.amount)}</td>
+                      <td className="px-3 py-2">
+                        {p.customerId ? (
+                          <a
+                            href={`https://app.squareup.com/dashboard/customers/directory/customer/${p.customerId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            {p.customerName ?? 'View in Square ↗'}
+                          </a>
+                        ) : (
+                          <span className="text-zinc-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        {p.suggestedProviderName ? (
+                          <span className="text-zinc-700">{p.suggestedProviderName}</span>
+                        ) : (
+                          <span className="text-zinc-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-zinc-500">{p.note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

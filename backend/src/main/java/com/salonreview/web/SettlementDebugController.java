@@ -54,7 +54,8 @@ public class SettlementDebugController {
                     "year", y, "month", m, "provider", provider == null ? "(all)" : provider,
                     "matchedCount", services.size(),
                     "services", services,
-                    "unmatched", agg.unmatched()));
+                    "unmatched", agg.unmatched(),
+                    "orphanPayments", agg.orphanPayments()));
         } catch (RestClientResponseException e) {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
                     "error", "Square API call failed",
