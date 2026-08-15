@@ -47,6 +47,20 @@ public class SecurityConfig {
                         UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/info", "/api/login").permitAll()
+                        // Spring Boot's internal error-rendering path: when a controller throws
+                        // (ResponseStatusException or otherwise), the container performs an internal
+                        // forward to /error to render the response body, which re-enters this whole
+                        // filter chain as a *second* pass over the same request. By that point the
+                        // original pass's SecurityContext has already been cleared (each context-bearing
+                        // filter clears it in its own finally block once the first pass unwinds), so
+                        // without this the forwarded pass looks anonymous, AuthorizationFilter rejects it
+                        // under the anyRequest().authenticated() catch-all below, and the resulting
+                        // AuthenticationException gets translated by the entry point into a bare 401 that
+                        // silently overwrites whatever status/body the controller actually intended (e.g.
+                        // a 409 conflict coming back as an empty 401). Permitting /error doesn't weaken
+                        // anything: the authorization decision for the real endpoint was already made on
+                        // the first pass, before the exception was even thrown.
+                        .requestMatchers("/error").permitAll()
                         // Service-to-service calls from mani/akluxnails-home (Telegram 4-hand-request
                         // relay) — no user session exists for these callers; auth is enforced by the
                         // controller's own X-Internal-Api-Key check instead (see
