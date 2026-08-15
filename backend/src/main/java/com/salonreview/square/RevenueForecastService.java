@@ -147,8 +147,8 @@ public class RevenueForecastService {
      * Returns null when fewer than {@value MIN_CALIBRATION_ROWS} usable rows exist.
      */
     BigDecimal calibration(BigDecimal currentMTD, BigDecimal upcomingGross) {
-        List<RevenueSnapshot> rows = snapshots.findAllByMonthEndActualIsNotNullOrderBySnapshotDateDesc(
-                PageRequest.of(0, CALIBRATION_WINDOW_ROWS));
+        List<RevenueSnapshot> rows = snapshots.findAllByBusinessIdAndMonthEndActualIsNotNullOrderBySnapshotDateDesc(
+                currentBusinessContext.id(), PageRequest.of(0, CALIBRATION_WINDOW_ROWS));
         // Only one snapshot per month is needed — pick the latest by snapshot_date per month to avoid
         // a long-running month with daily snapshots dominating the average.
         Map<YearMonth, RevenueSnapshot> oneByMonth = new HashMap<>();
@@ -177,8 +177,8 @@ public class RevenueForecastService {
 
     int countUsableCalibrationRows() {
         // Distinct months among the recent rows with month_end_actual filled.
-        List<RevenueSnapshot> rows = snapshots.findAllByMonthEndActualIsNotNullOrderBySnapshotDateDesc(
-                PageRequest.of(0, CALIBRATION_WINDOW_ROWS));
+        List<RevenueSnapshot> rows = snapshots.findAllByBusinessIdAndMonthEndActualIsNotNullOrderBySnapshotDateDesc(
+                currentBusinessContext.id(), PageRequest.of(0, CALIBRATION_WINDOW_ROWS));
         Map<YearMonth, Boolean> months = new HashMap<>();
         for (RevenueSnapshot r : rows) months.put(YearMonth.from(r.getSnapshotDate()), true);
         return months.size();

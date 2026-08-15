@@ -69,7 +69,7 @@ class RevenuePulseServiceAsyncBusinessContextTest {
                 .thenReturn(new ForecastResult(new BigDecimal("100.00"), null, null, 0, 0));
 
         RevenueSnapshotRepository snapshots = mock(RevenueSnapshotRepository.class);
-        when(snapshots.findBySnapshotDate(any())).thenReturn(java.util.Optional.empty());
+        when(snapshots.findByBusinessIdAndSnapshotDate(eq(42L), any())).thenReturn(java.util.Optional.empty());
 
         RevenuePulseService service = new RevenuePulseService(square, forecaster, aggregator, salonConfig,
                 realContext, snapshots, manualAdjustments);

@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -47,7 +48,7 @@ class RevenueForecastServiceTest {
 
         when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(anyLong(), anyInt())).thenReturn(List.of());
         when(entries.findAllByPayPeriodId(anyLong())).thenReturn(List.of());
-        when(snapshots.findAllByMonthEndActualIsNotNullOrderBySnapshotDateDesc(any(Pageable.class)))
+        when(snapshots.findAllByBusinessIdAndMonthEndActualIsNotNullOrderBySnapshotDateDesc(eq(1L), any(Pageable.class)))
                 .thenReturn(List.of());
     }
 
@@ -183,7 +184,7 @@ class RevenueForecastServiceTest {
                     .build());
             cursor = cursor.minusMonths(1);
         }
-        when(snapshots.findAllByMonthEndActualIsNotNullOrderBySnapshotDateDesc(any(Pageable.class)))
+        when(snapshots.findAllByBusinessIdAndMonthEndActualIsNotNullOrderBySnapshotDateDesc(eq(1L), any(Pageable.class)))
                 .thenReturn(rows);
     }
 }

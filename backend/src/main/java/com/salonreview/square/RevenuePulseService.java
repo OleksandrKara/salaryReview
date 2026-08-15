@@ -154,7 +154,7 @@ public class RevenuePulseService {
      * would have projected on that date, not a recomputation from today's data.
      */
     private BigDecimal snapshotProjection(LocalDate date) {
-        return snapshots.findBySnapshotDate(date)
+        return snapshots.findByBusinessIdAndSnapshotDate(currentBusinessContext.id(), date)
                 .map(s -> s.getMtdRevenue().add(s.getUpcomingGross()).setScale(2, RoundingMode.HALF_UP))
                 .orElse(null);
     }

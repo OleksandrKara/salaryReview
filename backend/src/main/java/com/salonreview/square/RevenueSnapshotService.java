@@ -75,7 +75,7 @@ public class RevenueSnapshotService {
      */
     @Transactional
     public void captureFor(LocalDate date) {
-        if (repo.findBySnapshotDate(date).isPresent()) {
+        if (repo.findByBusinessIdAndSnapshotDate(currentBusinessContext.id(), date).isPresent()) {
             log.debug("revenue_snapshot already exists for {}, skipping", date);
             return;
         }
@@ -159,8 +159,8 @@ public class RevenueSnapshotService {
         }
         BigDecimal finalActual = actual.setScale(2, RoundingMode.HALF_UP);
 
-        List<RevenueSnapshot> rows = repo.findAllBySnapshotDateBetween(
-                month.atDay(1), month.atEndOfMonth());
+        List<RevenueSnapshot> rows = repo.findAllByBusinessIdAndSnapshotDateBetween(
+                currentBusinessContext.id(), month.atDay(1), month.atEndOfMonth());
         for (RevenueSnapshot r : rows) {
             r.setMonthEndActual(finalActual);
         }
@@ -183,7 +183,7 @@ public class RevenueSnapshotService {
      * captured for that date (before the feature existed, or a gap the backfill didn't cover).
      */
     public RevenueDayDetailDto dayDetail(LocalDate date) {
-        Optional<RevenueSnapshot> row = repo.findBySnapshotDate(date);
+        Optional<RevenueSnapshot> row = repo.findByBusinessIdAndSnapshotDate(currentBusinessContext.id(), date);
         if (row.isEmpty()) {
             return RevenueDayDetailDto.noSnapshot(date);
         }
