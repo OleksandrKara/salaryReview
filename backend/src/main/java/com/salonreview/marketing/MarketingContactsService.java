@@ -323,8 +323,15 @@ public class MarketingContactsService {
             // per-customer window fan-out inside SquareClient.bookingsForCustomer, is what keeps
             // this page from taking many seconds to load once there are more than a couple of
             // Square-linked contacts.
+            //
+            // toContact() -> fetchAppointments() -> paymentsForBookings() -> priceCutoff() reaches
+            // CurrentBusinessContext.id(), but parallelStream() runs each element on a common
+            // ForkJoinPool worker thread — a ThreadLocal set on the calling thread doesn't carry
+            // over there. Resolve it once here and re-establish it explicitly per element, same fix
+            // as OwnerOverviewService/RevenuePulseService's identical async ThreadLocal loss.
+            Long businessId = currentBusinessContext.id();
             List<Contact> contacts = repository.listAll().parallelStream()
-                    .map(r -> toContact(r, visitCounts))
+                    .map(r -> currentBusinessContext.runAsAndGet(businessId, () -> toContact(r, visitCounts)))
                     .collect(Collectors.toList());
             return new MarketingContactDto(true, contacts);
         } catch (DataAccessException ex) {
@@ -430,12 +437,18 @@ public class MarketingContactsService {
         // (e.g. they filled the form again on a later visit), which would double-count one real
         // follow-up as two. A repeat contact row surfacing the exact same follow-up doesn't
         // deserve a second count just because the client happened to re-submit.
+        //
+        // uncountedAppointments() -> fetchAppointments() -> priceCutoff() needs CurrentBusinessContext
+        // on whatever thread it runs on — parallelStream()'s worker threads don't inherit it. Same
+        // fix as computeContacts() above.
+        Long businessId = currentBusinessContext.id();
         return repository.listAll().parallelStream()
                 .filter(r -> landingPageSlug.equals(r.landingPageSlug()))
                 .filter(r -> statsSince == null || !r.createdAt().isBefore(statsSince))
                 .filter(r -> periodTo == null || r.createdAt().isBefore(periodTo))
                 .filter(r -> !convertedCustomerIds.contains(resolveSquareCustomerId(r)))
-                .filter(r -> !uncountedAppointments(r, attributedBookingIds).isEmpty())
+                .filter(r -> currentBusinessContext.runAsAndGet(businessId,
+                        () -> !uncountedAppointments(r, attributedBookingIds).isEmpty()))
                 .collect(Collectors.toMap(
                         this::resolveSquareCustomerId,
                         r -> r,
@@ -483,15 +496,17 @@ public class MarketingContactsService {
     public List<FollowUpAppointment> followUpAppointments(
             String landingPageSlug, Instant statsSince,
             java.util.Set<String> attributedBookingIds, java.util.Set<String> convertedCustomerIds) {
+        // Same CurrentBusinessContext-across-parallelStream fix as countFollowUpBookingsByVariant.
+        Long businessId = currentBusinessContext.id();
         return repository.listAll().parallelStream()
                 .filter(r -> landingPageSlug.equals(r.landingPageSlug()))
                 .filter(r -> statsSince == null || !r.createdAt().isBefore(statsSince))
                 .filter(r -> !convertedCustomerIds.contains(resolveSquareCustomerId(r)))
-                .flatMap(r -> {
+                .flatMap(r -> currentBusinessContext.runAsAndGet(businessId, () -> {
                     String customerId = resolveSquareCustomerId(r);
                     return uncountedAppointments(r, attributedBookingIds).stream()
                             .map(a -> new FollowUpAppointment(customerId, a));
-                })
+                }))
                 .toList();
     }
 

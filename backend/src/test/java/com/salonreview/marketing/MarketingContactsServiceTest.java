@@ -66,6 +66,13 @@ class MarketingContactsServiceTest {
         com.salonreview.config.CurrentBusinessContext currentBusinessContext =
                 mock(com.salonreview.config.CurrentBusinessContext.class);
         when(currentBusinessContext.id()).thenReturn(1L);
+        // computeContacts()/countFollowUpBookingsByVariant()/followUpAppointments() wrap their
+        // parallelStream() work in runAsAndGet(businessId, Supplier) so worker threads see the business
+        // id (see the async ThreadLocal fix on this class) — a plain mock's runAsAndGet() is a no-op
+        // that never invokes the wrapped supplier, so make it actually run.
+        when(currentBusinessContext.runAsAndGet(org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.<java.util.function.Supplier<Object>>any()))
+                .thenAnswer(inv -> ((java.util.function.Supplier<?>) inv.getArgument(1)).get());
         service = new MarketingContactsService(repository, squareLinks, square, aggregator, salonConfig,
                 currentBusinessContext, syncStatus,
                 new RebookingProperties(), smsMessageLogService, providerVisits, 4);
