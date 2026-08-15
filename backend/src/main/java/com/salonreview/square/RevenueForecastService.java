@@ -48,13 +48,16 @@ public class RevenueForecastService {
     private final PayPeriodRepository payPeriods;
     private final PeriodEntryRepository entries;
     private final RevenueSnapshotRepository snapshots;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
     public RevenueForecastService(PayPeriodRepository payPeriods,
                                   PeriodEntryRepository entries,
-                                  RevenueSnapshotRepository snapshots) {
+                                  RevenueSnapshotRepository snapshots,
+                                  com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.payPeriods = payPeriods;
         this.entries = entries;
         this.snapshots = snapshots;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     public ForecastResult forecast(int year, int month, BigDecimal currentMTD, BigDecimal upcomingGross) {
@@ -112,7 +115,7 @@ public class RevenueForecastService {
 
     private boolean hasBothHalvesSettled(YearMonth ym) {
         boolean first = false, second = false;
-        for (PayPeriod pp : payPeriods.findAllByYearOrderByMonthAscHalfAsc(ym.getYear())) {
+        for (PayPeriod pp : payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(currentBusinessContext.id(), ym.getYear())) {
             if (pp.getMonth() != ym.getMonthValue()) continue;
             if (entries.findAllByPayPeriodId(pp.getId()).isEmpty()) continue;
             if (pp.getHalf() == Half.FIRST) first = true;
@@ -123,7 +126,7 @@ public class RevenueForecastService {
 
     private BigDecimal halfTotal(YearMonth ym, Half half) {
         BigDecimal total = BigDecimal.ZERO;
-        for (PayPeriod pp : payPeriods.findAllByYearOrderByMonthAscHalfAsc(ym.getYear())) {
+        for (PayPeriod pp : payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(currentBusinessContext.id(), ym.getYear())) {
             if (pp.getMonth() != ym.getMonthValue() || pp.getHalf() != half) continue;
             for (PeriodEntry e : entries.findAllByPayPeriodId(pp.getId())) {
                 total = total.add(e.getCardTotal()).add(e.getCashTotal());

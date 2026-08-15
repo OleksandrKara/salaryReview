@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.entry;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -75,7 +76,7 @@ class OwnerOverviewServicePAndLTest {
             return null;
         }).when(currentBusinessContext).runAs(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any());
         when(salonConfig.findByBusinessId(1L)).thenReturn(Optional.of(CFG));
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(anyInt())).thenReturn(List.of());
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(eq(1L), anyInt())).thenReturn(List.of());
 
         aggregator = mock(SquareMonthAggregator.class);
         retention = mock(RetentionAnalyticsService.class);

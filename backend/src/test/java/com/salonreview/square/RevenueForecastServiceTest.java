@@ -40,9 +40,12 @@ class RevenueForecastServiceTest {
         payPeriods = mock(PayPeriodRepository.class);
         entries    = mock(PeriodEntryRepository.class);
         snapshots  = mock(RevenueSnapshotRepository.class);
-        service    = new RevenueForecastService(payPeriods, entries, snapshots);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        service    = new RevenueForecastService(payPeriods, entries, snapshots, currentBusinessContext);
 
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(anyInt())).thenReturn(List.of());
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(anyLong(), anyInt())).thenReturn(List.of());
         when(entries.findAllByPayPeriodId(anyLong())).thenReturn(List.of());
         when(snapshots.findAllByMonthEndActualIsNotNullOrderBySnapshotDateDesc(any(Pageable.class)))
                 .thenReturn(List.of());
@@ -135,7 +138,7 @@ class RevenueForecastServiceTest {
             yrPeriods.add(first);
             yrPeriods.add(second);
             payPeriodMockReturns.put(yr, yrPeriods);
-            when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(yr)).thenReturn(yrPeriods);
+            when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, yr)).thenReturn(yrPeriods);
 
             PeriodEntry firstEntry  = entryWith(p, first,  firstHalfRev);
             PeriodEntry secondEntry = entryWith(p, second, secondHalfRev);

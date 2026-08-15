@@ -37,13 +37,16 @@ public class SopService {
     private final SopVersionRepository versions;
     private final SopAcknowledgmentRepository acks;
     private final AppUserRepository users;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
     public SopService(SopRepository sops, SopVersionRepository versions,
-                      SopAcknowledgmentRepository acks, AppUserRepository users) {
+                      SopAcknowledgmentRepository acks, AppUserRepository users,
+                      com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.sops = sops;
         this.versions = versions;
         this.acks = acks;
         this.users = users;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     // ---------------------------------------------------------------- authoring (owner)
@@ -210,7 +213,8 @@ public class SopService {
     public List<RosterEntry> roster(Long id) {
         Sop sop = sops.findById(id).orElse(null);
         if (sop == null) return List.of();
-        List<AppUser> audience = users.findByRoleInAndActiveTrueOrderByUsernameAsc(sop.getAudience().roles());
+        List<AppUser> audience = users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(
+                currentBusinessContext.id(), sop.getAudience().roles());
         Map<Long, Instant> ackedAt = new HashMap<>();
         if (sop.getCurrentVersionId() != null) {
             for (SopAcknowledgment a : acks.findBySopVersionId(sop.getCurrentVersionId())) {

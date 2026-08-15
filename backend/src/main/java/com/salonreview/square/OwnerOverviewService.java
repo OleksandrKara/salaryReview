@@ -128,7 +128,7 @@ public class OwnerOverviewService {
         // key = "YYYY-M"
         Map<String, List<PeriodEntry>> entriesByYearMonth = new HashMap<>();
         for (int yr : yearsNeeded) {
-            for (PayPeriod pp : payPeriods.findAllByYearOrderByMonthAscHalfAsc(yr)) {
+            for (PayPeriod pp : payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(businessId, yr)) {
                 List<PeriodEntry> monthEntries = entries.findAllByPayPeriodId(pp.getId());
                 if (!monthEntries.isEmpty()) {
                     entriesByYearMonth
@@ -517,8 +517,9 @@ public class OwnerOverviewService {
         List<int[]> range = buildRange(fromYear, fromMonth, toYear, toMonth);
         Set<Integer> yearsNeeded = range.stream().map(ym -> ym[0]).collect(Collectors.toSet());
         BigDecimal card = BigDecimal.ZERO, cash = BigDecimal.ZERO;
+        Long businessId = currentBusinessContext.id();
         for (int yr : yearsNeeded) {
-            for (PayPeriod pp : payPeriods.findAllByYearOrderByMonthAscHalfAsc(yr)) {
+            for (PayPeriod pp : payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(businessId, yr)) {
                 if (!inRange(range, pp.getYear(), pp.getMonth())) continue;
                 for (PeriodEntry e : entries.findAllByPayPeriodId(pp.getId())) {
                     card = card.add(e.getCardTotal());

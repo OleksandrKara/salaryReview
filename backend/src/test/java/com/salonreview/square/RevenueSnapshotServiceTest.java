@@ -112,7 +112,7 @@ class RevenueSnapshotServiceTest {
                 .commissionRate(new BigDecimal("0.45")).cardTipFeeRate(new BigDecimal("0.035")).active(true).build();
         PayPeriod first  = PayPeriod.builder().id(10L).year(2026).month(5).half(Half.FIRST).label("f").build();
         PayPeriod second = PayPeriod.builder().id(11L).year(2026).month(5).half(Half.SECOND).label("s").build();
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2026)).thenReturn(List.of(first, second));
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, 2026)).thenReturn(List.of(first, second));
         when(entries.findAllByPayPeriodId(10L)).thenReturn(List.of(entry(p, first, "5000")));
         when(entries.findAllByPayPeriodId(11L)).thenReturn(List.of(entry(p, second, "6000")));
 
@@ -132,7 +132,7 @@ class RevenueSnapshotServiceTest {
     @DisplayName("fillMonthEndActualsFor logs warning and returns 0 when no PeriodEntry rows")
     void fillMonthEndActualsForNoData() {
         YearMonth may = YearMonth.of(2026, 5);
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2026)).thenReturn(List.of());
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, 2026)).thenReturn(List.of());
 
         int updated = service.fillMonthEndActualsFor(may);
 

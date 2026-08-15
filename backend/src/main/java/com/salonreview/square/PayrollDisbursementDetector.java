@@ -34,17 +34,21 @@ public class PayrollDisbursementDetector {
 
     private final AppUserRepository users;
     private final ProviderRepository providers;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
-    public PayrollDisbursementDetector(AppUserRepository users, ProviderRepository providers) {
+    public PayrollDisbursementDetector(AppUserRepository users, ProviderRepository providers,
+                                       com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.users = users;
         this.providers = providers;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     public Optional<MerchantRuleEngine.MatchResult> suggest(String rawDescription) {
         if (rawDescription == null || rawDescription.isBlank()) return Optional.empty();
         String upper = rawDescription.toUpperCase(Locale.US);
 
-        for (AppUser manager : users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER))) {
+        for (AppUser manager : users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(
+                currentBusinessContext.id(), List.of(Role.MANAGER))) {
             if (payeeNameMatches(upper, manager.getUsername())) {
                 return Optional.of(suggestion(ExpenseEntry.CATEGORY_MANAGER_TIME, "manager " + manager.getUsername()));
             }

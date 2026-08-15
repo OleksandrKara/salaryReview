@@ -213,8 +213,8 @@ public class CancelledAppointmentService {
      */
     private Set<String> ownerManagerTeamIds() {
         Set<String> ids = new HashSet<>();
-        List<AppUser> staff = users.findByRoleInAndActiveTrueOrderByUsernameAsc(
-                List.of(Role.OWNER, Role.MANAGER));
+        List<AppUser> staff = users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(
+                currentBusinessContext.id(), List.of(Role.OWNER, Role.MANAGER));
         for (AppUser u : staff) {
             if (u.getSquareTeamMemberId() != null) ids.add(u.getSquareTeamMemberId());
             if (u.getProviderId() != null) {

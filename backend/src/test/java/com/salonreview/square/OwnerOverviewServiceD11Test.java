@@ -89,7 +89,7 @@ class OwnerOverviewServiceD11Test {
 
         Provider anna = provider(1L, "Anna");
         PayPeriod jan1 = PayPeriod.builder().id(1L).year(2025).month(1).half(Half.FIRST).label("First 1/2025").build();
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2025)).thenReturn(List.of(jan1));
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, 2025)).thenReturn(List.of(jan1));
         when(entries.findAllByPayPeriodId(1L)).thenReturn(List.of(entry(anna, jan1, "1000.00", "0.00", "0.00", 10)));
 
         ManualAdjustmentService manualAdjustments = mock(ManualAdjustmentService.class);

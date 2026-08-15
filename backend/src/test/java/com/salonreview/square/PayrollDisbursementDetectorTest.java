@@ -29,9 +29,12 @@ class PayrollDisbursementDetectorTest {
     void setUp() {
         users = mock(AppUserRepository.class);
         providers = mock(ProviderRepository.class);
-        detector = new PayrollDisbursementDetector(users, providers);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        detector = new PayrollDisbursementDetector(users, providers, currentBusinessContext);
 
-        when(users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER)))
+        when(users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(1L, List.of(Role.MANAGER)))
                 .thenReturn(List.of(AppUser.builder().id(1L).username("jsmith").role(Role.MANAGER).build()));
         when(providers.findAllByActiveTrue())
                 .thenReturn(List.of(Provider.builder().id(1L).name("anna").displayName("Anna Lee")

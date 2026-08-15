@@ -55,7 +55,8 @@ public class UserController {
 
     @GetMapping
     public List<UserView> list() {
-        return users.findAllByOrderByUsernameAsc().stream().map(UserView::of).toList();
+        return users.findAllByBusinessIdOrderByUsernameAsc(currentBusinessContext.id())
+                .stream().map(UserView::of).toList();
     }
 
     /**
@@ -65,7 +66,7 @@ public class UserController {
      */
     @GetMapping("/square-roster")
     public List<RosterEntry> squareRoster() {
-        List<AppUser> existing = users.findAllByOrderByUsernameAsc();
+        List<AppUser> existing = users.findAllByBusinessIdOrderByUsernameAsc(currentBusinessContext.id());
         Set<String> linkedMemberIds = existing.stream()
                 .map(AppUser::getSquareTeamMemberId).filter(java.util.Objects::nonNull)
                 .collect(Collectors.toSet());
@@ -101,7 +102,7 @@ public class UserController {
                 || req.password() == null || req.password().isBlank() || req.role() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "username, password and role are required");
         }
-        if (users.existsByUsername(req.username())) {
+        if (users.existsByBusinessIdAndUsername(currentBusinessContext.id(), req.username())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Username already taken");
         }
         // A provider imported from Square may not have a Provider row yet (no bookings) — provision it.
@@ -167,7 +168,7 @@ public class UserController {
         if (!providers.existsById(providerId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No such provider");
         }
-        boolean takenByOther = users.findAllByOrderByUsernameAsc().stream()
+        boolean takenByOther = users.findAllByBusinessIdOrderByUsernameAsc(currentBusinessContext.id()).stream()
                 .anyMatch(other -> providerId.equals(other.getProviderId())
                         && !other.getId().equals(currentUserId));
         if (takenByOther) {
@@ -177,7 +178,7 @@ public class UserController {
     }
 
     private long activeOwners() {
-        return users.findAllByOrderByUsernameAsc().stream()
+        return users.findAllByBusinessIdOrderByUsernameAsc(currentBusinessContext.id()).stream()
                 .filter(u -> u.getRole() == Role.OWNER && u.isActive()).count();
     }
 

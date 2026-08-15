@@ -38,6 +38,7 @@ class SopServiceTest {
     private SopVersionRepository versions;
     private SopAcknowledgmentRepository acks;
     private AppUserRepository users;
+    private com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private SopService service;
 
     @BeforeEach
@@ -46,6 +47,8 @@ class SopServiceTest {
         versions = mock(SopVersionRepository.class);
         acks = mock(SopAcknowledgmentRepository.class);
         users = mock(AppUserRepository.class);
+        currentBusinessContext = mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
         when(sops.save(any())).thenAnswer(inv -> {
             Sop s = inv.getArgument(0);
             if (s.getId() == null) s.setId(1L);
@@ -56,7 +59,7 @@ class SopServiceTest {
             if (v.getId() == null) v.setId(100L);
             return v;
         });
-        service = new SopService(sops, versions, acks, users);
+        service = new SopService(sops, versions, acks, users, currentBusinessContext);
     }
 
     private Sop sop(SopAudience audience, SopStatus status, Long currentVersionId) {
@@ -223,7 +226,7 @@ class SopServiceTest {
     @DisplayName("roster lists the audience's active users with correct ack flags")
     void roster() {
         when(sops.findById(1L)).thenReturn(Optional.of(sop(SopAudience.BOTH, SopStatus.ACTIVE, 100L)));
-        when(users.findByRoleInAndActiveTrueOrderByUsernameAsc(any())).thenReturn(List.of(
+        when(users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(eq(1L), any())).thenReturn(List.of(
                 AppUser.builder().id(10L).username("mgr").role(Role.MANAGER).active(true).passwordHash("x").build(),
                 AppUser.builder().id(11L).username("prov").role(Role.PROVIDER).active(true).passwordHash("x").build()));
         when(acks.findBySopVersionId(100L)).thenReturn(List.of(
