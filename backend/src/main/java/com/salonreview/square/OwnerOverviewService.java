@@ -101,7 +101,11 @@ public class OwnerOverviewService {
     }
 
     public OwnerOverviewDto overview(int fromYear, int fromMonth, int toYear, int toMonth) {
-        String key = fromYear + "-" + fromMonth + ":" + toYear + "-" + toMonth;
+        // businessId in the key, not just an argument to computeOverview() — this cache is a
+        // 30-day TTL (see CACHE_TTL's own doc), so without it a second business's first read of
+        // any range business A already computed would silently return business A's P&L instead
+        // of running its own computeOverview(), for up to 30 days.
+        String key = currentBusinessContext.id() + ":" + fromYear + "-" + fromMonth + ":" + toYear + "-" + toMonth;
         return cache.get(key, CACHE_TTL, () -> computeOverview(fromYear, fromMonth, toYear, toMonth));
     }
 

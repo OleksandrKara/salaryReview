@@ -33,7 +33,14 @@ class FunnelAnalyticsServiceTest {
         landingPageRepository = mock(MarketingDashboardRepository.class);
         SquareClient square = mock(SquareClient.class);
         when(square.locationTimeZone()).thenReturn("America/Los_Angeles");
-        service = new FunnelAnalyticsService(repository, landingPageRepository, square);
+        com.salonreview.square.SquareClientProvider squareClientProvider =
+                mock(com.salonreview.square.SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(org.mockito.ArgumentMatchers.anyLong())).thenReturn(square);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        service = new FunnelAnalyticsService(repository, landingPageRepository, squareClientProvider,
+                currentBusinessContext);
     }
 
     @Test

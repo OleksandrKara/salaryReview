@@ -16,6 +16,7 @@ import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClient.AppointmentSegment;
 import com.salonreview.square.SquareClient.Booking;
 import com.salonreview.square.SquareClient.TeamMember;
+import com.salonreview.square.SquareClientProvider;
 import com.salonreview.square.SquareMonthAggregator;
 import com.salonreview.square.SquareMonthAggregator.BookingPayment;
 import com.salonreview.util.PhoneNumbers;
@@ -59,7 +60,7 @@ public class MarketingContactsService {
     // is the most Square-call-heavy of the marketing tabs (one round trip per Square-linked
     // contact), so it benefits the most from this.
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
-    private static final String CONTACTS_CACHE_KEY = "contacts";
+    private static final String CONTACTS_CACHE_KEY_PREFIX = "contacts:";
 
     // See #contactFromLivePhoneLookup and MarketingAnalyticsService#BOOKING_HISTORY_LOOKBACK for
     // the same rationale: with no contact createdAt to anchor the Square scan on, this caps it at
@@ -68,7 +69,7 @@ public class MarketingContactsService {
 
     private final MarketingContactsRepository repository;
     private final MarketingContactSquareLinkRepository squareLinks;
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
     private final SquareMonthAggregator aggregator;
     private final SalonConfigRepository salonConfig;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
@@ -81,7 +82,7 @@ public class MarketingContactsService {
 
     public MarketingContactsService(MarketingContactsRepository repository,
                                      MarketingContactSquareLinkRepository squareLinks,
-                                     SquareClient square,
+                                     SquareClientProvider squareClientProvider,
                                      SquareMonthAggregator aggregator,
                                      SalonConfigRepository salonConfig,
                                      com.salonreview.config.CurrentBusinessContext currentBusinessContext,
@@ -92,7 +93,7 @@ public class MarketingContactsService {
                                      @Value("${vip.visit-threshold:4}") int vipVisitThreshold) {
         this.repository = repository;
         this.squareLinks = squareLinks;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
         this.aggregator = aggregator;
         this.salonConfig = salonConfig;
         this.currentBusinessContext = currentBusinessContext;
@@ -159,6 +160,7 @@ public class MarketingContactsService {
      * an unbounded "their whole history" Square scan isn't free, so this caps it at a generous
      * window instead. Empty if Square has no customer for this phone either. */
     private Optional<Contact> contactFromLivePhoneLookup(String phoneNumber) {
+        SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
         List<String> candidates = square.customerIdsForPhone(phoneNumber);
         if (candidates.isEmpty()) return Optional.empty();
         String customerId = candidates.get(0);
@@ -226,6 +228,7 @@ public class MarketingContactsService {
             return Map.of();
         }
         try {
+            SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
             // Keyed by last10Digits, not the raw phone string — marketing.contacts' own stored
             // format for this row isn't guaranteed to match the format phoneNumbers is holding
             // (see PhoneNumbers' own doc comment and MarketingContactsRepository#findNamesByPhoneNumbers).
@@ -309,7 +312,7 @@ public class MarketingContactsService {
      * extra round trip — see the Contact record's field docs.
      */
     public MarketingContactDto contacts() {
-        return cache.get(CONTACTS_CACHE_KEY, CACHE_TTL, this::computeContacts);
+        return cache.get(CONTACTS_CACHE_KEY_PREFIX + currentBusinessContext.id(), CACHE_TTL, this::computeContacts);
     }
 
     private MarketingContactDto computeContacts() {
@@ -376,6 +379,7 @@ public class MarketingContactsService {
      */
     @Transactional
     public MarketingContactDto syncSquareLinks() {
+        SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
         square.invalidate();
         cache.invalidateAll();
         List<MarketingContactsRepository.RawContact> raw = repository.listAll();
@@ -397,7 +401,7 @@ public class MarketingContactsService {
         // it immediately; contacts() would otherwise be a legitimate cache miss anyway (just
         // cleared above), but computing directly avoids relying on that as an implementation detail.
         MarketingContactDto fresh = computeContacts();
-        cache.get(CONTACTS_CACHE_KEY, CACHE_TTL, () -> fresh);
+        cache.get(CONTACTS_CACHE_KEY_PREFIX + currentBusinessContext.id(), CACHE_TTL, () -> fresh);
         return fresh;
     }
 
@@ -541,11 +545,13 @@ public class MarketingContactsService {
         if (squareCustomerId == null || consentSegmentId == null || consentSegmentId.isBlank()) {
             return false;
         }
-        List<String> segments = square.customerSegmentIds(squareCustomerId);
+        List<String> segments = squareClientProvider.forBusiness(currentBusinessContext.id())
+                .customerSegmentIds(squareCustomerId);
         return segments != null && segments.contains(consentSegmentId);
     }
 
     private Contact toContact(MarketingContactsRepository.RawContact raw, Map<String, Long> visitCounts) {
+        SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
         String effectiveSquareCustomerId = resolveSquareCustomerId(raw);
 
         String squareProfileUrl = effectiveSquareCustomerId == null
@@ -622,6 +628,7 @@ public class MarketingContactsService {
      */
     private List<Appointment> fetchAppointments(String squareCustomerId, Instant since) {
         try {
+            SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
             List<Booking> bookings = square.bookingsForCustomer(squareCustomerId, since);
             if (bookings.isEmpty()) return List.of();
 
@@ -688,7 +695,7 @@ public class MarketingContactsService {
 
     private ZoneId resolveZone() {
         try {
-            String tz = square.locationTimeZone();
+            String tz = squareClientProvider.forBusiness(currentBusinessContext.id()).locationTimeZone();
             return tz != null && !tz.isBlank() ? ZoneId.of(tz) : ZoneOffset.UTC;
         } catch (RuntimeException e) {
             return ZoneOffset.UTC;

@@ -67,8 +67,11 @@ class MarketingAnalyticsServiceTest {
         // unstubbed customerIdsForPhone (any phone not explicitly given a duplicate) just contributes
         // nothing extra beyond the stored square_customer_id.
         when(square.customerIdsForPhone(anyString())).thenReturn(List.of());
+        com.salonreview.square.SquareClientProvider squareClientProvider =
+                mock(com.salonreview.square.SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(org.mockito.ArgumentMatchers.anyLong())).thenReturn(square);
         service = new MarketingAnalyticsService(
-                contactsRepository, contactsService, dashboardRepository, aggregator, square, salonConfig,
+                contactsRepository, contactsService, dashboardRepository, aggregator, squareClientProvider, salonConfig,
                 currentBusinessContext, adSpendEntryRepository, FIXED_CLOCK);
     }
 

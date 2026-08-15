@@ -1,7 +1,7 @@
 package com.salonreview.marketing;
 
 import com.salonreview.config.MarketingLandingProperties;
-import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import com.salonreview.util.TtlCache;
 import com.salonreview.web.dto.MarketingDashboardDto;
 import com.salonreview.web.dto.MarketingDashboardDto.VariantStat;
@@ -41,17 +41,20 @@ public class MarketingDashboardService {
     private final MarketingDashboardRepository repository;
     private final MarketingContactsService contactsService;
     private final MarketingLandingProperties landingProperties;
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final TtlCache cache = new TtlCache();
 
     public MarketingDashboardService(MarketingDashboardRepository repository,
                                       MarketingContactsService contactsService,
                                       MarketingLandingProperties landingProperties,
-                                      SquareClient square) {
+                                      SquareClientProvider squareClientProvider,
+                                      com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.repository = repository;
         this.contactsService = contactsService;
         this.landingProperties = landingProperties;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     /** The salon's real business timezone (e.g. "America/Los_Angeles"), resolved from Square's own
@@ -61,7 +64,7 @@ public class MarketingDashboardService {
      * back to UTC only if Square's location has no configured zone or the lookup fails. */
     private ZoneId resolveZone() {
         try {
-            String tz = square.locationTimeZone();
+            String tz = squareClientProvider.forBusiness(currentBusinessContext.id()).locationTimeZone();
             return tz != null && !tz.isBlank() ? ZoneId.of(tz) : ZoneOffset.UTC;
         } catch (RuntimeException e) {
             return ZoneOffset.UTC;
@@ -86,7 +89,7 @@ public class MarketingDashboardService {
      * pre-cutoff test traffic the owner explicitly hid.
      */
     public MarketingDashboardDto dashboard(String slug, Set<String> sources, LocalDate periodFrom, LocalDate periodTo) {
-        String key = "dashboard:" + slug + ":" + sources + ":" + periodFrom + ":" + periodTo;
+        String key = "dashboard:" + currentBusinessContext.id() + ":" + slug + ":" + sources + ":" + periodFrom + ":" + periodTo;
         return cache.get(key, CACHE_TTL, () -> computeDashboard(slug, sources, periodFrom, periodTo));
     }
 

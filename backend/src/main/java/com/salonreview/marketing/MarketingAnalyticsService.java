@@ -6,6 +6,7 @@ import com.salonreview.marketing.MarketingContactsService.FollowUpAppointment;
 import com.salonreview.repo.AdSpendEntryRepository;
 import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import com.salonreview.square.SquareMonthAggregator;
 import com.salonreview.square.SquareMonthAggregator.AttributedService;
 import com.salonreview.util.TtlCache;
@@ -101,7 +102,7 @@ public class MarketingAnalyticsService {
     private final MarketingContactsService contactsService;
     private final MarketingDashboardRepository dashboardRepository;
     private final SquareMonthAggregator aggregator;
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
     private final SalonConfigRepository salonConfig;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final AdSpendEntryRepository adSpendEntryRepository;
@@ -114,12 +115,12 @@ public class MarketingAnalyticsService {
             MarketingContactsService contactsService,
             MarketingDashboardRepository dashboardRepository,
             SquareMonthAggregator aggregator,
-            SquareClient square,
+            SquareClientProvider squareClientProvider,
             SalonConfigRepository salonConfig,
             com.salonreview.config.CurrentBusinessContext currentBusinessContext,
             AdSpendEntryRepository adSpendEntryRepository
     ) {
-        this(contactsRepository, contactsService, dashboardRepository, aggregator, square, salonConfig,
+        this(contactsRepository, contactsService, dashboardRepository, aggregator, squareClientProvider, salonConfig,
                 currentBusinessContext, adSpendEntryRepository, java.time.Clock.systemUTC());
     }
 
@@ -130,7 +131,7 @@ public class MarketingAnalyticsService {
             MarketingContactsService contactsService,
             MarketingDashboardRepository dashboardRepository,
             SquareMonthAggregator aggregator,
-            SquareClient square,
+            SquareClientProvider squareClientProvider,
             SalonConfigRepository salonConfig,
             com.salonreview.config.CurrentBusinessContext currentBusinessContext,
             AdSpendEntryRepository adSpendEntryRepository,
@@ -140,7 +141,7 @@ public class MarketingAnalyticsService {
         this.contactsService = contactsService;
         this.dashboardRepository = dashboardRepository;
         this.aggregator = aggregator;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
         this.salonConfig = salonConfig;
         this.currentBusinessContext = currentBusinessContext;
         this.clock = clock;
@@ -155,7 +156,7 @@ public class MarketingAnalyticsService {
      * caches the underlying call, so this is cheap to call per-request. */
     private ZoneId resolveZone() {
         try {
-            String tz = square.locationTimeZone();
+            String tz = squareClientProvider.forBusiness(currentBusinessContext.id()).locationTimeZone();
             return tz != null && !tz.isBlank() ? ZoneId.of(tz) : ZoneOffset.UTC;
         } catch (RuntimeException e) {
             return ZoneOffset.UTC;
@@ -181,7 +182,7 @@ public class MarketingAnalyticsService {
     /** Same as the 3-arg overload, optionally scoped to a single landing page slug (e.g. "home") —
      * {@code slug == null} pools every page together, identical to the original behavior. */
     public MarketingAnalyticsDto analytics(LocalDate from, LocalDate to, Set<String> sources, String slug) {
-        String key = "analytics:" + from + ":" + to + ":" + sources + ":" + slug;
+        String key = "analytics:" + currentBusinessContext.id() + ":" + from + ":" + to + ":" + sources + ":" + slug;
         return cache.get(key, CACHE_TTL, () -> computeAnalytics(from, to, sources, slug));
     }
 
@@ -268,7 +269,8 @@ public class MarketingAnalyticsService {
         Set<String> customerIds = byBooking.values().stream()
                 .map(group -> group.get(0).customerId()).filter(Objects::nonNull)
                 .collect(java.util.stream.Collectors.toSet());
-        Map<String, String> customerNames = square.customerNames(customerIds);
+        Map<String, String> customerNames = squareClientProvider.forBusiness(currentBusinessContext.id())
+                .customerNames(customerIds);
 
         List<CompletedAppointment> result = new ArrayList<>();
         for (List<AttributedService> group : byBooking.values()) {
@@ -317,7 +319,7 @@ public class MarketingAnalyticsService {
      * fetching the narrower raw range would silently drop those edge days from their bucket.
      */
     public MarketingAdsReportDto adsReport(LocalDate from, LocalDate to, Set<String> sources, String slug, PeriodKind periodKind) {
-        String key = "adsReport:" + from + ":" + to + ":" + sources + ":" + slug + ":" + periodKind;
+        String key = "adsReport:" + currentBusinessContext.id() + ":" + from + ":" + to + ":" + sources + ":" + slug + ":" + periodKind;
         return cache.get(key, CACHE_TTL, () -> computeAdsReport(from, to, sources, slug, periodKind));
     }
 
@@ -415,7 +417,7 @@ public class MarketingAnalyticsService {
      * {@link #resolveFollowUps}.
      */
     public MarketingLtvDto ltv(String slug) {
-        String key = "ltv:" + slug;
+        String key = "ltv:" + currentBusinessContext.id() + ":" + slug;
         return cache.get(key, CACHE_TTL, () -> computeLtv(slug));
     }
 
@@ -557,7 +559,8 @@ public class MarketingAnalyticsService {
         if (followUps.isEmpty()) return;
         Set<String> customerIds = followUps.stream()
                 .map(FollowUpAppointment::customerId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
-        Map<String, String> customerNames = customerIds.isEmpty() ? Map.of() : square.customerNames(customerIds);
+        Map<String, String> customerNames = customerIds.isEmpty() ? Map.of()
+                : squareClientProvider.forBusiness(currentBusinessContext.id()).customerNames(customerIds);
 
         for (FollowUpAppointment f : followUps) {
             var a = f.appointment();
@@ -936,7 +939,7 @@ public class MarketingAnalyticsService {
      * while Square is still recovering from the first one.
      */
     private Map<String, AdsCustomer> resolveAdsCustomers(Set<String> sources, String slug) {
-        String key = "adsCustomers:" + sources + ":" + slug;
+        String key = "adsCustomers:" + currentBusinessContext.id() + ":" + sources + ":" + slug;
         return cache.get(key, CACHE_TTL, () -> resolveAdsCustomersUncached(sources, slug));
     }
 
@@ -961,6 +964,11 @@ public class MarketingAnalyticsService {
                 // so the unscoped default path is untouched, including at the test-mock level.
                 : (slug == null ? contactsRepository.findAdsAttributedContacts(sources) : contactsRepository.findAdsAttributedContacts(sources, slug));
 
+        // Resolved once on the calling thread and captured by value below — SquareClientProvider
+        // takes an explicit businessId (unlike CurrentBusinessContext.id(), it isn't a ThreadLocal
+        // read), so the parallelStream's worker threads can safely share this one SquareClient
+        // instance without needing runAsAndGet.
+        SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
         record Resolved(String customerId, AdsCustomer meta) {}
         List<Resolved> resolved = contacts.parallelStream()
                 .flatMap(c -> {
@@ -1020,8 +1028,9 @@ public class MarketingAnalyticsService {
         // every single time. Day-level granularity is more than precise enough for a 400-day
         // lookback anyway.
         Instant since = clock.instant().truncatedTo(java.time.temporal.ChronoUnit.DAYS).minus(BOOKING_HISTORY_LOOKBACK);
+        SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
         return customerIds.parallelStream()
-                .collect(java.util.stream.Collectors.toMap(id -> id, id -> bookingsOrEmpty(id, since)));
+                .collect(java.util.stream.Collectors.toMap(id -> id, id -> bookingsOrEmpty(square, id, since)));
     }
 
     private Set<String> freshCustomerIds(Map<String, AdsCustomer> adsCustomers,
@@ -1035,7 +1044,7 @@ public class MarketingAnalyticsService {
 
     private Map<String, Instant> fetchCustomerCreatedAtsOrEmpty(Set<String> customerIds) {
         try {
-            return square.customerCreatedAts(customerIds);
+            return squareClientProvider.forBusiness(currentBusinessContext.id()).customerCreatedAts(customerIds);
         } catch (RuntimeException ex) {
             log.warn("Failed to fetch Square customer creation dates; falling back to booking-history-only "
                     + "freshness check", ex);
@@ -1174,6 +1183,7 @@ public class MarketingAnalyticsService {
                                 .map(SquareClient.AppointmentSegment::serviceVariationId))
                 .filter(Objects::nonNull)
                 .toList();
+        SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
         Map<String, BigDecimal> prices = square.catalogPrices(variationIds);
         Map<String, String> serviceNames = square.catalogNames(variationIds);
         Map<String, String> customerNames = square.customerNames(adsCustomerIds);
@@ -1234,6 +1244,7 @@ public class MarketingAnalyticsService {
                                 .map(SquareClient.AppointmentSegment::serviceVariationId))
                 .filter(Objects::nonNull)
                 .toList();
+        SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
         Map<String, BigDecimal> prices = square.catalogPrices(variationIds);
         Map<String, String> serviceNames = square.catalogNames(variationIds);
         Map<String, String> customerNames = square.customerNames(adsCustomerIds);
@@ -1269,7 +1280,7 @@ public class MarketingAnalyticsService {
 
     /** Best-effort: a customer whose Square booking lookup fails is simply excluded from the
      * upcoming-appointments list rather than failing the whole analytics response. */
-    private List<SquareClient.Booking> bookingsOrEmpty(String customerId, Instant since) {
+    private List<SquareClient.Booking> bookingsOrEmpty(SquareClient square, String customerId, Instant since) {
         try {
             return square.bookingsForCustomer(customerId, since);
         } catch (RuntimeException ex) {

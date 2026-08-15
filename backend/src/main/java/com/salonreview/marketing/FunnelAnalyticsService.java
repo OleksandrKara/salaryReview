@@ -1,7 +1,6 @@
 package com.salonreview.marketing;
 
 import com.salonreview.marketing.FunnelAnalyticsRepository.RawFunnelStep;
-import com.salonreview.square.SquareClient;
 import com.salonreview.util.TtlCache;
 import com.salonreview.web.dto.FunnelDashboardDto;
 import com.salonreview.web.dto.FunnelDashboardDto.FunnelStepStat;
@@ -41,22 +40,25 @@ public class FunnelAnalyticsService {
 
     private final FunnelAnalyticsRepository repository;
     private final MarketingDashboardRepository landingPageRepository;
-    private final SquareClient square;
+    private final com.salonreview.square.SquareClientProvider squareClientProvider;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final TtlCache cache = new TtlCache();
 
     public FunnelAnalyticsService(FunnelAnalyticsRepository repository,
                                    MarketingDashboardRepository landingPageRepository,
-                                   SquareClient square) {
+                                   com.salonreview.square.SquareClientProvider squareClientProvider,
+                                   com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.repository = repository;
         this.landingPageRepository = landingPageRepository;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     /** The salon's real business timezone, resolved from Square's own location config — see
      * MarketingDashboardService#resolveZone for the identical pattern used across this codebase. */
     private ZoneId resolveZone() {
         try {
-            String tz = square.locationTimeZone();
+            String tz = squareClientProvider.forBusiness(currentBusinessContext.id()).locationTimeZone();
             return tz != null && !tz.isBlank() ? ZoneId.of(tz) : ZoneOffset.UTC;
         } catch (RuntimeException e) {
             return ZoneOffset.UTC;
@@ -78,7 +80,7 @@ public class FunnelAnalyticsService {
      * traffic the owner explicitly hid.
      */
     public List<FunnelDashboardDto> funnel(String slug, Set<String> sources, LocalDate periodFrom, LocalDate periodTo) {
-        String key = "funnel:" + slug + ":" + sources + ":" + periodFrom + ":" + periodTo;
+        String key = "funnel:" + currentBusinessContext.id() + ":" + slug + ":" + sources + ":" + periodFrom + ":" + periodTo;
         return cache.get(key, CACHE_TTL, () -> computeFunnel(slug, sources, periodFrom, periodTo));
     }
 

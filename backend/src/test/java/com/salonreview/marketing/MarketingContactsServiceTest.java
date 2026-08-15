@@ -73,7 +73,10 @@ class MarketingContactsServiceTest {
         when(currentBusinessContext.runAsAndGet(org.mockito.ArgumentMatchers.anyLong(),
                 org.mockito.ArgumentMatchers.<java.util.function.Supplier<Object>>any()))
                 .thenAnswer(inv -> ((java.util.function.Supplier<?>) inv.getArgument(1)).get());
-        service = new MarketingContactsService(repository, squareLinks, square, aggregator, salonConfig,
+        com.salonreview.square.SquareClientProvider squareClientProvider =
+                mock(com.salonreview.square.SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(org.mockito.ArgumentMatchers.anyLong())).thenReturn(square);
+        service = new MarketingContactsService(repository, squareLinks, squareClientProvider, aggregator, salonConfig,
                 currentBusinessContext, syncStatus,
                 new RebookingProperties(), smsMessageLogService, providerVisits, 4);
         when(repository.findSubmissionHistory(any())).thenReturn(List.of());
