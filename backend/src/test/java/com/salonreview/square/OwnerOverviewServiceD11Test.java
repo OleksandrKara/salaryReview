@@ -72,7 +72,7 @@ class OwnerOverviewServiceD11Test {
                 1L, "Anna", 0, false, false, false, half, empty, card, BigDecimal.ZERO,
                 null, null, null, null, 0, 0, 0, 0, 0, 0);
         CommissionConfig config = new CommissionConfig(60, new BigDecimal("0.45"), new BigDecimal("0.50"),
-                new BigDecimal("0.10"));
+                new BigDecimal("0.10"), true);
         return new SettlementPreviewService.SettlementPreview(2025, 1, "America/Los_Angeles", config,
                 BigDecimal.ZERO, List.of(payout), new SquareMonthAggregator.Diag(), "2025-01-31T00:00:00Z");
     }

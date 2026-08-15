@@ -26,4 +26,23 @@ public interface BusinessRepository extends JpaRepository<Business, Long> {
         }
         return all.get(0);
     }
+
+    /**
+     * Resolves Business A specifically, for the handful of SMS/webhook automation call sites
+     * (see design.md D9) that read/write tables with no {@code business_id} column of their own yet
+     * ({@code same_day_rebooking_group_membership} and friends) and share a still-global,
+     * single-row {@code twilio_sms_config} — there's no per-business Twilio number to route a
+     * second business's texts through yet, so unlike {@link #sole()} this deliberately keeps
+     * resolving to Business A once a second business exists, rather than failing every one of
+     * these schedulers for both businesses. Matches design.md's Open Question 2 resolution: SMS/
+     * review-trigger automation stays off for every business onboarded after Business A until
+     * per-business Twilio + {@code business_feature} gating (Phase 3.7) actually ships — this is
+     * that "off" behavior made explicit instead of an unhandled crash.
+     */
+    default Business legacySmsBusiness() {
+        return findByShortCode("akluxnails")
+                .orElseThrow(() -> new IllegalStateException(
+                        "Business A (short_code 'akluxnails') not found — legacySmsBusiness() is a"
+                                + " stopgap tied to that specific business until Phase 3.7 ships"));
+    }
 }

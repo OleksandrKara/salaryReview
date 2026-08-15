@@ -84,8 +84,8 @@ public class SameDayRebookingScheduler {
     @Scheduled(fixedDelay = 15_000, initialDelay = 15_000)
     @SchedulerLock(name = "SameDayRebookingScheduler_sendDueRebookingNudges", lockAtLeastFor = "PT10S", lockAtMostFor = "PT2M")
     public void sendDueRebookingNudges() {
-        // Same single-business guard as LeadFollowUpScheduler.
-        SquareClient square = squareClientProvider.forBusiness(businesses.sole().getId());
+        // See BusinessRepository#legacySmsBusiness, same as LeadFollowUpScheduler.
+        SquareClient square = squareClientProvider.forBusiness(businesses.legacySmsBusiness().getId());
         Instant now = Instant.now();
         List<SameDayRebookingSend> due = repository.findByStateAndSendDueAtBefore(
                 SameDayRebookingSend.STATE_AWAITING_SEND, now);

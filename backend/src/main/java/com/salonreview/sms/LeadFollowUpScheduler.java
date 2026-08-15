@@ -69,10 +69,10 @@ public class LeadFollowUpScheduler {
     @Scheduled(fixedDelay = 15_000, initialDelay = 15_000)
     @SchedulerLock(name = "LeadFollowUpScheduler_sendDueFollowUps", lockAtLeastFor = "PT10S", lockAtMostFor = "PT2M")
     public void sendDueFollowUps() {
-        // Same single-business guard as SameDayRebookingGroupExpiryScheduler — marketing.contacts
-        // has no business_id of its own yet, so there's no correct per-business Square routing
-        // until that schema is scoped too (tracked separately from this migration).
-        SquareClient square = squareClientProvider.forBusiness(businesses.sole().getId());
+        // See BusinessRepository#legacySmsBusiness — marketing.contacts has no business_id of its
+        // own yet, so there's no correct per-business Square routing until that schema is scoped
+        // too (tracked separately from this migration).
+        SquareClient square = squareClientProvider.forBusiness(businesses.legacySmsBusiness().getId());
         Instant now = Instant.now();
         List<RawContact> pending = contactsRepository.findPendingFollowUp(now.minus(MIN_AGE), now.minus(MAX_AGE));
         for (RawContact contact : pending) {

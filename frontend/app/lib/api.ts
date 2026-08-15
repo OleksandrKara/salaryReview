@@ -27,6 +27,12 @@ import type {
   RagAgentConfigDto,
   TelegramSettingsDto,
   TelegramSettingsUpdateRequest,
+  SquareConnectionDto,
+  SquareConnectionUpdateRequest,
+  BusinessSettingsDto,
+  BusinessSettingsUpdateRequest,
+  PlatformBusinessDto,
+  CreateBusinessRequest,
   TwilioSmsSettingsDto,
   TwilioSmsSettingsUpdateRequest,
   SmsAutomationSummary,
@@ -214,6 +220,24 @@ export const api = {
 
   updateTelegramSettings: (body: TelegramSettingsUpdateRequest) =>
     proxyJson<TelegramSettingsDto>(`/api/owner/settings/telegram`, 'PUT', body),
+
+  // Square connection settings (owner) — Phase 6.4.
+  getSquareConnection: () => proxyGet<SquareConnectionDto>(`/api/owner/settings/square`),
+
+  updateSquareConnection: (body: SquareConnectionUpdateRequest) =>
+    proxyJson<SquareConnectionDto>(`/api/owner/settings/square`, 'PUT', body),
+
+  // Business name/timezone + financial config (owner).
+  getBusinessSettings: () => proxyGet<BusinessSettingsDto>(`/api/owner/settings/business`),
+
+  updateBusinessSettings: (body: BusinessSettingsUpdateRequest) =>
+    proxyJson<BusinessSettingsDto>(`/api/owner/settings/business`, 'PUT', body),
+
+  // Platform-level: create/list businesses (Phase 5.1).
+  listBusinesses: () => proxyGet<PlatformBusinessDto[]>(`/api/platform/businesses`),
+
+  createBusiness: (body: CreateBusinessRequest) =>
+    proxyJson<PlatformBusinessDto>(`/api/platform/businesses`, 'POST', body),
 
   // Twilio SMS alert settings (owner).
   getTwilioSmsSettings: () => proxyGet<TwilioSmsSettingsDto>(`/api/owner/settings/sms`),

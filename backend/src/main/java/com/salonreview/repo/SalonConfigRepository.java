@@ -16,4 +16,8 @@ import java.util.Optional;
  */
 public interface SalonConfigRepository extends Repository<SalonConfig, Integer> {
     Optional<SalonConfig> findByBusinessId(Long businessId);
+
+    /** Explicitly declared (not inherited from JpaRepository, see this interface's own doc) so a
+     * second business's row can be created via the Business Settings admin form (Phase 6.4). */
+    SalonConfig save(SalonConfig config);
 }

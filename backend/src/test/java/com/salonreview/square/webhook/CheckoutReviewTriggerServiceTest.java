@@ -41,7 +41,7 @@ class CheckoutReviewTriggerServiceTest {
         square = mock(SquareClient.class);
         SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
         BusinessRepository businesses = mock(BusinessRepository.class);
-        when(businesses.sole()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
+        when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
                 .timezone("UTC").active(true).build());
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         repository = mock(SmsReplyFlowRepository.class);

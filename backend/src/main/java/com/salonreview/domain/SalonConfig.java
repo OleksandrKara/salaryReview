@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 public class SalonConfig {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
     @Column(name = "business_id", nullable = false, unique = true)
@@ -36,8 +37,14 @@ public class SalonConfig {
     @Column(name = "card_tip_fee_rate", nullable = false, precision = 5, scale = 4)
     private BigDecimal cardTipFeeRate;
 
+    /** See {@link CommissionConfig#tierEnabled()}'s own doc — false means flat baseCommissionRate,
+     * no exceptions, for businesses that don't run the tier program at all. */
+    @Column(name = "tier_enabled", nullable = false)
+    private boolean tierEnabled;
+
     /** Build the commission engine's config from the stored settings. */
     public CommissionConfig toCommissionConfig() {
-        return new CommissionConfig(tierServiceThreshold, baseCommissionRate, tierCommissionRate, cardTipFeeRate);
+        return new CommissionConfig(tierServiceThreshold, baseCommissionRate, tierCommissionRate, cardTipFeeRate,
+                tierEnabled);
     }
 }

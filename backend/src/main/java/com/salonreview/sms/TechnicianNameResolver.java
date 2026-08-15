@@ -52,9 +52,9 @@ public class TechnicianNameResolver {
             return Optional.empty();
         }
         try {
-            // Same single-business guard as every scheduler in this package that calls this
-            // resolver — no business_id on the caller side to route on yet.
-            SquareClient square = squareClientProvider.forBusiness(businesses.sole().getId());
+            // See BusinessRepository#legacySmsBusiness, same as every scheduler in this package
+            // that calls this resolver — no business_id on the caller side to route on yet.
+            SquareClient square = squareClientProvider.forBusiness(businesses.legacySmsBusiness().getId());
             return square.bookingsForCustomer(customerId, asOf.minus(LOOKBACK)).stream()
                     .filter(SquareBookingFilters::didHappen)
                     .filter(b -> alreadyHappened(b, asOf))

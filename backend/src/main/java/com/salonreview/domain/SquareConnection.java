@@ -35,6 +35,11 @@ public class SquareConnection {
     @Column(name = "location_id", nullable = false)
     private String locationId;
 
+    /** Not consumed by any current API call — see V93's own migration comment. Purely
+     * informational, stored so the owner has one place to see everything about this connection. */
+    @Column(name = "application_id")
+    private String applicationId;
+
     /** Nullable — Square doesn't require it upfront; see SquareClient.Location's own note. */
     @Column(name = "merchant_id")
     private String merchantId;

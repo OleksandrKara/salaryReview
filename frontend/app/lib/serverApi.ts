@@ -10,6 +10,9 @@ import type {
   Me,
   Sop,
   TelegramSettingsDto,
+  SquareConnectionDto,
+  BusinessSettingsDto,
+  PlatformBusinessDto,
   TwilioSmsSettingsDto,
   SmsAutomationSummary,
   SmsMessageDto,
@@ -131,6 +134,12 @@ export const serverApi = {
   listUsers: () => serverFetch<AppUser[]>(`/api/users`),
 
   getTelegramSettings: () => serverFetch<TelegramSettingsDto>(`/api/owner/settings/telegram`),
+
+  getSquareConnection: () => serverFetch<SquareConnectionDto>(`/api/owner/settings/square`),
+
+  getBusinessSettings: () => serverFetch<BusinessSettingsDto>(`/api/owner/settings/business`),
+
+  listBusinesses: () => serverFetch<PlatformBusinessDto[]>(`/api/platform/businesses`),
 
   getTwilioSmsSettings: () => serverFetch<TwilioSmsSettingsDto>(`/api/owner/settings/sms`),
 

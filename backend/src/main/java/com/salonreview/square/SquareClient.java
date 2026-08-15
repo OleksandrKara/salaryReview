@@ -151,11 +151,21 @@ public class SquareClient {
     /** IANA timezone of the configured location (e.g. "America/Los_Angeles"), for local-day bucketing. */
     public String locationTimeZone() {
         return cached("locationTimeZone", Duration.ofHours(1), () -> {
+            Location loc = location();
+            return loc == null ? null : loc.timezone();
+        });
+    }
+
+    /** The configured location's own record — used by the Square-connect flow to validate a
+     * token/location pair (a bad token or wrong id fails this call) and capture merchantId in the
+     * same round trip, not just to read the timezone. */
+    public Location location() {
+        return cached("location", Duration.ofHours(1), () -> {
             LocationResponse resp = throttled(() -> http.get()
                     .uri("/v2/locations/{id}", locationId)
                     .retrieve()
                     .body(LocationResponse.class));
-            return resp == null || resp.location() == null ? null : resp.location().timezone();
+            return resp == null ? null : resp.location();
         });
     }
 
@@ -880,7 +890,7 @@ public class SquareClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record Location(String id, String name, String timezone, String currency) {}
+    public record Location(String id, String name, String timezone, String currency, String merchantId) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)

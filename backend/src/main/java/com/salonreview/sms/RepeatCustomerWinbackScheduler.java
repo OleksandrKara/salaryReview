@@ -120,8 +120,8 @@ public class RepeatCustomerWinbackScheduler {
     @Scheduled(cron = "0 0 10 * * *", zone = "America/Los_Angeles")
     @SchedulerLock(name = "RepeatCustomerWinbackScheduler_sendDueWinbacks", lockAtLeastFor = "PT10S", lockAtMostFor = "PT10M")
     public void sendDueWinbacks() {
-        // Same single-business guard as LapsedCustomerWinbackScheduler.
-        SquareClient square = squareClientProvider.forBusiness(businesses.sole().getId());
+        // See BusinessRepository#legacySmsBusiness, same as LapsedCustomerWinbackScheduler.
+        SquareClient square = squareClientProvider.forBusiness(businesses.legacySmsBusiness().getId());
         Instant cooldownCutoff = Instant.now().minus(COOLDOWN_DAYS, ChronoUnit.DAYS);
         for (RepeatCustomerWinbackEligibilityRepository.EligibleCustomer customer : eligibilityRepository.findEligibleCustomers()) {
             if (sendRepository.existsBySquareCustomerIdAndStateAndCreatedAtAfter(

@@ -91,9 +91,9 @@ public class LapsedCustomerWinbackScheduler {
     @Scheduled(cron = "0 0 10 * * *", zone = "America/Los_Angeles")
     @SchedulerLock(name = "LapsedCustomerWinbackScheduler_sendDueWinbacks", lockAtLeastFor = "PT10S", lockAtMostFor = "PT10M")
     public void sendDueWinbacks() {
-        // Same single-business guard as SameDayRebookingGroupExpiryScheduler — the eligibility
-        // query below has no business_id of its own yet.
-        SquareClient square = squareClientProvider.forBusiness(businesses.sole().getId());
+        // See BusinessRepository#legacySmsBusiness — the eligibility query below has no
+        // business_id of its own yet, same as SameDayRebookingGroupExpiryScheduler.
+        SquareClient square = squareClientProvider.forBusiness(businesses.legacySmsBusiness().getId());
         for (LapsedCustomerWinbackEligibilityRepository.EligibleCustomer customer : eligibilityRepository.findEligibleCustomers()) {
             if (sendRepository.existsBySquareCustomerId(customer.squareCustomerId())) {
                 continue; // belt-and-suspenders vs. the eligibility query's own NOT EXISTS

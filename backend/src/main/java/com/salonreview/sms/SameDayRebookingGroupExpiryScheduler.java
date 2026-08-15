@@ -48,14 +48,13 @@ public class SameDayRebookingGroupExpiryScheduler {
     @Scheduled(fixedDelay = 60_000, initialDelay = 15_000)
     @SchedulerLock(name = "SameDayRebookingGroupExpiryScheduler_removeExpiredMemberships", lockAtLeastFor = "PT10S", lockAtMostFor = "PT3M")
     public void removeExpiredMemberships() {
-        // Same single-business guard as BusinessRepository#sole's own doc comment: the underlying
-        // same_day_rebooking_group_membership row (and every other SMS-scheduler table read in this
-        // package) has no business_id of its own yet, so there is no correct way to route this
-        // customer to the right Square account once a second business exists — failing loudly here
-        // is safer than silently processing every business's rows against business A's Square
-        // account. Scoping the sms/marketing schedulers is tracked separately from the
-        // SquareClientProvider migration itself.
-        SquareClient square = squareClientProvider.forBusiness(businesses.sole().getId());
+        // See BusinessRepository#legacySmsBusiness: the underlying same_day_rebooking_group_membership
+        // row (and every other SMS-scheduler table read in this package) has no business_id of its
+        // own yet, so there is no correct way to route this customer to a second business's Square
+        // account — this always resolves to business A specifically rather than guessing. Scoping
+        // the sms/marketing schedulers is tracked separately from the SquareClientProvider migration
+        // itself (design.md D9 / Phase 3.7).
+        SquareClient square = squareClientProvider.forBusiness(businesses.legacySmsBusiness().getId());
         Instant now = Instant.now();
         List<SameDayRebookingGroupMembership> due = repository.findByRemovedAtIsNullAndExpiresAtBefore(now);
         for (SameDayRebookingGroupMembership membership : due) {

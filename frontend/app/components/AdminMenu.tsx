@@ -43,6 +43,9 @@ function linksFor(role: Role): NavLink[] {
       { href: '/admin/documents', key: 'navStaffDocuments' },
       { href: '/owner/settings/telegram', key: 'navTelegramSettings' },
       { href: '/owner/settings/sms', key: 'navSmsSettings' },
+      { href: '/owner/settings/square', key: 'navSquareSettings' },
+      { href: '/owner/settings/business', key: 'navBusinessSettings' },
+      { href: '/owner/settings/businesses', key: 'navBusinesses' },
     ];
   }
   if (role === 'MANAGER') {

@@ -51,7 +51,7 @@ class ManualAdjustmentTest {
                            SquareClient square) {
         SalonConfig sc = mock(SalonConfig.class);
         when(sc.toCommissionConfig()).thenReturn(new CommissionConfig(60,
-                new BigDecimal("0.4500"), new BigDecimal("0.5000"), new BigDecimal("0.0350")));
+                new BigDecimal("0.4500"), new BigDecimal("0.5000"), new BigDecimal("0.0350"), true));
         when(sc.getServicePriceCutoff()).thenReturn(new BigDecimal("50.00"));
         when(sc.getCardTipFeeRate()).thenReturn(new BigDecimal("0.0350"));
         when(sc.getOwnerShortName()).thenReturn("AK");
