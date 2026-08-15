@@ -44,19 +44,24 @@ import java.util.Optional;
 @Service
 public class SquareMonthAggregator {
 
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
     private final CashNoteParser cashNotes;
     private final com.salonreview.repo.OwnerCustomerRepository ownerCustomers;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
-    public SquareMonthAggregator(SquareClient square, CashNoteParser cashNotes,
-                                 com.salonreview.repo.OwnerCustomerRepository ownerCustomers) {
-        this.square = square;
+    public SquareMonthAggregator(SquareClientProvider squareClientProvider, CashNoteParser cashNotes,
+                                 com.salonreview.repo.OwnerCustomerRepository ownerCustomers,
+                                 com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
+        this.squareClientProvider = squareClientProvider;
         this.cashNotes = cashNotes;
         this.ownerCustomers = ownerCustomers;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     public MonthAggregation aggregate(int year, int month, BigDecimal priceCutoff) {
-        ZoneId zone = resolveZone();
+        Long businessId = currentBusinessContext.id();
+        SquareClient square = squareClientProvider.forBusiness(businessId);
+        ZoneId zone = resolveZone(square);
         YearMonth ym = YearMonth.of(year, month);
         // Pad the query window by a day each side so timezone-boundary events aren't missed.
         Instant from = ym.atDay(1).minusDays(1).atStartOfDay(zone).toInstant();
@@ -79,7 +84,7 @@ public class SquareMonthAggregator {
         // Square customers who are owner(s)/family: services to them aren't charged (no order), but the
         // provider is still owed their commission — see the owner-comp pass below. Fetched before the
         // canonicalization pass so these ids get resolved right alongside every booking/order id.
-        java.util.Set<String> rawOwnerCustomerIds = ownerCustomers.findAll().stream()
+        java.util.Set<String> rawOwnerCustomerIds = ownerCustomers.findAllByBusinessId(businessId).stream()
                 .map(com.salonreview.domain.OwnerCustomer::getSquareCustomerId)
                 .filter(id -> id != null && !id.isBlank())
                 .collect(java.util.stream.Collectors.toSet());
@@ -391,7 +396,7 @@ public class SquareMonthAggregator {
                 .toList();
 
         // Label the (small) set of unattributed lines with their customer name for the trace view.
-        List<UnmatchedLine> namedUnmatched = withCustomerNames(unmatched);
+        List<UnmatchedLine> namedUnmatched = withCustomerNames(square, unmatched);
 
         // --- Orphan payments: completed Square payments with no linked Order at all, so the
         // order-based matching above never saw them (a card charged directly against a customer's
@@ -403,7 +408,7 @@ public class SquareMonthAggregator {
                 payments, knownOrderIds, bookingHintsByCustomer, nameById, zone, year, month);
         diag.orphanPayments = orphanPayments.size();
         for (OrphanPayment op : orphanPayments) diag.orphanPaymentRevenue = diag.orphanPaymentRevenue.add(op.amount());
-        List<OrphanPayment> namedOrphanPayments = withOrphanCustomerNames(orphanPayments);
+        List<OrphanPayment> namedOrphanPayments = withOrphanCustomerNames(square, orphanPayments);
 
         // A completed order from the same customer near the appointment day means the visit WAS paid —
         // even when our strict payout matcher (customer + exact service SKU, within 2 days) couldn't tie
@@ -552,7 +557,7 @@ public class SquareMonthAggregator {
     }
 
     /** Resolve customer names for orphan payments (one bulk Square call); best-effort. */
-    private List<OrphanPayment> withOrphanCustomerNames(List<OrphanPayment> payments) {
+    private List<OrphanPayment> withOrphanCustomerNames(SquareClient square, List<OrphanPayment> payments) {
         if (payments.isEmpty()) return payments;
         Map<String, String> names;
         try {
@@ -597,7 +602,7 @@ public class SquareMonthAggregator {
     }
 
     /** Resolve customer names for the unattributed lines (one bulk Square call); best-effort. */
-    private List<UnmatchedLine> withCustomerNames(List<UnmatchedLine> lines) {
+    private List<UnmatchedLine> withCustomerNames(SquareClient square, List<UnmatchedLine> lines) {
         if (lines.isEmpty()) return lines;
         Map<String, String> names;
         try {
@@ -615,7 +620,7 @@ public class SquareMonthAggregator {
 
     // --- helpers ---
 
-    private ZoneId resolveZone() {
+    private ZoneId resolveZone(SquareClient square) {
         try {
             String tz = square.locationTimeZone();
             return tz != null && !tz.isBlank() ? ZoneId.of(tz) : ZoneOffset.UTC;

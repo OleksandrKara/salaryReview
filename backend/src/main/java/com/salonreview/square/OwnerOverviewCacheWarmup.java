@@ -26,40 +26,39 @@ public class OwnerOverviewCacheWarmup {
 
     private final OwnerOverviewService overview;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
-    private final com.salonreview.repo.BusinessRepository businesses;
+    private final com.salonreview.repo.SquareConnectionRepository connections;
 
     public OwnerOverviewCacheWarmup(OwnerOverviewService overview,
                                      com.salonreview.config.CurrentBusinessContext currentBusinessContext,
-                                     com.salonreview.repo.BusinessRepository businesses) {
+                                     com.salonreview.repo.SquareConnectionRepository connections) {
         this.overview = overview;
         this.currentBusinessContext = currentBusinessContext;
-        this.businesses = businesses;
+        this.connections = connections;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     public void warmOnStartup() {
         Thread t = new Thread(() -> {
-            try {
-                // See BusinessRepository#sole's doc comment — Phase 3 replaces this with real
-                // per-business iteration. Resolved inside this try/catch, same as every other
-                // failure on this thread: a business-resolution hiccup at boot must not crash the
-                // app any more than a Square hiccup does — this is a cache warm-up, not
-                // load-bearing.
-                Long businessId = businesses.sole().getId();
-                currentBusinessContext.runAs(businessId, () -> {
-                    LocalDate today = LocalDate.now(ZoneOffset.UTC);
-                    int curYear = today.getYear();
-                    int curMonth = today.getMonthValue();
-                    int toMonth = curMonth == 1 ? 12 : curMonth - 1;
-                    int toYear = curMonth == 1 ? curYear - 1 : curYear;
-                    LocalDate from = LocalDate.of(toYear, toMonth, 1).minusMonths(11);
+            for (com.salonreview.domain.SquareConnection connection : connections.findAll()) {
+                Long businessId = connection.getBusinessId();
+                try {
+                    currentBusinessContext.runAs(businessId, () -> {
+                        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+                        int curYear = today.getYear();
+                        int curMonth = today.getMonthValue();
+                        int toMonth = curMonth == 1 ? 12 : curMonth - 1;
+                        int toYear = curMonth == 1 ? curYear - 1 : curYear;
+                        LocalDate from = LocalDate.of(toYear, toMonth, 1).minusMonths(11);
 
-                    log.info("Owner overview cache warm-up — {}-{} to {}-{}", from.getYear(), from.getMonthValue(), toYear, toMonth);
-                    overview.overview(from.getYear(), from.getMonthValue(), toYear, toMonth);
-                    log.info("Owner overview cache warm-up complete");
-                });
-            } catch (RuntimeException e) {
-                log.warn("Owner overview cache warm-up failed (the first real visit will compute it instead): {}", e.toString());
+                        log.info("Owner overview cache warm-up for business {} — {}-{} to {}-{}",
+                                businessId, from.getYear(), from.getMonthValue(), toYear, toMonth);
+                        overview.overview(from.getYear(), from.getMonthValue(), toYear, toMonth);
+                        log.info("Owner overview cache warm-up complete for business {}", businessId);
+                    });
+                } catch (RuntimeException e) {
+                    log.warn("Owner overview cache warm-up failed for business {} (the first real visit will "
+                            + "compute it instead): {}", businessId, e.toString());
+                }
             }
         }, "owner-overview-cache-warmup");
         t.setDaemon(true);

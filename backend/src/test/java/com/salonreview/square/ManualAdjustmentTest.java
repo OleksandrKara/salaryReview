@@ -37,8 +37,10 @@ class ManualAdjustmentTest {
         com.salonreview.config.CurrentBusinessContext currentBusinessContext =
                 mock(com.salonreview.config.CurrentBusinessContext.class);
         when(currentBusinessContext.id()).thenReturn(1L);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(org.mockito.ArgumentMatchers.anyLong())).thenReturn(square);
         return new SettlementPreviewService(aggregator, new TierCommissionEngine(),
-                salonConfigRepo, directory, tierGrants, feedback, square, mock(PrepaidRedemptionRepository.class),
+                salonConfigRepo, directory, tierGrants, feedback, squareClientProvider, mock(PrepaidRedemptionRepository.class),
                 mock(PrepaidPackageRepository.class), providerRepo, mock(RedoRepository.class), manualAdjustments,
                 mock(NoShowFeeService.class), mock(SuspiciousBookingService.class), mock(CancelledAppointmentService.class),
                 currentBusinessContext);

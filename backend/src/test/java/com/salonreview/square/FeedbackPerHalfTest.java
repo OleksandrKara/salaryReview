@@ -39,6 +39,8 @@ class FeedbackPerHalfTest {
         TierGrantRepository tierGrants = mock(TierGrantRepository.class);
         SettlementFeedbackRepository feedback = mock(SettlementFeedbackRepository.class);
         SquareClient square = mock(SquareClient.class);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(org.mockito.ArgumentMatchers.anyLong())).thenReturn(square);
         PrepaidRedemptionRepository prepaidRedemptions = mock(PrepaidRedemptionRepository.class);
         PrepaidPackageRepository prepaidPackages = mock(PrepaidPackageRepository.class);
         ProviderRepository providerRepo = mock(ProviderRepository.class);
@@ -47,7 +49,7 @@ class FeedbackPerHalfTest {
         when(currentBusinessContext.id()).thenReturn(1L);
 
         SettlementPreviewService service = new SettlementPreviewService(aggregator, new TierCommissionEngine(),
-                salonConfigRepo, directory, tierGrants, feedback, square, prepaidRedemptions, prepaidPackages, providerRepo, mock(com.salonreview.repo.RedoRepository.class), mock(com.salonreview.repo.ManualAdjustmentRepository.class), mock(com.salonreview.square.NoShowFeeService.class), mock(com.salonreview.square.SuspiciousBookingService.class), mock(com.salonreview.square.CancelledAppointmentService.class), currentBusinessContext);
+                salonConfigRepo, directory, tierGrants, feedback, squareClientProvider, prepaidRedemptions, prepaidPackages, providerRepo, mock(com.salonreview.repo.RedoRepository.class), mock(com.salonreview.repo.ManualAdjustmentRepository.class), mock(com.salonreview.square.NoShowFeeService.class), mock(com.salonreview.square.SuspiciousBookingService.class), mock(com.salonreview.square.CancelledAppointmentService.class), currentBusinessContext);
 
         SalonConfig sc = mock(SalonConfig.class);
         when(sc.toCommissionConfig()).thenReturn(new CommissionConfig(60,

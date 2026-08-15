@@ -30,6 +30,9 @@ public class NoShowFeeOverride {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "business_id", nullable = false)
+    private Long businessId;
+
     @Column(name = "square_booking_id", nullable = false, unique = true)
     private String squareBookingId;
 

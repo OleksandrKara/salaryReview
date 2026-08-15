@@ -32,7 +32,7 @@ class SuspiciousBookingServiceTest {
         repo = mock(SuspiciousBookingClearanceRepository.class);
         service = new SuspiciousBookingService(
                 mock(SquareMonthAggregator.class),
-                mock(SquareClient.class),
+                mock(SquareClientProvider.class),
                 mock(SalonConfigRepository.class),
                 mock(ProviderDirectory.class),
                 repo,

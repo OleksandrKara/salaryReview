@@ -73,24 +73,24 @@ public class ManagerTimeService {
     private final ManagerTimeEntryRepository entries;
     private final ManagerPayRateRepository rates;
     private final AppUserRepository users;
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
     private final Clock clock;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
     @Autowired
     public ManagerTimeService(ManagerTimeEntryRepository entries, ManagerPayRateRepository rates,
-                              AppUserRepository users, SquareClient square,
+                              AppUserRepository users, SquareClientProvider squareClientProvider,
                               com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
-        this(entries, rates, users, square, Clock.systemUTC(), currentBusinessContext);
+        this(entries, rates, users, squareClientProvider, Clock.systemUTC(), currentBusinessContext);
     }
 
     ManagerTimeService(ManagerTimeEntryRepository entries, ManagerPayRateRepository rates,
-                       AppUserRepository users, SquareClient square, Clock clock,
+                       AppUserRepository users, SquareClientProvider squareClientProvider, Clock clock,
                        com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.entries = entries;
         this.rates = rates;
         this.users = users;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
         this.clock = clock;
         this.currentBusinessContext = currentBusinessContext;
     }
@@ -481,7 +481,7 @@ public class ManagerTimeService {
 
     private ZoneId zone() {
         try {
-            String tz = square.locationTimeZone();
+            String tz = squareClientProvider.forBusiness(currentBusinessContext.id()).locationTimeZone();
             return tz != null && !tz.isBlank() ? ZoneId.of(tz) : ZoneOffset.UTC;
         } catch (RuntimeException e) {
             return ZoneOffset.UTC;

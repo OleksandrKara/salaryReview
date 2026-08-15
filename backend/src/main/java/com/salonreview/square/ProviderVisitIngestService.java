@@ -37,16 +37,16 @@ public class ProviderVisitIngestService {
     private static final int REBOOK_HORIZON_DAYS = 90; // how far ahead we look for a future booking
 
     private final SquareMonthAggregator aggregator;
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
     private final SalonConfigRepository salonConfig;
     private final ProviderVisitRepository visits;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
-    public ProviderVisitIngestService(SquareMonthAggregator aggregator, SquareClient square,
+    public ProviderVisitIngestService(SquareMonthAggregator aggregator, SquareClientProvider squareClientProvider,
                                       SalonConfigRepository salonConfig, ProviderVisitRepository visits,
                                       com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.aggregator = aggregator;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
         this.salonConfig = salonConfig;
         this.visits = visits;
         this.currentBusinessContext = currentBusinessContext;
@@ -122,6 +122,7 @@ public class ProviderVisitIngestService {
     private Map<String, Set<LocalDate>> sameDayRebookIndex(YearMonth ym, ZoneId zone) {
         Instant from = ym.atDay(1).atStartOfDay(zone).toInstant();
         Instant to = ym.atEndOfMonth().plusDays(REBOOK_HORIZON_DAYS + 1).atStartOfDay(zone).toInstant();
+        SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
         List<SquareClient.Booking> bookings = square.bookings(from, to);
         java.util.Set<String> customerIds = new HashSet<>();
         for (SquareClient.Booking b : bookings) if (b.customerId() != null) customerIds.add(b.customerId());
@@ -168,7 +169,7 @@ public class ProviderVisitIngestService {
 
     private ZoneId salonZone() {
         try {
-            String tz = square.locationTimeZone();
+            String tz = squareClientProvider.forBusiness(currentBusinessContext.id()).locationTimeZone();
             return tz != null && !tz.isBlank() ? ZoneId.of(tz) : ZoneOffset.UTC;
         } catch (RuntimeException e) {
             return ZoneOffset.UTC;

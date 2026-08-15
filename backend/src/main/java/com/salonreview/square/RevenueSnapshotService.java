@@ -40,7 +40,7 @@ public class RevenueSnapshotService {
 
     private final RevenueSnapshotRepository repo;
     private final SquareMonthAggregator aggregator;
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
     private final SalonConfigRepository salonConfig;
     private final PayPeriodRepository payPeriods;
     private final PeriodEntryRepository entries;
@@ -50,7 +50,7 @@ public class RevenueSnapshotService {
 
     public RevenueSnapshotService(RevenueSnapshotRepository repo,
                                   SquareMonthAggregator aggregator,
-                                  SquareClient square,
+                                  SquareClientProvider squareClientProvider,
                                   SalonConfigRepository salonConfig,
                                   PayPeriodRepository payPeriods,
                                   PeriodEntryRepository entries,
@@ -59,7 +59,7 @@ public class RevenueSnapshotService {
                                   com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.repo = repo;
         this.aggregator = aggregator;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
         this.salonConfig = salonConfig;
         this.currentBusinessContext = currentBusinessContext;
         this.payPeriods = payPeriods;
@@ -208,6 +208,7 @@ public class RevenueSnapshotService {
         Instant from = asOf.plusDays(1).atStartOfDay(zone).toInstant();
         Instant to   = ym.atEndOfMonth().plusDays(1).atStartOfDay(zone).toInstant();
 
+        SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
         List<SquareClient.Booking> bookings = square.bookings(from, to);
         // Non-cancelled bookings whose start is within asOf's month, after asOf.
         List<SquareClient.Booking> valid = bookings.stream()
@@ -270,7 +271,7 @@ public class RevenueSnapshotService {
 
     private ZoneId salonZone() {
         try {
-            String tz = square.locationTimeZone();
+            String tz = squareClientProvider.forBusiness(currentBusinessContext.id()).locationTimeZone();
             return tz != null && !tz.isBlank() ? ZoneId.of(tz) : ZoneOffset.UTC;
         } catch (RuntimeException e) {
             return ZoneOffset.UTC;

@@ -54,7 +54,9 @@ class RevenueSnapshotServiceTest {
         com.salonreview.config.CurrentBusinessContext currentBusinessContext =
                 mock(com.salonreview.config.CurrentBusinessContext.class);
         when(currentBusinessContext.id()).thenReturn(1L);
-        service     = new RevenueSnapshotService(repo, aggregator, square, salonConfig, payPeriods, entries,
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
+        service     = new RevenueSnapshotService(repo, aggregator, squareClientProvider, salonConfig, payPeriods, entries,
                 forecaster, manualAdjustments, currentBusinessContext);
         // No manual adjustments by default — individual tests can override to exercise the fold-in.
         when(manualAdjustments.totalGrossThrough(any())).thenReturn(BigDecimal.ZERO);

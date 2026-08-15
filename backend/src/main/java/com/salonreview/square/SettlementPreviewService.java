@@ -48,7 +48,7 @@ public class SettlementPreviewService {
     private final ProviderDirectory directory;
     private final TierGrantRepository tierGrants;
     private final SettlementFeedbackRepository feedback;
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
     private final PrepaidRedemptionRepository prepaidRedemptions;
     private final PrepaidPackageRepository prepaidPackages;
     private final com.salonreview.repo.ProviderRepository providerRepo;
@@ -62,7 +62,7 @@ public class SettlementPreviewService {
     public SettlementPreviewService(SquareMonthAggregator aggregator, TierCommissionEngine engine,
                                     SalonConfigRepository salonConfig, ProviderDirectory directory,
                                     TierGrantRepository tierGrants, SettlementFeedbackRepository feedback,
-                                    SquareClient square, PrepaidRedemptionRepository prepaidRedemptions,
+                                    SquareClientProvider squareClientProvider, PrepaidRedemptionRepository prepaidRedemptions,
                                     PrepaidPackageRepository prepaidPackages,
                                     com.salonreview.repo.ProviderRepository providerRepo,
                                     com.salonreview.repo.RedoRepository redoRepo,
@@ -78,7 +78,7 @@ public class SettlementPreviewService {
         this.directory = directory;
         this.tierGrants = tierGrants;
         this.feedback = feedback;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
         this.prepaidRedemptions = prepaidRedemptions;
         this.prepaidPackages = prepaidPackages;
         this.redoRepo = redoRepo;
@@ -197,7 +197,7 @@ public class SettlementPreviewService {
 
     /** When the data was last actually pulled from Square (the honest "synced" badge); now() if unknown. */
     private String syncedAt() {
-        java.time.Instant t = square.lastFetchAt();
+        java.time.Instant t = squareClientProvider.forBusiness(currentBusinessContext.id()).lastFetchAt();
         return (t == null ? java.time.Instant.now() : t).toString();
     }
 
@@ -435,7 +435,7 @@ public class SettlementPreviewService {
                         .thenComparing(SquareMonthAggregator.AttributedService::service))
                 .toList();
         // Attach the short client name (e.g. "Donnah P.") — only this provider's customers, cached.
-        Map<String, String> names = square.customerNames(matched.stream()
+        Map<String, String> names = squareClientProvider.forBusiness(businessId).customerNames(matched.stream()
                 .map(SquareMonthAggregator.AttributedService::customerId).toList());
         // Prepaid draw-downs for this provider this month: fold into the half input (pays out) and
         // into the trace lines, then re-sort chronologically.

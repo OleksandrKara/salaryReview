@@ -37,6 +37,8 @@ class ProviderVisitIngestServiceTest {
     void setUp() {
         aggregator = mock(SquareMonthAggregator.class);
         square = mock(SquareClient.class);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(org.mockito.ArgumentMatchers.anyLong())).thenReturn(square);
         SalonConfigRepository salonConfig = mock(SalonConfigRepository.class);
         repo = mock(ProviderVisitRepository.class);
 
@@ -48,7 +50,7 @@ class ProviderVisitIngestServiceTest {
         when(salonConfig.findByBusinessId(1L)).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
 
-        service = new ProviderVisitIngestService(aggregator, square, salonConfig, repo, currentBusinessContext);
+        service = new ProviderVisitIngestService(aggregator, squareClientProvider, salonConfig, repo, currentBusinessContext);
     }
 
     private static AttributedService svc(String customer, String provider, String date) {

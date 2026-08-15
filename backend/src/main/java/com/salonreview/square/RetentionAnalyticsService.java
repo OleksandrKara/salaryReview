@@ -40,13 +40,13 @@ public class RetentionAnalyticsService {
     private static final BigDecimal LEAK_RETENTION = new BigDecimal("0.40"); // below this = leaky
 
     private final ProviderVisitRepository repo;
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
-    public RetentionAnalyticsService(ProviderVisitRepository repo, SquareClient square,
+    public RetentionAnalyticsService(ProviderVisitRepository repo, SquareClientProvider squareClientProvider,
                                      com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.repo = repo;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
         this.currentBusinessContext = currentBusinessContext;
     }
 
@@ -238,7 +238,7 @@ public class RetentionAnalyticsService {
 
     private ZoneId salonZone() {
         try {
-            String tz = square.locationTimeZone();
+            String tz = squareClientProvider.forBusiness(currentBusinessContext.id()).locationTimeZone();
             return tz != null && !tz.isBlank() ? ZoneId.of(tz) : ZoneOffset.UTC;
         } catch (RuntimeException e) {
             return ZoneOffset.UTC;
