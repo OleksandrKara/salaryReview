@@ -287,6 +287,8 @@ export default async function ReportsPage({
         {report.diagnostics.ownerComps > 0 && `, ${report.diagnostics.ownerComps} owner comp${report.diagnostics.ownerComps > 1 ? 's' : ''}`}
         {report.diagnostics.unmatchedLineItems > 0 && ` · ${report.diagnostics.unmatchedLineItems} unmatched (${usd(report.diagnostics.unmatchedRevenue)})`}
         {report.diagnostics.orphanPayments > 0 && ` · ${report.diagnostics.orphanPayments} orphan payment${report.diagnostics.orphanPayments > 1 ? 's' : ''} (${usd(report.diagnostics.orphanPaymentRevenue)}, no linked order)`}
+        {report.diagnostics.cashNoteGapMatches > 0 && ` · ${report.diagnostics.cashNoteGapMatches} cash-note gap${report.diagnostics.cashNoteGapMatches > 1 ? 's' : ''} auto-matched`}
+        {report.diagnostics.cashNoteAmountCapped > 0 && ` · ${report.diagnostics.cashNoteAmountCapped} cash note${report.diagnostics.cashNoteAmountCapped > 1 ? 's' : ''} capped at catalog price (likely typo)`}
       </p>
 
       <NoShowFeesPanel year={year} month={month} />

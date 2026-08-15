@@ -688,6 +688,8 @@ export interface SettlementDiagnostics {
   ownerCompsSkipped: number; // owner bookings we couldn't value (no catalog price)
   orphanPayments: number; // completed payments with no linked order at all
   orphanPaymentRevenue: number;
+  cashNoteAmountCapped: number; // note's written amount exceeded the catalog price (likely typo)
+  cashNoteGapMatches: number;   // cash-note gaps auto-resolved against an unattributed sale
 }
 
 // --- Owner/family customers (owner/manager) ---
