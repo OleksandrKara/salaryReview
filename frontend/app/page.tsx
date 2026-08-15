@@ -19,7 +19,19 @@ export default async function Home() {
       });
       if (res.ok) {
         const me = (await res.json()) as { role?: string };
-        target = me.role === 'PROVIDER' ? '/me' : me.role === 'ADS_MANAGER' ? '/owner/marketing' : '/reports';
+        if (me.role === 'PROVIDER') {
+          target = '/me';
+        } else if (me.role === 'ADS_MANAGER') {
+          target = '/owner/marketing';
+        } else if (me.role === 'OWNER' && !(await ownerBusinessConfigured(sid))) {
+          // A freshly created business (Phase 5.1) has no salon_config row yet — every other
+          // owner page (/reports, /owner/overview, ...) 500s on it (SettlementService and
+          // friends all throw IllegalStateException on a missing config). Route the very first
+          // login straight to the form that creates it, instead of a broken landing page.
+          target = '/owner/settings/business';
+        } else {
+          target = '/reports';
+        }
       }
       // 401/other → session is dead; fall through to the landing (no redirect).
     } catch {
@@ -29,4 +41,18 @@ export default async function Home() {
   // redirect() throws NEXT_REDIRECT, so it must be called outside the try/catch above.
   if (target) redirect(target);
   return <Landing />;
+}
+
+async function ownerBusinessConfigured(sid: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BACKEND}/api/owner/settings/business`, {
+      headers: { Cookie: `JSESSIONID=${sid}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) return true; // fail open — never block an existing owner's landing on this check
+    const settings = (await res.json()) as { configured?: boolean };
+    return settings.configured !== false;
+  } catch {
+    return true;
+  }
 }
