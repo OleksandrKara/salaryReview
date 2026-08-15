@@ -32,9 +32,12 @@ public class ProviderController {
     private static final BigDecimal DEFAULT_FEE_RATE = new BigDecimal("0.0350");
 
     private final ProviderRepository providers;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
-    public ProviderController(ProviderRepository providers) {
+    public ProviderController(ProviderRepository providers,
+                               com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.providers = providers;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     @GetMapping
@@ -50,6 +53,7 @@ public class ProviderController {
     @PostMapping
     public ResponseEntity<ProviderDto> create(@Valid @RequestBody ProviderCreateRequest req) {
         Provider saved = providers.save(Provider.builder()
+                .businessId(currentBusinessContext.id())
                 .name(req.name())
                 .displayName(req.displayName())
                 .commissionRate(req.commissionRate() != null ? req.commissionRate() : DEFAULT_RATE)

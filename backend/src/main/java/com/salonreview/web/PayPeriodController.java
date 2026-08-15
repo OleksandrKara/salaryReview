@@ -39,13 +39,16 @@ public class PayPeriodController {
     private final PayPeriodRepository periods;
     private final PeriodEntryRepository entries;
     private final ProviderRepository providers;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
     public PayPeriodController(PayPeriodRepository periods,
                                PeriodEntryRepository entries,
-                               ProviderRepository providers) {
+                               ProviderRepository providers,
+                               com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.periods = periods;
         this.entries = entries;
         this.providers = providers;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     @GetMapping
@@ -75,6 +78,7 @@ public class PayPeriodController {
                         "Pay period " + p.getLabel() + " already exists"); });
 
         PayPeriod saved = periods.save(PayPeriod.builder()
+                .businessId(currentBusinessContext.id())
                 .year(req.year())
                 .month(req.month())
                 .half(req.half())

@@ -1,9 +1,11 @@
 package com.salonreview.web;
 
 import com.salonreview.domain.AppUser;
+import com.salonreview.domain.BusinessMembership;
 import com.salonreview.domain.Provider;
 import com.salonreview.domain.Role;
 import com.salonreview.repo.AppUserRepository;
+import com.salonreview.repo.BusinessMembershipRepository;
 import com.salonreview.repo.ProviderRepository;
 import com.salonreview.repo.SopAcknowledgmentRepository;
 import com.salonreview.service.ProviderDirectory;
@@ -34,16 +36,21 @@ public class UserController {
     private final SquareClient square;
     private final PasswordEncoder encoder;
     private final SopAcknowledgmentRepository sopAcks;
+    private final BusinessMembershipRepository memberships;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
     public UserController(AppUserRepository users, ProviderRepository providers,
                           ProviderDirectory directory, SquareClient square, PasswordEncoder encoder,
-                          SopAcknowledgmentRepository sopAcks) {
+                          SopAcknowledgmentRepository sopAcks, BusinessMembershipRepository memberships,
+                          com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.users = users;
         this.providers = providers;
         this.directory = directory;
         this.square = square;
         this.encoder = encoder;
         this.sopAcks = sopAcks;
+        this.memberships = memberships;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     @GetMapping
@@ -104,7 +111,9 @@ public class UserController {
             providerId = directory.resolveOrCreate(req.squareTeamMemberId(), name).getId();
         }
         providerId = validateProviderLink(req.role(), providerId, null);
+        Long businessId = currentBusinessContext.id();
         AppUser saved = users.save(AppUser.builder()
+                .businessId(businessId)
                 .username(req.username().trim())
                 .passwordHash(encoder.encode(req.password()))
                 .role(req.role())
@@ -113,6 +122,10 @@ public class UserController {
                 .email(req.email())
                 .active(true)
                 .build());
+        // Without this row JpaUserDetailsService fails loudly on the new account's first login —
+        // every app_user needs exactly one business_membership row (design.md D3).
+        memberships.save(BusinessMembership.builder()
+                .businessId(businessId).userId(saved.getId()).role(req.role()).build());
         return UserView.of(saved);
     }
 

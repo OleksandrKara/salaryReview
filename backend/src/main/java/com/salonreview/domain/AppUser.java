@@ -9,7 +9,8 @@ import lombok.*;
  * to the provider person whose settlement they may view. ({@code created_at} is DB-managed.)
  */
 @Entity
-@Table(name = "app_user")
+@Table(name = "app_user", uniqueConstraints =
+    @UniqueConstraint(columnNames = {"business_id", "username"}))
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
 public class AppUser {
@@ -17,6 +18,12 @@ public class AppUser {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    /** Backfilled by V87; the old global-unique {@link #username} constraint stays authoritative
+     * until a second business actually onboards (see V87's migration comment) — do not treat this
+     * column as scoping username lookups yet outside the explicitly-rewritten call sites (Phase 2.2). */
+    @Column(name = "business_id", nullable = false)
+    private Long businessId;
 
     @Column(nullable = false, unique = true)
     private String username;
