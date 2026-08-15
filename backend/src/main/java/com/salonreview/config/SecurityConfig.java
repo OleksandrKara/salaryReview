@@ -13,6 +13,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -33,11 +34,17 @@ public class SecurityConfig {
     private final ObjectMapper json = new ObjectMapper();
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain filterChain(HttpSecurity http, CurrentBusinessContext currentBusinessContext)
+            throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+                // Populates CurrentBusinessContext right after Spring Security resolves the
+                // Authentication (session-restored or freshly logged-in) — see design.md D7 and
+                // CurrentBusinessContextFilter's own doc comment.
+                .addFilterAfter(new CurrentBusinessContextFilter(currentBusinessContext),
+                        UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/info", "/api/login").permitAll()
                         // Service-to-service calls from mani/akluxnails-home (Telegram 4-hand-request
