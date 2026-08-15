@@ -63,7 +63,18 @@ class OwnerOverviewServicePAndLTest {
         payPeriods = mock(PayPeriodRepository.class);
         entries = mock(PeriodEntryRepository.class);
         salonConfig = mock(SalonConfigRepository.class);
-        when(salonConfig.findById(1)).thenReturn(Optional.of(CFG));
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        // computeOverview()'s live-month path wraps fromSquare() in currentBusinessContext.runAs(...)
+        // to carry the business id onto the async worker thread (see
+        // OwnerOverviewServiceAsyncBusinessContextTest) — a plain mock's runAs() is a no-op that never
+        // invokes the wrapped action, so every live month would resolve to null. Make it actually run.
+        org.mockito.Mockito.doAnswer(inv -> {
+            ((Runnable) inv.getArgument(1)).run();
+            return null;
+        }).when(currentBusinessContext).runAs(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any());
+        when(salonConfig.findByBusinessId(1L)).thenReturn(Optional.of(CFG));
         when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(anyInt())).thenReturn(List.of());
 
         aggregator = mock(SquareMonthAggregator.class);
@@ -93,7 +104,7 @@ class OwnerOverviewServicePAndLTest {
 
         service = new OwnerOverviewService(payPeriods, entries, new CommissionCalculator(), salonConfig,
                 aggregator, retention, manualAdjustments, expenses, managerTime, expenseImports,
-                settlementPreview, bankTransactions);
+                settlementPreview, bankTransactions, currentBusinessContext);
     }
 
     /** One provider, one month, entirely card revenue — no cash at all. */

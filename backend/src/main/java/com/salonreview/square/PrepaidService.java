@@ -45,16 +45,19 @@ public class PrepaidService {
     private final ProviderRepository providers;
     private final com.salonreview.service.ProviderDirectory directory;
     private final SalonConfigRepository salonConfig;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final PrepaidPackageRepository packages;
     private final PrepaidRedemptionRepository redemptions;
 
     public PrepaidService(SquareClient square, ProviderRepository providers,
                           com.salonreview.service.ProviderDirectory directory, SalonConfigRepository salonConfig,
+                          com.salonreview.config.CurrentBusinessContext currentBusinessContext,
                           PrepaidPackageRepository packages, PrepaidRedemptionRepository redemptions) {
         this.square = square;
         this.providers = providers;
         this.directory = directory;
         this.salonConfig = salonConfig;
+        this.currentBusinessContext = currentBusinessContext;
         this.packages = packages;
         this.redemptions = redemptions;
     }
@@ -222,8 +225,9 @@ public class PrepaidService {
     }
 
     private SalonConfig salonConfig() {
-        return salonConfig.findById(1)
-                .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"));
+        Long businessId = currentBusinessContext.id();
+        return salonConfig.findByBusinessId(businessId)
+                .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));
     }
 
     private ZoneId resolveZone() {

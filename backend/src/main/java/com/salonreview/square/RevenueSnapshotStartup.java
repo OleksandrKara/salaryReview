@@ -17,16 +17,22 @@ public class RevenueSnapshotStartup {
     private static final Logger log = LoggerFactory.getLogger(RevenueSnapshotStartup.class);
 
     private final RevenueSnapshotService service;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
+    private final com.salonreview.repo.BusinessRepository businesses;
 
-    public RevenueSnapshotStartup(RevenueSnapshotService service) {
+    public RevenueSnapshotStartup(RevenueSnapshotService service,
+                                   com.salonreview.config.CurrentBusinessContext currentBusinessContext,
+                                   com.salonreview.repo.BusinessRepository businesses) {
         this.service = service;
+        this.currentBusinessContext = currentBusinessContext;
+        this.businesses = businesses;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     public void backfillOnStartup() {
         try {
             log.info("Startup snapshot backfill — capturing last 3 days if missing");
-            service.backfillRecent();
+            currentBusinessContext.runAs(businesses.sole().getId(), service::backfillRecent);
         } catch (RuntimeException e) {
             log.warn("Startup snapshot backfill failed (will be retried at next scheduled run): {}", e.toString());
         }

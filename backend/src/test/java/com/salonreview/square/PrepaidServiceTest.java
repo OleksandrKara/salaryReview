@@ -42,8 +42,12 @@ class PrepaidServiceTest {
         SalonConfigRepository salonConfig = mock(SalonConfigRepository.class);
         PrepaidPackageRepository packages = mock(PrepaidPackageRepository.class);
         PrepaidRedemptionRepository redemptions = mock(PrepaidRedemptionRepository.class);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
 
-        PrepaidService svc = new PrepaidService(square, providers, directory, salonConfig, packages, redemptions);
+        PrepaidService svc = new PrepaidService(square, providers, directory, salonConfig,
+                currentBusinessContext, packages, redemptions);
 
         PrepaidPackage pkg = PrepaidPackage.builder().id(1L).customerId("C1").customerName("Alina")
                 .paidDate(LocalDate.of(2026, 3, 1)).amount(new BigDecimal("300")).totalServices(3).build();
@@ -51,7 +55,7 @@ class PrepaidServiceTest {
 
         SalonConfig sc = mock(SalonConfig.class);
         when(sc.getServicePriceCutoff()).thenReturn(new BigDecimal("50.00"));
-        when(salonConfig.findById(1)).thenReturn(Optional.of(sc));
+        when(salonConfig.findByBusinessId(1L)).thenReturn(Optional.of(sc));
 
         when(square.locationTimeZone()).thenReturn("UTC");
         // Two visits, two providers, two months — neither paid through the till.
@@ -82,8 +86,8 @@ class PrepaidServiceTest {
     void invoiceLookupMapsTotalAndDate() {
         SquareClient square = mock(SquareClient.class);
         PrepaidService svc = new PrepaidService(square, mock(ProviderRepository.class), mock(ProviderDirectory.class),
-                mock(SalonConfigRepository.class), mock(PrepaidPackageRepository.class),
-                mock(PrepaidRedemptionRepository.class));
+                mock(SalonConfigRepository.class), mock(com.salonreview.config.CurrentBusinessContext.class),
+                mock(PrepaidPackageRepository.class), mock(PrepaidRedemptionRepository.class));
 
         Invoice paid = new Invoice("inv1", "000089", "Prepaid", "PAID", "2026-05-29T10:00:00Z",
                 List.of(new PaymentRequest(new Money(2500L, "USD")), new PaymentRequest(new Money(1500L, "USD"))));

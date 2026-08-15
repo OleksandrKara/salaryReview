@@ -24,10 +24,16 @@ public class ProviderVisitScheduler implements SchedulingConfigurer {
 
     private final ProviderVisitIngestService ingest;
     private final SquareClient square;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
+    private final com.salonreview.repo.BusinessRepository businesses;
 
-    public ProviderVisitScheduler(ProviderVisitIngestService ingest, SquareClient square) {
+    public ProviderVisitScheduler(ProviderVisitIngestService ingest, SquareClient square,
+                                   com.salonreview.config.CurrentBusinessContext currentBusinessContext,
+                                   com.salonreview.repo.BusinessRepository businesses) {
         this.ingest = ingest;
         this.square = square;
+        this.currentBusinessContext = currentBusinessContext;
+        this.businesses = businesses;
     }
 
     @Override
@@ -36,7 +42,7 @@ public class ProviderVisitScheduler implements SchedulingConfigurer {
         registrar.addCronTask(new CronTask(() -> {
             log.info("Daily provider-visit ingest firing");
             try {
-                ingest.ingestCurrentMonth();
+                currentBusinessContext.runAs(businesses.sole().getId(), ingest::ingestCurrentMonth);
             } catch (RuntimeException e) {
                 log.warn("Daily provider-visit ingest failed: {}", e.toString());
             }

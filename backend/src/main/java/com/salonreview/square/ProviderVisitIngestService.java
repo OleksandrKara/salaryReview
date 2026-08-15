@@ -40,13 +40,16 @@ public class ProviderVisitIngestService {
     private final SquareClient square;
     private final SalonConfigRepository salonConfig;
     private final ProviderVisitRepository visits;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
     public ProviderVisitIngestService(SquareMonthAggregator aggregator, SquareClient square,
-                                      SalonConfigRepository salonConfig, ProviderVisitRepository visits) {
+                                      SalonConfigRepository salonConfig, ProviderVisitRepository visits,
+                                      com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.aggregator = aggregator;
         this.square = square;
         this.salonConfig = salonConfig;
         this.visits = visits;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     /** Re-ingest one month: replace its visit rows with a fresh computation. */
@@ -155,8 +158,9 @@ public class ProviderVisitIngestService {
     }
 
     private BigDecimal priceCutoff() {
-        SalonConfig cfg = salonConfig.findById(1)
-                .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"));
+        Long businessId = currentBusinessContext.id();
+        SalonConfig cfg = salonConfig.findByBusinessId(businessId)
+                .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));
         return cfg.getServicePriceCutoff();
     }
 

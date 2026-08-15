@@ -42,10 +42,13 @@ class ProviderVisitIngestServiceTest {
 
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.bookings(any(), any())).thenReturn(List.of()); // no rebookings in this fixture
-        when(salonConfig.findById(1)).thenReturn(Optional.of(SalonConfig.builder()
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        when(salonConfig.findByBusinessId(1L)).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
 
-        service = new ProviderVisitIngestService(aggregator, square, salonConfig, repo);
+        service = new ProviderVisitIngestService(aggregator, square, salonConfig, repo, currentBusinessContext);
     }
 
     private static AttributedService svc(String customer, String provider, String date) {

@@ -37,7 +37,8 @@ class SuspiciousBookingServiceTest {
                 mock(ProviderDirectory.class),
                 repo,
                 mock(org.springframework.beans.factory.ObjectProvider.class),
-                mock(com.salonreview.repo.SuspiciousTriageRepository.class));
+                mock(com.salonreview.repo.SuspiciousTriageRepository.class),
+                mock(com.salonreview.config.CurrentBusinessContext.class));
     }
 
     @Test

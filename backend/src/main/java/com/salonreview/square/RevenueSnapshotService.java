@@ -46,6 +46,7 @@ public class RevenueSnapshotService {
     private final PeriodEntryRepository entries;
     private final RevenueForecastService forecaster;
     private final ManualAdjustmentService manualAdjustments;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
     public RevenueSnapshotService(RevenueSnapshotRepository repo,
                                   SquareMonthAggregator aggregator,
@@ -54,11 +55,13 @@ public class RevenueSnapshotService {
                                   PayPeriodRepository payPeriods,
                                   PeriodEntryRepository entries,
                                   RevenueForecastService forecaster,
-                                  ManualAdjustmentService manualAdjustments) {
+                                  ManualAdjustmentService manualAdjustments,
+                                  com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.repo = repo;
         this.aggregator = aggregator;
         this.square = square;
         this.salonConfig = salonConfig;
+        this.currentBusinessContext = currentBusinessContext;
         this.payPeriods = payPeriods;
         this.entries = entries;
         this.forecaster = forecaster;
@@ -257,8 +260,9 @@ public class RevenueSnapshotService {
     }
 
     private BigDecimal priceCutoff() {
-        SalonConfig cfg = salonConfig.findById(1)
-                .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"));
+        Long businessId = currentBusinessContext.id();
+        SalonConfig cfg = salonConfig.findByBusinessId(businessId)
+                .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));
         return cfg.getServicePriceCutoff();
     }
 

@@ -50,18 +50,22 @@ public class CancelledAppointmentService {
     private final SquareMonthAggregator aggregator;
     private final SquareClient square;
     private final SalonConfigRepository salonConfig;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final ProviderDirectory providers;
     private final ProviderRepository providerRepo;
     private final AppUserRepository users;
     private final CancellationClearanceRepository clearances;
 
     public CancelledAppointmentService(SquareMonthAggregator aggregator, SquareClient square,
-                                       SalonConfigRepository salonConfig, ProviderDirectory providers,
+                                       SalonConfigRepository salonConfig,
+                                       com.salonreview.config.CurrentBusinessContext currentBusinessContext,
+                                       ProviderDirectory providers,
                                        ProviderRepository providerRepo, AppUserRepository users,
                                        CancellationClearanceRepository clearances) {
         this.aggregator = aggregator;
         this.square = square;
         this.salonConfig = salonConfig;
+        this.currentBusinessContext = currentBusinessContext;
         this.providers = providers;
         this.providerRepo = providerRepo;
         this.users = users;
@@ -244,8 +248,9 @@ public class CancelledAppointmentService {
     }
 
     private BigDecimal priceCutoff() {
-        SalonConfig cfg = salonConfig.findById(1)
-                .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"));
+        Long businessId = currentBusinessContext.id();
+        SalonConfig cfg = salonConfig.findByBusinessId(businessId)
+                .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));
         return cfg.getServicePriceCutoff();
     }
 }

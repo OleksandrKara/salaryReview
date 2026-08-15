@@ -34,10 +34,14 @@ class ManualAdjustmentTest {
                                                  SettlementFeedbackRepository feedback,
                                                  SquareClient square,
                                                  ProviderRepository providerRepo) {
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
         return new SettlementPreviewService(aggregator, new TierCommissionEngine(),
                 salonConfigRepo, directory, tierGrants, feedback, square, mock(PrepaidRedemptionRepository.class),
                 mock(PrepaidPackageRepository.class), providerRepo, mock(RedoRepository.class), manualAdjustments,
-                mock(NoShowFeeService.class), mock(SuspiciousBookingService.class), mock(CancelledAppointmentService.class));
+                mock(NoShowFeeService.class), mock(SuspiciousBookingService.class), mock(CancelledAppointmentService.class),
+                currentBusinessContext);
     }
 
     private void configFor(SalonConfigRepository salonConfigRepo, int year, int month,
@@ -49,7 +53,7 @@ class ManualAdjustmentTest {
         when(sc.getServicePriceCutoff()).thenReturn(new BigDecimal("50.00"));
         when(sc.getCardTipFeeRate()).thenReturn(new BigDecimal("0.0350"));
         when(sc.getOwnerShortName()).thenReturn("AK");
-        when(salonConfigRepo.findById(1)).thenReturn(Optional.of(sc));
+        when(salonConfigRepo.findByBusinessId(1L)).thenReturn(Optional.of(sc));
         when(tierGrants.findByYearAndMonth(year, month)).thenReturn(List.of());
         when(feedback.findByYearAndMonth(year, month)).thenReturn(List.of());
         when(square.customerNames(any())).thenReturn(java.util.Map.of());

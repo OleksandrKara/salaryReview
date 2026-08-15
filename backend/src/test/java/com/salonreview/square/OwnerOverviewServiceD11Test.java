@@ -82,7 +82,10 @@ class OwnerOverviewServiceD11Test {
         PayPeriodRepository payPeriods = mock(PayPeriodRepository.class);
         PeriodEntryRepository entries = mock(PeriodEntryRepository.class);
         SalonConfigRepository salonConfig = mock(SalonConfigRepository.class);
-        when(salonConfig.findById(1)).thenReturn(Optional.of(CFG));
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        when(salonConfig.findByBusinessId(1L)).thenReturn(Optional.of(CFG));
 
         Provider anna = provider(1L, "Anna");
         PayPeriod jan1 = PayPeriod.builder().id(1L).year(2025).month(1).half(Half.FIRST).label("First 1/2025").build();
@@ -99,7 +102,7 @@ class OwnerOverviewServiceD11Test {
 
         return new OwnerOverviewService(payPeriods, entries, new CommissionCalculator(), salonConfig,
                 mock(SquareMonthAggregator.class), mock(RetentionAnalyticsService.class), manualAdjustments,
-                expenses, managerTime, expenseImports, settlementPreview, bankTransactions);
+                expenses, managerTime, expenseImports, settlementPreview, bankTransactions, currentBusinessContext);
     }
 
     @Test

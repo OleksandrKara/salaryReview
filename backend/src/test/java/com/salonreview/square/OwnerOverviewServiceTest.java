@@ -31,6 +31,7 @@ class OwnerOverviewServiceTest {
     private PayPeriodRepository payPeriods;
     private PeriodEntryRepository entries;
     private SalonConfigRepository salonConfig;
+    private com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private SquareMonthAggregator aggregator;
     private SettlementPreviewService settlementPreview;
     private BankTransactionRepository bankTransactions;
@@ -97,11 +98,13 @@ class OwnerOverviewServiceTest {
         // No statement-covered months by default — individual D11 tests can override.
         when(expenseImports.isPeriodStatementCovered(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(false);
+        currentBusinessContext = mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
         service     = new OwnerOverviewService(payPeriods, entries, new CommissionCalculator(),
                 salonConfig, aggregator, mock(RetentionAnalyticsService.class), manualAdjustments, expenses,
-                managerTime, expenseImports, settlementPreview, bankTransactions);
+                managerTime, expenseImports, settlementPreview, bankTransactions, currentBusinessContext);
 
-        when(salonConfig.findById(1)).thenReturn(Optional.of(CFG));
+        when(salonConfig.findByBusinessId(1L)).thenReturn(Optional.of(CFG));
         // Default: no periods for any year (overridden per test)
         when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(anyInt())).thenReturn(List.of());
         when(entries.findAllByPayPeriodId(anyLong())).thenReturn(List.of());
@@ -175,7 +178,7 @@ class OwnerOverviewServiceTest {
         OwnerOverviewService serviceWithExpenses = new OwnerOverviewService(payPeriods, entries,
                 new CommissionCalculator(), salonConfig, aggregator, mock(RetentionAnalyticsService.class),
                 mock(ManualAdjustmentService.class), expenses, managerTime, notStatementCovered(),
-                settlementPreview, bankTransactions);
+                settlementPreview, bankTransactions, currentBusinessContext);
 
         MonthSummary jan = serviceWithExpenses.overview(2025, 1, 2025, 12).months().get(0);
 
@@ -206,7 +209,7 @@ class OwnerOverviewServiceTest {
         OwnerOverviewService serviceWithManagerTime = new OwnerOverviewService(payPeriods, entries,
                 new CommissionCalculator(), salonConfig, aggregator, mock(RetentionAnalyticsService.class),
                 mock(ManualAdjustmentService.class), expenses, managerTime, notStatementCovered(),
-                settlementPreview, bankTransactions);
+                settlementPreview, bankTransactions, currentBusinessContext);
 
         MonthSummary jan = serviceWithManagerTime.overview(2025, 1, 2025, 12).months().get(0);
 
@@ -240,7 +243,7 @@ class OwnerOverviewServiceTest {
         OwnerOverviewService serviceWithManualBackfill = new OwnerOverviewService(payPeriods, entries,
                 new CommissionCalculator(), salonConfig, aggregator, mock(RetentionAnalyticsService.class),
                 mock(ManualAdjustmentService.class), expenses, managerTime, notStatementCovered(),
-                settlementPreview, bankTransactions);
+                settlementPreview, bankTransactions, currentBusinessContext);
 
         MonthSummary jan = serviceWithManualBackfill.overview(2025, 1, 2025, 12).months().get(0);
 

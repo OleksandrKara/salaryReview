@@ -71,6 +71,7 @@ public class MarketingContactsService {
     private final SquareClient square;
     private final SquareMonthAggregator aggregator;
     private final SalonConfigRepository salonConfig;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final MarketingSyncStatusRepository syncStatus;
     private final RebookingProperties rebookingProperties;
     private final SmsMessageLogService smsMessageLogService;
@@ -83,6 +84,7 @@ public class MarketingContactsService {
                                      SquareClient square,
                                      SquareMonthAggregator aggregator,
                                      SalonConfigRepository salonConfig,
+                                     com.salonreview.config.CurrentBusinessContext currentBusinessContext,
                                      MarketingSyncStatusRepository syncStatus,
                                      RebookingProperties rebookingProperties,
                                      SmsMessageLogService smsMessageLogService,
@@ -93,6 +95,7 @@ public class MarketingContactsService {
         this.square = square;
         this.aggregator = aggregator;
         this.salonConfig = salonConfig;
+        this.currentBusinessContext = currentBusinessContext;
         this.syncStatus = syncStatus;
         this.rebookingProperties = rebookingProperties;
         this.smsMessageLogService = smsMessageLogService;
@@ -678,8 +681,9 @@ public class MarketingContactsService {
     }
 
     private BigDecimal priceCutoff() {
-        SalonConfig cfg = salonConfig.findById(1)
-                .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"));
+        Long businessId = currentBusinessContext.id();
+        SalonConfig cfg = salonConfig.findByBusinessId(businessId)
+                .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));
         return cfg.getServicePriceCutoff();
     }
 

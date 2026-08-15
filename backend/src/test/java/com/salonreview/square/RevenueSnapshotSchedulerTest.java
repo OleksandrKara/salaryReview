@@ -36,7 +36,14 @@ class RevenueSnapshotSchedulerTest {
         square = mock(SquareClient.class);
         lockingTaskExecutor = mock(LockingTaskExecutor.class);
         when(square.locationTimeZone()).thenReturn("UTC");
-        scheduler = new RevenueSnapshotScheduler(service, square, lockingTaskExecutor);
+        // A real (not mocked) CurrentBusinessContext — the "actually runs the task" tests below
+        // depend on runAs genuinely invoking its callback, which a mock wouldn't do by default.
+        var currentBusinessContext = new com.salonreview.config.CurrentBusinessContext();
+        var businesses = mock(com.salonreview.repo.BusinessRepository.class);
+        when(businesses.sole()).thenReturn(
+                com.salonreview.domain.Business.builder().id(1L).name("Test").shortCode("test")
+                        .timezone("UTC").active(true).build());
+        scheduler = new RevenueSnapshotScheduler(service, square, lockingTaskExecutor, currentBusinessContext, businesses);
     }
 
     @Test

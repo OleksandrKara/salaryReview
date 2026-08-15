@@ -50,12 +50,18 @@ public class RevenueSnapshotScheduler implements SchedulingConfigurer {
     private final RevenueSnapshotService service;
     private final SquareClient square;
     private final LockingTaskExecutor lockingTaskExecutor;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
+    private final com.salonreview.repo.BusinessRepository businesses;
 
     public RevenueSnapshotScheduler(RevenueSnapshotService service, SquareClient square,
-                                     LockingTaskExecutor lockingTaskExecutor) {
+                                     LockingTaskExecutor lockingTaskExecutor,
+                                     com.salonreview.config.CurrentBusinessContext currentBusinessContext,
+                                     com.salonreview.repo.BusinessRepository businesses) {
         this.service = service;
         this.square = square;
         this.lockingTaskExecutor = lockingTaskExecutor;
+        this.currentBusinessContext = currentBusinessContext;
+        this.businesses = businesses;
     }
 
     @Override
@@ -66,22 +72,22 @@ public class RevenueSnapshotScheduler implements SchedulingConfigurer {
 
         registrar.addCronTask(new CronTask(
                 () -> lockingTaskExecutor.executeWithLock(
-                        (Runnable) () -> {
+                        (Runnable) () -> currentBusinessContext.runAs(businesses.sole().getId(), () -> {
                             LocalDate yesterday = LocalDate.now(zone).minusDays(1);
                             log.info("Daily revenue snapshot job firing for {}", yesterday);
                             service.captureFor(yesterday);
-                        },
+                        }),
                         new LockConfiguration(Instant.now(), "RevenueSnapshotScheduler_dailyCapture",
                                 LOCK_AT_MOST_FOR, Duration.ZERO)),
                 new CronTrigger(DAILY_CAPTURE_CRON, tz)));
 
         registrar.addCronTask(new CronTask(
                 () -> lockingTaskExecutor.executeWithLock(
-                        (Runnable) () -> {
+                        (Runnable) () -> currentBusinessContext.runAs(businesses.sole().getId(), () -> {
                             YearMonth prior = YearMonth.now(zone).minusMonths(1);
                             log.info("Monthly actual-fill job firing for {}", prior);
                             service.fillMonthEndActualsFor(prior);
-                        },
+                        }),
                         new LockConfiguration(Instant.now(), "RevenueSnapshotScheduler_monthlyActualFill",
                                 LOCK_AT_MOST_FOR, Duration.ZERO)),
                 new CronTrigger(MONTHLY_ACTUAL_FILL_CRON, tz)));

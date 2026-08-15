@@ -50,13 +50,16 @@ class RevenueSnapshotServiceTest {
         entries     = mock(PeriodEntryRepository.class);
         forecaster  = mock(RevenueForecastService.class);
         manualAdjustments = mock(ManualAdjustmentService.class);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
         service     = new RevenueSnapshotService(repo, aggregator, square, salonConfig, payPeriods, entries,
-                forecaster, manualAdjustments);
+                forecaster, manualAdjustments, currentBusinessContext);
         // No manual adjustments by default — individual tests can override to exercise the fold-in.
         when(manualAdjustments.totalGrossThrough(any())).thenReturn(BigDecimal.ZERO);
         when(manualAdjustments.countedUnitDeltaThrough(any(), any())).thenReturn(0);
 
-        when(salonConfig.findById(1)).thenReturn(Optional.of(SalonConfig.builder()
+        when(salonConfig.findByBusinessId(1L)).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").tierServiceThreshold(25)
                 .servicePriceCutoff(new BigDecimal("60.00"))
                 .baseCommissionRate(new BigDecimal("0.45"))

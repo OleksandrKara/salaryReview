@@ -57,6 +57,7 @@ public class SettlementPreviewService {
     private final NoShowFeeService noShowFees;
     private final SuspiciousBookingService suspiciousBookings;
     private final CancelledAppointmentService cancelledAppointments;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
     public SettlementPreviewService(SquareMonthAggregator aggregator, TierCommissionEngine engine,
                                     SalonConfigRepository salonConfig, ProviderDirectory directory,
@@ -68,10 +69,12 @@ public class SettlementPreviewService {
                                     com.salonreview.repo.ManualAdjustmentRepository manualAdjustments,
                                     NoShowFeeService noShowFees,
                                     SuspiciousBookingService suspiciousBookings,
-                                    CancelledAppointmentService cancelledAppointments) {
+                                    CancelledAppointmentService cancelledAppointments,
+                                    com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.aggregator = aggregator;
         this.engine = engine;
         this.salonConfig = salonConfig;
+        this.currentBusinessContext = currentBusinessContext;
         this.directory = directory;
         this.tierGrants = tierGrants;
         this.feedback = feedback;
@@ -272,8 +275,9 @@ public class SettlementPreviewService {
 
     @Transactional
     public SettlementPreview preview(int year, int month) {
-        SalonConfig sc = salonConfig.findById(1)
-                .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"));
+        Long businessId = currentBusinessContext.id();
+        SalonConfig sc = salonConfig.findByBusinessId(businessId)
+                .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));
         CommissionConfig config = sc.toCommissionConfig();
         BigDecimal cutoff = sc.getServicePriceCutoff();
 
@@ -385,8 +389,9 @@ public class SettlementPreviewService {
      */
     @Transactional
     public ProviderDetail providerDetail(int year, int month, Long providerId) {
-        SalonConfig sc = salonConfig.findById(1)
-                .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"));
+        Long businessId = currentBusinessContext.id();
+        SalonConfig sc = salonConfig.findByBusinessId(businessId)
+                .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));
         CommissionConfig config = sc.toCommissionConfig();
 
         Set<Long> granted = tierGrants.findByYearAndMonth(year, month).stream()

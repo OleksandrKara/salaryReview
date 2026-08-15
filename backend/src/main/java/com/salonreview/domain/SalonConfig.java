@@ -15,6 +15,9 @@ public class SalonConfig {
     @Id
     private Integer id;
 
+    @Column(name = "business_id", nullable = false, unique = true)
+    private Long businessId;
+
     @Column(name = "owner_short_name", nullable = false)
     private String ownerShortName;
 

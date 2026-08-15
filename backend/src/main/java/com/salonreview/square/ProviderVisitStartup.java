@@ -18,9 +18,15 @@ public class ProviderVisitStartup {
     private static final int BACKFILL_MONTHS = 12;
 
     private final ProviderVisitIngestService ingest;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
+    private final com.salonreview.repo.BusinessRepository businesses;
 
-    public ProviderVisitStartup(ProviderVisitIngestService ingest) {
+    public ProviderVisitStartup(ProviderVisitIngestService ingest,
+                                 com.salonreview.config.CurrentBusinessContext currentBusinessContext,
+                                 com.salonreview.repo.BusinessRepository businesses) {
         this.ingest = ingest;
+        this.currentBusinessContext = currentBusinessContext;
+        this.businesses = businesses;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -28,8 +34,10 @@ public class ProviderVisitStartup {
         Thread t = new Thread(() -> {
             try {
                 log.info("Provider-visit backfill — up to {} months (skipping populated)", BACKFILL_MONTHS);
-                ingest.backfillHistory(BACKFILL_MONTHS);
-                ingest.ingestCurrentMonth();
+                currentBusinessContext.runAs(businesses.sole().getId(), () -> {
+                    ingest.backfillHistory(BACKFILL_MONTHS);
+                    ingest.ingestCurrentMonth();
+                });
                 log.info("Provider-visit backfill complete");
             } catch (RuntimeException e) {
                 log.warn("Provider-visit backfill failed (retried at next daily run): {}", e.toString());

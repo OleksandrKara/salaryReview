@@ -16,10 +16,13 @@ import java.io.IOException;
  * the {@link Authentication} (registered via {@code .addFilterAfter(..., UsernamePasswordAuthenticationFilter.class)}
  * in {@link SecurityConfig}), so this sees a populated {@code SecurityContextHolder} both for the
  * login request itself and for every subsequent session-cookie-authenticated request (restored
- * earlier in the chain by Spring Security's own session filter). Silently no-ops for unauthenticated
- * requests (public webhooks, health checks, /api/login) — nothing on those paths reads
- * {@link CurrentBusinessContext#id()}, and every business-scoped route already requires
- * authentication (see SecurityConfig's {@code anyRequest().authenticated()} catch-all).
+ * earlier in the chain by Spring Security's own session filter). No-ops for unauthenticated requests
+ * (public webhooks, health checks, {@code /api/login} itself) — those resolve their own business via
+ * {@link CurrentBusinessContext#runAs} instead, since there's no session to derive one from.
+ *
+ * <p><strong>Always clears the thread-local in a {@code finally} block.</strong> Servlet containers
+ * reuse request-handling threads from a pool; leaving a business id set past the end of this request
+ * would silently leak it into whatever unrelated request that pooled thread handles next.
  */
 public class CurrentBusinessContextFilter extends OncePerRequestFilter {
 
@@ -32,10 +35,14 @@ public class CurrentBusinessContextFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof AppUserPrincipal p && p.getActiveBusinessId() != null) {
-            context.set(p.getActiveBusinessId());
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof AppUserPrincipal p && p.getActiveBusinessId() != null) {
+                context.set(p.getActiveBusinessId());
+            }
+            chain.doFilter(request, response);
+        } finally {
+            context.clear();
         }
-        chain.doFilter(request, response);
     }
 }
