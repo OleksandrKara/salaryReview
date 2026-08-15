@@ -86,6 +86,24 @@ this file is the plan, not yet executed.
 - [ ] 2.5 Cross-tenant isolation integration test suite (new): stand up Business A + a synthetic
       Business B fixture in the test DB; assert every settlement/report/user/provider endpoint scoped
       to A never returns a B row and vice versa
+- [ ] 2.6 **NEW, found 2026-08-15 as a live incident** — same "no FK path, needs a bolted-on
+      `business_id` column" gap as 2.4, but never inventoried because these tables predate any
+      multi-tenant work: `sms_message`, `twilio_sms_config`, `telegram_config`, `kb_articles`,
+      `kb_request`, `rag_document`, `rag_chunk`, `rag_agent_config`, `rag_suggestion_cache`,
+      `rag_redaction_audit`, `sops`, `sop_versions`, `sop_acknowledgments`, `staff_documents` all have
+      zero tenant boundary. Confirmed exploitable: the moment AK PMU's OWNER account existed, it could
+      read Business A's SMS conversations and live Twilio/Telegram credentials — reported live by the
+      owner and fixed same-day for those three specifically (`SmsBusinessScopeFilter`, PR #370): those
+      paths now 403 for any business but Business A, the same stopgap shape as
+      `BusinessRepository#legacySmsBusiness`. **KB articles, RAG documents/chunks, SOPs, and staff
+      documents were deliberately left unfixed** — blocking them the same way would leave a real
+      second business unable to use its own KB/SOPs/documents at all, which is a product decision, not
+      a security one; scope was judged non-critical while there are only two businesses and this is
+      tracked here instead of patched under pressure. **Hard gate: this task must be fully closed
+      (real `business_id` columns + filtered queries + the cross-tenant isolation suite in 2.5
+      extended to cover these tables) before Phase 7 runs for a third business** — the stopgap
+      approach (allow-list one hardcoded business, 403 everyone else) does not scale past two
+      businesses and must not be repeated as a shortcut when business 3 is onboarded.
 
 ## Phase 3 — Square multi-account support
 
@@ -111,9 +129,19 @@ this file is the plan, not yet executed.
       key/notification URL; route `POST /api/public/webhooks/square/{businessId}` (path-based,
       verified before trusting any payload field, per design's rejection of trusting the unauthenticated
       `merchant_id` field pre-verification)
-- [ ] 3.7 `ProviderVisitScheduler`, `RevenueSnapshotScheduler`, their `*Startup` counterparts — iterate
-      all businesses with an active `square_connection`; ShedLock keys gain `-business-{id}` suffix
-      (`config/SchedulerLockConfig.java`)
+- [ ] 3.7 `ProviderVisitScheduler`, `RevenueSnapshotScheduler`, their `*Startup` counterparts, and
+      D9's six SMS automation schedulers (`RepeatCustomerWinbackScheduler`,
+      `LapsedCustomerWinbackScheduler`, `LeadFollowUpScheduler`, `SameDayRebookingScheduler`,
+      `SameDayRebookingGroupExpiryScheduler`, `SmsReplyFlowScheduler`) plus
+      `CheckoutReviewTriggerService`, `TechnicianNameResolver`, and `InternalNotificationController` —
+      iterate all businesses with an active `square_connection` (SMS ones: also an active
+      `twilio_sms_config`, once that's business-scoped per 2.6); ShedLock keys gain `-business-{id}`
+      suffix (`config/SchedulerLockConfig.java`). **Interim stopgap shipped 2026-08-15**: the SMS/
+      webhook/notification call sites now resolve `BusinessRepository#legacySmsBusiness` (hardcoded to
+      Business A) instead of crashing when a second business exists — correct only because `sms_message`/
+      `twilio_sms_config` are still global (2.6) so there's no second business's SMS data to route to
+      yet regardless. This does not scale to a third business's SMS needs and must be replaced by real
+      per-business iteration here, not extended with a second hardcoded business id.
 - [ ] 3.8 `/api/sync` (manual sync button) becomes business-scoped — `invalidate()` only clears the
       calling business's `SquareClient` cache instance, never the whole registry
 - [ ] 3.9 Integration tests: two businesses' `SquareClientProvider`-resolved clients never share cache
@@ -173,16 +201,41 @@ this file is the plan, not yet executed.
 - [ ] 6.5 Playwright e2e: business-switcher renders correctly for both 1-membership and 2-membership
       fixtures; onboarding flow end-to-end against Square sandbox credentials
 
-## Phase 7 — Second salon (Business B) onboarding
+## Phase 7 — Second salon (Business B / AK PMU) onboarding
 
-- [ ] 7.1 Create Business B's `business` row, connect its Square sandbox/production credentials via
-      the Phase 6.4 flow
-- [ ] 7.2 Enter Business B's `salon_config` values (Phase 4 output)
-- [ ] 7.3 Invite Business B's ~2 providers as `app_user` rows with `PROVIDER` role
-- [ ] 7.4 Enable only the feature set Business B actually wants (Phase 4.3's `business_feature` rows)
-      — leave RAG/SMS/marketing off unless requested
+- [x] 7.1 Create Business B's `business` row, connect its Square production credentials — shipped
+      2026-08-15 via `POST /api/platform/businesses` + `/owner/settings/square` (PR #368), not the
+      originally-planned Phase 6.4 `/onboarding` flow, which was folded into the Business Settings
+      admin UI instead
+- [x] 7.2 Enter Business B's `salon_config` values — 45%/55% commission, tier bonus off, 3.5% card tip
+      fee, via `/owner/settings/business` (PR #368)
+- [ ] 7.3 Invite Business B's ~2 providers as `app_user` rows with `PROVIDER` role — not yet done
+- [x] 7.4 Business_feature-style gating isn't built (2.6/4.3 still open), so this landed as a stricter
+      "off entirely, not configurable per-business yet" default: SMS/Telegram/KB/RAG/SOPs/staff-docs
+      all 403 or are otherwise unusable for Business B until 2.6 closes — see that task for why this
+      was judged acceptable for exactly two businesses but not a pattern to repeat
 - [ ] 7.5 Shadow-run for one real pay period: compare salaryReview's computed settlement against
       Business B's current manual process before treating it as authoritative
+
+## Phase 7b — Third+ business onboarding: hard gate
+
+Business B (AK PMU) shipped 2026-08-15 with several deliberate, hardcoded-to-"exactly one other
+business" stopgaps (2.6, 3.7's interim note) instead of the real per-business generalization Phase 3
+originally scoped — judged acceptable only because there were exactly two businesses and the
+alternative was rushing a bigger change under live-incident pressure. None of that reasoning holds for
+a third business: a hardcoded `legacySmsBusiness()`/`SmsBusinessScopeFilter` allow-list has no way to
+also allow-list a second non-Business-A business without becoming exactly the kind of ad-hoc,
+un-reviewed patch this file exists to prevent.
+
+- [ ] 7b.1 **Do not onboard a third business until 2.6 and 3.7 are both fully closed** — real
+      `business_id` columns (not a hardcoded business allow-list) on every table listed in 2.6, real
+      per-business iteration (not `legacySmsBusiness()`) on every call site listed in 3.7, and 2.5's
+      cross-tenant isolation suite extended to cover all of it
+- [ ] 7b.2 The point of 7b.1: onboarding a third (or Nth) business should need zero new backend/
+      frontend code by then — just a `business` row + owner account through the existing platform-admin
+      flow (Phase 5.1/6.4), same as any business after the second. If a third business turns out to
+      still need a code change, that's a signal 2.6/3.7 weren't actually finished — fix the gap there,
+      don't add a third hardcoded business id next to the other two
 
 ## Phase 8 — Regression and security testing
 
