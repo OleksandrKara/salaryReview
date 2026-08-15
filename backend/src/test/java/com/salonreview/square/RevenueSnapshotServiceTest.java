@@ -23,6 +23,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -79,7 +80,7 @@ class RevenueSnapshotServiceTest {
     @DisplayName("captureFor is idempotent — re-run on same date is a no-op")
     void idempotentRecapture() {
         LocalDate date = LocalDate.of(2026, 6, 14);
-        when(repo.findBySnapshotDate(date)).thenReturn(Optional.of(
+        when(repo.findByBusinessIdAndSnapshotDate(1L, date)).thenReturn(Optional.of(
                 RevenueSnapshot.builder().id(1L).snapshotDate(date).build()));
 
         service.captureFor(date);
@@ -90,7 +91,7 @@ class RevenueSnapshotServiceTest {
     @Test
     @DisplayName("backfillRecent captures last 3 days (today excluded)")
     void backfillRecentCapturesThreeDays() {
-        when(repo.findBySnapshotDate(any())).thenReturn(Optional.empty());
+        when(repo.findByBusinessIdAndSnapshotDate(eq(1L), any())).thenReturn(Optional.empty());
 
         service.backfillRecent();
 
@@ -118,7 +119,7 @@ class RevenueSnapshotServiceTest {
 
         RevenueSnapshot a = RevenueSnapshot.builder().id(1L).snapshotDate(LocalDate.of(2026,5,5)).build();
         RevenueSnapshot b = RevenueSnapshot.builder().id(2L).snapshotDate(LocalDate.of(2026,5,15)).build();
-        when(repo.findAllBySnapshotDateBetween(may.atDay(1), may.atEndOfMonth()))
+        when(repo.findAllByBusinessIdAndSnapshotDateBetween(1L, may.atDay(1), may.atEndOfMonth()))
                 .thenReturn(List.of(a, b));
 
         int updated = service.fillMonthEndActualsFor(may);
@@ -143,7 +144,7 @@ class RevenueSnapshotServiceTest {
     @DisplayName("dayDetail: no snapshot for that date → hasSnapshot=false, no forecast call")
     void dayDetailNoSnapshot() {
         LocalDate date = LocalDate.of(2026, 3, 10);
-        when(repo.findBySnapshotDate(date)).thenReturn(Optional.empty());
+        when(repo.findByBusinessIdAndSnapshotDate(1L, date)).thenReturn(Optional.empty());
 
         var detail = service.dayDetail(date);
 
@@ -162,7 +163,7 @@ class RevenueSnapshotServiceTest {
                 .mtdServices(42).upcomingCount(5).upcomingGross(new BigDecimal("600.00"))
                 .monthEndActual(new BigDecimal("9800.00"))
                 .build();
-        when(repo.findBySnapshotDate(date)).thenReturn(Optional.of(snap));
+        when(repo.findByBusinessIdAndSnapshotDate(1L, date)).thenReturn(Optional.of(snap));
         when(forecaster.forecast(2026, 6, new BigDecimal("3200.00"), new BigDecimal("600.00")))
                 .thenReturn(new ForecastResult(new BigDecimal("9500.00"), new BigDecimal("9000.00"), new BigDecimal("10000.00"), 4, 6));
 

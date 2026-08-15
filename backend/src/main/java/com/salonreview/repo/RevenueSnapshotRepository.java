@@ -10,13 +10,12 @@ import java.util.Optional;
 
 public interface RevenueSnapshotRepository extends JpaRepository<RevenueSnapshot, Long> {
 
-    Optional<RevenueSnapshot> findBySnapshotDate(LocalDate snapshotDate);
-
-    Optional<RevenueSnapshot> findTopByOrderBySnapshotDateDesc();
+    Optional<RevenueSnapshot> findByBusinessIdAndSnapshotDate(Long businessId, LocalDate snapshotDate);
 
     /** Calibration set: snapshots whose month has already closed and been filled in, newest first. */
-    List<RevenueSnapshot> findAllByMonthEndActualIsNotNullOrderBySnapshotDateDesc(Pageable pageable);
+    List<RevenueSnapshot> findAllByBusinessIdAndMonthEndActualIsNotNullOrderBySnapshotDateDesc(
+            Long businessId, Pageable pageable);
 
     /** All snapshot rows in a date window — used by the monthly actual-fill job. */
-    List<RevenueSnapshot> findAllBySnapshotDateBetween(LocalDate from, LocalDate to);
+    List<RevenueSnapshot> findAllByBusinessIdAndSnapshotDateBetween(Long businessId, LocalDate from, LocalDate to);
 }

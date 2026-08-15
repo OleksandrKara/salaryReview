@@ -64,7 +64,7 @@ class RevenuePulseServiceTest {
                 .thenAnswer(inv -> ((java.util.function.Supplier<?>) inv.getArgument(1)).get());
         when(salonConfig.findByBusinessId(1L)).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
-        when(snapshots.findBySnapshotDate(any())).thenReturn(Optional.empty());
+        when(snapshots.findByBusinessIdAndSnapshotDate(eq(1L), any())).thenReturn(Optional.empty());
         // No manual adjustments by default — individual tests override to exercise the fold-in.
         when(manualAdjustments.totalGrossThrough(any())).thenReturn(BigDecimal.ZERO);
 
@@ -136,7 +136,7 @@ class RevenuePulseServiceTest {
         when(forecaster.forecast(anyInt(), anyInt(), any(), any()))
                 .thenReturn(new ForecastResult(new BigDecimal("300.00"), null, null, 0, 0));
         // The real historical record of what the app projected on July 15 — not recomputed.
-        when(snapshots.findBySnapshotDate(LocalDate.of(2026, 7, 15))).thenReturn(Optional.of(
+        when(snapshots.findByBusinessIdAndSnapshotDate(1L, LocalDate.of(2026, 7, 15))).thenReturn(Optional.of(
                 RevenueSnapshot.builder().mtdRevenue(new BigDecimal("100.00"))
                         .upcomingGross(new BigDecimal("50.00")).build()));
 
@@ -166,7 +166,7 @@ class RevenuePulseServiceTest {
         when(aggregator.aggregate(eq(2026), eq(7), any())).thenReturn(aggOf(2026, 7, List.of()));
         when(forecaster.forecast(anyInt(), anyInt(), any(), any()))
                 .thenReturn(new ForecastResult(new BigDecimal("50.00"), null, null, 0, 0));
-        // snapshots.findBySnapshotDate(...) already stubbed to Optional.empty() in setUp().
+        // snapshots.findByBusinessIdAndSnapshotDate(1L, ...) already stubbed to Optional.empty() in setUp().
 
         RevenuePulseDto p = timed.pulse(2026, 8);
 
