@@ -51,7 +51,14 @@ class MarketingDashboardServiceTest {
         landingProperties.setLandingBaseUrls(java.util.Map.of("mani", "https://mani.akluxnails.com"));
         SquareClient square = mock(SquareClient.class);
         when(square.locationTimeZone()).thenReturn("America/Los_Angeles");
-        service = new MarketingDashboardService(repository, contactsService, landingProperties, square);
+        com.salonreview.square.SquareClientProvider squareClientProvider =
+                mock(com.salonreview.square.SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(org.mockito.ArgumentMatchers.anyLong())).thenReturn(square);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        service = new MarketingDashboardService(repository, contactsService, landingProperties, squareClientProvider,
+                currentBusinessContext);
     }
 
     private static AttributedBookingRow attributedRow(String variantId, String bookingId, String isoInstant) {
