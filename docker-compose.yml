@@ -18,6 +18,13 @@ x-backend-env: &backend-env
   SQUARE_ENVIRONMENT: ${SQUARE_ENVIRONMENT:-sandbox}
   SQUARE_ACCESS_TOKEN: ${SQUARE_ACCESS_TOKEN:-}
   SQUARE_LOCATION_ID: ${SQUARE_LOCATION_ID:-}
+  # Phase 3 multi-account Square support (SquareConnectionBootstrap/SquareCredentialCipher) — AES
+  # master key for square_connection.access_token_encrypted. Blank means the backfill/decrypt
+  # path throws IllegalStateException on every SquareClientProvider.forBusiness() call — same
+  # "referenced in application.yml but never actually passed through" gap as the webhook keys
+  # below (and #331/#309 before them): this line was missing entirely until the live incident it
+  # caused (every SquareClient-migrated endpoint 500ing) got traced back to it.
+  SQUARE_CREDENTIALS_MASTER_KEY: ${SQUARE_CREDENTIALS_MASTER_KEY:-}
   # Square's payment.updated/payment.created webhook (checkout-review-request automation).
   # Blank signature-key means every webhook request is rejected — was missing here entirely
   # until the automation's first real payment revealed no subscription/signature-key existed
