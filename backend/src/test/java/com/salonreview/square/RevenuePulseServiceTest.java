@@ -34,6 +34,7 @@ import static org.mockito.Mockito.when;
 class RevenuePulseServiceTest {
 
     private SquareClient square;
+    private SquareClientProvider squareClientProvider;
     private RevenueForecastService forecaster;
     private SquareMonthAggregator aggregator;
     private SalonConfigRepository salonConfig;
@@ -55,6 +56,8 @@ class RevenuePulseServiceTest {
         when(square.bookings(any(), any())).thenReturn(List.of());
         currentBusinessContext = mock(com.salonreview.config.CurrentBusinessContext.class);
         when(currentBusinessContext.id()).thenReturn(1L);
+        squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         // pulse() wraps its two CompletableFuture.supplyAsync tasks in runAsAndGet(businessId, Supplier)
         // so the worker thread sees the business id (see the async ThreadLocal fix on this class) — a
         // plain mock's runAsAndGet() is a no-op that never invokes the wrapped supplier (it would
@@ -68,7 +71,7 @@ class RevenuePulseServiceTest {
         // No manual adjustments by default — individual tests override to exercise the fold-in.
         when(manualAdjustments.totalGrossThrough(any())).thenReturn(BigDecimal.ZERO);
 
-        service = new RevenuePulseService(square, forecaster, aggregator, salonConfig, currentBusinessContext,
+        service = new RevenuePulseService(squareClientProvider, forecaster, aggregator, salonConfig, currentBusinessContext,
                 snapshots, manualAdjustments);
     }
 
@@ -122,7 +125,7 @@ class RevenuePulseServiceTest {
     void currentMonthHonoursTimeOfDayCutoff() {
         // Fix 'now' to Aug 15 2026, 12:00 PM UTC. Both months are compared through day 15 at noon.
         Clock clock = Clock.fixed(Instant.parse("2026-08-15T12:00:00Z"), ZoneOffset.UTC);
-        RevenuePulseService timed = new RevenuePulseService(square, forecaster, aggregator, salonConfig,
+        RevenuePulseService timed = new RevenuePulseService(squareClientProvider, forecaster, aggregator, salonConfig,
                 currentBusinessContext, snapshots, manualAdjustments, clock);
 
         when(aggregator.aggregate(eq(2026), eq(8), any())).thenReturn(aggOf(2026, 8, List.of(
@@ -159,7 +162,7 @@ class RevenuePulseServiceTest {
     void noComparisonWhenSnapshotMissing() {
         // e.g. before daily snapshotting started, or a genuine gap in the data.
         Clock clock = Clock.fixed(Instant.parse("2026-08-01T00:01:00Z"), ZoneOffset.UTC);
-        RevenuePulseService timed = new RevenuePulseService(square, forecaster, aggregator, salonConfig,
+        RevenuePulseService timed = new RevenuePulseService(squareClientProvider, forecaster, aggregator, salonConfig,
                 currentBusinessContext, snapshots, manualAdjustments, clock);
 
         when(aggregator.aggregate(eq(2026), eq(8), any())).thenReturn(aggOf(2026, 8, List.of()));

@@ -48,7 +48,7 @@ public class CancelledAppointmentService {
             DateTimeFormatter.ofPattern("h:mm a", Locale.US);
 
     private final SquareMonthAggregator aggregator;
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
     private final SalonConfigRepository salonConfig;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final ProviderDirectory providers;
@@ -56,14 +56,14 @@ public class CancelledAppointmentService {
     private final AppUserRepository users;
     private final CancellationClearanceRepository clearances;
 
-    public CancelledAppointmentService(SquareMonthAggregator aggregator, SquareClient square,
+    public CancelledAppointmentService(SquareMonthAggregator aggregator, SquareClientProvider squareClientProvider,
                                        SalonConfigRepository salonConfig,
                                        com.salonreview.config.CurrentBusinessContext currentBusinessContext,
                                        ProviderDirectory providers,
                                        ProviderRepository providerRepo, AppUserRepository users,
                                        CancellationClearanceRepository clearances) {
         this.aggregator = aggregator;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
         this.salonConfig = salonConfig;
         this.currentBusinessContext = currentBusinessContext;
         this.providers = providers;
@@ -229,7 +229,7 @@ public class CancelledAppointmentService {
     private Map<String, String> safeCustomerNames(List<String> ids) {
         if (ids.isEmpty()) return Map.of();
         try {
-            return square.customerNames(ids);
+            return squareClientProvider.forBusiness(currentBusinessContext.id()).customerNames(ids);
         } catch (RuntimeException e) {
             return Map.of();
         }
@@ -238,7 +238,7 @@ public class CancelledAppointmentService {
     private Map<String, String> safeCatalogNames(List<String> ids) {
         if (ids.isEmpty()) return Map.of();
         try {
-            return square.catalogNames(ids);
+            return squareClientProvider.forBusiness(currentBusinessContext.id()).catalogNames(ids);
         } catch (RuntimeException e) {
             return Map.of();
         }

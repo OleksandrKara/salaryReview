@@ -37,11 +37,13 @@ class RetentionAnalyticsServiceTest {
     void setUp() {
         repo = mock(ProviderVisitRepository.class);
         SquareClient square = mock(SquareClient.class);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(org.mockito.ArgumentMatchers.anyLong())).thenReturn(square);
         when(square.locationTimeZone()).thenReturn("UTC");
         com.salonreview.config.CurrentBusinessContext currentBusinessContext =
                 mock(com.salonreview.config.CurrentBusinessContext.class);
         when(currentBusinessContext.id()).thenReturn(1L);
-        service = new RetentionAnalyticsService(repo, square, currentBusinessContext);
+        service = new RetentionAnalyticsService(repo, squareClientProvider, currentBusinessContext);
     }
 
     private static ProviderVisit visit(String cust, String prov, LocalDate date, boolean rebooked) {

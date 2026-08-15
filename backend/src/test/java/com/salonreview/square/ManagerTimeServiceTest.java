@@ -47,9 +47,11 @@ class ManagerTimeServiceTest {
         currentBusinessContext = mock(com.salonreview.config.CurrentBusinessContext.class);
         when(currentBusinessContext.id()).thenReturn(1L);
         SquareClient square = mock(SquareClient.class);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(org.mockito.ArgumentMatchers.anyLong())).thenReturn(square);
         when(square.locationTimeZone()).thenReturn("UTC");
         when(entries.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        service = new ManagerTimeService(entries, rates, users, square,
+        service = new ManagerTimeService(entries, rates, users, squareClientProvider,
                 Clock.fixed(NOW, ZoneOffset.UTC), currentBusinessContext);
     }
 

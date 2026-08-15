@@ -31,7 +31,7 @@ public class RevenuePulseService {
     /** Matches the "h:mm a" display time the aggregator stamps on each attributed service. */
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("h:mm a", Locale.US);
 
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
     private final RevenueForecastService forecaster;
     private final SquareMonthAggregator aggregator;
     private final SalonConfigRepository salonConfig;
@@ -41,19 +41,19 @@ public class RevenuePulseService {
     private final Clock clock;
 
     @Autowired
-    public RevenuePulseService(SquareClient square, RevenueForecastService forecaster,
+    public RevenuePulseService(SquareClientProvider squareClientProvider, RevenueForecastService forecaster,
                                SquareMonthAggregator aggregator, SalonConfigRepository salonConfig,
                                com.salonreview.config.CurrentBusinessContext currentBusinessContext,
                                RevenueSnapshotRepository snapshots, ManualAdjustmentService manualAdjustments) {
-        this(square, forecaster, aggregator, salonConfig, currentBusinessContext, snapshots,
+        this(squareClientProvider, forecaster, aggregator, salonConfig, currentBusinessContext, snapshots,
                 manualAdjustments, Clock.systemUTC());
     }
 
-    RevenuePulseService(SquareClient square, RevenueForecastService forecaster,
+    RevenuePulseService(SquareClientProvider squareClientProvider, RevenueForecastService forecaster,
                         SquareMonthAggregator aggregator, SalonConfigRepository salonConfig,
                         com.salonreview.config.CurrentBusinessContext currentBusinessContext,
                         RevenueSnapshotRepository snapshots, ManualAdjustmentService manualAdjustments, Clock clock) {
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
         this.forecaster = forecaster;
         this.aggregator = aggregator;
         this.salonConfig = salonConfig;
@@ -105,7 +105,8 @@ public class RevenuePulseService {
         Instant nowInstant  = Instant.now();
         Instant endOfMonth  = ym.atEndOfMonth().plusDays(1).atStartOfDay(zone).toInstant();
         var upcomingF = fetchUpcoming
-                ? CompletableFuture.supplyAsync(() -> square.bookings(nowInstant, endOfMonth))
+                ? CompletableFuture.supplyAsync(() ->
+                        squareClientProvider.forBusiness(businessId).bookings(nowInstant, endOfMonth))
                 : CompletableFuture.completedFuture(List.<SquareClient.Booking>of());
 
         Split current = currentF.join();
@@ -246,7 +247,8 @@ public class RevenuePulseService {
                 .distinct()
                 .toList();
 
-        Map<String, BigDecimal> prices = varIds.isEmpty() ? Map.of() : square.catalogPrices(varIds);
+        Map<String, BigDecimal> prices = varIds.isEmpty() ? Map.of()
+                : squareClientProvider.forBusiness(currentBusinessContext.id()).catalogPrices(varIds);
 
         BigDecimal gross = BigDecimal.ZERO;
         for (SquareClient.Booking b : valid) {
@@ -296,7 +298,7 @@ public class RevenuePulseService {
 
     private ZoneId resolveZone() {
         try {
-            String tz = square.locationTimeZone();
+            String tz = squareClientProvider.forBusiness(currentBusinessContext.id()).locationTimeZone();
             return tz != null && !tz.isBlank() ? ZoneId.of(tz) : ZoneOffset.UTC;
         } catch (RuntimeException e) {
             return ZoneOffset.UTC;

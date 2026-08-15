@@ -41,8 +41,12 @@ class SuspiciousBookingDetectionTest {
     @BeforeEach
     void setUp() {
         square = mock(SquareClient.class);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext = mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         ownerRepo = mock(OwnerCustomerRepository.class);
-        aggregator = new SquareMonthAggregator(square, new CashNoteParser(), ownerRepo);
+        aggregator = new SquareMonthAggregator(squareClientProvider, new CashNoteParser(), ownerRepo, currentBusinessContext);
 
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.allTeamMembers()).thenReturn(List.of(
@@ -50,7 +54,7 @@ class SuspiciousBookingDetectionTest {
         when(square.catalogPrices(any())).thenReturn(Map.of(VAR, new BigDecimal("80.00")));
         when(square.catalogNames(any())).thenReturn(Map.of(VAR, "Manicure"));
         when(square.completedOrders(any(), any())).thenReturn(List.of()); // no orders by default
-        when(ownerRepo.findAll()).thenReturn(List.of());
+        when(ownerRepo.findAllByBusinessId(1L)).thenReturn(List.of());
     }
 
     /** A booking 3 days ago — clearly in the past for any salon timezone. */
@@ -138,7 +142,7 @@ class SuspiciousBookingDetectionTest {
         OwnerCustomer oc = new OwnerCustomer();
         oc.setId(1L);
         oc.setSquareCustomerId(CUST);
-        when(ownerRepo.findAll()).thenReturn(List.of(oc));
+        when(ownerRepo.findAllByBusinessId(1L)).thenReturn(List.of(oc));
 
         MonthAggregation agg = runForBookingMonth(List.of(pastBooking(CUST, "ACCEPTED", null, null)));
 

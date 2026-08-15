@@ -14,7 +14,10 @@ import java.util.TimeZone;
 
 /**
  * Daily re-ingest of the current month into the provider-visit ledger (02:00 salon-local, just after
- * the revenue snapshot). Timezone resolved from Square at startup, like the snapshot scheduler.
+ * the revenue snapshot) — one cron task per connected business, each bound to that business's own
+ * Square-resolved timezone. Registered once at startup ({@link #configureTasks}), like every
+ * {@link SchedulingConfigurer}-based job here — a business connected after boot picks up its own
+ * task on the next restart, not immediately (see design.md D9).
  */
 @Configuration
 public class ProviderVisitScheduler implements SchedulingConfigurer {
@@ -23,35 +26,38 @@ public class ProviderVisitScheduler implements SchedulingConfigurer {
     static final String DAILY_INGEST_CRON = "0 0 2 * * *"; // 02:00 salon-local
 
     private final ProviderVisitIngestService ingest;
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
-    private final com.salonreview.repo.BusinessRepository businesses;
+    private final com.salonreview.repo.SquareConnectionRepository connections;
 
-    public ProviderVisitScheduler(ProviderVisitIngestService ingest, SquareClient square,
+    public ProviderVisitScheduler(ProviderVisitIngestService ingest, SquareClientProvider squareClientProvider,
                                    com.salonreview.config.CurrentBusinessContext currentBusinessContext,
-                                   com.salonreview.repo.BusinessRepository businesses) {
+                                   com.salonreview.repo.SquareConnectionRepository connections) {
         this.ingest = ingest;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
         this.currentBusinessContext = currentBusinessContext;
-        this.businesses = businesses;
+        this.connections = connections;
     }
 
     @Override
     public void configureTasks(ScheduledTaskRegistrar registrar) {
-        ZoneId zone = resolveZone();
-        registrar.addCronTask(new CronTask(() -> {
-            log.info("Daily provider-visit ingest firing");
-            try {
-                currentBusinessContext.runAs(businesses.sole().getId(), ingest::ingestCurrentMonth);
-            } catch (RuntimeException e) {
-                log.warn("Daily provider-visit ingest failed: {}", e.toString());
-            }
-        }, new CronTrigger(DAILY_INGEST_CRON, TimeZone.getTimeZone(zone))));
+        for (com.salonreview.domain.SquareConnection connection : connections.findAll()) {
+            Long businessId = connection.getBusinessId();
+            ZoneId zone = resolveZone(businessId);
+            registrar.addCronTask(new CronTask(() -> {
+                log.info("Daily provider-visit ingest firing for business {}", businessId);
+                try {
+                    currentBusinessContext.runAs(businessId, ingest::ingestCurrentMonth);
+                } catch (RuntimeException e) {
+                    log.warn("Daily provider-visit ingest failed for business {}: {}", businessId, e.toString());
+                }
+            }, new CronTrigger(DAILY_INGEST_CRON, TimeZone.getTimeZone(zone))));
+        }
     }
 
-    private ZoneId resolveZone() {
+    private ZoneId resolveZone(Long businessId) {
         try {
-            String tz = square.locationTimeZone();
+            String tz = squareClientProvider.forBusiness(businessId).locationTimeZone();
             return tz != null && !tz.isBlank() ? ZoneId.of(tz) : ZoneOffset.UTC;
         } catch (RuntimeException e) {
             return ZoneOffset.UTC;

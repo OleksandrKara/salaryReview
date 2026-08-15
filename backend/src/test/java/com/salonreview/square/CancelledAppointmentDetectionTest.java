@@ -42,15 +42,19 @@ class CancelledAppointmentDetectionTest {
     @BeforeEach
     void setUp() {
         square = mock(SquareClient.class);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext = mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         OwnerCustomerRepository ownerRepo = mock(OwnerCustomerRepository.class);
-        aggregator = new SquareMonthAggregator(square, new CashNoteParser(), ownerRepo);
+        aggregator = new SquareMonthAggregator(squareClientProvider, new CashNoteParser(), ownerRepo, currentBusinessContext);
 
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.allTeamMembers()).thenReturn(List.of(
                 new TeamMember(TM, "Test", "Provider", "ACTIVE", false, null, null)));
         when(square.catalogPrices(any())).thenReturn(Map.of(VAR, new BigDecimal("80.00")));
         when(square.completedOrders(any(), any())).thenReturn(List.of());
-        when(ownerRepo.findAll()).thenReturn(List.of());
+        when(ownerRepo.findAllByBusinessId(1L)).thenReturn(List.of());
     }
 
     /** @param startAt when the appointment was scheduled; @param updatedAt when it was last changed (the cancel). */

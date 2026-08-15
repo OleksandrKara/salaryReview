@@ -53,17 +53,20 @@ public class NoShowFeeService {
     private static final Pattern CANCEL = Pattern.compile("cancel\\w*\\s*polic", Pattern.CASE_INSENSITIVE);
     private static final int LOOKBACK_MONTHS = 2; // max gap between a no-show and its fee payment
 
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
     private final ProviderDirectory directory;
     private final ProviderRepository providers;
     private final NoShowFeeOverrideRepository overrides;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
-    public NoShowFeeService(SquareClient square, ProviderDirectory directory,
-                            ProviderRepository providers, NoShowFeeOverrideRepository overrides) {
-        this.square = square;
+    public NoShowFeeService(SquareClientProvider squareClientProvider, ProviderDirectory directory,
+                            ProviderRepository providers, NoShowFeeOverrideRepository overrides,
+                            com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
+        this.squareClientProvider = squareClientProvider;
         this.directory = directory;
         this.providers = providers;
         this.overrides = overrides;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     /**
@@ -110,7 +113,9 @@ public class NoShowFeeService {
      */
     @Transactional
     public NoShowMonth compute(int year, int month) {
-        ZoneId zone = zone();
+        Long businessId = currentBusinessContext.id();
+        SquareClient square = squareClientProvider.forBusiness(businessId);
+        ZoneId zone = zone(square);
         YearMonth ym = YearMonth.of(year, month);
         LocalDate monthStart = ym.atDay(1), monthEnd = ym.atEndOfMonth();
 
@@ -178,7 +183,7 @@ public class NoShowFeeService {
             if (best != null) { usedNoShow.add(best.bookingId()); feeByNoShow.put(best.bookingId(), f); }
         }
 
-        Map<String, NoShowFeeOverride> ovr = overrides.findAll().stream()
+        Map<String, NoShowFeeOverride> ovr = overrides.findAllByBusinessId(businessId).stream()
                 .collect(Collectors.toMap(NoShowFeeOverride::getSquareBookingId, o -> o, (a, b) -> a));
         Map<String, String> custNames = square.customerNames(noShows.stream()
                 .map(NoShow::customerId).filter(Objects::nonNull).collect(Collectors.toSet()));
@@ -259,6 +264,7 @@ public class NoShowFeeService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "no such provider");
         }
         NoShowFeeOverride row = overrides.findBySquareBookingId(req.bookingId()).orElseGet(NoShowFeeOverride::new);
+        row.setBusinessId(currentBusinessContext.id());
         row.setSquareBookingId(req.bookingId());
         row.setKind(NoShowFeeOverride.CONFIRM);
         row.setProviderId(req.providerId());
@@ -277,6 +283,7 @@ public class NoShowFeeService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "bookingId is required");
         }
         NoShowFeeOverride row = overrides.findBySquareBookingId(bookingId).orElseGet(NoShowFeeOverride::new);
+        row.setBusinessId(currentBusinessContext.id());
         row.setSquareBookingId(bookingId);
         row.setKind(NoShowFeeOverride.SUPPRESS);
         row.setAmount(FEE);
@@ -299,7 +306,7 @@ public class NoShowFeeService {
         return d != null && d.getYear() == year && d.getMonthValue() == month;
     }
 
-    private ZoneId zone() {
+    private ZoneId zone(SquareClient square) {
         String tz = square.locationTimeZone();
         try {
             return tz == null || tz.isBlank() ? ZoneId.of("UTC") : ZoneId.of(tz);

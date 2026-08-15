@@ -37,6 +37,11 @@ class NoShowFeeTest {
     @DisplayName("Detection: a paid $25 'Cancelation Policy' is split across a 2-provider no-show, in the paid month")
     void detectsSplitsAndScopesToPaidMonth() {
         SquareClient square = mock(SquareClient.class);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         ProviderDirectory directory = mock(ProviderDirectory.class);
         ProviderRepository providers = mock(ProviderRepository.class);
         NoShowFeeOverrideRepository overrides = mock(NoShowFeeOverrideRepository.class);
@@ -44,7 +49,7 @@ class NoShowFeeTest {
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.allTeamMembers()).thenReturn(List.of(member("M1", "Susan"), member("M2", "Bayan")));
         when(square.customerNames(any())).thenReturn(Map.of("CUST1", "Test Customer 1"));
-        when(overrides.findAll()).thenReturn(List.of());
+        when(overrides.findAllByBusinessId(1L)).thenReturn(List.of());
 
         // One NO_SHOW booking on May 10 with two providers (two segments), customer CUST1.
         Booking noShow = new Booking("BK1", "NO_SHOW", "2026-05-10T17:00:00Z", null, "2026-05-10T17:00:00Z", "LOC",
@@ -63,7 +68,8 @@ class NoShowFeeTest {
         when(providers.findById(1L)).thenReturn(Optional.of(Provider.builder().id(1L).displayName("Susan").build()));
         when(providers.findById(2L)).thenReturn(Optional.of(Provider.builder().id(2L).displayName("Bayan").build()));
 
-        NoShowFeeService svc = new NoShowFeeService(square, directory, providers, overrides);
+        NoShowFeeService svc = new NoShowFeeService(squareClientProvider, directory, providers, overrides,
+                currentBusinessContext);
 
         // In the payment month (May): $25 split evenly → $12.50 each, both CREDITED.
         NoShowMonth may = svc.compute(2026, 5);
@@ -91,9 +97,11 @@ class NoShowFeeTest {
         com.salonreview.config.CurrentBusinessContext currentBusinessContext =
                 mock(com.salonreview.config.CurrentBusinessContext.class);
         when(currentBusinessContext.id()).thenReturn(1L);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
 
         SettlementPreviewService service = new SettlementPreviewService(aggregator, new TierCommissionEngine(),
-                salonConfigRepo, directory, tierGrants, feedback, square, mock(PrepaidRedemptionRepository.class),
+                salonConfigRepo, directory, tierGrants, feedback, squareClientProvider, mock(PrepaidRedemptionRepository.class),
                 mock(PrepaidPackageRepository.class), providerRepo, mock(RedoRepository.class),
                 mock(ManualAdjustmentRepository.class), noShowFees, mock(SuspiciousBookingService.class),
                 mock(com.salonreview.square.CancelledAppointmentService.class), currentBusinessContext);

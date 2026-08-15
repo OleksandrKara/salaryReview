@@ -45,8 +45,10 @@ class PrepaidServiceTest {
         com.salonreview.config.CurrentBusinessContext currentBusinessContext =
                 mock(com.salonreview.config.CurrentBusinessContext.class);
         when(currentBusinessContext.id()).thenReturn(1L);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
 
-        PrepaidService svc = new PrepaidService(square, providers, directory, salonConfig,
+        PrepaidService svc = new PrepaidService(squareClientProvider, providers, directory, salonConfig,
                 currentBusinessContext, packages, redemptions);
 
         PrepaidPackage pkg = PrepaidPackage.builder().id(1L).customerId("C1").customerName("Alina")
@@ -85,7 +87,9 @@ class PrepaidServiceTest {
     @DisplayName("Invoice lookup maps the total (sum of payment requests) and the created date")
     void invoiceLookupMapsTotalAndDate() {
         SquareClient square = mock(SquareClient.class);
-        PrepaidService svc = new PrepaidService(square, mock(ProviderRepository.class), mock(ProviderDirectory.class),
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(any())).thenReturn(square);
+        PrepaidService svc = new PrepaidService(squareClientProvider, mock(ProviderRepository.class), mock(ProviderDirectory.class),
                 mock(SalonConfigRepository.class), mock(com.salonreview.config.CurrentBusinessContext.class),
                 mock(PrepaidPackageRepository.class), mock(PrepaidRedemptionRepository.class));
 

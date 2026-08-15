@@ -46,6 +46,8 @@ class CancelledAppointmentServiceTest {
     void setUp() {
         aggregator = mock(SquareMonthAggregator.class);
         SquareClient square = mock(SquareClient.class);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(org.mockito.ArgumentMatchers.anyLong())).thenReturn(square);
         SalonConfigRepository salonConfig = mock(SalonConfigRepository.class);
         providers = mock(ProviderDirectory.class);
         providerRepo = mock(ProviderRepository.class);
@@ -54,7 +56,7 @@ class CancelledAppointmentServiceTest {
         com.salonreview.config.CurrentBusinessContext currentBusinessContext =
                 mock(com.salonreview.config.CurrentBusinessContext.class);
         when(currentBusinessContext.id()).thenReturn(1L);
-        service = new CancelledAppointmentService(aggregator, square, salonConfig,
+        service = new CancelledAppointmentService(aggregator, squareClientProvider, salonConfig,
                 currentBusinessContext, providers,
                 providerRepo, users, clearances);
 

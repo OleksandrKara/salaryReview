@@ -33,11 +33,15 @@ class TipAllocationTest {
     @BeforeEach
     void setUp() {
         square = mock(SquareClient.class);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext = mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         OwnerCustomerRepository ownerRepo = mock(OwnerCustomerRepository.class);
-        aggregator = new SquareMonthAggregator(square, new CashNoteParser(), ownerRepo);
+        aggregator = new SquareMonthAggregator(squareClientProvider, new CashNoteParser(), ownerRepo, currentBusinessContext);
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.allTeamMembers()).thenReturn(List.of(new TeamMember(TM, "Anna", "C", "ACTIVE", false, null, null)));
-        when(ownerRepo.findAll()).thenReturn(List.of());
+        when(ownerRepo.findAllByBusinessId(1L)).thenReturn(List.of());
         when(square.completedOrders(any(), any())).thenReturn(List.of());
         when(square.bookings(any(), any())).thenReturn(List.of());
     }

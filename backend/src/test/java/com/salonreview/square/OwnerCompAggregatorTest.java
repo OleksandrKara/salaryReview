@@ -38,8 +38,12 @@ class OwnerCompAggregatorTest {
     @BeforeEach
     void setUp() {
         square = mock(SquareClient.class);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext = mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         ownerRepo = mock(OwnerCustomerRepository.class);
-        aggregator = new SquareMonthAggregator(square, new CashNoteParser(), ownerRepo);
+        aggregator = new SquareMonthAggregator(squareClientProvider, new CashNoteParser(), ownerRepo, currentBusinessContext);
 
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.allTeamMembers()).thenReturn(List.of(
@@ -55,7 +59,7 @@ class OwnerCompAggregatorTest {
     }
 
     private void ownerCustomers(String... ids) {
-        when(ownerRepo.findAll()).thenReturn(java.util.Arrays.stream(ids)
+        when(ownerRepo.findAllByBusinessId(1L)).thenReturn(java.util.Arrays.stream(ids)
                 .map(id -> OwnerCustomer.builder().squareCustomerId(id).build())
                 .toList());
     }

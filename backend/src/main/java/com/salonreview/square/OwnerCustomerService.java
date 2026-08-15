@@ -17,13 +17,13 @@ import java.util.Map;
 public class OwnerCustomerService {
 
     private final OwnerCustomerRepository repo;
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
-    public OwnerCustomerService(OwnerCustomerRepository repo, SquareClient square,
+    public OwnerCustomerService(OwnerCustomerRepository repo, SquareClientProvider squareClientProvider,
                                 com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.repo = repo;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
         this.currentBusinessContext = currentBusinessContext;
     }
 
@@ -38,7 +38,8 @@ public class OwnerCustomerService {
         List<OwnerCustomer> all = repo.findAllByBusinessId(currentBusinessContext.id());
         Map<String, String> names;
         try {
-            names = square.customerNames(all.stream().map(OwnerCustomer::getSquareCustomerId).toList());
+            names = squareClientProvider.forBusiness(currentBusinessContext.id())
+                    .customerNames(all.stream().map(OwnerCustomer::getSquareCustomerId).toList());
         } catch (RuntimeException e) {
             names = Map.of(); // names are a nicety; show stored labels if Square is unreachable
         }
@@ -60,7 +61,8 @@ public class OwnerCustomerService {
         // Resolve the name now so the list reads well even if Square is unreachable later.
         String label = req.label();
         if (label == null || label.isBlank()) {
-            label = square.customerNames(List.of(customerId)).get(customerId);
+            label = squareClientProvider.forBusiness(currentBusinessContext.id())
+                    .customerNames(List.of(customerId)).get(customerId);
         }
         OwnerCustomer saved = repo.save(OwnerCustomer.builder()
                 .businessId(currentBusinessContext.id())
@@ -77,7 +79,7 @@ public class OwnerCustomerService {
 
     /** Square customers whose name matches {@code query}, for the add picker. */
     public List<CustomerMatch> search(String query) {
-        return square.searchCustomers(query).stream()
+        return squareClientProvider.forBusiness(currentBusinessContext.id()).searchCustomers(query).stream()
                 .map(c -> new CustomerMatch(c.id(), c.fullName()))
                 .toList();
     }

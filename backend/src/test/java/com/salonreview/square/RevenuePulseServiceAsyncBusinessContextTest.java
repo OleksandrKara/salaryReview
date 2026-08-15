@@ -51,6 +51,8 @@ class RevenuePulseServiceAsyncBusinessContextTest {
         SquareClient square = mock(SquareClient.class);
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.bookings(any(), any())).thenReturn(List.of());
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(42L)).thenReturn(square);
 
         SquareMonthAggregator aggregator = mock(SquareMonthAggregator.class);
         when(aggregator.aggregate(org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyInt(), any()))
@@ -71,7 +73,7 @@ class RevenuePulseServiceAsyncBusinessContextTest {
         RevenueSnapshotRepository snapshots = mock(RevenueSnapshotRepository.class);
         when(snapshots.findByBusinessIdAndSnapshotDate(eq(42L), any())).thenReturn(java.util.Optional.empty());
 
-        RevenuePulseService service = new RevenuePulseService(square, forecaster, aggregator, salonConfig,
+        RevenuePulseService service = new RevenuePulseService(squareClientProvider, forecaster, aggregator, salonConfig,
                 realContext, snapshots, manualAdjustments);
 
         // A past month (not the current month) so both mtdSplit() calls run through the full window —

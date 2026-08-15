@@ -41,7 +41,7 @@ public class PrepaidService {
     private static final Set<String> DID_NOT_HAPPEN =
             Set.of("CANCELLED_BY_CUSTOMER", "CANCELLED_BY_SELLER", "DECLINED", "NO_SHOW");
 
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
     private final ProviderRepository providers;
     private final com.salonreview.service.ProviderDirectory directory;
     private final SalonConfigRepository salonConfig;
@@ -49,11 +49,11 @@ public class PrepaidService {
     private final PrepaidPackageRepository packages;
     private final PrepaidRedemptionRepository redemptions;
 
-    public PrepaidService(SquareClient square, ProviderRepository providers,
+    public PrepaidService(SquareClientProvider squareClientProvider, ProviderRepository providers,
                           com.salonreview.service.ProviderDirectory directory, SalonConfigRepository salonConfig,
                           com.salonreview.config.CurrentBusinessContext currentBusinessContext,
                           PrepaidPackageRepository packages, PrepaidRedemptionRepository redemptions) {
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
         this.providers = providers;
         this.directory = directory;
         this.salonConfig = salonConfig;
@@ -147,7 +147,8 @@ public class PrepaidService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such package"));
         if (pkg.getCustomerId() == null) return List.of(); // need a Square customer id to find their bookings
 
-        ZoneId zone = resolveZone();
+        SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
+        ZoneId zone = resolveZone(square);
         Instant from = pkg.getPaidDate().atStartOfDay(zone).toInstant();
         Instant to = LocalDate.now(zone).plusDays(2).atStartOfDay(zone).toInstant();
 
@@ -193,7 +194,7 @@ public class PrepaidService {
 
     /** Square customers whose name matches {@code query} — to pick the package's customer by name. */
     public List<CustomerMatch> searchCustomers(String query) {
-        return square.searchCustomers(query).stream()
+        return squareClientProvider.forBusiness(currentBusinessContext.id()).searchCustomers(query).stream()
                 .map(c -> new CustomerMatch(c.id(), c.fullName()))
                 .toList();
     }
@@ -204,7 +205,7 @@ public class PrepaidService {
      * so unpaid/draft/cancelled invoices aren't relevant.
      */
     public List<InvoiceMatch> invoices(String customerId) {
-        return square.invoicesForCustomer(customerId).stream()
+        return squareClientProvider.forBusiness(currentBusinessContext.id()).invoicesForCustomer(customerId).stream()
                 .filter(i -> "PAID".equalsIgnoreCase(i.status()))
                 .map(i -> new InvoiceMatch(i.id(), blankToNull(i.invoiceNumber()), blankToNull(i.title()),
                         i.status(), i.createdAt() == null ? null : i.createdAt().substring(0, 10), i.total()))
@@ -232,7 +233,7 @@ public class PrepaidService {
                 .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));
     }
 
-    private ZoneId resolveZone() {
+    private ZoneId resolveZone(SquareClient square) {
         try {
             String tz = square.locationTimeZone();
             return tz != null && !tz.isBlank() ? ZoneId.of(tz) : ZoneOffset.UTC;

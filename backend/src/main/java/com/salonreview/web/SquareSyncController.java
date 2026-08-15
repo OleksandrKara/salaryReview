@@ -5,7 +5,7 @@ import com.salonreview.marketing.MarketingAnalyticsService;
 import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.marketing.MarketingDashboardService;
 import com.salonreview.square.OwnerOverviewService;
-import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,30 +22,34 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/sync")
 public class SquareSyncController {
 
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
     private final MarketingDashboardService marketingDashboard;
     private final FunnelAnalyticsService funnelAnalytics;
     private final MarketingContactsService marketingContacts;
     private final MarketingAnalyticsService marketingAnalytics;
     private final OwnerOverviewService ownerOverview;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
-    public SquareSyncController(SquareClient square,
+    public SquareSyncController(SquareClientProvider squareClientProvider,
                                  MarketingDashboardService marketingDashboard,
                                  FunnelAnalyticsService funnelAnalytics,
                                  MarketingContactsService marketingContacts,
                                  MarketingAnalyticsService marketingAnalytics,
-                                 OwnerOverviewService ownerOverview) {
-        this.square = square;
+                                 OwnerOverviewService ownerOverview,
+                                 com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
+        this.squareClientProvider = squareClientProvider;
         this.marketingDashboard = marketingDashboard;
         this.funnelAnalytics = funnelAnalytics;
         this.marketingContacts = marketingContacts;
         this.marketingAnalytics = marketingAnalytics;
         this.ownerOverview = ownerOverview;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     @PostMapping
     public ResponseEntity<Void> sync() {
-        square.invalidate();
+        // Only this business's own cached SquareClient instance — never the whole registry (Phase 3.8).
+        squareClientProvider.forBusiness(currentBusinessContext.id()).invalidate();
         marketingDashboard.invalidateCache();
         funnelAnalytics.invalidateCache();
         marketingContacts.invalidateCache();

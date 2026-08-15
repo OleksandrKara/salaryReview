@@ -18,23 +18,27 @@ public class RevenueSnapshotStartup {
 
     private final RevenueSnapshotService service;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
-    private final com.salonreview.repo.BusinessRepository businesses;
+    private final com.salonreview.repo.SquareConnectionRepository connections;
 
     public RevenueSnapshotStartup(RevenueSnapshotService service,
                                    com.salonreview.config.CurrentBusinessContext currentBusinessContext,
-                                   com.salonreview.repo.BusinessRepository businesses) {
+                                   com.salonreview.repo.SquareConnectionRepository connections) {
         this.service = service;
         this.currentBusinessContext = currentBusinessContext;
-        this.businesses = businesses;
+        this.connections = connections;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     public void backfillOnStartup() {
-        try {
-            log.info("Startup snapshot backfill — capturing last 3 days if missing");
-            currentBusinessContext.runAs(businesses.sole().getId(), service::backfillRecent);
-        } catch (RuntimeException e) {
-            log.warn("Startup snapshot backfill failed (will be retried at next scheduled run): {}", e.toString());
+        for (com.salonreview.domain.SquareConnection connection : connections.findAll()) {
+            Long businessId = connection.getBusinessId();
+            try {
+                log.info("Startup snapshot backfill for business {} — capturing last 3 days if missing", businessId);
+                currentBusinessContext.runAs(businessId, service::backfillRecent);
+            } catch (RuntimeException e) {
+                log.warn("Startup snapshot backfill failed for business {} (will be retried at next scheduled run): {}",
+                        businessId, e.toString());
+            }
         }
     }
 }
