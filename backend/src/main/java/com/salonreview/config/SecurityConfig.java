@@ -34,7 +34,8 @@ public class SecurityConfig {
     private final ObjectMapper json = new ObjectMapper();
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http, CurrentBusinessContext currentBusinessContext)
+    SecurityFilterChain filterChain(HttpSecurity http, CurrentBusinessContext currentBusinessContext,
+                                     com.salonreview.repo.BusinessRepository businesses)
             throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
@@ -45,6 +46,11 @@ public class SecurityConfig {
                 // CurrentBusinessContextFilter's own doc comment.
                 .addFilterAfter(new CurrentBusinessContextFilter(currentBusinessContext),
                         UsernamePasswordAuthenticationFilter.class)
+                // Live-incident fix (2026-08-15): sms_message/twilio_sms_config have no business_id
+                // yet, so a second business's OWNER could otherwise read Business A's SMS history and
+                // live Twilio credentials — see SmsBusinessScopeFilter's own doc comment.
+                .addFilterAfter(new SmsBusinessScopeFilter(currentBusinessContext, businesses),
+                        CurrentBusinessContextFilter.class)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/info", "/api/login").permitAll()
                         // Spring Boot's internal error-rendering path: when a controller throws
