@@ -1,11 +1,14 @@
 package com.salonreview.sms;
 
 import com.salonreview.config.RebookingProperties;
+import com.salonreview.domain.Business;
 import com.salonreview.domain.LapsedCustomerWinbackSend;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.TwilioSmsConfig;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.LapsedCustomerWinbackSendRepository;
 import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -55,8 +58,13 @@ class LapsedCustomerWinbackSchedulerTest {
         messageLogService = mock(SmsMessageLogService.class);
         configService = mock(TwilioSmsConfigService.class);
         client = mock(TwilioSmsClient.class);
-        scheduler = new LapsedCustomerWinbackScheduler(eligibilityRepository, sendRepository, square,
-                automationService, consentRepository, rebookingProperties, messageLogService, configService,
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        BusinessRepository businesses = mock(BusinessRepository.class);
+        when(businesses.sole()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
+                .timezone("UTC").active(true).build());
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
+        scheduler = new LapsedCustomerWinbackScheduler(eligibilityRepository, sendRepository, squareClientProvider,
+                businesses, automationService, consentRepository, rebookingProperties, messageLogService, configService,
                 client, "https://salon.akluxnails.com");
 
         when(automationService.isEnabled("lapsed_customer_winback")).thenReturn(true);

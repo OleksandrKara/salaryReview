@@ -1,9 +1,12 @@
 package com.salonreview.sms;
 
 import com.salonreview.config.RebookingProperties;
+import com.salonreview.domain.Business;
 import com.salonreview.domain.SameDayRebookingGroupMembership;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SameDayRebookingGroupMembershipRepository;
 import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,9 +34,14 @@ class SameDayRebookingGroupExpirySchedulerTest {
     void setUp() {
         repository = mock(SameDayRebookingGroupMembershipRepository.class);
         square = mock(SquareClient.class);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        BusinessRepository businesses = mock(BusinessRepository.class);
+        when(businesses.sole()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
+                .timezone("UTC").active(true).build());
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         rebookingProperties = new RebookingProperties();
         rebookingProperties.setAutoDiscountGroupId(GROUP_ID);
-        scheduler = new SameDayRebookingGroupExpiryScheduler(repository, square, rebookingProperties);
+        scheduler = new SameDayRebookingGroupExpiryScheduler(repository, squareClientProvider, businesses, rebookingProperties);
     }
 
     private static SameDayRebookingGroupMembership membership(String customerId, Instant expiresAt) {

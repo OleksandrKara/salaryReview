@@ -9,8 +9,8 @@ import com.salonreview.repo.BusinessMembershipRepository;
 import com.salonreview.repo.ProviderRepository;
 import com.salonreview.repo.SopAcknowledgmentRepository;
 import com.salonreview.service.ProviderDirectory;
-import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClient.TeamMember;
+import com.salonreview.square.SquareClientProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,20 +33,20 @@ public class UserController {
     private final AppUserRepository users;
     private final ProviderRepository providers;
     private final ProviderDirectory directory;
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
     private final PasswordEncoder encoder;
     private final SopAcknowledgmentRepository sopAcks;
     private final BusinessMembershipRepository memberships;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
     public UserController(AppUserRepository users, ProviderRepository providers,
-                          ProviderDirectory directory, SquareClient square, PasswordEncoder encoder,
+                          ProviderDirectory directory, SquareClientProvider squareClientProvider, PasswordEncoder encoder,
                           SopAcknowledgmentRepository sopAcks, BusinessMembershipRepository memberships,
                           com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.users = users;
         this.providers = providers;
         this.directory = directory;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
         this.encoder = encoder;
         this.sopAcks = sopAcks;
         this.memberships = memberships;
@@ -74,7 +74,7 @@ public class UserController {
                 .map(AppUser::getProviderId).filter(java.util.Objects::nonNull)
                 .collect(Collectors.toSet());
 
-        return square.activeTeamMembers().stream().map(tm -> {
+        return squareClientProvider.forBusiness(currentBusinessContext.id()).activeTeamMembers().stream().map(tm -> {
             Role suggested = suggestRole(tm);
             Provider provider = suggested == Role.PROVIDER
                     ? providers.findBySquareTeamMemberId(tm.id()).orElse(null) : null;

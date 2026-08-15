@@ -1,10 +1,13 @@
 package com.salonreview.sms;
 
+import com.salonreview.domain.Business;
 import com.salonreview.domain.LeadFollowUpSend;
 import com.salonreview.marketing.MarketingContactsRepository;
 import com.salonreview.marketing.MarketingContactsRepository.RawContact;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.LeadFollowUpSendRepository;
 import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,9 +42,15 @@ class LeadFollowUpSchedulerTest {
         contactsRepository = mock(MarketingContactsRepository.class);
         sendRepository = mock(LeadFollowUpSendRepository.class);
         square = mock(SquareClient.class);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        BusinessRepository businesses = mock(BusinessRepository.class);
+        when(businesses.sole()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
+                .timezone("UTC").active(true).build());
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         automationService = mock(SmsAutomationService.class);
         smsService = mock(TwilioSmsService.class);
-        scheduler = new LeadFollowUpScheduler(contactsRepository, sendRepository, square, automationService, smsService);
+        scheduler = new LeadFollowUpScheduler(contactsRepository, sendRepository, squareClientProvider, businesses,
+                automationService, smsService);
 
         when(automationService.isEnabled("lead_follow_up")).thenReturn(true);
         when(smsService.sendTemplated(any(), any(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));

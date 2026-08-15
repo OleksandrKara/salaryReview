@@ -2,8 +2,10 @@ package com.salonreview.sms;
 
 import com.salonreview.config.RebookingProperties;
 import com.salonreview.domain.SameDayRebookingGroupMembership;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SameDayRebookingGroupMembershipRepository;
 import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,19 +30,32 @@ public class SameDayRebookingGroupExpiryScheduler {
     private static final Logger log = LoggerFactory.getLogger(SameDayRebookingGroupExpiryScheduler.class);
 
     private final SameDayRebookingGroupMembershipRepository repository;
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
+    private final BusinessRepository businesses;
     private final RebookingProperties rebookingProperties;
 
     public SameDayRebookingGroupExpiryScheduler(SameDayRebookingGroupMembershipRepository repository,
-                                                 SquareClient square, RebookingProperties rebookingProperties) {
+                                                 SquareClientProvider squareClientProvider, BusinessRepository businesses,
+                                                 RebookingProperties rebookingProperties) {
         this.repository = repository;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
+        this.businesses = businesses;
         this.rebookingProperties = rebookingProperties;
     }
 
-    @Scheduled(fixedDelay = 60_000)
+    // initialDelay: see SameDayRebookingScheduler's identical comment — gives
+    // SquareConnectionBootstrap's ApplicationRunner time to finish before the first tick.
+    @Scheduled(fixedDelay = 60_000, initialDelay = 15_000)
     @SchedulerLock(name = "SameDayRebookingGroupExpiryScheduler_removeExpiredMemberships", lockAtLeastFor = "PT10S", lockAtMostFor = "PT3M")
     public void removeExpiredMemberships() {
+        // Same single-business guard as BusinessRepository#sole's own doc comment: the underlying
+        // same_day_rebooking_group_membership row (and every other SMS-scheduler table read in this
+        // package) has no business_id of its own yet, so there is no correct way to route this
+        // customer to the right Square account once a second business exists — failing loudly here
+        // is safer than silently processing every business's rows against business A's Square
+        // account. Scoping the sms/marketing schedulers is tracked separately from the
+        // SquareClientProvider migration itself.
+        SquareClient square = squareClientProvider.forBusiness(businesses.sole().getId());
         Instant now = Instant.now();
         List<SameDayRebookingGroupMembership> due = repository.findByRemovedAtIsNullAndExpiresAtBefore(now);
         for (SameDayRebookingGroupMembership membership : due) {

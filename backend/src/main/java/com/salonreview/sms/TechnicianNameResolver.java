@@ -1,9 +1,11 @@
 package com.salonreview.sms;
 
 import com.salonreview.domain.Provider;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.ProviderRepository;
 import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import com.salonreview.util.Names;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,11 +31,14 @@ public class TechnicianNameResolver {
      * few hours delayed (same-day-rebooking) without pulling in unrelated older history. */
     private static final Duration LOOKBACK = Duration.ofDays(2);
 
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
+    private final BusinessRepository businesses;
     private final ProviderRepository providers;
 
-    public TechnicianNameResolver(SquareClient square, ProviderRepository providers) {
-        this.square = square;
+    public TechnicianNameResolver(SquareClientProvider squareClientProvider, BusinessRepository businesses,
+                                   ProviderRepository providers) {
+        this.squareClientProvider = squareClientProvider;
+        this.businesses = businesses;
         this.providers = providers;
     }
 
@@ -47,6 +52,9 @@ public class TechnicianNameResolver {
             return Optional.empty();
         }
         try {
+            // Same single-business guard as every scheduler in this package that calls this
+            // resolver — no business_id on the caller side to route on yet.
+            SquareClient square = squareClientProvider.forBusiness(businesses.sole().getId());
             return square.bookingsForCustomer(customerId, asOf.minus(LOOKBACK)).stream()
                     .filter(SquareBookingFilters::didHappen)
                     .filter(b -> alreadyHappened(b, asOf))

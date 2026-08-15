@@ -1,6 +1,5 @@
 package com.salonreview.square;
 
-import com.salonreview.config.SquareProperties;
 import com.salonreview.square.SquareClient.Booking;
 import com.salonreview.square.SquareClient.Order;
 import com.salonreview.square.SquareClient.AppointmentSegment;
@@ -28,20 +27,21 @@ import java.util.TreeMap;
 @Service
 public class SquareSpikeService {
 
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
     private final CashNoteParser cashNotes;
-    private final SquareProperties props;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
-    public SquareSpikeService(SquareClient square, CashNoteParser cashNotes, SquareProperties props) {
-        this.square = square;
+    public SquareSpikeService(SquareClientProvider squareClientProvider, CashNoteParser cashNotes,
+                               com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
+        this.squareClientProvider = squareClientProvider;
         this.cashNotes = cashNotes;
-        this.props = props;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     public SpikeReport run(LocalDate from, LocalDate to, BigDecimal priceCutoff) {
-        if (!props.isConfigured()) {
-            throw new IllegalStateException("SQUARE_ACCESS_TOKEN is not set — cannot reach Square.");
-        }
+        // squareClientProvider.forBusiness() itself throws a clear IllegalStateException if this
+        // business has no square_connection row yet — no separate pre-flight check needed.
+        SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
         Instant start = from.atStartOfDay(ZoneOffset.UTC).toInstant();
         Instant end = to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
 

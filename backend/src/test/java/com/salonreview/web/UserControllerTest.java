@@ -7,7 +7,7 @@ import com.salonreview.repo.BusinessMembershipRepository;
 import com.salonreview.repo.ProviderRepository;
 import com.salonreview.repo.SopAcknowledgmentRepository;
 import com.salonreview.service.ProviderDirectory;
-import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -28,7 +28,7 @@ class UserControllerTest {
         AppUserRepository users = mock(AppUserRepository.class);
         SopAcknowledgmentRepository acks = mock(SopAcknowledgmentRepository.class);
         UserController controller = new UserController(users, mock(ProviderRepository.class),
-                mock(ProviderDirectory.class), mock(SquareClient.class), mock(PasswordEncoder.class), acks,
+                mock(ProviderDirectory.class), mock(SquareClientProvider.class), mock(PasswordEncoder.class), acks,
                 mock(BusinessMembershipRepository.class), mock(com.salonreview.config.CurrentBusinessContext.class));
 
         AppUser manager = AppUser.builder().id(7L).username("m").role(Role.MANAGER).active(true).build();

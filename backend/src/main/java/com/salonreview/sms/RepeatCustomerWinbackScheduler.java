@@ -5,9 +5,11 @@ import com.salonreview.domain.RepeatCustomerWinbackSend;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.BlockedNumberRepository;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.RepeatCustomerWinbackSendRepository;
 import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import com.salonreview.util.Names;
 import com.salonreview.util.PhoneNumbers;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
@@ -80,7 +82,8 @@ public class RepeatCustomerWinbackScheduler {
 
     private final RepeatCustomerWinbackEligibilityRepository eligibilityRepository;
     private final RepeatCustomerWinbackSendRepository sendRepository;
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
+    private final BusinessRepository businesses;
     private final SmsAutomationService automationService;
     private final SmsConsentRepository consentRepository;
     private final RebookingProperties rebookingProperties;
@@ -91,14 +94,16 @@ public class RepeatCustomerWinbackScheduler {
     private final String publicBaseUrl;
 
     public RepeatCustomerWinbackScheduler(RepeatCustomerWinbackEligibilityRepository eligibilityRepository,
-                                           RepeatCustomerWinbackSendRepository sendRepository, SquareClient square,
+                                           RepeatCustomerWinbackSendRepository sendRepository,
+                                           SquareClientProvider squareClientProvider, BusinessRepository businesses,
                                            SmsAutomationService automationService, SmsConsentRepository consentRepository,
                                            RebookingProperties rebookingProperties, SmsMessageLogService messageLogService,
                                            BlockedNumberRepository blockedNumberRepository, TwilioSmsConfigService configService,
                                            TwilioSmsClient client, @Value("${app.public-base-url}") String publicBaseUrl) {
         this.eligibilityRepository = eligibilityRepository;
         this.sendRepository = sendRepository;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
+        this.businesses = businesses;
         this.automationService = automationService;
         this.consentRepository = consentRepository;
         this.rebookingProperties = rebookingProperties;
@@ -115,17 +120,19 @@ public class RepeatCustomerWinbackScheduler {
     @Scheduled(cron = "0 0 10 * * *", zone = "America/Los_Angeles")
     @SchedulerLock(name = "RepeatCustomerWinbackScheduler_sendDueWinbacks", lockAtLeastFor = "PT10S", lockAtMostFor = "PT10M")
     public void sendDueWinbacks() {
+        // Same single-business guard as LapsedCustomerWinbackScheduler.
+        SquareClient square = squareClientProvider.forBusiness(businesses.sole().getId());
         Instant cooldownCutoff = Instant.now().minus(COOLDOWN_DAYS, ChronoUnit.DAYS);
         for (RepeatCustomerWinbackEligibilityRepository.EligibleCustomer customer : eligibilityRepository.findEligibleCustomers()) {
             if (sendRepository.existsBySquareCustomerIdAndStateAndCreatedAtAfter(
                     customer.squareCustomerId(), RepeatCustomerWinbackSend.STATE_SENT, cooldownCutoff)) {
                 continue; // belt-and-suspenders vs. the eligibility query's own NOT EXISTS
             }
-            process(customer);
+            process(customer, square);
         }
     }
 
-    private void process(RepeatCustomerWinbackEligibilityRepository.EligibleCustomer customer) {
+    private void process(RepeatCustomerWinbackEligibilityRepository.EligibleCustomer customer, SquareClient square) {
         int daysSinceLastVisit = (int) ChronoUnit.DAYS.between(customer.lastVisitDate(), LocalDate.now(SALON_ZONE));
         boolean providerChanged = !Objects.equals(customer.lastProvider(), customer.previousProvider());
 
@@ -147,7 +154,7 @@ public class RepeatCustomerWinbackScheduler {
 
         boolean upcoming;
         try {
-            upcoming = hasUpcomingAppointment(customer.squareCustomerId());
+            upcoming = hasUpcomingAppointment(customer.squareCustomerId(), square);
         } catch (RuntimeException ex) {
             // Fails closed, same as every other scheduler in this package: a transient Square
             // failure means "don't know," not "assume unbooked" — no row written, retried on the
@@ -168,14 +175,14 @@ public class RepeatCustomerWinbackScheduler {
 
         Instant promoExpiresAt = endOfTodayInSalonZone();
         String givenName = square.customerGivenNames(List.of(customer.squareCustomerId())).get(customer.squareCustomerId());
-        String variant = sendNudge(customer, phoneNumber, givenName, providerChanged, promoExpiresAt);
+        String variant = sendNudge(customer, phoneNumber, givenName, providerChanged, promoExpiresAt, square);
         save(customer, phoneNumber, daysSinceLastVisit, providerChanged, promoExpiresAt, variant, RepeatCustomerWinbackSend.STATE_SENT);
     }
 
     /** Consent from *either* source is sufficient — same dual-source check
      * {@code LapsedCustomerWinbackScheduler.hasConsent}/{@code SameDayRebookingScheduler.hasConsent}
      * use, reusing the same consent-segment id (no new Square segment needed). */
-    private boolean hasConsent(String phoneNumber, String squareCustomerId) {
+    private boolean hasConsent(String phoneNumber, String squareCustomerId, SquareClient square) {
         if (consentRepository.hasMarketingConsent(phoneNumber)) {
             return true;
         }
@@ -194,7 +201,7 @@ public class RepeatCustomerWinbackScheduler {
 
     /** Live check for any not-cancelled, not-yet-happened Square appointment — same helper every
      * other scheduler in this package uses. */
-    private boolean hasUpcomingAppointment(String customerId) {
+    private boolean hasUpcomingAppointment(String customerId, SquareClient square) {
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
         return square.bookingsForCustomer(customerId, Instant.now()).stream()
                 .filter(SquareBookingFilters::didHappen)
@@ -204,14 +211,14 @@ public class RepeatCustomerWinbackScheduler {
     /** Returns the message variant actually used ("default" or "previous_provider"), for the
      * caller to record. */
     private String sendNudge(RepeatCustomerWinbackEligibilityRepository.EligibleCustomer customer, String phoneNumber,
-                              String rawGivenName, boolean providerChanged, Instant promoExpiresAt) {
+                              String rawGivenName, boolean providerChanged, Instant promoExpiresAt, SquareClient square) {
         String clickToken = messageLogService.generateUniqueClickToken();
         // Reconstructed deterministically by ShortLinkController at click time — see
         // RebookingPromoSigner and class doc. No signature stored here; it's recomputed. Identical
         // regardless of consent — the coupon is applied on click either way, it's only the SMS
         // wording that differs (see class doc).
         String linkTarget = "WINBACK:" + promoExpiresAt.getEpochSecond();
-        boolean consented = hasConsent(phoneNumber, customer.squareCustomerId());
+        boolean consented = hasConsent(phoneNumber, customer.squareCustomerId(), square);
         String templateKey = consented ? TEMPLATE_KEY : TEMPLATE_KEY_TRANSACTIONAL;
         SmsMessage reserved = messageLogService.logOutboundWithLink(
                 templateKey, AUTOMATION_KEY, phoneNumber, "", false, "pending", null, linkTarget, clickToken);

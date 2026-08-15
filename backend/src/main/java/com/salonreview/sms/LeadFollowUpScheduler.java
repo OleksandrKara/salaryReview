@@ -3,9 +3,11 @@ package com.salonreview.sms;
 import com.salonreview.domain.LeadFollowUpSend;
 import com.salonreview.marketing.MarketingContactsRepository;
 import com.salonreview.marketing.MarketingContactsRepository.RawContact;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.LeadFollowUpSendRepository;
 import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,39 +45,48 @@ public class LeadFollowUpScheduler {
 
     private final MarketingContactsRepository contactsRepository;
     private final LeadFollowUpSendRepository sendRepository;
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
+    private final BusinessRepository businesses;
     private final SmsAutomationService automationService;
     private final TwilioSmsService smsService;
 
     public LeadFollowUpScheduler(MarketingContactsRepository contactsRepository,
                                   LeadFollowUpSendRepository sendRepository,
-                                  SquareClient square,
+                                  SquareClientProvider squareClientProvider,
+                                  BusinessRepository businesses,
                                   SmsAutomationService automationService,
                                   TwilioSmsService smsService) {
         this.contactsRepository = contactsRepository;
         this.sendRepository = sendRepository;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
+        this.businesses = businesses;
         this.automationService = automationService;
         this.smsService = smsService;
     }
 
-    @Scheduled(fixedDelay = 15_000)
+    // initialDelay: see SameDayRebookingScheduler's identical comment — gives
+    // SquareConnectionBootstrap's ApplicationRunner time to finish before the first tick.
+    @Scheduled(fixedDelay = 15_000, initialDelay = 15_000)
     @SchedulerLock(name = "LeadFollowUpScheduler_sendDueFollowUps", lockAtLeastFor = "PT10S", lockAtMostFor = "PT2M")
     public void sendDueFollowUps() {
+        // Same single-business guard as SameDayRebookingGroupExpiryScheduler — marketing.contacts
+        // has no business_id of its own yet, so there's no correct per-business Square routing
+        // until that schema is scoped too (tracked separately from this migration).
+        SquareClient square = squareClientProvider.forBusiness(businesses.sole().getId());
         Instant now = Instant.now();
         List<RawContact> pending = contactsRepository.findPendingFollowUp(now.minus(MIN_AGE), now.minus(MAX_AGE));
         for (RawContact contact : pending) {
             if (sendRepository.existsByContactIdAndContactUpdatedAtGreaterThanEqual(contact.id(), contact.updatedAt())) {
                 continue; // belt-and-suspenders vs. the poll query's own NOT EXISTS
             }
-            process(contact);
+            process(contact, square);
         }
     }
 
-    private void process(RawContact contact) {
+    private void process(RawContact contact, SquareClient square) {
         boolean upcoming;
         try {
-            upcoming = hasUpcomingAppointment(contact);
+            upcoming = hasUpcomingAppointment(contact, square);
         } catch (RuntimeException ex) {
             // Fails closed: a transient Square failure means "don't know," not "assume unbooked."
             // No row is written, so this contact is simply retried on the next poll tick rather
@@ -106,7 +117,7 @@ public class LeadFollowUpScheduler {
      * Square customer via the contact's own {@code squareCustomerId} if the tracked flow already
      * set it, otherwise falls back to a live phone lookup, same as
      * {@code MarketingContactsService.syncSquareLinks}. */
-    private boolean hasUpcomingAppointment(RawContact contact) {
+    private boolean hasUpcomingAppointment(RawContact contact, SquareClient square) {
         String customerId = contact.squareCustomerId();
         if (customerId == null) {
             List<String> candidates = square.customerIdsForPhone(contact.phoneNumber());

@@ -3,10 +3,13 @@ package com.salonreview.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.config.InternalApiProperties;
 import com.salonreview.config.RebookingProperties;
+import com.salonreview.domain.Business;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SameDayRebookingGroupMembershipRepository;
 import com.salonreview.sms.RebookingPromoSigner;
 import com.salonreview.sms.TwilioSmsService;
 import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import com.salonreview.telegram.TelegramNotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -55,8 +58,14 @@ class InternalNotificationControllerTest {
         rebookingProperties.setWinbackAutoDiscountGroupId("grp2");
         groupMembershipRepository = mock(SameDayRebookingGroupMembershipRepository.class);
         square = mock(SquareClient.class);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        BusinessRepository businesses = mock(BusinessRepository.class);
+        when(businesses.sole()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
+                .timezone("UTC").active(true).build());
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         InternalNotificationController controller = new InternalNotificationController(
-                props, telegram, sms, promoSigner, rebookingProperties, groupMembershipRepository, square);
+                props, telegram, sms, promoSigner, rebookingProperties, groupMembershipRepository,
+                squareClientProvider, businesses);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 

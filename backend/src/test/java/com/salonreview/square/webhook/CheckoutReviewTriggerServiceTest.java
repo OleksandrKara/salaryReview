@@ -1,11 +1,14 @@
 package com.salonreview.square.webhook;
 
+import com.salonreview.domain.Business;
 import com.salonreview.domain.SmsReplyFlow;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SmsReplyFlowRepository;
 import com.salonreview.sms.CheckoutReviewLinks;
 import com.salonreview.sms.SameDayRebookingTriggerService;
 import com.salonreview.sms.SmsMessageLogService;
 import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,10 +39,16 @@ class CheckoutReviewTriggerServiceTest {
     @BeforeEach
     void setUp() {
         square = mock(SquareClient.class);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        BusinessRepository businesses = mock(BusinessRepository.class);
+        when(businesses.sole()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
+                .timezone("UTC").active(true).build());
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         repository = mock(SmsReplyFlowRepository.class);
         rebookingTrigger = mock(SameDayRebookingTriggerService.class);
         messageLogService = mock(SmsMessageLogService.class);
-        service = new CheckoutReviewTriggerService(square, repository, rebookingTrigger, messageLogService);
+        service = new CheckoutReviewTriggerService(squareClientProvider, businesses, repository, rebookingTrigger,
+                messageLogService);
     }
 
     private static SquareWebhookEvent.Payment payment(String status, String orderId, String customerId) {

@@ -1,11 +1,14 @@
 package com.salonreview.sms;
 
 import com.salonreview.config.RebookingProperties;
+import com.salonreview.domain.Business;
 import com.salonreview.domain.SameDayRebookingSend;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.TwilioSmsConfig;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SameDayRebookingSendRepository;
 import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -54,8 +57,13 @@ class SameDayRebookingSchedulerTest {
         client = mock(TwilioSmsClient.class);
         technicianNameResolver = mock(TechnicianNameResolver.class);
         when(technicianNameResolver.resolveForCustomer(any(), any())).thenReturn(Optional.empty());
-        scheduler = new SameDayRebookingScheduler(repository, square, automationService, consentRepository,
-                rebookingProperties, messageLogService, configService, client, technicianNameResolver,
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        BusinessRepository businesses = mock(BusinessRepository.class);
+        when(businesses.sole()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
+                .timezone("UTC").active(true).build());
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
+        scheduler = new SameDayRebookingScheduler(repository, squareClientProvider, businesses, automationService,
+                consentRepository, rebookingProperties, messageLogService, configService, client, technicianNameResolver,
                 "https://salon.akluxnails.com");
 
         when(automationService.isEnabled("same_day_rebooking_discount")).thenReturn(true);
