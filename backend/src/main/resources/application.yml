@@ -51,6 +51,12 @@ square:
   environment: ${SQUARE_ENVIRONMENT:sandbox}
   access-token: ${SQUARE_ACCESS_TOKEN:}
   location-id: ${SQUARE_LOCATION_ID:}
+  # Phase 3 multi-account support (SquareConnectionBootstrap/SquareCredentialCipher/
+  # SquareClientProvider) — one AES-256-GCM master key, base64, generated with
+  # `openssl rand -base64 32`. Deployment-wide infra, not per-business, so it lives in the
+  # environment like every other secret here, not in the database it encrypts values for.
+  credentials:
+    master-key: ${SQUARE_CREDENTIALS_MASTER_KEY:}
   webhook:
     signature-key: ${SQUARE_WEBHOOK_SIGNATURE_KEY:}
     notification-url: ${SQUARE_WEBHOOK_NOTIFICATION_URL:https://salon.akluxnails.com/api/public/webhooks/square}
