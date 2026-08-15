@@ -53,7 +53,7 @@ public class PayPeriodController {
 
     @GetMapping
     public List<PayPeriodDto> list() {
-        return periods.findAllByOrderByYearDescMonthDescHalfDesc().stream()
+        return periods.findAllByBusinessIdOrderByYearDescMonthDescHalfDesc(currentBusinessContext.id()).stream()
                 .map(PayPeriodDto::from)
                 .toList();
     }
@@ -73,12 +73,13 @@ public class PayPeriodController {
 
     @PostMapping
     public ResponseEntity<PayPeriodDto> create(@Valid @RequestBody PayPeriodCreateRequest req) {
-        periods.findByYearAndMonthAndHalf(req.year(), req.month(), req.half())
+        Long businessId = currentBusinessContext.id();
+        periods.findByBusinessIdAndYearAndMonthAndHalf(businessId, req.year(), req.month(), req.half())
                 .ifPresent(p -> { throw new IllegalArgumentException(
                         "Pay period " + p.getLabel() + " already exists"); });
 
         PayPeriod saved = periods.save(PayPeriod.builder()
-                .businessId(currentBusinessContext.id())
+                .businessId(businessId)
                 .year(req.year())
                 .month(req.month())
                 .half(req.half())

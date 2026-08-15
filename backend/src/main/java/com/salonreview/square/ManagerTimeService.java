@@ -75,20 +75,24 @@ public class ManagerTimeService {
     private final AppUserRepository users;
     private final SquareClient square;
     private final Clock clock;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
     @Autowired
     public ManagerTimeService(ManagerTimeEntryRepository entries, ManagerPayRateRepository rates,
-                              AppUserRepository users, SquareClient square) {
-        this(entries, rates, users, square, Clock.systemUTC());
+                              AppUserRepository users, SquareClient square,
+                              com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
+        this(entries, rates, users, square, Clock.systemUTC(), currentBusinessContext);
     }
 
     ManagerTimeService(ManagerTimeEntryRepository entries, ManagerPayRateRepository rates,
-                       AppUserRepository users, SquareClient square, Clock clock) {
+                       AppUserRepository users, SquareClient square, Clock clock,
+                       com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.entries = entries;
         this.rates = rates;
         this.users = users;
         this.square = square;
         this.clock = clock;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     // --- manager self actions (scoped to the caller's userId) ---
@@ -188,7 +192,7 @@ public class ManagerTimeService {
     public AdminTimesheetDto adminTimesheets(int year, int month) {
         ZoneId z = zone();
         YearMonth ym = YearMonth.of(year, month);
-        List<AppUser> managers = users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER));
+        List<AppUser> managers = users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(currentBusinessContext.id(), List.of(Role.MANAGER));
         List<Long> ids = managers.stream().map(AppUser::getId).toList();
 
         Map<Long, BigDecimal> rateById = rates.findByUserIdIn(ids).stream()
@@ -221,7 +225,7 @@ public class ManagerTimeService {
         YearMonth ym = YearMonth.of(year, month);
         LocalDate today = LocalDate.ofInstant(clock.instant(), z);
 
-        Map<Long, String> usernameById = users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER))
+        Map<Long, String> usernameById = users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(currentBusinessContext.id(), List.of(Role.MANAGER))
                 .stream().collect(Collectors.toMap(AppUser::getId, AppUser::getUsername));
 
         Map<LocalDate, List<ManagerTimeEntry>> byDate = entries

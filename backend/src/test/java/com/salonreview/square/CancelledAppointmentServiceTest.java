@@ -51,12 +51,15 @@ class CancelledAppointmentServiceTest {
         providerRepo = mock(ProviderRepository.class);
         users = mock(AppUserRepository.class);
         clearances = mock(CancellationClearanceRepository.class);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
         service = new CancelledAppointmentService(aggregator, square, salonConfig,
-                mock(com.salonreview.config.CurrentBusinessContext.class), providers,
+                currentBusinessContext, providers,
                 providerRepo, users, clearances);
 
         // Default: no owner/manager accounts, no clearances.
-        when(users.findByRoleInAndActiveTrueOrderByUsernameAsc(any())).thenReturn(List.of());
+        when(users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(eq(1L), any())).thenReturn(List.of());
         when(clearances.findAllBySquareBookingIdIn(any())).thenReturn(List.of());
     }
 
@@ -92,7 +95,7 @@ class CancelledAppointmentServiceTest {
     void ownerOrManagerCancellationIsExcluded() {
         AppUser owner = AppUser.builder().id(1L).username("owner").role(Role.OWNER)
                 .squareTeamMemberId("TM_OWNER").active(true).build();
-        when(users.findByRoleInAndActiveTrueOrderByUsernameAsc(any())).thenReturn(List.of(owner));
+        when(users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(eq(1L), any())).thenReturn(List.of(owner));
         // Even if resolvable, it must not be counted.
         resolveTeam("TM_OWNER", 99L);
         MonthAggregation agg = aggWith(candidate("bk-owner", "TM_OWNER", Half.FIRST));

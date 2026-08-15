@@ -36,6 +36,7 @@ class ManagerTimeServiceTest {
     private ManagerTimeEntryRepository entries;
     private ManagerPayRateRepository rates;
     private AppUserRepository users;
+    private com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private ManagerTimeService service;
 
     @BeforeEach
@@ -43,10 +44,13 @@ class ManagerTimeServiceTest {
         entries = mock(ManagerTimeEntryRepository.class);
         rates = mock(ManagerPayRateRepository.class);
         users = mock(AppUserRepository.class);
+        currentBusinessContext = mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
         SquareClient square = mock(SquareClient.class);
         when(square.locationTimeZone()).thenReturn("UTC");
         when(entries.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        service = new ManagerTimeService(entries, rates, users, square, Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new ManagerTimeService(entries, rates, users, square,
+                Clock.fixed(NOW, ZoneOffset.UTC), currentBusinessContext);
     }
 
     @Test
@@ -200,7 +204,7 @@ class ManagerTimeServiceTest {
     void dailyScheduleDaysAreNewestFirst() {
         when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
                 .thenReturn(List.of());
-        when(users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER))).thenReturn(List.of());
+        when(users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(1L, List.of(Role.MANAGER))).thenReturn(List.of());
 
         AdminDailyScheduleDto dto = service.adminDailySchedule(2026, 7);
 
@@ -220,7 +224,7 @@ class ManagerTimeServiceTest {
                 .startAt(Instant.parse("2026-07-01T13:30:00Z")).endAt(Instant.parse("2026-07-01T20:00:00Z")).build();
         when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
                 .thenReturn(List.of(susan, tatiana));
-        when(users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER))).thenReturn(List.of(
+        when(users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(1L, List.of(Role.MANAGER))).thenReturn(List.of(
                 AppUser.builder().id(7L).username("Susan").role(Role.MANAGER).active(true).build(),
                 AppUser.builder().id(8L).username("Tatiana").role(Role.MANAGER).active(true).build()));
 
@@ -241,7 +245,7 @@ class ManagerTimeServiceTest {
                 .startAt(Instant.parse("2026-07-05T20:00:00Z")).endAt(Instant.parse("2026-07-05T21:00:00Z")).build();
         when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
                 .thenReturn(List.of(mistake));
-        when(users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER))).thenReturn(List.of(
+        when(users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(1L, List.of(Role.MANAGER))).thenReturn(List.of(
                 AppUser.builder().id(7L).username("Susan").role(Role.MANAGER).active(true).build()));
 
         AdminDailyScheduleDto.Day day = dayOf(service.adminDailySchedule(2026, 7), "2026-07-05");
@@ -261,7 +265,7 @@ class ManagerTimeServiceTest {
                 .startAt(Instant.parse("2026-07-08T15:00:00Z")).endAt(Instant.parse("2026-07-08T20:00:00Z")).build();
         when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
                 .thenReturn(List.of(morning, evening));
-        when(users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER))).thenReturn(List.of(
+        when(users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(1L, List.of(Role.MANAGER))).thenReturn(List.of(
                 AppUser.builder().id(7L).username("Susan").role(Role.MANAGER).active(true).build(),
                 AppUser.builder().id(8L).username("Tatiana").role(Role.MANAGER).active(true).build()));
 
@@ -278,7 +282,7 @@ class ManagerTimeServiceTest {
                 .startAt(Instant.parse("2026-06-30T08:00:00Z")).build(); // never clocked out
         when(entries.findByWorkDateBetween(LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30)))
                 .thenReturn(List.of(forgotten));
-        when(users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER))).thenReturn(List.of(
+        when(users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(1L, List.of(Role.MANAGER))).thenReturn(List.of(
                 AppUser.builder().id(7L).username("Susan").role(Role.MANAGER).active(true).build()));
 
         AdminDailyScheduleDto.Day day = dayOf(service.adminDailySchedule(2026, 6), "2026-06-30");
@@ -294,7 +298,7 @@ class ManagerTimeServiceTest {
                 .workDate(LocalDate.of(2026, 7, 2)).startAt(Instant.parse("2026-07-02T09:00:00Z")).build();
         when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
                 .thenReturn(List.of(openToday));
-        when(users.findByRoleInAndActiveTrueOrderByUsernameAsc(List.of(Role.MANAGER))).thenReturn(List.of(
+        when(users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(1L, List.of(Role.MANAGER))).thenReturn(List.of(
                 AppUser.builder().id(7L).username("Susan").role(Role.MANAGER).active(true).build()));
 
         AdminDailyScheduleDto.Day day = dayOf(service.adminDailySchedule(2026, 7), "2026-07-02");

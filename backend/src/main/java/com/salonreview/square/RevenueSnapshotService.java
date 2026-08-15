@@ -145,7 +145,8 @@ public class RevenueSnapshotService {
     public int fillMonthEndActualsFor(YearMonth month) {
         BigDecimal actual = BigDecimal.ZERO;
         boolean anyEntry = false;
-        for (PayPeriod pp : payPeriods.findAllByYearOrderByMonthAscHalfAsc(month.getYear())) {
+        for (PayPeriod pp : payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(
+                currentBusinessContext.id(), month.getYear())) {
             if (pp.getMonth() != month.getMonthValue()) continue;
             for (PeriodEntry e : entries.findAllByPayPeriodId(pp.getId())) {
                 anyEntry = true;

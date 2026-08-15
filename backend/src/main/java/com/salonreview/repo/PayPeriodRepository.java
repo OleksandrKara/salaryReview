@@ -8,9 +8,9 @@ import java.util.List;
 import java.util.Optional;
 
 public interface PayPeriodRepository extends JpaRepository<PayPeriod, Long> {
-    List<PayPeriod> findAllByOrderByYearDescMonthDescHalfDesc();
+    List<PayPeriod> findAllByBusinessIdOrderByYearDescMonthDescHalfDesc(Long businessId);
 
-    Optional<PayPeriod> findByYearAndMonthAndHalf(int year, int month, Half half);
+    Optional<PayPeriod> findByBusinessIdAndYearAndMonthAndHalf(Long businessId, int year, int month, Half half);
 
-    List<PayPeriod> findAllByYearOrderByMonthAscHalfAsc(int year);
+    List<PayPeriod> findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(Long businessId, int year);
 }

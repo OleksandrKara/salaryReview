@@ -15,6 +15,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -62,7 +63,7 @@ class OwnerOverviewServiceAsyncBusinessContextTest {
                         .cardTipFeeRate(new BigDecimal("0.035")).tierServiceThreshold(60).build()));
 
         PayPeriodRepository payPeriods = mock(PayPeriodRepository.class);
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(anyInt())).thenReturn(List.of());
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(eq(42L), anyInt())).thenReturn(List.of());
         PeriodEntryRepository entries = mock(PeriodEntryRepository.class);
         BankTransactionRepository bankTransactions = mock(BankTransactionRepository.class);
         when(bankTransactions.sumOwnerDrawsForCompletedImportsOverlapping(any(), any(), any()))

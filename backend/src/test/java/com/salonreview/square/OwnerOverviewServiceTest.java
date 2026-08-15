@@ -106,7 +106,7 @@ class OwnerOverviewServiceTest {
 
         when(salonConfig.findByBusinessId(1L)).thenReturn(Optional.of(CFG));
         // Default: no periods for any year (overridden per test)
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(anyInt())).thenReturn(List.of());
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(anyLong(), anyInt())).thenReturn(List.of());
         when(entries.findAllByPayPeriodId(anyLong())).thenReturn(List.of());
         // No manual adjustments by default — individual tests can override to exercise the fold-in.
         when(manualAdjustments.totalGrossForMonth(anyInt(), anyInt())).thenReturn(BigDecimal.ZERO);
@@ -139,7 +139,7 @@ class OwnerOverviewServiceTest {
         PayPeriod jan1 = period(1L, 2025, 1, Half.FIRST);
         PayPeriod jan2 = period(2L, 2025, 1, Half.SECOND);
 
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2025))
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, 2025))
                 .thenReturn(List.of(jan1, jan2));
         when(entries.findAllByPayPeriodId(1L))
                 .thenReturn(List.of(entry(anna, jan1, "500.00", "200.00", "50.00", 6)));
@@ -162,7 +162,7 @@ class OwnerOverviewServiceTest {
     void netRevenueSubtractsPayrollAndExpenses() {
         Provider anna = provider(1L, "Anna");
         PayPeriod jan1 = period(1L, 2025, 1, Half.FIRST);
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2025)).thenReturn(List.of(jan1));
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, 2025)).thenReturn(List.of(jan1));
         // Card-only: gross = 1000, payroll = 1000 * 0.45 = 450
         when(entries.findAllByPayPeriodId(1L))
                 .thenReturn(List.of(entry(anna, jan1, "1000.00", "0.00", "0.00", 10)));
@@ -194,7 +194,7 @@ class OwnerOverviewServiceTest {
     void netRevenueSubtractsManagerLaborCost() {
         Provider anna = provider(1L, "Anna");
         PayPeriod jan1 = period(1L, 2025, 1, Half.FIRST);
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2025)).thenReturn(List.of(jan1));
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, 2025)).thenReturn(List.of(jan1));
         when(entries.findAllByPayPeriodId(1L))
                 .thenReturn(List.of(entry(anna, jan1, "1000.00", "0.00", "0.00", 10)));
 
@@ -226,7 +226,7 @@ class OwnerOverviewServiceTest {
     void netRevenueFallsBackToManualManagerLaborForMonthsWithoutClockedData() {
         Provider anna = provider(1L, "Anna");
         PayPeriod jan1 = period(1L, 2025, 1, Half.FIRST);
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2025)).thenReturn(List.of(jan1));
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, 2025)).thenReturn(List.of(jan1));
         when(entries.findAllByPayPeriodId(1L))
                 .thenReturn(List.of(entry(anna, jan1, "1000.00", "0.00", "0.00", 10)));
 
@@ -258,7 +258,7 @@ class OwnerOverviewServiceTest {
         Provider anna = provider(1L, "Anna");
         PayPeriod mar1 = period(3L, 2025, 3, Half.FIRST);
 
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2025))
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, 2025))
                 .thenReturn(List.of(mar1));
         // Card-only, no cash or tips — payroll = card * 0.45
         when(entries.findAllByPayPeriodId(3L))
@@ -290,7 +290,7 @@ class OwnerOverviewServiceTest {
     void futureMonthsHaveNullRevenue() {
         // Requesting next year — all months should be empty/null
         int futureYear = java.time.LocalDate.now().getYear() + 1;
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(futureYear)).thenReturn(List.of());
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, futureYear)).thenReturn(List.of());
 
         OwnerOverviewDto dto = service.overview(futureYear, 1, futureYear, 12);
         assertThat(dto.months()).hasSize(12)
@@ -304,7 +304,7 @@ class OwnerOverviewServiceTest {
         Provider kate = provider(2L, "Kate");
         PayPeriod mar1 = period(3L, 2025, 3, Half.FIRST);
 
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2025)).thenReturn(List.of(mar1));
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, 2025)).thenReturn(List.of(mar1));
         when(entries.findAllByPayPeriodId(3L)).thenReturn(List.of(
                 entry(anna, mar1, "800.00", "0.00", "0.00", 8),
                 entry(kate, mar1, "1200.00", "0.00", "0.00", 12)));
@@ -327,7 +327,7 @@ class OwnerOverviewServiceTest {
     @Test
     @DisplayName("30-day cache: identical range is served from cache, not recomputed from the DB")
     void identicalRangeIsCached() {
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2025)).thenReturn(List.of());
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, 2025)).thenReturn(List.of());
 
         service.overview(2025, 1, 2025, 12);
         service.overview(2025, 1, 2025, 12);
@@ -335,7 +335,7 @@ class OwnerOverviewServiceTest {
         // Only one real computation happened — the repository lookup for 2025 fired exactly once,
         // not twice, even though overview() was called twice with the same range.
         org.mockito.Mockito.verify(payPeriods, org.mockito.Mockito.times(1))
-                .findAllByYearOrderByMonthAscHalfAsc(2025);
+                .findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, 2025);
     }
 
     @Test
@@ -344,26 +344,26 @@ class OwnerOverviewServiceTest {
         // Years far enough apart that neither range's own prevPeriodTotals() lookup (fromYear - 1)
         // touches the other range's year — isolates "was this range's own cache entry reused" from
         // the unrelated prior-year-totals side query every overview() call also makes.
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2025)).thenReturn(List.of());
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2010)).thenReturn(List.of());
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, 2025)).thenReturn(List.of());
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, 2010)).thenReturn(List.of());
 
         service.overview(2025, 1, 2025, 12);
         service.overview(2010, 1, 2010, 12);
 
-        org.mockito.Mockito.verify(payPeriods, org.mockito.Mockito.times(1)).findAllByYearOrderByMonthAscHalfAsc(2025);
-        org.mockito.Mockito.verify(payPeriods, org.mockito.Mockito.times(1)).findAllByYearOrderByMonthAscHalfAsc(2010);
+        org.mockito.Mockito.verify(payPeriods, org.mockito.Mockito.times(1)).findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, 2025);
+        org.mockito.Mockito.verify(payPeriods, org.mockito.Mockito.times(1)).findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, 2010);
     }
 
     @Test
     @DisplayName("invalidateCache() forces the next call to recompute rather than serving the cached response")
     void invalidateCacheForcesRecompute() {
-        when(payPeriods.findAllByYearOrderByMonthAscHalfAsc(2025)).thenReturn(List.of());
+        when(payPeriods.findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, 2025)).thenReturn(List.of());
 
         service.overview(2025, 1, 2025, 12);
         service.invalidateCache();
         service.overview(2025, 1, 2025, 12);
 
         org.mockito.Mockito.verify(payPeriods, org.mockito.Mockito.times(2))
-                .findAllByYearOrderByMonthAscHalfAsc(2025);
+                .findAllByBusinessIdAndYearOrderByMonthAscHalfAsc(1L, 2025);
     }
 }
