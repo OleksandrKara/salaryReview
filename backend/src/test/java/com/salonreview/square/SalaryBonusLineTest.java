@@ -52,8 +52,8 @@ class SalaryBonusLineTest {
         when(sc.getCardTipFeeRate()).thenReturn(new BigDecimal("0.0350"));
         when(sc.getOwnerShortName()).thenReturn("AK");
         when(salonConfigRepo.findByBusinessId(1L)).thenReturn(Optional.of(sc));
-        when(tierGrants.findByYearAndMonth(2026, 5)).thenReturn(List.of());
-        when(feedback.findByYearAndMonth(2026, 5)).thenReturn(List.of());
+        when(tierGrants.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
+        when(feedback.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
         when(prepaidRedemptions.findByServiceDateBetween(any(), any())).thenReturn(List.of());
 
         // 60 counted in H1 → qualified; card 1000 (H1) + 500 (H2). Bonus = 0.05 * 1500 = 75.00 at close.

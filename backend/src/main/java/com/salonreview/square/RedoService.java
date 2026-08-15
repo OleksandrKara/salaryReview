@@ -26,10 +26,13 @@ public class RedoService {
 
     private final RedoRepository redos;
     private final ProviderRepository providers;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
-    public RedoService(RedoRepository redos, ProviderRepository providers) {
+    public RedoService(RedoRepository redos, ProviderRepository providers,
+                       com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.redos = redos;
         this.providers = providers;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     public record CreateRequest(Long originalProviderId, Long redoProviderId, LocalDate originalDate,
@@ -40,10 +43,11 @@ public class RedoService {
                            String serviceName) {}
 
     public List<RedoView> list() {
-        Map<Long, String> names = providers.findAll().stream()
+        Long businessId = currentBusinessContext.id();
+        Map<Long, String> names = providers.findAllByBusinessId(businessId).stream()
                 .collect(Collectors.toMap(Provider::getId, Provider::getDisplayName, (a, b) -> a));
         Function<Long, String> name = id -> names.getOrDefault(id, "#" + id);
-        return redos.findAllByOrderByRedoDateDesc().stream()
+        return redos.findAllByBusinessIdOrderByRedoDateDesc(businessId).stream()
                 .map(r -> new RedoView(r.getId(), r.getOriginalProviderId(), name.apply(r.getOriginalProviderId()),
                         r.getRedoProviderId(), name.apply(r.getRedoProviderId()), r.getOriginalDate().toString(),
                         r.getRedoDate().toString(), r.getAmount(), r.getServiceName()))

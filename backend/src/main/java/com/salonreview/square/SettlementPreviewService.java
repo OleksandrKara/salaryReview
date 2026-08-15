@@ -137,7 +137,7 @@ public class SettlementPreviewService {
      * Returned as signed synthetic lines keyed by provider id — folded like prepaid ({@link #applyExtraLines}).
      */
     private Map<Long, List<AttributedService>> redoLinesByProvider(int year, int month, BigDecimal cutoff) {
-        List<com.salonreview.domain.Redo> all = redoRepo.findAllByOrderByRedoDateDesc();
+        List<com.salonreview.domain.Redo> all = redoRepo.findAllByBusinessIdOrderByRedoDateDesc(currentBusinessContext.id());
         if (all.isEmpty()) return Map.of();
         Map<Long, List<AttributedService>> byProvider = new LinkedHashMap<>();
         for (com.salonreview.domain.Redo rd : all) {
@@ -168,7 +168,7 @@ public class SettlementPreviewService {
      * building this on {@code gross.abs()} instead.
      */
     private Map<Long, List<AttributedService>> manualAdjustmentLinesByProvider(int year, int month, BigDecimal cutoff) {
-        List<com.salonreview.domain.ManualAdjustment> all = manualAdjustments.findAllByOrderByServiceDateDesc();
+        List<com.salonreview.domain.ManualAdjustment> all = manualAdjustments.findAllByBusinessIdOrderByServiceDateDesc(currentBusinessContext.id());
         if (all.isEmpty()) return Map.of();
         Map<Long, List<AttributedService>> byProvider = new LinkedHashMap<>();
         for (com.salonreview.domain.ManualAdjustment c : all) {
@@ -281,10 +281,10 @@ public class SettlementPreviewService {
         CommissionConfig config = sc.toCommissionConfig();
         BigDecimal cutoff = sc.getServicePriceCutoff();
 
-        Set<Long> tierGrantedProviderIds = tierGrants.findByYearAndMonth(year, month).stream()
+        Set<Long> tierGrantedProviderIds = tierGrants.findByBusinessIdAndYearAndMonth(businessId, year, month).stream()
                 .map(TierGrant::getProviderId).collect(Collectors.toSet());
 
-        Map<Long, Map<Half, SettlementFeedback>> feedbackByProvider = feedback.findByYearAndMonth(year, month).stream()
+        Map<Long, Map<Half, SettlementFeedback>> feedbackByProvider = feedback.findByBusinessIdAndYearAndMonth(businessId, year, month).stream()
                 .collect(Collectors.groupingBy(SettlementFeedback::getProviderId,
                         Collectors.toMap(SettlementFeedback::getHalf, f -> f, (a, b) -> a)));
 
@@ -394,9 +394,9 @@ public class SettlementPreviewService {
                 .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));
         CommissionConfig config = sc.toCommissionConfig();
 
-        Set<Long> granted = tierGrants.findByYearAndMonth(year, month).stream()
+        Set<Long> granted = tierGrants.findByBusinessIdAndYearAndMonth(businessId, year, month).stream()
                 .map(TierGrant::getProviderId).collect(Collectors.toSet());
-        Map<Long, Map<Half, SettlementFeedback>> fb = feedback.findByYearAndMonth(year, month).stream()
+        Map<Long, Map<Half, SettlementFeedback>> fb = feedback.findByBusinessIdAndYearAndMonth(businessId, year, month).stream()
                 .collect(Collectors.groupingBy(SettlementFeedback::getProviderId,
                         Collectors.toMap(SettlementFeedback::getHalf, f -> f, (a, b) -> a)));
 

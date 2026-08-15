@@ -54,8 +54,8 @@ class ManualAdjustmentTest {
         when(sc.getCardTipFeeRate()).thenReturn(new BigDecimal("0.0350"));
         when(sc.getOwnerShortName()).thenReturn("AK");
         when(salonConfigRepo.findByBusinessId(1L)).thenReturn(Optional.of(sc));
-        when(tierGrants.findByYearAndMonth(year, month)).thenReturn(List.of());
-        when(feedback.findByYearAndMonth(year, month)).thenReturn(List.of());
+        when(tierGrants.findByBusinessIdAndYearAndMonth(1L, year, month)).thenReturn(List.of());
+        when(feedback.findByBusinessIdAndYearAndMonth(1L, year, month)).thenReturn(List.of());
         when(square.customerNames(any())).thenReturn(java.util.Map.of());
     }
 
@@ -79,7 +79,7 @@ class ManualAdjustmentTest {
         when(providerRepo.findById(1L)).thenReturn(Optional.of(Provider.builder().id(1L).displayName("Test Provider 1").build()));
 
         // Julia's May 26 visit, recorded as a manual credit: $129 services, −$50, $15.80 tip.
-        when(manualAdjustments.findAllByOrderByServiceDateDesc()).thenReturn(List.of(ManualAdjustment.builder()
+        when(manualAdjustments.findAllByBusinessIdOrderByServiceDateDesc(1L)).thenReturn(List.of(ManualAdjustment.builder()
                 .id(1L).providerId(1L).serviceDate(LocalDate.of(2026, 5, 26))
                 .gross(new BigDecimal("129.00")).discount(new BigDecimal("50.00")).tip(new BigDecimal("15.80"))
                 .serviceName("Manicure + Design (Test Customer 1)").build()));
@@ -121,7 +121,7 @@ class ManualAdjustmentTest {
         // Chloe Pruitt's July 13 manicure was refunded $124.20 — deduct Susan's commission and tier
         // count, but she still keeps the $20 tip from that visit (reduced by the same card-tip fee
         // as any other tip, not a special rate).
-        when(manualAdjustments.findAllByOrderByServiceDateDesc()).thenReturn(List.of(ManualAdjustment.builder()
+        when(manualAdjustments.findAllByBusinessIdOrderByServiceDateDesc(1L)).thenReturn(List.of(ManualAdjustment.builder()
                 .id(2L).providerId(1L).serviceDate(LocalDate.of(2026, 7, 13))
                 .gross(new BigDecimal("-124.20")).discount(BigDecimal.ZERO).tip(new BigDecimal("20.00"))
                 .serviceName("Refund — Chloe Pruitt").build()));

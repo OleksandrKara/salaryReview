@@ -69,8 +69,8 @@ class SalaryProcedureCountTest {
         when(sc.getCardTipFeeRate()).thenReturn(new BigDecimal("0.0350"));
         when(sc.getOwnerShortName()).thenReturn("AK");
         when(salonConfigRepo.findByBusinessId(1L)).thenReturn(Optional.of(sc));
-        when(tierGrants.findByYearAndMonth(2026, 5)).thenReturn(List.of());
-        when(feedback.findByYearAndMonth(2026, 5)).thenReturn(List.of());
+        when(tierGrants.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
+        when(feedback.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
         when(prepaidRedemptions.findByServiceDateBetween(any(), any())).thenReturn(List.of());
 
         // Two main services (>= $50) plus one sub-cutoff add-on, all first half, same provider.

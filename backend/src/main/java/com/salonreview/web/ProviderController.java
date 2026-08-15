@@ -42,8 +42,9 @@ public class ProviderController {
 
     @GetMapping
     public List<ProviderDto> list(@RequestParam(name = "all", defaultValue = "false") boolean all) {
-        var stream = all ? providers.findAll().stream()
-                         : providers.findAllByActiveTrue().stream();
+        Long businessId = currentBusinessContext.id();
+        var stream = all ? providers.findAllByBusinessId(businessId).stream()
+                         : providers.findAllByBusinessIdAndActiveTrue(businessId).stream();
         return stream
                 .sorted(Comparator.comparing(p -> p.getDisplayName().toLowerCase()))
                 .map(ProviderDto::from)

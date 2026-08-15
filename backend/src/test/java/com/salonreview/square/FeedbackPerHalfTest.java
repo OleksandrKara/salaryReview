@@ -56,7 +56,7 @@ class FeedbackPerHalfTest {
         when(sc.getCardTipFeeRate()).thenReturn(new BigDecimal("0.0350"));
         when(sc.getOwnerShortName()).thenReturn("AK");
         when(salonConfigRepo.findByBusinessId(1L)).thenReturn(Optional.of(sc));
-        when(tierGrants.findByYearAndMonth(2026, 5)).thenReturn(List.of());
+        when(tierGrants.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
         when(prepaidRedemptions.findByServiceDateBetween(any(), any())).thenReturn(List.of());
 
         HalfInput first = new HalfInput(1, new BigDecimal("100.00"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
@@ -67,7 +67,7 @@ class FeedbackPerHalfTest {
         when(directory.resolveOrCreate("TM1", "Anna"))
                 .thenReturn(Provider.builder().id(1L).name("Anna").displayName("Anna").build());
 
-        when(feedback.findByYearAndMonth(2026, 5)).thenReturn(List.of(
+        when(feedback.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of(
                 SettlementFeedback.builder().providerId(1L).year(2026).month(5).half(Half.FIRST)
                         .status(FeedbackStatus.APPROVED).updatedAt(Instant.now()).build(),
                 SettlementFeedback.builder().providerId(1L).year(2026).month(5).half(Half.SECOND)

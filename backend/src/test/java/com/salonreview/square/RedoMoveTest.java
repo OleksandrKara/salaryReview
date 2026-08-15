@@ -56,8 +56,8 @@ class RedoMoveTest {
         when(sc.getCardTipFeeRate()).thenReturn(new BigDecimal("0.0350"));
         when(sc.getOwnerShortName()).thenReturn("AK");
         when(salonConfigRepo.findByBusinessId(1L)).thenReturn(Optional.of(sc));
-        when(tierGrants.findByYearAndMonth(2026, 5)).thenReturn(List.of());
-        when(feedback.findByYearAndMonth(2026, 5)).thenReturn(List.of());
+        when(tierGrants.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
+        when(feedback.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
         when(prepaidRedemptions.findByServiceDateBetween(any(), any())).thenReturn(List.of());
 
         // Susan: first-half card 200 (2 counted, the original/paid period) + second-half card 300 (2).
@@ -75,7 +75,7 @@ class RedoMoveTest {
         when(providerRepo.findById(2L)).thenReturn(Optional.of(Provider.builder().id(2L).displayName("Bayan").build()));
 
         // Redo: Susan's May-10 (first half) $100 service redone by Bayan May-20 (second half).
-        when(redoRepo.findAllByOrderByRedoDateDesc()).thenReturn(List.of(Redo.builder()
+        when(redoRepo.findAllByBusinessIdOrderByRedoDateDesc(1L)).thenReturn(List.of(Redo.builder()
                 .originalProviderId(1L).redoProviderId(2L)
                 .originalDate(LocalDate.of(2026, 5, 10)).redoDate(LocalDate.of(2026, 5, 20))
                 .amount(new BigDecimal("100.00")).build()));
