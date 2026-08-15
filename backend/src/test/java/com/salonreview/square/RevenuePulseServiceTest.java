@@ -55,6 +55,13 @@ class RevenuePulseServiceTest {
         when(square.bookings(any(), any())).thenReturn(List.of());
         currentBusinessContext = mock(com.salonreview.config.CurrentBusinessContext.class);
         when(currentBusinessContext.id()).thenReturn(1L);
+        // pulse() wraps its two CompletableFuture.supplyAsync tasks in runAsAndGet(businessId, Supplier)
+        // so the worker thread sees the business id (see the async ThreadLocal fix on this class) — a
+        // plain mock's runAsAndGet() is a no-op that never invokes the wrapped supplier (it would
+        // return null), so make it actually run.
+        when(currentBusinessContext.runAsAndGet(org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.<java.util.function.Supplier<Object>>any()))
+                .thenAnswer(inv -> ((java.util.function.Supplier<?>) inv.getArgument(1)).get());
         when(salonConfig.findByBusinessId(1L)).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
         when(snapshots.findBySnapshotDate(any())).thenReturn(Optional.empty());

@@ -87,10 +87,18 @@ public class RevenuePulseService {
 
         // Card vs cash, attributed through the month aggregator (which includes cash notes — the
         // reason a raw Square-orders sum understated cash). Run the two months in parallel.
+        //
+        // mtdSplit() reaches manualAdjustments.totalGrossThrough() -> CurrentBusinessContext.id(), but
+        // CompletableFuture.supplyAsync hands each task to a different pool thread — a ThreadLocal set
+        // on THIS (calling) thread does not carry over. Resolve it here, once, on the calling thread,
+        // and re-establish it explicitly inside each async task via runAs (same fix as
+        // OwnerOverviewService's identical async ThreadLocal loss).
         BigDecimal cutoff = priceCutoff();
-        var currentF = CompletableFuture.supplyAsync(() -> mtdSplit(year, month, currentEndDay, cutoffTime, cutoff));
-        var priorF   = CompletableFuture.supplyAsync(
-                () -> mtdSplit(priorYm.getYear(), priorYm.getMonthValue(), priorEndDay, cutoffTime, cutoff));
+        Long businessId = currentBusinessContext.id();
+        var currentF = CompletableFuture.supplyAsync(() -> currentBusinessContext.runAsAndGet(businessId,
+                () -> mtdSplit(year, month, currentEndDay, cutoffTime, cutoff)));
+        var priorF   = CompletableFuture.supplyAsync(() -> currentBusinessContext.runAsAndGet(businessId,
+                () -> mtdSplit(priorYm.getYear(), priorYm.getMonthValue(), priorEndDay, cutoffTime, cutoff)));
 
         // Upcoming bookings are only meaningful for the current or a future month.
         boolean fetchUpcoming = !today.isAfter(ym.atEndOfMonth());

@@ -2,6 +2,8 @@ package com.salonreview.config;
 
 import org.springframework.stereotype.Component;
 
+import java.util.function.Supplier;
+
 /**
  * The current business for the calling thread — see
  * openspec/changes/multi-tenant-salon-platform/design.md D7/D9. Two populating paths:
@@ -64,6 +66,24 @@ public class CurrentBusinessContext {
         current.set(businessId);
         try {
             action.run();
+        } finally {
+            if (previous == null) current.remove(); else current.set(previous);
+        }
+    }
+
+    /** Value-returning variant of {@link #runAs(Long, Runnable)} — for background/async code (e.g. a
+     * {@code CompletableFuture.supplyAsync} task on a different thread) that needs to hand a result
+     * back rather than just run for side effects. Deliberately a different method name, not an
+     * overload of {@code runAs}: a single-expression lambda whose body is a discardable-return method
+     * call (e.g. {@code map.put(...)}) is simultaneously void- and value-compatible, so two same-named
+     * overloads here would make Java's overload resolution silently pick one with no compile error —
+     * confirmed to actually happen, breaking a call site's business-context propagation with no
+     * warning. A distinct name removes the ambiguity entirely. */
+    public <T> T runAsAndGet(Long businessId, Supplier<T> action) {
+        Long previous = current.get();
+        current.set(businessId);
+        try {
+            return action.get();
         } finally {
             if (previous == null) current.remove(); else current.set(previous);
         }
