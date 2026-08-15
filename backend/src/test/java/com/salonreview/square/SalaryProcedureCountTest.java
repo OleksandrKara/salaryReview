@@ -71,7 +71,7 @@ class SalaryProcedureCountTest {
         when(salonConfigRepo.findByBusinessId(1L)).thenReturn(Optional.of(sc));
         when(tierGrants.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
         when(feedback.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
-        when(prepaidRedemptions.findByServiceDateBetween(any(), any())).thenReturn(List.of());
+        when(prepaidRedemptions.findByBusinessIdAndServiceDateBetween(eq(1L), any(), any())).thenReturn(List.of());
 
         // Two main services (>= $50) plus one sub-cutoff add-on, all first half, same provider.
         HalfInput first = new HalfInput(2, new BigDecimal("200.00"), ZERO, ZERO, ZERO, ZERO);

@@ -340,7 +340,7 @@ public class MarketingContactsService {
      * query against our own DB (same "load once, compute in memory" pattern
      * MarketingAnalyticsService already uses for this table), not a Square round trip. */
     private Map<String, Long> visitCountsByCustomerId() {
-        return providerVisits.findAllByOrderByServiceDateAsc().stream()
+        return providerVisits.findAllByBusinessIdOrderByServiceDateAsc(currentBusinessContext.id()).stream()
                 .collect(Collectors.groupingBy(
                         ProviderVisit::getCustomerId,
                         Collectors.mapping(ProviderVisit::getServiceDate, Collectors.toSet())))

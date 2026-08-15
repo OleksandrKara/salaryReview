@@ -72,7 +72,7 @@ class ProviderVisitIngestServiceTest {
         int n = service.ingestMonth(2026, 5);
 
         assertThat(n).isEqualTo(2); // C1/2026-05-03 and C2/2026-05-04
-        verify(repo).deleteByServiceDateBetween(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 31));
+        verify(repo).deleteByBusinessIdAndServiceDateBetween(1L, LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 31));
         ArgumentCaptor<List<ProviderVisit>> cap = ArgumentCaptor.forClass(List.class);
         verify(repo).saveAll(cap.capture());
         assertThat(cap.getValue()).extracting(ProviderVisit::getCustomerId).containsExactlyInAnyOrder("C1", "C2");
@@ -108,7 +108,7 @@ class ProviderVisitIngestServiceTest {
     @Test
     @DisplayName("backfill skips a month that already has visits")
     void backfillSkipsPopulated() {
-        when(repo.countByServiceDateBetween(any(), any())).thenReturn(5L); // every month already populated
+        when(repo.countByBusinessIdAndServiceDateBetween(eq(1L), any(), any())).thenReturn(5L); // every month already populated
 
         service.backfillHistory(3);
 

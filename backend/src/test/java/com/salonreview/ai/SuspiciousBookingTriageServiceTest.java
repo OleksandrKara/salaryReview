@@ -67,8 +67,11 @@ class SuspiciousBookingTriageServiceTest {
         tracerProvider = mock(ObjectProvider.class);
         when(tracerProvider.getIfAvailable()).thenReturn(null);
 
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
         service = new SuspiciousBookingTriageService(
-                anthropicProvider, props, triages, suspiciousBookings, tracerProvider);
+                anthropicProvider, props, triages, suspiciousBookings, tracerProvider, currentBusinessContext);
         spied = spy(service);
 
         // Default: any save returns a persisted-looking row with an ID.

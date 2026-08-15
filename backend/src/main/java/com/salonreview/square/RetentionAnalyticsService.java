@@ -41,14 +41,17 @@ public class RetentionAnalyticsService {
 
     private final ProviderVisitRepository repo;
     private final SquareClient square;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
-    public RetentionAnalyticsService(ProviderVisitRepository repo, SquareClient square) {
+    public RetentionAnalyticsService(ProviderVisitRepository repo, SquareClient square,
+                                     com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.repo = repo;
         this.square = square;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     public RetentionReport report(int year, int month) {
-        List<ProviderVisit> all = repo.findAllByOrderByServiceDateAsc();
+        List<ProviderVisit> all = repo.findAllByBusinessIdOrderByServiceDateAsc(currentBusinessContext.id());
         YearMonth ym = YearMonth.of(year, month);
         LocalDate mStart = ym.atDay(1), mEnd = ym.atEndOfMonth();
         LocalDate today = LocalDate.now(salonZone());
@@ -138,7 +141,7 @@ public class RetentionAnalyticsService {
      * or one provider (new = new-to-that-provider). Plus the provider list for the selector.
      */
     public RetentionSeries series(int fromYear, int fromMonth, int toYear, int toMonth, String providerRef) {
-        List<ProviderVisit> all = repo.findAllByOrderByServiceDateAsc();
+        List<ProviderVisit> all = repo.findAllByBusinessIdOrderByServiceDateAsc(currentBusinessContext.id());
         String wanted = (providerRef == null || providerRef.isBlank()) ? null : providerRef;
 
         // First-ever dates (full history).

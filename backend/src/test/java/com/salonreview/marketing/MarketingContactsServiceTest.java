@@ -75,7 +75,7 @@ class MarketingContactsServiceTest {
         when(salonConfig.findByBusinessId(1L)).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
         when(syncStatus.getSingleton()).thenReturn(MarketingSyncStatus.builder().build());
-        when(providerVisits.findAllByOrderByServiceDateAsc()).thenReturn(List.of());
+        when(providerVisits.findAllByBusinessIdOrderByServiceDateAsc(1L)).thenReturn(List.of());
         // No link engagement by default — individual tests override with a specific stub if they
         // care about the repeat-reviewer/click-status fields.
         when(smsMessageLogService.linkEngagement(any(), any()))
@@ -151,7 +151,7 @@ class MarketingContactsServiceTest {
         UUID regularId = UUID.randomUUID();
         when(repository.listAll()).thenReturn(List.of(rawContact(vipId, "SQCUST_VIP"), rawContact(regularId, "SQCUST_REGULAR")));
         when(square.bookingsForCustomer(any(), any())).thenReturn(List.of());
-        when(providerVisits.findAllByOrderByServiceDateAsc()).thenReturn(List.of(
+        when(providerVisits.findAllByBusinessIdOrderByServiceDateAsc(1L)).thenReturn(List.of(
                 visit("SQCUST_VIP", java.time.LocalDate.parse("2026-01-05")),
                 visit("SQCUST_VIP", java.time.LocalDate.parse("2026-02-05")),
                 visit("SQCUST_VIP", java.time.LocalDate.parse("2026-03-05")),
@@ -179,7 +179,7 @@ class MarketingContactsServiceTest {
         UUID id = UUID.randomUUID();
         when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST_SAMEDAY")));
         when(square.bookingsForCustomer(any(), any())).thenReturn(List.of());
-        when(providerVisits.findAllByOrderByServiceDateAsc()).thenReturn(List.of(
+        when(providerVisits.findAllByBusinessIdOrderByServiceDateAsc(1L)).thenReturn(List.of(
                 visit("SQCUST_SAMEDAY", java.time.LocalDate.parse("2026-05-01")),
                 visitWithProvider("SQCUST_SAMEDAY", java.time.LocalDate.parse("2026-05-01"), "PROVIDER_2")
         ));

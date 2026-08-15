@@ -71,7 +71,7 @@ class PrepaidDiscountTest {
         PrepaidRedemption red = PrepaidRedemption.builder().id(7L).packageId(1L).providerId(1L)
                 .squareBookingId("bk").serviceVariationId("v").serviceName("Regular Manicure")
                 .serviceDate(LocalDate.of(2026, 5, 20)).menuPrice(new BigDecimal("109.00")).counts(true).build();
-        when(prepaidRedemptions.findByServiceDateBetween(any(), any())).thenReturn(List.of(red));
+        when(prepaidRedemptions.findByBusinessIdAndServiceDateBetween(eq(1L), any(), any())).thenReturn(List.of(red));
         when(prepaidPackages.findAllById(any())).thenReturn(List.of(pkg));
 
         ProviderDetail detail = service.providerDetail(2026, 5, 1L);

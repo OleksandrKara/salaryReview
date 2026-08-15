@@ -22,6 +22,9 @@ public class PrepaidPackage {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "business_id", nullable = false)
+    private Long businessId;
+
     /** Square customer id, when known (used to find candidate bookings). */
     @Column(name = "customer_id")
     private String customerId;

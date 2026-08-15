@@ -18,10 +18,13 @@ public class OwnerCustomerService {
 
     private final OwnerCustomerRepository repo;
     private final SquareClient square;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
-    public OwnerCustomerService(OwnerCustomerRepository repo, SquareClient square) {
+    public OwnerCustomerService(OwnerCustomerRepository repo, SquareClient square,
+                                com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.repo = repo;
         this.square = square;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     public record OwnerCustomerView(Long id, String squareCustomerId, String name) {}
@@ -32,7 +35,7 @@ public class OwnerCustomerService {
 
     /** Current owner customers, with names refreshed from Square (falls back to the stored label). */
     public List<OwnerCustomerView> list() {
-        List<OwnerCustomer> all = repo.findAll();
+        List<OwnerCustomer> all = repo.findAllByBusinessId(currentBusinessContext.id());
         Map<String, String> names;
         try {
             names = square.customerNames(all.stream().map(OwnerCustomer::getSquareCustomerId).toList());
@@ -60,6 +63,7 @@ public class OwnerCustomerService {
             label = square.customerNames(List.of(customerId)).get(customerId);
         }
         OwnerCustomer saved = repo.save(OwnerCustomer.builder()
+                .businessId(currentBusinessContext.id())
                 .squareCustomerId(customerId)
                 .label(label)
                 .createdBy(createdBy)

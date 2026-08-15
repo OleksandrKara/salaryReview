@@ -57,7 +57,7 @@ class FeedbackPerHalfTest {
         when(sc.getOwnerShortName()).thenReturn("AK");
         when(salonConfigRepo.findByBusinessId(1L)).thenReturn(Optional.of(sc));
         when(tierGrants.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
-        when(prepaidRedemptions.findByServiceDateBetween(any(), any())).thenReturn(List.of());
+        when(prepaidRedemptions.findByBusinessIdAndServiceDateBetween(eq(1L), any(), any())).thenReturn(List.of());
 
         HalfInput first = new HalfInput(1, new BigDecimal("100.00"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
         ProviderMonth pm = new ProviderMonth("TM1", "Anna", first, HalfInput.empty());

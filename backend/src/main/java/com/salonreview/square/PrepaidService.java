@@ -65,7 +65,8 @@ public class PrepaidService {
     // --- packages ---
 
     public List<PackageView> list() {
-        return packages.findAllByOrderByPaidDateDesc().stream().map(this::toView).toList();
+        return packages.findAllByBusinessIdOrderByPaidDateDesc(currentBusinessContext.id())
+                .stream().map(this::toView).toList();
     }
 
     @Transactional
@@ -77,6 +78,7 @@ public class PrepaidService {
                     "customerName, paidDate, amount and totalServices (>=1) are required");
         }
         PrepaidPackage saved = packages.save(PrepaidPackage.builder()
+                .businessId(currentBusinessContext.id())
                 .customerId(blankToNull(req.customerId()))
                 .customerName(req.customerName().trim())
                 .paidDate(req.paidDate())
