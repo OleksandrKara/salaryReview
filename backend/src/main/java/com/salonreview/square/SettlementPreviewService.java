@@ -96,7 +96,8 @@ public class SettlementPreviewService {
      */
     private Map<Long, List<AttributedService>> prepaidLinesByProvider(int year, int month) {
         YearMonth ym = YearMonth.of(year, month);
-        List<PrepaidRedemption> rs = prepaidRedemptions.findByServiceDateBetween(ym.atDay(1), ym.atEndOfMonth());
+        List<PrepaidRedemption> rs = prepaidRedemptions.findByBusinessIdAndServiceDateBetween(
+                currentBusinessContext.id(), ym.atDay(1), ym.atEndOfMonth());
         if (rs.isEmpty()) return Map.of();
         Map<Long, PrepaidPackage> pkgById = prepaidPackages.findAllById(
                 rs.stream().map(PrepaidRedemption::getPackageId).collect(Collectors.toSet()))

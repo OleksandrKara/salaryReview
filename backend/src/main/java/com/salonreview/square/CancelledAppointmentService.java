@@ -182,6 +182,7 @@ public class CancelledAppointmentService {
     public void clear(String bookingId, String username, String note) {
         if (clearances.findBySquareBookingId(bookingId).isPresent()) return;
         clearances.save(CancellationClearance.builder()
+                .businessId(currentBusinessContext.id())
                 .squareBookingId(bookingId)
                 .clearedByUsername(username)
                 .clearedAt(Instant.now())

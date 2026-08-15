@@ -38,7 +38,10 @@ class RetentionAnalyticsServiceTest {
         repo = mock(ProviderVisitRepository.class);
         SquareClient square = mock(SquareClient.class);
         when(square.locationTimeZone()).thenReturn("UTC");
-        service = new RetentionAnalyticsService(repo, square);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        service = new RetentionAnalyticsService(repo, square, currentBusinessContext);
     }
 
     private static ProviderVisit visit(String cust, String prov, LocalDate date, boolean rebooked) {
@@ -58,7 +61,7 @@ class RetentionAnalyticsServiceTest {
                 visit("C1", "P1", next.atDay(10), false),     // C1 returns to P1 (within 60d)
                 visit("C4", "P2", next.atDay(12), false)));   // C4 returns, but to a DIFFERENT provider
         rows.sort(Comparator.comparing(ProviderVisit::getServiceDate));
-        when(repo.findAllByOrderByServiceDateAsc()).thenReturn(rows);
+        when(repo.findAllByBusinessIdOrderByServiceDateAsc(1L)).thenReturn(rows);
 
         RetentionReport report = service.report(testMonth.getYear(), testMonth.getMonthValue());
 
@@ -80,7 +83,7 @@ class RetentionAnalyticsServiceTest {
     void series() {
         YearMonth m1 = YearMonth.now(ZoneOffset.UTC).minusMonths(6);
         YearMonth m2 = m1.plusMonths(1);
-        when(repo.findAllByOrderByServiceDateAsc()).thenReturn(List.of(
+        when(repo.findAllByBusinessIdOrderByServiceDateAsc(1L)).thenReturn(List.of(
                 visit("C1", "P1", m1.atDay(5), false),
                 visit("C1", "P1", m2.atDay(5), false),   // C1 returns
                 visit("C2", "P2", m2.atDay(8), false)));  // C2 is new in m2
@@ -103,7 +106,7 @@ class RetentionAnalyticsServiceTest {
     @Test
     @DisplayName("empty ledger → no providers")
     void emptyLedger() {
-        when(repo.findAllByOrderByServiceDateAsc()).thenReturn(List.of());
+        when(repo.findAllByBusinessIdOrderByServiceDateAsc(1L)).thenReturn(List.of());
         RetentionReport report = service.report(testMonth.getYear(), testMonth.getMonthValue());
         assertThat(report.providers()).isEmpty();
         assertThat(report.retentionWindowDays()).isEqualTo(60);
@@ -113,7 +116,7 @@ class RetentionAnalyticsServiceTest {
     @DisplayName("a recent (in-flight) cohort is not judged — retention is null, not 0%")
     void immatureCohortNotJudged() {
         YearMonth thisMonth = YearMonth.now(ZoneOffset.UTC);
-        when(repo.findAllByOrderByServiceDateAsc()).thenReturn(List.of(
+        when(repo.findAllByBusinessIdOrderByServiceDateAsc(1L)).thenReturn(List.of(
                 visit("C1", "P1", thisMonth.atDay(1), false)));
 
         ProviderRetentionRow p1 = service.report(thisMonth.getYear(), thisMonth.getMonthValue())

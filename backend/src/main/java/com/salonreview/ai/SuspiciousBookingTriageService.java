@@ -60,17 +60,20 @@ public class SuspiciousBookingTriageService {
     private final SuspiciousTriageRepository triages;
     private final SuspiciousBookingService suspiciousBookings;
     private final ObjectProvider<LangSmithTracer> tracerProvider;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
     public SuspiciousBookingTriageService(ObjectProvider<AnthropicClient> anthropicClientProvider,
                                           AiTriageProperties props,
                                           SuspiciousTriageRepository triages,
                                           SuspiciousBookingService suspiciousBookings,
-                                          ObjectProvider<LangSmithTracer> tracerProvider) {
+                                          ObjectProvider<LangSmithTracer> tracerProvider,
+                                          com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.anthropicClientProvider = anthropicClientProvider;
         this.props = props;
         this.triages = triages;
         this.suspiciousBookings = suspiciousBookings;
         this.tracerProvider = tracerProvider;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     /**
@@ -235,6 +238,7 @@ public class SuspiciousBookingTriageService {
     private SuspiciousTriage persist(String bookingId, TriageResult result,
                                      String refusalCategory, String langsmithRunId) {
         SuspiciousTriage row = SuspiciousTriage.builder()
+                .businessId(currentBusinessContext.id())
                 .squareBookingId(bookingId)
                 .promptVersion(TriagePrompts.PROMPT_VERSION)
                 .classification(result.classification())

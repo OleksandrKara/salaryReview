@@ -58,7 +58,7 @@ class RedoMoveTest {
         when(salonConfigRepo.findByBusinessId(1L)).thenReturn(Optional.of(sc));
         when(tierGrants.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
         when(feedback.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
-        when(prepaidRedemptions.findByServiceDateBetween(any(), any())).thenReturn(List.of());
+        when(prepaidRedemptions.findByBusinessIdAndServiceDateBetween(eq(1L), any(), any())).thenReturn(List.of());
 
         // Susan: first-half card 200 (2 counted, the original/paid period) + second-half card 300 (2).
         // Bayan: second-half card 150 (1 counted).

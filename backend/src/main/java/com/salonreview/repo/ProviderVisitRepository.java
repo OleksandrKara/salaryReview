@@ -10,13 +10,13 @@ import java.util.List;
 public interface ProviderVisitRepository extends JpaRepository<ProviderVisit, Long> {
 
     /** The whole ledger, oldest first — analytics loads this and computes in memory (one salon's volume). */
-    List<ProviderVisit> findAllByOrderByServiceDateAsc();
+    List<ProviderVisit> findAllByBusinessIdOrderByServiceDateAsc(Long businessId);
 
     /** Visits within a month — used to re-ingest idempotently (delete the month, then reinsert). */
-    List<ProviderVisit> findByServiceDateBetween(LocalDate from, LocalDate to);
+    List<ProviderVisit> findByBusinessIdAndServiceDateBetween(Long businessId, LocalDate from, LocalDate to);
 
-    long countByServiceDateBetween(LocalDate from, LocalDate to);
+    long countByBusinessIdAndServiceDateBetween(Long businessId, LocalDate from, LocalDate to);
 
     @Transactional
-    void deleteByServiceDateBetween(LocalDate from, LocalDate to);
+    void deleteByBusinessIdAndServiceDateBetween(Long businessId, LocalDate from, LocalDate to);
 }

@@ -18,6 +18,9 @@ public class OwnerCustomer {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "business_id", nullable = false)
+    private Long businessId;
+
     /** Square customer id — the join key against booking.customer_id. */
     @Column(name = "square_customer_id", nullable = false, unique = true)
     private String squareCustomerId;

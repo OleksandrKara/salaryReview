@@ -22,6 +22,9 @@ public class ProviderVisit {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "business_id", nullable = false)
+    private Long businessId;
+
     @Column(name = "customer_id", nullable = false, length = 64)
     private String customerId;
 

@@ -70,12 +70,14 @@ public class ProviderVisitIngestService {
 
         Map<String, Set<LocalDate>> rebookDays = sameDayRebookIndex(ym, zone);
 
-        visits.deleteByServiceDateBetween(ym.atDay(1), ym.atEndOfMonth());
+        Long businessId = currentBusinessContext.id();
+        visits.deleteByBusinessIdAndServiceDateBetween(businessId, ym.atDay(1), ym.atEndOfMonth());
         List<ProviderVisit> rows = new ArrayList<>(visitName.size());
         for (var e : visitName.entrySet()) {
             VisitKey k = e.getKey();
             boolean rebooked = rebookDays.getOrDefault(k.customerId(), Set.of()).contains(k.day());
             rows.add(ProviderVisit.builder()
+                    .businessId(businessId)
                     .customerId(k.customerId()).providerRef(k.providerRef()).providerName(e.getValue())
                     .serviceDate(k.day()).rebookedSameDay(rebooked).createdAt(Instant.now())
                     .build());
@@ -96,7 +98,7 @@ public class ProviderVisitIngestService {
         YearMonth cursor = YearMonth.now(salonZone());
         for (int i = 0; i < months; i++) {
             YearMonth ym = cursor.minusMonths(i);
-            if (visits.countByServiceDateBetween(ym.atDay(1), ym.atEndOfMonth()) > 0) continue;
+            if (visits.countByBusinessIdAndServiceDateBetween(currentBusinessContext.id(), ym.atDay(1), ym.atEndOfMonth()) > 0) continue;
             try {
                 ingestMonth(ym.getYear(), ym.getMonthValue());
             } catch (RuntimeException ex) {

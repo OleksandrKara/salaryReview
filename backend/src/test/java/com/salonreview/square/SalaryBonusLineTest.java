@@ -54,7 +54,7 @@ class SalaryBonusLineTest {
         when(salonConfigRepo.findByBusinessId(1L)).thenReturn(Optional.of(sc));
         when(tierGrants.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
         when(feedback.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
-        when(prepaidRedemptions.findByServiceDateBetween(any(), any())).thenReturn(List.of());
+        when(prepaidRedemptions.findByBusinessIdAndServiceDateBetween(eq(1L), any(), any())).thenReturn(List.of());
 
         // 60 counted in H1 → qualified; card 1000 (H1) + 500 (H2). Bonus = 0.05 * 1500 = 75.00 at close.
         HalfInput first = new HalfInput(60, new BigDecimal("1000.00"), BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
