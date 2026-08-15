@@ -1,8 +1,17 @@
 package com.salonreview.config;
 
+import com.salonreview.domain.AppUser;
+import com.salonreview.domain.Business;
+import com.salonreview.domain.BusinessMembership;
+import com.salonreview.domain.Role;
+import com.salonreview.repo.AppUserRepository;
+import com.salonreview.repo.BusinessMembershipRepository;
+import com.salonreview.repo.BusinessRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -27,15 +36,30 @@ import static org.assertj.core.api.Assertions.assertThat;
  * (the pattern most controller tests in this repo use) never exercises container-level error dispatch
  * at all, so it can't catch this. Uses the JDK's own {@code HttpClient} against the embedded server
  * (no new test dependency) so cookie-based session auth behaves exactly as it does for a real browser/
- * proxy request. Needs a real Postgres to boot the full application context (fails locally without
- * one, passes in CI — same as {@code BusinessRepositoryTest}).
+ * proxy request. Seeds its own OWNER account directly rather than relying on {@code OwnerBootstrap} —
+ * that only seeds when {@code app_user} is empty, which doesn't hold in CI where every
+ * {@code @SpringBootTest} class shares one real Postgres instance across the whole suite run, so by
+ * the time this class's context boots other tests have almost always already created rows. Needs a
+ * real Postgres to boot the full application context (fails locally without one, passes in CI — same
+ * as {@code BusinessRepositoryTest}).
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {"app.auth.username=errdispatchowner", "app.auth.password=errDispatchTestPw1"})
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class SecurityConfigErrorDispatchTest {
+
+    private static final String USERNAME = "errdispatchowner";
+    private static final String PASSWORD = "errDispatchTestPw1";
 
     @LocalServerPort
     private int port;
+
+    @Autowired
+    private AppUserRepository appUsers;
+    @Autowired
+    private BusinessRepository businesses;
+    @Autowired
+    private BusinessMembershipRepository memberships;
+    @Autowired
+    private PasswordEncoder encoder;
 
     private final HttpClient http = HttpClient.newBuilder()
             .cookieHandler(new java.net.CookieManager())
@@ -43,6 +67,7 @@ class SecurityConfigErrorDispatchTest {
 
     @Test
     void controllerThrownResponseStatusExceptionSurvivesTheErrorDispatch() throws Exception {
+        seedOwner();
         login();
 
         String username = "err-dispatch-dupe-" + System.nanoTime();
@@ -56,8 +81,22 @@ class SecurityConfigErrorDispatchTest {
         assertThat(duplicate.body()).contains("\"status\":409");
     }
 
+    private void seedOwner() {
+        if (appUsers.findByUsername(USERNAME).isPresent()) return;
+        Business businessA = businesses.findByShortCode("akluxnails").orElseThrow();
+        AppUser owner = appUsers.save(AppUser.builder()
+                .businessId(businessA.getId())
+                .username(USERNAME)
+                .passwordHash(encoder.encode(PASSWORD))
+                .role(Role.OWNER)
+                .active(true)
+                .build());
+        memberships.save(BusinessMembership.builder()
+                .businessId(businessA.getId()).userId(owner.getId()).role(Role.OWNER).build());
+    }
+
     private void login() throws Exception {
-        String form = "username=errdispatchowner&password=errDispatchTestPw1";
+        String form = "username=" + USERNAME + "&password=" + PASSWORD;
         HttpRequest req = HttpRequest.newBuilder(URI.create(url("/api/login")))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(form))
