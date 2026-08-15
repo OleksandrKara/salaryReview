@@ -1,8 +1,11 @@
 package com.salonreview.sms;
 
+import com.salonreview.domain.Business;
 import com.salonreview.domain.Provider;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.ProviderRepository;
 import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,8 +32,13 @@ class TechnicianNameResolverTest {
     @BeforeEach
     void setUp() {
         square = mock(SquareClient.class);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        BusinessRepository businesses = mock(BusinessRepository.class);
+        when(businesses.sole()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
+                .timezone("UTC").active(true).build());
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         providers = mock(ProviderRepository.class);
-        resolver = new TechnicianNameResolver(square, providers);
+        resolver = new TechnicianNameResolver(squareClientProvider, businesses, providers);
         asOf = Instant.parse("2026-08-05T18:00:00Z");
     }
 

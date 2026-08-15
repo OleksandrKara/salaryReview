@@ -1,11 +1,13 @@
 package com.salonreview.square.webhook;
 
 import com.salonreview.domain.SmsReplyFlow;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SmsReplyFlowRepository;
 import com.salonreview.sms.CheckoutReviewLinks;
 import com.salonreview.sms.SameDayRebookingTriggerService;
 import com.salonreview.sms.SmsMessageLogService;
 import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import com.salonreview.util.PhoneNumbers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,15 +31,18 @@ public class CheckoutReviewTriggerService {
     static final String AUTOMATION_KEY = "checkout_review_request";
     static final Duration SEND_DELAY = Duration.ofMinutes(2);
 
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
+    private final BusinessRepository businesses;
     private final SmsReplyFlowRepository repository;
     private final SameDayRebookingTriggerService rebookingTrigger;
     private final SmsMessageLogService messageLogService;
 
-    public CheckoutReviewTriggerService(SquareClient square, SmsReplyFlowRepository repository,
+    public CheckoutReviewTriggerService(SquareClientProvider squareClientProvider, BusinessRepository businesses,
+                                         SmsReplyFlowRepository repository,
                                          SameDayRebookingTriggerService rebookingTrigger,
                                          SmsMessageLogService messageLogService) {
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
+        this.businesses = businesses;
         this.repository = repository;
         this.rebookingTrigger = rebookingTrigger;
         this.messageLogService = messageLogService;
@@ -52,6 +57,10 @@ public class CheckoutReviewTriggerService {
                 return; // Square redelivered an event we already enqueued a flow for
             }
 
+            // Webhooks are unauthenticated (no session) and today's payload carries no business
+            // identifier of its own — same single-business guard as the SMS schedulers, until
+            // Phase 3.6 (per-business webhook routing) lands.
+            SquareClient square = squareClientProvider.forBusiness(businesses.sole().getId());
             Optional<SquareClient.Order> order = square.orderById(payment.orderId());
             if (order.isEmpty()) {
                 log.warn("Checkout-review trigger: order {} not found for payment {}", payment.orderId(), payment.id());

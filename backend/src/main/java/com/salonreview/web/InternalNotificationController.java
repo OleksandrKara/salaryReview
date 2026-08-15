@@ -5,8 +5,9 @@ import com.salonreview.config.RebookingProperties;
 import com.salonreview.domain.SameDayRebookingGroupMembership;
 import com.salonreview.repo.SameDayRebookingGroupMembershipRepository;
 import com.salonreview.sms.RebookingPromoSigner;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.sms.TwilioSmsService;
-import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import com.salonreview.telegram.FourHandRequestNotification;
 import com.salonreview.telegram.TelegramNotificationService;
 import org.slf4j.Logger;
@@ -41,20 +42,22 @@ public class InternalNotificationController {
     private final RebookingPromoSigner promoSigner;
     private final RebookingProperties rebookingProperties;
     private final SameDayRebookingGroupMembershipRepository groupMembershipRepository;
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
+    private final BusinessRepository businesses;
 
     public InternalNotificationController(InternalApiProperties internalApi, TelegramNotificationService telegram,
                                           TwilioSmsService sms, RebookingPromoSigner promoSigner,
                                           RebookingProperties rebookingProperties,
                                           SameDayRebookingGroupMembershipRepository groupMembershipRepository,
-                                          SquareClient square) {
+                                          SquareClientProvider squareClientProvider, BusinessRepository businesses) {
         this.internalApi = internalApi;
         this.telegram = telegram;
         this.sms = sms;
         this.promoSigner = promoSigner;
         this.rebookingProperties = rebookingProperties;
         this.groupMembershipRepository = groupMembershipRepository;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
+        this.businesses = businesses;
     }
 
     @PostMapping("/notifications/four-hand-request")
@@ -121,7 +124,10 @@ public class InternalNotificationController {
             return ResponseEntity.ok(Map.of("enrolled", false, "reason", "not_configured"));
         }
         try {
-            square.addCustomerToGroup(body.squareCustomerId(), groupId);
+            // Same single-business guard as the SMS schedulers — this endpoint has no session, so
+            // there's no business context to resolve beyond the current single-business reality.
+            squareClientProvider.forBusiness(businesses.sole().getId())
+                    .addCustomerToGroup(body.squareCustomerId(), groupId);
         } catch (RuntimeException e) {
             log.warn("Failed to enroll customer {} in {} group: {}", body.squareCustomerId(), promoCode, e.getMessage());
             return ResponseEntity.ok(Map.of("enrolled", false, "reason", "square_error"));

@@ -4,9 +4,11 @@ import com.salonreview.config.RebookingProperties;
 import com.salonreview.domain.LapsedCustomerWinbackSend;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.TwilioSmsConfig;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.LapsedCustomerWinbackSendRepository;
 import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
+import com.salonreview.square.SquareClientProvider;
 import com.salonreview.util.Names;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
@@ -51,7 +53,8 @@ public class LapsedCustomerWinbackScheduler {
 
     private final LapsedCustomerWinbackEligibilityRepository eligibilityRepository;
     private final LapsedCustomerWinbackSendRepository sendRepository;
-    private final SquareClient square;
+    private final SquareClientProvider squareClientProvider;
+    private final BusinessRepository businesses;
     private final SmsAutomationService automationService;
     private final SmsConsentRepository consentRepository;
     private final RebookingProperties rebookingProperties;
@@ -61,14 +64,16 @@ public class LapsedCustomerWinbackScheduler {
     private final String publicBaseUrl;
 
     public LapsedCustomerWinbackScheduler(LapsedCustomerWinbackEligibilityRepository eligibilityRepository,
-                                           LapsedCustomerWinbackSendRepository sendRepository, SquareClient square,
+                                           LapsedCustomerWinbackSendRepository sendRepository,
+                                           SquareClientProvider squareClientProvider, BusinessRepository businesses,
                                            SmsAutomationService automationService, SmsConsentRepository consentRepository,
                                            RebookingProperties rebookingProperties, SmsMessageLogService messageLogService,
                                            TwilioSmsConfigService configService, TwilioSmsClient client,
                                            @Value("${app.public-base-url}") String publicBaseUrl) {
         this.eligibilityRepository = eligibilityRepository;
         this.sendRepository = sendRepository;
-        this.square = square;
+        this.squareClientProvider = squareClientProvider;
+        this.businesses = businesses;
         this.automationService = automationService;
         this.consentRepository = consentRepository;
         this.rebookingProperties = rebookingProperties;
@@ -86,15 +91,18 @@ public class LapsedCustomerWinbackScheduler {
     @Scheduled(cron = "0 0 10 * * *", zone = "America/Los_Angeles")
     @SchedulerLock(name = "LapsedCustomerWinbackScheduler_sendDueWinbacks", lockAtLeastFor = "PT10S", lockAtMostFor = "PT10M")
     public void sendDueWinbacks() {
+        // Same single-business guard as SameDayRebookingGroupExpiryScheduler — the eligibility
+        // query below has no business_id of its own yet.
+        SquareClient square = squareClientProvider.forBusiness(businesses.sole().getId());
         for (LapsedCustomerWinbackEligibilityRepository.EligibleCustomer customer : eligibilityRepository.findEligibleCustomers()) {
             if (sendRepository.existsBySquareCustomerId(customer.squareCustomerId())) {
                 continue; // belt-and-suspenders vs. the eligibility query's own NOT EXISTS
             }
-            process(customer);
+            process(customer, square);
         }
     }
 
-    private void process(LapsedCustomerWinbackEligibilityRepository.EligibleCustomer customer) {
+    private void process(LapsedCustomerWinbackEligibilityRepository.EligibleCustomer customer, SquareClient square) {
         String phoneNumber = square.customerPhone(customer.squareCustomerId());
         if (phoneNumber == null || phoneNumber.isBlank()) {
             save(customer, null, null, LapsedCustomerWinbackSend.STATE_SKIPPED_UNRESOLVED);
@@ -108,7 +116,7 @@ public class LapsedCustomerWinbackScheduler {
 
         boolean upcoming;
         try {
-            upcoming = hasUpcomingAppointment(customer.squareCustomerId());
+            upcoming = hasUpcomingAppointment(customer.squareCustomerId(), square);
         } catch (RuntimeException ex) {
             // Fails closed, same as every other scheduler in this package: a transient Square
             // failure means "don't know," not "assume unbooked" — no row written, retried on the
@@ -129,13 +137,13 @@ public class LapsedCustomerWinbackScheduler {
 
         Instant promoExpiresAt = endOfTodayInSalonZone();
         String givenName = square.customerGivenNames(List.of(customer.squareCustomerId())).get(customer.squareCustomerId());
-        sendNudge(customer, phoneNumber, givenName, promoExpiresAt, hasConsent(phoneNumber, customer.squareCustomerId()));
+        sendNudge(customer, phoneNumber, givenName, promoExpiresAt, hasConsent(phoneNumber, customer.squareCustomerId(), square));
         save(customer, phoneNumber, promoExpiresAt, LapsedCustomerWinbackSend.STATE_SENT);
     }
 
     /** Live check for any not-cancelled, not-yet-happened Square appointment — same helper every
      * other scheduler in this package uses. */
-    private boolean hasUpcomingAppointment(String customerId) {
+    private boolean hasUpcomingAppointment(String customerId, SquareClient square) {
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
         return square.bookingsForCustomer(customerId, Instant.now()).stream()
                 .filter(SquareBookingFilters::didHappen)
@@ -145,7 +153,7 @@ public class LapsedCustomerWinbackScheduler {
     /** Consent from *either* source is sufficient — same dual-source check
      * {@code SameDayRebookingScheduler.hasConsent} uses, reusing the same consent-segment id (no
      * new Square segment needed — see design.md D8). */
-    private boolean hasConsent(String phoneNumber, String squareCustomerId) {
+    private boolean hasConsent(String phoneNumber, String squareCustomerId, SquareClient square) {
         if (consentRepository.hasMarketingConsent(phoneNumber)) {
             return true;
         }
