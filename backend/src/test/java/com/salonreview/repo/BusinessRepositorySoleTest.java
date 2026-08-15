@@ -50,4 +50,24 @@ class BusinessRepositorySoleTest {
 
         assertThatThrownBy(repo::sole).isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    @DisplayName("legacySmsBusiness resolves Business A by short code even once a second business exists")
+    void legacySmsBusinessResolvesBusinessAWithMultipleBusinesses() {
+        BusinessRepository repo = mock(BusinessRepository.class, CALLS_REAL_METHODS);
+        Business businessA = Business.builder().id(1L).name("AK.LUX.NAILS").shortCode("akluxnails")
+                .timezone("America/Los_Angeles").active(true).build();
+        when(repo.findByShortCode("akluxnails")).thenReturn(java.util.Optional.of(businessA));
+
+        assertThat(repo.legacySmsBusiness().getId()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("legacySmsBusiness fails loudly if Business A's row is somehow missing")
+    void legacySmsBusinessFailsLoudlyWhenMissing() {
+        BusinessRepository repo = mock(BusinessRepository.class, CALLS_REAL_METHODS);
+        when(repo.findByShortCode("akluxnails")).thenReturn(java.util.Optional.empty());
+
+        assertThatThrownBy(repo::legacySmsBusiness).isInstanceOf(IllegalStateException.class);
+    }
 }

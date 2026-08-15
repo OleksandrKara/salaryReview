@@ -35,7 +35,7 @@ import static org.mockito.Mockito.when;
 class OwnerOverviewServiceAsyncBusinessContextTest {
 
     private static final CommissionConfig CFG_COMMISSION =
-            new CommissionConfig(60, new BigDecimal("0.4500"), new BigDecimal("0.5000"), new BigDecimal("0.0350"));
+            new CommissionConfig(60, new BigDecimal("0.4500"), new BigDecimal("0.5000"), new BigDecimal("0.0350"), true);
 
     @Test
     @DisplayName("the async live-month fetch path sees the same business id as the calling thread, not an unpopulated context")

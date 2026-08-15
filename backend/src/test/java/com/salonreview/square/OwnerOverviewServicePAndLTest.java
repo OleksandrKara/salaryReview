@@ -135,7 +135,7 @@ class OwnerOverviewServicePAndLTest {
                 1L, "Anna", 0, false, false, false, half, empty, card, BigDecimal.ZERO,
                 null, null, null, null, 0, 0, 0, 0, 0, 0);
         CommissionConfig config = new CommissionConfig(60, new BigDecimal("0.45"), new BigDecimal("0.50"),
-                new BigDecimal("0.10"));
+                new BigDecimal("0.10"), true);
         return new SettlementPreviewService.SettlementPreview(year, month, "America/Los_Angeles", config,
                 BigDecimal.ZERO, List.of(payout), new SquareMonthAggregator.Diag(), year + "-" + month + "-01T00:00:00Z");
     }
@@ -255,7 +255,7 @@ class OwnerOverviewServicePAndLTest {
                 1L, "Anna", 0, false, false, false, half, empty, BigDecimal.ZERO, new BigDecimal("500.00"),
                 null, null, null, null, 0, 0, 0, 0, 0, 0);
         CommissionConfig config = new CommissionConfig(60, new BigDecimal("0.45"), new BigDecimal("0.50"),
-                new BigDecimal("0.10"));
+                new BigDecimal("0.10"), true);
         when(settlementPreview.preview(2026, 3)).thenReturn(new SettlementPreviewService.SettlementPreview(
                 2026, 3, "America/Los_Angeles", config, BigDecimal.ZERO, List.of(payout),
                 new SquareMonthAggregator.Diag(), "2026-03-01T00:00:00Z"));

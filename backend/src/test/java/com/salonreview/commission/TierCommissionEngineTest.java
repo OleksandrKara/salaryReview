@@ -18,7 +18,18 @@ class TierCommissionEngineTest {
                 60,
                 new BigDecimal("0.4500"),
                 new BigDecimal("0.5000"),
-                new BigDecimal("0.0350"));
+                new BigDecimal("0.0350"),
+                true);
+    }
+
+    /** Same rates, tier program off entirely — a second business that pays a flat rate. */
+    private static CommissionConfig configTierDisabled() {
+        return new CommissionConfig(
+                60,
+                new BigDecimal("0.4500"),
+                new BigDecimal("0.5000"),
+                new BigDecimal("0.0350"),
+                false);
     }
 
     private static HalfInput half(int counted, String card, String cash, String tips, String adj) {
@@ -142,6 +153,31 @@ class TierCommissionEngineTest {
         assertThat(auto.tierBonus()).isEqualByComparingTo("0.00");        // not qualified automatically
         assertThat(granted.appliedRate()).isEqualByComparingTo("0.5000"); // grant applies the tier
         assertThat(granted.tierBonus()).isEqualByComparingTo("100.00");   // 2000 * 0.05
+    }
+
+    @Test
+    @DisplayName("tierEnabled=false: an otherwise-qualifying month still pays flat base rate, no bonus")
+    void tierDisabled_qualifyingMonthStillPaysFlatBase() {
+        HalfInput h1 = half(35, "2000.00", "1000.00", "0.00", "0.00");
+        HalfInput h2 = half(30, "1500.00", "800.00", "200.00", "0.00");
+
+        HalfSettlement s = engine.secondHalfFinal(h1, h2, configTierDisabled());
+
+        assertThat(s.appliedRate()).isEqualByComparingTo("0.4500");
+        assertThat(s.tierBonus()).isEqualByComparingTo("0.00");
+        assertThat(s.cashTierRebate()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    @DisplayName("tierEnabled=false: a manual grant is ignored too — no exceptions means no exceptions")
+    void tierDisabled_manualGrantIgnored() {
+        HalfInput h1 = half(30, "1000.00", "0.00", "0.00", "0.00");
+        HalfInput h2 = half(25, "1000.00", "0.00", "0.00", "0.00");
+
+        HalfSettlement s = engine.secondHalfFinal(h1, h2, configTierDisabled(), Boolean.TRUE);
+
+        assertThat(s.appliedRate()).isEqualByComparingTo("0.4500");
+        assertThat(s.tierBonus()).isEqualByComparingTo("0.00");
     }
 
     @Test

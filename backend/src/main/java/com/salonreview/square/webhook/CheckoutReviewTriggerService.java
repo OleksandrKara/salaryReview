@@ -58,9 +58,9 @@ public class CheckoutReviewTriggerService {
             }
 
             // Webhooks are unauthenticated (no session) and today's payload carries no business
-            // identifier of its own — same single-business guard as the SMS schedulers, until
-            // Phase 3.6 (per-business webhook routing) lands.
-            SquareClient square = squareClientProvider.forBusiness(businesses.sole().getId());
+            // identifier of its own — see BusinessRepository#legacySmsBusiness, same as the SMS
+            // schedulers, until Phase 3.6 (per-business webhook routing) lands.
+            SquareClient square = squareClientProvider.forBusiness(businesses.legacySmsBusiness().getId());
             Optional<SquareClient.Order> order = square.orderById(payment.orderId());
             if (order.isEmpty()) {
                 log.warn("Checkout-review trigger: order {} not found for payment {}", payment.orderId(), payment.id());

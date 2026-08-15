@@ -104,7 +104,12 @@ public class SecurityConfig {
                         // decision — that request falls through to the catch-all below, unaffected
                         // by this matcher. Listed first so it wins.
                         .requestMatchers("/api/owner/automations/activity/**").hasAnyRole("OWNER", "MANAGER")
-                        .requestMatchers("/api/users/**", "/api/owner/**", "/api/rag/admin/**").hasRole("OWNER")
+                        // Business creation (Phase 5.1) — pragmatically OWNER-gated like everything
+                        // else here rather than a separate platform_admin role, since there is
+                        // exactly one owner account in practice today; see design.md D4/5.2 for the
+                        // real platform_admin table this should move to once that's needed.
+                        .requestMatchers("/api/users/**", "/api/owner/**", "/api/rag/admin/**", "/api/platform/**")
+                                .hasRole("OWNER")
                         .requestMatchers("/api/settlements/me/**").hasRole("PROVIDER")
                         // A provider/manager's own read-only "My Documents" — list + download only,
                         // never create/edit/delete (that stays under /api/owner/** above, OWNER-only).

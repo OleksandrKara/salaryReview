@@ -47,6 +47,71 @@ export interface TelegramSettingsDto {
   updatedBy: string | null;
 }
 
+export interface SquareConnectionDto {
+  accessTokenMasked: string | null;
+  accessTokenSet: boolean;
+  environment: 'SANDBOX' | 'PRODUCTION' | null;
+  locationId: string | null;
+  applicationId: string | null;
+  merchantId: string | null;
+  connectedAt: string | null;
+  lastSyncAt: string | null;
+}
+
+// accessToken omitted/undefined = keep the existing token (only meaningful when reconnecting to
+// change just the location/environment); required the first time this business connects. Never
+// send the masked value from SquareConnectionDto back here.
+export interface SquareConnectionUpdateRequest {
+  accessToken?: string;
+  environment: 'SANDBOX' | 'PRODUCTION';
+  locationId: string;
+  applicationId?: string;
+}
+
+export interface BusinessSettingsDto {
+  businessId: number;
+  name: string;
+  shortCode: string;
+  timezone: string;
+  configured: boolean;
+  ownerShortName: string | null;
+  baseCommissionRate: number | null;
+  tierEnabled: boolean;
+  tierServiceThreshold: number | null;
+  servicePriceCutoff: number | null;
+  cardTipFeeRate: number | null;
+}
+
+// shortCode is immutable, not included. Every other field null/undefined = leave unchanged on an
+// existing config — see BusinessSettingsService's own doc for which are required on first setup.
+export interface BusinessSettingsUpdateRequest {
+  name?: string;
+  timezone?: string;
+  ownerShortName?: string;
+  baseCommissionRate?: number;
+  tierEnabled?: boolean;
+  tierServiceThreshold?: number;
+  servicePriceCutoff?: number;
+  cardTipFeeRate?: number;
+}
+
+export interface PlatformBusinessDto {
+  id: number;
+  name: string;
+  shortCode: string;
+  timezone: string;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface CreateBusinessRequest {
+  name: string;
+  shortCode: string;
+  timezone: string;
+  ownerUsername: string;
+  ownerPassword: string;
+}
+
 // null field = leave unchanged; '' = clear. Never send the masked token back — only include
 // botToken when the owner actually typed a new one.
 export interface TelegramSettingsUpdateRequest {

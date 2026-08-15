@@ -83,11 +83,14 @@ public class TierCommissionEngine {
      * @param tierGrant manual override of qualification by an owner/manager:
      *                  {@code TRUE} forces the tier (e.g. "close enough to 60"), {@code FALSE} denies
      *                  it, {@code null} falls back to the automatic count-vs-threshold decision.
+     *                  Ignored entirely when {@link CommissionConfig#tierEnabled()} is false — see
+     *                  its own doc for why that's a real "no exceptions" guarantee.
      */
     public HalfSettlement secondHalfFinal(HalfInput h1, HalfInput h2, CommissionConfig cfg, Boolean tierGrant) {
         BigDecimal base = cfg.baseRate();
         int countedMonth = h1.countedServices() + h2.countedServices();
-        boolean qualified = tierGrant != null ? tierGrant : countedMonth >= cfg.tierServiceThreshold();
+        boolean qualified = cfg.tierEnabled()
+                && (tierGrant != null ? tierGrant : countedMonth >= cfg.tierServiceThreshold());
 
         BigDecimal tipsAfterFee = tipsAfterFee(h2.cardTips(), cfg);
 
