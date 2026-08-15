@@ -88,11 +88,15 @@ class NoShowFeeTest {
         SquareClient square = mock(SquareClient.class);
         ProviderRepository providerRepo = mock(ProviderRepository.class);
         NoShowFeeService noShowFees = mock(NoShowFeeService.class);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
 
         SettlementPreviewService service = new SettlementPreviewService(aggregator, new TierCommissionEngine(),
                 salonConfigRepo, directory, tierGrants, feedback, square, mock(PrepaidRedemptionRepository.class),
                 mock(PrepaidPackageRepository.class), providerRepo, mock(RedoRepository.class),
-                mock(ManualAdjustmentRepository.class), noShowFees, mock(SuspiciousBookingService.class), mock(com.salonreview.square.CancelledAppointmentService.class));
+                mock(ManualAdjustmentRepository.class), noShowFees, mock(SuspiciousBookingService.class),
+                mock(com.salonreview.square.CancelledAppointmentService.class), currentBusinessContext);
 
         SalonConfig sc = mock(SalonConfig.class);
         when(sc.toCommissionConfig()).thenReturn(new CommissionConfig(60,
@@ -100,7 +104,7 @@ class NoShowFeeTest {
         when(sc.getServicePriceCutoff()).thenReturn(new BigDecimal("50.00"));
         when(sc.getCardTipFeeRate()).thenReturn(new BigDecimal("0.0350"));
         when(sc.getOwnerShortName()).thenReturn("AK");
-        when(salonConfigRepo.findById(1)).thenReturn(Optional.of(sc));
+        when(salonConfigRepo.findByBusinessId(1L)).thenReturn(Optional.of(sc));
         when(tierGrants.findByYearAndMonth(2026, 5)).thenReturn(List.of());
         when(feedback.findByYearAndMonth(2026, 5)).thenReturn(List.of());
         when(square.customerNames(any())).thenReturn(Map.of());

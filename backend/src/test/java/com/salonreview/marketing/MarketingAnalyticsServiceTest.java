@@ -58,7 +58,10 @@ class MarketingAnalyticsServiceTest {
         adSpendEntryRepository = mock(AdSpendEntryRepository.class);
         contactsService = mock(MarketingContactsService.class);
         dashboardRepository = mock(MarketingDashboardRepository.class);
-        when(salonConfig.findById(1)).thenReturn(Optional.of(SalonConfig.builder()
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        when(salonConfig.findByBusinessId(1L)).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
         // No square_customer_id ever collides with another contact's phone in these tests, so an
         // unstubbed customerIdsForPhone (any phone not explicitly given a duplicate) just contributes
@@ -66,7 +69,7 @@ class MarketingAnalyticsServiceTest {
         when(square.customerIdsForPhone(anyString())).thenReturn(List.of());
         service = new MarketingAnalyticsService(
                 contactsRepository, contactsService, dashboardRepository, aggregator, square, salonConfig,
-                adSpendEntryRepository, FIXED_CLOCK);
+                currentBusinessContext, adSpendEntryRepository, FIXED_CLOCK);
     }
 
     private static AttributedService svc(String date, String customerId, String gross) {

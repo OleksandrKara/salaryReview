@@ -63,12 +63,16 @@ class MarketingContactsServiceTest {
         syncStatus = mock(MarketingSyncStatusRepository.class);
         smsMessageLogService = mock(com.salonreview.sms.SmsMessageLogService.class);
         providerVisits = mock(ProviderVisitRepository.class);
-        service = new MarketingContactsService(repository, squareLinks, square, aggregator, salonConfig, syncStatus,
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        service = new MarketingContactsService(repository, squareLinks, square, aggregator, salonConfig,
+                currentBusinessContext, syncStatus,
                 new RebookingProperties(), smsMessageLogService, providerVisits, 4);
         when(repository.findSubmissionHistory(any())).thenReturn(List.of());
         when(repository.findSubmissionsByBookingIds(any())).thenReturn(Map.of());
         when(squareLinks.findByPhoneNumber(any())).thenReturn(Optional.empty());
-        when(salonConfig.findById(1)).thenReturn(Optional.of(SalonConfig.builder()
+        when(salonConfig.findByBusinessId(1L)).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
         when(syncStatus.getSingleton()).thenReturn(MarketingSyncStatus.builder().build());
         when(providerVisits.findAllByOrderByServiceDateAsc()).thenReturn(List.of());

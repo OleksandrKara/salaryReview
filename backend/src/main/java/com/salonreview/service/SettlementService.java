@@ -25,6 +25,7 @@ public class SettlementService {
     private final PeriodEntryRepository entries;
     private final ProviderRepository providers;
     private final SalonConfigRepository salonConfig;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final CommissionCalculator calculator;
     private final MessageFormatter formatter;
 
@@ -32,11 +33,13 @@ public class SettlementService {
                              PeriodEntryRepository entries,
                              ProviderRepository providers,
                              SalonConfigRepository salonConfig,
+                             com.salonreview.config.CurrentBusinessContext currentBusinessContext,
                              CommissionCalculator calculator,
                              MessageFormatter formatter) {
         this.periods = periods;
         this.entries = entries;
         this.providers = providers;
+        this.currentBusinessContext = currentBusinessContext;
         this.salonConfig = salonConfig;
         this.calculator = calculator;
         this.formatter = formatter;
@@ -47,8 +50,9 @@ public class SettlementService {
         PayPeriod period = periods.findById(payPeriodId)
                 .orElseThrow(() -> new NoSuchElementException("Pay period " + payPeriodId + " not found"));
 
-        String owner = salonConfig.findById(1)
-        .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"))
+        Long businessId = currentBusinessContext.id();
+        String owner = salonConfig.findByBusinessId(businessId)
+        .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"))
         .getOwnerShortName();
 
         Map<Long, PeriodEntry> entryByProvider = entries.findAllByPayPeriodId(payPeriodId).stream()

@@ -51,7 +51,8 @@ class CancelledAppointmentServiceTest {
         providerRepo = mock(ProviderRepository.class);
         users = mock(AppUserRepository.class);
         clearances = mock(CancellationClearanceRepository.class);
-        service = new CancelledAppointmentService(aggregator, square, salonConfig, providers,
+        service = new CancelledAppointmentService(aggregator, square, salonConfig,
+                mock(com.salonreview.config.CurrentBusinessContext.class), providers,
                 providerRepo, users, clearances);
 
         // Default: no owner/manager accounts, no clearances.

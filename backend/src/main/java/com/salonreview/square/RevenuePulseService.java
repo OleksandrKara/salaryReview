@@ -35,6 +35,7 @@ public class RevenuePulseService {
     private final RevenueForecastService forecaster;
     private final SquareMonthAggregator aggregator;
     private final SalonConfigRepository salonConfig;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final RevenueSnapshotRepository snapshots;
     private final ManualAdjustmentService manualAdjustments;
     private final Clock clock;
@@ -42,17 +43,21 @@ public class RevenuePulseService {
     @Autowired
     public RevenuePulseService(SquareClient square, RevenueForecastService forecaster,
                                SquareMonthAggregator aggregator, SalonConfigRepository salonConfig,
+                               com.salonreview.config.CurrentBusinessContext currentBusinessContext,
                                RevenueSnapshotRepository snapshots, ManualAdjustmentService manualAdjustments) {
-        this(square, forecaster, aggregator, salonConfig, snapshots, manualAdjustments, Clock.systemUTC());
+        this(square, forecaster, aggregator, salonConfig, currentBusinessContext, snapshots,
+                manualAdjustments, Clock.systemUTC());
     }
 
     RevenuePulseService(SquareClient square, RevenueForecastService forecaster,
                         SquareMonthAggregator aggregator, SalonConfigRepository salonConfig,
+                        com.salonreview.config.CurrentBusinessContext currentBusinessContext,
                         RevenueSnapshotRepository snapshots, ManualAdjustmentService manualAdjustments, Clock clock) {
         this.square = square;
         this.forecaster = forecaster;
         this.aggregator = aggregator;
         this.salonConfig = salonConfig;
+        this.currentBusinessContext = currentBusinessContext;
         this.snapshots = snapshots;
         this.manualAdjustments = manualAdjustments;
         this.clock = clock;
@@ -211,8 +216,9 @@ public class RevenuePulseService {
     }
 
     private BigDecimal priceCutoff() {
-        SalonConfig cfg = salonConfig.findById(1)
-                .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"));
+        Long businessId = currentBusinessContext.id();
+        SalonConfig cfg = salonConfig.findByBusinessId(businessId)
+                .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));
         return cfg.getServicePriceCutoff();
     }
 

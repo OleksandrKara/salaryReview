@@ -103,6 +103,7 @@ public class MarketingAnalyticsService {
     private final SquareMonthAggregator aggregator;
     private final SquareClient square;
     private final SalonConfigRepository salonConfig;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final AdSpendEntryRepository adSpendEntryRepository;
     private final java.time.Clock clock;
     private final TtlCache cache = new TtlCache();
@@ -115,10 +116,11 @@ public class MarketingAnalyticsService {
             SquareMonthAggregator aggregator,
             SquareClient square,
             SalonConfigRepository salonConfig,
+            com.salonreview.config.CurrentBusinessContext currentBusinessContext,
             AdSpendEntryRepository adSpendEntryRepository
     ) {
         this(contactsRepository, contactsService, dashboardRepository, aggregator, square, salonConfig,
-                adSpendEntryRepository, java.time.Clock.systemUTC());
+                currentBusinessContext, adSpendEntryRepository, java.time.Clock.systemUTC());
     }
 
     /** Test-only constructor — lets tests fix "today" instead of racing the real clock for the
@@ -130,6 +132,7 @@ public class MarketingAnalyticsService {
             SquareMonthAggregator aggregator,
             SquareClient square,
             SalonConfigRepository salonConfig,
+            com.salonreview.config.CurrentBusinessContext currentBusinessContext,
             AdSpendEntryRepository adSpendEntryRepository,
             java.time.Clock clock
     ) {
@@ -139,6 +142,7 @@ public class MarketingAnalyticsService {
         this.aggregator = aggregator;
         this.square = square;
         this.salonConfig = salonConfig;
+        this.currentBusinessContext = currentBusinessContext;
         this.clock = clock;
         this.adSpendEntryRepository = adSpendEntryRepository;
     }
@@ -1287,8 +1291,9 @@ public class MarketingAnalyticsService {
     }
 
     private BigDecimal priceCutoff() {
-        SalonConfig cfg = salonConfig.findById(1)
-                .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"));
+        Long businessId = currentBusinessContext.id();
+        SalonConfig cfg = salonConfig.findByBusinessId(businessId)
+                .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));
         return cfg.getServicePriceCutoff();
     }
 

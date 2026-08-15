@@ -62,6 +62,7 @@ public class SuspiciousBookingService {
      * abstraction) so cached triages survive even after the feature flag is later flipped off.
      */
     private final SuspiciousTriageRepository triages;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
     public SuspiciousBookingService(SquareMonthAggregator aggregator,
                                     SquareClient square,
@@ -69,7 +70,8 @@ public class SuspiciousBookingService {
                                     ProviderDirectory providers,
                                     SuspiciousBookingClearanceRepository clearances,
                                     ObjectProvider<TriageFeedbackPublisher> triageFeedbackProvider,
-                                    SuspiciousTriageRepository triages) {
+                                    SuspiciousTriageRepository triages,
+                                    com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.aggregator = aggregator;
         this.square = square;
         this.salonConfig = salonConfig;
@@ -77,6 +79,7 @@ public class SuspiciousBookingService {
         this.clearances = clearances;
         this.triageFeedbackProvider = triageFeedbackProvider;
         this.triages = triages;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     /**
@@ -365,8 +368,9 @@ public class SuspiciousBookingService {
     }
 
     private java.math.BigDecimal priceCutoff() {
-        SalonConfig cfg = salonConfig.findById(1)
-                .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"));
+        Long businessId = currentBusinessContext.id();
+        SalonConfig cfg = salonConfig.findByBusinessId(businessId)
+                .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));
         return cfg.getServicePriceCutoff();
     }
 

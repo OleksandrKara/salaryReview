@@ -21,10 +21,13 @@ public class ProviderDirectory {
 
     private final ProviderRepository providers;
     private final SalonConfigRepository salonConfig;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
-    public ProviderDirectory(ProviderRepository providers, SalonConfigRepository salonConfig) {
+    public ProviderDirectory(ProviderRepository providers, SalonConfigRepository salonConfig,
+                              com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.providers = providers;
         this.salonConfig = salonConfig;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     @Transactional
@@ -34,8 +37,9 @@ public class ProviderDirectory {
     }
 
     private Provider create(String teamMemberId, String name) {
-        SalonConfig cfg = salonConfig.findById(1)
-                .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"));
+        Long businessId = currentBusinessContext.id();
+        SalonConfig cfg = salonConfig.findByBusinessId(businessId)
+                .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));
         Set<String> ids = new HashSet<>();
         ids.add(teamMemberId);
         Provider p = Provider.builder()

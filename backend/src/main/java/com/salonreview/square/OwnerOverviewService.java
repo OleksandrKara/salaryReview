@@ -76,18 +76,21 @@ public class OwnerOverviewService {
     private final ExpenseImportService expenseImports;
     private final SettlementPreviewService settlementPreview;
     private final BankTransactionRepository bankTransactions;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
     public OwnerOverviewService(PayPeriodRepository payPeriods, PeriodEntryRepository entries,
                                 CommissionCalculator calculator, SalonConfigRepository salonConfig,
                                 SquareMonthAggregator aggregator, RetentionAnalyticsService retention,
                                 ManualAdjustmentService manualAdjustments, ExpenseService expenses,
                                 ManagerTimeService managerTime, ExpenseImportService expenseImports,
-                                SettlementPreviewService settlementPreview, BankTransactionRepository bankTransactions) {
+                                SettlementPreviewService settlementPreview, BankTransactionRepository bankTransactions,
+                                com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.expenseImports = expenseImports;
         this.payPeriods = payPeriods;
         this.entries = entries;
         this.calculator = calculator;
         this.salonConfig = salonConfig;
+        this.currentBusinessContext = currentBusinessContext;
         this.aggregator = aggregator;
         this.retention = retention;
         this.manualAdjustments = manualAdjustments;
@@ -109,8 +112,9 @@ public class OwnerOverviewService {
     }
 
     private OwnerOverviewDto computeOverview(int fromYear, int fromMonth, int toYear, int toMonth) {
-        SalonConfig cfg = salonConfig.findById(1)
-                .orElseThrow(() -> new IllegalStateException("Salon config with id=1 is missing"));
+        Long businessId = currentBusinessContext.id();
+        SalonConfig cfg = salonConfig.findByBusinessId(businessId)
+                .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));
 
         LocalDate today = LocalDate.now();
         int currentYear = today.getYear();
@@ -142,9 +146,18 @@ public class OwnerOverviewService {
 
         Map<String, MonthSummary> liveResults = new ConcurrentHashMap<>();
         if (!liveNeeded.isEmpty()) {
+            // fromSquare() reaches settlementPreview.preview() -> CurrentBusinessContext.id(), but
+            // CompletableFuture.runAsync hands each task to a different pool thread — a ThreadLocal
+            // set on THIS (calling) thread does not carry over. Resolve it here, once, on the calling
+            // thread, and re-establish it explicitly inside each async task via runAs; without this
+            // every live-month fetch below throws on the worker thread, which
+            // providerCompensationForMonth's own catch(RuntimeException) then silently swallows into
+            // a zeroed-out cash figure — confirmed by a real regression-snapshot diff before this fix
+            // shipped, not a hypothetical. (businessId already resolved above, before this method's
+            // own salon_config lookup — reused here rather than re-read, same value either way.)
             CompletableFuture<?>[] futures = liveNeeded.stream()
-                    .map(ym -> CompletableFuture.runAsync(
-                            () -> liveResults.put(ymKey(ym[0], ym[1]), fromSquare(ym[1], ym[0], cfg))))
+                    .map(ym -> CompletableFuture.runAsync(() -> currentBusinessContext.runAs(businessId,
+                            () -> liveResults.put(ymKey(ym[0], ym[1]), fromSquare(ym[1], ym[0], cfg)))))
                     .toArray(CompletableFuture[]::new);
             CompletableFuture.allOf(futures).join();
         }
