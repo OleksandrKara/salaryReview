@@ -281,23 +281,71 @@ public class SquareMonthAggregator {
                 if (price.compareTo(priceCutoff) >= 0) countedSegs++;
             }
             // Collected = what the provider wrote in the note (or the catalog total if no amount).
-            // Gross (commission basis) = the menu price; the difference is a salon-absorbed discount.
-            // If the note amount exceeds the catalog (or catalog didn't resolve), treat it as gross
-            // with no discount, so we never undercount the provider.
-            BigDecimal collected = cb.explicitAmount.orElse(serviceTotal);
-            BigDecimal gross = serviceTotal.max(collected);
-            BigDecimal discount = gross.subtract(collected);
+            // Cash written in a note can never exceed the service's own catalog price — if it does,
+            // it's a typo (an extra zero, a misplaced decimal), not a real overpayment, so it's
+            // capped at the catalog price rather than inflating the commission basis. Only applies
+            // when the catalog price actually resolved (serviceTotal > 0); if it didn't, the note's
+            // amount is the only signal available and is trusted as-is, unchanged from before.
+            BigDecimal rawCollected = cb.explicitAmount.orElse(serviceTotal);
+            boolean amountCapped = serviceTotal.signum() > 0 && rawCollected.compareTo(serviceTotal) > 0;
+            BigDecimal collected = amountCapped ? serviceTotal : rawCollected;
+            BigDecimal gross = serviceTotal.signum() > 0 ? serviceTotal : collected;
+            if (amountCapped) diag.cashNoteAmountCapped++;
             // If catalog prices didn't resolve but a cash amount is known, count it as one service.
             if (countedSegs == 0 && gross.compareTo(priceCutoff) >= 0) countedSegs = 1;
 
-            a.cashGross = a.cashGross.add(gross);
-            a.cashCollected = a.cashCollected.add(collected);
+            // If the note leaves a gap (cash collected is less than the full price), look for the
+            // rest of the payment among this month's already-computed unattributed sales — same
+            // customer, within a couple of days, amount matching the gap to the cent. This is the
+            // common real pattern: a client splits card+cash, the provider notes only the cash
+            // portion, and staff rings up the card portion by hand (which the order-matcher can't
+            // tie to a specific service, so it lands in `unmatched`). A match is reclassified as
+            // real revenue for this exact visit instead of a phantom "salon discount" — the total
+            // gross (and so the provider's total commission) is unchanged either way; this only
+            // fixes which channel the money is booked under.
+            BigDecimal gap = gross.subtract(collected);
+            UnmatchedLine gapMatch = gap.signum() > 0 && cb.customerId() != null
+                    ? findGapMatch(unmatched, cb.customerId(), cb.day, gap) : null;
+            BigDecimal discount = gap;
+            BigDecimal cardPortion = BigDecimal.ZERO;
+            BigDecimal cashPortionGross = gross;
+            BigDecimal cashPortionCollected = collected;
+            if (gapMatch != null) {
+                unmatched.remove(gapMatch);
+                diag.unmatchedLineItems--;
+                diag.unmatchedRevenue = diag.unmatchedRevenue.subtract(gapMatch.gross());
+                diag.cashNoteGapMatches++;
+                discount = BigDecimal.ZERO;
+                if ("CASH".equals(gapMatch.channel())) {
+                    cashPortionGross = gross; // still fully cash — just now fully accounted for
+                    cashPortionCollected = collected.add(gapMatch.gross());
+                } else {
+                    cardPortion = gapMatch.gross();
+                    cashPortionGross = gross.subtract(cardPortion);
+                    cashPortionCollected = collected;
+                }
+            }
+
+            a.cashGross = a.cashGross.add(cashPortionGross);
+            a.cashCollected = a.cashCollected.add(cashPortionCollected);
+            a.card = a.card.add(cardPortion);
             a.counted += countedSegs;
             int totalSegs = Math.max(cb.serviceVariationIds.size(), countedSegs);
+            String label = "cash note (" + countedSegs + " counted)"
+                    + (amountCapped ? " — note exceeded catalog price, capped" : "");
             services.add(new AttributedService(cb.providerId, nameById.getOrDefault(cb.providerId, "?"),
-                    str(cb.day), half.name(), "cash note (" + countedSegs + " counted)", gross,
-                    discount, collected, BigDecimal.ZERO, countedSegs > 0, countedSegs, totalSegs, false, "CASH-NOTE",
-                    localTime(cb.startAt, zone), cb.bookingId, cb.customerId(), null));
+                    str(cb.day), half.name(), label, cashPortionGross,
+                    discount, cashPortionCollected, BigDecimal.ZERO, countedSegs > 0, countedSegs, totalSegs,
+                    false, "CASH-NOTE", localTime(cb.startAt, zone), cb.bookingId, cb.customerId(), null));
+            if (gapMatch != null && cardPortion.signum() > 0) {
+                // The card portion, as its own line — never counted as an extra service unit, the
+                // cash-note line above already counts this one visit toward the tier.
+                services.add(new AttributedService(cb.providerId, nameById.getOrDefault(cb.providerId, "?"),
+                        str(cb.day), half.name(), gapMatch.service() + " (auto-matched to cash-note gap)",
+                        cardPortion, BigDecimal.ZERO, cardPortion, BigDecimal.ZERO,
+                        false, 0, 0, false, gapMatch.channel(),
+                        localTime(cb.startAt, zone), cb.bookingId, cb.customerId(), null));
+            }
         }
 
         // --- Owner comps: a service rendered to an owner/family customer is never charged, so Square
@@ -518,6 +566,34 @@ public class SquareMonthAggregator {
                     p.suggestedProviderId(), p.suggestedProviderName(), p.suggestedBookingId(), p.note()));
         }
         return out;
+    }
+
+    /**
+     * Find an already-detected unattributed sale that plausibly closes a cash-note's gap — same
+     * customer, within 2 days of the note's day (the matching tolerance used elsewhere in this
+     * class), and its amount equal to the gap to the cent. Exact-amount matching only — no fuzzy
+     * tolerance — since the gap is itself computed from the note, a coincidental near-miss isn't
+     * good enough evidence to reclassify real money. Picks the nearest day if more than one
+     * candidate qualifies. Package-private (not private) for unit testing.
+     */
+    static UnmatchedLine findGapMatch(List<UnmatchedLine> unmatched, String customerId, LocalDate noteDay,
+                                      BigDecimal gap) {
+        UnmatchedLine best = null;
+        long bestDist = Long.MAX_VALUE;
+        for (UnmatchedLine u : unmatched) {
+            if (!customerId.equals(u.customerId())) continue;
+            if (u.gross().compareTo(gap) != 0) continue;
+            LocalDate uDay;
+            try {
+                uDay = LocalDate.parse(u.date());
+            } catch (RuntimeException e) {
+                continue; // defensive — unmatched lines always carry a real date in practice
+            }
+            long dist = Math.abs(uDay.toEpochDay() - noteDay.toEpochDay());
+            if (dist > 2) continue;
+            if (dist < bestDist) { best = u; bestDist = dist; }
+        }
+        return best;
     }
 
     /** Resolve customer names for the unattributed lines (one bulk Square call); best-effort. */
@@ -951,6 +1027,8 @@ public class SquareMonthAggregator {
         public int ownerCompsSkipped = 0; // owner bookings we couldn't value (no catalog price)
         public int orphanPayments = 0;              // completed payments with no linked Order at all
         public BigDecimal orphanPaymentRevenue = BigDecimal.ZERO;
+        public int cashNoteAmountCapped = 0; // note's written amount exceeded the catalog price (likely typo)
+        public int cashNoteGapMatches = 0;   // cash-note gaps auto-resolved against an unattributed sale
 
         public int getOrders() { return orders; }
         public int getMatchedLineItems() { return matchedLineItems; }
@@ -963,5 +1041,7 @@ public class SquareMonthAggregator {
         public int getOwnerCompsSkipped() { return ownerCompsSkipped; }
         public int getOrphanPayments() { return orphanPayments; }
         public BigDecimal getOrphanPaymentRevenue() { return orphanPaymentRevenue; }
+        public int getCashNoteAmountCapped() { return cashNoteAmountCapped; }
+        public int getCashNoteGapMatches() { return cashNoteGapMatches; }
     }
 }
