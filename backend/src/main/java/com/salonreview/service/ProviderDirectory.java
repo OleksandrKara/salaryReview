@@ -43,6 +43,7 @@ public class ProviderDirectory {
         Set<String> ids = new HashSet<>();
         ids.add(teamMemberId);
         Provider p = Provider.builder()
+                .businessId(businessId)
                 .name(name)
                 .displayName(name)
                 .commissionRate(cfg.getBaseCommissionRate())

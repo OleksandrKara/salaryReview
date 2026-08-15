@@ -14,7 +14,8 @@ import java.time.LocalDate;
  * pairs become the calibration dataset for the bias-correction step.
  */
 @Entity
-@Table(name = "revenue_snapshot")
+@Table(name = "revenue_snapshot", uniqueConstraints =
+    @UniqueConstraint(columnNames = {"business_id", "snapshot_date"}))
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
 public class RevenueSnapshot {
@@ -22,6 +23,9 @@ public class RevenueSnapshot {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "business_id", nullable = false)
+    private Long businessId;
 
     @Column(name = "snapshot_date", nullable = false, unique = true)
     private LocalDate snapshotDate;

@@ -106,6 +106,7 @@ public class RevenueSnapshotService {
         UpcomingResult upcoming = computeUpcoming(date);
 
         repo.save(RevenueSnapshot.builder()
+                .businessId(currentBusinessContext.id())
                 .snapshotDate(date)
                 .mtdRevenue(mtdRevenue)
                 .mtdCard(mtdCard.setScale(2, RoundingMode.HALF_UP))

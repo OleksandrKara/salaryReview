@@ -37,6 +37,7 @@ class BusinessMembershipRepositoryTest {
     void duplicateMembershipForTheSameUserAndBusinessIsRejected() {
         var businessA = businesses.findByShortCode("akluxnails").orElseThrow();
         var user = appUsers.save(AppUser.builder()
+                .businessId(businessA.getId())
                 .username("membership-test-" + System.nanoTime())
                 .passwordHash("unused")
                 .role(Role.MANAGER)

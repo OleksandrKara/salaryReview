@@ -3,6 +3,7 @@ package com.salonreview.web;
 import com.salonreview.domain.AppUser;
 import com.salonreview.domain.Role;
 import com.salonreview.repo.AppUserRepository;
+import com.salonreview.repo.BusinessMembershipRepository;
 import com.salonreview.repo.ProviderRepository;
 import com.salonreview.repo.SopAcknowledgmentRepository;
 import com.salonreview.service.ProviderDirectory;
@@ -27,7 +28,8 @@ class UserControllerTest {
         AppUserRepository users = mock(AppUserRepository.class);
         SopAcknowledgmentRepository acks = mock(SopAcknowledgmentRepository.class);
         UserController controller = new UserController(users, mock(ProviderRepository.class),
-                mock(ProviderDirectory.class), mock(SquareClient.class), mock(PasswordEncoder.class), acks);
+                mock(ProviderDirectory.class), mock(SquareClient.class), mock(PasswordEncoder.class), acks,
+                mock(BusinessMembershipRepository.class), mock(com.salonreview.config.CurrentBusinessContext.class));
 
         AppUser manager = AppUser.builder().id(7L).username("m").role(Role.MANAGER).active(true).build();
         when(users.findById(7L)).thenReturn(Optional.of(manager));
