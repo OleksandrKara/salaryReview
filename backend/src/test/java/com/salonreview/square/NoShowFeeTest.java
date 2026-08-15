@@ -105,8 +105,8 @@ class NoShowFeeTest {
         when(sc.getCardTipFeeRate()).thenReturn(new BigDecimal("0.0350"));
         when(sc.getOwnerShortName()).thenReturn("AK");
         when(salonConfigRepo.findByBusinessId(1L)).thenReturn(Optional.of(sc));
-        when(tierGrants.findByYearAndMonth(2026, 5)).thenReturn(List.of());
-        when(feedback.findByYearAndMonth(2026, 5)).thenReturn(List.of());
+        when(tierGrants.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
+        when(feedback.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
         when(square.customerNames(any())).thenReturn(Map.of());
         when(aggregator.aggregate(eq(2026), eq(5), any())).thenReturn(
                 new MonthAggregation(2026, 5, "UTC", List.of(), new SquareMonthAggregator.Diag(), List.of(), List.of(), List.of()));

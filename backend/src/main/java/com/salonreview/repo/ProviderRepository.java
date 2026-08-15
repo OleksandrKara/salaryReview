@@ -9,7 +9,9 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ProviderRepository extends JpaRepository<Provider, Long> {
-    List<Provider> findAllByActiveTrue();
+    List<Provider> findAllByBusinessId(Long businessId);
+
+    List<Provider> findAllByBusinessIdAndActiveTrue(Long businessId);
 
     /** The provider that owns the given Square team-member ID, if any. */
     @Query("select p from Provider p join p.squareTeamMemberIds m where m = :teamMemberId")

@@ -57,8 +57,8 @@ class PrepaidDiscountTest {
         when(sc.getCardTipFeeRate()).thenReturn(new BigDecimal("0.0350"));
         when(sc.getOwnerShortName()).thenReturn("AK");
         when(salonConfigRepo.findByBusinessId(1L)).thenReturn(Optional.of(sc));
-        when(tierGrants.findByYearAndMonth(2026, 5)).thenReturn(List.of());
-        when(feedback.findByYearAndMonth(2026, 5)).thenReturn(List.of());
+        when(tierGrants.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
+        when(feedback.findByBusinessIdAndYearAndMonth(1L, 2026, 5)).thenReturn(List.of());
         when(square.customerNames(any())).thenReturn(java.util.Map.of());
         // No Square orders this month — provider 1's only activity is the prepaid draw-down.
         when(aggregator.aggregate(eq(2026), eq(5), any())).thenReturn(

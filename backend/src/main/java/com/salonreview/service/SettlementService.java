@@ -58,7 +58,7 @@ public class SettlementService {
         Map<Long, PeriodEntry> entryByProvider = entries.findAllByPayPeriodId(payPeriodId).stream()
                 .collect(java.util.stream.Collectors.toMap(e -> e.getProvider().getId(), Function.identity()));
 
-        return providers.findAllByActiveTrue().stream()
+        return providers.findAllByBusinessIdAndActiveTrue(businessId).stream()
                 .sorted(Comparator.comparing(p -> p.getDisplayName().toLowerCase()))
                 .map(provider -> {
                     PeriodEntry entry = entryByProvider.getOrDefault(provider.getId(), zeroEntry(provider, period));

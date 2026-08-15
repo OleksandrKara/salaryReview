@@ -29,10 +29,13 @@ public class ManualAdjustmentService {
 
     private final ManualAdjustmentRepository adjustments;
     private final ProviderRepository providers;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
-    public ManualAdjustmentService(ManualAdjustmentRepository adjustments, ProviderRepository providers) {
+    public ManualAdjustmentService(ManualAdjustmentRepository adjustments, ProviderRepository providers,
+                                   com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.adjustments = adjustments;
         this.providers = providers;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     public record CreateRequest(Long providerId, LocalDate serviceDate, BigDecimal gross, BigDecimal discount,
@@ -42,9 +45,10 @@ public class ManualAdjustmentService {
                                        BigDecimal gross, BigDecimal discount, BigDecimal tip, String serviceName) {}
 
     public List<ManualAdjustmentView> list() {
-        Map<Long, String> names = providers.findAll().stream()
+        Long businessId = currentBusinessContext.id();
+        Map<Long, String> names = providers.findAllByBusinessId(businessId).stream()
                 .collect(Collectors.toMap(Provider::getId, Provider::getDisplayName, (a, b) -> a));
-        return adjustments.findAllByOrderByServiceDateDesc().stream()
+        return adjustments.findAllByBusinessIdOrderByServiceDateDesc(businessId).stream()
                 .map(c -> new ManualAdjustmentView(c.getId(), c.getProviderId(),
                         names.getOrDefault(c.getProviderId(), "#" + c.getProviderId()), c.getServiceDate().toString(),
                         c.getGross(), c.getDiscount(), c.getTip(), c.getServiceName()))
@@ -104,7 +108,7 @@ public class ManualAdjustmentService {
     /** Signed total of every adjustment dated within the given month — for Overview's live-month revenue. */
     public BigDecimal totalGrossForMonth(int year, int month) {
         YearMonth ym = YearMonth.of(year, month);
-        return adjustments.findAllByServiceDateBetween(ym.atDay(1), ym.atEndOfMonth()).stream()
+        return adjustments.findAllByBusinessIdAndServiceDateBetween(currentBusinessContext.id(), ym.atDay(1), ym.atEndOfMonth()).stream()
                 .map(ManualAdjustment::getGross)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
@@ -112,7 +116,7 @@ public class ManualAdjustmentService {
     /** Signed total of every adjustment from the 1st of {@code date}'s month through {@code date}
      *  inclusive — for RevenueSnapshot's month-to-date figure. */
     public BigDecimal totalGrossThrough(LocalDate date) {
-        return adjustments.findAllByServiceDateBetween(date.withDayOfMonth(1), date).stream()
+        return adjustments.findAllByBusinessIdAndServiceDateBetween(currentBusinessContext.id(), date.withDayOfMonth(1), date).stream()
                 .map(ManualAdjustment::getGross)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
@@ -132,7 +136,7 @@ public class ManualAdjustmentService {
     }
 
     private int countedUnitDelta(LocalDate from, LocalDate to, BigDecimal cutoff) {
-        return adjustments.findAllByServiceDateBetween(from, to).stream()
+        return adjustments.findAllByBusinessIdAndServiceDateBetween(currentBusinessContext.id(), from, to).stream()
                 .filter(a -> a.getGross().abs().compareTo(cutoff) >= 0)
                 .mapToInt(a -> a.getGross().signum())
                 .sum();

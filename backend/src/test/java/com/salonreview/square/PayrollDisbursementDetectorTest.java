@@ -36,7 +36,7 @@ class PayrollDisbursementDetectorTest {
 
         when(users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(1L, List.of(Role.MANAGER)))
                 .thenReturn(List.of(AppUser.builder().id(1L).username("jsmith").role(Role.MANAGER).build()));
-        when(providers.findAllByActiveTrue())
+        when(providers.findAllByBusinessIdAndActiveTrue(1L))
                 .thenReturn(List.of(Provider.builder().id(1L).name("anna").displayName("Anna Lee")
                         .commissionRate(BigDecimal.ZERO).cardTipFeeRate(BigDecimal.ZERO).active(true).build()));
     }

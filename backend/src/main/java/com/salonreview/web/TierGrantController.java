@@ -19,14 +19,17 @@ import java.util.List;
 public class TierGrantController {
 
     private final TierGrantRepository grants;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
-    public TierGrantController(TierGrantRepository grants) {
+    public TierGrantController(TierGrantRepository grants,
+                               com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.grants = grants;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     @GetMapping
     public List<TierGrant> list(@RequestParam int year, @RequestParam int month) {
-        return grants.findByYearAndMonth(year, month);
+        return grants.findByBusinessIdAndYearAndMonth(currentBusinessContext.id(), year, month);
     }
 
     /** Grant the tier (idempotent — re-granting returns the existing row). */

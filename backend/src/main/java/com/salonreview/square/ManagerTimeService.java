@@ -199,12 +199,12 @@ public class ManagerTimeService {
                 .collect(Collectors.toMap(ManagerPayRate::getUserId, ManagerPayRate::getUsdPerHour));
 
         Map<Long, Integer> minsById = new HashMap<>();
-        for (ManagerTimeEntry e : entries.findByWorkDateBetween(ym.atDay(1), ym.atEndOfMonth())) {
+        for (ManagerTimeEntry e : entries.findByBusinessIdAndWorkDateBetween(currentBusinessContext.id(), ym.atDay(1), ym.atEndOfMonth())) {
             if (e.getEndAt() == null) continue;
             minsById.merge(e.getUserId(),
                     (int) Duration.between(e.getStartAt(), e.getEndAt()).toMinutes(), Integer::sum);
         }
-        Set<Long> clockedIn = entries.findByEndAtIsNull().stream()
+        Set<Long> clockedIn = entries.findByBusinessIdAndEndAtIsNull(currentBusinessContext.id()).stream()
                 .map(ManagerTimeEntry::getUserId).collect(Collectors.toSet());
 
         List<AdminTimesheetDto.Row> rows = managers.stream().map(u -> {
@@ -229,7 +229,7 @@ public class ManagerTimeService {
                 .stream().collect(Collectors.toMap(AppUser::getId, AppUser::getUsername));
 
         Map<LocalDate, List<ManagerTimeEntry>> byDate = entries
-                .findByWorkDateBetween(ym.atDay(1), ym.atEndOfMonth()).stream()
+                .findByBusinessIdAndWorkDateBetween(currentBusinessContext.id(), ym.atDay(1), ym.atEndOfMonth()).stream()
                 .collect(Collectors.groupingBy(ManagerTimeEntry::getWorkDate));
 
         List<AdminDailyScheduleDto.Day> days = new ArrayList<>();
@@ -382,7 +382,7 @@ public class ManagerTimeService {
      * has a rate configured yet. */
     public BigDecimal totalLaborCost(LocalDate from, LocalDate to) {
         Map<Long, Integer> minsById = new HashMap<>();
-        for (ManagerTimeEntry e : entries.findByWorkDateBetween(from, to)) {
+        for (ManagerTimeEntry e : entries.findByBusinessIdAndWorkDateBetween(currentBusinessContext.id(), from, to)) {
             if (e.getEndAt() == null) continue; // an open shift has no fixed cost yet
             minsById.merge(e.getUserId(),
                     (int) Duration.between(e.getStartAt(), e.getEndAt()).toMinutes(), Integer::sum);

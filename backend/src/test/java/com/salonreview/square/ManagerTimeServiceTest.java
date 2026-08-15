@@ -150,7 +150,7 @@ class ManagerTimeServiceTest {
 
     @Test
     void totalLaborCostReturnsNullWhenNoClockedDataInRange() {
-        when(entries.findByWorkDateBetween(LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30)))
+        when(entries.findByBusinessIdAndWorkDateBetween(1L, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30)))
                 .thenReturn(List.of());
 
         assertThat(service.totalLaborCost(LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30))).isNull();
@@ -164,7 +164,7 @@ class ManagerTimeServiceTest {
         ManagerTimeEntry tatiana = ManagerTimeEntry.builder().id(2L).userId(8L)
                 .workDate(LocalDate.of(2026, 7, 10))
                 .startAt(Instant.parse("2026-07-10T16:00:00Z")).endAt(Instant.parse("2026-07-10T17:00:00Z")).build(); // 60m
-        when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+        when(entries.findByBusinessIdAndWorkDateBetween(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
                 .thenReturn(List.of(susan, tatiana));
         when(rates.findById(7L)).thenReturn(Optional.of(
                 ManagerPayRate.builder().userId(7L).usdPerHour(new BigDecimal("20.00")).build()));
@@ -183,7 +183,7 @@ class ManagerTimeServiceTest {
         ManagerTimeEntry noRate = ManagerTimeEntry.builder().id(2L).userId(8L)
                 .workDate(LocalDate.of(2026, 7, 10))
                 .startAt(Instant.parse("2026-07-10T16:00:00Z")).endAt(Instant.parse("2026-07-10T17:00:00Z")).build();
-        when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+        when(entries.findByBusinessIdAndWorkDateBetween(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
                 .thenReturn(List.of(open, noRate));
         when(rates.findById(8L)).thenReturn(Optional.empty());
 
@@ -202,7 +202,7 @@ class ManagerTimeServiceTest {
 
     @Test
     void dailyScheduleDaysAreNewestFirst() {
-        when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+        when(entries.findByBusinessIdAndWorkDateBetween(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
                 .thenReturn(List.of());
         when(users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(1L, List.of(Role.MANAGER))).thenReturn(List.of());
 
@@ -222,7 +222,7 @@ class ManagerTimeServiceTest {
         ManagerTimeEntry tatiana = ManagerTimeEntry.builder().id(2L).userId(8L)
                 .workDate(LocalDate.of(2026, 7, 1))
                 .startAt(Instant.parse("2026-07-01T13:30:00Z")).endAt(Instant.parse("2026-07-01T20:00:00Z")).build();
-        when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+        when(entries.findByBusinessIdAndWorkDateBetween(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
                 .thenReturn(List.of(susan, tatiana));
         when(users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(1L, List.of(Role.MANAGER))).thenReturn(List.of(
                 AppUser.builder().id(7L).username("Susan").role(Role.MANAGER).active(true).build(),
@@ -243,7 +243,7 @@ class ManagerTimeServiceTest {
         ManagerTimeEntry mistake = ManagerTimeEntry.builder().id(1L).userId(7L)
                 .workDate(LocalDate.of(2026, 7, 5))
                 .startAt(Instant.parse("2026-07-05T20:00:00Z")).endAt(Instant.parse("2026-07-05T21:00:00Z")).build();
-        when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+        when(entries.findByBusinessIdAndWorkDateBetween(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
                 .thenReturn(List.of(mistake));
         when(users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(1L, List.of(Role.MANAGER))).thenReturn(List.of(
                 AppUser.builder().id(7L).username("Susan").role(Role.MANAGER).active(true).build()));
@@ -263,7 +263,7 @@ class ManagerTimeServiceTest {
         ManagerTimeEntry evening = ManagerTimeEntry.builder().id(2L).userId(8L)
                 .workDate(LocalDate.of(2026, 7, 8))
                 .startAt(Instant.parse("2026-07-08T15:00:00Z")).endAt(Instant.parse("2026-07-08T20:00:00Z")).build();
-        when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+        when(entries.findByBusinessIdAndWorkDateBetween(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
                 .thenReturn(List.of(morning, evening));
         when(users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(1L, List.of(Role.MANAGER))).thenReturn(List.of(
                 AppUser.builder().id(7L).username("Susan").role(Role.MANAGER).active(true).build(),
@@ -280,7 +280,7 @@ class ManagerTimeServiceTest {
         ManagerTimeEntry forgotten = ManagerTimeEntry.builder().id(1L).userId(7L)
                 .workDate(LocalDate.of(2026, 6, 30))
                 .startAt(Instant.parse("2026-06-30T08:00:00Z")).build(); // never clocked out
-        when(entries.findByWorkDateBetween(LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30)))
+        when(entries.findByBusinessIdAndWorkDateBetween(1L, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30)))
                 .thenReturn(List.of(forgotten));
         when(users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(1L, List.of(Role.MANAGER))).thenReturn(List.of(
                 AppUser.builder().id(7L).username("Susan").role(Role.MANAGER).active(true).build()));
@@ -296,7 +296,7 @@ class ManagerTimeServiceTest {
         // NOW is fixed at 2026-07-02T17:00:00Z; clocked in at 09:00 the same day — 8h in, not stale yet.
         ManagerTimeEntry openToday = ManagerTimeEntry.builder().id(1L).userId(7L)
                 .workDate(LocalDate.of(2026, 7, 2)).startAt(Instant.parse("2026-07-02T09:00:00Z")).build();
-        when(entries.findByWorkDateBetween(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+        when(entries.findByBusinessIdAndWorkDateBetween(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
                 .thenReturn(List.of(openToday));
         when(users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(1L, List.of(Role.MANAGER))).thenReturn(List.of(
                 AppUser.builder().id(7L).username("Susan").role(Role.MANAGER).active(true).build()));

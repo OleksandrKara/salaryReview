@@ -53,7 +53,7 @@ public class PayrollDisbursementDetector {
                 return Optional.of(suggestion(ExpenseEntry.CATEGORY_MANAGER_TIME, "manager " + manager.getUsername()));
             }
         }
-        for (Provider provider : providers.findAllByActiveTrue()) {
+        for (Provider provider : providers.findAllByBusinessIdAndActiveTrue(currentBusinessContext.id())) {
             if (payeeNameMatches(upper, provider.getDisplayName()) || payeeNameMatches(upper, provider.getName())) {
                 return Optional.of(suggestion(ExpenseEntry.CATEGORY_PROVIDER_PAYROLL, "provider " + provider.getDisplayName()));
             }
