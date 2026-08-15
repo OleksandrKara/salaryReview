@@ -18,6 +18,15 @@ import java.util.List;
  */
 public class AppUserPrincipal implements UserDetails {
 
+    // Sessions are DB-backed (spring_session_jdbc) and persist across deploys — UserDetails extends
+    // Serializable, so without a pinned UID, any field added/removed here recomputes Java's default
+    // serialVersionUID and makes every session created before that deploy throw InvalidClassException
+    // on its very next request (a bare 500, not a clean 401 — this happened for real: PR #351 added
+    // activeBusinessId below with no pinned UID, silently breaking every already-logged-in session
+    // from that deploy onward until the stale rows were manually cleared). Bump this only if the
+    // stored shape is deliberately being made incompatible (never for a routine field change).
+    private static final long serialVersionUID = 1L;
+
     private final Long userId;
     private final String username;
     private final String passwordHash;
