@@ -26,20 +26,21 @@ public class LapsedCustomerWinbackEligibilityRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public List<EligibleCustomer> findEligibleCustomers() {
+    public List<EligibleCustomer> findEligibleCustomers(Long businessId) {
         String sql = "SELECT customer_id, MIN(service_date) AS only_visit_date, "
                 + "MIN(provider_name) AS technician_name "
                 + "FROM provider_visit "
-                + "WHERE customer_id IS NOT NULL "
+                + "WHERE business_id = ? AND customer_id IS NOT NULL "
                 + "GROUP BY customer_id "
                 + "HAVING COUNT(*) = 1 "
                 + "   AND MIN(service_date) BETWEEN (CURRENT_DATE - INTERVAL '35 days') "
                 + "                              AND (CURRENT_DATE - INTERVAL '21 days') "
                 + "   AND NOT EXISTS (SELECT 1 FROM lapsed_customer_winback_send w "
-                + "                   WHERE w.square_customer_id = provider_visit.customer_id)";
+                + "                   WHERE w.business_id = ? "
+                + "                     AND w.square_customer_id = provider_visit.customer_id)";
         return jdbcTemplate.query(sql, (rs, rowNum) -> new EligibleCustomer(
                 rs.getString("customer_id"),
                 rs.getDate("only_visit_date").toLocalDate(),
-                rs.getString("technician_name")));
+                rs.getString("technician_name")), businessId, businessId);
     }
 }

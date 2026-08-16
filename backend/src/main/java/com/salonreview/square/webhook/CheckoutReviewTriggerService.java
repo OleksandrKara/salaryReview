@@ -120,7 +120,7 @@ public class CheckoutReviewTriggerService {
             // A second, independent send off the same qualifying event — see
             // openspec/changes/same-day-rebooking-discount design.md D1. Reuses the values
             // already resolved above rather than re-hitting Square.
-            rebookingTrigger.enqueue(payment.id(), customerId, phoneNumber, customerName);
+            rebookingTrigger.enqueue(businessId, payment.id(), customerId, phoneNumber, customerName);
         } catch (Exception e) {
             log.warn("Checkout-review trigger failed for payment {} (event ignored): {}",
                     payment == null ? null : payment.id(), e.getMessage());

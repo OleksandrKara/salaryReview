@@ -5,8 +5,8 @@ import com.salonreview.domain.RepeatCustomerWinbackSend;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.BlockedNumberRepository;
-import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.RepeatCustomerWinbackSendRepository;
+import com.salonreview.repo.TwilioSmsConfigRepository;
 import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
@@ -83,7 +83,7 @@ public class RepeatCustomerWinbackScheduler {
     private final RepeatCustomerWinbackEligibilityRepository eligibilityRepository;
     private final RepeatCustomerWinbackSendRepository sendRepository;
     private final SquareClientProvider squareClientProvider;
-    private final BusinessRepository businesses;
+    private final TwilioSmsConfigRepository twilioConfigs;
     private final SmsAutomationService automationService;
     private final SmsConsentRepository consentRepository;
     private final RebookingProperties rebookingProperties;
@@ -95,7 +95,7 @@ public class RepeatCustomerWinbackScheduler {
 
     public RepeatCustomerWinbackScheduler(RepeatCustomerWinbackEligibilityRepository eligibilityRepository,
                                            RepeatCustomerWinbackSendRepository sendRepository,
-                                           SquareClientProvider squareClientProvider, BusinessRepository businesses,
+                                           SquareClientProvider squareClientProvider, TwilioSmsConfigRepository twilioConfigs,
                                            SmsAutomationService automationService, SmsConsentRepository consentRepository,
                                            RebookingProperties rebookingProperties, SmsMessageLogService messageLogService,
                                            BlockedNumberRepository blockedNumberRepository, TwilioSmsConfigService configService,
@@ -103,7 +103,7 @@ public class RepeatCustomerWinbackScheduler {
         this.eligibilityRepository = eligibilityRepository;
         this.sendRepository = sendRepository;
         this.squareClientProvider = squareClientProvider;
-        this.businesses = businesses;
+        this.twilioConfigs = twilioConfigs;
         this.automationService = automationService;
         this.consentRepository = consentRepository;
         this.rebookingProperties = rebookingProperties;
@@ -117,19 +117,31 @@ public class RepeatCustomerWinbackScheduler {
     // zone is mandatory here too — see LapsedCustomerWinbackScheduler's own comment on the
     // 2026-08-07 unzoned-cron incident. Every @Scheduled(cron=...) in this codebase must set an
     // explicit zone.
+    //
+    // Single lock covers the whole per-business loop below — same deliberate simplification as
+    // SmsReplyFlowScheduler (tasks.md 3.7).
     @Scheduled(cron = "0 0 10 * * *", zone = "America/Los_Angeles")
     @SchedulerLock(name = "RepeatCustomerWinbackScheduler_sendDueWinbacks", lockAtLeastFor = "PT10S", lockAtMostFor = "PT10M")
     public void sendDueWinbacks() {
-        // See BusinessRepository#legacySmsBusiness, same as LapsedCustomerWinbackScheduler.
-        Long businessId = businesses.legacySmsBusiness().getId();
-        SquareClient square = squareClientProvider.forBusiness(businessId);
         Instant cooldownCutoff = Instant.now().minus(COOLDOWN_DAYS, ChronoUnit.DAYS);
-        for (RepeatCustomerWinbackEligibilityRepository.EligibleCustomer customer : eligibilityRepository.findEligibleCustomers()) {
-            if (sendRepository.existsBySquareCustomerIdAndStateAndCreatedAtAfter(
-                    customer.squareCustomerId(), RepeatCustomerWinbackSend.STATE_SENT, cooldownCutoff)) {
-                continue; // belt-and-suspenders vs. the eligibility query's own NOT EXISTS
+        for (TwilioSmsConfig config : twilioConfigs.findAll()) {
+            Long businessId = config.getBusinessId();
+            SquareClient square;
+            try {
+                square = squareClientProvider.forBusiness(businessId);
+            } catch (RuntimeException e) {
+                log.warn("Repeat-customer-winback run skipped for business {} (will be retried at next scheduled run): {}",
+                        businessId, e.getMessage());
+                continue;
             }
-            process(customer, square, businessId);
+            for (RepeatCustomerWinbackEligibilityRepository.EligibleCustomer customer
+                    : eligibilityRepository.findEligibleCustomers(businessId)) {
+                if (sendRepository.existsByBusinessIdAndSquareCustomerIdAndStateAndCreatedAtAfter(
+                        businessId, customer.squareCustomerId(), RepeatCustomerWinbackSend.STATE_SENT, cooldownCutoff)) {
+                    continue; // belt-and-suspenders vs. the eligibility query's own NOT EXISTS
+                }
+                process(customer, square, businessId);
+            }
         }
     }
 
@@ -140,17 +152,17 @@ public class RepeatCustomerWinbackScheduler {
 
         String phoneNumber = square.customerPhone(customer.squareCustomerId());
         if (phoneNumber == null || phoneNumber.isBlank()) {
-            save(customer, null, daysSinceLastVisit, providerChanged, null, null, RepeatCustomerWinbackSend.STATE_SKIPPED_UNRESOLVED);
+            save(businessId, customer, null, daysSinceLastVisit, providerChanged, null, null, RepeatCustomerWinbackSend.STATE_SKIPPED_UNRESOLVED);
             return;
         }
 
         if (blockedNumberRepository.existsById(PhoneNumbers.normalize(phoneNumber))) {
-            save(customer, phoneNumber, daysSinceLastVisit, providerChanged, null, null, RepeatCustomerWinbackSend.STATE_SKIPPED_BLOCKED);
+            save(businessId, customer, phoneNumber, daysSinceLastVisit, providerChanged, null, null, RepeatCustomerWinbackSend.STATE_SKIPPED_BLOCKED);
             return;
         }
 
         if (messageLogService.hasNegativeFeedback(businessId, phoneNumber)) {
-            save(customer, phoneNumber, daysSinceLastVisit, providerChanged, null, null, RepeatCustomerWinbackSend.STATE_SKIPPED_NEGATIVE_FEEDBACK);
+            save(businessId, customer, phoneNumber, daysSinceLastVisit, providerChanged, null, null, RepeatCustomerWinbackSend.STATE_SKIPPED_NEGATIVE_FEEDBACK);
             return;
         }
 
@@ -166,19 +178,19 @@ public class RepeatCustomerWinbackScheduler {
             return;
         }
         if (upcoming) {
-            save(customer, phoneNumber, daysSinceLastVisit, providerChanged, null, null, RepeatCustomerWinbackSend.STATE_SKIPPED_BOOKED);
+            save(businessId, customer, phoneNumber, daysSinceLastVisit, providerChanged, null, null, RepeatCustomerWinbackSend.STATE_SKIPPED_BOOKED);
             return;
         }
 
         if (!automationService.isEnabled(businessId, AUTOMATION_KEY)) {
-            save(customer, phoneNumber, daysSinceLastVisit, providerChanged, null, null, RepeatCustomerWinbackSend.STATE_SKIPPED_DISABLED);
+            save(businessId, customer, phoneNumber, daysSinceLastVisit, providerChanged, null, null, RepeatCustomerWinbackSend.STATE_SKIPPED_DISABLED);
             return;
         }
 
         Instant promoExpiresAt = endOfTodayInSalonZone();
         String givenName = square.customerGivenNames(List.of(customer.squareCustomerId())).get(customer.squareCustomerId());
         String variant = sendNudge(customer, phoneNumber, givenName, providerChanged, promoExpiresAt, square, businessId);
-        save(customer, phoneNumber, daysSinceLastVisit, providerChanged, promoExpiresAt, variant, RepeatCustomerWinbackSend.STATE_SENT);
+        save(businessId, customer, phoneNumber, daysSinceLastVisit, providerChanged, promoExpiresAt, variant, RepeatCustomerWinbackSend.STATE_SENT);
     }
 
     /** Consent from *either* source is sufficient — same dual-source check
@@ -318,10 +330,11 @@ public class RepeatCustomerWinbackScheduler {
         messageLogService.save(reserved);
     }
 
-    private void save(RepeatCustomerWinbackEligibilityRepository.EligibleCustomer customer, String phoneNumber,
+    private void save(Long businessId, RepeatCustomerWinbackEligibilityRepository.EligibleCustomer customer, String phoneNumber,
                        int daysSinceLastVisit, boolean providerChanged, Instant promoExpiresAt, String messageVariant,
                        String state) {
         sendRepository.save(RepeatCustomerWinbackSend.builder()
+                .businessId(businessId)
                 .squareCustomerId(customer.squareCustomerId())
                 .phoneNumber(phoneNumber)
                 .lastVisitDate(customer.lastVisitDate())

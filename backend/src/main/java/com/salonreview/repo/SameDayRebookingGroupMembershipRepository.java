@@ -8,5 +8,5 @@ import java.util.List;
 
 public interface SameDayRebookingGroupMembershipRepository extends JpaRepository<SameDayRebookingGroupMembership, Long> {
 
-    List<SameDayRebookingGroupMembership> findByRemovedAtIsNullAndExpiresAtBefore(Instant now);
+    List<SameDayRebookingGroupMembership> findByBusinessIdAndRemovedAtIsNullAndExpiresAtBefore(Long businessId, Instant now);
 }

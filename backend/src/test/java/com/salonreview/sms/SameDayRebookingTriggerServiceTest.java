@@ -28,11 +28,12 @@ class SameDayRebookingTriggerServiceTest {
     @Test
     @DisplayName("enqueues a new AWAITING_SEND row with send_due_at ~3h out and a future promo_expires_at")
     void enqueuesNewRow() {
-        trigger.enqueue("pay1", "cust1", "+15551234567", "Jane");
+        trigger.enqueue(1L, "pay1", "cust1", "+15551234567", "Jane");
 
         ArgumentCaptor<SameDayRebookingSend> captor = ArgumentCaptor.forClass(SameDayRebookingSend.class);
         verify(repository).save(captor.capture());
         SameDayRebookingSend saved = captor.getValue();
+        assertThat(saved.getBusinessId()).isEqualTo(1L);
         assertThat(saved.getState()).isEqualTo(SameDayRebookingSend.STATE_AWAITING_SEND);
         assertThat(saved.getSquarePaymentId()).isEqualTo("pay1");
         assertThat(saved.getSquareCustomerId()).isEqualTo("cust1");
@@ -48,7 +49,7 @@ class SameDayRebookingTriggerServiceTest {
     void doesNotEnqueueTwiceForSamePayment() {
         when(repository.existsBySquarePaymentId("pay1")).thenReturn(true);
 
-        trigger.enqueue("pay1", "cust1", "+15551234567", "Jane");
+        trigger.enqueue(1L, "pay1", "cust1", "+15551234567", "Jane");
 
         verify(repository, never()).save(any());
     }
@@ -58,7 +59,7 @@ class SameDayRebookingTriggerServiceTest {
     void neverThrowsOnFailure() {
         when(repository.existsBySquarePaymentId(any())).thenThrow(new RuntimeException("db down"));
 
-        trigger.enqueue("pay1", "cust1", "+15551234567", "Jane");
+        trigger.enqueue(1L, "pay1", "cust1", "+15551234567", "Jane");
         // no assertion needed beyond "didn't throw" — the test method completing is the assertion
     }
 }

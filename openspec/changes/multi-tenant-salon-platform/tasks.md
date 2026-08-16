@@ -263,13 +263,46 @@ this file is the plan, not yet executed.
       akluxnails-home) over a shared API key with no session; making it business-aware needs an API
       contract change on the *caller* side, not a decision to make unilaterally in this codebase.
 
+      **2026-08-16 (later the same day): `same_day_rebooking_send`, `same_day_rebooking_group_membership`,
+      `repeat_customer_winback_send`, `lapsed_customer_winback_send` given the `business_id`
+      treatment** (V105 — root tables, standard `ADD COLUMN` + backfill-to-Business-A + `NOT NULL` +
+      FK + index, same shape as every 2.6 table). `SameDayRebookingScheduler`,
+      `SameDayRebookingGroupExpiryScheduler`, `RepeatCustomerWinbackScheduler`,
+      `LapsedCustomerWinbackScheduler` now really iterate `TwilioSmsConfigRepository.findAll()`,
+      same per-business try/catch resilience pattern as `RevenueSnapshotStartup` (one business's
+      broken Square connection logs a warning and is skipped, doesn't abort the tick for the rest).
+      `LapsedCustomerWinbackEligibilityRepository`/`RepeatCustomerWinbackEligibilityRepository`
+      (plain-`JdbcTemplate`, read `provider_visit`) and `RepeatCustomerWinbackSendRepository
+      .countConvertedSince` all gained a `businessId` filter. `SameDayRebookingTriggerService.enqueue`
+      now takes `businessId` (passed through from `CheckoutReviewTriggerService`'s own resolved
+      value — the *service* is business-id-correct even though its only caller still resolves
+      `legacySmsBusiness()` until Phase 3.6 lands). `InternalNotificationController`'s
+      `/rebooking-promo/enroll` now stamps the membership row it writes with the same
+      `legacySmsBusiness()` id it already resolves for its Square call — no other change, still
+      out of scope per the note above. `LeadFollowUpScheduler` (marketing.contacts, a separate
+      service) and `CheckoutReviewTriggerService`/`TechnicianNameResolver` (Phase 3.6) remain
+      exactly as described above — genuinely not fixable from this codebase alone.
+
       **Net effect for the owner-facing question "if I configure Twilio for a second business, do
-      the same automations run?"**: checkout-review-request (via `SmsReplyFlowScheduler`) — yes.
-      four_hand_request (via `InternalNotificationController`) — no, needs that cross-app contract
-      work. The other five D9 automations — no, blocked on giving their own send-tracking tables a
-      `business_id` first (straightforward, same pattern as everything else in 2.6, just not done
-      yet). checkout-review-request's own *trigger* (a Square payment webhook) — no, blocked on
-      Phase 3.6's signature-verification work first.
+      the same automations run?" — corrected/refined here, since this chunk's work exposed a
+      nuance the PR #382 answer glossed over**: "will it run" and "is the table/scheduler ready"
+      are two different questions, and checkout-review-request and same_day_rebooking-discount
+      both fall on the wrong side of that split despite their scheduler/table layer being fully
+      real now. repeat_customer_winback and lapsed_customer_winback — **yes**, fully functional
+      the moment Twilio is configured: their schedulers are pure `@Scheduled` sweeps with no
+      webhook dependency. checkout_review_request and same_day_rebooking_discount — **data/
+      scheduler-correct but still not reachable in practice**: both are only ever triggered by the
+      same Square payment webhook (`CheckoutReviewTriggerService.handlePaymentUpdated`, which also
+      calls `SameDayRebookingTriggerService.enqueue`), and that webhook is still Phase-3.6-blocked
+      (one global signature key, `legacySmsBusiness()` throughout) — so no second business's
+      payment ever creates a row for either automation yet, regardless of how ready
+      `SmsReplyFlowScheduler`/`SameDayRebookingScheduler` are to process one once it exists.
+      four_hand_request (via `InternalNotificationController`) — no, needs a cross-app API
+      contract change. lead_follow_up — no, blocked on a separate service's (salonLandings) own
+      schema. **Bottom line: every D9 automation is now blocked on exactly one of two remaining
+      gaps — Phase 3.6 (checkout_review_request, same_day_rebooking_discount) or a cross-codebase
+      contract change (four_hand_request, lead_follow_up) — not on anything left to do inside this
+      codebase's own schedulers/tables.**
 - [ ] 3.8 `/api/sync` (manual sync button) becomes business-scoped — `invalidate()` only clears the
       calling business's `SquareClient` cache instance, never the whole registry
 - [ ] 3.9 Integration tests: two businesses' `SquareClientProvider`-resolved clients never share cache

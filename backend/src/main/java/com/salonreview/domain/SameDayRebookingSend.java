@@ -28,6 +28,9 @@ public class SameDayRebookingSend {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "business_id", nullable = false)
+    private Long businessId;
+
     @Column(name = "phone_number", nullable = false)
     private String phoneNumber;
 

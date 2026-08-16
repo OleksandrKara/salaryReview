@@ -127,7 +127,7 @@ class SmsAutomationServiceTest {
                 eq(BUSINESS_ID), eq("repeat_customer_winback"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(4L);
         when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndCreatedAtAfter(
                 eq(BUSINESS_ID), eq("repeat_customer_winback"), eq("INBOUND"), any(Instant.class))).thenReturn(3L);
-        when(repeatCustomerWinbackSendRepository.countConvertedSince(eq("SENT"), any(Instant.class))).thenReturn(6L);
+        when(repeatCustomerWinbackSendRepository.countConvertedSince(eq(BUSINESS_ID), eq("SENT"), any(Instant.class))).thenReturn(6L);
 
         var summary = find("repeat_customer_winback");
 

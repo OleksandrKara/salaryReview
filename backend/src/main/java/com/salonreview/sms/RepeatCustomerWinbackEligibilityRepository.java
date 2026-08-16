@@ -39,13 +39,13 @@ public class RepeatCustomerWinbackEligibilityRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public List<EligibleCustomer> findEligibleCustomers() {
+    public List<EligibleCustomer> findEligibleCustomers(Long businessId) {
         String sql = "WITH visits AS ("
                 + "  SELECT customer_id, service_date,"
                 + "         MIN(provider_name) AS provider_name,"
                 + "         bool_or(rebooked_same_day) AS rebooked_same_day"
                 + "  FROM provider_visit"
-                + "  WHERE customer_id IS NOT NULL"
+                + "  WHERE business_id = ? AND customer_id IS NOT NULL"
                 + "  GROUP BY customer_id, service_date"
                 + "), ranked AS ("
                 + "  SELECT customer_id, service_date, provider_name, rebooked_same_day,"
@@ -62,7 +62,8 @@ public class RepeatCustomerWinbackEligibilityRepository {
                 + "  AND last.visit_count >= 2 "
                 + "  AND last.service_date <= (CURRENT_DATE - INTERVAL '40 days') "
                 + "  AND NOT EXISTS (SELECT 1 FROM repeat_customer_winback_send w "
-                + "                  WHERE w.square_customer_id = last.customer_id "
+                + "                  WHERE w.business_id = ? "
+                + "                    AND w.square_customer_id = last.customer_id "
                 + "                    AND w.state = 'SENT' "
                 + "                    AND w.created_at >= (now() - INTERVAL '60 days'))";
         return jdbcTemplate.query(sql, (rs, rowNum) -> new EligibleCustomer(
@@ -71,6 +72,6 @@ public class RepeatCustomerWinbackEligibilityRepository {
                 rs.getInt("visit_count"),
                 rs.getString("last_provider"),
                 rs.getString("previous_provider"),
-                rs.getBoolean("rebooked_same_day")));
+                rs.getBoolean("rebooked_same_day")), businessId, businessId);
     }
 }
