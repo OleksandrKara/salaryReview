@@ -54,6 +54,7 @@ class CrossTenantIsolationTest {
     @Autowired private SopRepository sops;
     @Autowired private KbArticleRepository kbArticles;
     @Autowired private KbRequestRepository kbRequests;
+    @Autowired private RagDocumentRepository ragDocuments;
 
     private Long businessAId;
     private Long businessBId;
@@ -393,8 +394,11 @@ class CrossTenantIsolationTest {
         KbArticle articleB = kbArticles.save(KbArticle.builder().businessId(businessBId).title("Refunds B")
                 .category("FAQ").body("x").contentHash("hash-b").syncStatus(SyncStatus.NOT_SYNCED)
                 .createdBy("owner").build());
+        RagDocument ragDoc = ragDocuments.save(RagDocument.builder().filename("f.txt").sourceType("TEXT")
+                .extractedText("x").status(RagDocumentStatus.INDEXED).uploadedBy("owner")
+                .createdAt(Instant.now()).build());
         KbArticle syncedA = kbArticles.save(KbArticle.builder().businessId(businessAId).title("Synced A")
-                .category("FAQ").body("x").contentHash("hash-c").ragDocId(1L).syncStatus(SyncStatus.SYNCED)
+                .category("FAQ").body("x").contentHash("hash-c").ragDocId(ragDoc.getId()).syncStatus(SyncStatus.SYNCED)
                 .createdBy("owner").build());
 
         assertIds(kbArticles.findAllByBusinessIdOrderByCategoryAscTitleAsc(businessAId), articleA.getId(), articleB.getId());
