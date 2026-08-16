@@ -28,13 +28,13 @@ public class KbExportService {
 
     public record Export(String filename, String markdown) {}
 
-    public Optional<Export> exportOne(Long id) {
-        return repo.findById(id).map(KbExportService::toExport);
+    public Optional<Export> exportOne(Long id, Long businessId) {
+        return repo.findByIdAndBusinessId(id, businessId).map(KbExportService::toExport);
     }
 
-    /** Zips every KB article. */
-    public byte[] exportAllAsZip() {
-        List<KbArticle> all = repo.findAllByOrderByCategoryAscTitleAsc();
+    /** Zips every KB article for one business. */
+    public byte[] exportAllAsZip(Long businessId) {
+        List<KbArticle> all = repo.findAllByBusinessIdOrderByCategoryAscTitleAsc(businessId);
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         try (ZipOutputStream zip = new ZipOutputStream(buffer)) {
             for (KbArticle a : all) {

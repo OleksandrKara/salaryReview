@@ -1,6 +1,7 @@
 package com.salonreview.web;
 
 import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.domain.KbRequest;
 import com.salonreview.domain.KbRequestStatus;
 import com.salonreview.domain.KbRequestTarget;
@@ -24,9 +25,11 @@ import java.util.List;
 public class KbRequestController {
 
     private final KbRequestService requests;
+    private final CurrentBusinessContext currentBusinessContext;
 
-    public KbRequestController(KbRequestService requests) {
+    public KbRequestController(KbRequestService requests, CurrentBusinessContext currentBusinessContext) {
         this.requests = requests;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     /** File a request (owner/manager) — typically when the assistant returned no answer. */
@@ -36,20 +39,21 @@ public class KbRequestController {
         if (body == null || body.question() == null || body.question().isBlank()) {
             return ResponseEntity.badRequest().build();
         }
-        KbRequest r = requests.create(body.question(), body.note(), parseTarget(body.target()), me.getUsername());
+        KbRequest r = requests.create(body.question(), body.note(), parseTarget(body.target()), me.getUsername(),
+                currentBusinessContext.id());
         return ResponseEntity.ok(toDto(r));
     }
 
     /** Owner list of all requests (newest first). */
     @GetMapping("/admin/requests")
     public List<KbRequestDto> list() {
-        return requests.list().stream().map(KbRequestController::toDto).toList();
+        return requests.list(currentBusinessContext.id()).stream().map(KbRequestController::toDto).toList();
     }
 
     /** Count of OPEN (not yet triaged) requests — powers the nav badge, cheaper than fetching the list. */
     @GetMapping("/admin/requests/open-count")
     public OpenCountDto openCount() {
-        return new OpenCountDto(requests.openCount());
+        return new OpenCountDto(requests.openCount(currentBusinessContext.id()));
     }
 
     /** Owner triage: resolve / dismiss / reopen (OPEN). */
@@ -58,14 +62,15 @@ public class KbRequestController {
                                                   @AuthenticationPrincipal AppUserPrincipal me) {
         KbRequestStatus status = parseStatus(body == null ? null : body.status());
         if (status == null) return ResponseEntity.badRequest().build();
-        return requests.setStatus(id, status, me.getUsername())
+        return requests.setStatus(id, status, me.getUsername(), currentBusinessContext.id())
                 .map(r -> ResponseEntity.ok(toDto(r)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/admin/requests/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
-        return requests.delete(id) ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
+        return requests.delete(id, currentBusinessContext.id())
+                ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
     }
 
     private static KbRequestTarget parseTarget(String raw) {

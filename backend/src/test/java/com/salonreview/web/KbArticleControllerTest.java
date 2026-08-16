@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.domain.KbArticle;
 import com.salonreview.domain.Role;
 import com.salonreview.domain.SyncStatus;
@@ -39,6 +40,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class KbArticleControllerTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     private KbArticleService articles;
     private KbSyncService sync;
     private KbAiDraftService aiDraft;
@@ -50,7 +53,10 @@ class KbArticleControllerTest {
         articles = mock(KbArticleService.class);
         sync = mock(KbSyncService.class);
         aiDraft = mock(KbAiDraftService.class);
-        KbArticleController controller = new KbArticleController(articles, sync, aiDraft, mock(KbExportService.class));
+        CurrentBusinessContext currentBusinessContext = mock(CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(BUSINESS_ID);
+        KbArticleController controller = new KbArticleController(articles, sync, aiDraft,
+                mock(KbExportService.class), currentBusinessContext);
         mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
@@ -76,7 +82,7 @@ class KbArticleControllerTest {
     @Test
     @DisplayName("list returns 200 with mapped articles")
     void listSucceeds() throws Exception {
-        when(articles.list(Role.OWNER)).thenReturn(List.of(sample()));
+        when(articles.list(Role.OWNER, BUSINESS_ID)).thenReturn(List.of(sample()));
         mvc.perform(get("/api/kb-articles"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].title").value("No-show policy"))
@@ -87,7 +93,7 @@ class KbArticleControllerTest {
     @Test
     @DisplayName("missing article → 404")
     void getMissing() throws Exception {
-        when(articles.get(any(), any())).thenReturn(Optional.empty());
+        when(articles.get(any(), any(), any())).thenReturn(Optional.empty());
         mvc.perform(get("/api/kb-articles/9")).andExpect(status().isNotFound());
     }
 
@@ -102,7 +108,7 @@ class KbArticleControllerTest {
     @Test
     @DisplayName("concurrent sync-all → 409")
     void syncAllConflict() throws Exception {
-        when(sync.syncAll(anyString())).thenThrow(new KbSyncService.SyncInProgressException());
+        when(sync.syncAll(anyString(), any())).thenThrow(new KbSyncService.SyncInProgressException());
         mvc.perform(post("/api/kb-articles/sync-all")).andExpect(status().isConflict());
     }
 

@@ -29,6 +29,8 @@ import static org.mockito.Mockito.when;
 /** Unit tests for {@link KbSyncService}: clean sync, all-or-nothing PII rollback, skips, concurrency guard. */
 class KbSyncServiceTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     private KbArticleRepository repo;
     @SuppressWarnings("unchecked")
     private ObjectProvider<RagIngestionService> ragProvider = mock(ObjectProvider.class);
@@ -57,12 +59,12 @@ class KbSyncServiceTest {
     @Test
     @DisplayName("clean content → SYNCED with a rag_doc_id and refreshed hash")
     void cleanSync() {
-        when(repo.findById(7L)).thenReturn(Optional.of(article("the no-show fee is $25", null, SyncStatus.NOT_SYNCED)));
+        when(repo.findByIdAndBusinessId(7L, BUSINESS_ID)).thenReturn(Optional.of(article("the no-show fee is $25", null, SyncStatus.NOT_SYNCED)));
         when(rag.upload(anyString(), any(), anyString())).thenReturn(RagDocument.builder().id(10L).build());
         when(ragChunks.countByDocumentIdAndStatus(10L, RagChunkStatus.QUARANTINED)).thenReturn(0L);
         when(ragChunks.countByDocumentIdAndStatus(10L, RagChunkStatus.INDEXED)).thenReturn(2L);
 
-        KbArticle out = service.syncOne(7L, "owner").orElseThrow();
+        KbArticle out = service.syncOne(7L, "owner", BUSINESS_ID).orElseThrow();
 
         assertThat(out.getSyncStatus()).isEqualTo(SyncStatus.SYNCED);
         assertThat(out.getRagDocId()).isEqualTo(10L);
@@ -73,12 +75,12 @@ class KbSyncServiceTest {
     @Test
     @DisplayName("any quarantined chunk → whole article rejected (ERROR), RAG doc rolled back, no rag_doc_id")
     void piiRejectedAllOrNothing() {
-        when(repo.findById(7L)).thenReturn(Optional.of(article("call client 555-1212", null, SyncStatus.NOT_SYNCED)));
+        when(repo.findByIdAndBusinessId(7L, BUSINESS_ID)).thenReturn(Optional.of(article("call client 555-1212", null, SyncStatus.NOT_SYNCED)));
         when(rag.upload(anyString(), any(), anyString())).thenReturn(RagDocument.builder().id(10L).build());
         when(ragChunks.countByDocumentIdAndStatus(10L, RagChunkStatus.QUARANTINED)).thenReturn(1L);
         when(ragChunks.countByDocumentIdAndStatus(10L, RagChunkStatus.INDEXED)).thenReturn(0L);
 
-        KbArticle out = service.syncOne(7L, "owner").orElseThrow();
+        KbArticle out = service.syncOne(7L, "owner", BUSINESS_ID).orElseThrow();
 
         assertThat(out.getSyncStatus()).isEqualTo(SyncStatus.ERROR);
         assertThat(out.getRagDocId()).isNull();
@@ -89,9 +91,9 @@ class KbSyncServiceTest {
     @Test
     @DisplayName("blank body → skipped, nothing embedded")
     void blankBodySkipped() {
-        when(repo.findById(7L)).thenReturn(Optional.of(article("   ", null, SyncStatus.NOT_SYNCED)));
+        when(repo.findByIdAndBusinessId(7L, BUSINESS_ID)).thenReturn(Optional.of(article("   ", null, SyncStatus.NOT_SYNCED)));
 
-        KbArticle out = service.syncOne(7L, "owner").orElseThrow();
+        KbArticle out = service.syncOne(7L, "owner", BUSINESS_ID).orElseThrow();
 
         assertThat(out.getLastSyncError()).contains("empty");
         verify(rag, never()).upload(any(), any(), any());
@@ -100,12 +102,12 @@ class KbSyncServiceTest {
     @Test
     @DisplayName("re-sync retires the prior RAG document before creating a new one")
     void reSyncRetiresPriorDoc() {
-        when(repo.findById(7L)).thenReturn(Optional.of(article("fresh content", 5L, SyncStatus.CHANGED)));
+        when(repo.findByIdAndBusinessId(7L, BUSINESS_ID)).thenReturn(Optional.of(article("fresh content", 5L, SyncStatus.CHANGED)));
         when(rag.upload(anyString(), any(), anyString())).thenReturn(RagDocument.builder().id(11L).build());
         when(ragChunks.countByDocumentIdAndStatus(11L, RagChunkStatus.QUARANTINED)).thenReturn(0L);
         when(ragChunks.countByDocumentIdAndStatus(11L, RagChunkStatus.INDEXED)).thenReturn(1L);
 
-        KbArticle out = service.syncOne(7L, "owner").orElseThrow();
+        KbArticle out = service.syncOne(7L, "owner", BUSINESS_ID).orElseThrow();
 
         verify(rag).delete(eq(5L), any());             // prior doc retired
         assertThat(out.getRagDocId()).isEqualTo(11L);
@@ -116,9 +118,9 @@ class KbSyncServiceTest {
     @DisplayName("RAG not enabled → ERROR with a clear message")
     void ragNotEnabled() {
         when(ragProvider.getIfAvailable()).thenReturn(null);
-        when(repo.findById(7L)).thenReturn(Optional.of(article("content", null, SyncStatus.NOT_SYNCED)));
+        when(repo.findByIdAndBusinessId(7L, BUSINESS_ID)).thenReturn(Optional.of(article("content", null, SyncStatus.NOT_SYNCED)));
 
-        KbArticle out = service.syncOne(7L, "owner").orElseThrow();
+        KbArticle out = service.syncOne(7L, "owner", BUSINESS_ID).orElseThrow();
 
         assertThat(out.getSyncStatus()).isEqualTo(SyncStatus.ERROR);
         assertThat(out.getLastSyncError()).contains("RAG ingestion is not enabled");
@@ -129,13 +131,13 @@ class KbSyncServiceTest {
     void concurrentSyncAllRejected() {
         // While the outer sync-all holds the lock (it has begun and called the repo), a re-entrant
         // call must be rejected — deterministic, single-threaded.
-        when(repo.findBySyncStatusInOrderByCategoryAscTitleAsc(any())).thenAnswer(inv -> {
-            assertThatThrownBy(() -> service.syncAll("owner"))
+        when(repo.findPendingSyncByBusinessIdOrderByCategoryAscTitleAsc(eq(BUSINESS_ID), any())).thenAnswer(inv -> {
+            assertThatThrownBy(() -> service.syncAll("owner", BUSINESS_ID))
                     .isInstanceOf(KbSyncService.SyncInProgressException.class);
             return List.of();
         });
 
-        service.syncAll("owner");                       // outer call completes normally
+        service.syncAll("owner", BUSINESS_ID);                       // outer call completes normally
         assertThat(service.isSyncAllRunning()).isFalse(); // lock released
     }
 }
