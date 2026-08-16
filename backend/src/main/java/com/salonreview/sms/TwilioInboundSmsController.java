@@ -141,16 +141,41 @@ public class TwilioInboundSmsController {
         // A STOP-style reply isn't a satisfaction-rating reply — the block above already stops
         // any branch reply this would otherwise trigger from ever actually sending, but skip the
         // branching/negative-feedback logic entirely rather than relying on that as a backstop.
-        if (pending.isPresent() && !isOptOut) {
+        if (isOptOut) {
+            // no-op, per the comment above
+        } else if (pending.isPresent()) {
             SmsReplyFlow flow = pending.get();
             boolean positive = body.contains("5"); // digits only — "Five" spelled out doesn't match, see design.md D4
             if (containsLowRatingDigit(body)) {
                 logged.setNegativeFeedbackAt(Instant.now());
                 messageLogService.save(logged);
             }
-            replyService.sendBranchReply(flow, positive);
-            flow.setState(SmsReplyFlow.STATE_COMPLETED);
-            replyFlowRepository.save(flow);
+            try {
+                replyService.sendBranchReply(flow, positive);
+                flow.setState(SmsReplyFlow.STATE_COMPLETED);
+                replyFlowRepository.save(flow);
+            } catch (RuntimeException e) {
+                // 2026-08-16 live incident: 3 real "5" replies left their flow stuck in
+                // AWAITING_REPLY with no branch reply ever sent and zero application-level log line
+                // naming why — the previous version of this method let any exception here propagate
+                // silently (as a bare 500 to Twilio). This is that log line. Recoverable via
+                // POST /api/owner/settings/sms/reply-flows/{id}/retry once the cause is fixed.
+                log.error("Checkout-review branch reply failed for flow {} ({}, positive={}) — flow "
+                        + "left AWAITING_REPLY, recoverable via reply-flows/{}/retry",
+                        flow.getId(), from, positive, flow.getId(), e);
+                throw e;
+            }
+        } else if (CheckoutReviewReplyService.AUTOMATION_KEY.equals(automationKey)) {
+            // Same incident, the other half of "stuck with no evidence": a reply that looks exactly
+            // like a checkout-review rating (it's the customer's most recent automation) but no
+            // AWAITING_REPLY row exists for their number at all — this is the case actually observed
+            // in the 2026-08-16 incident (flow rows were confirmed correctly AWAITING_REPLY minutes
+            // to half an hour before the reply arrived, ruling out a timing race, yet this branch
+            // was apparently still what ran). Previously silent; now visible.
+            log.warn("Inbound SMS from {} (body=\"{}\") looks like a checkout-review reply but no "
+                    + "AWAITING_REPLY flow was found for this number — the rating was never followed "
+                    + "up on. Check sms_reply_flow for a row that should be AWAITING_REPLY but isn't.",
+                    from, body);
         }
         return ResponseEntity.ok().build();
     }
