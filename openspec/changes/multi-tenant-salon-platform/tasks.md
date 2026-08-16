@@ -120,16 +120,36 @@ this file is the plan, not yet executed.
       existing FK into an already business-scoped table (unlike `staff_documents`/`sop_versions`), so
       both got a real `business_id BIGINT NOT NULL FK` migration, backfilled to Business A;
       `KbArticleController`/`KbRequestController` resolve via `CurrentBusinessContext`. KB→RAG sync
-      (`KbSyncService`) is untouched beyond which articles get selected for syncing. **Only
-      `rag_document`/`rag_chunk`/`rag_agent_config`/`rag_suggestion_cache`/`rag_redaction_audit`
-      remain deliberately unfixed** — blocking them the same way would leave a real second business
-      unable to use its own KB/SOP-backed assistant at all, which is a product decision, not a
-      security one; scope was judged non-critical while there are only two businesses and this is
-      tracked here instead of patched under pressure. **Hard gate: this task must be fully closed
-      (real `business_id` columns + filtered queries + the cross-tenant isolation suite in 2.5
-      extended to cover these tables) before Phase 7 runs for a third business** — the stopgap
-      approach (allow-list one hardcoded business, 403 everyone else) does not scale past two
-      businesses and must not be repeated as a shortcut when business 3 is onboarded.
+      (`KbSyncService`) is untouched beyond which articles get selected for syncing. **`rag_document`,
+      `rag_agent_config`, `rag_redaction_audit`, and `rag_suggestion_cache` are now genuinely
+      business-scoped** (V99-V102): `rag_document`/`rag_redaction_audit` are root tables (the latter
+      intentionally has no FK to `rag_document` — it must survive a deleted document — so it needs its
+      own `business_id` rather than a join); `rag_agent_config` keeps its `version` PK and global
+      version-numbering counter unchanged but gained a `business_id` column and a re-scoped
+      `(business_id, active) WHERE active` unique index (one active config per business, not
+      globally); `rag_suggestion_cache`'s PK became composite `(business_id, language)` (was
+      `language` alone — a real PK-shape change, `RagSuggestionCacheId`/`@IdClass`). `rag_chunk` gets
+      no `business_id` column of its own — every access (including the native pgvector nearest-
+      neighbour search in `RagChunkRepository#searchNearest`, the query the live chat assistant
+      depends on) joins through `rag_document.business_id`. Every RAG service/controller call site
+      that reaches these tables was updated: `RagIngestionService`, `RagRetrievalService`,
+      `RagAnswerService`, `RagConfigService`, `RagSuggestionService`, `RagAdminController`,
+      `RagController`, plus two non-obvious call sites found by grepping the whole tree —
+      `KbSyncService`/`SopSyncService` (already business-scoped from earlier in 2.6, now thread
+      `businessId` into their `RagIngestionService` calls too) and `SmsDraftService` (the SMS
+      "Generate" button's RAG-grounding lookup, called from `SmsActivityController`, an
+      `/api/owner/automations/**` path — only reachable by Business A today via
+      `SmsBusinessScopeFilter`, but resolved via `CurrentBusinessContext` for correctness regardless).
+      Verified via `CrossTenantIsolationTest` against a real Postgres, including a vector-search test
+      that gives Business B's chunk the objectively nearest embedding to prove a Business A query
+      still never returns it. **`sms_message` is the one remaining item on this task's original
+      list** — still unscoped (no `business_id` column, still behind the `SmsBusinessScopeFilter`
+      stopgap) — so this task is not yet fully closed; see the hard gate below. **Hard gate: this
+      task must be fully closed (real `business_id` columns + filtered queries + the cross-tenant
+      isolation suite in 2.5 extended to cover these tables — now true for every table except
+      `sms_message`) before Phase 7 runs for a third business** — the stopgap approach (allow-list one
+      hardcoded business, 403 everyone else) does not scale past two businesses and must not be
+      repeated as a shortcut when business 3 is onboarded.
 
 ## Phase 3 — Square multi-account support
 
@@ -155,7 +175,12 @@ this file is the plan, not yet executed.
       key/notification URL; route `POST /api/public/webhooks/square/{businessId}` (path-based,
       verified before trusting any payload field, per design's rejection of trusting the unauthenticated
       `merchant_id` field pre-verification)
-- [ ] 3.7 `ProviderVisitScheduler`, `RevenueSnapshotScheduler`, their `*Startup` counterparts, and
+- [ ] 3.7 **Not applicable to the RAG services** (`RagIngestionService`, `RagRetrievalService`,
+      `RagAnswerService`, `RagConfigService`, `RagSuggestionService`) — none of them run as an
+      `@Scheduled` background job; every call site is synchronous and session-triggered (an owner
+      clicking sync/approve/ask, or the SMS draft "Generate" button), so each already resolves a real
+      `businessId` via `CurrentBusinessContext` with no `legacySmsBusiness()`-shaped stopgap needed
+      (2.6). `ProviderVisitScheduler`, `RevenueSnapshotScheduler`, their `*Startup` counterparts, and
       D9's six SMS automation schedulers (`RepeatCustomerWinbackScheduler`,
       `LapsedCustomerWinbackScheduler`, `LeadFollowUpScheduler`, `SameDayRebookingScheduler`,
       `SameDayRebookingGroupExpiryScheduler`, `SmsReplyFlowScheduler`) plus

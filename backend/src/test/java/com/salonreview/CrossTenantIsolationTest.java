@@ -55,6 +55,10 @@ class CrossTenantIsolationTest {
     @Autowired private KbArticleRepository kbArticles;
     @Autowired private KbRequestRepository kbRequests;
     @Autowired private RagDocumentRepository ragDocuments;
+    @Autowired private RagChunkRepository ragChunks;
+    @Autowired private RagAgentConfigRepository ragAgentConfigs;
+    @Autowired private RagRedactionAuditRepository ragRedactionAudits;
+    @Autowired private RagSuggestionCacheRepository ragSuggestionCache;
 
     private Long businessAId;
     private Long businessBId;
@@ -394,8 +398,8 @@ class CrossTenantIsolationTest {
         KbArticle articleB = kbArticles.save(KbArticle.builder().businessId(businessBId).title("Refunds B")
                 .category("FAQ").body("x").contentHash("hash-b").syncStatus(SyncStatus.NOT_SYNCED)
                 .createdBy("owner").build());
-        RagDocument ragDoc = ragDocuments.save(RagDocument.builder().filename("f.txt").sourceType("TEXT")
-                .extractedText("x").status(RagDocumentStatus.INDEXED).uploadedBy("owner")
+        RagDocument ragDoc = ragDocuments.save(RagDocument.builder().businessId(businessAId).filename("f.txt")
+                .sourceType("TEXT").extractedText("x").status(RagDocumentStatus.INDEXED).uploadedBy("owner")
                 .createdAt(Instant.now()).build());
         KbArticle syncedA = kbArticles.save(KbArticle.builder().businessId(businessAId).title("Synced A")
                 .category("FAQ").body("x").contentHash("hash-c").ragDocId(ragDoc.getId()).syncStatus(SyncStatus.SYNCED)
@@ -437,5 +441,130 @@ class CrossTenantIsolationTest {
         assertThat(kbRequests.findByIdAndBusinessId(requestA.getId(), businessBId)).isEmpty();
         assertThat(kbRequests.findByIdAndBusinessId(requestB.getId(), businessBId)).isPresent();
         assertThat(kbRequests.findByIdAndBusinessId(requestB.getId(), businessAId)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("RagDocumentRepository: business_id scoping never crosses businesses, for list and single-lookup")
+    void ragDocumentRepositoryIsolation() {
+        RagDocument docA = ragDocuments.save(ragDoc(businessAId, "a.txt", RagDocumentStatus.INDEXED));
+        RagDocument docB = ragDocuments.save(ragDoc(businessBId, "b.txt", RagDocumentStatus.INDEXED));
+        RagDocument pendingA = ragDocuments.save(ragDoc(businessAId, "pending-a.txt", RagDocumentStatus.PENDING));
+
+        assertIds(ragDocuments.findAllByBusinessIdOrderByCreatedAtDesc(businessAId), docA.getId(), docB.getId());
+        assertThat(ragDocuments.findAllByBusinessIdOrderByCreatedAtDesc(businessAId))
+                .extracting("id").contains(pendingA.getId());
+        assertIds(ragDocuments.findAllByBusinessIdOrderByCreatedAtDesc(businessBId), docB.getId(), docA.getId());
+
+        assertIds(ragDocuments.findByBusinessIdAndStatusOrderByCreatedAtDesc(businessAId, RagDocumentStatus.INDEXED),
+                docA.getId(), docB.getId());
+        assertThat(ragDocuments.findByBusinessIdAndStatusOrderByCreatedAtDesc(businessAId, RagDocumentStatus.INDEXED))
+                .extracting("id").doesNotContain(pendingA.getId());
+
+        assertThat(ragDocuments.findByIdAndBusinessId(docA.getId(), businessAId)).isPresent();
+        assertThat(ragDocuments.findByIdAndBusinessId(docA.getId(), businessBId)).isEmpty();
+        assertThat(ragDocuments.findByIdAndBusinessId(docB.getId(), businessBId)).isPresent();
+        assertThat(ragDocuments.findByIdAndBusinessId(docB.getId(), businessAId)).isEmpty();
+    }
+
+    /**
+     * The most important isolation check in this file: {@code RagChunkRepository#searchNearest}
+     * powers the live chat assistant's document retrieval. Business B's chunk is deliberately given
+     * the exact query vector (distance 0 — the objectively nearest match in the whole table) while
+     * Business A's chunk is given a different-but-still-in-range vector, so a business-A search that
+     * returned B's chunk would show up as a wrong (nearer) result, not just a missing one.
+     */
+    @Test
+    @DisplayName("RagChunkRepository: vector search never returns another business's chunk, even when it's the nearest match")
+    void ragChunkVectorSearchIsolation() {
+        RagDocument docA = ragDocuments.save(ragDoc(businessAId, "policy-a.txt", RagDocumentStatus.INDEXED));
+        RagDocument docB = ragDocuments.save(ragDoc(businessBId, "policy-b.txt", RagDocumentStatus.INDEXED));
+
+        RagChunk chunkA = ragChunks.save(RagChunk.builder().documentId(docA.getId()).ordinal(0)
+                .chunkText("Business A's confidential refund policy").charStart(0).charEnd(10)
+                .contentSha256("sha-a").status(RagChunkStatus.INDEXED).build());
+        RagChunk chunkB = ragChunks.save(RagChunk.builder().documentId(docB.getId()).ordinal(0)
+                .chunkText("Business B's confidential refund policy").charStart(0).charEnd(10)
+                .contentSha256("sha-b").status(RagChunkStatus.INDEXED).build());
+
+        // One-hot vectors, not all-zero/all-equal: cosine distance is undefined (NaN, matches
+        // nothing) for a zero-magnitude vector, and scale-invariant for parallel same-direction
+        // vectors, so those would either falsely match nothing or fail to distinguish "nearest" at
+        // all. Orthogonal one-hot vectors give a real, well-defined distance (0 vs 1.0).
+        String queryVec = vectorLiteral(0);
+        ragChunks.updateEmbedding(chunkA.getId(), vectorLiteral(1)); // orthogonal — in range, not the nearest
+        ragChunks.updateEmbedding(chunkB.getId(), queryVec);         // identical to the query — the true nearest
+
+        List<ChunkMatch> hitsForA = ragChunks.searchNearest(queryVec, 2.0, 5, businessAId);
+        assertThat(hitsForA).extracting("id").containsExactly(chunkA.getId());
+
+        List<ChunkMatch> hitsForB = ragChunks.searchNearest(queryVec, 2.0, 5, businessBId);
+        assertThat(hitsForB).extracting("id").containsExactly(chunkB.getId());
+    }
+
+    private static RagDocument ragDoc(Long businessId, String filename, RagDocumentStatus status) {
+        return RagDocument.builder().businessId(businessId).filename(filename).sourceType("TEXT")
+                .extractedText("x").status(status).uploadedBy("owner").build();
+    }
+
+    /** A 1024-dim one-hot vector literal (1.0 at {@code hotIndex}, 0.0 elsewhere) — gives a
+     * well-defined, non-degenerate cosine distance, unlike an all-zero (undefined/NaN) or
+     * all-equal (scale-invariant, indistinguishable direction) vector. */
+    private static String vectorLiteral(int hotIndex) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < 1024; i++) {
+            if (i > 0) sb.append(',');
+            sb.append(i == hotIndex ? "1.0" : "0.0");
+        }
+        return sb.append(']').toString();
+    }
+
+    @Test
+    @DisplayName("RagAgentConfigRepository: the active config never crosses businesses")
+    void ragAgentConfigRepositoryIsolation() {
+        // Business A already has a real, permanently-seeded active config (V25) — deactivate it
+        // first so this test's own row can become active without tripping the partial unique index
+        // (business_id, active) WHERE active. Rolled back with everything else in this test.
+        ragAgentConfigs.deactivateAll(businessAId);
+
+        RagAgentConfig configA = ragAgentConfigs.save(RagAgentConfig.builder().version(9001).businessId(businessAId)
+                .systemPrompt("A's prompt").model("claude-haiku-4-5").temperature(BigDecimal.ZERO).k(6)
+                .distanceThreshold(new BigDecimal("0.600")).active(true).build());
+        RagAgentConfig configB = ragAgentConfigs.save(RagAgentConfig.builder().version(9002).businessId(businessBId)
+                .systemPrompt("B's prompt").model("claude-haiku-4-5").temperature(BigDecimal.ZERO).k(6)
+                .distanceThreshold(new BigDecimal("0.600")).active(true).build());
+
+        assertThat(ragAgentConfigs.findByBusinessIdAndActiveTrue(businessAId)).isPresent()
+                .get().extracting(RagAgentConfig::getVersion).isEqualTo(configA.getVersion());
+        assertThat(ragAgentConfigs.findByBusinessIdAndActiveTrue(businessBId)).isPresent()
+                .get().extracting(RagAgentConfig::getVersion).isEqualTo(configB.getVersion());
+    }
+
+    @Test
+    @DisplayName("RagRedactionAuditRepository: the audit trail never crosses businesses")
+    void ragRedactionAuditRepositoryIsolation() {
+        RagRedactionAudit auditA = ragRedactionAudits.save(RagRedactionAudit.builder().businessId(businessAId)
+                .documentId(101L).filename("deleted-a.txt").chunkCount(3).deletedBy("owner").build());
+        RagRedactionAudit auditB = ragRedactionAudits.save(RagRedactionAudit.builder().businessId(businessBId)
+                .documentId(102L).filename("deleted-b.txt").chunkCount(2).deletedBy("owner").build());
+
+        assertIds(ragRedactionAudits.findAllByBusinessIdOrderByDeletedAtDesc(businessAId),
+                auditA.getId(), auditB.getId());
+        assertIds(ragRedactionAudits.findAllByBusinessIdOrderByDeletedAtDesc(businessBId),
+                auditB.getId(), auditA.getId());
+    }
+
+    @Test
+    @DisplayName("RagSuggestionCacheRepository: the composite (business, language) key never crosses businesses")
+    void ragSuggestionCacheRepositoryIsolation() {
+        ragSuggestionCache.save(RagSuggestionCache.builder().businessId(businessAId).language("EN")
+                .signature("sig-a").payload("{\"topics\":[]}").generatedAt(Instant.now()).build());
+        ragSuggestionCache.save(RagSuggestionCache.builder().businessId(businessBId).language("EN")
+                .signature("sig-b").payload("{\"topics\":[]}").generatedAt(Instant.now()).build());
+
+        assertThat(ragSuggestionCache.findById(new RagSuggestionCacheId(businessAId, "EN")))
+                .isPresent().get().extracting(RagSuggestionCache::getSignature).isEqualTo("sig-a");
+        assertThat(ragSuggestionCache.findById(new RagSuggestionCacheId(businessBId, "EN")))
+                .isPresent().get().extracting(RagSuggestionCache::getSignature).isEqualTo("sig-b");
+        assertThat(ragSuggestionCache.findById(new RagSuggestionCacheId(businessAId, "RU"))).isEmpty();
     }
 }

@@ -49,7 +49,7 @@ public class KbSyncService {
     /** Sync one article. Returns the updated article (possibly in ERROR). Empty when it doesn't
      * exist or isn't this business's — 404 handled by the caller. */
     public Optional<KbArticle> syncOne(Long id, String by, Long businessId) {
-        return repo.findByIdAndBusinessId(id, businessId).map(a -> doSync(a, by));
+        return repo.findByIdAndBusinessId(id, businessId).map(a -> doSync(a, by, businessId));
     }
 
     /**
@@ -63,7 +63,7 @@ public class KbSyncService {
         try {
             return repo.findPendingSyncByBusinessIdOrderByCategoryAscTitleAsc(businessId,
                             EnumSet.of(SyncStatus.NOT_SYNCED, SyncStatus.CHANGED, SyncStatus.ERROR)).stream()
-                    .map(a -> doSync(a, by))
+                    .map(a -> doSync(a, by, businessId))
                     .toList();
         } finally {
             syncAllRunning.set(false);
@@ -77,7 +77,7 @@ public class KbSyncService {
 
     // ---------------------------------------------------------------- internals
 
-    private KbArticle doSync(KbArticle a, String by) {
+    private KbArticle doSync(KbArticle a, String by, Long businessId) {
         String freshHash = KbArticleService.contentHash(a.getBody(), a.getBodyRu());
 
         // Already up to date — no-op (verify the hash, don't trust a possibly-stale flag).
@@ -101,7 +101,7 @@ public class KbSyncService {
 
         // Retire any prior RAG document first — no orphan, no duplicate.
         if (a.getRagDocId() != null) {
-            rag.delete(a.getRagDocId(), by);
+            rag.delete(a.getRagDocId(), by, businessId);
             a.setRagDocId(null);
         }
 
@@ -112,15 +112,15 @@ public class KbSyncService {
                 combined = combined + "\n\n---\n\n" + a.getBodyRu();
             }
             RagDocument doc = rag.upload(a.getTitle() + ".md",
-                    combined.getBytes(StandardCharsets.UTF_8), by);
-            rag.approve(doc.getId());
+                    combined.getBytes(StandardCharsets.UTF_8), by, businessId);
+            rag.approve(doc.getId(), businessId);
 
             long quarantined = ragChunks.countByDocumentIdAndStatus(doc.getId(), RagChunkStatus.QUARANTINED);
             long indexed = ragChunks.countByDocumentIdAndStatus(doc.getId(), RagChunkStatus.INDEXED);
 
             if (quarantined > 0 || indexed == 0) {
                 // All-or-nothing: any flagged (or nothing indexable) → reject the whole article.
-                rag.delete(doc.getId(), by);
+                rag.delete(doc.getId(), by, businessId);
                 a.setRagDocId(null);
                 a.setSyncStatus(SyncStatus.ERROR);
                 a.setLastSyncError(quarantined > 0 ? PII_MESSAGE

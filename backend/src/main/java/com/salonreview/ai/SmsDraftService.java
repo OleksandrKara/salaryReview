@@ -84,14 +84,14 @@ public class SmsDraftService {
     /** Empty when the feature is off or Claude isn't configured (→ 404 in the controller, mirroring
      * every other AI feature's ships-dark convention). Never returns empty for "nothing to draft
      * from" — an empty thread still gets a reasonable generic rebooking nudge. */
-    public Optional<DraftResult> draft(String phoneNumber, Language lang) {
+    public Optional<DraftResult> draft(String phoneNumber, Language lang, Long businessId) {
         if (!props.isEnabled()) return Optional.empty();
         AnthropicClient client = anthropicClientProvider.getIfAvailable();
         if (client == null) return Optional.empty();
 
         List<SmsMessage> thread = smsMessageLogService.thread(phoneNumber);
         MarketingContactDto.Contact contact = contactsService.contactByPhone(phoneNumber).orElse(null);
-        List<ChunkMatch> ragMatches = retrieveGrounding(thread);
+        List<ChunkMatch> ragMatches = retrieveGrounding(thread, businessId);
 
         String userMessage = buildUserMessage(contact, thread, ragMatches);
         try {
@@ -110,7 +110,7 @@ public class SmsDraftService {
      * no open question doesn't need salon-policy grounding, and gracefully no-ops (empty list) when
      * {@code rag.enabled} is off, since {@link RagRetrievalService}/{@link RagConfigService} are
      * themselves conditional beans. */
-    private List<ChunkMatch> retrieveGrounding(List<SmsMessage> thread) {
+    private List<ChunkMatch> retrieveGrounding(List<SmsMessage> thread, Long businessId) {
         RagRetrievalService retrieval = ragRetrievalProvider.getIfAvailable();
         RagConfigService ragConfigService = ragConfigProvider.getIfAvailable();
         if (retrieval == null || ragConfigService == null) return List.of();
@@ -123,8 +123,8 @@ public class SmsDraftService {
         if (lastInbound == null || lastInbound.isBlank()) return List.of();
 
         try {
-            RagAgentConfig cfg = ragConfigService.getActive();
-            return retrieval.retrieve(lastInbound, cfg);
+            RagAgentConfig cfg = ragConfigService.getActive(businessId);
+            return retrieval.retrieve(lastInbound, cfg, businessId);
         } catch (Exception e) {
             log.warn("RAG grounding lookup failed for SMS draft, continuing without it: {}", e.toString());
             return List.of();

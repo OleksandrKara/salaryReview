@@ -93,9 +93,9 @@ public class RagAnswerService {
 
     // ---------------------------------------------------------------- buffered
 
-    public RagAnswer answer(String question, Language lang) {
-        RagAgentConfig cfg = configService.getActive();
-        List<ChunkMatch> hits = retrieval.retrieve(question, cfg);
+    public RagAnswer answer(String question, Language lang, Long businessId) {
+        RagAgentConfig cfg = configService.getActive(businessId);
+        List<ChunkMatch> hits = retrieval.retrieve(question, cfg, businessId);
         String requestId = UUID.randomUUID().toString();
         openRetrievalSpan(requestId, cfg, question, hits);
 
@@ -149,9 +149,9 @@ public class RagAnswerService {
      * grounding, assembly, citation mapping, and two-span trace as {@link #answer}. Runs synchronously
      * (the controller drives it on a worker thread).
      */
-    public void answerStream(String question, Language lang, StreamSink sink) {
-        RagAgentConfig cfg = configService.getActive();
-        List<ChunkMatch> hits = retrieval.retrieve(question, cfg);
+    public void answerStream(String question, Language lang, StreamSink sink, Long businessId) {
+        RagAgentConfig cfg = configService.getActive(businessId);
+        List<ChunkMatch> hits = retrieval.retrieve(question, cfg, businessId);
         String requestId = UUID.randomUUID().toString();
         openRetrievalSpan(requestId, cfg, question, hits);
 

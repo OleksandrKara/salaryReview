@@ -43,6 +43,8 @@ import static org.mockito.Mockito.when;
  */
 class SmsDraftServiceTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     @SuppressWarnings("unchecked")
     private ObjectProvider<AnthropicClient> anthropicProvider = mock(ObjectProvider.class);
     private AiSmsDraftProperties props;
@@ -102,7 +104,7 @@ class SmsDraftServiceTest {
     void disabledReturnsEmpty() {
         when(props.isEnabled()).thenReturn(false);
 
-        Optional<DraftResult> result = service.draft(PHONE, Language.EN);
+        Optional<DraftResult> result = service.draft(PHONE, Language.EN, BUSINESS_ID);
 
         assertThat(result).isEmpty();
         verifyNoInteractions(anthropicProvider);
@@ -113,7 +115,7 @@ class SmsDraftServiceTest {
     void noClientReturnsEmpty() {
         when(anthropicProvider.getIfAvailable()).thenReturn(null);
 
-        Optional<DraftResult> result = service.draft(PHONE, Language.EN);
+        Optional<DraftResult> result = service.draft(PHONE, Language.EN, BUSINESS_ID);
 
         assertThat(result).isEmpty();
         verifyNoInteractions(smsMessageLogService);
@@ -137,7 +139,7 @@ class SmsDraftServiceTest {
 
         doReturn(canned()).when(spied).callClaude(any(), anyString(), eq(Language.EN));
 
-        Optional<DraftResult> result = spied.draft(PHONE, Language.EN);
+        Optional<DraftResult> result = spied.draft(PHONE, Language.EN, BUSINESS_ID);
 
         assertThat(result).isPresent();
         org.mockito.ArgumentCaptor<String> userMessageCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
@@ -160,9 +162,9 @@ class SmsDraftServiceTest {
 
         doReturn(canned()).when(spied).callClaude(any(), anyString(), eq(Language.EN));
 
-        spied.draft(PHONE, Language.EN);
+        spied.draft(PHONE, Language.EN, BUSINESS_ID);
 
-        verify(retrieval, never()).retrieve(anyString(), any());
+        verify(retrieval, never()).retrieve(anyString(), any(), any());
     }
 
     @Test
@@ -174,22 +176,22 @@ class SmsDraftServiceTest {
                 .temperature(BigDecimal.ONE).k(3).distanceThreshold(BigDecimal.ONE).active(true).build();
         when(ragConfigProvider.getIfAvailable()).thenReturn(configService);
         when(ragRetrievalProvider.getIfAvailable()).thenReturn(retrieval);
-        when(configService.getActive()).thenReturn(cfg);
+        when(configService.getActive(BUSINESS_ID)).thenReturn(cfg);
         ChunkMatch match = mock(ChunkMatch.class);
         when(match.getChunkText()).thenReturn("Our cancellation policy requires 24 hours notice.");
-        when(retrieval.retrieve(eq("Do you have a cancellation fee?"), eq(cfg))).thenReturn(List.of(match));
+        when(retrieval.retrieve(eq("Do you have a cancellation fee?"), eq(cfg), eq(BUSINESS_ID))).thenReturn(List.of(match));
         when(smsMessageLogService.thread(PHONE)).thenReturn(List.of(
                 outbound("Hi! Time for a fill?"),
                 inbound("Do you have a cancellation fee?")));
 
         doReturn(canned()).when(spied).callClaude(any(), anyString(), eq(Language.EN));
 
-        spied.draft(PHONE, Language.EN);
+        spied.draft(PHONE, Language.EN, BUSINESS_ID);
 
         org.mockito.ArgumentCaptor<String> userMessageCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
         verify(spied).callClaude(any(), userMessageCaptor.capture(), eq(Language.EN));
         assertThat(userMessageCaptor.getValue()).contains("24 hours notice");
-        verify(retrieval).retrieve(eq("Do you have a cancellation fee?"), eq(cfg));
+        verify(retrieval).retrieve(eq("Do you have a cancellation fee?"), eq(cfg), eq(BUSINESS_ID));
     }
 
     @Test
@@ -198,7 +200,7 @@ class SmsDraftServiceTest {
         doThrow(new SmsDraftService.RefusalException("policy_refusal"))
                 .when(spied).callClaude(any(), anyString(), eq(Language.RU));
 
-        Optional<DraftResult> result = spied.draft(PHONE, Language.RU);
+        Optional<DraftResult> result = spied.draft(PHONE, Language.RU, BUSINESS_ID);
 
         assertThat(result).isPresent();
         assertThat(result.get().body()).contains("вручную");
@@ -211,6 +213,6 @@ class SmsDraftServiceTest {
                 .when(spied).callClaude(any(), anyString(), eq(Language.EN));
 
         org.junit.jupiter.api.Assertions.assertThrows(SmsDraftService.DraftFailedException.class,
-                () -> spied.draft(PHONE, Language.EN));
+                () -> spied.draft(PHONE, Language.EN, BUSINESS_ID));
     }
 }

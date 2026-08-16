@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.salonreview.ai.SmsDraftService;
 import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.domain.AppUser;
 import com.salonreview.domain.BlockedNumber;
 import com.salonreview.domain.Language;
@@ -58,13 +59,14 @@ public class SmsActivityController {
     private final SmsReactionService reactionService;
     private final SmsDraftService draftService;
     private final AppUserRepository users;
+    private final CurrentBusinessContext currentBusinessContext;
 
     public SmsActivityController(SmsMessageLogService service, TwilioSmsService smsService,
                                   MarketingContactsService contactsService,
                                   BlockedNumberRepository blockedNumberRepository,
                                   SmsEventBroadcaster events, SmsMediaService mediaService,
                                   SmsReactionService reactionService, SmsDraftService draftService,
-                                  AppUserRepository users) {
+                                  AppUserRepository users, CurrentBusinessContext currentBusinessContext) {
         this.service = service;
         this.smsService = smsService;
         this.contactsService = contactsService;
@@ -74,6 +76,7 @@ public class SmsActivityController {
         this.reactionService = reactionService;
         this.draftService = draftService;
         this.users = users;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     public record SmsMediaDto(String url, String contentType) {}
@@ -290,7 +293,7 @@ public class SmsActivityController {
     @PostMapping("/conversations/{phoneNumber}/draft-reply")
     public ResponseEntity<DraftReplyResult> draftReply(@PathVariable String phoneNumber,
                                                          @AuthenticationPrincipal AppUserPrincipal me) {
-        return draftService.draft(phoneNumber, language(me))
+        return draftService.draft(phoneNumber, language(me), currentBusinessContext.id())
                 .map(d -> ResponseEntity.ok(new DraftReplyResult(d.body(), d.model())))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }

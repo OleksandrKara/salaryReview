@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.ai.LangSmithTracer;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.config.RagProperties;
 import com.salonreview.rag.RagAnswer;
 import com.salonreview.rag.RagAnswerService;
@@ -36,6 +37,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class RagControllerTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     private RagAnswerService answerService;
     private RagSuggestionService suggestionService;
     private RagProperties props;
@@ -53,8 +56,10 @@ class RagControllerTest {
         props = mock(RagProperties.class);
         tracerProvider = mock(ObjectProvider.class);
         aiDraft = mock(com.salonreview.kb.KbAiDraftService.class);
+        CurrentBusinessContext currentBusinessContext = mock(CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(BUSINESS_ID);
         RagController controller = new RagController(answerService, suggestionService, tracerProvider, props,
-                mock(com.salonreview.repo.AppUserRepository.class), aiDraft);
+                mock(com.salonreview.repo.AppUserRepository.class), aiDraft, currentBusinessContext);
         mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setCustomArgumentResolvers(
                         new org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver())
@@ -64,7 +69,7 @@ class RagControllerTest {
     @Test
     @DisplayName("suggestions endpoint returns the service's topic-grouped prompts")
     void suggestions() throws Exception {
-        when(suggestionService.get(any())).thenReturn(new StarterSuggestions(List.of(
+        when(suggestionService.get(any(), eq(BUSINESS_ID))).thenReturn(new StarterSuggestions(List.of(
                 new StarterSuggestions.Topic("Policies", List.of("What's our no-show fee policy?")))));
 
         mvc.perform(get("/api/rag/suggestions"))
@@ -76,7 +81,7 @@ class RagControllerTest {
     @Test
     @DisplayName("refresh endpoint regenerates and returns the prompts")
     void refreshSuggestions() throws Exception {
-        when(suggestionService.refresh(any())).thenReturn(new StarterSuggestions(List.of(
+        when(suggestionService.refresh(any(), eq(BUSINESS_ID))).thenReturn(new StarterSuggestions(List.of(
                 new StarterSuggestions.Topic("Pricing", List.of("What's the gel price?")))));
 
         mvc.perform(post("/api/rag/suggestions/refresh"))
@@ -104,7 +109,7 @@ class RagControllerTest {
                 "The no-show fee is $25.",
                 List.of(new Citation(5L, "policies.md", "The no-show fee is $25.")),
                 1, "run-abc", true, List.of());
-        when(answerService.answer(eq("what's the no-show fee?"), any())).thenReturn(answer);
+        when(answerService.answer(eq("what's the no-show fee?"), any(), eq(BUSINESS_ID))).thenReturn(answer);
 
         mvc.perform(post("/api/rag/ask").contentType("application/json")
                         .content(json.writeValueAsString(Map.of("question", "what's the no-show fee?"))))
@@ -129,7 +134,7 @@ class RagControllerTest {
     @DisplayName("RagAnswerException → 502")
     void answerFailureReturns502() throws Exception {
         when(props.isEnabled()).thenReturn(true);
-        when(answerService.answer(anyString(), any()))
+        when(answerService.answer(anyString(), any(), eq(BUSINESS_ID)))
                 .thenThrow(new RagAnswerService.RagAnswerException("anthropic 5xx"));
 
         mvc.perform(post("/api/rag/ask").contentType("application/json")

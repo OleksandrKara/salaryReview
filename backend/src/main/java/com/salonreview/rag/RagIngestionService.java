@@ -59,12 +59,13 @@ public class RagIngestionService {
 
     /** Extract text and store the document PENDING. Throws on unparseable input (→ 400). */
     @Transactional
-    public RagDocument upload(String filename, byte[] bytes, String uploadedBy) {
+    public RagDocument upload(String filename, byte[] bytes, String uploadedBy, Long businessId) {
         DocumentTextExtractor.Extracted extracted = extractor.extract(bytes, filename);
         if (extracted.text() == null || extracted.text().isBlank()) {
             throw new IllegalArgumentException("No text could be extracted from " + filename);
         }
         RagDocument doc = RagDocument.builder()
+                .businessId(businessId)
                 .filename(filename)
                 .sourceType(extracted.sourceType())
                 .extractedText(extracted.text())
@@ -76,11 +77,11 @@ public class RagIngestionService {
 
     /**
      * Approve a PENDING document and run ingestion. Idempotent guard: only PENDING documents are
-     * ingested. Returns the updated document.
+     * ingested. Returns the updated document; empty when it doesn't exist or isn't this business's.
      */
     @Transactional
-    public Optional<RagDocument> approve(Long documentId) {
-        Optional<RagDocument> found = documents.findById(documentId);
+    public Optional<RagDocument> approve(Long documentId, Long businessId) {
+        Optional<RagDocument> found = documents.findByIdAndBusinessId(documentId, businessId);
         if (found.isEmpty()) return Optional.empty();
         RagDocument doc = found.get();
         if (doc.getStatus() != RagDocumentStatus.PENDING) return Optional.of(doc);
@@ -135,17 +136,19 @@ public class RagIngestionService {
 
     /**
      * Delete a document: write a redaction audit row, then delete the document (its chunks + vectors
-     * cascade away via the FK, so the content is no longer retrievable). Returns false if not found.
+     * cascade away via the FK, so the content is no longer retrievable). Returns false when not
+     * found or not this business's.
      */
     @Transactional
-    public boolean delete(Long documentId, String deletedBy) {
-        Optional<RagDocument> found = documents.findById(documentId);
+    public boolean delete(Long documentId, String deletedBy, Long businessId) {
+        Optional<RagDocument> found = documents.findByIdAndBusinessId(documentId, businessId);
         if (found.isEmpty()) return false;
         RagDocument doc = found.get();
 
         long chunkCount = chunks.countByDocumentIdAndStatus(doc.getId(), RagChunkStatus.INDEXED)
                 + chunks.countByDocumentIdAndStatus(doc.getId(), RagChunkStatus.QUARANTINED);
         audits.save(RagRedactionAudit.builder()
+                .businessId(businessId)
                 .documentId(doc.getId())
                 .filename(doc.getFilename())
                 .chunkCount((int) chunkCount)

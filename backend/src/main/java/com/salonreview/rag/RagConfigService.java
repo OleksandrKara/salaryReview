@@ -22,22 +22,24 @@ public class RagConfigService {
         this.configs = configs;
     }
 
-    /** The single active config (seeded as version 1 by V25). */
-    public RagAgentConfig getActive() {
-        return configs.findByActiveTrue()
-                .orElseThrow(() -> new IllegalStateException("No active rag_agent_config — V25 seed missing?"));
+    /** The single active config for one business (seeded for Business A as version 1 by V25). */
+    public RagAgentConfig getActive(Long businessId) {
+        return configs.findByBusinessIdAndActiveTrue(businessId)
+                .orElseThrow(() -> new IllegalStateException("No active rag_agent_config for business " + businessId));
     }
 
-    /** Insert a new active version, deactivating the previous one. Returns the new config. */
+    /** Insert a new active version for one business, deactivating that business's previous one.
+     * Returns the new config. */
     @Transactional
     public RagAgentConfig createVersion(String systemPrompt, String model, BigDecimal temperature,
-                                        int k, BigDecimal distanceThreshold) {
+                                        int k, BigDecimal distanceThreshold, Long businessId) {
         int nextVersion = configs.findTopByOrderByVersionDesc()
                 .map(c -> c.getVersion() + 1)
                 .orElse(1);
-        configs.deactivateAll();
+        configs.deactivateAll(businessId);
         RagAgentConfig created = RagAgentConfig.builder()
                 .version(nextVersion)
+                .businessId(businessId)
                 .systemPrompt(systemPrompt)
                 .model(model)
                 .temperature(temperature)

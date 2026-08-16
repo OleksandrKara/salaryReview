@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.salonreview.ai.LangSmithTracer;
 import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.config.RagProperties;
 import com.salonreview.domain.AppUser;
 import com.salonreview.domain.Language;
@@ -52,6 +53,7 @@ public class RagController {
     private final RagProperties props;
     private final AppUserRepository users;
     private final KbAiDraftService aiDraft;
+    private final CurrentBusinessContext currentBusinessContext;
     // Streaming runs the (blocking) Anthropic stream off the request thread. Daemon, small pool.
     private final ExecutorService streamExecutor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "rag-stream");
@@ -61,25 +63,27 @@ public class RagController {
 
     public RagController(RagAnswerService answerService, RagSuggestionService suggestionService,
                         ObjectProvider<LangSmithTracer> tracerProvider, RagProperties props,
-                        AppUserRepository users, KbAiDraftService aiDraft) {
+                        AppUserRepository users, KbAiDraftService aiDraft,
+                        CurrentBusinessContext currentBusinessContext) {
         this.answerService = answerService;
         this.suggestionService = suggestionService;
         this.tracerProvider = tracerProvider;
         this.props = props;
         this.users = users;
         this.aiDraft = aiDraft;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     /** Stored starter prompts for the chat empty state, in the caller's language (no LLM call). */
     @GetMapping("/suggestions")
     public StarterSuggestions suggestions(@AuthenticationPrincipal AppUserPrincipal me) {
-        return suggestionService.get(language(me));
+        return suggestionService.get(language(me), currentBusinessContext.id());
     }
 
     /** Regenerate and overwrite the stored starter prompts — the chat's on-demand refresh. */
     @PostMapping("/suggestions/refresh")
     public StarterSuggestions refreshSuggestions(@AuthenticationPrincipal AppUserPrincipal me) {
-        return suggestionService.refresh(language(me));
+        return suggestionService.refresh(language(me), currentBusinessContext.id());
     }
 
     /**
@@ -97,6 +101,7 @@ public class RagController {
             return emitter;
         }
         Language lang = language(me);
+        Long businessId = currentBusinessContext.id();
         RagAnswerService.StreamSink sink = new RagAnswerService.StreamSink() {
             @Override public void token(String text) { send(emitter, "token", Map.of("text", text)); }
             @Override public void citations(List<Citation> citations) { send(emitter, "citations", citations); }
@@ -115,7 +120,7 @@ public class RagController {
         };
         streamExecutor.execute(() -> {
             try {
-                answerService.answerStream(body.question(), lang, sink);
+                answerService.answerStream(body.question(), lang, sink, businessId);
             } catch (Exception e) {
                 log.error("RAG stream failed: {}", e.toString());
                 sink.error("The assistant is unavailable right now. Please try again.");
@@ -141,7 +146,7 @@ public class RagController {
             return ResponseEntity.badRequest().build();
         }
         try {
-            return ResponseEntity.ok(answerService.answer(body.question(), language(me)));
+            return ResponseEntity.ok(answerService.answer(body.question(), language(me), currentBusinessContext.id()));
         } catch (RagAnswerService.RagAnswerException e) {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
         }

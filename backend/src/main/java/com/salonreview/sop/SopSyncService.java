@@ -69,7 +69,7 @@ public class SopSyncService {
     /** Sync one SOP. Returns the updated SOP (possibly ERROR); empty when it doesn't exist or isn't
      * this business's. */
     public Optional<Sop> syncOne(Long id, String by, Long businessId) {
-        return sops.findByIdAndBusinessId(id, businessId).map(s -> doSync(s, by));
+        return sops.findByIdAndBusinessId(id, businessId).map(s -> doSync(s, by, businessId));
     }
 
     /**
@@ -82,7 +82,7 @@ public class SopSyncService {
             throw new SyncInProgressException();
         }
         try {
-            sops.findAllByBusinessIdOrderByPriorityAscCategoryAscTitleAsc(businessId).forEach(s -> doSync(s, by));
+            sops.findAllByBusinessIdOrderByPriorityAscCategoryAscTitleAsc(businessId).forEach(s -> doSync(s, by, businessId));
             return list(businessId);
         } finally {
             syncAllRunning.set(false);
@@ -112,7 +112,7 @@ public class SopSyncService {
 
     // ---------------------------------------------------------------- internals
 
-    private Sop doSync(Sop sop, String by) {
+    private Sop doSync(Sop sop, String by, Long businessId) {
         boolean isProviderOnly = sop.getAudience() == SopAudience.PROVIDER;
         boolean syncable = sop.getStatus() == SopStatus.ACTIVE && sop.getCurrentVersionId() != null && !isProviderOnly;
 
@@ -122,7 +122,7 @@ public class SopSyncService {
         if (!syncable) {
             if (sop.getRagDocId() != null) {
                 RagIngestionService rag = ragIngestionProvider.getIfAvailable();
-                if (rag != null) rag.delete(sop.getRagDocId(), by);
+                if (rag != null) rag.delete(sop.getRagDocId(), by, businessId);
             }
             sop.setRagDocId(null);
             sop.setSyncedVersionId(null);
@@ -158,7 +158,7 @@ public class SopSyncService {
 
         // Retire any prior RAG document first — no orphan, no duplicate.
         if (sop.getRagDocId() != null) {
-            rag.delete(sop.getRagDocId(), by);
+            rag.delete(sop.getRagDocId(), by, businessId);
             sop.setRagDocId(null);
         }
 
@@ -168,14 +168,15 @@ public class SopSyncService {
             if (version.getBodyRu() != null && !version.getBodyRu().isBlank()) {
                 combined = combined + "\n\n---\n\n" + version.getBodyRu();
             }
-            RagDocument doc = rag.upload(sop.getTitle() + ".md", combined.getBytes(StandardCharsets.UTF_8), by);
-            rag.approve(doc.getId());
+            RagDocument doc = rag.upload(sop.getTitle() + ".md", combined.getBytes(StandardCharsets.UTF_8), by,
+                    businessId);
+            rag.approve(doc.getId(), businessId);
 
             long quarantined = ragChunks.countByDocumentIdAndStatus(doc.getId(), RagChunkStatus.QUARANTINED);
             long indexed = ragChunks.countByDocumentIdAndStatus(doc.getId(), RagChunkStatus.INDEXED);
 
             if (quarantined > 0 || indexed == 0) {
-                rag.delete(doc.getId(), by);
+                rag.delete(doc.getId(), by, businessId);
                 sop.setRagDocId(null);
                 sop.setSyncStatus(SyncStatus.ERROR);
                 sop.setLastSyncError(quarantined > 0 ? PII_MESSAGE : "Nothing could be indexed from this SOP.");

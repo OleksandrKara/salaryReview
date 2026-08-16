@@ -19,6 +19,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -32,6 +33,8 @@ import static org.mockito.Mockito.when;
  * retrieval/assembly behaviour is tested without the real Anthropic SDK.
  */
 class RagAnswerServiceTest {
+
+    private static final Long BUSINESS_ID = 1L;
 
     @SuppressWarnings("unchecked")
     private ObjectProvider<AnthropicClient> anthropicProvider = mock(ObjectProvider.class);
@@ -55,7 +58,7 @@ class RagAnswerServiceTest {
         tracerProvider = mock(ObjectProvider.class);
         when(tracerProvider.getIfAvailable()).thenReturn(null);
 
-        when(configService.getActive()).thenReturn(RagAgentConfig.builder()
+        when(configService.getActive(BUSINESS_ID)).thenReturn(RagAgentConfig.builder()
                 .version(1).systemPrompt("answer only from context").model("claude-haiku-4-5")
                 .temperature(BigDecimal.ZERO).k(6).distanceThreshold(new BigDecimal("0.600")).active(true)
                 .build());
@@ -68,9 +71,9 @@ class RagAnswerServiceTest {
     @Test
     @DisplayName("no chunk within the distance floor → 'don't know', no LLM call")
     void emptyRetrievalYieldsDontKnow() {
-        when(retrieval.retrieve(anyString(), any())).thenReturn(List.of());
+        when(retrieval.retrieve(anyString(), any(), eq(BUSINESS_ID))).thenReturn(List.of());
 
-        RagAnswer answer = spied.answer("what is the refund policy?", Language.EN);
+        RagAnswer answer = spied.answer("what is the refund policy?", Language.EN, BUSINESS_ID);
 
         assertThat(answer.answered()).isFalse();
         assertThat(answer.citations()).isEmpty();
@@ -82,7 +85,7 @@ class RagAnswerServiceTest {
     @Test
     @DisplayName("streaming: empty retrieval emits the 'don't know' token then done, no LLM call")
     void streamingEmptyRetrieval() {
-        when(retrieval.retrieve(anyString(), any())).thenReturn(List.of());
+        when(retrieval.retrieve(anyString(), any(), eq(BUSINESS_ID))).thenReturn(List.of());
 
         class Capture implements RagAnswerService.StreamSink {
             final java.util.List<String> tokens = new java.util.ArrayList<>();
@@ -98,7 +101,7 @@ class RagAnswerServiceTest {
         }
         Capture cap = new Capture();
 
-        service.answerStream("what is the refund policy?", Language.EN, cap);
+        service.answerStream("what is the refund policy?", Language.EN, cap, BUSINESS_ID);
 
         assertThat(cap.tokens).hasSize(1);
         assertThat(cap.tokens.get(0)).contains("couldn't find");
@@ -113,9 +116,9 @@ class RagAnswerServiceTest {
     @Test
     @DisplayName("empty retrieval in Russian → the Russian 'don't know' message")
     void emptyRetrievalRussian() {
-        when(retrieval.retrieve(anyString(), any())).thenReturn(List.of());
+        when(retrieval.retrieve(anyString(), any(), eq(BUSINESS_ID))).thenReturn(List.of());
 
-        RagAnswer answer = spied.answer("какая политика возврата?", Language.RU);
+        RagAnswer answer = spied.answer("какая политика возврата?", Language.RU, BUSINESS_ID);
 
         assertThat(answer.answered()).isFalse();
         assertThat(answer.answer()).isEqualTo("Я не нашёл ничего об этом в текущих документах.");
@@ -129,7 +132,7 @@ class RagAnswerServiceTest {
         when(hit.getDocumentId()).thenReturn(5L);
         when(hit.getChunkText()).thenReturn("The no-show fee is $25.");
         when(hit.getDistance()).thenReturn(0.12);
-        when(retrieval.retrieve(anyString(), any())).thenReturn(List.of(hit));
+        when(retrieval.retrieve(anyString(), any(), eq(BUSINESS_ID))).thenReturn(List.of(hit));
         when(documents.findAllById(any())).thenReturn(List.of(
                 RagDocument.builder().id(5L).filename("policies.md").build()));
 
@@ -139,7 +142,7 @@ class RagAnswerServiceTest {
                 List.of()))
                 .when(spied).callClaude(any(), any(), anyString(), any(), any(), any());
 
-        RagAnswer answer = spied.answer("what's the no-show fee?", Language.EN);
+        RagAnswer answer = spied.answer("what's the no-show fee?", Language.EN, BUSINESS_ID);
 
         assertThat(answer.answered()).isTrue();
         assertThat(answer.answer()).contains("$25");
@@ -156,14 +159,14 @@ class RagAnswerServiceTest {
         when(hit.getDocumentId()).thenReturn(5L);
         when(hit.getChunkText()).thenReturn("text");
         when(hit.getDistance()).thenReturn(0.2);
-        when(retrieval.retrieve(anyString(), any())).thenReturn(List.of(hit));
+        when(retrieval.retrieve(anyString(), any(), eq(BUSINESS_ID))).thenReturn(List.of(hit));
         when(documents.findAllById(any())).thenReturn(List.of(
                 RagDocument.builder().id(5L).filename("p.md").build()));
         org.mockito.Mockito.doThrow(new RagAnswerService.RagAnswerException("anthropic 5xx"))
                 .when(spied).callClaude(any(), any(), anyString(), any(), any(), any());
 
         try {
-            spied.answer("q", Language.EN);
+            spied.answer("q", Language.EN, BUSINESS_ID);
             org.junit.jupiter.api.Assertions.fail("expected RagAnswerException");
         } catch (RagAnswerService.RagAnswerException expected) {
             assertThat(expected.getMessage()).contains("anthropic 5xx");

@@ -20,6 +20,9 @@ public class RagDocument {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "business_id", nullable = false)
+    private Long businessId;
+
     @Column(nullable = false, length = 512)
     private String filename;
 
