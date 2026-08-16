@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Suspense } from 'react';
-import { serverApi } from '../lib/serverApi';
-import type { Feedback, ProviderPayout } from '../lib/types';
+import { serverApi, ApiError } from '../lib/serverApi';
+import type { Feedback, ProviderPayout, SettlementPreview } from '../lib/types';
 import PageHeader from '../components/PageHeader';
 import MonthNav from '../components/MonthNav';
 import GrantTierButton from './GrantTierButton';
@@ -10,6 +10,7 @@ import ClearFeedbackButton from './ClearFeedbackButton';
 import RevenuePulse from './RevenuePulse';
 import SalaryButtons from './SalaryButtons';
 import { SyncBadge } from '../components/SyncBadge';
+import SetupRequiredNotice from '../components/SetupRequiredNotice';
 
 const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -144,10 +145,26 @@ export default async function ReportsPage({
   const year = Number(sp.year) || now.getUTCFullYear();
   const month = Number(sp.month) || now.getUTCMonth() + 1;
 
-  const [report, me] = await Promise.all([
-    serverApi.getSettlementPreview(year, month),
-    serverApi.getMe(),
-  ]);
+  const me = await serverApi.getMe();
+  let report: SettlementPreview;
+  try {
+    report = await serverApi.getSettlementPreview(year, month);
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'square_not_connected') {
+      return (
+        <main className="mx-auto max-w-6xl p-4 sm:p-8">
+          <PageHeader title="Salary report" role={me.role} language={me.preferredLanguage} />
+          <SetupRequiredNotice
+            title="Connect Square to see reports"
+            message="This business's salary reports need a Square connection to pull bookings, orders, and payments from."
+            ctaHref="/owner/settings/square"
+            ctaLabel="Connect Square"
+          />
+        </main>
+      );
+    }
+    throw err;
+  }
   const prev = shift(year, month, -1);
   const next = shift(year, month, 1);
   const cfg = report.config;

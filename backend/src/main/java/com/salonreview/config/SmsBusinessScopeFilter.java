@@ -43,8 +43,11 @@ public class SmsBusinessScopeFilter extends OncePerRequestFilter {
                 && !context.id().equals(businesses.legacySmsBusiness().getId())) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            // `code` matches GlobalExceptionHandler's BusinessSetupIncompleteException shape so the
+            // frontend can render the same "here's what to do next" onboarding UX from one field,
+            // regardless of whether the block came from this filter or a thrown exception.
             response.getWriter().write(
-                    "{\"error\":\"SMS features are not yet available for this business\"}");
+                    "{\"code\":\"sms_not_available\",\"message\":\"SMS features are not yet available for this business\"}");
             return;
         }
         chain.doFilter(request, response);

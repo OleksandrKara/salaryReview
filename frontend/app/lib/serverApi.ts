@@ -53,6 +53,20 @@ import type {
 
 const BACKEND = process.env.BACKEND_URL ?? 'http://localhost:8080';
 
+// Thrown by serverFetch on a non-ok response — a plain Error subclass, so every existing `catch
+// (err) { ... }` call site keeps working unchanged (same .message, same stack). `status`/`code` let
+// a *specific* call site opt in to distinguishing "this business hasn't finished setup yet"
+// (GlobalExceptionHandler's BusinessSetupIncompleteException, code e.g. "square_not_connected") or
+// a scoped-feature 403 (SmsBusinessScopeFilter) from a genuine bug, and render an onboarding-style
+// empty state instead of the default error page. `code` matches on GlobalExceptionHandler's stable
+// machine-readable field, never on `.message`, which is free to be reworded.
+export class ApiError extends Error {
+  constructor(public status: number, public code: string | undefined, message: string) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 async function serverFetch<T>(path: string): Promise<T> {
   const sid = (await cookies()).get('sid')?.value;
   const res = await fetch(`${BACKEND}${path}`, {
@@ -64,7 +78,16 @@ async function serverFetch<T>(path: string): Promise<T> {
   // throws NEXT_REDIRECT, so it must not be wrapped in a try/catch at the call site.
   if (res.status === 401) redirect('/');
   if (res.status === 204) return null as T;
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${await res.text()}`);
+  if (!res.ok) {
+    const text = await res.text();
+    let code: string | undefined;
+    try {
+      code = JSON.parse(text)?.code;
+    } catch {
+      // not JSON (or no `code` field) — fine, code stays undefined
+    }
+    throw new ApiError(res.status, code, `${res.status} ${res.statusText}: ${text}`);
+  }
   return (await res.json()) as T;
 }
 

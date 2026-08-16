@@ -201,6 +201,33 @@ this file is the plan, not yet executed.
 - [ ] 6.5 Playwright e2e: business-switcher renders correctly for both 1-membership and 2-membership
       fixtures; onboarding flow end-to-end against Square sandbox credentials
 
+## Phase 6b — Onboarding UX: graceful "not set up yet" states
+
+**Found live 2026-08-15 onboarding AK PMU**: a freshly created business hits raw errors on every page
+that needs a setup step it hasn't finished yet (a stack-trace-shaped 500 on `/reports` before Square
+is connected, a 403 with no explanation on `/admin/messages`) instead of being told what to do.
+Backend infra shipped same day: `BusinessSetupIncompleteException` (thrown by the low-level service
+that hit the gap, e.g. `SquareClientProvider`) + `GlobalExceptionHandler` turns it into a 409 with a
+stable `code` field; `SmsBusinessScopeFilter` returns the same `{code, message}` shape on its 403.
+Frontend: `ApiError` (serverApi.ts) surfaces `status`/`code` from any failed `serverFetch` call without
+changing behavior for existing callers; `SetupRequiredNotice` is the reusable empty-state component.
+
+- [x] 6b.1 `/reports` — catches `square_not_connected`, renders `SetupRequiredNotice` with a CTA to
+      `/owner/settings/square` instead of the raw 500
+- [x] 6b.2 `/admin/messages` — catches `sms_not_available`, renders `SetupRequiredNotice` (no CTA —
+      there's nothing to configure yet, see 2.6) instead of the raw 403
+- [ ] 6b.3 **Not yet covered — same treatment needed wherever else a fresh business can hit a missing
+      Square connection or missing config**: `/owner/overview` and its sub-pages (revenue pulse, net,
+      expenses), `/owner/marketing/**`, `/owner/retention`, `/admin/redos`, `/admin/prepaid`,
+      `/admin/owner-customers`, `/admin/manual-adjustments`, anything under `/reports/[providerId]/**`
+      — audit each for what it actually throws today (some may already go through
+      `BusinessSetupIncompleteException` for free once `SquareClientProvider`/`ProviderDirectory`
+      callers are consistent; others may need a new `code`) before assuming this is done
+- [ ] 6b.4 RAG assistant, Telegram settings, KB articles, SOPs — once 2.6 gives these real
+      per-business scoping (rather than the current Business-A-only block), they'll need this same
+      "not set up yet" treatment too, not just a bare 403/500, the first time a second business
+      actually gets access to them
+
 ## Phase 7 — Second salon (Business B / AK PMU) onboarding
 
 - [x] 7.1 Create Business B's `business` row, connect its Square production credentials — shipped
