@@ -4,10 +4,12 @@ import com.salonreview.config.TwilioInboundProperties;
 import com.salonreview.domain.BlockedNumber;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
+import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SmsReplyFlowRepository;
+import com.salonreview.repo.TwilioSmsConfigRepository;
 import com.salonreview.telegram.TelegramNotificationService;
 import com.salonreview.util.PhoneNumbers;
 import org.slf4j.Logger;
@@ -56,12 +58,14 @@ public class TwilioInboundSmsController {
     private final SmsMediaService mediaService;
     private final SmsReactionService reactionService;
     private final BusinessRepository businesses;
+    private final TwilioSmsConfigRepository twilioConfigs;
 
     public TwilioInboundSmsController(TwilioInboundProperties properties, SmsMessageLogService messageLogService,
                                        SmsReplyFlowRepository replyFlowRepository, CheckoutReviewReplyService replyService,
                                        TelegramNotificationService telegramService, MarketingContactsService contactsService,
                                        BlockedNumberRepository blockedNumberRepository, SmsMediaService mediaService,
-                                       SmsReactionService reactionService, BusinessRepository businesses) {
+                                       SmsReactionService reactionService, BusinessRepository businesses,
+                                       TwilioSmsConfigRepository twilioConfigs) {
         this.properties = properties;
         this.messageLogService = messageLogService;
         this.replyFlowRepository = replyFlowRepository;
@@ -72,6 +76,7 @@ public class TwilioInboundSmsController {
         this.mediaService = mediaService;
         this.reactionService = reactionService;
         this.businesses = businesses;
+        this.twilioConfigs = twilioConfigs;
     }
 
     @PostMapping(value = "/api/public/sms/inbound", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
@@ -82,10 +87,18 @@ public class TwilioInboundSmsController {
             return ResponseEntity.status(401).build();
         }
 
-        // Webhooks are unauthenticated (no session) and today's payload carries no business
-        // identifier of its own — see BusinessRepository#legacySmsBusiness, same interim stopgap
-        // as every other background/webhook SMS call site until real per-business routing exists.
-        Long businessId = businesses.legacySmsBusiness().getId();
+        // Webhooks are unauthenticated (no session), but Twilio's own "To" field (the salon's
+        // number the customer texted) is real business signal now that twilio_sms_config is
+        // business-scoped (V95/V103) — resolve the real business from it instead of hardcoding.
+        // Falls back to legacySmsBusiness() only for an unrecognized destination number, which
+        // shouldn't happen in practice but must not 500/drop the message if it ever does.
+        String to = params.get("To");
+        Long businessId = (to == null ? Optional.<TwilioSmsConfig>empty() : twilioConfigs.findByFromPhoneNumber(to))
+                .map(TwilioSmsConfig::getBusinessId)
+                .orElseGet(() -> {
+                    log.warn("Twilio inbound SMS to unrecognized number \"{}\" — falling back to legacySmsBusiness()", to);
+                    return businesses.legacySmsBusiness().getId();
+                });
         String from = params.get("From");
         String body = params.getOrDefault("Body", "");
         if (from == null || from.isBlank()) {

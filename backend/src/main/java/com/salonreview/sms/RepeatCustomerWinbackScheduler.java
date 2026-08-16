@@ -170,7 +170,7 @@ public class RepeatCustomerWinbackScheduler {
             return;
         }
 
-        if (!automationService.isEnabled(AUTOMATION_KEY)) {
+        if (!automationService.isEnabled(businessId, AUTOMATION_KEY)) {
             save(customer, phoneNumber, daysSinceLastVisit, providerChanged, null, null, RepeatCustomerWinbackSend.STATE_SKIPPED_DISABLED);
             return;
         }

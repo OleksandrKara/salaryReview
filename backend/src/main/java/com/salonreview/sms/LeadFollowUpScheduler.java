@@ -100,7 +100,7 @@ public class LeadFollowUpScheduler {
             save(contact, LeadFollowUpSend.STATE_SKIPPED_BOOKED);
             return;
         }
-        if (!automationService.isEnabled("lead_follow_up")) {
+        if (!automationService.isEnabled(businessId, "lead_follow_up")) {
             save(contact, LeadFollowUpSend.STATE_SKIPPED_DISABLED);
             return;
         }

@@ -38,7 +38,7 @@ class SmsAutomationServiceTest {
         messageRepository = mock(SmsMessageRepository.class);
         repeatCustomerWinbackSendRepository = mock(RepeatCustomerWinbackSendRepository.class);
         service = new SmsAutomationService(repository, messageRepository, repeatCustomerWinbackSendRepository);
-        when(repository.findById(anyString())).thenReturn(Optional.empty());
+        when(repository.findByBusinessIdAndAutomationKey(eq(BUSINESS_ID), anyString())).thenReturn(Optional.empty());
     }
 
     private SmsAutomationService.AutomationSummary find(String key) {
@@ -143,8 +143,8 @@ class SmsAutomationServiceTest {
     @Test
     @DisplayName("enabled state still reflects the DB row, independent of the new metrics")
     void enabledStateUnaffected() {
-        when(repository.findById("lead_follow_up"))
-                .thenReturn(Optional.of(SmsAutomation.builder().automationKey("lead_follow_up").enabled(true).build()));
+        when(repository.findByBusinessIdAndAutomationKey(BUSINESS_ID, "lead_follow_up"))
+                .thenReturn(Optional.of(SmsAutomation.builder().businessId(BUSINESS_ID).automationKey("lead_follow_up").enabled(true).build()));
 
         var summary = find("lead_follow_up");
 

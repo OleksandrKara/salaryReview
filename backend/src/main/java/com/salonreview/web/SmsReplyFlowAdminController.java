@@ -12,8 +12,8 @@ import org.springframework.web.bind.annotation.RestController;
  * OWNER-only manual recovery for a checkout-review {@code SmsReplyFlow} stuck in
  * {@code AWAITING_REPLY} — see {@link CheckoutReviewFlowRecoveryService}'s own doc for why this
  * exists. Falls under {@code /api/owner/settings/sms/**} — already OWNER-gated by
- * {@link com.salonreview.config.SecurityConfig} and Business-A-scoped by
- * {@link com.salonreview.config.SmsBusinessScopeFilter}, no new security config needed.
+ * {@link com.salonreview.config.SecurityConfig}, no new security config needed;
+ * {@code recoveryService.retry} itself verifies the flow belongs to the caller's business.
  */
 @RestController
 @RequestMapping("/api/owner/settings/sms/reply-flows")

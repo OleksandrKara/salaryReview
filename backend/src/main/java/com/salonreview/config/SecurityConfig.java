@@ -34,8 +34,7 @@ public class SecurityConfig {
     private final ObjectMapper json = new ObjectMapper();
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http, CurrentBusinessContext currentBusinessContext,
-                                     com.salonreview.repo.BusinessRepository businesses)
+    SecurityFilterChain filterChain(HttpSecurity http, CurrentBusinessContext currentBusinessContext)
             throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
@@ -46,11 +45,12 @@ public class SecurityConfig {
                 // CurrentBusinessContextFilter's own doc comment.
                 .addFilterAfter(new CurrentBusinessContextFilter(currentBusinessContext),
                         UsernamePasswordAuthenticationFilter.class)
-                // Live-incident fix (2026-08-15): sms_message/twilio_sms_config have no business_id
-                // yet, so a second business's OWNER could otherwise read Business A's SMS history and
-                // live Twilio credentials — see SmsBusinessScopeFilter's own doc comment.
-                .addFilterAfter(new SmsBusinessScopeFilter(currentBusinessContext, businesses),
-                        CurrentBusinessContextFilter.class)
+                // SmsBusinessScopeFilter (2026-08-15 live-incident fix, removed tasks.md 3.7
+                // 2026-08-16) used to block every business but A from sms_message/twilio_sms_config/
+                // telegram_notification_config/sms_automation entirely — those tables are now
+                // genuinely business-scoped (V95/V103/V104) and every controller reading them
+                // resolves via CurrentBusinessContext like everything else, so the blanket block is
+                // no longer needed.
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/info", "/api/login").permitAll()
                         // Spring Boot's internal error-rendering path: when a controller throws

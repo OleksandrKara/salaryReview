@@ -48,7 +48,7 @@ class TwilioSmsServiceTest {
         service = new TwilioSmsService(templateRegistry, configService, consentRepository, automationService,
                 messageLogService, client, blockedNumberRepository, mediaService);
 
-        when(automationService.isEnabled(any())).thenReturn(true);
+        when(automationService.isEnabled(any(), any())).thenReturn(true);
         when(blockedNumberRepository.existsById(any())).thenReturn(false);
         when(templateRegistry.find(TRANSACTIONAL_KEY))
                 .thenReturn(new SmsTemplate(TRANSACTIONAL_KEY, SmsMessageClass.TRANSACTIONAL, vars -> "transactional body"));
@@ -138,7 +138,7 @@ class TwilioSmsServiceTest {
         String key = "test_gated";
         when(templateRegistry.find(key)).thenReturn(
                 new SmsTemplate(key, SmsMessageClass.TRANSACTIONAL, "some_automation", vars -> "gated body"));
-        when(automationService.isEnabled("some_automation")).thenReturn(false);
+        when(automationService.isEnabled(BUSINESS_ID, "some_automation")).thenReturn(false);
 
         var result = service.sendTemplated(BUSINESS_ID, key, PHONE, Map.of());
 

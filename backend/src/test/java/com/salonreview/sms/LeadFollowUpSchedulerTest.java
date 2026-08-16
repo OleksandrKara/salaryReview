@@ -53,7 +53,7 @@ class LeadFollowUpSchedulerTest {
         scheduler = new LeadFollowUpScheduler(contactsRepository, sendRepository, squareClientProvider, businesses,
                 automationService, smsService);
 
-        when(automationService.isEnabled("lead_follow_up")).thenReturn(true);
+        when(automationService.isEnabled(1L, "lead_follow_up")).thenReturn(true);
         when(smsService.sendTemplated(any(), any(), any(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
     }
 
@@ -168,7 +168,7 @@ class LeadFollowUpSchedulerTest {
     @Test
     @DisplayName("automation disabled → skipped, no send attempt, writes SKIPPED_DISABLED")
     void disabledAutomationSkips() {
-        when(automationService.isEnabled("lead_follow_up")).thenReturn(false);
+        when(automationService.isEnabled(1L, "lead_follow_up")).thenReturn(false);
         RawContact c = contact(UUID.randomUUID(), "Jane", "cust1");
         givenPending(c);
         when(square.bookingsForCustomer(eq("cust1"), any())).thenReturn(List.of());
