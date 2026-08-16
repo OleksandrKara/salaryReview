@@ -1,10 +1,26 @@
 import { serverApi } from '../../lib/serverApi';
 import PageHeader from '../../components/PageHeader';
+import SetupRequiredNotice from '../../components/SetupRequiredNotice';
 import PrepaidManager from './PrepaidManager';
 
 // Owner/manager prepaid packages. The backend gates /api/prepaid by role; the proxy keeps providers
 // out of /admin. A package belongs to a customer; any provider's visit can draw it down.
 export default async function PrepaidPage() {
+  const squareConnection = await serverApi.getSquareConnection();
+  if (!squareConnection.accessTokenSet) {
+    return (
+      <main className="mx-auto max-w-4xl p-4 sm:p-8">
+        <PageHeader title="Prepaid packages" />
+        <SetupRequiredNotice
+          title="Connect Square to manage prepaid packages"
+          message="Prepaid packages are matched against real Square bookings and payments, which needs a Square connection first."
+          ctaHref="/owner/settings/square"
+          ctaLabel="Connect Square"
+        />
+      </main>
+    );
+  }
+
   const packages = await serverApi.listPrepaid();
 
   return (

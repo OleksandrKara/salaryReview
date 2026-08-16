@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { serverApi } from '../../lib/serverApi';
 import PageHeader from '../../components/PageHeader';
+import SetupRequiredNotice from '../../components/SetupRequiredNotice';
 import RetentionControls from './RetentionControls';
 import NewReturningChart from './NewReturningChart';
 import ProviderScorecard, { rankProviders, totalScorecard } from './ProviderScorecard';
@@ -21,6 +22,22 @@ export default async function RetentionPage({
   const me = await serverApi.getMe();
   if (me.role === 'PROVIDER') redirect('/me');
   if (me.role === 'ADS_MANAGER') redirect('/owner/marketing');
+
+  // Managers can't reach the Square settings page — fails open (see /admin/redos's own comment).
+  const squareConnection = await serverApi.getSquareConnection().catch(() => null);
+  if (squareConnection && !squareConnection.accessTokenSet) {
+    return (
+      <main className="mx-auto max-w-6xl p-4 sm:p-8">
+        <PageHeader title="Provider retention" role={me.role} language={me.preferredLanguage} />
+        <SetupRequiredNotice
+          title="Connect Square to see retention"
+          message="Retention is calculated from real Square booking history, which needs a Square connection first."
+          ctaHref={me.role === 'OWNER' ? '/owner/settings/square' : undefined}
+          ctaLabel={me.role === 'OWNER' ? 'Connect Square' : undefined}
+        />
+      </main>
+    );
+  }
 
   const sp = await searchParams;
   const now = new Date();

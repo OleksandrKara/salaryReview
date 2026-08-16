@@ -229,13 +229,18 @@ changing behavior for existing callers; `SetupRequiredNotice` is the reusable em
       touching these pages at all. `/owner/overview/expenses/**`, `/owner/retention`,
       `/admin/manual-adjustments` not yet individually re-verified against this same empirical test —
       assume "probably also degrades gracefully already" only after checking, not from the pattern.
-- [ ] 6b.3b **Real, separate, lower-priority gap**: the pages in 6b.3a don't crash, but a brand-new
-      business sees an unexplained wall of zeros/nulls with no indication *why* — e.g. `/owner/overview`
-      renders 12 months of `cardRevenue: null` etc. with no "connect Square" prompt anywhere. Fixing
-      this needs a different mechanism than 6b.1/6b.2 (there's no exception to catch): check
-      `serverApi.getSquareConnection().accessTokenSet` up front and render `SetupRequiredNotice`
-      preemptively when false, before making the now-pointless data call at all. Worth doing, but a UX
-      polish task, not a crash fix — deprioritized below 2.6/3.7.
+- [x] 6b.3b Fixed via the preemptive-check mechanism its own note above described: `/owner/overview`,
+      `/owner/overview/net`, `/admin/prepaid`, `/admin/owner-customers`, `/admin/redos`,
+      `/owner/marketing`, `/owner/retention` all now check `serverApi.getSquareConnection()
+      .accessTokenSet` up front and render `SetupRequiredNotice` before making the (now-pointless)
+      data call. `/admin/redos`, `/owner/marketing`, `/owner/retention` are reachable by MANAGER/
+      ADS_MANAGER, who can't call `/owner/settings/square` (OWNER-only) — that call `.catch(() =>
+      null)`s and fails open (skips the check, falls through to the normal page) for those roles,
+      same reasoning as the CTA link itself being conditional on `me.role === 'OWNER'`. Verified in
+      an isolated instance: all 7 pages show the notice for an unconnected business, all 7 render
+      normally for Business A (connected) — no regression. `/owner/overview/expenses/**` and
+      `/admin/manual-adjustments` confirmed not Square-dependent at all (no `SquareClientProvider` in
+      their service chain) — correctly left untouched.
 - [ ] 6b.4 RAG assistant, Telegram settings, KB articles, SOPs — once 2.6 gives these real
       per-business scoping (rather than the current Business-A-only block), they'll need this same
       "not set up yet" treatment too, not just a bare 403/500, the first time a second business
@@ -249,7 +254,10 @@ changing behavior for existing callers; `SetupRequiredNotice` is the reusable em
       admin UI instead
 - [x] 7.2 Enter Business B's `salon_config` values — 45%/55% commission, tier bonus off, 3.5% card tip
       fee, via `/owner/settings/business` (PR #368)
-- [ ] 7.3 Invite Business B's ~2 providers as `app_user` rows with `PROVIDER` role — not yet done
+- [ ] 7.3 Invite Business B's ~2 providers as `app_user` rows with `PROVIDER` role — not yet done,
+      but confirmed no code is needed: `/admin/users` + `UserController` were already fully
+      business-scoped (`currentBusinessContext.id()` throughout) before tonight — this is purely a
+      user action for the owner to take via the existing UI whenever ready
 - [x] 7.4 Business_feature-style gating isn't built (2.6/4.3 still open), so this landed as a stricter
       "off entirely, not configurable per-business yet" default: SMS/Telegram/KB/RAG/SOPs/staff-docs
       all 403 or are otherwise unusable for Business B until 2.6 closes — see that task for why this
