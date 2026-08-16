@@ -1,6 +1,7 @@
 package com.salonreview.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.sms.TwilioSmsConfigService;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +31,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class TwilioSmsSettingsControllerTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     private TwilioSmsConfigService configService;
     private MockMvc mvc;
     private final ObjectMapper json = new ObjectMapper();
@@ -37,14 +40,17 @@ class TwilioSmsSettingsControllerTest {
     @BeforeEach
     void setUp() {
         configService = mock(TwilioSmsConfigService.class);
-        TwilioSmsSettingsController controller = new TwilioSmsSettingsController(configService);
+        CurrentBusinessContext currentBusinessContext = mock(CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(BUSINESS_ID);
+        TwilioSmsSettingsController controller = new TwilioSmsSettingsController(configService, currentBusinessContext);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
     @Test
     @DisplayName("GET masks the API key and secret, never the real values")
     void getMasksSecrets() throws Exception {
-        when(configService.get()).thenReturn(TwilioSmsConfig.builder()
+        when(configService.get(BUSINESS_ID)).thenReturn(TwilioSmsConfig.builder()
+                .businessId(BUSINESS_ID)
                 .accountSid("AC1234567890abcdef")
                 .apiKey("SK1234567890abcdef")
                 .apiSecret("supersecretvalue123")
@@ -71,7 +77,7 @@ class TwilioSmsSettingsControllerTest {
     @Test
     @DisplayName("GET with no credentials set returns null masks and *Set:false")
     void getUnsetCredentials() throws Exception {
-        when(configService.get()).thenReturn(TwilioSmsConfig.builder().build());
+        when(configService.get(BUSINESS_ID)).thenReturn(TwilioSmsConfig.builder().businessId(BUSINESS_ID).build());
 
         mvc.perform(get("/api/owner/settings/sms"))
                 .andExpect(status().isOk())
@@ -82,8 +88,8 @@ class TwilioSmsSettingsControllerTest {
     @Test
     @DisplayName("PUT with null fields passes null through unchanged")
     void putNullFieldsPassThrough() throws Exception {
-        when(configService.update(isNull(), isNull(), isNull(), eq("+15559999999"), any()))
-                .thenReturn(TwilioSmsConfig.builder().fromPhoneNumber("+15559999999").build());
+        when(configService.update(isNull(), isNull(), isNull(), eq("+15559999999"), any(), eq(BUSINESS_ID)))
+                .thenReturn(TwilioSmsConfig.builder().businessId(BUSINESS_ID).fromPhoneNumber("+15559999999").build());
 
         Principal owner = () -> "owner";
         mvc.perform(put("/api/owner/settings/sms")
@@ -92,6 +98,6 @@ class TwilioSmsSettingsControllerTest {
                         .content(json.writeValueAsString(Map.of("fromPhoneNumber", "+15559999999"))))
                 .andExpect(status().isOk());
 
-        verify(configService).update(isNull(), isNull(), isNull(), eq("+15559999999"), any());
+        verify(configService).update(isNull(), isNull(), isNull(), eq("+15559999999"), any(), eq(BUSINESS_ID));
     }
 }

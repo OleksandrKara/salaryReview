@@ -1,5 +1,6 @@
 package com.salonreview.web;
 
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.sms.TwilioSmsConfigService;
 import org.springframework.http.ResponseEntity;
@@ -12,27 +13,33 @@ import java.time.Instant;
  * OWNER-only settings for outbound SMS (Twilio). Falls under the existing {@code /api/owner/**}
  * matcher in {@link com.salonreview.config.SecurityConfig} — no new security config needed. GET
  * only ever returns masked key/secret values; the frontend must not PUT those masked values back
- * (see {@link TwilioSmsConfigService#update}'s null-vs-empty-string contract).
+ * (see {@link TwilioSmsConfigService#update}'s null-vs-empty-string contract). In practice only
+ * Business A can ever reach this controller ({@link com.salonreview.config.SmsBusinessScopeFilter}
+ * blocks every other business), but resolving the business via the session rather than hardcoding
+ * it keeps this controller itself correct independent of that filter.
  */
 @RestController
 @RequestMapping("/api/owner/settings/sms")
 public class TwilioSmsSettingsController {
 
     private final TwilioSmsConfigService configService;
+    private final CurrentBusinessContext currentBusinessContext;
 
-    public TwilioSmsSettingsController(TwilioSmsConfigService configService) {
+    public TwilioSmsSettingsController(TwilioSmsConfigService configService, CurrentBusinessContext currentBusinessContext) {
         this.configService = configService;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     @GetMapping
     public ResponseEntity<TwilioSmsSettingsDto> get() {
-        return ResponseEntity.ok(toDto(configService.get()));
+        return ResponseEntity.ok(toDto(configService.get(currentBusinessContext.id())));
     }
 
     @PutMapping
     public ResponseEntity<TwilioSmsSettingsDto> update(@RequestBody TwilioSmsSettingsUpdateRequest body, Principal principal) {
         TwilioSmsConfig updated = configService.update(
-                body.accountSid(), body.apiKey(), body.apiSecret(), body.fromPhoneNumber(), principal.getName());
+                body.accountSid(), body.apiKey(), body.apiSecret(), body.fromPhoneNumber(), principal.getName(),
+                currentBusinessContext.id());
         return ResponseEntity.ok(toDto(updated));
     }
 

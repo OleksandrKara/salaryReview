@@ -77,7 +77,7 @@ class LapsedCustomerWinbackSchedulerTest {
                 .thenReturn(reserved);
         TwilioSmsConfig configured = mock(TwilioSmsConfig.class);
         when(configured.isConfigured()).thenReturn(true);
-        when(configService.get()).thenReturn(configured);
+        when(configService.getForAutomation()).thenReturn(configured);
     }
 
     private static LapsedCustomerWinbackEligibilityRepository.EligibleCustomer eligible(String technicianName) {

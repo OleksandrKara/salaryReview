@@ -101,7 +101,7 @@ class SmsMediaServiceTest {
     @Test
     @DisplayName("ingestInboundMedia: unconfigured credentials → skipped, nothing fetched")
     void ingestInboundMediaUnconfiguredSkips() {
-        when(configService.get()).thenReturn(TwilioSmsConfig.builder().build());
+        when(configService.getForAutomation()).thenReturn(TwilioSmsConfig.builder().build());
 
         service.ingestInboundMedia(1L, Map.of("NumMedia", "1", "MediaUrl0", "https://api.twilio.com/m0"));
 
@@ -111,7 +111,7 @@ class SmsMediaServiceTest {
     @Test
     @DisplayName("ingestInboundMedia: fetches and stores each attachment by index")
     void ingestInboundMediaFetchesAndStoresEach() throws Exception {
-        when(configService.get()).thenReturn(configured());
+        when(configService.getForAutomation()).thenReturn(configured());
         when(client.fetchMedia(any(), eq("https://api.twilio.com/m0"))).thenReturn(new byte[]{1});
         when(client.fetchMedia(any(), eq("https://api.twilio.com/m1"))).thenReturn(new byte[]{2});
         when(repository.existsByAccessToken(any())).thenReturn(false);
@@ -130,7 +130,7 @@ class SmsMediaServiceTest {
     @Test
     @DisplayName("ingestInboundMedia: one attachment failing to fetch doesn't stop the others")
     void ingestInboundMediaOneFailureDoesNotStopOthers() throws Exception {
-        when(configService.get()).thenReturn(configured());
+        when(configService.getForAutomation()).thenReturn(configured());
         when(client.fetchMedia(any(), eq("https://api.twilio.com/m0"))).thenThrow(new java.io.IOException("boom"));
         when(client.fetchMedia(any(), eq("https://api.twilio.com/m1"))).thenReturn(new byte[]{2});
         when(repository.existsByAccessToken(any())).thenReturn(false);

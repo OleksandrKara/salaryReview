@@ -88,22 +88,31 @@ this file is the plan, not yet executed.
       to A never returns a B row and vice versa
 - [ ] 2.6 **NEW, found 2026-08-15 as a live incident** — same "no FK path, needs a bolted-on
       `business_id` column" gap as 2.4, but never inventoried because these tables predate any
-      multi-tenant work: `sms_message`, `twilio_sms_config`, `telegram_config`, `kb_articles`,
-      `kb_request`, `rag_document`, `rag_chunk`, `rag_agent_config`, `rag_suggestion_cache`,
-      `rag_redaction_audit`, `sops`, `sop_versions`, `sop_acknowledgments`, `staff_documents` all have
-      zero tenant boundary. Confirmed exploitable: the moment AK PMU's OWNER account existed, it could
-      read Business A's SMS conversations and live Twilio/Telegram credentials — reported live by the
-      owner and fixed same-day for those three specifically (`SmsBusinessScopeFilter`, PR #370): those
-      paths now 403 for any business but Business A, the same stopgap shape as
-      `BusinessRepository#legacySmsBusiness`. **KB articles, RAG documents/chunks, SOPs, and staff
-      documents were deliberately left unfixed** — blocking them the same way would leave a real
-      second business unable to use its own KB/SOPs/documents at all, which is a product decision, not
-      a security one; scope was judged non-critical while there are only two businesses and this is
-      tracked here instead of patched under pressure. **Hard gate: this task must be fully closed
-      (real `business_id` columns + filtered queries + the cross-tenant isolation suite in 2.5
-      extended to cover these tables) before Phase 7 runs for a third business** — the stopgap
-      approach (allow-list one hardcoded business, 403 everyone else) does not scale past two
-      businesses and must not be repeated as a shortcut when business 3 is onboarded.
+      multi-tenant work: `sms_message`, `twilio_sms_config`, `telegram_notification_config`,
+      `kb_articles`, `kb_request`, `rag_document`, `rag_chunk`, `rag_agent_config`,
+      `rag_suggestion_cache`, `rag_redaction_audit`, `sops`, `sop_versions`, `sop_acknowledgments`,
+      `staff_documents` all have zero tenant boundary. Confirmed exploitable: the moment AK PMU's
+      OWNER account existed, it could read Business A's SMS conversations and live Twilio/Telegram
+      credentials — reported live by the owner and fixed same-day for those three specifically
+      (`SmsBusinessScopeFilter`, PR #370): those paths now 403 for any business but Business A, the
+      same stopgap shape as `BusinessRepository#legacySmsBusiness`. **`twilio_sms_config` and
+      `telegram_notification_config` are now genuinely business-scoped** (V95/V96 — real `id BIGINT
+      IDENTITY` PK + `business_id BIGINT UNIQUE NOT NULL FK`, replacing the boolean-singleton PK;
+      `TwilioSmsSettingsController`/`TelegramSettingsController` resolve via
+      `CurrentBusinessContext`, verified in an isolated environment restored from a real backup). The
+      `SmsBusinessScopeFilter` 403 stopgap is left in place for now — the ~15 automation call sites
+      (schedulers, webhooks) still resolve via `legacySmsBusiness()` rather than real per-business
+      iteration (tracked in 3.7), so a second business's config, even though storable, isn't reachable
+      by automation yet. `sms_message` itself is still unscoped (still behind the filter, no
+      `business_id` column). **KB articles, RAG documents/chunks, SOPs, and staff documents were
+      deliberately left unfixed** — blocking them the same way would leave a real second business
+      unable to use its own KB/SOPs/documents at all, which is a product decision, not a security
+      one; scope was judged non-critical while there are only two businesses and this is tracked here
+      instead of patched under pressure. **Hard gate: this task must be fully closed (real
+      `business_id` columns + filtered queries + the cross-tenant isolation suite in 2.5 extended to
+      cover these tables) before Phase 7 runs for a third business** — the stopgap approach
+      (allow-list one hardcoded business, 403 everyone else) does not scale past two businesses and
+      must not be repeated as a shortcut when business 3 is onboarded.
 
 ## Phase 3 — Square multi-account support
 
@@ -135,13 +144,17 @@ this file is the plan, not yet executed.
       `SameDayRebookingGroupExpiryScheduler`, `SmsReplyFlowScheduler`) plus
       `CheckoutReviewTriggerService`, `TechnicianNameResolver`, and `InternalNotificationController` —
       iterate all businesses with an active `square_connection` (SMS ones: also an active
-      `twilio_sms_config`, once that's business-scoped per 2.6); ShedLock keys gain `-business-{id}`
-      suffix (`config/SchedulerLockConfig.java`). **Interim stopgap shipped 2026-08-15**: the SMS/
-      webhook/notification call sites now resolve `BusinessRepository#legacySmsBusiness` (hardcoded to
-      Business A) instead of crashing when a second business exists — correct only because `sms_message`/
-      `twilio_sms_config` are still global (2.6) so there's no second business's SMS data to route to
-      yet regardless. This does not scale to a third business's SMS needs and must be replaced by real
-      per-business iteration here, not extended with a second hardcoded business id.
+      `twilio_sms_config`, now business-scoped per 2.6 — `getForAutomation()` on
+      `TwilioSmsConfigService`/`TelegramConfigService` resolves `legacySmsBusiness()` internally so
+      call sites only needed a one-line rename, not real iteration); ShedLock keys gain
+      `-business-{id}` suffix (`config/SchedulerLockConfig.java`). **Interim stopgap shipped
+      2026-08-15**: the SMS/webhook/notification call sites still resolve
+      `BusinessRepository#legacySmsBusiness` (hardcoded to Business A) instead of crashing when a
+      second business exists — correct only because `sms_message` is still global (2.6) so there's no
+      second business's SMS data to route to yet regardless, even though the config tables
+      themselves could now hold a second business's row. This does not scale to a third business's
+      SMS needs and must be replaced by real per-business iteration here, not extended with a second
+      hardcoded business id.
 - [ ] 3.8 `/api/sync` (manual sync button) becomes business-scoped — `invalidate()` only clears the
       calling business's `SquareClient` cache instance, never the whole registry
 - [ ] 3.9 Integration tests: two businesses' `SquareClientProvider`-resolved clients never share cache

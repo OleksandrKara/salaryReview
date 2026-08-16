@@ -99,7 +99,7 @@ public class CheckoutReviewReplyService {
     }
 
     private void sendNow(SmsReplyFlow flow, SmsMessage reserved, String body) {
-        TwilioSmsConfig config = configService.get();
+        TwilioSmsConfig config = configService.getForAutomation();
         if (!config.isConfigured()) {
             log.info("Checkout-review branch reply skipped — Twilio credentials not configured");
             updateReserved(reserved, body, false, "not_configured", null);

@@ -6,10 +6,12 @@ import lombok.*;
 import java.time.Instant;
 
 /**
- * Single-row runtime config for the 4-hand-request Telegram alert (see V45). Owner-editable at
- * {@code /api/owner/settings/telegram}; the bot token never leaves this backend — mani and
- * akluxnails-home call {@code POST /api/internal/notifications/four-hand-request} instead of
- * fetching this config directly.
+ * Per-business runtime config for the 4-hand-request Telegram alert (see V45, business-scoped by
+ * V96). Owner-editable at {@code /api/owner/settings/telegram}; the bot token never leaves this
+ * backend — mani and akluxnails-home call {@code POST /api/internal/notifications/four-hand-request}
+ * instead of fetching this config directly. Every call site with no session resolves
+ * {@code businessId} via {@link com.salonreview.repo.BusinessRepository#legacySmsBusiness} — see
+ * {@link com.salonreview.telegram.TelegramConfigService#getForAutomation}.
  */
 @Entity
 @Table(name = "telegram_notification_config")
@@ -18,8 +20,11 @@ import java.time.Instant;
 public class TelegramNotificationConfig {
 
     @Id
-    @Builder.Default
-    private Boolean id = Boolean.TRUE;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "business_id", nullable = false, unique = true)
+    private Long businessId;
 
     @Column(name = "bot_token")
     private String botToken;

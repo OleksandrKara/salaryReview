@@ -75,7 +75,7 @@ class SameDayRebookingSchedulerTest {
                 .thenReturn(reserved);
         TwilioSmsConfig configured = mock(TwilioSmsConfig.class);
         when(configured.isConfigured()).thenReturn(true);
-        when(configService.get()).thenReturn(configured);
+        when(configService.getForAutomation()).thenReturn(configured);
     }
 
     private static SameDayRebookingSend send(Instant sendDueAt, Instant promoExpiresAt) {

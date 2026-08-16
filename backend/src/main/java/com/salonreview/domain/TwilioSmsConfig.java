@@ -6,9 +6,12 @@ import lombok.*;
 import java.time.Instant;
 
 /**
- * Single-row runtime config for outbound SMS via Twilio (see V46). Owner-editable at
- * {@code /api/owner/settings/sms}; mani and akluxnails-home never see these credentials — they
- * call {@code POST /api/internal/notifications/sms/send} instead.
+ * Per-business runtime config for outbound SMS via Twilio (see V46, business-scoped by V95).
+ * Owner-editable at {@code /api/owner/settings/sms}; mani and akluxnails-home never see these
+ * credentials — they call {@code POST /api/internal/notifications/sms/send} instead. Every
+ * automation/scheduler call site with no session resolves {@code businessId} via
+ * {@link com.salonreview.repo.BusinessRepository#legacySmsBusiness} — see
+ * {@link com.salonreview.sms.TwilioSmsConfigService#getForAutomation}.
  */
 @Entity
 @Table(name = "twilio_sms_config")
@@ -17,8 +20,11 @@ import java.time.Instant;
 public class TwilioSmsConfig {
 
     @Id
-    @Builder.Default
-    private Boolean id = Boolean.TRUE;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "business_id", nullable = false, unique = true)
+    private Long businessId;
 
     @Column(name = "account_sid")
     private String accountSid;

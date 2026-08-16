@@ -75,7 +75,7 @@ class CheckoutReviewReplyServiceTest {
     @Test
     @DisplayName("positive branch: reserves a row, body contains a self-referencing /r/{token} short link to the Google review target, sends via Twilio")
     void positiveBranchSendsGoogleReviewLink() throws Exception {
-        when(configService.get()).thenReturn(configured());
+        when(configService.getForAutomation()).thenReturn(configured());
         when(client.send(any(), eq(PHONE), anyString())).thenReturn("SM_SID_1");
 
         sendBranchReplyAndFireDelayedTask(flow(), true);
@@ -102,7 +102,7 @@ class CheckoutReviewReplyServiceTest {
     @Test
     @DisplayName("positive branch, repeat reviewer (already clicked the Google review link before): sends the feedback-form link with different copy, not the Google review link again")
     void repeatReviewerGetsFeedbackFormInstead() throws Exception {
-        when(configService.get()).thenReturn(configured());
+        when(configService.getForAutomation()).thenReturn(configured());
         when(client.send(any(), eq(PHONE), anyString())).thenReturn("SM_SID_3");
         when(messageLogService.hasClickedLinkTarget(PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
 
@@ -122,7 +122,7 @@ class CheckoutReviewReplyServiceTest {
     @Test
     @DisplayName("negative branch: body contains a self-referencing short link to the feedback-form target")
     void negativeBranchSendsFeedbackFormLink() throws Exception {
-        when(configService.get()).thenReturn(configured());
+        when(configService.getForAutomation()).thenReturn(configured());
         when(client.send(any(), eq(PHONE), anyString())).thenReturn("SM_SID_2");
 
         sendBranchReplyAndFireDelayedTask(flow(), false);
@@ -140,7 +140,7 @@ class CheckoutReviewReplyServiceTest {
     @Test
     @DisplayName("Twilio not configured → reserved row finalized as NOT_SENT with reason, never calls the client")
     void notConfiguredSkipsSend() throws Exception {
-        when(configService.get()).thenReturn(TwilioSmsConfig.builder().build());
+        when(configService.getForAutomation()).thenReturn(TwilioSmsConfig.builder().build());
 
         sendBranchReplyAndFireDelayedTask(flow(), true);
 
@@ -154,7 +154,7 @@ class CheckoutReviewReplyServiceTest {
     @Test
     @DisplayName("Twilio client throws → reserved row finalized as NOT_SENT/send_failed, exception doesn't propagate")
     void sendFailureIsCaughtAndLogged() throws Exception {
-        when(configService.get()).thenReturn(configured());
+        when(configService.getForAutomation()).thenReturn(configured());
         doThrow(new java.io.IOException("boom")).when(client).send(any(), any(), any());
 
         sendBranchReplyAndFireDelayedTask(flow(), true);
@@ -168,7 +168,7 @@ class CheckoutReviewReplyServiceTest {
     @Test
     @DisplayName("sendBranchReply returns before the Twilio send happens — the send only fires once the scheduled task runs")
     void sendDoesNotHappenSynchronously() throws Exception {
-        when(configService.get()).thenReturn(configured());
+        when(configService.getForAutomation()).thenReturn(configured());
 
         service.sendBranchReply(flow(), true);
 

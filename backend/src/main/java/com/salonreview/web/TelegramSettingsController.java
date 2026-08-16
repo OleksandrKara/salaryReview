@@ -1,5 +1,6 @@
 package com.salonreview.web;
 
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.domain.TelegramNotificationConfig;
 import com.salonreview.telegram.TelegramConfigService;
 import org.springframework.http.ResponseEntity;
@@ -12,26 +13,32 @@ import java.time.Instant;
  * OWNER-only settings for the 4-hand-request Telegram alert. Falls under the existing
  * {@code /api/owner/**} matcher in {@link com.salonreview.config.SecurityConfig} — no new security
  * config needed. GET only ever returns a masked token; the frontend must not PUT that masked value
- * back (see {@link TelegramConfigService#update}'s null-vs-empty-string contract).
+ * back (see {@link TelegramConfigService#update}'s null-vs-empty-string contract). In practice only
+ * Business A can ever reach this controller ({@link com.salonreview.config.SmsBusinessScopeFilter}
+ * blocks every other business), but resolving the business via the session rather than hardcoding
+ * it keeps this controller itself correct independent of that filter.
  */
 @RestController
 @RequestMapping("/api/owner/settings/telegram")
 public class TelegramSettingsController {
 
     private final TelegramConfigService configService;
+    private final CurrentBusinessContext currentBusinessContext;
 
-    public TelegramSettingsController(TelegramConfigService configService) {
+    public TelegramSettingsController(TelegramConfigService configService, CurrentBusinessContext currentBusinessContext) {
         this.configService = configService;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     @GetMapping
     public ResponseEntity<TelegramSettingsDto> get() {
-        return ResponseEntity.ok(toDto(configService.get()));
+        return ResponseEntity.ok(toDto(configService.get(currentBusinessContext.id())));
     }
 
     @PutMapping
     public ResponseEntity<TelegramSettingsDto> update(@RequestBody TelegramSettingsUpdateRequest body, Principal principal) {
-        return ResponseEntity.ok(toDto(configService.update(body.botToken(), body.chatId(), principal.getName())));
+        return ResponseEntity.ok(toDto(configService.update(body.botToken(), body.chatId(), principal.getName(),
+                currentBusinessContext.id())));
     }
 
     private static TelegramSettingsDto toDto(TelegramNotificationConfig cfg) {

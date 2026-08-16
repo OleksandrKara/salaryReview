@@ -195,7 +195,7 @@ public class LapsedCustomerWinbackScheduler {
                 ? marketingBody(name, technician, shortLink)
                 : transactionalBody(name, technician, shortLink);
 
-        TwilioSmsConfig config = configService.get();
+        TwilioSmsConfig config = configService.getForAutomation();
         if (!config.isConfigured()) {
             log.info("{} skipped — Twilio credentials not configured", templateKey);
             updateReserved(reserved, body, false, "not_configured", null);

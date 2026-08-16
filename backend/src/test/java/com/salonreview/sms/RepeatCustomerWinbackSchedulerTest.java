@@ -78,7 +78,7 @@ class RepeatCustomerWinbackSchedulerTest {
                 .thenReturn(reserved);
         TwilioSmsConfig configured = mock(TwilioSmsConfig.class);
         when(configured.isConfigured()).thenReturn(true);
-        when(configService.get()).thenReturn(configured);
+        when(configService.getForAutomation()).thenReturn(configured);
         when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
     }
 
