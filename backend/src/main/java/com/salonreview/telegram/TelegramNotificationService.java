@@ -56,7 +56,7 @@ public class TelegramNotificationService {
 
     /** Returns {@code true} only on a confirmed successful send — never throws. */
     public boolean sendFourHandRequestAlert(FourHandRequestNotification n) {
-        TelegramNotificationConfig cfg = configService.get();
+        TelegramNotificationConfig cfg = configService.getForAutomation();
         String token = cfg.getBotToken();
         String chatId = cfg.getChatId();
         if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
@@ -95,7 +95,7 @@ public class TelegramNotificationService {
      * so reading the alert and replying is one tap, not "open the app, find the right
      * conversation." Never throws, same contract as {@link #sendFourHandRequestAlert}. */
     public boolean sendInboundSmsAlert(String phoneNumber, String customerName, String body, String automationKey) {
-        TelegramNotificationConfig cfg = configService.get();
+        TelegramNotificationConfig cfg = configService.getForAutomation();
         String token = cfg.getBotToken();
         String chatId = cfg.getChatId();
         if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
@@ -176,7 +176,7 @@ public class TelegramNotificationService {
      * the old manual "Same day rebooking discount" (would stack to $20 off). Never throws, same
      * contract as {@link #sendFourHandRequestAlert}. */
     public boolean sendRebookingPromoAlert(String customerName, String phoneNumber, String appointmentStartAt) {
-        TelegramNotificationConfig cfg = configService.get();
+        TelegramNotificationConfig cfg = configService.getForAutomation();
         String token = cfg.getBotToken();
         String chatId = cfg.getChatId();
         if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {

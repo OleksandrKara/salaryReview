@@ -30,7 +30,7 @@ class TelegramNotificationServiceTest {
     @DisplayName("blank bot token → false, no exception")
     void blankBotTokenSkips() {
         TelegramConfigService configService = mock(TelegramConfigService.class);
-        when(configService.get()).thenReturn(
+        when(configService.getForAutomation()).thenReturn(
                 TelegramNotificationConfig.builder().botToken(null).chatId("999888777").build());
 
         assertThat(service(configService).sendFourHandRequestAlert(NOTIFICATION)).isFalse();
@@ -40,7 +40,7 @@ class TelegramNotificationServiceTest {
     @DisplayName("blank chat id → false, no exception")
     void blankChatIdSkips() {
         TelegramConfigService configService = mock(TelegramConfigService.class);
-        when(configService.get()).thenReturn(
+        when(configService.getForAutomation()).thenReturn(
                 TelegramNotificationConfig.builder().botToken("some-token").chatId("").build());
 
         assertThat(service(configService).sendFourHandRequestAlert(NOTIFICATION)).isFalse();
@@ -83,7 +83,7 @@ class TelegramNotificationServiceTest {
     @DisplayName("inbound-SMS alert: blank bot token → false, no exception")
     void inboundSmsAlertBlankBotTokenSkips() {
         TelegramConfigService configService = mock(TelegramConfigService.class);
-        when(configService.get()).thenReturn(
+        when(configService.getForAutomation()).thenReturn(
                 TelegramNotificationConfig.builder().botToken(null).chatId("999888777").build());
 
         assertThat(service(configService).sendInboundSmsAlert("+15551234567", "Jane Doe", "hi", null)).isFalse();
@@ -93,7 +93,7 @@ class TelegramNotificationServiceTest {
     @DisplayName("inbound-SMS alert: blank chat id → false, no exception")
     void inboundSmsAlertBlankChatIdSkips() {
         TelegramConfigService configService = mock(TelegramConfigService.class);
-        when(configService.get()).thenReturn(
+        when(configService.getForAutomation()).thenReturn(
                 TelegramNotificationConfig.builder().botToken("some-token").chatId("").build());
 
         assertThat(service(configService).sendInboundSmsAlert("+15551234567", "Jane Doe", "hi", "checkout_review_request"))

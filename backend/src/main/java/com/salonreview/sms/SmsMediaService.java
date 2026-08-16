@@ -94,7 +94,7 @@ public class SmsMediaService {
         if (numMedia == 0) {
             return;
         }
-        TwilioSmsConfig config = configService.get();
+        TwilioSmsConfig config = configService.getForAutomation();
         if (!config.isConfigured()) {
             log.warn("Inbound MMS with {} attachment(s) on message {} skipped — Twilio credentials not configured",
                     numMedia, smsMessageId);

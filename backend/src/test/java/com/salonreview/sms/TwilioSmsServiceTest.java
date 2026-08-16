@@ -74,7 +74,7 @@ class TwilioSmsServiceTest {
     @Test
     @DisplayName("TRANSACTIONAL template sends regardless of consent")
     void transactionalSendsWithoutConsentCheck() throws Exception {
-        when(configService.get()).thenReturn(configured());
+        when(configService.getForAutomation()).thenReturn(configured());
 
         var result = service.sendTemplated(TRANSACTIONAL_KEY, PHONE, Map.of());
 
@@ -99,7 +99,7 @@ class TwilioSmsServiceTest {
     @DisplayName("MARKETING template sent when consent is true and credentials are configured")
     void marketingSentWithConsent() throws Exception {
         when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(true);
-        when(configService.get()).thenReturn(configured());
+        when(configService.getForAutomation()).thenReturn(configured());
 
         var result = service.sendTemplated(MARKETING_KEY, PHONE, Map.of());
 
@@ -110,7 +110,7 @@ class TwilioSmsServiceTest {
     @Test
     @DisplayName("unset credentials → not_configured, no HTTP attempt")
     void unconfiguredCredentialsSkipsSend() throws Exception {
-        when(configService.get()).thenReturn(TwilioSmsConfig.builder().build());
+        when(configService.getForAutomation()).thenReturn(TwilioSmsConfig.builder().build());
 
         var result = service.sendTemplated(TRANSACTIONAL_KEY, PHONE, Map.of());
 
@@ -122,7 +122,7 @@ class TwilioSmsServiceTest {
     @Test
     @DisplayName("Twilio client failure → send_failed, never throws")
     void clientFailureReturnsSendFailed() throws Exception {
-        when(configService.get()).thenReturn(configured());
+        when(configService.getForAutomation()).thenReturn(configured());
         doThrow(new java.io.IOException("boom")).when(client).send(any(), any(), any());
 
         var result = service.sendTemplated(TRANSACTIONAL_KEY, PHONE, Map.of());
@@ -149,7 +149,7 @@ class TwilioSmsServiceTest {
     @Test
     @DisplayName("Every send attempt, including blocked ones, is logged to the activity log")
     void everyAttemptIsLogged() throws Exception {
-        when(configService.get()).thenReturn(configured());
+        when(configService.getForAutomation()).thenReturn(configured());
 
         service.sendTemplated(TRANSACTIONAL_KEY, PHONE, Map.of());
         verify(messageLogService).logOutbound(eq(TRANSACTIONAL_KEY), any(), eq(PHONE), eq("transactional body"),
@@ -163,7 +163,7 @@ class TwilioSmsServiceTest {
     @Test
     @DisplayName("sendManual: sends a freeform body directly, bypassing templates/automation/consent")
     void sendManualSendsDirectly() throws Exception {
-        when(configService.get()).thenReturn(configured());
+        when(configService.getForAutomation()).thenReturn(configured());
 
         var result = service.sendManual(PHONE, "hand-typed reply");
 
@@ -177,7 +177,7 @@ class TwilioSmsServiceTest {
     @Test
     @DisplayName("sendManual: unset credentials → not_configured, no HTTP attempt")
     void sendManualUnconfiguredSkips() throws Exception {
-        when(configService.get()).thenReturn(TwilioSmsConfig.builder().build());
+        when(configService.getForAutomation()).thenReturn(TwilioSmsConfig.builder().build());
 
         var result = service.sendManual(PHONE, "hi");
 
@@ -189,7 +189,7 @@ class TwilioSmsServiceTest {
     @Test
     @DisplayName("sendManual: Twilio client failure → send_failed, never throws")
     void sendManualClientFailureReturnsSendFailed() throws Exception {
-        when(configService.get()).thenReturn(configured());
+        when(configService.getForAutomation()).thenReturn(configured());
         doThrow(new java.io.IOException("boom")).when(client).send(any(), any(), any());
 
         var result = service.sendManual(PHONE, "hi");
@@ -227,7 +227,7 @@ class TwilioSmsServiceTest {
     @Test
     @DisplayName("sendManualWithMedia: stores each attachment against the reserved row, then sends with media URLs")
     void sendManualWithMediaStoresThenSends() throws Exception {
-        when(configService.get()).thenReturn(configured());
+        when(configService.getForAutomation()).thenReturn(configured());
         SmsMessage reserved = SmsMessage.builder().id(55L).build();
         when(messageLogService.logOutbound(eq(null), eq(null), eq(PHONE), eq("here's a photo"), eq(false), eq("pending"), eq(null)))
                 .thenReturn(reserved);
@@ -262,7 +262,7 @@ class TwilioSmsServiceTest {
     @Test
     @DisplayName("sendManualWithMedia: Twilio send failure → send_failed, reserved row updated, never throws")
     void sendManualWithMediaSendFailureReturnsSendFailed() throws Exception {
-        when(configService.get()).thenReturn(configured());
+        when(configService.getForAutomation()).thenReturn(configured());
         SmsMessage reserved = SmsMessage.builder().id(56L).build();
         when(messageLogService.logOutbound(eq(null), eq(null), eq(PHONE), eq("photo"), eq(false), eq("pending"), eq(null)))
                 .thenReturn(reserved);

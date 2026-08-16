@@ -176,7 +176,7 @@ public class SameDayRebookingScheduler {
                 ? marketingBody(technician, shortLink)
                 : transactionalBody(technician, shortLink);
 
-        TwilioSmsConfig config = configService.get();
+        TwilioSmsConfig config = configService.getForAutomation();
         if (!config.isConfigured()) {
             log.info("{} skipped — Twilio credentials not configured", templateKey);
             updateReserved(reserved, body, false, "not_configured", null);

@@ -97,7 +97,7 @@ public class TwilioSmsService {
             return SmsSendResult.skipped("no_consent");
         }
 
-        TwilioSmsConfig config = configService.get();
+        TwilioSmsConfig config = configService.getForAutomation();
         if (!config.isConfigured()) {
             log.info("SMS template '{}' skipped — Twilio credentials not configured", templateKey);
             messageLogService.logOutbound(templateKey, automationKey, phoneNumber, body, false, "not_configured", null);
@@ -126,7 +126,7 @@ public class TwilioSmsService {
             return SmsSendResult.skipped("blocked");
         }
 
-        TwilioSmsConfig config = configService.get();
+        TwilioSmsConfig config = configService.getForAutomation();
         if (!config.isConfigured()) {
             log.info("Manual reply skipped — Twilio credentials not configured");
             messageLogService.logOutbound(null, null, phoneNumber, body, false, "not_configured", null);
@@ -159,7 +159,7 @@ public class TwilioSmsService {
             return SmsSendResult.skipped("blocked");
         }
 
-        TwilioSmsConfig config = configService.get();
+        TwilioSmsConfig config = configService.getForAutomation();
         if (!config.isConfigured()) {
             log.info("Manual MMS reply skipped — Twilio credentials not configured");
             messageLogService.logOutbound(null, null, phoneNumber, safeBody, false, "not_configured", null);

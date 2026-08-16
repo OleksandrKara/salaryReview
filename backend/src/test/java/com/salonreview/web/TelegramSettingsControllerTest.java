@@ -1,6 +1,7 @@
 package com.salonreview.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.domain.TelegramNotificationConfig;
 import com.salonreview.telegram.TelegramConfigService;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +31,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class TelegramSettingsControllerTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     private TelegramConfigService configService;
     private MockMvc mvc;
     private final ObjectMapper json = new ObjectMapper();
@@ -37,14 +40,17 @@ class TelegramSettingsControllerTest {
     @BeforeEach
     void setUp() {
         configService = mock(TelegramConfigService.class);
-        TelegramSettingsController controller = new TelegramSettingsController(configService);
+        CurrentBusinessContext currentBusinessContext = mock(CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(BUSINESS_ID);
+        TelegramSettingsController controller = new TelegramSettingsController(configService, currentBusinessContext);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
     @Test
     @DisplayName("GET returns a masked token, never the real one")
     void getMasksToken() throws Exception {
-        when(configService.get()).thenReturn(TelegramNotificationConfig.builder()
+        when(configService.get(BUSINESS_ID)).thenReturn(TelegramNotificationConfig.builder()
+                .businessId(BUSINESS_ID)
                 .botToken("123456789:FAKE-TEST-TOKEN-NOT-REAL-abcd")
                 .chatId("999")
                 .updatedAt(Instant.parse("2026-07-18T00:00:00Z"))
@@ -66,7 +72,8 @@ class TelegramSettingsControllerTest {
     @Test
     @DisplayName("GET with no token set returns null mask and botTokenSet:false")
     void getUnsetToken() throws Exception {
-        when(configService.get()).thenReturn(TelegramNotificationConfig.builder().build());
+        when(configService.get(BUSINESS_ID)).thenReturn(
+                TelegramNotificationConfig.builder().businessId(BUSINESS_ID).build());
 
         mvc.perform(get("/api/owner/settings/telegram"))
                 .andExpect(status().isOk())
@@ -77,8 +84,8 @@ class TelegramSettingsControllerTest {
     @Test
     @DisplayName("PUT with null botToken passes null through unchanged (service owns the semantics)")
     void putNullBotTokenPassesThrough() throws Exception {
-        when(configService.update(isNull(), eq("999888777"), any()))
-                .thenReturn(TelegramNotificationConfig.builder().chatId("999888777").build());
+        when(configService.update(isNull(), eq("999888777"), any(), eq(BUSINESS_ID)))
+                .thenReturn(TelegramNotificationConfig.builder().businessId(BUSINESS_ID).chatId("999888777").build());
 
         Principal owner = () -> "owner";
         mvc.perform(put("/api/owner/settings/telegram")
@@ -87,6 +94,6 @@ class TelegramSettingsControllerTest {
                         .content(json.writeValueAsString(Map.of("chatId", "999888777"))))
                 .andExpect(status().isOk());
 
-        verify(configService).update(isNull(), eq("999888777"), any());
+        verify(configService).update(isNull(), eq("999888777"), any(), eq(BUSINESS_ID));
     }
 }
