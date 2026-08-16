@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { serverApi } from '../../lib/serverApi';
 import PageHeader from '../../components/PageHeader';
 import { SyncBadge } from '../../components/SyncBadge';
+import SetupRequiredNotice from '../../components/SetupRequiredNotice';
 import OverviewClient from './OverviewClient';
 import ProviderTable from './ProviderTable';
 import RevenueTabs from './RevenueTabs';
@@ -28,12 +29,25 @@ export default async function OwnerOverviewPage({
   const toYear    = Number(sp.toYear)    || defToYear;
   const toMonth   = Number(sp.toMonth)   || defToMonth;
 
-  const [me, data] = await Promise.all([
-    serverApi.getMe(),
-    serverApi.getOwnerOverview(fromYear, fromMonth, toYear, toMonth),
-  ]);
-
+  const me = await serverApi.getMe();
   if (me?.role !== 'OWNER') redirect(me?.role === 'ADS_MANAGER' ? '/owner/marketing' : '/reports');
+
+  const squareConnection = await serverApi.getSquareConnection();
+  if (!squareConnection.accessTokenSet) {
+    return (
+      <main className="mx-auto max-w-6xl p-4 sm:p-8">
+        <PageHeader title="Revenue" role={me.role} language={me.preferredLanguage} />
+        <SetupRequiredNotice
+          title="Connect Square to see revenue"
+          message="This business's revenue dashboard needs a Square connection to pull bookings, orders, and payments from."
+          ctaHref="/owner/settings/square"
+          ctaLabel="Connect Square"
+        />
+      </main>
+    );
+  }
+
+  const data = await serverApi.getOwnerOverview(fromYear, fromMonth, toYear, toMonth);
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">

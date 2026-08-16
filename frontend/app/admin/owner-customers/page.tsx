@@ -1,11 +1,27 @@
 import { serverApi } from '../../lib/serverApi';
 import PageHeader from '../../components/PageHeader';
+import SetupRequiredNotice from '../../components/SetupRequiredNotice';
 import OwnerCustomerManager from './OwnerCustomerManager';
 
 // Owner/manager: the Square customers who are owner(s)/family. A booking for one of them with no
 // Square order (they aren't charged) still credits the provider their commission at the menu price.
 // The backend gates /api/owner-customers by role; the proxy keeps providers out of /admin.
 export default async function OwnerCustomersPage() {
+  const squareConnection = await serverApi.getSquareConnection();
+  if (!squareConnection.accessTokenSet) {
+    return (
+      <main className="mx-auto max-w-3xl p-4 sm:p-8">
+        <PageHeader title="Owner customers" />
+        <SetupRequiredNotice
+          title="Connect Square to manage owner customers"
+          message="This list is matched against real Square customers, which needs a Square connection first."
+          ctaHref="/owner/settings/square"
+          ctaLabel="Connect Square"
+        />
+      </main>
+    );
+  }
+
   const customers = await serverApi.listOwnerCustomers();
 
   return (

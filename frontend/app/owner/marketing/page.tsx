@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { serverApi } from '../../lib/serverApi';
 import PageHeader from '../../components/PageHeader';
+import SetupRequiredNotice from '../../components/SetupRequiredNotice';
 import AbuseBlocksPanel from './AbuseBlocksPanel';
 import MarketingManager from './MarketingManager';
 import MarketingTabs from './MarketingTabs';
@@ -18,13 +19,31 @@ export default async function MarketingDashboardPage({
   // this page's own permanent "Hide stats before" cutoff, which the backend intersects with these
   // bounds itself.
   const bounds = periodToBounds(parsePeriodParams(params, 'all'));
-  const [me, data, abuseBlocks] = await Promise.all([
-    serverApi.getMe(),
+  const me = await serverApi.getMe();
+  if (me?.role !== 'OWNER' && me?.role !== 'ADS_MANAGER') redirect('/reports');
+
+  // ADS_MANAGER can't reach the Square settings page (OWNER-only) — the request 403s and this
+  // fails open, same reasoning as /admin/redos, letting an ADS_MANAGER through to the normal
+  // (possibly empty) dashboard rather than blocking on a check they have no way to act on.
+  const squareConnection = await serverApi.getSquareConnection().catch(() => null);
+  if (squareConnection && !squareConnection.accessTokenSet) {
+    return (
+      <main className="mx-auto max-w-6xl p-4 sm:p-8">
+        <PageHeader title="Marketing" role={me.role} language={me.preferredLanguage} />
+        <SetupRequiredNotice
+          title="Connect Square to see marketing data"
+          message="Marketing tracking is matched against real Square bookings and customers, which needs a Square connection first."
+          ctaHref={me.role === 'OWNER' ? '/owner/settings/square' : undefined}
+          ctaLabel={me.role === 'OWNER' ? 'Connect Square' : undefined}
+        />
+      </main>
+    );
+  }
+
+  const [data, abuseBlocks] = await Promise.all([
     serverApi.getMarketingDashboard(slug, undefined, bounds.from, bounds.to),
     serverApi.getAbuseBlocks(),
   ]);
-
-  if (me?.role !== 'OWNER' && me?.role !== 'ADS_MANAGER') redirect('/reports');
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">

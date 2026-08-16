@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { serverApi } from '../../../lib/serverApi';
 import PageHeader from '../../../components/PageHeader';
+import SetupRequiredNotice from '../../../components/SetupRequiredNotice';
 import RevenueTabs from '../RevenueTabs';
 import RangePicker from '../RangePicker';
 import NetSummary from '../NetSummary';
@@ -29,13 +30,28 @@ export default async function RevenueNetPage({
   const toYear    = Number(sp.toYear)    || defToYear;
   const toMonth   = Number(sp.toMonth)   || defToMonth;
 
-  const [me, data, categories] = await Promise.all([
-    serverApi.getMe(),
+  const me = await serverApi.getMe();
+  if (me?.role !== 'OWNER') redirect(me?.role === 'ADS_MANAGER' ? '/owner/marketing' : '/reports');
+
+  const squareConnection = await serverApi.getSquareConnection();
+  if (!squareConnection.accessTokenSet) {
+    return (
+      <main className="mx-auto max-w-6xl p-4 sm:p-8">
+        <PageHeader title="Revenue" role={me.role} language={me.preferredLanguage} />
+        <SetupRequiredNotice
+          title="Connect Square to see revenue"
+          message="This business's revenue dashboard needs a Square connection to pull bookings, orders, and payments from."
+          ctaHref="/owner/settings/square"
+          ctaLabel="Connect Square"
+        />
+      </main>
+    );
+  }
+
+  const [data, categories] = await Promise.all([
     serverApi.getOwnerOverview(fromYear, fromMonth, toYear, toMonth),
     serverApi.listExpenseCategories(),
   ]);
-
-  if (me?.role !== 'OWNER') redirect(me?.role === 'ADS_MANAGER' ? '/owner/marketing' : '/reports');
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
