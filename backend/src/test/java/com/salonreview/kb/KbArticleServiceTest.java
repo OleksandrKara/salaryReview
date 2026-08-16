@@ -74,7 +74,7 @@ class KbArticleServiceTest {
         KbArticle updated = service.update(7L, "t", null, "c", "new body", null, null, BUSINESS_ID).orElseThrow();
 
         assertThat(updated.getSyncStatus()).isEqualTo(SyncStatus.CHANGED);
-        verify(rag, never()).upload(any(), any(), any()); // save never embeds
+        verify(rag, never()).upload(any(), any(), any(), any()); // save never embeds
     }
 
     @Test
@@ -127,7 +127,7 @@ class KbArticleServiceTest {
         when(repo.findByIdAndBusinessId(7L, BUSINESS_ID)).thenReturn(Optional.of(a));
 
         assertThat(service.delete(7L, "owner", BUSINESS_ID)).isTrue();
-        verify(rag).delete(eq(55L), any());
+        verify(rag).delete(eq(55L), any(), eq(BUSINESS_ID));
         verify(repo).delete(a);
     }
 
@@ -140,7 +140,7 @@ class KbArticleServiceTest {
         when(repo.findByIdAndBusinessId(7L, BUSINESS_ID)).thenReturn(Optional.of(a));
 
         service.delete(7L, "owner", BUSINESS_ID);
-        verify(rag, never()).delete(any(), any());
+        verify(rag, never()).delete(any(), any(), any());
     }
 
     @Test

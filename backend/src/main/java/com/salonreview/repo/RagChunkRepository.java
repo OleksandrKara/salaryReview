@@ -29,23 +29,28 @@ public interface RagChunkRepository extends JpaRepository<RagChunk, Long> {
     void updateEmbedding(@Param("id") Long id, @Param("vec") String vec);
 
     /**
-     * Top-k nearest INDEXED chunks to the query vector, within {@code maxDistance} (cosine). The
-     * distance filter is the "say you don't know" floor: an out-of-corpus question matches nothing
-     * and yields empty context. Quarantined chunks have a null embedding and never match.
+     * Top-k nearest INDEXED chunks to the query vector, within {@code maxDistance} (cosine), scoped
+     * to one business (joined through {@code rag_document.business_id} — rag_chunk has no
+     * business_id column of its own). The distance filter is the "say you don't know" floor: an
+     * out-of-corpus question matches nothing and yields empty context. Quarantined chunks have a
+     * null embedding and never match.
      */
     @Query(value = """
-            SELECT id AS id,
-                   document_id AS documentId,
-                   chunk_text AS chunkText,
-                   (embedding <=> CAST(:vec AS vector)) AS distance
-              FROM rag_chunk
-             WHERE status = 'INDEXED'
-               AND embedding IS NOT NULL
-               AND (embedding <=> CAST(:vec AS vector)) <= :maxDistance
-             ORDER BY embedding <=> CAST(:vec AS vector)
+            SELECT c.id AS id,
+                   c.document_id AS documentId,
+                   c.chunk_text AS chunkText,
+                   (c.embedding <=> CAST(:vec AS vector)) AS distance
+              FROM rag_chunk c
+              JOIN rag_document d ON d.id = c.document_id
+             WHERE d.business_id = :businessId
+               AND c.status = 'INDEXED'
+               AND c.embedding IS NOT NULL
+               AND (c.embedding <=> CAST(:vec AS vector)) <= :maxDistance
+             ORDER BY c.embedding <=> CAST(:vec AS vector)
              LIMIT :k
             """, nativeQuery = true)
     List<ChunkMatch> searchNearest(@Param("vec") String vec,
                                    @Param("maxDistance") double maxDistance,
-                                   @Param("k") int k);
+                                   @Param("k") int k,
+                                   @Param("businessId") Long businessId);
 }

@@ -30,6 +30,8 @@ import static org.mockito.Mockito.when;
  */
 class RagIngestionServiceTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     private RagDocumentRepository documents;
     private RagChunkRepository chunks;
     private RagRedactionAuditRepository audits;
@@ -71,12 +73,12 @@ class RagIngestionServiceTest {
     @Test
     @DisplayName("PII chunk is quarantined and never embedded")
     void piiChunkQuarantinedNeverEmbedded() {
-        when(documents.findById(1L)).thenReturn(Optional.of(pendingDoc()));
+        when(documents.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(pendingDoc()));
         when(chunker.chunk(anyString())).thenReturn(List.of(new Chunk("client a@b.com 555-1212", 0, 24)));
         when(classifier.classify(anyString()))
                 .thenReturn(new ChunkClassification(true, List.of("email", "phone"), "RELEVANT", "has PII"));
 
-        Optional<RagDocument> result = service.approve(1L);
+        Optional<RagDocument> result = service.approve(1L, BUSINESS_ID);
 
         // The core guarantee: Voyage is never called for a quarantined chunk.
         verify(voyage, never()).embedDocuments(any());
@@ -94,13 +96,13 @@ class RagIngestionServiceTest {
     @Test
     @DisplayName("clean chunk is embedded and indexed")
     void cleanChunkEmbeddedAndIndexed() {
-        when(documents.findById(1L)).thenReturn(Optional.of(pendingDoc()));
+        when(documents.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(pendingDoc()));
         when(chunker.chunk(anyString())).thenReturn(List.of(new Chunk("the no-show fee is $25", 0, 21)));
         when(classifier.classify(anyString()))
                 .thenReturn(new ChunkClassification(false, List.of(), "RELEVANT", "policy"));
         when(voyage.embedDocuments(anyList())).thenReturn(List.of(new float[]{0.1f, 0.2f, 0.3f}));
 
-        Optional<RagDocument> result = service.approve(1L);
+        Optional<RagDocument> result = service.approve(1L, BUSINESS_ID);
 
         verify(voyage).embedDocuments(List.of("the no-show fee is $25"));
         verify(chunks).updateEmbedding(any(), anyString());
@@ -117,9 +119,9 @@ class RagIngestionServiceTest {
     void approveNonPendingIsNoop() {
         RagDocument indexed = pendingDoc();
         indexed.setStatus(RagDocumentStatus.INDEXED);
-        when(documents.findById(1L)).thenReturn(Optional.of(indexed));
+        when(documents.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(indexed));
 
-        service.approve(1L);
+        service.approve(1L, BUSINESS_ID);
 
         verify(chunker, never()).chunk(anyString());
         verify(voyage, never()).embedDocuments(any());
@@ -128,9 +130,9 @@ class RagIngestionServiceTest {
     @Test
     @DisplayName("delete writes a redaction audit row and removes the document")
     void deleteWritesAuditAndRemoves() {
-        when(documents.findById(1L)).thenReturn(Optional.of(pendingDoc()));
+        when(documents.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(pendingDoc()));
 
-        boolean ok = service.delete(1L, "owner");
+        boolean ok = service.delete(1L, "owner", BUSINESS_ID);
 
         assertThat(ok).isTrue();
         verify(audits).save(any());

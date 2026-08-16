@@ -60,7 +60,7 @@ class KbSyncServiceTest {
     @DisplayName("clean content → SYNCED with a rag_doc_id and refreshed hash")
     void cleanSync() {
         when(repo.findByIdAndBusinessId(7L, BUSINESS_ID)).thenReturn(Optional.of(article("the no-show fee is $25", null, SyncStatus.NOT_SYNCED)));
-        when(rag.upload(anyString(), any(), anyString())).thenReturn(RagDocument.builder().id(10L).build());
+        when(rag.upload(anyString(), any(), anyString(), eq(BUSINESS_ID))).thenReturn(RagDocument.builder().id(10L).build());
         when(ragChunks.countByDocumentIdAndStatus(10L, RagChunkStatus.QUARANTINED)).thenReturn(0L);
         when(ragChunks.countByDocumentIdAndStatus(10L, RagChunkStatus.INDEXED)).thenReturn(2L);
 
@@ -76,7 +76,7 @@ class KbSyncServiceTest {
     @DisplayName("any quarantined chunk → whole article rejected (ERROR), RAG doc rolled back, no rag_doc_id")
     void piiRejectedAllOrNothing() {
         when(repo.findByIdAndBusinessId(7L, BUSINESS_ID)).thenReturn(Optional.of(article("call client 555-1212", null, SyncStatus.NOT_SYNCED)));
-        when(rag.upload(anyString(), any(), anyString())).thenReturn(RagDocument.builder().id(10L).build());
+        when(rag.upload(anyString(), any(), anyString(), eq(BUSINESS_ID))).thenReturn(RagDocument.builder().id(10L).build());
         when(ragChunks.countByDocumentIdAndStatus(10L, RagChunkStatus.QUARANTINED)).thenReturn(1L);
         when(ragChunks.countByDocumentIdAndStatus(10L, RagChunkStatus.INDEXED)).thenReturn(0L);
 
@@ -85,7 +85,7 @@ class KbSyncServiceTest {
         assertThat(out.getSyncStatus()).isEqualTo(SyncStatus.ERROR);
         assertThat(out.getRagDocId()).isNull();
         assertThat(out.getLastSyncError()).contains("PII");
-        verify(rag).delete(eq(10L), any());           // the just-created doc is rolled back
+        verify(rag).delete(eq(10L), any(), eq(BUSINESS_ID));           // the just-created doc is rolled back
     }
 
     @Test
@@ -96,20 +96,20 @@ class KbSyncServiceTest {
         KbArticle out = service.syncOne(7L, "owner", BUSINESS_ID).orElseThrow();
 
         assertThat(out.getLastSyncError()).contains("empty");
-        verify(rag, never()).upload(any(), any(), any());
+        verify(rag, never()).upload(any(), any(), any(), any());
     }
 
     @Test
     @DisplayName("re-sync retires the prior RAG document before creating a new one")
     void reSyncRetiresPriorDoc() {
         when(repo.findByIdAndBusinessId(7L, BUSINESS_ID)).thenReturn(Optional.of(article("fresh content", 5L, SyncStatus.CHANGED)));
-        when(rag.upload(anyString(), any(), anyString())).thenReturn(RagDocument.builder().id(11L).build());
+        when(rag.upload(anyString(), any(), anyString(), eq(BUSINESS_ID))).thenReturn(RagDocument.builder().id(11L).build());
         when(ragChunks.countByDocumentIdAndStatus(11L, RagChunkStatus.QUARANTINED)).thenReturn(0L);
         when(ragChunks.countByDocumentIdAndStatus(11L, RagChunkStatus.INDEXED)).thenReturn(1L);
 
         KbArticle out = service.syncOne(7L, "owner", BUSINESS_ID).orElseThrow();
 
-        verify(rag).delete(eq(5L), any());             // prior doc retired
+        verify(rag).delete(eq(5L), any(), eq(BUSINESS_ID));             // prior doc retired
         assertThat(out.getRagDocId()).isEqualTo(11L);
         assertThat(out.getSyncStatus()).isEqualTo(SyncStatus.SYNCED);
     }

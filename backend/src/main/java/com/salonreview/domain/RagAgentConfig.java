@@ -20,6 +20,9 @@ public class RagAgentConfig {
     @Id
     private Integer version;
 
+    @Column(name = "business_id", nullable = false)
+    private Long businessId;
+
     @Column(name = "system_prompt", nullable = false, columnDefinition = "text")
     private String systemPrompt;
 

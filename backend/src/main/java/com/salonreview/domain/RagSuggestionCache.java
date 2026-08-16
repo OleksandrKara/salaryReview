@@ -3,6 +3,7 @@ package com.salonreview.domain;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -15,16 +16,22 @@ import org.hibernate.type.SqlTypes;
 import java.time.Instant;
 
 /**
- * Durable cache row for the chat's grounded starter prompts, one per language. The {@code payload} is
- * a serialized {@code StarterSuggestions}; {@code signature} fingerprints the corpus so it invalidates
- * when documents change; {@code generatedAt} drives the 24h TTL. Keyed by language so EN and RU each
- * cache independently and are shared by all users.
+ * Durable cache row for the chat's grounded starter prompts, one per (business, language). The
+ * {@code payload} is a serialized {@code StarterSuggestions}; {@code signature} fingerprints the
+ * corpus so it invalidates when documents change; {@code generatedAt} drives the 24h TTL. Keyed by
+ * business + language so EN and RU each cache independently per business and are shared by all of
+ * that business's users.
  */
 @Entity
 @Table(name = "rag_suggestion_cache")
+@IdClass(RagSuggestionCacheId.class)
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
 public class RagSuggestionCache {
+
+    @Id
+    @Column(name = "business_id")
+    private Long businessId;
 
     /** "EN" or "RU". */
     @Id

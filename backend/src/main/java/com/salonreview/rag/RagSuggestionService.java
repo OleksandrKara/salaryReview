@@ -8,6 +8,7 @@ import com.salonreview.config.RagProperties;
 import com.salonreview.domain.Language;
 import com.salonreview.domain.RagDocumentStatus;
 import com.salonreview.domain.RagSuggestionCache;
+import com.salonreview.domain.RagSuggestionCacheId;
 import com.salonreview.repo.RagDocumentRepository;
 import com.salonreview.repo.RagSuggestionCacheRepository;
 import org.slf4j.Logger;
@@ -78,27 +79,27 @@ public class RagSuggestionService {
      * Stored starter prompts for the language. Permanent: returns the saved set as-is, generating it
      * once (and storing it) only the first time none exist. No LLM call on a normal open.
      */
-    public StarterSuggestions get(Language lang) {
+    public StarterSuggestions get(Language lang, Long businessId) {
         if (!props.getSuggestions().isEnabled()) return StarterSuggestions.empty();
 
-        RagSuggestionCache row = cacheRepo.findById(lang.name()).orElse(null);
+        RagSuggestionCache row = cacheRepo.findById(new RagSuggestionCacheId(businessId, lang.name())).orElse(null);
         if (row != null) {
             StarterSuggestions stored = deserialize(row.getPayload());
             if (stored != null) return stored; // permanent — never auto-regenerates
         }
-        return generateAndStore(lang); // first time only (or a corrupt row): seed it
+        return generateAndStore(lang, businessId); // first time only (or a corrupt row): seed it
     }
 
     /** Force a fresh generation and overwrite the stored set — the chat's on-demand refresh. */
-    public StarterSuggestions refresh(Language lang) {
+    public StarterSuggestions refresh(Language lang, Long businessId) {
         if (!props.getSuggestions().isEnabled()) return StarterSuggestions.empty();
-        return generateAndStore(lang);
+        return generateAndStore(lang, businessId);
     }
 
     // --- internals ---
 
-    private StarterSuggestions generateAndStore(Language lang) {
-        List<String> titles = documents.findByStatusOrderByCreatedAtDesc(RagDocumentStatus.INDEXED).stream()
+    private StarterSuggestions generateAndStore(Language lang, Long businessId) {
+        List<String> titles = documents.findByBusinessIdAndStatusOrderByCreatedAtDesc(businessId, RagDocumentStatus.INDEXED).stream()
                 .map(d -> cleanTitle(d.getFilename()))
                 .filter(s -> !s.isBlank())
                 .distinct()
@@ -128,7 +129,7 @@ public class RagSuggestionService {
                 return StarterSuggestions.empty(); // don't store an empty result — let a later attempt seed it
             }
 
-            persist(lang, String.join("|", titles), result);
+            persist(lang, String.join("|", titles), result, businessId);
             return result;
         } catch (RuntimeException e) {
             log.warn("Starter-suggestion generation failed: {}", e.toString());
@@ -136,9 +137,10 @@ public class RagSuggestionService {
         }
     }
 
-    private void persist(Language lang, String signature, StarterSuggestions value) {
+    private void persist(Language lang, String signature, StarterSuggestions value, Long businessId) {
         try {
             cacheRepo.save(RagSuggestionCache.builder()
+                    .businessId(businessId)
                     .language(lang.name())
                     .signature(signature)
                     .payload(objectMapper.writeValueAsString(value))

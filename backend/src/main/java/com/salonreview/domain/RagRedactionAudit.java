@@ -21,6 +21,9 @@ public class RagRedactionAudit {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "business_id", nullable = false)
+    private Long businessId;
+
     @Column(name = "document_id", nullable = false)
     private Long documentId;
 

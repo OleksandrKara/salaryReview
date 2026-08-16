@@ -24,11 +24,12 @@ public class RagRetrievalService {
         this.chunks = chunks;
     }
 
-    public List<ChunkMatch> retrieve(String question, RagAgentConfig cfg) {
+    public List<ChunkMatch> retrieve(String question, RagAgentConfig cfg, Long businessId) {
         float[] q = voyage.embedQuery(question);
         return chunks.searchNearest(
                 VoyageClient.toVectorLiteral(q),
                 cfg.getDistanceThreshold().doubleValue(),
-                cfg.getK());
+                cfg.getK(),
+                businessId);
     }
 }

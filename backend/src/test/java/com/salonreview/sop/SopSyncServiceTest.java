@@ -66,7 +66,7 @@ class SopSyncServiceTest {
         Sop sop = activeSop(100L);
         when(sops.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(sop));
         stubVersionBody(100L, "Wash hands before each client.");
-        when(rag.upload(eq("Cleaning.md"), any(), eq("owner"))).thenReturn(RagDocument.builder().id(55L).build());
+        when(rag.upload(eq("Cleaning.md"), any(), eq("owner"), eq(BUSINESS_ID))).thenReturn(RagDocument.builder().id(55L).build());
         when(ragChunks.countByDocumentIdAndStatus(55L, RagChunkStatus.QUARANTINED)).thenReturn(0L);
         when(ragChunks.countByDocumentIdAndStatus(55L, RagChunkStatus.INDEXED)).thenReturn(3L);
 
@@ -76,7 +76,7 @@ class SopSyncServiceTest {
         assertThat(out.getRagDocId()).isEqualTo(55L);
         assertThat(out.getSyncedVersionId()).isEqualTo(100L);
         assertThat(out.getLastSyncError()).isNull();
-        verify(rag).approve(55L);
+        verify(rag).approve(55L, BUSINESS_ID);
     }
 
     @Test
@@ -85,7 +85,7 @@ class SopSyncServiceTest {
         Sop sop = activeSop(100L);
         when(sops.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(sop));
         stubVersionBody(100L, "Call the client at 555-123-4567.");
-        when(rag.upload(any(), any(), any())).thenReturn(RagDocument.builder().id(55L).build());
+        when(rag.upload(any(), any(), any(), eq(BUSINESS_ID))).thenReturn(RagDocument.builder().id(55L).build());
         when(ragChunks.countByDocumentIdAndStatus(55L, RagChunkStatus.QUARANTINED)).thenReturn(1L);
         when(ragChunks.countByDocumentIdAndStatus(55L, RagChunkStatus.INDEXED)).thenReturn(2L);
 
@@ -94,7 +94,7 @@ class SopSyncServiceTest {
         assertThat(out.getSyncStatus()).isEqualTo(SyncStatus.ERROR);
         assertThat(out.getRagDocId()).isNull();
         assertThat(out.getLastSyncError()).contains("PII");
-        verify(rag).delete(55L, "owner");
+        verify(rag).delete(55L, "owner", BUSINESS_ID);
     }
 
     @Test
@@ -109,7 +109,7 @@ class SopSyncServiceTest {
         Sop out = service.syncOne(1L, "owner", BUSINESS_ID).orElseThrow();
 
         assertThat(out.getSyncStatus()).isEqualTo(SyncStatus.SYNCED);
-        verify(rag, never()).upload(any(), any(), any());
+        verify(rag, never()).upload(any(), any(), any(), any());
         verify(sops, never()).save(any());
     }
 
@@ -137,10 +137,10 @@ class SopSyncServiceTest {
 
         Sop out = service.syncOne(1L, "owner", BUSINESS_ID).orElseThrow();
 
-        verify(rag).delete(55L, "owner");
+        verify(rag).delete(55L, "owner", BUSINESS_ID);
         assertThat(out.getRagDocId()).isNull();
         assertThat(out.getSyncStatus()).isEqualTo(SyncStatus.NOT_SYNCED);
-        verify(rag, never()).upload(any(), any(), any());
+        verify(rag, never()).upload(any(), any(), any(), any());
     }
 
     @Test
@@ -165,7 +165,7 @@ class SopSyncServiceTest {
 
         assertThat(out.getSyncStatus()).isEqualTo(SyncStatus.NOT_SYNCED);
         assertThat(out.getLastSyncError()).contains("Provider-only");
-        verify(rag, never()).upload(any(), any(), any());
+        verify(rag, never()).upload(any(), any(), any(), any());
     }
 
     @Test
@@ -178,7 +178,7 @@ class SopSyncServiceTest {
 
         Sop out = service.syncOne(1L, "owner", BUSINESS_ID).orElseThrow();
 
-        verify(rag).delete(55L, "owner");
+        verify(rag).delete(55L, "owner", BUSINESS_ID);
         assertThat(out.getRagDocId()).isNull();
         assertThat(out.getSyncStatus()).isEqualTo(SyncStatus.NOT_SYNCED);
     }

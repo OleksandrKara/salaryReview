@@ -3,6 +3,7 @@ package com.salonreview.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.ai.SmsDraftService;
 import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.domain.AppUser;
 import com.salonreview.domain.BlockedNumber;
 import com.salonreview.domain.SmsMessage;
@@ -72,11 +73,13 @@ class SmsActivityControllerTest {
         reactionService = mock(SmsReactionService.class);
         draftService = mock(SmsDraftService.class);
         users = mock(AppUserRepository.class);
+        CurrentBusinessContext currentBusinessContext = mock(CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
         when(blockedNumberRepository.findByPhoneNumberIn(any())).thenReturn(List.of());
         when(mediaService.mediaForMessages(any())).thenReturn(Map.of());
         when(reactionService.reactionsForMessages(any())).thenReturn(Map.of());
         mvc = MockMvcBuilders.standaloneSetup(
-                new SmsActivityController(service, smsService, contactsService, blockedNumberRepository, events, mediaService, reactionService, draftService, users)).build();
+                new SmsActivityController(service, smsService, contactsService, blockedNumberRepository, events, mediaService, reactionService, draftService, users, currentBusinessContext)).build();
     }
 
     private static Contact contact(String givenName, String emailAddress) {
