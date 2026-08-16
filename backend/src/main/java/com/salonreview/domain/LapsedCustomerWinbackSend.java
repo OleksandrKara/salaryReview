@@ -28,6 +28,9 @@ public class LapsedCustomerWinbackSend {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "business_id", nullable = false)
+    private Long businessId;
+
     @Column(name = "square_customer_id", nullable = false)
     private String squareCustomerId;
 

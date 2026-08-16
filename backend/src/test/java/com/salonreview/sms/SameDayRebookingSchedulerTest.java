@@ -1,12 +1,11 @@
 package com.salonreview.sms;
 
 import com.salonreview.config.RebookingProperties;
-import com.salonreview.domain.Business;
 import com.salonreview.domain.SameDayRebookingSend;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.TwilioSmsConfig;
-import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SameDayRebookingSendRepository;
+import com.salonreview.repo.TwilioSmsConfigRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,6 +42,8 @@ class SameDayRebookingSchedulerTest {
     private TwilioSmsConfigService configService;
     private TwilioSmsClient client;
     private TechnicianNameResolver technicianNameResolver;
+    private SquareClientProvider squareClientProvider;
+    private TwilioSmsConfigRepository twilioConfigs;
     private SameDayRebookingScheduler scheduler;
 
     @BeforeEach
@@ -58,12 +59,11 @@ class SameDayRebookingSchedulerTest {
         client = mock(TwilioSmsClient.class);
         technicianNameResolver = mock(TechnicianNameResolver.class);
         when(technicianNameResolver.resolveForCustomer(any(), any())).thenReturn(Optional.empty());
-        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
-        BusinessRepository businesses = mock(BusinessRepository.class);
-        when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
-                .timezone("UTC").active(true).build());
+        squareClientProvider = mock(SquareClientProvider.class);
+        twilioConfigs = mock(TwilioSmsConfigRepository.class);
+        when(twilioConfigs.findAll()).thenReturn(List.of(TwilioSmsConfig.builder().businessId(BUSINESS_ID).build()));
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
-        scheduler = new SameDayRebookingScheduler(repository, squareClientProvider, businesses, automationService,
+        scheduler = new SameDayRebookingScheduler(repository, squareClientProvider, twilioConfigs, automationService,
                 consentRepository, rebookingProperties, messageLogService, configService, client, technicianNameResolver,
                 "https://salon.akluxnails.com");
 
@@ -82,6 +82,7 @@ class SameDayRebookingSchedulerTest {
     private static SameDayRebookingSend send(Instant sendDueAt, Instant promoExpiresAt) {
         return SameDayRebookingSend.builder()
                 .id(1L)
+                .businessId(BUSINESS_ID)
                 .phoneNumber(PHONE)
                 .customerName("Jane")
                 .squareCustomerId(CUSTOMER_ID)
@@ -93,7 +94,8 @@ class SameDayRebookingSchedulerTest {
     }
 
     private void givenDue(SameDayRebookingSend... sends) {
-        when(repository.findByStateAndSendDueAtBefore(eq(SameDayRebookingSend.STATE_AWAITING_SEND), any()))
+        when(repository.findByBusinessIdAndStateAndSendDueAtBefore(
+                eq(BUSINESS_ID), eq(SameDayRebookingSend.STATE_AWAITING_SEND), any()))
                 .thenReturn(List.of(sends));
     }
 
@@ -278,5 +280,40 @@ class SameDayRebookingSchedulerTest {
         assertThat(bodyCaptor.getValue())
                 .contains("Tatiana").doesNotContain(" her ").doesNotContain(" his ")
                 .doesNotContain("Hi ").doesNotContain("Lucy").doesNotContain("—");
+    }
+
+    @Test
+    @DisplayName("one business's SquareClientProvider failure doesn't stop another business's due sends (tasks.md 3.7)")
+    void oneBusinessSquareFailureDoesNotBlockAnother() throws Exception {
+        Long otherBusinessId = 2L;
+        SquareClient otherSquare = mock(SquareClient.class);
+        when(otherSquare.bookingsForCustomer(any(), any())).thenReturn(List.of());
+        when(twilioConfigs.findAll()).thenReturn(List.of(
+                TwilioSmsConfig.builder().businessId(BUSINESS_ID).build(),
+                TwilioSmsConfig.builder().businessId(otherBusinessId).build()));
+        when(squareClientProvider.forBusiness(BUSINESS_ID)).thenThrow(new RuntimeException("business A Square down"));
+        when(squareClientProvider.forBusiness(otherBusinessId)).thenReturn(otherSquare);
+
+        SameDayRebookingSend otherSend = SameDayRebookingSend.builder()
+                .id(2L).businessId(otherBusinessId).phoneNumber("+15559998888").customerName("Other")
+                .squareCustomerId("cust2").squarePaymentId("pay2")
+                .sendDueAt(Instant.now().minusSeconds(5)).promoExpiresAt(Instant.now().plusSeconds(3600))
+                .state(SameDayRebookingSend.STATE_AWAITING_SEND).build();
+        when(repository.findByBusinessIdAndStateAndSendDueAtBefore(
+                eq(otherBusinessId), eq(SameDayRebookingSend.STATE_AWAITING_SEND), any()))
+                .thenReturn(List.of(otherSend));
+        when(automationService.isEnabled(otherBusinessId, "same_day_rebooking_discount")).thenReturn(true);
+        TwilioSmsConfig otherConfigured = mock(TwilioSmsConfig.class);
+        when(otherConfigured.isConfigured()).thenReturn(true);
+        when(configService.get(otherBusinessId)).thenReturn(otherConfigured);
+        when(client.send(any(), eq("+15559998888"), any())).thenReturn("SM999");
+
+        scheduler.sendDueRebookingNudges();
+
+        // Business A's own repository lookup is never reached (forBusiness threw first) — only
+        // business B's due row gets processed.
+        verify(repository, never()).findByBusinessIdAndStateAndSendDueAtBefore(
+                eq(BUSINESS_ID), any(), any());
+        verify(client).send(any(), eq("+15559998888"), any());
     }
 }

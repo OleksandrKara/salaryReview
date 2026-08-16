@@ -8,5 +8,5 @@ public interface LapsedCustomerWinbackSendRepository extends JpaRepository<Lapse
     /** Belt-and-suspenders alongside the eligibility query's own {@code NOT EXISTS} — see
      * LapsedCustomerWinbackScheduler. Once a customer has any row here, they're never reconsidered
      * (one-shot per customer, not per-visit — see design.md D4). */
-    boolean existsBySquareCustomerId(String squareCustomerId);
+    boolean existsByBusinessIdAndSquareCustomerId(Long businessId, String squareCustomerId);
 }

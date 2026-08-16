@@ -126,16 +126,18 @@ public class InternalNotificationController {
         if (groupId == null) {
             return ResponseEntity.ok(Map.of("enrolled", false, "reason", "not_configured"));
         }
+        // See BusinessRepository#legacySmsBusiness, same as the SMS schedulers — this endpoint
+        // has no session, so there's no business context to resolve beyond business A.
+        Long businessId = businesses.legacySmsBusiness().getId();
         try {
-            // See BusinessRepository#legacySmsBusiness, same as the SMS schedulers — this endpoint
-            // has no session, so there's no business context to resolve beyond business A.
-            squareClientProvider.forBusiness(businesses.legacySmsBusiness().getId())
+            squareClientProvider.forBusiness(businessId)
                     .addCustomerToGroup(body.squareCustomerId(), groupId);
         } catch (RuntimeException e) {
             log.warn("Failed to enroll customer {} in {} group: {}", body.squareCustomerId(), promoCode, e.getMessage());
             return ResponseEntity.ok(Map.of("enrolled", false, "reason", "square_error"));
         }
         groupMembershipRepository.save(SameDayRebookingGroupMembership.builder()
+                .businessId(businessId)
                 .squareCustomerId(body.squareCustomerId())
                 .groupId(groupId)
                 .expiresAt(expiresAt)

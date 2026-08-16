@@ -4,8 +4,8 @@ import com.salonreview.config.RebookingProperties;
 import com.salonreview.domain.LapsedCustomerWinbackSend;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.TwilioSmsConfig;
-import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.LapsedCustomerWinbackSendRepository;
+import com.salonreview.repo.TwilioSmsConfigRepository;
 import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
@@ -54,7 +54,7 @@ public class LapsedCustomerWinbackScheduler {
     private final LapsedCustomerWinbackEligibilityRepository eligibilityRepository;
     private final LapsedCustomerWinbackSendRepository sendRepository;
     private final SquareClientProvider squareClientProvider;
-    private final BusinessRepository businesses;
+    private final TwilioSmsConfigRepository twilioConfigs;
     private final SmsAutomationService automationService;
     private final SmsConsentRepository consentRepository;
     private final RebookingProperties rebookingProperties;
@@ -65,7 +65,7 @@ public class LapsedCustomerWinbackScheduler {
 
     public LapsedCustomerWinbackScheduler(LapsedCustomerWinbackEligibilityRepository eligibilityRepository,
                                            LapsedCustomerWinbackSendRepository sendRepository,
-                                           SquareClientProvider squareClientProvider, BusinessRepository businesses,
+                                           SquareClientProvider squareClientProvider, TwilioSmsConfigRepository twilioConfigs,
                                            SmsAutomationService automationService, SmsConsentRepository consentRepository,
                                            RebookingProperties rebookingProperties, SmsMessageLogService messageLogService,
                                            TwilioSmsConfigService configService, TwilioSmsClient client,
@@ -73,7 +73,7 @@ public class LapsedCustomerWinbackScheduler {
         this.eligibilityRepository = eligibilityRepository;
         this.sendRepository = sendRepository;
         this.squareClientProvider = squareClientProvider;
-        this.businesses = businesses;
+        this.twilioConfigs = twilioConfigs;
         this.automationService = automationService;
         this.consentRepository = consentRepository;
         this.rebookingProperties = rebookingProperties;
@@ -88,18 +88,29 @@ public class LapsedCustomerWinbackScheduler {
     // Pacific as intended. This is what actually happened in production on 2026-08-07 (16 real
     // sends at 10:00:0x UTC). Every future @Scheduled(cron=...) in this codebase must set an
     // explicit zone for the same reason — never rely on the host's default timezone.
+    //
+    // Single lock covers the whole per-business loop below — same deliberate simplification as
+    // SmsReplyFlowScheduler (tasks.md 3.7).
     @Scheduled(cron = "0 0 10 * * *", zone = "America/Los_Angeles")
     @SchedulerLock(name = "LapsedCustomerWinbackScheduler_sendDueWinbacks", lockAtLeastFor = "PT10S", lockAtMostFor = "PT10M")
     public void sendDueWinbacks() {
-        // See BusinessRepository#legacySmsBusiness — the eligibility query below has no
-        // business_id of its own yet, same as SameDayRebookingGroupExpiryScheduler.
-        Long businessId = businesses.legacySmsBusiness().getId();
-        SquareClient square = squareClientProvider.forBusiness(businessId);
-        for (LapsedCustomerWinbackEligibilityRepository.EligibleCustomer customer : eligibilityRepository.findEligibleCustomers()) {
-            if (sendRepository.existsBySquareCustomerId(customer.squareCustomerId())) {
-                continue; // belt-and-suspenders vs. the eligibility query's own NOT EXISTS
+        for (TwilioSmsConfig config : twilioConfigs.findAll()) {
+            Long businessId = config.getBusinessId();
+            SquareClient square;
+            try {
+                square = squareClientProvider.forBusiness(businessId);
+            } catch (RuntimeException e) {
+                log.warn("Lapsed-customer-winback run skipped for business {} (will be retried at next scheduled run): {}",
+                        businessId, e.getMessage());
+                continue;
             }
-            process(customer, square, businessId);
+            for (LapsedCustomerWinbackEligibilityRepository.EligibleCustomer customer
+                    : eligibilityRepository.findEligibleCustomers(businessId)) {
+                if (sendRepository.existsByBusinessIdAndSquareCustomerId(businessId, customer.squareCustomerId())) {
+                    continue; // belt-and-suspenders vs. the eligibility query's own NOT EXISTS
+                }
+                process(customer, square, businessId);
+            }
         }
     }
 
@@ -107,12 +118,12 @@ public class LapsedCustomerWinbackScheduler {
                           Long businessId) {
         String phoneNumber = square.customerPhone(customer.squareCustomerId());
         if (phoneNumber == null || phoneNumber.isBlank()) {
-            save(customer, null, null, LapsedCustomerWinbackSend.STATE_SKIPPED_UNRESOLVED);
+            save(businessId, customer, null, null, LapsedCustomerWinbackSend.STATE_SKIPPED_UNRESOLVED);
             return;
         }
 
         if (messageLogService.hasNegativeFeedback(businessId, phoneNumber)) {
-            save(customer, phoneNumber, null, LapsedCustomerWinbackSend.STATE_SKIPPED_NEGATIVE_FEEDBACK);
+            save(businessId, customer, phoneNumber, null, LapsedCustomerWinbackSend.STATE_SKIPPED_NEGATIVE_FEEDBACK);
             return;
         }
 
@@ -128,19 +139,19 @@ public class LapsedCustomerWinbackScheduler {
             return;
         }
         if (upcoming) {
-            save(customer, phoneNumber, null, LapsedCustomerWinbackSend.STATE_SKIPPED_BOOKED);
+            save(businessId, customer, phoneNumber, null, LapsedCustomerWinbackSend.STATE_SKIPPED_BOOKED);
             return;
         }
 
         if (!automationService.isEnabled(businessId, AUTOMATION_KEY)) {
-            save(customer, phoneNumber, null, LapsedCustomerWinbackSend.STATE_SKIPPED_DISABLED);
+            save(businessId, customer, phoneNumber, null, LapsedCustomerWinbackSend.STATE_SKIPPED_DISABLED);
             return;
         }
 
         Instant promoExpiresAt = endOfTodayInSalonZone();
         String givenName = square.customerGivenNames(List.of(customer.squareCustomerId())).get(customer.squareCustomerId());
         sendNudge(customer, phoneNumber, givenName, promoExpiresAt, hasConsent(phoneNumber, customer.squareCustomerId(), square), businessId);
-        save(customer, phoneNumber, promoExpiresAt, LapsedCustomerWinbackSend.STATE_SENT);
+        save(businessId, customer, phoneNumber, promoExpiresAt, LapsedCustomerWinbackSend.STATE_SENT);
     }
 
     /** Live check for any not-cancelled, not-yet-happened Square appointment — same helper every
@@ -250,9 +261,10 @@ public class LapsedCustomerWinbackScheduler {
         messageLogService.save(reserved);
     }
 
-    private void save(LapsedCustomerWinbackEligibilityRepository.EligibleCustomer customer, String phoneNumber,
+    private void save(Long businessId, LapsedCustomerWinbackEligibilityRepository.EligibleCustomer customer, String phoneNumber,
                        Instant promoExpiresAt, String state) {
         sendRepository.save(LapsedCustomerWinbackSend.builder()
+                .businessId(businessId)
                 .squareCustomerId(customer.squareCustomerId())
                 .phoneNumber(phoneNumber)
                 .visitDate(customer.visitDate())

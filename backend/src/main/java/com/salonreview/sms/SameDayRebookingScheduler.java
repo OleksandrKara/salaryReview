@@ -5,7 +5,7 @@ import com.salonreview.domain.SameDayRebookingSend;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.SameDayRebookingSendRepository;
-import com.salonreview.repo.BusinessRepository;
+import com.salonreview.repo.TwilioSmsConfigRepository;
 import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
@@ -46,7 +46,7 @@ public class SameDayRebookingScheduler {
 
     private final SameDayRebookingSendRepository repository;
     private final SquareClientProvider squareClientProvider;
-    private final BusinessRepository businesses;
+    private final TwilioSmsConfigRepository twilioConfigs;
     private final SmsAutomationService automationService;
     private final SmsConsentRepository consentRepository;
     private final RebookingProperties rebookingProperties;
@@ -57,7 +57,7 @@ public class SameDayRebookingScheduler {
     private final String publicBaseUrl;
 
     public SameDayRebookingScheduler(SameDayRebookingSendRepository repository, SquareClientProvider squareClientProvider,
-                                      BusinessRepository businesses,
+                                      TwilioSmsConfigRepository twilioConfigs,
                                       SmsAutomationService automationService, SmsConsentRepository consentRepository,
                                       RebookingProperties rebookingProperties, SmsMessageLogService messageLogService,
                                       TwilioSmsConfigService configService, TwilioSmsClient client,
@@ -65,7 +65,7 @@ public class SameDayRebookingScheduler {
                                       @Value("${app.public-base-url}") String publicBaseUrl) {
         this.repository = repository;
         this.squareClientProvider = squareClientProvider;
-        this.businesses = businesses;
+        this.twilioConfigs = twilioConfigs;
         this.automationService = automationService;
         this.consentRepository = consentRepository;
         this.rebookingProperties = rebookingProperties;
@@ -81,17 +81,29 @@ public class SameDayRebookingScheduler {
     // every deploy hits "No Square connection configured" and logs an ERROR, self-healing only on
     // the next tick 15s later. A short delay gives that ApplicationRunner (a single fast DB
     // read/write) comfortable margin to finish first.
+    //
+    // Single lock covers the whole per-business loop below — still correct (no duplicate sends
+    // across blue/green), just not maximally parallel across businesses; fine given today's
+    // business count (same deliberate simplification as SmsReplyFlowScheduler, tasks.md 3.7).
     @Scheduled(fixedDelay = 15_000, initialDelay = 15_000)
     @SchedulerLock(name = "SameDayRebookingScheduler_sendDueRebookingNudges", lockAtLeastFor = "PT10S", lockAtMostFor = "PT2M")
     public void sendDueRebookingNudges() {
-        // See BusinessRepository#legacySmsBusiness, same as LeadFollowUpScheduler.
-        Long businessId = businesses.legacySmsBusiness().getId();
-        SquareClient square = squareClientProvider.forBusiness(businessId);
         Instant now = Instant.now();
-        List<SameDayRebookingSend> due = repository.findByStateAndSendDueAtBefore(
-                SameDayRebookingSend.STATE_AWAITING_SEND, now);
-        for (SameDayRebookingSend send : due) {
-            process(send, now, square, businessId);
+        for (TwilioSmsConfig config : twilioConfigs.findAll()) {
+            Long businessId = config.getBusinessId();
+            SquareClient square;
+            try {
+                square = squareClientProvider.forBusiness(businessId);
+            } catch (RuntimeException e) {
+                log.warn("Same-day-rebooking nudges skipped for business {} (will be retried at next scheduled run): {}",
+                        businessId, e.getMessage());
+                continue;
+            }
+            List<SameDayRebookingSend> due = repository.findByBusinessIdAndStateAndSendDueAtBefore(
+                    businessId, SameDayRebookingSend.STATE_AWAITING_SEND, now);
+            for (SameDayRebookingSend send : due) {
+                process(send, now, square, businessId);
+            }
         }
     }
 

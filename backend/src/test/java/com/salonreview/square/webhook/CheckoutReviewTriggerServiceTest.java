@@ -81,7 +81,7 @@ class CheckoutReviewTriggerServiceTest {
 
         // Second, independent enqueue off the same qualifying event — see
         // openspec/changes/same-day-rebooking-discount design.md D1.
-        verify(rebookingTrigger).enqueue("pay_1", "cust_1", PHONE, "Jane");
+        verify(rebookingTrigger).enqueue(BUSINESS_ID, "pay_1", "cust_1", PHONE, "Jane");
     }
 
     @Test
@@ -105,7 +105,7 @@ class CheckoutReviewTriggerServiceTest {
         assertThat(captor.getValue().getSquarePaymentId()).isEqualTo("pay_1");
 
         // The independent same-day-rebooking trigger is unaffected by review-channel coverage.
-        verify(rebookingTrigger).enqueue("pay_1", "cust_1", PHONE, "Jane");
+        verify(rebookingTrigger).enqueue(BUSINESS_ID, "pay_1", "cust_1", PHONE, "Jane");
     }
 
     @Test

@@ -1,12 +1,11 @@
 package com.salonreview.sms;
 
 import com.salonreview.config.RebookingProperties;
-import com.salonreview.domain.Business;
 import com.salonreview.domain.LapsedCustomerWinbackSend;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.TwilioSmsConfig;
-import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.LapsedCustomerWinbackSendRepository;
+import com.salonreview.repo.TwilioSmsConfigRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +44,8 @@ class LapsedCustomerWinbackSchedulerTest {
     private SmsMessageLogService messageLogService;
     private TwilioSmsConfigService configService;
     private TwilioSmsClient client;
+    private SquareClientProvider squareClientProvider;
+    private TwilioSmsConfigRepository twilioConfigs;
     private LapsedCustomerWinbackScheduler scheduler;
 
     @BeforeEach
@@ -59,13 +60,12 @@ class LapsedCustomerWinbackSchedulerTest {
         messageLogService = mock(SmsMessageLogService.class);
         configService = mock(TwilioSmsConfigService.class);
         client = mock(TwilioSmsClient.class);
-        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
-        BusinessRepository businesses = mock(BusinessRepository.class);
-        when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
-                .timezone("UTC").active(true).build());
+        squareClientProvider = mock(SquareClientProvider.class);
+        twilioConfigs = mock(TwilioSmsConfigRepository.class);
+        when(twilioConfigs.findAll()).thenReturn(List.of(TwilioSmsConfig.builder().businessId(BUSINESS_ID).build()));
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         scheduler = new LapsedCustomerWinbackScheduler(eligibilityRepository, sendRepository, squareClientProvider,
-                businesses, automationService, consentRepository, rebookingProperties, messageLogService, configService,
+                twilioConfigs, automationService, consentRepository, rebookingProperties, messageLogService, configService,
                 client, "https://salon.akluxnails.com");
 
         when(automationService.isEnabled(1L, "lapsed_customer_winback")).thenReturn(true);
@@ -87,7 +87,7 @@ class LapsedCustomerWinbackSchedulerTest {
     }
 
     private void givenEligible(LapsedCustomerWinbackEligibilityRepository.EligibleCustomer... customers) {
-        when(eligibilityRepository.findEligibleCustomers()).thenReturn(List.of(customers));
+        when(eligibilityRepository.findEligibleCustomers(BUSINESS_ID)).thenReturn(List.of(customers));
     }
 
     @Test
@@ -220,7 +220,7 @@ class LapsedCustomerWinbackSchedulerTest {
     @DisplayName("customer already present in lapsed_customer_winback_send → never reprocessed")
     void alreadyProcessedCustomerNeverReprocessed() {
         givenEligible(eligible("Susan"));
-        when(sendRepository.existsBySquareCustomerId(CUSTOMER_ID)).thenReturn(true);
+        when(sendRepository.existsByBusinessIdAndSquareCustomerId(BUSINESS_ID, CUSTOMER_ID)).thenReturn(true);
 
         scheduler.sendDueWinbacks();
 
@@ -272,5 +272,36 @@ class LapsedCustomerWinbackSchedulerTest {
 
     private static Instant expectedEndOfTodaySalonZone() {
         return ZonedDateTime.now(SALON_ZONE).toLocalDate().plusDays(1).atStartOfDay(SALON_ZONE).toInstant();
+    }
+
+    @Test
+    @DisplayName("one business's SquareClientProvider failure doesn't stop another business's due winbacks (tasks.md 3.7)")
+    void oneBusinessSquareFailureDoesNotBlockAnother() throws Exception {
+        Long otherBusinessId = 2L;
+        String otherPhone = "+15559998888";
+        SquareClient otherSquare = mock(SquareClient.class);
+        when(otherSquare.customerPhone("cust2")).thenReturn(otherPhone);
+        when(otherSquare.customerGivenNames(List.of("cust2"))).thenReturn(Map.of("cust2", "Other"));
+        when(otherSquare.bookingsForCustomer(eq("cust2"), any())).thenReturn(List.of());
+        when(twilioConfigs.findAll()).thenReturn(List.of(
+                TwilioSmsConfig.builder().businessId(BUSINESS_ID).build(),
+                TwilioSmsConfig.builder().businessId(otherBusinessId).build()));
+        when(squareClientProvider.forBusiness(BUSINESS_ID)).thenThrow(new RuntimeException("business A Square down"));
+        when(squareClientProvider.forBusiness(otherBusinessId)).thenReturn(otherSquare);
+
+        LapsedCustomerWinbackEligibilityRepository.EligibleCustomer otherCustomer =
+                new LapsedCustomerWinbackEligibilityRepository.EligibleCustomer(
+                        "cust2", LocalDate.now().minusDays(28), "Susan Alieva");
+        when(eligibilityRepository.findEligibleCustomers(otherBusinessId)).thenReturn(List.of(otherCustomer));
+        when(automationService.isEnabled(otherBusinessId, "lapsed_customer_winback")).thenReturn(true);
+        TwilioSmsConfig otherConfigured = mock(TwilioSmsConfig.class);
+        when(otherConfigured.isConfigured()).thenReturn(true);
+        when(configService.get(otherBusinessId)).thenReturn(otherConfigured);
+        when(client.send(any(), eq(otherPhone), any())).thenReturn("SM999");
+
+        scheduler.sendDueWinbacks();
+
+        verify(eligibilityRepository, never()).findEligibleCustomers(BUSINESS_ID);
+        verify(client).send(any(), eq(otherPhone), any());
     }
 }

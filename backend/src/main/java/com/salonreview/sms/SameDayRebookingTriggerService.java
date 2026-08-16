@@ -19,6 +19,11 @@ import java.time.ZonedDateTime;
  * with already-resolved values (no duplicate Square lookups). Never throws back to the webhook
  * controller — matches the "never block, never throw" convention every notifier in this codebase
  * follows.
+ *
+ * <p>{@code businessId} is passed in by the caller, which today always resolves it via
+ * {@code BusinessRepository#legacySmsBusiness} (the webhook handler is still Phase-3.6-blocked —
+ * see tasks.md 3.7) — this service itself is business-id-correct regardless of how the caller got
+ * there, so it needs no changes once that upstream gap closes.
  */
 @Service
 public class SameDayRebookingTriggerService {
@@ -34,7 +39,7 @@ public class SameDayRebookingTriggerService {
         this.repository = repository;
     }
 
-    public void enqueue(String paymentId, String customerId, String phoneNumber, String customerName) {
+    public void enqueue(Long businessId, String paymentId, String customerId, String phoneNumber, String customerName) {
         try {
             if (repository.existsBySquarePaymentId(paymentId)) {
                 return; // Square redelivered an event we already enqueued a send for
@@ -46,6 +51,7 @@ public class SameDayRebookingTriggerService {
                     .atStartOfDay(SALON_ZONE).toInstant();
 
             repository.save(SameDayRebookingSend.builder()
+                    .businessId(businessId)
                     .phoneNumber(phoneNumber)
                     .customerName(customerName)
                     .squareCustomerId(customerId)

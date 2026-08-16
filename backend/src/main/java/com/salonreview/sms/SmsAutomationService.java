@@ -84,7 +84,7 @@ public class SmsAutomationService {
                     // convertedLast30Days / sentLast30Days on the frontend, same denominator
                     // convention as reply rate — no separate denominator field needed here.
                     long converted = meta.tracksConversion()
-                            ? repeatCustomerWinbackSendRepository.countConvertedSince("SENT", since)
+                            ? repeatCustomerWinbackSendRepository.countConvertedSince(businessId, "SENT", since)
                             : 0;
 
                     return new AutomationSummary(meta.key(), meta.name(), meta.audienceDescription(), enabled, sent,

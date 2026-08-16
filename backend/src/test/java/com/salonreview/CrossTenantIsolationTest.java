@@ -61,6 +61,7 @@ class CrossTenantIsolationTest {
     @Autowired private RagSuggestionCacheRepository ragSuggestionCache;
     @Autowired private SmsMessageRepository smsMessages;
     @Autowired private SmsReplyFlowRepository smsReplyFlows;
+    @Autowired private SameDayRebookingSendRepository sameDayRebookingSends;
 
     private Long businessAId;
     private Long businessBId;
@@ -635,5 +636,26 @@ class CrossTenantIsolationTest {
 
         assertThat(smsReplyFlows.findByIdAndBusinessId(flowA.getId(), businessAId)).isPresent();
         assertThat(smsReplyFlows.findByIdAndBusinessId(flowA.getId(), businessBId)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("SameDayRebookingSendRepository: findByBusinessIdAndStateAndSendDueAtBefore never crosses businesses (tasks.md 3.7)")
+    void sameDayRebookingSendRepositoryIsolation() {
+        Instant now = Instant.now();
+        SameDayRebookingSend sendA = sameDayRebookingSends.save(SameDayRebookingSend.builder()
+                .businessId(businessAId).phoneNumber("+15550007777").squareCustomerId("cust-a")
+                .squarePaymentId("pay-a-" + System.nanoTime()).sendDueAt(now.minusSeconds(60))
+                .promoExpiresAt(now.plusSeconds(3600)).state(SameDayRebookingSend.STATE_AWAITING_SEND).build());
+        SameDayRebookingSend sendB = sameDayRebookingSends.save(SameDayRebookingSend.builder()
+                .businessId(businessBId).phoneNumber("+15550008888").squareCustomerId("cust-b")
+                .squarePaymentId("pay-b-" + System.nanoTime()).sendDueAt(now.minusSeconds(60))
+                .promoExpiresAt(now.plusSeconds(3600)).state(SameDayRebookingSend.STATE_AWAITING_SEND).build());
+
+        assertIds(sameDayRebookingSends.findByBusinessIdAndStateAndSendDueAtBefore(
+                        businessAId, SameDayRebookingSend.STATE_AWAITING_SEND, now),
+                sendA.getId(), sendB.getId());
+        assertIds(sameDayRebookingSends.findByBusinessIdAndStateAndSendDueAtBefore(
+                        businessBId, SameDayRebookingSend.STATE_AWAITING_SEND, now),
+                sendB.getId(), sendA.getId());
     }
 }
