@@ -1,5 +1,6 @@
 package com.salonreview.web;
 
+import com.salonreview.config.BusinessSetupIncompleteException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -18,6 +19,20 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<Map<String, Object>> notFound(NoSuchElementException ex) {
         return body(HttpStatus.NOT_FOUND, ex.getMessage(), null);
+    }
+
+    /** Onboarding UX: a business exists but a required setup step (e.g. connecting Square) hasn't
+     * happened yet — 409 with a machine-readable {@code code} so the frontend can render "here's
+     * what to do next" instead of a generic error page. */
+    @ExceptionHandler(BusinessSetupIncompleteException.class)
+    public ResponseEntity<Map<String, Object>> setupIncomplete(BusinessSetupIncompleteException ex) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", Instant.now().toString());
+        body.put("status", HttpStatus.CONFLICT.value());
+        body.put("error", HttpStatus.CONFLICT.getReasonPhrase());
+        body.put("code", ex.getCode());
+        body.put("message", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

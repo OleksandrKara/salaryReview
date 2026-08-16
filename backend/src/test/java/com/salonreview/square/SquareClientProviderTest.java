@@ -98,7 +98,9 @@ class SquareClientProviderTest {
     void missingConnectionFailsLoudly() {
         when(connections.findByBusinessId(99L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> provider.forBusiness(99L)).isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("99");
+        assertThatThrownBy(() -> provider.forBusiness(99L))
+                .isInstanceOf(com.salonreview.config.BusinessSetupIncompleteException.class)
+                .satisfies(ex -> assertThat(((com.salonreview.config.BusinessSetupIncompleteException) ex).getCode())
+                        .isEqualTo("square_not_connected"));
     }
 }

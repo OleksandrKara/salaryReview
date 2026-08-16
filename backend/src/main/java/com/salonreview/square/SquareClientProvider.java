@@ -1,5 +1,6 @@
 package com.salonreview.square;
 
+import com.salonreview.config.BusinessSetupIncompleteException;
 import com.salonreview.config.SquareCredentialCipher;
 import com.salonreview.config.SquareProperties;
 import com.salonreview.domain.SquareConnection;
@@ -57,8 +58,9 @@ public class SquareClientProvider {
 
     private SquareClient buildClient(Long businessId) {
         SquareConnection connection = connections.findByBusinessId(businessId)
-                .orElseThrow(() -> new IllegalStateException(
-                        "No Square connection configured for business " + businessId));
+                .orElseThrow(() -> new BusinessSetupIncompleteException(
+                        "square_not_connected",
+                        "Connect Square before viewing reports or syncing data."));
 
         SquareProperties props = new SquareProperties();
         props.setEnvironment(connection.getEnvironment());

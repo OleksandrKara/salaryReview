@@ -1,7 +1,9 @@
 import { redirect } from 'next/navigation';
-import { serverApi } from '../../lib/serverApi';
+import { serverApi, ApiError } from '../../lib/serverApi';
+import type { SmsConversationPageDto } from '../../lib/types';
 import PageHeader from '../../components/PageHeader';
 import MessagesView from './MessagesView';
+import SetupRequiredNotice from '../../components/SetupRequiredNotice';
 
 // Shared OWNER+MANAGER conversation view — see openspec/changes/lead-followup-and-manager-inbox
 // design.md D6/D7. Lives under /admin/* (not /owner/*) since both roles use it, matching this
@@ -42,7 +44,24 @@ export default async function MessagesPage({
   const me = await serverApi.getMe();
   if (me.role !== 'OWNER' && me.role !== 'MANAGER') redirect('/reports');
 
-  const [{ phone }, conversationsPage] = await Promise.all([searchParams, serverApi.listSmsConversationsPage()]);
+  const { phone } = await searchParams;
+  let conversationsPage: SmsConversationPageDto;
+  try {
+    conversationsPage = await serverApi.listSmsConversationsPage();
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'sms_not_available') {
+      return (
+        <main className="mx-auto max-w-5xl p-4 sm:p-8">
+          <PageHeader title="Messages" role={me.role} language={me.preferredLanguage} />
+          <SetupRequiredNotice
+            title="SMS isn't available for this business yet"
+            message="Messaging needs its own Twilio number, which isn't set up per-business yet — this is planned for a future release."
+          />
+        </main>
+      );
+    }
+    throw err;
+  }
 
   return (
     // w-full is load-bearing, not decorative: `main` is a flex item of `body`'s column flex
