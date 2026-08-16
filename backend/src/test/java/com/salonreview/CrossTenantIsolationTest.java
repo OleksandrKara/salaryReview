@@ -50,6 +50,7 @@ class CrossTenantIsolationTest {
     @Autowired private PrepaidPackageRepository prepaidPackages;
     @Autowired private PrepaidRedemptionRepository prepaidRedemptions;
     @Autowired private ProviderVisitRepository providerVisits;
+    @Autowired private StaffDocumentRepository staffDocuments;
 
     private Long businessAId;
     private Long businessBId;
@@ -323,5 +324,34 @@ class CrossTenantIsolationTest {
                 businessAId, visitDate.minusDays(1), visitDate.plusDays(1))).isEqualTo(1);
         assertThat(providerVisits.countByBusinessIdAndServiceDateBetween(
                 businessBId, visitDate.minusDays(1), visitDate.plusDays(1))).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("StaffDocumentRepository: the provider/app_user-join scoping never crosses businesses, for either kind of document")
+    void staffDocumentRepositoryIsolation() {
+        StaffDocument providerDocA = staffDocuments.save(StaffDocument.builder()
+                .providerId(providerA.getId()).documentType("License").fileName("a.pdf")
+                .contentType("application/pdf").fileData(new byte[]{1}).expirationDate(LocalDate.of(2031, 6, 1))
+                .createdBy("owner").build());
+        StaffDocument providerDocB = staffDocuments.save(StaffDocument.builder()
+                .providerId(providerB.getId()).documentType("License").fileName("b.pdf")
+                .contentType("application/pdf").fileData(new byte[]{1}).expirationDate(LocalDate.of(2031, 6, 2))
+                .createdBy("owner").build());
+        StaffDocument managerDocA = staffDocuments.save(StaffDocument.builder()
+                .appUserId(userA.getId()).documentType("NDA").fileName("nda-a.pdf")
+                .contentType("application/pdf").fileData(new byte[]{1}).expirationDate(LocalDate.of(2031, 6, 3))
+                .createdBy("owner").build());
+
+        assertIds(staffDocuments.findAllByBusinessIdOrderByExpirationDateAsc(businessAId),
+                providerDocA.getId(), providerDocB.getId());
+        assertThat(staffDocuments.findAllByBusinessIdOrderByExpirationDateAsc(businessAId))
+                .extracting("id").contains(managerDocA.getId());
+        assertIds(staffDocuments.findAllByBusinessIdOrderByExpirationDateAsc(businessBId),
+                providerDocB.getId(), providerDocA.getId());
+
+        assertThat(staffDocuments.findByIdAndBusinessId(providerDocA.getId(), businessAId)).isPresent();
+        assertThat(staffDocuments.findByIdAndBusinessId(providerDocA.getId(), businessBId)).isEmpty();
+        assertThat(staffDocuments.findByIdAndBusinessId(managerDocA.getId(), businessAId)).isPresent();
+        assertThat(staffDocuments.findByIdAndBusinessId(managerDocA.getId(), businessBId)).isEmpty();
     }
 }

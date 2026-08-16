@@ -44,9 +44,9 @@ public class StaffDocumentService {
         return ExpirationStatus.OK;
     }
 
-    /** Every document, soonest-expiring first. */
-    public List<StaffDocument> listAll() {
-        return documents.findAllByOrderByExpirationDateAsc();
+    /** Every document belonging to one business, soonest-expiring first. */
+    public List<StaffDocument> listAll(Long businessId) {
+        return documents.findAllByBusinessIdOrderByExpirationDateAsc(businessId);
     }
 
     /** One provider's own documents, soonest-expiring first — backs the self-service "My
@@ -65,18 +65,25 @@ public class StaffDocumentService {
         return documents.findById(id);
     }
 
+    /** Owner-side lookup scoped to one business — used for download/update/delete ownership checks
+     * so a document id from another business's table 404s instead of serving/mutating cross-tenant
+     * data (see {@link com.salonreview.repo.StaffDocumentRepository#findByIdAndBusinessId}). */
+    public Optional<StaffDocument> getForBusiness(Long id, Long businessId) {
+        return documents.findByIdAndBusinessId(id, businessId);
+    }
+
     @Transactional
     public StaffDocument create(Long providerId, Long appUserId, String documentType, String label,
                                 LocalDate expirationDate, String fileName, String contentType,
-                                byte[] fileData, String createdBy) {
+                                byte[] fileData, String createdBy, Long businessId) {
         if ((providerId == null) == (appUserId == null)) {
             throw new IllegalArgumentException("A document must belong to exactly one provider or manager");
         }
-        if (providerId != null && !providers.existsById(providerId)) {
+        if (providerId != null && providers.findByIdAndBusinessId(providerId, businessId).isEmpty()) {
             throw new IllegalArgumentException("No such provider");
         }
         if (appUserId != null) {
-            AppUser u = users.findById(appUserId)
+            AppUser u = users.findByIdAndBusinessId(appUserId, businessId)
                     .orElseThrow(() -> new IllegalArgumentException("No such user"));
             if (u.getRole() != Role.MANAGER) {
                 throw new IllegalArgumentException("Documents can only be attached to a service provider or a manager");
@@ -105,8 +112,8 @@ public class StaffDocumentService {
     }
 
     @Transactional
-    public boolean delete(Long id) {
-        if (!documents.existsById(id)) return false;
+    public boolean delete(Long id, Long businessId) {
+        if (documents.findByIdAndBusinessId(id, businessId).isEmpty()) return false;
         documents.deleteById(id);
         return true;
     }
@@ -123,8 +130,9 @@ public class StaffDocumentService {
      * one already on file. Empty (not thrown) if the id doesn't exist, mirroring {@link #delete}'s
      * not-found handling. */
     @Transactional
-    public Optional<StaffDocument> update(Long id, LocalDate expirationDate, String documentType, String label) {
-        return documents.findById(id).map(doc -> {
+    public Optional<StaffDocument> update(Long id, LocalDate expirationDate, String documentType, String label,
+                                          Long businessId) {
+        return documents.findByIdAndBusinessId(id, businessId).map(doc -> {
             if (expirationDate != null) doc.setExpirationDate(expirationDate);
             if (documentType != null) {
                 if (documentType.isBlank()) throw new IllegalArgumentException("documentType cannot be blank");

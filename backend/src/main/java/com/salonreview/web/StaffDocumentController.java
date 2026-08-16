@@ -1,6 +1,7 @@
 package com.salonreview.web;
 
 import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.domain.AppUser;
 import com.salonreview.domain.Provider;
 import com.salonreview.domain.StaffDocument;
@@ -35,17 +36,19 @@ public class StaffDocumentController {
     private final StaffDocumentService service;
     private final ProviderRepository providers;
     private final AppUserRepository users;
+    private final CurrentBusinessContext currentBusinessContext;
 
     public StaffDocumentController(StaffDocumentService service, ProviderRepository providers,
-                                   AppUserRepository users) {
+                                   AppUserRepository users, CurrentBusinessContext currentBusinessContext) {
         this.service = service;
         this.providers = providers;
         this.users = users;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     @GetMapping
     public List<StaffDocumentDto> list() {
-        List<StaffDocument> docs = service.listAll();
+        List<StaffDocument> docs = service.listAll(currentBusinessContext.id());
         Set<Long> providerIds = docs.stream().map(StaffDocument::getProviderId).filter(Objects::nonNull).collect(Collectors.toSet());
         Set<Long> userIds = docs.stream().map(StaffDocument::getAppUserId).filter(Objects::nonNull).collect(Collectors.toSet());
         Map<Long, String> providerNames = providers.findAllById(providerIds).stream()
@@ -67,7 +70,7 @@ public class StaffDocumentController {
             @AuthenticationPrincipal AppUserPrincipal me) throws IOException {
         StaffDocument saved = service.create(providerId, appUserId, documentType, label,
                 LocalDate.parse(expirationDate), file.getOriginalFilename(), file.getContentType(),
-                file.getBytes(), me.getUsername());
+                file.getBytes(), me.getUsername(), currentBusinessContext.id());
         Map<Long, String> providerNames = providerId == null ? Map.of()
                 : providers.findById(providerId).map(p -> Map.of(providerId, p.getDisplayName())).orElse(Map.of());
         Map<Long, String> userNames = appUserId == null ? Map.of()
@@ -82,7 +85,7 @@ public class StaffDocumentController {
     public ResponseEntity<StaffDocumentDto> update(
             @PathVariable Long id, @RequestBody UpdateStaffDocumentRequest req) {
         LocalDate expirationDate = req.expirationDate() == null ? null : LocalDate.parse(req.expirationDate());
-        return service.update(id, expirationDate, req.documentType(), req.label())
+        return service.update(id, expirationDate, req.documentType(), req.label(), currentBusinessContext.id())
                 .map(d -> {
                     Map<Long, String> providerNames = d.getProviderId() == null ? Map.of()
                             : providers.findById(d.getProviderId()).map(p -> Map.of(d.getProviderId(), p.getDisplayName())).orElse(Map.of());
@@ -95,7 +98,7 @@ public class StaffDocumentController {
 
     @GetMapping("/{id}/download")
     public ResponseEntity<byte[]> download(@PathVariable Long id) {
-        return service.get(id)
+        return service.getForBusiness(id, currentBusinessContext.id())
                 .map(d -> ResponseEntity.ok()
                         .contentType(MediaType.parseMediaType(d.getContentType()))
                         .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + d.getFileName() + "\"")
@@ -105,7 +108,8 @@ public class StaffDocumentController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
-        return service.delete(id) ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
+        return service.delete(id, currentBusinessContext.id())
+                ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
     }
 
     /** Package-private (not private) so StaffDocumentSelfController's own read-only endpoints can
