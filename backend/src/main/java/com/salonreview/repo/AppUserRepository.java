@@ -22,6 +22,8 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
 
     List<AppUser> findAllByBusinessIdOrderByUsernameAsc(Long businessId);
 
+    Optional<AppUser> findByIdAndBusinessId(Long id, Long businessId);
+
     /** Active accounts in the given roles — used to build a SOP's acknowledgment roster. */
     List<AppUser> findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(Long businessId, Collection<Role> roles);
 }

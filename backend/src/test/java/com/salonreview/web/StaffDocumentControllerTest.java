@@ -1,6 +1,7 @@
 package com.salonreview.web;
 
 import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.domain.Provider;
 import com.salonreview.domain.Role;
 import com.salonreview.domain.StaffDocument;
@@ -43,6 +44,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class StaffDocumentControllerTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     private StaffDocumentService service;
     private ProviderRepository providers;
     private AppUserRepository users;
@@ -53,7 +56,9 @@ class StaffDocumentControllerTest {
         service = mock(StaffDocumentService.class);
         providers = mock(ProviderRepository.class);
         users = mock(AppUserRepository.class);
-        mvc = MockMvcBuilders.standaloneSetup(new StaffDocumentController(service, providers, users))
+        CurrentBusinessContext currentBusinessContext = mock(CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(BUSINESS_ID);
+        mvc = MockMvcBuilders.standaloneSetup(new StaffDocumentController(service, providers, users, currentBusinessContext))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
 
@@ -76,7 +81,7 @@ class StaffDocumentControllerTest {
         StaffDocument doc = StaffDocument.builder().id(1L).providerId(10L).documentType("License")
                 .fileName("lic.pdf").expirationDate(LocalDate.now().plusDays(5))
                 .createdBy("owner1").createdAt(Instant.now()).build();
-        when(service.listAll()).thenReturn(List.of(doc));
+        when(service.listAll(BUSINESS_ID)).thenReturn(List.of(doc));
         when(providers.findAllById(any())).thenReturn(List.of(
                 Provider.builder().id(10L).displayName("Jane Doe").build()));
         when(users.findAllById(any())).thenReturn(List.of());
@@ -96,7 +101,7 @@ class StaffDocumentControllerTest {
                 .fileName("lic.pdf").expirationDate(LocalDate.of(2027, 1, 1))
                 .createdBy("owner1").createdAt(Instant.now()).build();
         when(service.create(eq(10L), isNull(), eq("License"), isNull(), eq(LocalDate.of(2027, 1, 1)),
-                eq("lic.pdf"), eq("application/pdf"), any(), eq("owner1"))).thenReturn(saved);
+                eq("lic.pdf"), eq("application/pdf"), any(), eq("owner1"), eq(BUSINESS_ID))).thenReturn(saved);
         when(providers.findById(10L)).thenReturn(Optional.of(Provider.builder().id(10L).displayName("Jane Doe").build()));
 
         mvc.perform(multipart("/api/owner/staff-documents")
@@ -115,7 +120,7 @@ class StaffDocumentControllerTest {
         StaffDocument updated = StaffDocument.builder().id(1L).providerId(10L).documentType("Insurance")
                 .label(null).fileName("lic.pdf").expirationDate(LocalDate.of(2099, 1, 1))
                 .createdBy("owner1").createdAt(Instant.now()).build();
-        when(service.update(eq(1L), eq(LocalDate.of(2099, 1, 1)), eq("Insurance"), eq("")))
+        when(service.update(eq(1L), eq(LocalDate.of(2099, 1, 1)), eq("Insurance"), eq(""), eq(BUSINESS_ID)))
                 .thenReturn(Optional.of(updated));
         when(providers.findById(10L)).thenReturn(Optional.of(Provider.builder().id(10L).displayName("Jane Doe").build()));
 
@@ -131,7 +136,7 @@ class StaffDocumentControllerTest {
     @Test
     @DisplayName("PATCH 404s when the document doesn't exist")
     void updateMissing() throws Exception {
-        when(service.update(eq(99L), any(), any(), any())).thenReturn(Optional.empty());
+        when(service.update(eq(99L), any(), any(), any(), eq(BUSINESS_ID))).thenReturn(Optional.empty());
 
         mvc.perform(patch("/api/owner/staff-documents/99")
                         .contentType("application/json")
@@ -145,7 +150,7 @@ class StaffDocumentControllerTest {
         StaffDocument doc = StaffDocument.builder().id(1L).providerId(10L).documentType("License")
                 .fileName("lic.pdf").contentType("application/pdf").fileData(new byte[]{9, 9, 9})
                 .expirationDate(LocalDate.now().plusYears(1)).createdBy("owner1").createdAt(Instant.now()).build();
-        when(service.get(1L)).thenReturn(Optional.of(doc));
+        when(service.getForBusiness(1L, BUSINESS_ID)).thenReturn(Optional.of(doc));
 
         mvc.perform(get("/api/owner/staff-documents/1/download"))
                 .andExpect(status().isOk())
@@ -155,7 +160,7 @@ class StaffDocumentControllerTest {
     @Test
     @DisplayName("GET /{id}/download 404s when the document doesn't exist")
     void downloadMissing() throws Exception {
-        when(service.get(99L)).thenReturn(Optional.empty());
+        when(service.getForBusiness(99L, BUSINESS_ID)).thenReturn(Optional.empty());
 
         mvc.perform(get("/api/owner/staff-documents/99/download"))
                 .andExpect(status().isNotFound());
@@ -164,8 +169,8 @@ class StaffDocumentControllerTest {
     @Test
     @DisplayName("DELETE removes an existing document (204) and 404s for a missing one")
     void deleteBehavior() throws Exception {
-        when(service.delete(1L)).thenReturn(true);
-        when(service.delete(99L)).thenReturn(false);
+        when(service.delete(1L, BUSINESS_ID)).thenReturn(true);
+        when(service.delete(99L, BUSINESS_ID)).thenReturn(false);
 
         mvc.perform(delete("/api/owner/staff-documents/1")).andExpect(status().isNoContent());
         mvc.perform(delete("/api/owner/staff-documents/99")).andExpect(status().isNotFound());

@@ -13,6 +13,8 @@ public interface ProviderRepository extends JpaRepository<Provider, Long> {
 
     List<Provider> findAllByBusinessIdAndActiveTrue(Long businessId);
 
+    Optional<Provider> findByIdAndBusinessId(Long id, Long businessId);
+
     /** The provider that owns the given Square team-member ID, if any. */
     @Query("select p from Provider p join p.squareTeamMemberIds m where m = :teamMemberId")
     Optional<Provider> findBySquareTeamMemberId(@Param("teamMemberId") String teamMemberId);
