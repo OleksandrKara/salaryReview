@@ -29,6 +29,8 @@ import static org.mockito.Mockito.when;
 /** Unit tests for {@link SopSyncService}: ingest success, all-or-nothing PII, no-op, retire, status. */
 class SopSyncServiceTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     private final SopRepository sops = mock(SopRepository.class);
     private final SopVersionRepository versions = mock(SopVersionRepository.class);
     @SuppressWarnings("unchecked")
@@ -62,13 +64,13 @@ class SopSyncServiceTest {
     @DisplayName("syncs the current published version → SYNCED with rag doc + version recorded")
     void syncSuccess() {
         Sop sop = activeSop(100L);
-        when(sops.findById(1L)).thenReturn(Optional.of(sop));
+        when(sops.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(sop));
         stubVersionBody(100L, "Wash hands before each client.");
         when(rag.upload(eq("Cleaning.md"), any(), eq("owner"))).thenReturn(RagDocument.builder().id(55L).build());
         when(ragChunks.countByDocumentIdAndStatus(55L, RagChunkStatus.QUARANTINED)).thenReturn(0L);
         when(ragChunks.countByDocumentIdAndStatus(55L, RagChunkStatus.INDEXED)).thenReturn(3L);
 
-        Sop out = service.syncOne(1L, "owner").orElseThrow();
+        Sop out = service.syncOne(1L, "owner", BUSINESS_ID).orElseThrow();
 
         assertThat(out.getSyncStatus()).isEqualTo(SyncStatus.SYNCED);
         assertThat(out.getRagDocId()).isEqualTo(55L);
@@ -81,13 +83,13 @@ class SopSyncServiceTest {
     @DisplayName("all-or-nothing: any quarantined chunk rejects the whole SOP and deletes the doc")
     void piiRejected() {
         Sop sop = activeSop(100L);
-        when(sops.findById(1L)).thenReturn(Optional.of(sop));
+        when(sops.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(sop));
         stubVersionBody(100L, "Call the client at 555-123-4567.");
         when(rag.upload(any(), any(), any())).thenReturn(RagDocument.builder().id(55L).build());
         when(ragChunks.countByDocumentIdAndStatus(55L, RagChunkStatus.QUARANTINED)).thenReturn(1L);
         when(ragChunks.countByDocumentIdAndStatus(55L, RagChunkStatus.INDEXED)).thenReturn(2L);
 
-        Sop out = service.syncOne(1L, "owner").orElseThrow();
+        Sop out = service.syncOne(1L, "owner", BUSINESS_ID).orElseThrow();
 
         assertThat(out.getSyncStatus()).isEqualTo(SyncStatus.ERROR);
         assertThat(out.getRagDocId()).isNull();
@@ -102,9 +104,9 @@ class SopSyncServiceTest {
         sop.setSyncStatus(SyncStatus.SYNCED);
         sop.setRagDocId(55L);
         sop.setSyncedVersionId(100L);
-        when(sops.findById(1L)).thenReturn(Optional.of(sop));
+        when(sops.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(sop));
 
-        Sop out = service.syncOne(1L, "owner").orElseThrow();
+        Sop out = service.syncOne(1L, "owner", BUSINESS_ID).orElseThrow();
 
         assertThat(out.getSyncStatus()).isEqualTo(SyncStatus.SYNCED);
         verify(rag, never()).upload(any(), any(), any());
@@ -116,10 +118,10 @@ class SopSyncServiceTest {
     void ragUnavailable() {
         when(ragProvider.getIfAvailable()).thenReturn(null);
         Sop sop = activeSop(100L);
-        when(sops.findById(1L)).thenReturn(Optional.of(sop));
+        when(sops.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(sop));
         stubVersionBody(100L, "Some policy text.");
 
-        Sop out = service.syncOne(1L, "owner").orElseThrow();
+        Sop out = service.syncOne(1L, "owner", BUSINESS_ID).orElseThrow();
 
         assertThat(out.getSyncStatus()).isEqualTo(SyncStatus.ERROR);
         assertThat(out.getLastSyncError()).contains("RAG");
@@ -131,9 +133,9 @@ class SopSyncServiceTest {
         Sop sop = Sop.builder().id(1L).title("Old policy").category("c").audience(SopAudience.BOTH)
                 .status(SopStatus.ARCHIVED).currentVersionId(100L).createdBy("owner")
                 .ragDocId(55L).syncedVersionId(100L).syncStatus(SyncStatus.SYNCED).build();
-        when(sops.findById(1L)).thenReturn(Optional.of(sop));
+        when(sops.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(sop));
 
-        Sop out = service.syncOne(1L, "owner").orElseThrow();
+        Sop out = service.syncOne(1L, "owner", BUSINESS_ID).orElseThrow();
 
         verify(rag).delete(55L, "owner");
         assertThat(out.getRagDocId()).isNull();
@@ -157,9 +159,9 @@ class SopSyncServiceTest {
         Sop sop = Sop.builder().id(1L).title("Clock-in steps").category("c").audience(SopAudience.PROVIDER)
                 .status(SopStatus.ACTIVE).currentVersionId(100L).createdBy("owner")
                 .syncStatus(SyncStatus.NOT_SYNCED).build();
-        when(sops.findById(1L)).thenReturn(Optional.of(sop));
+        when(sops.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(sop));
 
-        Sop out = service.syncOne(1L, "owner").orElseThrow();
+        Sop out = service.syncOne(1L, "owner", BUSINESS_ID).orElseThrow();
 
         assertThat(out.getSyncStatus()).isEqualTo(SyncStatus.NOT_SYNCED);
         assertThat(out.getLastSyncError()).contains("Provider-only");
@@ -172,9 +174,9 @@ class SopSyncServiceTest {
         Sop sop = Sop.builder().id(1L).title("Clock-in steps").category("c").audience(SopAudience.PROVIDER)
                 .status(SopStatus.ACTIVE).currentVersionId(100L).createdBy("owner")
                 .ragDocId(55L).syncedVersionId(100L).syncStatus(SyncStatus.SYNCED).build();
-        when(sops.findById(1L)).thenReturn(Optional.of(sop));
+        when(sops.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(sop));
 
-        Sop out = service.syncOne(1L, "owner").orElseThrow();
+        Sop out = service.syncOne(1L, "owner", BUSINESS_ID).orElseThrow();
 
         verify(rag).delete(55L, "owner");
         assertThat(out.getRagDocId()).isNull();
@@ -190,9 +192,9 @@ class SopSyncServiceTest {
                 .status(SopStatus.ACTIVE).createdBy("owner").build();
         Sop providerSop = Sop.builder().id(3L).title("Provider thing").category("c").audience(SopAudience.PROVIDER)
                 .status(SopStatus.ACTIVE).createdBy("owner").build();
-        when(sops.findByStatusOrderByPriorityAscCategoryAscTitleAsc(SopStatus.ACTIVE))
+        when(sops.findByBusinessIdAndStatusOrderByPriorityAscCategoryAscTitleAsc(BUSINESS_ID, SopStatus.ACTIVE))
                 .thenReturn(java.util.List.of(managerSop, bothSop, providerSop));
 
-        assertThat(service.list()).extracting(Sop::getId).containsExactly(1L, 2L);
+        assertThat(service.list(BUSINESS_ID)).extracting(Sop::getId).containsExactly(1L, 2L);
     }
 }

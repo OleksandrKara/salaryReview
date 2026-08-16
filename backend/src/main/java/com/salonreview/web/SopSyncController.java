@@ -1,6 +1,7 @@
 package com.salonreview.web;
 
 import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.domain.Sop;
 import com.salonreview.sop.SopExportService;
 import com.salonreview.sop.SopSyncService;
@@ -29,21 +30,23 @@ public class SopSyncController {
 
     private final SopSyncService sync;
     private final SopExportService export;
+    private final CurrentBusinessContext currentBusinessContext;
 
-    public SopSyncController(SopSyncService sync, SopExportService export) {
+    public SopSyncController(SopSyncService sync, SopExportService export, CurrentBusinessContext currentBusinessContext) {
         this.sync = sync;
         this.export = export;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     @GetMapping("/rag-sync")
     public List<SopSyncDto> list() {
-        return sync.list().stream().map(this::toDto).toList();
+        return sync.list(currentBusinessContext.id()).stream().map(this::toDto).toList();
     }
 
     /** One SOP's current published version as a standalone .md file. */
     @GetMapping("/{id}/download")
     public ResponseEntity<byte[]> downloadOne(@PathVariable Long id) {
-        return export.exportOne(id)
+        return export.exportOne(id, currentBusinessContext.id())
                 .map(e -> ResponseEntity.ok()
                         .contentType(MediaType.parseMediaType("text/markdown; charset=UTF-8"))
                         .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + e.filename() + "\"")
@@ -57,14 +60,14 @@ public class SopSyncController {
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"sops.zip\"")
-                .body(export.exportAllAsZip());
+                .body(export.exportAllAsZip(currentBusinessContext.id()));
     }
 
     @PostMapping("/{id}/rag-sync")
     public ResponseEntity<SopSyncDto> syncOne(@PathVariable Long id,
                                               @AuthenticationPrincipal AppUserPrincipal me) {
         try {
-            return sync.syncOne(id, me.getUsername()).map(s -> ResponseEntity.ok(toDto(s)))
+            return sync.syncOne(id, me.getUsername(), currentBusinessContext.id()).map(s -> ResponseEntity.ok(toDto(s)))
                     .orElseGet(() -> ResponseEntity.notFound().build());
         } catch (SopSyncService.SyncInProgressException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).build();
@@ -74,7 +77,8 @@ public class SopSyncController {
     @PostMapping("/rag-sync-all")
     public ResponseEntity<List<SopSyncDto>> syncAll(@AuthenticationPrincipal AppUserPrincipal me) {
         try {
-            return ResponseEntity.ok(sync.syncAll(me.getUsername()).stream().map(this::toDto).toList());
+            return ResponseEntity.ok(sync.syncAll(me.getUsername(), currentBusinessContext.id()).stream()
+                    .map(this::toDto).toList());
         } catch (SopSyncService.SyncInProgressException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).build();
         }

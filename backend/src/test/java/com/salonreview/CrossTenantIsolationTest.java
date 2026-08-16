@@ -51,6 +51,7 @@ class CrossTenantIsolationTest {
     @Autowired private PrepaidRedemptionRepository prepaidRedemptions;
     @Autowired private ProviderVisitRepository providerVisits;
     @Autowired private StaffDocumentRepository staffDocuments;
+    @Autowired private SopRepository sops;
 
     private Long businessAId;
     private Long businessBId;
@@ -353,5 +354,31 @@ class CrossTenantIsolationTest {
         assertThat(staffDocuments.findByIdAndBusinessId(providerDocA.getId(), businessBId)).isEmpty();
         assertThat(staffDocuments.findByIdAndBusinessId(managerDocA.getId(), businessAId)).isPresent();
         assertThat(staffDocuments.findByIdAndBusinessId(managerDocA.getId(), businessBId)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("SopRepository: business_id scoping never crosses businesses, for the list and single-lookup methods")
+    void sopRepositoryIsolation() {
+        Sop sopA = sops.save(Sop.builder().businessId(businessAId).title("Cleaning A").category("Hygiene")
+                .audience(SopAudience.BOTH).status(SopStatus.ACTIVE).createdBy("owner").build());
+        Sop sopB = sops.save(Sop.builder().businessId(businessBId).title("Cleaning B").category("Hygiene")
+                .audience(SopAudience.BOTH).status(SopStatus.ACTIVE).createdBy("owner").build());
+        Sop draftA = sops.save(Sop.builder().businessId(businessAId).title("Draft A").category("Hygiene")
+                .audience(SopAudience.BOTH).status(SopStatus.ARCHIVED).createdBy("owner").build());
+
+        assertIds(sops.findAllByBusinessIdOrderByPriorityAscCategoryAscTitleAsc(businessAId), sopA.getId(), sopB.getId());
+        assertThat(sops.findAllByBusinessIdOrderByPriorityAscCategoryAscTitleAsc(businessAId))
+                .extracting("id").contains(draftA.getId());
+        assertIds(sops.findAllByBusinessIdOrderByPriorityAscCategoryAscTitleAsc(businessBId), sopB.getId(), sopA.getId());
+
+        assertIds(sops.findByBusinessIdAndStatusOrderByPriorityAscCategoryAscTitleAsc(businessAId, SopStatus.ACTIVE),
+                sopA.getId(), sopB.getId());
+        assertThat(sops.findByBusinessIdAndStatusOrderByPriorityAscCategoryAscTitleAsc(businessAId, SopStatus.ACTIVE))
+                .extracting("id").doesNotContain(draftA.getId());
+
+        assertThat(sops.findByIdAndBusinessId(sopA.getId(), businessAId)).isPresent();
+        assertThat(sops.findByIdAndBusinessId(sopA.getId(), businessBId)).isEmpty();
+        assertThat(sops.findByIdAndBusinessId(sopB.getId(), businessBId)).isPresent();
+        assertThat(sops.findByIdAndBusinessId(sopB.getId(), businessAId)).isEmpty();
     }
 }

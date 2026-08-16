@@ -104,15 +104,27 @@ this file is the plan, not yet executed.
       (schedulers, webhooks) still resolve via `legacySmsBusiness()` rather than real per-business
       iteration (tracked in 3.7), so a second business's config, even though storable, isn't reachable
       by automation yet. `sms_message` itself is still unscoped (still behind the filter, no
-      `business_id` column). **KB articles, RAG documents/chunks, SOPs, and staff documents were
-      deliberately left unfixed** — blocking them the same way would leave a real second business
-      unable to use its own KB/SOPs/documents at all, which is a product decision, not a security
-      one; scope was judged non-critical while there are only two businesses and this is tracked here
-      instead of patched under pressure. **Hard gate: this task must be fully closed (real
-      `business_id` columns + filtered queries + the cross-tenant isolation suite in 2.5 extended to
-      cover these tables) before Phase 7 runs for a third business** — the stopgap approach
-      (allow-list one hardcoded business, 403 everyone else) does not scale past two businesses and
-      must not be repeated as a shortcut when business 3 is onboarded.
+      `business_id` column). **`staff_documents` is now genuinely business-scoped** (PR #377 — no
+      migration needed: `provider_id`/`app_user_id` are real FKs into already business-scoped
+      `Provider`/`AppUser`, so `StaffDocumentRepository` filters via a join through those, same idiom
+      as `RedoRepository`/`ManualAdjustmentRepository`; `StaffDocumentController`'s owner-side
+      list/create/update/delete/download resolve via `CurrentBusinessContext`). **`sops` (and by
+      extension `sop_versions`/`sop_acknowledgments`) is now genuinely business-scoped** too — `sops`
+      got a real migration (`business_id BIGINT UNIQUE`-less FK, since a business can have many SOPs
+      unlike the singleton config tables), backfilled to Business A; `sop_versions`/
+      `sop_acknowledgments` need no migration of their own — every access joins through an
+      already-verified `sops.business_id` (same join idiom as `staff_documents`), since the service
+      layer always resolves+verifies the parent `Sop` before touching a version or acknowledgment row.
+      `SopController`/`SopSyncController` resolve via `CurrentBusinessContext`. **KB articles and RAG
+      documents/chunks/agent-config/suggestion-cache/redaction-audit were deliberately left
+      unfixed** — blocking them the same way would leave a real second business unable to use its own
+      KB at all, which is a product decision, not a security one; scope was judged non-critical while
+      there are only two businesses and this is tracked here instead of patched under pressure.
+      **Hard gate: this task must be fully closed (real `business_id` columns + filtered queries + the
+      cross-tenant isolation suite in 2.5 extended to cover these tables) before Phase 7 runs for a
+      third business** — the stopgap approach (allow-list one hardcoded business, 403 everyone else)
+      does not scale past two businesses and must not be repeated as a shortcut when business 3 is
+      onboarded.
 
 ## Phase 3 — Square multi-account support
 

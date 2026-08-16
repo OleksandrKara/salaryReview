@@ -34,13 +34,14 @@ public class SopExportService {
 
     public record Export(String filename, String markdown) {}
 
-    public Optional<Export> exportOne(Long id) {
-        return sops.findById(id).flatMap(this::toExport);
+    public Optional<Export> exportOne(Long id, Long businessId) {
+        return sops.findByIdAndBusinessId(id, businessId).flatMap(this::toExport);
     }
 
-    /** Zips every ACTIVE, published SOP — the same corpus shown in the admin sync section. */
-    public byte[] exportAllAsZip() {
-        List<Sop> active = sops.findByStatusOrderByPriorityAscCategoryAscTitleAsc(SopStatus.ACTIVE);
+    /** Zips every ACTIVE, published SOP for one business — the same corpus shown in the admin sync
+     * section. */
+    public byte[] exportAllAsZip(Long businessId) {
+        List<Sop> active = sops.findByBusinessIdAndStatusOrderByPriorityAscCategoryAscTitleAsc(businessId, SopStatus.ACTIVE);
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         try (ZipOutputStream zip = new ZipOutputStream(buffer)) {
             for (Sop s : active) {

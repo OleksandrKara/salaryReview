@@ -31,6 +31,9 @@ public class Sop {
     @Column(nullable = false, length = 128)
     private String category;
 
+    @Column(name = "business_id", nullable = false)
+    private Long businessId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private SopAudience audience;
