@@ -52,6 +52,9 @@ class CrossTenantIsolationTest {
     @Autowired private ProviderVisitRepository providerVisits;
     @Autowired private StaffDocumentRepository staffDocuments;
     @Autowired private SopRepository sops;
+    @Autowired private KbArticleRepository kbArticles;
+    @Autowired private KbRequestRepository kbRequests;
+    @Autowired private RagDocumentRepository ragDocuments;
 
     private Long businessAId;
     private Long businessBId;
@@ -380,5 +383,59 @@ class CrossTenantIsolationTest {
         assertThat(sops.findByIdAndBusinessId(sopA.getId(), businessBId)).isEmpty();
         assertThat(sops.findByIdAndBusinessId(sopB.getId(), businessBId)).isPresent();
         assertThat(sops.findByIdAndBusinessId(sopB.getId(), businessAId)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("KbArticleRepository: business_id scoping never crosses businesses, for the list, pending-sync, and single-lookup methods")
+    void kbArticleRepositoryIsolation() {
+        KbArticle articleA = kbArticles.save(KbArticle.builder().businessId(businessAId).title("Refunds A")
+                .category("FAQ").body("x").contentHash("hash-a").syncStatus(SyncStatus.NOT_SYNCED)
+                .createdBy("owner").build());
+        KbArticle articleB = kbArticles.save(KbArticle.builder().businessId(businessBId).title("Refunds B")
+                .category("FAQ").body("x").contentHash("hash-b").syncStatus(SyncStatus.NOT_SYNCED)
+                .createdBy("owner").build());
+        RagDocument ragDoc = ragDocuments.save(RagDocument.builder().filename("f.txt").sourceType("TEXT")
+                .extractedText("x").status(RagDocumentStatus.INDEXED).uploadedBy("owner")
+                .createdAt(Instant.now()).build());
+        KbArticle syncedA = kbArticles.save(KbArticle.builder().businessId(businessAId).title("Synced A")
+                .category("FAQ").body("x").contentHash("hash-c").ragDocId(ragDoc.getId()).syncStatus(SyncStatus.SYNCED)
+                .createdBy("owner").build());
+
+        assertIds(kbArticles.findAllByBusinessIdOrderByCategoryAscTitleAsc(businessAId), articleA.getId(), articleB.getId());
+        assertIds(kbArticles.findAllByBusinessIdOrderByCategoryAscTitleAsc(businessBId), articleB.getId(), articleA.getId());
+
+        assertIds(kbArticles.findPendingSyncByBusinessIdOrderByCategoryAscTitleAsc(
+                        businessAId, java.util.EnumSet.of(SyncStatus.NOT_SYNCED)),
+                articleA.getId(), articleB.getId());
+        assertThat(kbArticles.findPendingSyncByBusinessIdOrderByCategoryAscTitleAsc(
+                        businessAId, java.util.EnumSet.of(SyncStatus.NOT_SYNCED)))
+                .extracting("id").doesNotContain(syncedA.getId());
+
+        assertThat(kbArticles.findByIdAndBusinessId(articleA.getId(), businessAId)).isPresent();
+        assertThat(kbArticles.findByIdAndBusinessId(articleA.getId(), businessBId)).isEmpty();
+        assertThat(kbArticles.findByIdAndBusinessId(articleB.getId(), businessBId)).isPresent();
+        assertThat(kbArticles.findByIdAndBusinessId(articleB.getId(), businessAId)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("KbRequestRepository: business_id scoping never crosses businesses, for the list, count, and single-lookup methods")
+    void kbRequestRepositoryIsolation() {
+        KbRequest requestA = kbRequests.save(KbRequest.builder().businessId(businessAId).question("Q-A")
+                .target(KbRequestTarget.KB).status(KbRequestStatus.OPEN).requestedBy("manager").build());
+        KbRequest requestB = kbRequests.save(KbRequest.builder().businessId(businessBId).question("Q-B")
+                .target(KbRequestTarget.KB).status(KbRequestStatus.OPEN).requestedBy("manager").build());
+        kbRequests.save(KbRequest.builder().businessId(businessBId).question("Q-B2")
+                .target(KbRequestTarget.KB).status(KbRequestStatus.OPEN).requestedBy("manager").build());
+
+        assertIds(kbRequests.findAllByBusinessIdOrderByCreatedAtDesc(businessAId), requestA.getId(), requestB.getId());
+        assertIds(kbRequests.findAllByBusinessIdOrderByCreatedAtDesc(businessBId), requestB.getId(), requestA.getId());
+
+        assertThat(kbRequests.countByBusinessIdAndStatus(businessAId, KbRequestStatus.OPEN)).isEqualTo(1L);
+        assertThat(kbRequests.countByBusinessIdAndStatus(businessBId, KbRequestStatus.OPEN)).isEqualTo(2L);
+
+        assertThat(kbRequests.findByIdAndBusinessId(requestA.getId(), businessAId)).isPresent();
+        assertThat(kbRequests.findByIdAndBusinessId(requestA.getId(), businessBId)).isEmpty();
+        assertThat(kbRequests.findByIdAndBusinessId(requestB.getId(), businessBId)).isPresent();
+        assertThat(kbRequests.findByIdAndBusinessId(requestB.getId(), businessAId)).isEmpty();
     }
 }

@@ -1,6 +1,7 @@
 package com.salonreview.web;
 
 import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.domain.KbArticle;
 import com.salonreview.domain.Role;
 import com.salonreview.kb.KbAiDraftService;
@@ -31,24 +32,27 @@ public class KbArticleController {
     private final KbSyncService sync;
     private final KbAiDraftService aiDraft;
     private final KbExportService export;
+    private final CurrentBusinessContext currentBusinessContext;
 
     public KbArticleController(KbArticleService articles, KbSyncService sync, KbAiDraftService aiDraft,
-                               KbExportService export) {
+                               KbExportService export, CurrentBusinessContext currentBusinessContext) {
         this.articles = articles;
         this.sync = sync;
         this.aiDraft = aiDraft;
         this.export = export;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     @GetMapping
     public List<KbArticleDto> list(@AuthenticationPrincipal AppUserPrincipal me) {
-        return articles.list(me.getRole()).stream().map(KbArticleController::toDto).toList();
+        return articles.list(me.getRole(), currentBusinessContext.id()).stream()
+                .map(KbArticleController::toDto).toList();
     }
 
     /** One article as a standalone .md file. */
     @GetMapping("/{id}/download")
     public ResponseEntity<byte[]> downloadOne(@PathVariable Long id) {
-        return export.exportOne(id)
+        return export.exportOne(id, currentBusinessContext.id())
                 .map(e -> ResponseEntity.ok()
                         .contentType(MediaType.parseMediaType("text/markdown; charset=UTF-8"))
                         .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + e.filename() + "\"")
@@ -62,12 +66,12 @@ public class KbArticleController {
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"kb-articles.zip\"")
-                .body(export.exportAllAsZip());
+                .body(export.exportAllAsZip(currentBusinessContext.id()));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<KbArticleDto> get(@PathVariable Long id, @AuthenticationPrincipal AppUserPrincipal me) {
-        return articles.get(id, me.getRole()).map(a -> ResponseEntity.ok(toDto(a)))
+        return articles.get(id, me.getRole(), currentBusinessContext.id()).map(a -> ResponseEntity.ok(toDto(a)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
@@ -76,21 +80,22 @@ public class KbArticleController {
                                                @AuthenticationPrincipal AppUserPrincipal me) {
         if (isBlank(body.title()) || isBlank(body.category())) return ResponseEntity.badRequest().build();
         KbArticle a = articles.create(body.title(), body.titleRu(), body.category(), body.body(), body.bodyRu(),
-                body.visibleRoles(), me.getUsername());
+                body.visibleRoles(), me.getUsername(), currentBusinessContext.id());
         return ResponseEntity.ok(toDto(a));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<KbArticleDto> update(@PathVariable Long id, @RequestBody WriteRequest body) {
         if (isBlank(body.title()) || isBlank(body.category())) return ResponseEntity.badRequest().build();
-        return articles.update(id, body.title(), body.titleRu(), body.category(), body.body(), body.bodyRu(), body.visibleRoles())
+        return articles.update(id, body.title(), body.titleRu(), body.category(), body.body(), body.bodyRu(),
+                        body.visibleRoles(), currentBusinessContext.id())
                 .map(a -> ResponseEntity.ok(toDto(a)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id, @AuthenticationPrincipal AppUserPrincipal me) {
-        return articles.delete(id, me.getUsername())
+        return articles.delete(id, me.getUsername(), currentBusinessContext.id())
                 ? ResponseEntity.noContent().build()
                 : ResponseEntity.notFound().build();
     }
@@ -99,7 +104,7 @@ public class KbArticleController {
     public ResponseEntity<KbArticleDto> syncOne(@PathVariable Long id,
                                                 @AuthenticationPrincipal AppUserPrincipal me) {
         try {
-            return sync.syncOne(id, me.getUsername()).map(a -> ResponseEntity.ok(toDto(a)))
+            return sync.syncOne(id, me.getUsername(), currentBusinessContext.id()).map(a -> ResponseEntity.ok(toDto(a)))
                     .orElseGet(() -> ResponseEntity.notFound().build());
         } catch (KbSyncService.SyncInProgressException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).build();
@@ -109,7 +114,7 @@ public class KbArticleController {
     @PostMapping("/sync-all")
     public ResponseEntity<List<KbArticleDto>> syncAll(@AuthenticationPrincipal AppUserPrincipal me) {
         try {
-            return ResponseEntity.ok(sync.syncAll(me.getUsername()).stream()
+            return ResponseEntity.ok(sync.syncAll(me.getUsername(), currentBusinessContext.id()).stream()
                     .map(KbArticleController::toDto).toList());
         } catch (KbSyncService.SyncInProgressException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).build();

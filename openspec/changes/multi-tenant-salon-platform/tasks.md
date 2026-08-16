@@ -115,16 +115,21 @@ this file is the plan, not yet executed.
       `sop_acknowledgments` need no migration of their own — every access joins through an
       already-verified `sops.business_id` (same join idiom as `staff_documents`), since the service
       layer always resolves+verifies the parent `Sop` before touching a version or acknowledgment row.
-      `SopController`/`SopSyncController` resolve via `CurrentBusinessContext`. **KB articles and RAG
-      documents/chunks/agent-config/suggestion-cache/redaction-audit were deliberately left
-      unfixed** — blocking them the same way would leave a real second business unable to use its own
-      KB at all, which is a product decision, not a security one; scope was judged non-critical while
-      there are only two businesses and this is tracked here instead of patched under pressure.
-      **Hard gate: this task must be fully closed (real `business_id` columns + filtered queries + the
-      cross-tenant isolation suite in 2.5 extended to cover these tables) before Phase 7 runs for a
-      third business** — the stopgap approach (allow-list one hardcoded business, 403 everyone else)
-      does not scale past two businesses and must not be repeated as a shortcut when business 3 is
-      onboarded.
+      `SopController`/`SopSyncController` resolve via `CurrentBusinessContext`. **`kb_articles` and
+      `kb_request` are now genuinely business-scoped** too (V98) — both are root tables with no
+      existing FK into an already business-scoped table (unlike `staff_documents`/`sop_versions`), so
+      both got a real `business_id BIGINT NOT NULL FK` migration, backfilled to Business A;
+      `KbArticleController`/`KbRequestController` resolve via `CurrentBusinessContext`. KB→RAG sync
+      (`KbSyncService`) is untouched beyond which articles get selected for syncing. **Only
+      `rag_document`/`rag_chunk`/`rag_agent_config`/`rag_suggestion_cache`/`rag_redaction_audit`
+      remain deliberately unfixed** — blocking them the same way would leave a real second business
+      unable to use its own KB/SOP-backed assistant at all, which is a product decision, not a
+      security one; scope was judged non-critical while there are only two businesses and this is
+      tracked here instead of patched under pressure. **Hard gate: this task must be fully closed
+      (real `business_id` columns + filtered queries + the cross-tenant isolation suite in 2.5
+      extended to cover these tables) before Phase 7 runs for a third business** — the stopgap
+      approach (allow-list one hardcoded business, 403 everyone else) does not scale past two
+      businesses and must not be repeated as a shortcut when business 3 is onboarded.
 
 ## Phase 3 — Square multi-account support
 

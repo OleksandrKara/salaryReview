@@ -25,8 +25,9 @@ public class KbRequestService {
     }
 
     @Transactional
-    public KbRequest create(String question, String note, KbRequestTarget target, String by) {
+    public KbRequest create(String question, String note, KbRequestTarget target, String by, Long businessId) {
         return repo.save(KbRequest.builder()
+                .businessId(businessId)
                 .question(question.trim())
                 .note(blankToNull(note))
                 .target(target == null ? KbRequestTarget.UNSURE : target)
@@ -35,18 +36,18 @@ public class KbRequestService {
                 .build());
     }
 
-    public List<KbRequest> list() {
-        return repo.findAllByOrderByCreatedAtDesc();
+    public List<KbRequest> list(Long businessId) {
+        return repo.findAllByBusinessIdOrderByCreatedAtDesc(businessId);
     }
 
-    public long openCount() {
-        return repo.countByStatus(KbRequestStatus.OPEN);
+    public long openCount(Long businessId) {
+        return repo.countByBusinessIdAndStatus(businessId, KbRequestStatus.OPEN);
     }
 
     /** Set the status; RESOLVED records who/when, any other status clears the resolution stamp. */
     @Transactional
-    public Optional<KbRequest> setStatus(Long id, KbRequestStatus status, String by) {
-        return repo.findById(id).map(r -> {
+    public Optional<KbRequest> setStatus(Long id, KbRequestStatus status, String by, Long businessId) {
+        return repo.findByIdAndBusinessId(id, businessId).map(r -> {
             r.setStatus(status);
             if (status == KbRequestStatus.RESOLVED) {
                 r.setResolvedAt(Instant.now());
@@ -60,8 +61,8 @@ public class KbRequestService {
     }
 
     @Transactional
-    public boolean delete(Long id) {
-        if (!repo.existsById(id)) return false;
+    public boolean delete(Long id, Long businessId) {
+        if (repo.findByIdAndBusinessId(id, businessId).isEmpty()) return false;
         repo.deleteById(id);
         return true;
     }

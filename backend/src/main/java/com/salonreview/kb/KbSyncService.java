@@ -46,21 +46,22 @@ public class KbSyncService {
         this.ragChunks = ragChunks;
     }
 
-    /** Sync one article. Returns the updated article (possibly in ERROR). 404 handled by the caller. */
-    public Optional<KbArticle> syncOne(Long id, String by) {
-        return repo.findById(id).map(a -> doSync(a, by));
+    /** Sync one article. Returns the updated article (possibly in ERROR). Empty when it doesn't
+     * exist or isn't this business's — 404 handled by the caller. */
+    public Optional<KbArticle> syncOne(Long id, String by, Long businessId) {
+        return repo.findByIdAndBusinessId(id, businessId).map(a -> doSync(a, by));
     }
 
     /**
-     * Sync every article that is NOT_SYNCED / CHANGED / ERROR, one at a time. Rejects a concurrent
-     * run with {@link SyncInProgressException} (→ 409).
+     * Sync every article in one business that is NOT_SYNCED / CHANGED / ERROR, one at a time.
+     * Rejects a concurrent run with {@link SyncInProgressException} (→ 409).
      */
-    public List<KbArticle> syncAll(String by) {
+    public List<KbArticle> syncAll(String by, Long businessId) {
         if (!syncAllRunning.compareAndSet(false, true)) {
             throw new SyncInProgressException();
         }
         try {
-            return repo.findPendingSyncOrderByCategoryAscTitleAsc(
+            return repo.findPendingSyncByBusinessIdOrderByCategoryAscTitleAsc(businessId,
                             EnumSet.of(SyncStatus.NOT_SYNCED, SyncStatus.CHANGED, SyncStatus.ERROR)).stream()
                     .map(a -> doSync(a, by))
                     .toList();

@@ -21,6 +21,8 @@ import static org.mockito.Mockito.when;
 /** Unit tests for {@link KbExportService}: single-file export and the all-articles zip. */
 class KbExportServiceTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     private final KbArticleRepository repo = mock(KbArticleRepository.class);
     private KbExportService service;
 
@@ -37,17 +39,17 @@ class KbExportServiceTest {
     @Test
     @DisplayName("exportOne returns empty when the article doesn't exist")
     void exportOneMissing() {
-        when(repo.findById(1L)).thenReturn(Optional.empty());
-        assertThat(service.exportOne(1L)).isEmpty();
+        when(repo.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.empty());
+        assertThat(service.exportOne(1L, BUSINESS_ID)).isEmpty();
     }
 
     @Test
     @DisplayName("exportOne includes body, and the RU section only when a translation exists")
     void exportOneContent() {
-        when(repo.findById(1L)).thenReturn(Optional.of(
+        when(repo.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(
                 article(1L, "Refund Policy", "Refunds within 7 days.", "Возврат в течение 7 дней.")));
 
-        KbExportService.Export export = service.exportOne(1L).orElseThrow();
+        KbExportService.Export export = service.exportOne(1L, BUSINESS_ID).orElseThrow();
         assertThat(export.filename()).isEqualTo("refund-policy-1.md");
         assertThat(export.markdown()).contains("# Refund Policy", "Refunds within 7 days.",
                 "Russian translation", "Возврат в течение 7 дней.");
@@ -56,8 +58,8 @@ class KbExportServiceTest {
     @Test
     @DisplayName("exportOne omits the RU section when there's no translation")
     void exportOneNoTranslation() {
-        when(repo.findById(1L)).thenReturn(Optional.of(article(1L, "Refund Policy", "Body text.", null)));
-        KbExportService.Export export = service.exportOne(1L).orElseThrow();
+        when(repo.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(article(1L, "Refund Policy", "Body text.", null)));
+        KbExportService.Export export = service.exportOne(1L, BUSINESS_ID).orElseThrow();
         assertThat(export.markdown()).doesNotContain("Russian translation");
     }
 
@@ -67,9 +69,9 @@ class KbExportServiceTest {
         List<KbArticle> articles = new ArrayList<>();
         articles.add(article(1L, "Refund Policy", "Body one.", null));
         articles.add(article(2L, "Cancellation Policy", "Body two.", null));
-        when(repo.findAllByOrderByCategoryAscTitleAsc()).thenReturn(articles);
+        when(repo.findAllByBusinessIdOrderByCategoryAscTitleAsc(BUSINESS_ID)).thenReturn(articles);
 
-        byte[] zip = service.exportAllAsZip();
+        byte[] zip = service.exportAllAsZip(BUSINESS_ID);
 
         List<String> entries = new ArrayList<>();
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zip))) {

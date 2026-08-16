@@ -20,6 +20,9 @@ public class KbRequest {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "business_id", nullable = false)
+    private Long businessId;
+
     @Column(nullable = false, columnDefinition = "text")
     private String question;
 

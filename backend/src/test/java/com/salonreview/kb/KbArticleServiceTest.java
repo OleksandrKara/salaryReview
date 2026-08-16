@@ -24,6 +24,8 @@ import static org.mockito.Mockito.when;
 /** Unit tests for {@link KbArticleService}: hashing/status, visibility defaults + read filtering, delete cleanup. */
 class KbArticleServiceTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     private KbArticleRepository repo;
     @SuppressWarnings("unchecked")
     private ObjectProvider<RagIngestionService> ragProvider = mock(ObjectProvider.class);
@@ -48,7 +50,7 @@ class KbArticleServiceTest {
     @Test
     @DisplayName("create defaults visible_roles to {OWNER,MANAGER}, status NOT_SYNCED, hash set")
     void createDefaults() {
-        KbArticle a = service.create("FAQ", null, "FAQ", "body text", null, null, "owner");
+        KbArticle a = service.create("FAQ", null, "FAQ", "body text", null, null, "owner", BUSINESS_ID);
         assertThat(a.getVisibleRoles()).containsExactlyInAnyOrder(Role.OWNER, Role.MANAGER);
         assertThat(a.getSyncStatus()).isEqualTo(SyncStatus.NOT_SYNCED);
         assertThat(a.getContentHash()).isNotBlank();
@@ -57,7 +59,7 @@ class KbArticleServiceTest {
     @Test
     @DisplayName("assigning PROVIDER keeps the admin roles and adds PROVIDER")
     void assignProviderKeepsAdmins() {
-        KbArticle a = service.create("Menu", null, "Services", "x", null, List.of(Role.PROVIDER), "owner");
+        KbArticle a = service.create("Menu", null, "Services", "x", null, List.of(Role.PROVIDER), "owner", BUSINESS_ID);
         assertThat(a.getVisibleRoles()).containsExactlyInAnyOrder(Role.OWNER, Role.MANAGER, Role.PROVIDER);
     }
 
@@ -67,9 +69,9 @@ class KbArticleServiceTest {
         KbArticle existing = KbArticle.builder().id(7L).title("t").category("c").body("old")
                 .visibleRoles(List.of(Role.OWNER, Role.MANAGER)).contentHash(KbArticleService.contentHash("old"))
                 .ragDocId(99L).syncStatus(SyncStatus.SYNCED).createdBy("owner").build();
-        when(repo.findById(7L)).thenReturn(Optional.of(existing));
+        when(repo.findByIdAndBusinessId(7L, BUSINESS_ID)).thenReturn(Optional.of(existing));
 
-        KbArticle updated = service.update(7L, "t", null, "c", "new body", null, null).orElseThrow();
+        KbArticle updated = service.update(7L, "t", null, "c", "new body", null, null, BUSINESS_ID).orElseThrow();
 
         assertThat(updated.getSyncStatus()).isEqualTo(SyncStatus.CHANGED);
         verify(rag, never()).upload(any(), any(), any()); // save never embeds
@@ -81,9 +83,9 @@ class KbArticleServiceTest {
         KbArticle existing = KbArticle.builder().id(7L).title("t").category("c").body("same")
                 .visibleRoles(List.of(Role.OWNER, Role.MANAGER)).contentHash(KbArticleService.contentHash("same"))
                 .ragDocId(99L).syncStatus(SyncStatus.SYNCED).createdBy("owner").build();
-        when(repo.findById(7L)).thenReturn(Optional.of(existing));
+        when(repo.findByIdAndBusinessId(7L, BUSINESS_ID)).thenReturn(Optional.of(existing));
 
-        KbArticle updated = service.update(7L, "t2", null, "c2", "same", null, null).orElseThrow();
+        KbArticle updated = service.update(7L, "t2", null, "c2", "same", null, null, BUSINESS_ID).orElseThrow();
 
         assertThat(updated.getSyncStatus()).isEqualTo(SyncStatus.SYNCED);
     }
@@ -94,10 +96,10 @@ class KbArticleServiceTest {
         KbArticle existing = KbArticle.builder().id(7L).title("t").category("c").body("same")
                 .visibleRoles(List.of(Role.OWNER, Role.MANAGER)).contentHash(KbArticleService.contentHash("same"))
                 .ragDocId(99L).syncStatus(SyncStatus.SYNCED).createdBy("owner").build();
-        when(repo.findById(7L)).thenReturn(Optional.of(existing));
+        when(repo.findByIdAndBusinessId(7L, BUSINESS_ID)).thenReturn(Optional.of(existing));
 
         // English unchanged, but a Russian body is added → the combined hash moves → CHANGED.
-        KbArticle updated = service.update(7L, "t", null, "c", "same", "перевод", null).orElseThrow();
+        KbArticle updated = service.update(7L, "t", null, "c", "same", "перевод", null, BUSINESS_ID).orElseThrow();
 
         assertThat(updated.getBodyRu()).isEqualTo("перевод");
         assertThat(updated.getSyncStatus()).isEqualTo(SyncStatus.CHANGED);
@@ -109,9 +111,9 @@ class KbArticleServiceTest {
         KbArticle existing = KbArticle.builder().id(7L).title("t").category("c").body("old")
                 .visibleRoles(List.of(Role.OWNER, Role.MANAGER)).contentHash(KbArticleService.contentHash("old"))
                 .ragDocId(null).syncStatus(SyncStatus.NOT_SYNCED).createdBy("owner").build();
-        when(repo.findById(7L)).thenReturn(Optional.of(existing));
+        when(repo.findByIdAndBusinessId(7L, BUSINESS_ID)).thenReturn(Optional.of(existing));
 
-        KbArticle updated = service.update(7L, "t", null, "c", "changed", null, null).orElseThrow();
+        KbArticle updated = service.update(7L, "t", null, "c", "changed", null, null, BUSINESS_ID).orElseThrow();
 
         assertThat(updated.getSyncStatus()).isEqualTo(SyncStatus.NOT_SYNCED);
     }
@@ -122,9 +124,9 @@ class KbArticleServiceTest {
         KbArticle a = KbArticle.builder().id(7L).title("t").category("c").body("x")
                 .visibleRoles(List.of(Role.OWNER, Role.MANAGER)).contentHash("h").ragDocId(55L)
                 .syncStatus(SyncStatus.SYNCED).createdBy("owner").build();
-        when(repo.findById(7L)).thenReturn(Optional.of(a));
+        when(repo.findByIdAndBusinessId(7L, BUSINESS_ID)).thenReturn(Optional.of(a));
 
-        assertThat(service.delete(7L, "owner")).isTrue();
+        assertThat(service.delete(7L, "owner", BUSINESS_ID)).isTrue();
         verify(rag).delete(eq(55L), any());
         verify(repo).delete(a);
     }
@@ -135,9 +137,9 @@ class KbArticleServiceTest {
         KbArticle a = KbArticle.builder().id(7L).title("t").category("c").body("x")
                 .visibleRoles(List.of(Role.OWNER, Role.MANAGER)).contentHash("h").ragDocId(null)
                 .syncStatus(SyncStatus.NOT_SYNCED).createdBy("owner").build();
-        when(repo.findById(7L)).thenReturn(Optional.of(a));
+        when(repo.findByIdAndBusinessId(7L, BUSINESS_ID)).thenReturn(Optional.of(a));
 
-        service.delete(7L, "owner");
+        service.delete(7L, "owner", BUSINESS_ID);
         verify(rag, never()).delete(any(), any());
     }
 
@@ -150,13 +152,13 @@ class KbArticleServiceTest {
         KbArticle shared = KbArticle.builder().id(2L).title("b").category("c").body("x")
                 .visibleRoles(List.of(Role.OWNER, Role.MANAGER, Role.PROVIDER)).contentHash("h")
                 .syncStatus(SyncStatus.SYNCED).createdBy("owner").build();
-        when(repo.findAllByOrderByCategoryAscTitleAsc()).thenReturn(List.of(ownerOnly, shared));
+        when(repo.findAllByBusinessIdOrderByCategoryAscTitleAsc(BUSINESS_ID)).thenReturn(List.of(ownerOnly, shared));
 
-        assertThat(service.list(Role.OWNER)).hasSize(2);
-        assertThat(service.list(Role.PROVIDER)).extracting(KbArticle::getId).containsExactly(2L);
+        assertThat(service.list(Role.OWNER, BUSINESS_ID)).hasSize(2);
+        assertThat(service.list(Role.PROVIDER, BUSINESS_ID)).extracting(KbArticle::getId).containsExactly(2L);
 
-        when(repo.findById(1L)).thenReturn(Optional.of(ownerOnly));
-        assertThat(service.get(1L, Role.PROVIDER)).isEmpty();      // not shared with provider
-        assertThat(service.get(1L, Role.OWNER)).isPresent();
+        when(repo.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(ownerOnly));
+        assertThat(service.get(1L, Role.PROVIDER, BUSINESS_ID)).isEmpty();      // not shared with provider
+        assertThat(service.get(1L, Role.OWNER, BUSINESS_ID)).isPresent();
     }
 }
