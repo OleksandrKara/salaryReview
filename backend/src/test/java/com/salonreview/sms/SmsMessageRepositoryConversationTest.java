@@ -23,17 +23,19 @@ class SmsMessageRepositoryConversationTest {
     @Autowired
     private SmsMessageRepository repository;
 
+    private static final Long BUSINESS_ID = 1L;
+
     @Test
     void conversationSummariesGroupsByPhoneWithLatestMessageAndUnreadCount() {
         String phone = "+15557778899";
-        repository.save(SmsMessage.builder().direction("OUTBOUND").phoneNumber(phone)
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("OUTBOUND").phoneNumber(phone)
                 .body("first").status("SENT").createdAt(Instant.now().minusSeconds(120)).build());
-        repository.save(SmsMessage.builder().direction("INBOUND").phoneNumber(phone)
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("INBOUND").phoneNumber(phone)
                 .body("reply one").status("RECEIVED").createdAt(Instant.now().minusSeconds(60)).build());
-        repository.save(SmsMessage.builder().direction("INBOUND").phoneNumber(phone)
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("INBOUND").phoneNumber(phone)
                 .body("latest reply").status("RECEIVED").createdAt(Instant.now()).build());
 
-        List<SmsMessageRepository.ConversationSummaryProjection> conversations = repository.conversationSummaries();
+        List<SmsMessageRepository.ConversationSummaryProjection> conversations = repository.conversationSummaries(BUSINESS_ID);
 
         var match = conversations.stream().filter(c -> c.getPhoneNumber().equals(phone)).findFirst().orElseThrow();
         assertThat(match.getLastMessageBody()).isEqualTo("latest reply");
@@ -46,12 +48,12 @@ class SmsMessageRepositoryConversationTest {
     @Test
     void conversationSummariesSurfacesNegativeFeedbackEvenWhenNotTheLastMessage() {
         String phone = "+15554443322";
-        repository.save(SmsMessage.builder().direction("INBOUND").phoneNumber(phone)
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("INBOUND").phoneNumber(phone)
                 .body("2, not happy").status("RECEIVED").negativeFeedbackAt(Instant.now().minusSeconds(120)).build());
-        repository.save(SmsMessage.builder().direction("OUTBOUND").phoneNumber(phone)
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("OUTBOUND").phoneNumber(phone)
                 .body("a later, unrelated message").status("SENT").createdAt(Instant.now()).build());
 
-        List<SmsMessageRepository.ConversationSummaryProjection> conversations = repository.conversationSummaries();
+        List<SmsMessageRepository.ConversationSummaryProjection> conversations = repository.conversationSummaries(BUSINESS_ID);
 
         var match = conversations.stream().filter(c -> c.getPhoneNumber().equals(phone)).findFirst().orElseThrow();
         assertThat(match.getLastMessageBody()).isEqualTo("a later, unrelated message");
@@ -61,13 +63,13 @@ class SmsMessageRepositoryConversationTest {
     @Test
     void conversationSummariesSurfacesLastMessageDeliveryFailure() {
         String phone = "+15556665544";
-        repository.save(SmsMessage.builder().direction("OUTBOUND").phoneNumber(phone)
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("OUTBOUND").phoneNumber(phone)
                 .body("rebooking nudge").status("SENT").twilioMessageSid("SM-undelivered")
                 .deliveryStatus("undelivered").deliveryErrorCode("30003")
                 .deliveryErrorMessage("Phone unreachable (turned off or out of coverage)")
                 .createdAt(Instant.now()).build());
 
-        List<SmsMessageRepository.ConversationSummaryProjection> conversations = repository.conversationSummaries();
+        List<SmsMessageRepository.ConversationSummaryProjection> conversations = repository.conversationSummaries(BUSINESS_ID);
 
         var match = conversations.stream().filter(c -> c.getPhoneNumber().equals(phone)).findFirst().orElseThrow();
         assertThat(match.getLastMessageDeliveryStatus()).isEqualTo("undelivered");
@@ -84,25 +86,25 @@ class SmsMessageRepositoryConversationTest {
         String phoneB = "+15551110002";
         String phoneC = "+15551110003";
         Instant now = Instant.now();
-        repository.save(SmsMessage.builder().direction("INBOUND").phoneNumber(phoneA)
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("INBOUND").phoneNumber(phoneA)
                 .body("a").status("RECEIVED").createdAt(now.minusSeconds(10)).build());
-        repository.save(SmsMessage.builder().direction("INBOUND").phoneNumber(phoneB)
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("INBOUND").phoneNumber(phoneB)
                 .body("b").status("RECEIVED").createdAt(now.minusSeconds(20)).build());
-        repository.save(SmsMessage.builder().direction("INBOUND").phoneNumber(phoneC)
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("INBOUND").phoneNumber(phoneC)
                 .body("c").status("RECEIVED").createdAt(now.minusSeconds(30)).build());
         List<String> ours = List.of(phoneA, phoneB, phoneC);
 
         List<SmsMessageRepository.ConversationSummaryProjection> everything =
-                repository.conversationSummariesPage(null, 1000);
+                repository.conversationSummariesPage(BUSINESS_ID, null, 1000);
         List<String> ourOrder = everything.stream()
                 .map(SmsMessageRepository.ConversationSummaryProjection::getPhoneNumber)
                 .filter(ours::contains)
                 .toList();
         assertThat(ourOrder).containsExactly(phoneA, phoneB, phoneC);
 
-        Instant cursor = repository.conversationSummaryForPhone(phoneB).orElseThrow().getLastMessageAt();
+        Instant cursor = repository.conversationSummaryForPhone(BUSINESS_ID, phoneB).orElseThrow().getLastMessageAt();
         List<SmsMessageRepository.ConversationSummaryProjection> afterB =
-                repository.conversationSummariesPage(cursor, 1000);
+                repository.conversationSummariesPage(BUSINESS_ID, cursor, 1000);
         List<String> afterBOurs = afterB.stream()
                 .map(SmsMessageRepository.ConversationSummaryProjection::getPhoneNumber)
                 .filter(ours::contains)
@@ -114,15 +116,15 @@ class SmsMessageRepositoryConversationTest {
     void conversationSummaryForPhoneReturnsThatPhonesLatestMessageAndUnreadCount() {
         String phone = "+15552220001";
         String otherPhone = "+15552220002";
-        repository.save(SmsMessage.builder().direction("INBOUND").phoneNumber(phone)
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("INBOUND").phoneNumber(phone)
                 .body("older").status("RECEIVED").createdAt(Instant.now().minusSeconds(60)).build());
-        repository.save(SmsMessage.builder().direction("INBOUND").phoneNumber(phone)
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("INBOUND").phoneNumber(phone)
                 .body("newest").status("RECEIVED").createdAt(Instant.now()).build());
-        repository.save(SmsMessage.builder().direction("INBOUND").phoneNumber(otherPhone)
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("INBOUND").phoneNumber(otherPhone)
                 .body("unrelated").status("RECEIVED").build());
 
         Optional<SmsMessageRepository.ConversationSummaryProjection> result =
-                repository.conversationSummaryForPhone(phone);
+                repository.conversationSummaryForPhone(BUSINESS_ID, phone);
 
         assertThat(result).isPresent();
         assertThat(result.get().getPhoneNumber()).isEqualTo(phone);
@@ -133,7 +135,7 @@ class SmsMessageRepositoryConversationTest {
     @Test
     void conversationSummaryForPhoneIsEmptyWhenNoMessagesExist() {
         Optional<SmsMessageRepository.ConversationSummaryProjection> result =
-                repository.conversationSummaryForPhone("+15559990000");
+                repository.conversationSummaryForPhone(BUSINESS_ID, "+15559990000");
 
         assertThat(result).isEmpty();
     }
@@ -141,12 +143,12 @@ class SmsMessageRepositoryConversationTest {
     @Test
     void threadReturnsFullChronologicalHistoryForOnePhoneNumber() {
         String phone = "+15551112233";
-        repository.save(SmsMessage.builder().direction("OUTBOUND").phoneNumber(phone)
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("OUTBOUND").phoneNumber(phone)
                 .body("hello").status("SENT").createdAt(Instant.now().minusSeconds(30)).build());
-        repository.save(SmsMessage.builder().direction("INBOUND").phoneNumber(phone)
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("INBOUND").phoneNumber(phone)
                 .body("hi back").status("RECEIVED").createdAt(Instant.now()).build());
 
-        List<SmsMessage> thread = repository.findByPhoneNumberOrderByCreatedAtAsc(phone);
+        List<SmsMessage> thread = repository.findByBusinessIdAndPhoneNumberOrderByCreatedAtAsc(BUSINESS_ID, phone);
 
         assertThat(thread).extracting(SmsMessage::getBody).containsExactly("hello", "hi back");
     }

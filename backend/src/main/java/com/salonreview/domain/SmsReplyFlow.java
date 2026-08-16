@@ -28,6 +28,9 @@ public class SmsReplyFlow {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "business_id", nullable = false)
+    private Long businessId;
+
     @Column(name = "automation_key", nullable = false)
     private String automationKey;
 

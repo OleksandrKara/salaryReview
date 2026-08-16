@@ -1,5 +1,6 @@
 package com.salonreview.web;
 
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.sms.CheckoutReviewFlowRecoveryService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,14 +20,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class SmsReplyFlowAdminController {
 
     private final CheckoutReviewFlowRecoveryService recoveryService;
+    private final CurrentBusinessContext currentBusinessContext;
 
-    public SmsReplyFlowAdminController(CheckoutReviewFlowRecoveryService recoveryService) {
+    public SmsReplyFlowAdminController(CheckoutReviewFlowRecoveryService recoveryService,
+                                        CurrentBusinessContext currentBusinessContext) {
         this.recoveryService = recoveryService;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     @PostMapping("/{id}/retry")
     public ResponseEntity<Void> retry(@PathVariable Long id) {
-        recoveryService.retry(id);
+        recoveryService.retry(currentBusinessContext.id(), id);
         return ResponseEntity.ok().build();
     }
 }

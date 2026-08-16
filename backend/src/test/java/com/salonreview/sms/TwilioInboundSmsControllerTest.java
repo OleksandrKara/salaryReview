@@ -4,8 +4,10 @@ import com.salonreview.config.TwilioInboundProperties;
 import com.salonreview.domain.BlockedNumber;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
+import com.salonreview.domain.Business;
 import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.repo.BlockedNumberRepository;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SmsReplyFlowRepository;
 import com.salonreview.telegram.TelegramNotificationService;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,6 +41,7 @@ class TwilioInboundSmsControllerTest {
     private static final String AUTH_TOKEN = "test-auth-token";
     private static final String WEBHOOK_URL = "https://salon.akluxnails.com/api/public/sms/inbound";
     private static final String PHONE = "+15551234567";
+    private static final Long BUSINESS_ID = 1L;
 
     private TwilioInboundProperties properties;
     private SmsMessageLogService messageLogService;
@@ -49,6 +52,7 @@ class TwilioInboundSmsControllerTest {
     private BlockedNumberRepository blockedNumberRepository;
     private SmsMediaService mediaService;
     private SmsReactionService reactionService;
+    private BusinessRepository businesses;
     private MockMvc mvc;
 
     @BeforeEach
@@ -64,6 +68,9 @@ class TwilioInboundSmsControllerTest {
         blockedNumberRepository = mock(BlockedNumberRepository.class);
         mediaService = mock(SmsMediaService.class);
         reactionService = mock(SmsReactionService.class);
+        businesses = mock(BusinessRepository.class);
+        when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(BUSINESS_ID).name("Test")
+                .shortCode("test").timezone("UTC").active(true).build());
         // No name resolvable by default — individual tests override with a specific stub if they
         // care about the resolved-name path.
         when(contactsService.resolveDisplayNames(any())).thenReturn(java.util.Map.of());
@@ -72,13 +79,13 @@ class TwilioInboundSmsControllerTest {
         // thenAnswer (not a fixed thenReturn) so logged.getAutomationKey() reflects whatever
         // automationKey the controller actually passed in, matching the real implementation —
         // needed since the controller forwards logged.getAutomationKey() to the Telegram alert.
-        when(messageLogService.logInbound(any(), any(), any()))
+        when(messageLogService.logInbound(any(), any(), any(), any()))
                 .thenAnswer(inv -> SmsMessage.builder().id(99L).direction("INBOUND")
-                        .automationKey(inv.getArgument(2)).build());
+                        .automationKey(inv.getArgument(3)).build());
 
         TwilioInboundSmsController controller = new TwilioInboundSmsController(
                 properties, messageLogService, replyFlowRepository, replyService, telegramService, contactsService,
-                blockedNumberRepository, mediaService, reactionService);
+                blockedNumberRepository, mediaService, reactionService, businesses);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -132,7 +139,7 @@ class TwilioInboundSmsControllerTest {
         String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
         SmsReplyFlow pending = SmsReplyFlow.builder().id(7L).automationKey("checkout_review_request")
                 .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
-        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
                 .thenReturn(Optional.of(pending));
 
         mvc.perform(post("/api/public/sms/inbound")
@@ -141,7 +148,7 @@ class TwilioInboundSmsControllerTest {
                         .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
                 .andExpect(status().isOk());
 
-        verify(messageLogService).logInbound(PHONE, p.get("Body"), "checkout_review_request");
+        verify(messageLogService).logInbound(BUSINESS_ID, PHONE, p.get("Body"), "checkout_review_request");
         verify(replyService).sendBranchReply(pending, true);
         verify(replyFlowRepository).save(pending);
         verify(telegramService).sendInboundSmsAlert(PHONE, null, p.get("Body"), "checkout_review_request");
@@ -155,7 +162,7 @@ class TwilioInboundSmsControllerTest {
         String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
         SmsReplyFlow pending = SmsReplyFlow.builder().id(8L).automationKey("checkout_review_request")
                 .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
-        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
                 .thenReturn(Optional.of(pending));
 
         mvc.perform(post("/api/public/sms/inbound")
@@ -175,7 +182,7 @@ class TwilioInboundSmsControllerTest {
         String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
         SmsReplyFlow pending = SmsReplyFlow.builder().id(9L).automationKey("checkout_review_request")
                 .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
-        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
                 .thenReturn(Optional.of(pending));
 
         mvc.perform(post("/api/public/sms/inbound")
@@ -199,7 +206,7 @@ class TwilioInboundSmsControllerTest {
         String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
         SmsReplyFlow pending = SmsReplyFlow.builder().id(10L).automationKey("checkout_review_request")
                 .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
-        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
                 .thenReturn(Optional.of(pending));
 
         mvc.perform(post("/api/public/sms/inbound")
@@ -216,7 +223,7 @@ class TwilioInboundSmsControllerTest {
     void noPendingFlowLoggedOnly() throws Exception {
         var p = params(PHONE, "hello?");
         String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
-        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
                 .thenReturn(Optional.empty());
 
         mvc.perform(post("/api/public/sms/inbound")
@@ -225,7 +232,7 @@ class TwilioInboundSmsControllerTest {
                         .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
                 .andExpect(status().isOk());
 
-        verify(messageLogService).logInbound(PHONE, p.get("Body"), null);
+        verify(messageLogService).logInbound(BUSINESS_ID, PHONE, p.get("Body"), null);
         verify(telegramService).sendInboundSmsAlert(PHONE, null, p.get("Body"), null);
         verifyNoInteractions(replyService);
         verify(replyFlowRepository, never()).save(any());
@@ -236,9 +243,9 @@ class TwilioInboundSmsControllerTest {
     void noPendingFlowFallsBackToMostRecentAutomationSend() throws Exception {
         var p = params(PHONE, "sure, book me in!");
         String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
-        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
                 .thenReturn(Optional.empty());
-        when(messageLogService.mostRecentAutomationKey(PHONE)).thenReturn("repeat_customer_winback");
+        when(messageLogService.mostRecentAutomationKey(BUSINESS_ID, PHONE)).thenReturn("repeat_customer_winback");
 
         mvc.perform(post("/api/public/sms/inbound")
                         .contentType(MediaType.APPLICATION_FORM_URLENCODED)
@@ -246,7 +253,7 @@ class TwilioInboundSmsControllerTest {
                         .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
                 .andExpect(status().isOk());
 
-        verify(messageLogService).logInbound(PHONE, p.get("Body"), "repeat_customer_winback");
+        verify(messageLogService).logInbound(BUSINESS_ID, PHONE, p.get("Body"), "repeat_customer_winback");
         verify(telegramService).sendInboundSmsAlert(PHONE, null, p.get("Body"), "repeat_customer_winback");
         verifyNoInteractions(replyService);
     }
@@ -256,7 +263,7 @@ class TwilioInboundSmsControllerTest {
     void resolvedCustomerNameForwardedToTelegramAlert() throws Exception {
         var p = params(PHONE, "hello?");
         String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
-        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
                 .thenReturn(Optional.empty());
         when(contactsService.resolveDisplayNames(java.util.List.of(PHONE))).thenReturn(java.util.Map.of(
                 PHONE, new MarketingContactsService.ContactNameInfo("Jane", "Doe", false, null, false, null)));
@@ -275,7 +282,7 @@ class TwilioInboundSmsControllerTest {
     void blockedNumberSkipsTelegramAlertButStillLogs() throws Exception {
         var p = params(PHONE, "hello?");
         String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
-        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
                 .thenReturn(Optional.empty());
         when(blockedNumberRepository.existsById(PHONE)).thenReturn(true);
 
@@ -285,7 +292,7 @@ class TwilioInboundSmsControllerTest {
                         .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
                 .andExpect(status().isOk());
 
-        verify(messageLogService).logInbound(PHONE, p.get("Body"), null);
+        verify(messageLogService).logInbound(BUSINESS_ID, PHONE, p.get("Body"), null);
         verifyNoInteractions(telegramService);
     }
 
@@ -297,7 +304,7 @@ class TwilioInboundSmsControllerTest {
         p.put("MediaUrl0", "https://api.twilio.com/media/ME123");
         p.put("MediaContentType0", "image/jpeg");
         String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
-        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
                 .thenReturn(Optional.empty());
 
         mvc.perform(post("/api/public/sms/inbound")
@@ -318,7 +325,7 @@ class TwilioInboundSmsControllerTest {
     void bodyForwardedToReactionService() throws Exception {
         var p = params(PHONE, "Loved “Thanks so much!”");
         String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
-        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
                 .thenReturn(Optional.empty());
 
         mvc.perform(post("/api/public/sms/inbound")
@@ -327,7 +334,7 @@ class TwilioInboundSmsControllerTest {
                         .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
                 .andExpect(status().isOk());
 
-        verify(reactionService).tryAttachCustomerReaction(PHONE, p.get("Body"));
+        verify(reactionService).tryAttachCustomerReaction(BUSINESS_ID, PHONE, p.get("Body"));
     }
 
     @Test
@@ -335,7 +342,7 @@ class TwilioInboundSmsControllerTest {
     void stopReplyBlocksNumber() throws Exception {
         var p = params(PHONE, "  stop  ");
         String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
-        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
                 .thenReturn(Optional.empty());
         // Mirrors real DB behavior: not yet blocked when the handler checks before inserting, then
         // blocked by the time it checks again just before the Telegram-alert gate.
@@ -347,7 +354,7 @@ class TwilioInboundSmsControllerTest {
                         .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
                 .andExpect(status().isOk());
 
-        verify(messageLogService).logInbound(PHONE, p.get("Body"), null);
+        verify(messageLogService).logInbound(BUSINESS_ID, PHONE, p.get("Body"), null);
         ArgumentCaptor<BlockedNumber> captor = ArgumentCaptor.forClass(BlockedNumber.class);
         verify(blockedNumberRepository).save(captor.capture());
         assertThat(captor.getValue().getPhoneNumber()).isEqualTo(PHONE);
@@ -360,7 +367,7 @@ class TwilioInboundSmsControllerTest {
     void stopMentionedMidSentenceDoesNotBlock() throws Exception {
         var p = params(PHONE, "please stop calling me at night");
         String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
-        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
                 .thenReturn(Optional.empty());
 
         mvc.perform(post("/api/public/sms/inbound")
@@ -378,7 +385,7 @@ class TwilioInboundSmsControllerTest {
     void stopReplyFromAlreadyBlockedNumberDoesNotResave() throws Exception {
         var p = params(PHONE, "STOP");
         String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
-        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
                 .thenReturn(Optional.empty());
         when(blockedNumberRepository.existsById(PHONE)).thenReturn(true);
 
@@ -398,7 +405,7 @@ class TwilioInboundSmsControllerTest {
         String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
         SmsReplyFlow pending = SmsReplyFlow.builder().id(11L).automationKey("checkout_review_request")
                 .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
-        when(replyFlowRepository.findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
                 .thenReturn(Optional.of(pending));
 
         mvc.perform(post("/api/public/sms/inbound")

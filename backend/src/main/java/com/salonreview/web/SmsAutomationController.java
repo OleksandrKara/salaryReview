@@ -1,5 +1,6 @@
 package com.salonreview.web;
 
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.sms.SmsAutomationService;
 import com.salonreview.sms.SmsAutomationService.AutomationSummary;
 import org.springframework.web.bind.annotation.*;
@@ -17,14 +18,16 @@ import java.util.List;
 public class SmsAutomationController {
 
     private final SmsAutomationService service;
+    private final CurrentBusinessContext currentBusinessContext;
 
-    public SmsAutomationController(SmsAutomationService service) {
+    public SmsAutomationController(SmsAutomationService service, CurrentBusinessContext currentBusinessContext) {
         this.service = service;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     @GetMapping
     public List<AutomationSummary> list() {
-        return service.list();
+        return service.list(currentBusinessContext.id());
     }
 
     public record ToggleRequest(boolean enabled) {}

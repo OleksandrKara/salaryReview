@@ -50,6 +50,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class SmsActivityControllerTest {
 
     private static final String PHONE = "+15551234567";
+    private static final Long BUSINESS_ID = 1L;
 
     private SmsMessageLogService service;
     private TwilioSmsService smsService;
@@ -74,7 +75,7 @@ class SmsActivityControllerTest {
         draftService = mock(SmsDraftService.class);
         users = mock(AppUserRepository.class);
         CurrentBusinessContext currentBusinessContext = mock(CurrentBusinessContext.class);
-        when(currentBusinessContext.id()).thenReturn(1L);
+        when(currentBusinessContext.id()).thenReturn(BUSINESS_ID);
         when(blockedNumberRepository.findByPhoneNumberIn(any())).thenReturn(List.of());
         when(mediaService.mediaForMessages(any())).thenReturn(Map.of());
         when(reactionService.reactionsForMessages(any())).thenReturn(Map.of());
@@ -111,7 +112,7 @@ class SmsActivityControllerTest {
     @Test
     @DisplayName("GET /conversations maps each projection row to a ConversationDto")
     void conversationsMapsProjections() throws Exception {
-        when(service.conversations()).thenReturn(List.of(
+        when(service.conversations(BUSINESS_ID)).thenReturn(List.of(
                 new FakeConversationSummary(PHONE, Instant.now(), "hi", "INBOUND", 2L)));
         when(contactsService.resolveDisplayNames(List.of(PHONE)))
                 .thenReturn(Map.of(PHONE, new MarketingContactsService.ContactNameInfo(
@@ -138,7 +139,7 @@ class SmsActivityControllerTest {
     @Test
     @DisplayName("GET /conversations marks a row blocked when its phone number is in the blocked-number table")
     void conversationsMarksBlockedNumbers() throws Exception {
-        when(service.conversations()).thenReturn(List.of(
+        when(service.conversations(BUSINESS_ID)).thenReturn(List.of(
                 new FakeConversationSummary(PHONE, Instant.now(), "hi", "INBOUND", 0L)));
         when(contactsService.resolveDisplayNames(List.of(PHONE))).thenReturn(Map.of());
         when(blockedNumberRepository.findByPhoneNumberIn(List.of(PHONE)))
@@ -153,7 +154,7 @@ class SmsActivityControllerTest {
     @Test
     @DisplayName("GET /conversations marks a row optedOut (and blocked) when the block was source STOP_REQUEST")
     void conversationsMarksOptedOutForStopRequestSource() throws Exception {
-        when(service.conversations()).thenReturn(List.of(
+        when(service.conversations(BUSINESS_ID)).thenReturn(List.of(
                 new FakeConversationSummary(PHONE, Instant.now(), "STOP", "INBOUND", 0L)));
         when(contactsService.resolveDisplayNames(List.of(PHONE))).thenReturn(Map.of());
         when(blockedNumberRepository.findByPhoneNumberIn(List.of(PHONE))).thenReturn(List.of(
@@ -168,12 +169,12 @@ class SmsActivityControllerTest {
     @Test
     @DisplayName("GET /conversations marks a row's clicked-link flags from the batch lookups, independently")
     void conversationsMarksClickedLinkTargets() throws Exception {
-        when(service.conversations()).thenReturn(List.of(
+        when(service.conversations(BUSINESS_ID)).thenReturn(List.of(
                 new FakeConversationSummary(PHONE, Instant.now(), "hi", "INBOUND", 0L)));
         when(contactsService.resolveDisplayNames(List.of(PHONE))).thenReturn(Map.of());
-        when(service.phoneNumbersWithClickedLinkTarget(List.of(PHONE), "GOOGLE_REVIEW"))
+        when(service.phoneNumbersWithClickedLinkTarget(BUSINESS_ID, List.of(PHONE), "GOOGLE_REVIEW"))
                 .thenReturn(java.util.Set.of(PHONE));
-        when(service.phoneNumbersWithClickedLinkTarget(List.of(PHONE), "FEEDBACK_FORM"))
+        when(service.phoneNumbersWithClickedLinkTarget(BUSINESS_ID, List.of(PHONE), "FEEDBACK_FORM"))
                 .thenReturn(java.util.Set.of());
 
         mvc.perform(get("/api/owner/automations/activity/conversations"))
@@ -185,10 +186,10 @@ class SmsActivityControllerTest {
     @Test
     @DisplayName("GET /conversations marks a row flagged-as-spam when the batch lookup finds it")
     void conversationsMarksFlaggedAsSpam() throws Exception {
-        when(service.conversations()).thenReturn(List.of(
+        when(service.conversations(BUSINESS_ID)).thenReturn(List.of(
                 new FakeConversationSummary(PHONE, Instant.now(), "hi", "INBOUND", 0L)));
         when(contactsService.resolveDisplayNames(List.of(PHONE))).thenReturn(Map.of());
-        when(service.phoneNumbersFlaggedAsSpam(List.of(PHONE))).thenReturn(java.util.Set.of(PHONE));
+        when(service.phoneNumbersFlaggedAsSpam(BUSINESS_ID, List.of(PHONE))).thenReturn(java.util.Set.of(PHONE));
 
         mvc.perform(get("/api/owner/automations/activity/conversations"))
                 .andExpect(status().isOk())
@@ -199,7 +200,7 @@ class SmsActivityControllerTest {
     @DisplayName("GET /conversations/paged returns items + nextCursor + hasMore=true when a full page comes back")
     void conversationsPagedReturnsFullPageWithHasMoreTrue() throws Exception {
         Instant t1 = Instant.parse("2026-08-01T10:00:00Z");
-        when(service.conversationsPage(null, 2)).thenReturn(List.of(
+        when(service.conversationsPage(BUSINESS_ID, null, 2)).thenReturn(List.of(
                 new FakeConversationSummary(PHONE, t1, "hi", "INBOUND", 1L),
                 new FakeConversationSummary("+15559998877", t1.minusSeconds(60), "yo", "OUTBOUND", 0L)));
         when(contactsService.resolveDisplayNames(any())).thenReturn(Map.of());
@@ -211,13 +212,13 @@ class SmsActivityControllerTest {
                 .andExpect(jsonPath("$.nextCursor").value(t1.minusSeconds(60).toString()))
                 .andExpect(jsonPath("$.hasMore").value(true));
 
-        verify(service).conversationsPage(null, 2);
+        verify(service).conversationsPage(BUSINESS_ID, null, 2);
     }
 
     @Test
     @DisplayName("GET /conversations/paged returns hasMore=false and null nextCursor for a short/empty final page")
     void conversationsPagedReturnsHasMoreFalseForShortPage() throws Exception {
-        when(service.conversationsPage(any(), eq(10))).thenReturn(List.of());
+        when(service.conversationsPage(eq(BUSINESS_ID), any(), eq(10))).thenReturn(List.of());
         when(contactsService.resolveDisplayNames(any())).thenReturn(Map.of());
 
         mvc.perform(get("/api/owner/automations/activity/conversations/paged")
@@ -231,19 +232,19 @@ class SmsActivityControllerTest {
     @Test
     @DisplayName("GET /conversations/paged clamps an out-of-range limit into [1, 50]")
     void conversationsPagedClampsLimit() throws Exception {
-        when(service.conversationsPage(null, 50)).thenReturn(List.of());
+        when(service.conversationsPage(BUSINESS_ID, null, 50)).thenReturn(List.of());
         when(contactsService.resolveDisplayNames(any())).thenReturn(Map.of());
 
         mvc.perform(get("/api/owner/automations/activity/conversations/paged").param("limit", "9999"))
                 .andExpect(status().isOk());
 
-        verify(service).conversationsPage(null, 50);
+        verify(service).conversationsPage(BUSINESS_ID, null, 50);
     }
 
     @Test
     @DisplayName("GET /conversations/{phoneNumber}/summary returns the enriched single-conversation DTO")
     void conversationSummaryReturnsEnrichedDto() throws Exception {
-        when(service.conversationSummary(PHONE)).thenReturn(Optional.of(
+        when(service.conversationSummary(BUSINESS_ID, PHONE)).thenReturn(Optional.of(
                 new FakeConversationSummary(PHONE, Instant.now(), "hi", "INBOUND", 3L)));
         when(contactsService.resolveDisplayNames(List.of(PHONE)))
                 .thenReturn(Map.of(PHONE, new MarketingContactsService.ContactNameInfo(
@@ -259,7 +260,7 @@ class SmsActivityControllerTest {
     @Test
     @DisplayName("GET /conversations/{phoneNumber}/summary 404s when the phone number has no messages")
     void conversationSummaryReturns404WhenNotFound() throws Exception {
-        when(service.conversationSummary(PHONE)).thenReturn(Optional.empty());
+        when(service.conversationSummary(BUSINESS_ID, PHONE)).thenReturn(Optional.empty());
 
         mvc.perform(get("/api/owner/automations/activity/conversations/{phoneNumber}/summary", PHONE))
                 .andExpect(status().isNotFound());
@@ -271,7 +272,7 @@ class SmsActivityControllerTest {
         mvc.perform(post("/api/owner/automations/activity/conversations/{phoneNumber}/unread", PHONE))
                 .andExpect(status().isOk());
 
-        verify(service).markThreadUnread(PHONE);
+        verify(service).markThreadUnread(BUSINESS_ID, PHONE);
     }
 
     @Test
@@ -313,7 +314,7 @@ class SmsActivityControllerTest {
     @Test
     @DisplayName("GET /conversations/{phoneNumber} returns that number's full thread")
     void threadReturnsMessagesForPhone() throws Exception {
-        when(service.thread(PHONE)).thenReturn(List.of(
+        when(service.thread(BUSINESS_ID, PHONE)).thenReturn(List.of(
                 SmsMessage.builder().id(1L).direction("OUTBOUND").phoneNumber(PHONE).body("hi").status("SENT").build()));
 
         mvc.perform(get("/api/owner/automations/activity/conversations/{phoneNumber}", PHONE))
@@ -345,7 +346,7 @@ class SmsActivityControllerTest {
     @Test
     @DisplayName("POST /reply sends via TwilioSmsService.sendManual and returns the result")
     void replySendsManualMessage() throws Exception {
-        when(smsService.sendManual(PHONE, "hand-typed reply"))
+        when(smsService.sendManual(BUSINESS_ID, PHONE, "hand-typed reply"))
                 .thenReturn(new TwilioSmsService.SmsSendResult(true, null));
         String body = new ObjectMapper().writeValueAsString(
                 new SmsActivityController.ReplyRequest(PHONE, "hand-typed reply"));
@@ -356,13 +357,13 @@ class SmsActivityControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sent").value(true));
 
-        verify(smsService).sendManual(PHONE, "hand-typed reply");
+        verify(smsService).sendManual(BUSINESS_ID, PHONE, "hand-typed reply");
     }
 
     @Test
     @DisplayName("POST /reply-with-media sends via TwilioSmsService.sendManualWithMedia and returns the result")
     void replyWithMediaSendsManualMessageWithFiles() throws Exception {
-        when(smsService.sendManualWithMedia(eq(PHONE), eq("check this out"), any()))
+        when(smsService.sendManualWithMedia(eq(BUSINESS_ID), eq(PHONE), eq("check this out"), any()))
                 .thenReturn(new TwilioSmsService.SmsSendResult(true, null));
         MockMultipartFile file = new MockMultipartFile("files", "photo.jpg", "image/jpeg", new byte[]{1, 2, 3});
 
@@ -374,13 +375,13 @@ class SmsActivityControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sent").value(true));
 
-        verify(smsService).sendManualWithMedia(eq(PHONE), eq("check this out"), any());
+        verify(smsService).sendManualWithMedia(eq(BUSINESS_ID), eq(PHONE), eq("check this out"), any());
     }
 
     @Test
     @DisplayName("GET /conversations/{phoneNumber} attaches media URLs from the batch lookup")
     void threadIncludesMedia() throws Exception {
-        when(service.thread(PHONE)).thenReturn(List.of(
+        when(service.thread(BUSINESS_ID, PHONE)).thenReturn(List.of(
                 SmsMessage.builder().id(1L).direction("INBOUND").phoneNumber(PHONE).body("here's a pic").status("RECEIVED").build()));
         when(mediaService.mediaForMessages(List.of(1L))).thenReturn(Map.of(
                 1L, List.of(new SmsMediaService.MediaInfo("https://salon.akluxnails.com/api/public/sms-media/abc12", "image/jpeg"))));
@@ -394,7 +395,7 @@ class SmsActivityControllerTest {
     @Test
     @DisplayName("GET /conversations/{phoneNumber} attaches reactions from the batch lookup")
     void threadIncludesReactions() throws Exception {
-        when(service.thread(PHONE)).thenReturn(List.of(
+        when(service.thread(BUSINESS_ID, PHONE)).thenReturn(List.of(
                 SmsMessage.builder().id(1L).direction("OUTBOUND").phoneNumber(PHONE).body("hi").status("SENT").build()));
         when(reactionService.reactionsForMessages(List.of(1L))).thenReturn(Map.of(
                 1L, List.of(new SmsReactionService.ReactionDto("❤️"))));
@@ -407,7 +408,7 @@ class SmsActivityControllerTest {
     @Test
     @DisplayName("GET /search maps each hit to a ConversationSearchHitDto")
     void searchMapsHits() throws Exception {
-        when(service.searchConversations("appointment")).thenReturn(List.of(
+        when(service.searchConversations(BUSINESS_ID, "appointment")).thenReturn(List.of(
                 new ConversationSearchHit(PHONE, "running late for my appointment", "INBOUND", Instant.now())));
 
         mvc.perform(get("/api/owner/automations/activity/search").param("q", "appointment"))

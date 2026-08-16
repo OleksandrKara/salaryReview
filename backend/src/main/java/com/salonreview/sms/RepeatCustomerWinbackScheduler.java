@@ -121,18 +121,20 @@ public class RepeatCustomerWinbackScheduler {
     @SchedulerLock(name = "RepeatCustomerWinbackScheduler_sendDueWinbacks", lockAtLeastFor = "PT10S", lockAtMostFor = "PT10M")
     public void sendDueWinbacks() {
         // See BusinessRepository#legacySmsBusiness, same as LapsedCustomerWinbackScheduler.
-        SquareClient square = squareClientProvider.forBusiness(businesses.legacySmsBusiness().getId());
+        Long businessId = businesses.legacySmsBusiness().getId();
+        SquareClient square = squareClientProvider.forBusiness(businessId);
         Instant cooldownCutoff = Instant.now().minus(COOLDOWN_DAYS, ChronoUnit.DAYS);
         for (RepeatCustomerWinbackEligibilityRepository.EligibleCustomer customer : eligibilityRepository.findEligibleCustomers()) {
             if (sendRepository.existsBySquareCustomerIdAndStateAndCreatedAtAfter(
                     customer.squareCustomerId(), RepeatCustomerWinbackSend.STATE_SENT, cooldownCutoff)) {
                 continue; // belt-and-suspenders vs. the eligibility query's own NOT EXISTS
             }
-            process(customer, square);
+            process(customer, square, businessId);
         }
     }
 
-    private void process(RepeatCustomerWinbackEligibilityRepository.EligibleCustomer customer, SquareClient square) {
+    private void process(RepeatCustomerWinbackEligibilityRepository.EligibleCustomer customer, SquareClient square,
+                          Long businessId) {
         int daysSinceLastVisit = (int) ChronoUnit.DAYS.between(customer.lastVisitDate(), LocalDate.now(SALON_ZONE));
         boolean providerChanged = !Objects.equals(customer.lastProvider(), customer.previousProvider());
 
@@ -147,7 +149,7 @@ public class RepeatCustomerWinbackScheduler {
             return;
         }
 
-        if (messageLogService.hasNegativeFeedback(phoneNumber)) {
+        if (messageLogService.hasNegativeFeedback(businessId, phoneNumber)) {
             save(customer, phoneNumber, daysSinceLastVisit, providerChanged, null, null, RepeatCustomerWinbackSend.STATE_SKIPPED_NEGATIVE_FEEDBACK);
             return;
         }
@@ -175,7 +177,7 @@ public class RepeatCustomerWinbackScheduler {
 
         Instant promoExpiresAt = endOfTodayInSalonZone();
         String givenName = square.customerGivenNames(List.of(customer.squareCustomerId())).get(customer.squareCustomerId());
-        String variant = sendNudge(customer, phoneNumber, givenName, providerChanged, promoExpiresAt, square);
+        String variant = sendNudge(customer, phoneNumber, givenName, providerChanged, promoExpiresAt, square, businessId);
         save(customer, phoneNumber, daysSinceLastVisit, providerChanged, promoExpiresAt, variant, RepeatCustomerWinbackSend.STATE_SENT);
     }
 
@@ -211,7 +213,8 @@ public class RepeatCustomerWinbackScheduler {
     /** Returns the message variant actually used ("default" or "previous_provider"), for the
      * caller to record. */
     private String sendNudge(RepeatCustomerWinbackEligibilityRepository.EligibleCustomer customer, String phoneNumber,
-                              String rawGivenName, boolean providerChanged, Instant promoExpiresAt, SquareClient square) {
+                              String rawGivenName, boolean providerChanged, Instant promoExpiresAt, SquareClient square,
+                              Long businessId) {
         String clickToken = messageLogService.generateUniqueClickToken();
         // Reconstructed deterministically by ShortLinkController at click time — see
         // RebookingPromoSigner and class doc. No signature stored here; it's recomputed. Identical
@@ -221,7 +224,7 @@ public class RepeatCustomerWinbackScheduler {
         boolean consented = hasConsent(phoneNumber, customer.squareCustomerId(), square);
         String templateKey = consented ? TEMPLATE_KEY : TEMPLATE_KEY_TRANSACTIONAL;
         SmsMessage reserved = messageLogService.logOutboundWithLink(
-                templateKey, AUTOMATION_KEY, phoneNumber, "", false, "pending", null, linkTarget, clickToken);
+                businessId, templateKey, AUTOMATION_KEY, phoneNumber, "", false, "pending", null, linkTarget, clickToken);
 
         String shortLink = publicBaseUrl + "/r/" + clickToken;
         String name = Names.capitalizeFirst(rawGivenName);
@@ -243,7 +246,7 @@ public class RepeatCustomerWinbackScheduler {
                     : defaultTransactionalBody(name, lastProviderFirstName, shortLink);
         }
 
-        TwilioSmsConfig config = configService.getForAutomation();
+        TwilioSmsConfig config = configService.get(businessId);
         if (!config.isConfigured()) {
             log.info("{} skipped — Twilio credentials not configured", templateKey);
             updateReserved(reserved, body, false, "not_configured", null);

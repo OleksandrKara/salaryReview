@@ -70,7 +70,7 @@ class SmsDraftServiceTest {
         when(props.isEnabled()).thenReturn(true);
 
         smsMessageLogService = mock(SmsMessageLogService.class);
-        when(smsMessageLogService.thread(anyString())).thenReturn(List.of());
+        when(smsMessageLogService.thread(eq(BUSINESS_ID), anyString())).thenReturn(List.of());
 
         contactsService = mock(MarketingContactsService.class);
         when(contactsService.contactByPhone(anyString())).thenReturn(Optional.empty());
@@ -133,7 +133,7 @@ class SmsDraftServiceTest {
                 null, null, null, null, null, null, List.of(), List.of(appt), null, null, null, null, null, null,
                 true, 5);
         when(contactsService.contactByPhone(PHONE)).thenReturn(Optional.of(contact));
-        when(smsMessageLogService.thread(PHONE)).thenReturn(List.of(
+        when(smsMessageLogService.thread(BUSINESS_ID, PHONE)).thenReturn(List.of(
                 outbound("Hi Maria! It's Lucy 💛 Time for your next gel fill?"),
                 inbound("My last polish chipped after 3 days, kind of annoyed")));
 
@@ -158,7 +158,7 @@ class SmsDraftServiceTest {
         RagConfigService configService = mock(RagConfigService.class);
         when(ragRetrievalProvider.getIfAvailable()).thenReturn(retrieval);
         when(ragConfigProvider.getIfAvailable()).thenReturn(configService);
-        when(smsMessageLogService.thread(PHONE)).thenReturn(List.of(outbound("Hi! Time for a fill?")));
+        when(smsMessageLogService.thread(BUSINESS_ID, PHONE)).thenReturn(List.of(outbound("Hi! Time for a fill?")));
 
         doReturn(canned()).when(spied).callClaude(any(), anyString(), eq(Language.EN));
 
@@ -180,7 +180,7 @@ class SmsDraftServiceTest {
         ChunkMatch match = mock(ChunkMatch.class);
         when(match.getChunkText()).thenReturn("Our cancellation policy requires 24 hours notice.");
         when(retrieval.retrieve(eq("Do you have a cancellation fee?"), eq(cfg), eq(BUSINESS_ID))).thenReturn(List.of(match));
-        when(smsMessageLogService.thread(PHONE)).thenReturn(List.of(
+        when(smsMessageLogService.thread(BUSINESS_ID, PHONE)).thenReturn(List.of(
                 outbound("Hi! Time for a fill?"),
                 inbound("Do you have a cancellation fee?")));
 

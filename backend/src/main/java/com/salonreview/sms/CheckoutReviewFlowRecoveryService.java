@@ -39,15 +39,15 @@ public class CheckoutReviewFlowRecoveryService {
     }
 
     @Transactional
-    public void retry(Long flowId) {
-        SmsReplyFlow flow = flows.findById(flowId)
+    public void retry(Long businessId, Long flowId) {
+        SmsReplyFlow flow = flows.findByIdAndBusinessId(flowId, businessId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such reply flow"));
         if (!SmsReplyFlow.STATE_AWAITING_REPLY.equals(flow.getState())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Flow " + flowId + " is " + flow.getState() + ", not AWAITING_REPLY — nothing to retry");
         }
-        SmsMessage reply = messages.findFirstByPhoneNumberAndDirectionOrderByCreatedAtDesc(
-                        flow.getPhoneNumber(), "INBOUND")
+        SmsMessage reply = messages.findFirstByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(
+                        businessId, flow.getPhoneNumber(), "INBOUND")
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
                         "No inbound message on file for " + flow.getPhoneNumber() + " to retry against"));
         boolean positive = reply.getBody() != null && reply.getBody().contains("5");

@@ -59,9 +59,10 @@ public class SmsMessageLogService {
         this.events = events;
     }
 
-    public SmsMessage logOutbound(String templateKey, String automationKey, String phoneNumber, String body,
-                                   boolean sent, String reason, String twilioMessageSid) {
+    public SmsMessage logOutbound(Long businessId, String templateKey, String automationKey, String phoneNumber,
+                                   String body, boolean sent, String reason, String twilioMessageSid) {
         SmsMessage saved = repository.save(SmsMessage.builder()
+                .businessId(businessId)
                 .direction("OUTBOUND")
                 .automationKey(automationKey)
                 .phoneNumber(PhoneNumbers.normalize(phoneNumber))
@@ -78,10 +79,11 @@ public class SmsMessageLogService {
     /** {@code linkTarget}/{@code clickToken} are set when this outbound message contains a
      * click-tracked {@code /r/{clickToken}} short link (see {@code ShortLinkController}) — both
      * {@code null} for messages with no link. */
-    public SmsMessage logOutboundWithLink(String templateKey, String automationKey, String phoneNumber, String body,
-                                           boolean sent, String reason, String twilioMessageSid, String linkTarget,
-                                           String clickToken) {
+    public SmsMessage logOutboundWithLink(Long businessId, String templateKey, String automationKey,
+                                           String phoneNumber, String body, boolean sent, String reason,
+                                           String twilioMessageSid, String linkTarget, String clickToken) {
         SmsMessage saved = repository.save(SmsMessage.builder()
+                .businessId(businessId)
                 .direction("OUTBOUND")
                 .automationKey(automationKey)
                 .phoneNumber(PhoneNumbers.normalize(phoneNumber))
@@ -98,9 +100,13 @@ public class SmsMessageLogService {
     }
 
     /** Logged unconditionally, independent of whether the message matches a pending automation
-     * flow — an unmatched text still needs to be visible (see design.md D9). */
-    public SmsMessage logInbound(String phoneNumber, String body, String automationKey) {
+     * flow — an unmatched text still needs to be visible (see design.md D9). {@code businessId} is
+     * resolved by the caller (a public webhook with no session — see {@code TwilioInboundSmsController})
+     * via {@code BusinessRepository#legacySmsBusiness()}, same interim stopgap as every other
+     * background/webhook SMS call site until real per-business routing exists. */
+    public SmsMessage logInbound(Long businessId, String phoneNumber, String body, String automationKey) {
         SmsMessage saved = repository.save(SmsMessage.builder()
+                .businessId(businessId)
                 .direction("INBOUND")
                 .automationKey(automationKey)
                 .phoneNumber(PhoneNumbers.normalize(phoneNumber))
@@ -112,7 +118,9 @@ public class SmsMessageLogService {
     }
 
     /** Used by {@link CheckoutReviewReplyService} to finalize a reserved placeholder row once the
-     * real body (containing that row's own short link) and send outcome are known. */
+     * real body (containing that row's own short link) and send outcome are known. The row already
+     * carries its own {@code businessId} (set when it was first reserved), so this doesn't need one
+     * as a parameter. */
     public SmsMessage save(SmsMessage message) {
         SmsMessage saved = repository.save(message);
         events.broadcast(saved.getPhoneNumber());
@@ -122,7 +130,8 @@ public class SmsMessageLogService {
     /** A fresh {@link ClickTokens#generate()} candidate, re-rolled if it happens to collide with
      * one already in use (see design.md D6) — keeping the token itself short (5 chars) is only
      * safe because collisions are handled here rather than avoided by padding the length. Never
-     * expected to need more than one attempt in practice. */
+     * expected to need more than one attempt in practice. Not business-scoped: the token must be
+     * globally unique across every business sharing this table. */
     String generateUniqueClickToken() {
         for (int attempt = 0; attempt < 20; attempt++) {
             String candidate = ClickTokens.generate();
@@ -133,8 +142,10 @@ public class SmsMessageLogService {
         throw new IllegalStateException("Could not generate a unique click token after 20 attempts");
     }
 
-    public Page<SmsMessage> search(String phoneNumber, String direction, String automationKey, Pageable pageable) {
-        return repository.search(phoneNumber == null ? null : PhoneNumbers.normalize(phoneNumber), direction, automationKey, pageable);
+    public Page<SmsMessage> search(Long businessId, String phoneNumber, String direction, String automationKey,
+                                    Pageable pageable) {
+        return repository.search(businessId, phoneNumber == null ? null : PhoneNumbers.normalize(phoneNumber),
+                direction, automationKey, pageable);
     }
 
     /** One hit per phone number with a matching message, most-recent-match-first — backs the
@@ -143,11 +154,11 @@ public class SmsMessageLogService {
      * older history that the client doesn't have loaded. */
     public record ConversationSearchHit(String phoneNumber, String snippet, String direction, Instant matchedAt) {}
 
-    public List<ConversationSearchHit> searchConversations(String q) {
+    public List<ConversationSearchHit> searchConversations(Long businessId, String q) {
         if (q == null || q.isBlank()) {
             return List.of();
         }
-        List<SmsMessage> matches = repository.searchByBodyContaining(q.trim(), PageRequest.of(0, 300));
+        List<SmsMessage> matches = repository.searchByBodyContaining(businessId, q.trim(), PageRequest.of(0, 300));
         LinkedHashMap<String, ConversationSearchHit> byPhone = new LinkedHashMap<>();
         for (SmsMessage m : matches) {
             byPhone.putIfAbsent(m.getPhoneNumber(),
@@ -158,38 +169,42 @@ public class SmsMessageLogService {
 
     /** One row per distinct phone number, most-recent-message-first — backs the manager
      * conversation view's contact list (design.md D8). */
-    public java.util.List<SmsMessageRepository.ConversationSummaryProjection> conversations() {
-        return repository.conversationSummaries();
+    public java.util.List<SmsMessageRepository.ConversationSummaryProjection> conversations(Long businessId) {
+        return repository.conversationSummaries(businessId);
     }
 
-    /** Cursor-paginated form of {@link #conversations()} — see
+    /** Cursor-paginated form of {@link #conversations} — see
      * {@link SmsMessageRepository#conversationSummariesPage} for why cursor, not offset. */
-    public java.util.List<SmsMessageRepository.ConversationSummaryProjection> conversationsPage(Instant cursor, int limit) {
-        return repository.conversationSummariesPage(cursor, limit);
+    public java.util.List<SmsMessageRepository.ConversationSummaryProjection> conversationsPage(
+            Long businessId, Instant cursor, int limit) {
+        return repository.conversationSummariesPage(businessId, cursor, limit);
     }
 
-    /** Single-conversation form of {@link #conversations()}, for one phone number. */
-    public Optional<SmsMessageRepository.ConversationSummaryProjection> conversationSummary(String phoneNumber) {
-        return repository.conversationSummaryForPhone(PhoneNumbers.normalize(phoneNumber));
+    /** Single-conversation form of {@link #conversations}, for one phone number. */
+    public Optional<SmsMessageRepository.ConversationSummaryProjection> conversationSummary(
+            Long businessId, String phoneNumber) {
+        return repository.conversationSummaryForPhone(businessId, PhoneNumbers.normalize(phoneNumber));
     }
 
     /** Full chronological thread for one phone number. */
-    public java.util.List<SmsMessage> thread(String phoneNumber) {
-        return repository.findByPhoneNumberOrderByCreatedAtAsc(PhoneNumbers.normalize(phoneNumber));
+    public java.util.List<SmsMessage> thread(Long businessId, String phoneNumber) {
+        return repository.findByBusinessIdAndPhoneNumberOrderByCreatedAtAsc(businessId, PhoneNumbers.normalize(phoneNumber));
     }
 
     /** Whether this phone number has ever actually clicked a click-tracked link sent to the given
-     * {@code linkTarget} — see {@link com.salonreview.repo.SmsMessageRepository#existsByPhoneNumberAndLinkTargetAndClickedAtIsNotNull}. */
-    public boolean hasClickedLinkTarget(String phoneNumber, String linkTarget) {
-        return repository.existsByPhoneNumberAndLinkTargetAndClickedAtIsNotNull(PhoneNumbers.normalize(phoneNumber), linkTarget);
+     * {@code linkTarget} — see {@link com.salonreview.repo.SmsMessageRepository#existsByBusinessIdAndPhoneNumberAndLinkTargetAndClickedAtIsNotNull}. */
+    public boolean hasClickedLinkTarget(Long businessId, String phoneNumber, String linkTarget) {
+        return repository.existsByBusinessIdAndPhoneNumberAndLinkTargetAndClickedAtIsNotNull(
+                businessId, PhoneNumbers.normalize(phoneNumber), linkTarget);
     }
 
     /** Batch form of {@link #hasClickedLinkTarget} — one query for every phone number on the
      * manager conversation view's list page, not one per row. {@code phoneNumbers} must already be
      * E.164-normalized (the caller already has them in that form from the conversation summaries
      * this backs). */
-    public java.util.Set<String> phoneNumbersWithClickedLinkTarget(java.util.Collection<String> phoneNumbers, String linkTarget) {
-        return new java.util.HashSet<>(repository.findPhoneNumbersWithClickedLinkTarget(phoneNumbers, linkTarget));
+    public java.util.Set<String> phoneNumbersWithClickedLinkTarget(Long businessId,
+            java.util.Collection<String> phoneNumbers, String linkTarget) {
+        return new java.util.HashSet<>(repository.findPhoneNumbersWithClickedLinkTarget(businessId, phoneNumbers, linkTarget));
     }
 
     /** Batch form of "has any outbound message to this number ever come back flagged as spam or
@@ -197,15 +212,15 @@ public class SmsMessageLogService {
      * {@link #phoneNumbersWithClickedLinkTarget}. Backs the conversation list's spam-flag icon —
      * the full reason and date are already visible on the individual message bubble
      * ("Not delivered — ..."), this is just the quick-glance version. */
-    public java.util.Set<String> phoneNumbersFlaggedAsSpam(java.util.Collection<String> phoneNumbers) {
-        return new java.util.HashSet<>(repository.findPhoneNumbersWithDeliveryErrorCode(phoneNumbers, SPAM_ERROR_CODES));
+    public java.util.Set<String> phoneNumbersFlaggedAsSpam(Long businessId, java.util.Collection<String> phoneNumbers) {
+        return new java.util.HashSet<>(repository.findPhoneNumbersWithDeliveryErrorCode(businessId, phoneNumbers, SPAM_ERROR_CODES));
     }
 
     /** Whether this phone number has ever left a low-rating reply to the checkout-review-request
-     * automation — see {@link com.salonreview.repo.SmsMessageRepository#existsByPhoneNumberAndNegativeFeedbackAtIsNotNull}.
+     * automation — see {@link com.salonreview.repo.SmsMessageRepository#existsByBusinessIdAndPhoneNumberAndNegativeFeedbackAtIsNotNull}.
      * Used by {@code SameDayRebookingScheduler} to permanently exclude them from the win-back nudge. */
-    public boolean hasNegativeFeedback(String phoneNumber) {
-        return repository.existsByPhoneNumberAndNegativeFeedbackAtIsNotNull(PhoneNumbers.normalize(phoneNumber));
+    public boolean hasNegativeFeedback(Long businessId, String phoneNumber) {
+        return repository.existsByBusinessIdAndPhoneNumberAndNegativeFeedbackAtIsNotNull(businessId, PhoneNumbers.normalize(phoneNumber));
     }
 
     /** Best-effort automation attribution for an inbound reply that doesn't match a pending
@@ -215,8 +230,9 @@ public class SmsMessageLogService {
      * automated) send. Used by {@code TwilioInboundSmsController} so a reply to, say, the
      * repeat-customer win-back nudge shows up as a "reply" for that automation on the owner's
      * automations panel instead of silently going untracked. */
-    public String mostRecentAutomationKey(String phoneNumber) {
-        return repository.findFirstByPhoneNumberAndDirectionOrderByCreatedAtDesc(PhoneNumbers.normalize(phoneNumber), "OUTBOUND")
+    public String mostRecentAutomationKey(Long businessId, String phoneNumber) {
+        return repository.findFirstByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(
+                        businessId, PhoneNumbers.normalize(phoneNumber), "OUTBOUND")
                 .map(SmsMessage::getAutomationKey)
                 .orElse(null);
     }
@@ -228,21 +244,23 @@ public class SmsMessageLogService {
      * {@link com.salonreview.repo.SmsMessageRepository#findLatestLinkSentAt}/{@code #findLatestLinkClickedAt}. */
     public record LinkEngagement(Instant sentAt, Instant clickedAt) {}
 
-    public LinkEngagement linkEngagement(String phoneNumber, String linkTarget) {
+    public LinkEngagement linkEngagement(Long businessId, String phoneNumber, String linkTarget) {
         String normalized = PhoneNumbers.normalize(phoneNumber);
         return new LinkEngagement(
-                repository.findLatestLinkSentAt(normalized, linkTarget),
-                repository.findLatestLinkClickedAt(normalized, linkTarget)
+                repository.findLatestLinkSentAt(businessId, normalized, linkTarget),
+                repository.findLatestLinkClickedAt(businessId, normalized, linkTarget)
         );
     }
 
-    public long unreadCount() {
-        return repository.countByDirectionAndReadAtIsNull("INBOUND");
+    public long unreadCount(Long businessId) {
+        return repository.countByBusinessIdAndDirectionAndReadAtIsNull(businessId, "INBOUND");
     }
 
     /** Applies a Twilio delivery-status callback to the row it was sent from — see
      * {@code TwilioStatusCallbackController}. No-op if the SID doesn't match any row (already
-     * deleted, or a SID from before this tracking existed). */
+     * deleted, or a SID from before this tracking existed). Not business-scoped: the SID is
+     * Twilio's own globally unique identifier and the row it resolves to already carries its own
+     * business_id, same reasoning as {@code SmsMessageRepository#findByTwilioMessageSid}. */
     @Transactional
     public void updateDeliveryStatus(String twilioMessageSid, String deliveryStatus, String errorCode) {
         if (twilioMessageSid == null) {
@@ -261,10 +279,11 @@ public class SmsMessageLogService {
 
     /** Idempotent — marking an already-read message read again leaves its original {@code readAt}
      * untouched and doesn't error (see spec.md "Marking an already-read message read again is a
-     * no-op"). */
-    public void markRead(long messageId) {
+     * no-op"). {@code businessId} scopes the lookup so a message id from another business's table
+     * 404s (silently no-ops here) instead of being mutable cross-tenant. */
+    public void markRead(Long businessId, long messageId) {
         Optional<SmsMessage> found = repository.findById(messageId);
-        if (found.isEmpty()) {
+        if (found.isEmpty() || !found.get().getBusinessId().equals(businessId)) {
             return;
         }
         SmsMessage message = found.get();
@@ -283,9 +302,9 @@ public class SmsMessageLogService {
      * silently revert — the automation hub's SmsActivityLog page didn't have this problem because
      * it already called the single-message {@link #markRead} endpoint per row on click. */
     @Transactional
-    public void markThreadRead(String phoneNumber) {
+    public void markThreadRead(Long businessId, String phoneNumber) {
         String normalized = PhoneNumbers.normalize(phoneNumber);
-        repository.markThreadRead(normalized, Instant.now());
+        repository.markThreadRead(businessId, normalized, Instant.now());
         events.broadcast(normalized);
     }
 
@@ -294,9 +313,9 @@ public class SmsMessageLogService {
      * inbound message, not the whole read history, so the conversation shows as needing attention
      * again next time the inbox is opened. See SmsMessageRepository#markLastInboundUnread. */
     @Transactional
-    public void markThreadUnread(String phoneNumber) {
+    public void markThreadUnread(Long businessId, String phoneNumber) {
         String normalized = PhoneNumbers.normalize(phoneNumber);
-        repository.markLastInboundUnread(normalized);
+        repository.markLastInboundUnread(businessId, normalized);
         events.broadcast(normalized);
     }
 }

@@ -1,6 +1,7 @@
 package com.salonreview.sms;
 
 import com.salonreview.domain.SmsReplyFlow;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SmsReplyFlowRepository;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
@@ -28,19 +29,24 @@ public class SmsReplyFlowScheduler {
     private final SmsReplyFlowRepository repository;
     private final TwilioSmsService smsService;
     private final TechnicianNameResolver technicianNameResolver;
+    private final BusinessRepository businesses;
 
     public SmsReplyFlowScheduler(SmsReplyFlowRepository repository, TwilioSmsService smsService,
-                                  TechnicianNameResolver technicianNameResolver) {
+                                  TechnicianNameResolver technicianNameResolver, BusinessRepository businesses) {
         this.repository = repository;
         this.smsService = smsService;
         this.technicianNameResolver = technicianNameResolver;
+        this.businesses = businesses;
     }
 
     @Scheduled(fixedDelay = 15_000)
     @SchedulerLock(name = "SmsReplyFlowScheduler_sendDueRatingRequests", lockAtLeastFor = "PT10S", lockAtMostFor = "PT2M")
     public void sendDueRatingRequests() {
+        // See BusinessRepository#legacySmsBusiness, same interim stopgap as every scheduler in
+        // this package — real per-business iteration is a separate follow-up task.
+        Long businessId = businesses.legacySmsBusiness().getId();
         Instant now = Instant.now();
-        List<SmsReplyFlow> due = repository.findByStateAndSendDueAtBefore(SmsReplyFlow.STATE_AWAITING_SEND, now);
+        List<SmsReplyFlow> due = repository.findByBusinessIdAndStateAndSendDueAtBefore(businessId, SmsReplyFlow.STATE_AWAITING_SEND, now);
         for (SmsReplyFlow flow : due) {
             Map<String, String> vars = new java.util.HashMap<>();
             if (flow.getCustomerName() != null) {
@@ -48,7 +54,7 @@ public class SmsReplyFlowScheduler {
             }
             technicianNameResolver.resolveForCustomer(flow.getSquareCustomerId(), now)
                     .ifPresent(technician -> vars.put("technician", technician));
-            var result = smsService.sendTemplated("checkout_rating_request", flow.getPhoneNumber(), vars);
+            var result = smsService.sendTemplated(flow.getBusinessId(), "checkout_rating_request", flow.getPhoneNumber(), vars);
             if (result.sent()) {
                 flow.setState(SmsReplyFlow.STATE_AWAITING_REPLY);
                 flow.setReplyExpiresAt(now.plus(REPLY_WINDOW));
@@ -66,8 +72,9 @@ public class SmsReplyFlowScheduler {
     @Scheduled(fixedDelay = 15_000)
     @SchedulerLock(name = "SmsReplyFlowScheduler_expireStaleReplyWindows", lockAtLeastFor = "PT10S", lockAtMostFor = "PT2M")
     public void expireStaleReplyWindows() {
+        Long businessId = businesses.legacySmsBusiness().getId();
         Instant now = Instant.now();
-        List<SmsReplyFlow> stale = repository.findByStateAndReplyExpiresAtBefore(SmsReplyFlow.STATE_AWAITING_REPLY, now);
+        List<SmsReplyFlow> stale = repository.findByBusinessIdAndStateAndReplyExpiresAtBefore(businessId, SmsReplyFlow.STATE_AWAITING_REPLY, now);
         for (SmsReplyFlow flow : stale) {
             flow.setState(SmsReplyFlow.STATE_EXPIRED);
             repository.save(flow);

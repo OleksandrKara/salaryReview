@@ -93,23 +93,25 @@ public class LapsedCustomerWinbackScheduler {
     public void sendDueWinbacks() {
         // See BusinessRepository#legacySmsBusiness — the eligibility query below has no
         // business_id of its own yet, same as SameDayRebookingGroupExpiryScheduler.
-        SquareClient square = squareClientProvider.forBusiness(businesses.legacySmsBusiness().getId());
+        Long businessId = businesses.legacySmsBusiness().getId();
+        SquareClient square = squareClientProvider.forBusiness(businessId);
         for (LapsedCustomerWinbackEligibilityRepository.EligibleCustomer customer : eligibilityRepository.findEligibleCustomers()) {
             if (sendRepository.existsBySquareCustomerId(customer.squareCustomerId())) {
                 continue; // belt-and-suspenders vs. the eligibility query's own NOT EXISTS
             }
-            process(customer, square);
+            process(customer, square, businessId);
         }
     }
 
-    private void process(LapsedCustomerWinbackEligibilityRepository.EligibleCustomer customer, SquareClient square) {
+    private void process(LapsedCustomerWinbackEligibilityRepository.EligibleCustomer customer, SquareClient square,
+                          Long businessId) {
         String phoneNumber = square.customerPhone(customer.squareCustomerId());
         if (phoneNumber == null || phoneNumber.isBlank()) {
             save(customer, null, null, LapsedCustomerWinbackSend.STATE_SKIPPED_UNRESOLVED);
             return;
         }
 
-        if (messageLogService.hasNegativeFeedback(phoneNumber)) {
+        if (messageLogService.hasNegativeFeedback(businessId, phoneNumber)) {
             save(customer, phoneNumber, null, LapsedCustomerWinbackSend.STATE_SKIPPED_NEGATIVE_FEEDBACK);
             return;
         }
@@ -137,7 +139,7 @@ public class LapsedCustomerWinbackScheduler {
 
         Instant promoExpiresAt = endOfTodayInSalonZone();
         String givenName = square.customerGivenNames(List.of(customer.squareCustomerId())).get(customer.squareCustomerId());
-        sendNudge(customer, phoneNumber, givenName, promoExpiresAt, hasConsent(phoneNumber, customer.squareCustomerId(), square));
+        sendNudge(customer, phoneNumber, givenName, promoExpiresAt, hasConsent(phoneNumber, customer.squareCustomerId(), square), businessId);
         save(customer, phoneNumber, promoExpiresAt, LapsedCustomerWinbackSend.STATE_SENT);
     }
 
@@ -171,7 +173,7 @@ public class LapsedCustomerWinbackScheduler {
     }
 
     private void sendNudge(LapsedCustomerWinbackEligibilityRepository.EligibleCustomer customer, String phoneNumber,
-                            String rawGivenName, Instant promoExpiresAt, boolean consented) {
+                            String rawGivenName, Instant promoExpiresAt, boolean consented, Long businessId) {
         String clickToken = messageLogService.generateUniqueClickToken();
         long expEpochSeconds = promoExpiresAt.getEpochSecond();
         // Reconstructed deterministically by ShortLinkController at click time — see
@@ -181,7 +183,7 @@ public class LapsedCustomerWinbackScheduler {
         String linkTarget = "WINBACK:" + expEpochSeconds;
         String templateKey = consented ? TEMPLATE_KEY : TEMPLATE_KEY_TRANSACTIONAL;
         SmsMessage reserved = messageLogService.logOutboundWithLink(
-                templateKey, AUTOMATION_KEY, phoneNumber, "", false, "pending", null, linkTarget, clickToken);
+                businessId, templateKey, AUTOMATION_KEY, phoneNumber, "", false, "pending", null, linkTarget, clickToken);
 
         String shortLink = publicBaseUrl + "/r/" + clickToken;
         String name = Names.capitalizeFirst(rawGivenName);
@@ -195,7 +197,7 @@ public class LapsedCustomerWinbackScheduler {
                 ? marketingBody(name, technician, shortLink)
                 : transactionalBody(name, technician, shortLink);
 
-        TwilioSmsConfig config = configService.getForAutomation();
+        TwilioSmsConfig config = configService.get(businessId);
         if (!config.isConfigured()) {
             log.info("{} skipped — Twilio credentials not configured", templateKey);
             updateReserved(reserved, body, false, "not_configured", null);

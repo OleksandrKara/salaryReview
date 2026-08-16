@@ -29,6 +29,7 @@ import static org.mockito.Mockito.*;
 class LeadFollowUpSchedulerTest {
 
     private static final String PHONE = "+15551234567";
+    private static final Long BUSINESS_ID = 1L;
 
     private MarketingContactsRepository contactsRepository;
     private LeadFollowUpSendRepository sendRepository;
@@ -53,7 +54,7 @@ class LeadFollowUpSchedulerTest {
                 automationService, smsService);
 
         when(automationService.isEnabled("lead_follow_up")).thenReturn(true);
-        when(smsService.sendTemplated(any(), any(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
+        when(smsService.sendTemplated(any(), any(), any(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
     }
 
     private static RawContact contact(UUID id, String name, String squareCustomerId) {
@@ -89,7 +90,7 @@ class LeadFollowUpSchedulerTest {
 
         scheduler.sendDueFollowUps();
 
-        verify(smsService).sendTemplated("lead_follow_up_nudge", PHONE, Map.of("name", "Jane"));
+        verify(smsService).sendTemplated(BUSINESS_ID, "lead_follow_up_nudge", PHONE, Map.of("name", "Jane"));
         ArgumentCaptor<LeadFollowUpSend> captor = ArgumentCaptor.forClass(LeadFollowUpSend.class);
         verify(sendRepository).save(captor.capture());
         assertThat(captor.getValue().getState()).isEqualTo(LeadFollowUpSend.STATE_SENT);
@@ -122,7 +123,7 @@ class LeadFollowUpSchedulerTest {
 
         scheduler.sendDueFollowUps();
 
-        verify(smsService).sendTemplated(eq("lead_follow_up_nudge"), eq(PHONE), any());
+        verify(smsService).sendTemplated(eq(BUSINESS_ID), eq("lead_follow_up_nudge"), eq(PHONE), any());
     }
 
     @Test
@@ -136,7 +137,7 @@ class LeadFollowUpSchedulerTest {
         scheduler.sendDueFollowUps();
 
         verify(square).customerIdsForPhone(PHONE);
-        verify(smsService).sendTemplated(eq("lead_follow_up_nudge"), eq(PHONE), any());
+        verify(smsService).sendTemplated(eq(BUSINESS_ID), eq("lead_follow_up_nudge"), eq(PHONE), any());
     }
 
     @Test
@@ -148,7 +149,7 @@ class LeadFollowUpSchedulerTest {
 
         scheduler.sendDueFollowUps();
 
-        verify(smsService).sendTemplated(eq("lead_follow_up_nudge"), eq(PHONE), any());
+        verify(smsService).sendTemplated(eq(BUSINESS_ID), eq("lead_follow_up_nudge"), eq(PHONE), any());
         verify(square, never()).bookingsForCustomer(any(), any());
     }
 
@@ -161,7 +162,7 @@ class LeadFollowUpSchedulerTest {
 
         scheduler.sendDueFollowUps();
 
-        verify(smsService).sendTemplated("lead_follow_up_nudge", PHONE, Map.of());
+        verify(smsService).sendTemplated(BUSINESS_ID, "lead_follow_up_nudge", PHONE, Map.of());
     }
 
     @Test
@@ -210,7 +211,7 @@ class LeadFollowUpSchedulerTest {
 
         scheduler.sendDueFollowUps();
 
-        verify(smsService).sendTemplated(eq("lead_follow_up_nudge"), eq(PHONE), any());
+        verify(smsService).sendTemplated(eq(BUSINESS_ID), eq("lead_follow_up_nudge"), eq(PHONE), any());
         ArgumentCaptor<LeadFollowUpSend> captor = ArgumentCaptor.forClass(LeadFollowUpSend.class);
         verify(sendRepository).save(captor.capture());
         assertThat(captor.getValue().getContactUpdatedAt()).isEqualTo(newTouch);

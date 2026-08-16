@@ -22,6 +22,8 @@ import static org.mockito.Mockito.*;
  */
 class SmsMessageLogServiceTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     private SmsMessageRepository repository;
     private SmsEventBroadcaster events;
     private SmsMessageLogService service;
@@ -37,7 +39,7 @@ class SmsMessageLogServiceTest {
     @Test
     @DisplayName("a newly-logged inbound message has read_at = null")
     void newInboundMessageIsUnread() {
-        SmsMessage logged = service.logInbound("+15551234567", "hello", null);
+        SmsMessage logged = service.logInbound(BUSINESS_ID, "+15551234567", "hello", null);
 
         assertThat(logged.getReadAt()).isNull();
         assertThat(logged.getDirection()).isEqualTo("INBOUND");
@@ -46,7 +48,7 @@ class SmsMessageLogServiceTest {
     @Test
     @DisplayName("logInbound broadcasts the normalized phone number so the manager view can live-update")
     void logInboundBroadcastsChange() {
-        service.logInbound("(555) 123-4567", "hello", null);
+        service.logInbound(BUSINESS_ID, "(555) 123-4567", "hello", null);
 
         verify(events).broadcast("+15551234567");
     }
@@ -54,19 +56,19 @@ class SmsMessageLogServiceTest {
     @Test
     @DisplayName("unreadCount delegates to the repository's unread-inbound count")
     void unreadCountDelegates() {
-        when(repository.countByDirectionAndReadAtIsNull("INBOUND")).thenReturn(3L);
+        when(repository.countByBusinessIdAndDirectionAndReadAtIsNull(BUSINESS_ID, "INBOUND")).thenReturn(3L);
 
-        assertThat(service.unreadCount()).isEqualTo(3L);
+        assertThat(service.unreadCount(BUSINESS_ID)).isEqualTo(3L);
     }
 
     @Test
     @DisplayName("marking an unread message read sets read_at")
     void markReadSetsTimestamp() {
-        SmsMessage message = SmsMessage.builder().id(1L).direction("INBOUND").phoneNumber("+15551234567")
+        SmsMessage message = SmsMessage.builder().id(1L).businessId(BUSINESS_ID).direction("INBOUND").phoneNumber("+15551234567")
                 .body("hi").status("RECEIVED").build();
         when(repository.findById(1L)).thenReturn(Optional.of(message));
 
-        service.markRead(1L);
+        service.markRead(BUSINESS_ID, 1L);
 
         assertThat(message.getReadAt()).isNotNull();
         verify(repository).save(message);
@@ -76,11 +78,11 @@ class SmsMessageLogServiceTest {
     @DisplayName("marking an already-read message read again is a no-op — doesn't change the original timestamp, doesn't error")
     void markReadOnAlreadyReadIsNoOp() {
         Instant original = Instant.now().minusSeconds(60);
-        SmsMessage message = SmsMessage.builder().id(1L).direction("INBOUND").phoneNumber("+15551234567")
+        SmsMessage message = SmsMessage.builder().id(1L).businessId(BUSINESS_ID).direction("INBOUND").phoneNumber("+15551234567")
                 .body("hi").status("RECEIVED").readAt(original).build();
         when(repository.findById(1L)).thenReturn(Optional.of(message));
 
-        service.markRead(1L);
+        service.markRead(BUSINESS_ID, 1L);
 
         assertThat(message.getReadAt()).isEqualTo(original);
         verify(repository, never()).save(any());
@@ -91,25 +93,38 @@ class SmsMessageLogServiceTest {
     void markReadOnUnknownIdIsNoOp() {
         when(repository.findById(999L)).thenReturn(Optional.empty());
 
-        service.markRead(999L);
+        service.markRead(BUSINESS_ID, 999L);
 
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("marking a message id belonging to another business is a no-op, doesn't error")
+    void markReadOnAnotherBusinessesMessageIsNoOp() {
+        SmsMessage message = SmsMessage.builder().id(1L).businessId(2L).direction("INBOUND").phoneNumber("+15551234567")
+                .body("hi").status("RECEIVED").build();
+        when(repository.findById(1L)).thenReturn(Optional.of(message));
+
+        service.markRead(BUSINESS_ID, 1L);
+
+        assertThat(message.getReadAt()).isNull();
         verify(repository, never()).save(any());
     }
 
     @Test
     @DisplayName("markThreadRead normalizes the phone number and delegates to the bulk repository update")
     void markThreadReadNormalizesAndDelegates() {
-        service.markThreadRead("(555) 123-4567");
+        service.markThreadRead(BUSINESS_ID, "(555) 123-4567");
 
-        verify(repository).markThreadRead(eq("+15551234567"), any(Instant.class));
+        verify(repository).markThreadRead(eq(BUSINESS_ID), eq("+15551234567"), any(Instant.class));
     }
 
     @Test
     @DisplayName("markThreadUnread normalizes the phone number and delegates to the repository")
     void markThreadUnreadNormalizesAndDelegates() {
-        service.markThreadUnread("(555) 123-4567");
+        service.markThreadUnread(BUSINESS_ID, "(555) 123-4567");
 
-        verify(repository).markLastInboundUnread(eq("+15551234567"));
+        verify(repository).markLastInboundUnread(eq(BUSINESS_ID), eq("+15551234567"));
     }
 
     @Test
@@ -136,16 +151,16 @@ class SmsMessageLogServiceTest {
     @Test
     @DisplayName("searchConversations returns one hit per phone number, keeping only the most recent match")
     void searchConversationsDedupesByPhoneKeepingMostRecent() {
-        SmsMessage newer = SmsMessage.builder().phoneNumber("+15551234567").direction("INBOUND")
+        SmsMessage newer = SmsMessage.builder().businessId(BUSINESS_ID).phoneNumber("+15551234567").direction("INBOUND")
                 .body("running late for my appointment").createdAt(Instant.now()).build();
-        SmsMessage older = SmsMessage.builder().phoneNumber("+15551234567").direction("OUTBOUND")
+        SmsMessage older = SmsMessage.builder().businessId(BUSINESS_ID).phoneNumber("+15551234567").direction("OUTBOUND")
                 .body("see you at your appointment tomorrow").createdAt(Instant.now().minusSeconds(3600)).build();
-        SmsMessage otherPhone = SmsMessage.builder().phoneNumber("+15559876543").direction("INBOUND")
+        SmsMessage otherPhone = SmsMessage.builder().businessId(BUSINESS_ID).phoneNumber("+15559876543").direction("INBOUND")
                 .body("can I reschedule my appointment").createdAt(Instant.now().minusSeconds(60)).build();
-        when(repository.searchByBodyContaining(eq("appointment"), any(Pageable.class)))
+        when(repository.searchByBodyContaining(eq(BUSINESS_ID), eq("appointment"), any(Pageable.class)))
                 .thenReturn(List.of(newer, otherPhone, older)); // already ordered newest-first
 
-        List<SmsMessageLogService.ConversationSearchHit> hits = service.searchConversations("appointment");
+        List<SmsMessageLogService.ConversationSearchHit> hits = service.searchConversations(BUSINESS_ID, "appointment");
 
         assertThat(hits).hasSize(2);
         assertThat(hits.get(0).phoneNumber()).isEqualTo("+15551234567");
@@ -156,14 +171,14 @@ class SmsMessageLogServiceTest {
     @Test
     @DisplayName("searchConversations returns an empty list for a blank query without hitting the repository")
     void searchConversationsWithBlankQueryReturnsEmpty() {
-        assertThat(service.searchConversations("   ")).isEmpty();
-        verify(repository, never()).searchByBodyContaining(any(), any());
+        assertThat(service.searchConversations(BUSINESS_ID, "   ")).isEmpty();
+        verify(repository, never()).searchByBodyContaining(any(), any(), any());
     }
 
     @Test
     @DisplayName("updateDeliveryStatus applies status, a known error code's plain-language message, and a timestamp")
     void updateDeliveryStatusAppliesKnownErrorCode() {
-        SmsMessage message = SmsMessage.builder().id(1L).direction("OUTBOUND").phoneNumber("+15551234567")
+        SmsMessage message = SmsMessage.builder().id(1L).businessId(BUSINESS_ID).direction("OUTBOUND").phoneNumber("+15551234567")
                 .body("hi").status("SENT").twilioMessageSid("SM123").build();
         when(repository.findByTwilioMessageSid("SM123")).thenReturn(Optional.of(message));
 
@@ -179,7 +194,7 @@ class SmsMessageLogServiceTest {
     @Test
     @DisplayName("updateDeliveryStatus falls back to a generic message for an unrecognized error code")
     void updateDeliveryStatusFallsBackForUnknownErrorCode() {
-        SmsMessage message = SmsMessage.builder().id(1L).direction("OUTBOUND").phoneNumber("+15551234567")
+        SmsMessage message = SmsMessage.builder().id(1L).businessId(BUSINESS_ID).direction("OUTBOUND").phoneNumber("+15551234567")
                 .body("hi").status("SENT").twilioMessageSid("SM123").build();
         when(repository.findByTwilioMessageSid("SM123")).thenReturn(Optional.of(message));
 
@@ -191,7 +206,7 @@ class SmsMessageLogServiceTest {
     @Test
     @DisplayName("updateDeliveryStatus for delivered clears any error code/message")
     void updateDeliveryStatusDeliveredHasNoError() {
-        SmsMessage message = SmsMessage.builder().id(1L).direction("OUTBOUND").phoneNumber("+15551234567")
+        SmsMessage message = SmsMessage.builder().id(1L).businessId(BUSINESS_ID).direction("OUTBOUND").phoneNumber("+15551234567")
                 .body("hi").status("SENT").twilioMessageSid("SM123").build();
         when(repository.findByTwilioMessageSid("SM123")).thenReturn(Optional.of(message));
 
@@ -215,19 +230,19 @@ class SmsMessageLogServiceTest {
     @Test
     @DisplayName("hasNegativeFeedback normalizes the phone number and delegates to the repository")
     void hasNegativeFeedbackNormalizesAndDelegates() {
-        when(repository.existsByPhoneNumberAndNegativeFeedbackAtIsNotNull("+15551234567")).thenReturn(true);
+        when(repository.existsByBusinessIdAndPhoneNumberAndNegativeFeedbackAtIsNotNull(BUSINESS_ID, "+15551234567")).thenReturn(true);
 
-        assertThat(service.hasNegativeFeedback("(555) 123-4567")).isTrue();
+        assertThat(service.hasNegativeFeedback(BUSINESS_ID, "(555) 123-4567")).isTrue();
     }
 
     @Test
     @DisplayName("phoneNumbersWithClickedLinkTarget delegates to the batch repository query")
     void phoneNumbersWithClickedLinkTargetDelegates() {
         List<String> phones = List.of("+15551234567", "+15559876543");
-        when(repository.findPhoneNumbersWithClickedLinkTarget(phones, "GOOGLE_REVIEW"))
+        when(repository.findPhoneNumbersWithClickedLinkTarget(BUSINESS_ID, phones, "GOOGLE_REVIEW"))
                 .thenReturn(List.of("+15551234567"));
 
-        assertThat(service.phoneNumbersWithClickedLinkTarget(phones, "GOOGLE_REVIEW"))
+        assertThat(service.phoneNumbersWithClickedLinkTarget(BUSINESS_ID, phones, "GOOGLE_REVIEW"))
                 .containsExactly("+15551234567");
     }
 
@@ -235,10 +250,10 @@ class SmsMessageLogServiceTest {
     @DisplayName("phoneNumbersFlaggedAsSpam delegates to the batch repository query with the spam/opt-out error codes")
     void phoneNumbersFlaggedAsSpamDelegates() {
         List<String> phones = List.of("+15551234567", "+15559876543");
-        when(repository.findPhoneNumbersWithDeliveryErrorCode(eq(phones), any()))
+        when(repository.findPhoneNumbersWithDeliveryErrorCode(eq(BUSINESS_ID), eq(phones), any()))
                 .thenReturn(List.of("+15559876543"));
 
-        assertThat(service.phoneNumbersFlaggedAsSpam(phones)).containsExactly("+15559876543");
-        verify(repository).findPhoneNumbersWithDeliveryErrorCode(phones, java.util.Set.of("30007", "21610"));
+        assertThat(service.phoneNumbersFlaggedAsSpam(BUSINESS_ID, phones)).containsExactly("+15559876543");
+        verify(repository).findPhoneNumbersWithDeliveryErrorCode(BUSINESS_ID, phones, java.util.Set.of("30007", "21610"));
     }
 }

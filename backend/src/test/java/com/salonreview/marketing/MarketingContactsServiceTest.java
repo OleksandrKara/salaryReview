@@ -88,7 +88,7 @@ class MarketingContactsServiceTest {
         when(providerVisits.findAllByBusinessIdOrderByServiceDateAsc(1L)).thenReturn(List.of());
         // No link engagement by default — individual tests override with a specific stub if they
         // care about the repeat-reviewer/click-status fields.
-        when(smsMessageLogService.linkEngagement(any(), any()))
+        when(smsMessageLogService.linkEngagement(any(), any(), any()))
                 .thenReturn(new com.salonreview.sms.SmsMessageLogService.LinkEngagement(null, null));
     }
 
@@ -116,9 +116,9 @@ class MarketingContactsServiceTest {
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of());
         Instant googleSent = Instant.parse("2026-07-20T10:00:00Z");
         Instant googleClicked = Instant.parse("2026-07-20T10:05:00Z");
-        when(smsMessageLogService.linkEngagement("(858) 555-0100", com.salonreview.sms.CheckoutReviewLinks.GOOGLE_REVIEW_TARGET))
+        when(smsMessageLogService.linkEngagement(1L, "(858) 555-0100", com.salonreview.sms.CheckoutReviewLinks.GOOGLE_REVIEW_TARGET))
                 .thenReturn(new com.salonreview.sms.SmsMessageLogService.LinkEngagement(googleSent, googleClicked));
-        when(smsMessageLogService.linkEngagement("(858) 555-0100", com.salonreview.sms.CheckoutReviewLinks.FEEDBACK_FORM_TARGET))
+        when(smsMessageLogService.linkEngagement(1L, "(858) 555-0100", com.salonreview.sms.CheckoutReviewLinks.FEEDBACK_FORM_TARGET))
                 .thenReturn(new com.salonreview.sms.SmsMessageLogService.LinkEngagement(null, null));
 
         Contact c = service.contacts().contacts().get(0);

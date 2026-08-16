@@ -31,6 +31,7 @@ class SameDayRebookingSchedulerTest {
 
     private static final String PHONE = "+15551234567";
     private static final String CUSTOMER_ID = "cust1";
+    private static final Long BUSINESS_ID = 1L;
     private static final String SEGMENT_ID = "gv2:TEXT_SUBSCRIBERS";
 
     private SameDayRebookingSendRepository repository;
@@ -71,11 +72,11 @@ class SameDayRebookingSchedulerTest {
         when(square.bookingsForCustomer(eq(CUSTOMER_ID), any())).thenReturn(List.of());
         when(messageLogService.generateUniqueClickToken()).thenReturn("tok123");
         SmsMessage reserved = SmsMessage.builder().id(1L).direction("OUTBOUND").phoneNumber(PHONE).body("").status("NOT_SENT").build();
-        when(messageLogService.logOutboundWithLink(any(), any(), any(), any(), anyBoolean(), any(), any(), any(), any()))
+        when(messageLogService.logOutboundWithLink(any(), any(), any(), any(), any(), anyBoolean(), any(), any(), any(), any()))
                 .thenReturn(reserved);
         TwilioSmsConfig configured = mock(TwilioSmsConfig.class);
         when(configured.isConfigured()).thenReturn(true);
-        when(configService.getForAutomation()).thenReturn(configured);
+        when(configService.get(BUSINESS_ID)).thenReturn(configured);
     }
 
     private static SameDayRebookingSend send(Instant sendDueAt, Instant promoExpiresAt) {
@@ -180,7 +181,7 @@ class SameDayRebookingSchedulerTest {
                 .doesNotContain("discount")
                 .doesNotContain("off");
         verify(messageLogService).logOutboundWithLink(
-                eq("same_day_rebooking_reminder"), any(), any(), any(), anyBoolean(), any(), any(), any(), any());
+                eq(BUSINESS_ID), eq("same_day_rebooking_reminder"), any(), any(), any(), anyBoolean(), any(), any(), any(), any());
 
         ArgumentCaptor<SameDayRebookingSend> captor = ArgumentCaptor.forClass(SameDayRebookingSend.class);
         verify(repository).save(captor.capture());
@@ -218,7 +219,7 @@ class SameDayRebookingSchedulerTest {
     @Test
     @DisplayName("customer has ever left negative feedback → SKIPPED_NEGATIVE_FEEDBACK, never sent, regardless of consent")
     void negativeFeedbackIsSkipped() throws Exception {
-        when(messageLogService.hasNegativeFeedback(PHONE)).thenReturn(true);
+        when(messageLogService.hasNegativeFeedback(BUSINESS_ID, PHONE)).thenReturn(true);
         SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
         givenDue(s);
 

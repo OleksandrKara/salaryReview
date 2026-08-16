@@ -49,29 +49,29 @@ public class SmsAutomationService {
         return repository.findById(automationKey).map(SmsAutomation::isEnabled).orElse(true);
     }
 
-    public List<AutomationSummary> list() {
+    public List<AutomationSummary> list(Long businessId) {
         Instant since = Instant.now().minus(30, ChronoUnit.DAYS);
         return SmsAutomationRegistry.all().values().stream()
                 .map(meta -> {
                     boolean enabled = repository.findById(meta.key()).map(SmsAutomation::isEnabled).orElse(false);
 
                     long sent = meta.primaryTemplateKey() != null
-                            ? messageRepository.countByAutomationKeyAndTemplateKeyAndDirectionAndStatusAndCreatedAtAfter(
-                                    meta.key(), meta.primaryTemplateKey(), "OUTBOUND", "SENT", since)
-                            : messageRepository.countByAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
-                                    meta.key(), "OUTBOUND", "SENT", since);
+                            ? messageRepository.countByBusinessIdAndAutomationKeyAndTemplateKeyAndDirectionAndStatusAndCreatedAtAfter(
+                                    businessId, meta.key(), meta.primaryTemplateKey(), "OUTBOUND", "SENT", since)
+                            : messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
+                                    businessId, meta.key(), "OUTBOUND", "SENT", since);
 
                     long linkSent = 0;
                     long clicked = 0;
                     if (meta.tracksClicks()) {
-                        linkSent = messageRepository.countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
-                                meta.key(), "OUTBOUND", "SENT", since);
-                        clicked = messageRepository.countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndClickedAtIsNotNullAndCreatedAtAfter(
-                                meta.key(), "OUTBOUND", "SENT", since);
+                        linkSent = messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
+                                businessId, meta.key(), "OUTBOUND", "SENT", since);
+                        clicked = messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndClickedAtIsNotNullAndCreatedAtAfter(
+                                businessId, meta.key(), "OUTBOUND", "SENT", since);
                     }
 
                     long replies = meta.tracksReplies()
-                            ? messageRepository.countByAutomationKeyAndDirectionAndCreatedAtAfter(meta.key(), "INBOUND", since)
+                            ? messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndCreatedAtAfter(businessId, meta.key(), "INBOUND", since)
                             : 0;
 
                     // Conversion (did the customer actually come back for a visit) is computed from

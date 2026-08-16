@@ -18,6 +18,7 @@ import static org.mockito.Mockito.*;
 class SmsReactionServiceTest {
 
     private static final String PHONE = "+15551234567";
+    private static final Long BUSINESS_ID = 1L;
 
     private SmsMessageReactionRepository repository;
     private SmsMessageRepository messageRepository;
@@ -38,10 +39,10 @@ class SmsReactionServiceTest {
     @DisplayName("tryAttachCustomerReaction: 'Loved \"...\"' matching a recent outbound message attaches a heart reaction")
     void lovedTapbackMatchesRecentOutbound() {
         SmsMessage sent = SmsMessage.builder().id(42L).direction("OUTBOUND").body("Thanks so much for coming in!").build();
-        when(messageRepository.findTop20ByPhoneNumberAndDirectionOrderByCreatedAtDesc(PHONE, "OUTBOUND"))
+        when(messageRepository.findTop20ByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(BUSINESS_ID, PHONE, "OUTBOUND"))
                 .thenReturn(List.of(sent));
 
-        boolean attached = service.tryAttachCustomerReaction(PHONE, "Loved “Thanks so much for coming in!”");
+        boolean attached = service.tryAttachCustomerReaction(BUSINESS_ID, PHONE, "Loved “Thanks so much for coming in!”");
 
         assertThat(attached).isTrue();
         org.mockito.ArgumentCaptor<SmsMessageReaction> captor = org.mockito.ArgumentCaptor.forClass(SmsMessageReaction.class);
@@ -55,7 +56,7 @@ class SmsReactionServiceTest {
     @DisplayName("tryAttachCustomerReaction: every tapback keyword maps to its emoji")
     void everyTapbackKeywordMaps() {
         SmsMessage sent = SmsMessage.builder().id(1L).direction("OUTBOUND").body("See you soon").build();
-        when(messageRepository.findTop20ByPhoneNumberAndDirectionOrderByCreatedAtDesc(PHONE, "OUTBOUND"))
+        when(messageRepository.findTop20ByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(BUSINESS_ID, PHONE, "OUTBOUND"))
                 .thenReturn(List.of(sent));
 
         assertThat(parseEmoji("Liked \"See you soon\"")).isEqualTo("👍");
@@ -69,7 +70,7 @@ class SmsReactionServiceTest {
         reset(repository);
         when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(repository.findBySmsMessageId(any())).thenReturn(Optional.empty());
-        service.tryAttachCustomerReaction(PHONE, body);
+        service.tryAttachCustomerReaction(BUSINESS_ID, PHONE, body);
         org.mockito.ArgumentCaptor<SmsMessageReaction> captor = org.mockito.ArgumentCaptor.forClass(SmsMessageReaction.class);
         verify(repository).save(captor.capture());
         return captor.getValue().getEmoji();
@@ -80,10 +81,10 @@ class SmsReactionServiceTest {
     void truncatedQuoteMatchesViaPrefix() {
         SmsMessage sent = SmsMessage.builder().id(7L).direction("OUTBOUND")
                 .body("Just a reminder that your appointment is tomorrow at 2pm, see you then!").build();
-        when(messageRepository.findTop20ByPhoneNumberAndDirectionOrderByCreatedAtDesc(PHONE, "OUTBOUND"))
+        when(messageRepository.findTop20ByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(BUSINESS_ID, PHONE, "OUTBOUND"))
                 .thenReturn(List.of(sent));
 
-        boolean attached = service.tryAttachCustomerReaction(PHONE, "Liked “Just a reminder that your appointment is…”");
+        boolean attached = service.tryAttachCustomerReaction(BUSINESS_ID, PHONE, "Liked “Just a reminder that your appointment is…”");
 
         assertThat(attached).isTrue();
         verify(repository).save(any());
@@ -92,7 +93,7 @@ class SmsReactionServiceTest {
     @Test
     @DisplayName("tryAttachCustomerReaction: an ordinary reply (not a tapback) is left alone")
     void ordinaryReplyIsIgnored() {
-        boolean attached = service.tryAttachCustomerReaction(PHONE, "Thanks, see you then!");
+        boolean attached = service.tryAttachCustomerReaction(BUSINESS_ID, PHONE, "Thanks, see you then!");
 
         assertThat(attached).isFalse();
         verifyNoInteractions(messageRepository, repository, events);
@@ -101,10 +102,10 @@ class SmsReactionServiceTest {
     @Test
     @DisplayName("tryAttachCustomerReaction: tapback text with no matching outbound message is a no-op")
     void tapbackWithNoMatchIsNoop() {
-        when(messageRepository.findTop20ByPhoneNumberAndDirectionOrderByCreatedAtDesc(PHONE, "OUTBOUND"))
+        when(messageRepository.findTop20ByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(BUSINESS_ID, PHONE, "OUTBOUND"))
                 .thenReturn(List.of(SmsMessage.builder().id(1L).direction("OUTBOUND").body("completely different text").build()));
 
-        boolean attached = service.tryAttachCustomerReaction(PHONE, "Loved \"Something we never sent\"");
+        boolean attached = service.tryAttachCustomerReaction(BUSINESS_ID, PHONE, "Loved \"Something we never sent\"");
 
         assertThat(attached).isFalse();
         verify(repository, never()).save(any());
@@ -114,12 +115,12 @@ class SmsReactionServiceTest {
     @DisplayName("tryAttachCustomerReaction: a re-tap on the same message updates the existing row instead of duplicating")
     void reTapUpdatesExistingRow() {
         SmsMessage sent = SmsMessage.builder().id(42L).direction("OUTBOUND").body("Thanks so much for coming in!").build();
-        when(messageRepository.findTop20ByPhoneNumberAndDirectionOrderByCreatedAtDesc(PHONE, "OUTBOUND"))
+        when(messageRepository.findTop20ByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(BUSINESS_ID, PHONE, "OUTBOUND"))
                 .thenReturn(List.of(sent));
         SmsMessageReaction existing = SmsMessageReaction.builder().id(9L).smsMessageId(42L).emoji("👍").build();
         when(repository.findBySmsMessageId(42L)).thenReturn(Optional.of(existing));
 
-        service.tryAttachCustomerReaction(PHONE, "Loved “Thanks so much for coming in!”");
+        service.tryAttachCustomerReaction(BUSINESS_ID, PHONE, "Loved “Thanks so much for coming in!”");
 
         verify(repository).save(existing);
         assertThat(existing.getEmoji()).isEqualTo("❤️");

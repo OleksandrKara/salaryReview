@@ -142,14 +142,51 @@ this file is the plan, not yet executed.
       `SmsBusinessScopeFilter`, but resolved via `CurrentBusinessContext` for correctness regardless).
       Verified via `CrossTenantIsolationTest` against a real Postgres, including a vector-search test
       that gives Business B's chunk the objectively nearest embedding to prove a Business A query
-      still never returns it. **`sms_message` is the one remaining item on this task's original
-      list** — still unscoped (no `business_id` column, still behind the `SmsBusinessScopeFilter`
-      stopgap) — so this task is not yet fully closed; see the hard gate below. **Hard gate: this
-      task must be fully closed (real `business_id` columns + filtered queries + the cross-tenant
-      isolation suite in 2.5 extended to cover these tables — now true for every table except
-      `sms_message`) before Phase 7 runs for a third business** — the stopgap approach (allow-list one
-      hardcoded business, 403 everyone else) does not scale past two businesses and must not be
-      repeated as a shortcut when business 3 is onboarded.
+      still never returns it. **`sms_message` and `sms_reply_flow` are now genuinely business-scoped
+      at the data layer** (V103) — both are root tables with no existing FK into an already
+      business-scoped table (`sms_reply_flow.automation_key` FKs into `sms_automation`, which stays a
+      global registry of automation *types*, deliberately not scoped), so both got a real
+      `business_id BIGINT NOT NULL FK` migration, backfilled to Business A (every existing row already
+      belonged to A regardless, since `SmsBusinessScopeFilter` had blocked any other business from
+      writing to these paths). `sms_message_media`/`sms_message_reaction` (V69/V70) need no migration
+      of their own — both join through an already-verified `sms_message.id`. Every consumer was
+      updated to take/resolve a `businessId`: `SmsMessageRepository`'s ~25 methods (including the
+      native `conversationSummaries`/`conversationSummariesPage`/`conversationSummaryForPhone`
+      queries), `SmsMessageLogService` (the central read/write choke point), `SmsReplyFlowRepository`,
+      `SmsReactionService`, `SmsAutomationService.list`, `TwilioSmsService` (all three send methods —
+      `configService.getForAutomation()` calls became `configService.get(businessId)`),
+      `CheckoutReviewReplyService` (derives `businessId` from the `SmsReplyFlow` row itself, not a
+      separate parameter), `CheckoutReviewFlowRecoveryService.retry` (now verifies flow ownership via
+      `findByIdAndBusinessId` before acting), `SmsActivityController`/`SmsAutomationController`/
+      `SmsReplyFlowAdminController` (resolve via `CurrentBusinessContext`), and every background/
+      webhook call site with no session — `TwilioInboundSmsController`, `SmsReplyFlowScheduler`,
+      `CheckoutReviewTriggerService`, `InternalNotificationController`, and the four D9 SMS
+      schedulers (`LapsedCustomerWinbackScheduler`, `RepeatCustomerWinbackScheduler`,
+      `SameDayRebookingScheduler`, `LeadFollowUpScheduler`) — which **deliberately still resolve
+      `BusinessRepository#legacySmsBusiness()`** rather than getting real per-business iteration; that
+      remains 3.7's job, done separately from this data-layer change, per this task's own established
+      pattern for `twilio_sms_config`/`telegram_notification_config`. `ShortLinkController` (the
+      public `/r/{token}` redirect) and `SmsMessageLogService#updateDeliveryStatus`/
+      `#markRead`-by-token-style lookups (`findByClickToken`, `findByTwilioMessageSid`,
+      `existsByClickToken`) deliberately stay unscoped — both tokens are globally unique and
+      self-identifying, and the row they resolve to already carries its own `business_id`, so there's
+      no external business hint to filter by (same reasoning `RagIngestionService.approve/delete`
+      already established: derive correctness from the row, not an injected hint). `CrossTenantIsolationTest`
+      coverage added for `conversationSummaries`, `search`, and `SmsReplyFlowRepository`'s due-send/
+      reply-lookup queries — **written but not run against a real Postgres from this implementation
+      pass** (the sanctioned local test-DB container was unavailable — `docker.sock` was back at its
+      restricted 660 permission mid-task; every other file in this task's diff was compiler-verified
+      and, for the ~10 already-existing test files touched, follows the exact same mechanical
+      rename pattern proven correct in every prior chunk of 2.6 tonight — but this specific new test
+      needs a real-DB run before shipping, not just a compile check, per the lesson from PR #379's
+      test-fixture bug). **This closes every table in 2.6's original list.** Nothing in this task
+      implements real per-business scheduler iteration — the `SmsBusinessScopeFilter` 403 stopgap for
+      non-Business-A also stays in place; both remain 3.7's explicit follow-up. **Hard gate: this task
+      is now fully closed (real `business_id` columns + filtered queries for every table in the
+      original list, cross-tenant isolation coverage for all of them pending the real-DB test run
+      above) — Phase 7 (onboarding a third business) still additionally requires 3.7's real
+      per-business scheduler iteration to actually ship**, not just this task, since a third business
+      with its own `twilio_sms_config` row would otherwise have no scheduler ever reading it.
 
 ## Phase 3 — Square multi-account support
 

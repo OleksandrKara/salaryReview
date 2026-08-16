@@ -6,6 +6,7 @@ import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.repo.BlockedNumberRepository;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SmsReplyFlowRepository;
 import com.salonreview.telegram.TelegramNotificationService;
 import com.salonreview.util.PhoneNumbers;
@@ -54,12 +55,13 @@ public class TwilioInboundSmsController {
     private final BlockedNumberRepository blockedNumberRepository;
     private final SmsMediaService mediaService;
     private final SmsReactionService reactionService;
+    private final BusinessRepository businesses;
 
     public TwilioInboundSmsController(TwilioInboundProperties properties, SmsMessageLogService messageLogService,
                                        SmsReplyFlowRepository replyFlowRepository, CheckoutReviewReplyService replyService,
                                        TelegramNotificationService telegramService, MarketingContactsService contactsService,
                                        BlockedNumberRepository blockedNumberRepository, SmsMediaService mediaService,
-                                       SmsReactionService reactionService) {
+                                       SmsReactionService reactionService, BusinessRepository businesses) {
         this.properties = properties;
         this.messageLogService = messageLogService;
         this.replyFlowRepository = replyFlowRepository;
@@ -69,6 +71,7 @@ public class TwilioInboundSmsController {
         this.blockedNumberRepository = blockedNumberRepository;
         this.mediaService = mediaService;
         this.reactionService = reactionService;
+        this.businesses = businesses;
     }
 
     @PostMapping(value = "/api/public/sms/inbound", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
@@ -79,6 +82,10 @@ public class TwilioInboundSmsController {
             return ResponseEntity.status(401).build();
         }
 
+        // Webhooks are unauthenticated (no session) and today's payload carries no business
+        // identifier of its own — see BusinessRepository#legacySmsBusiness, same interim stopgap
+        // as every other background/webhook SMS call site until real per-business routing exists.
+        Long businessId = businesses.legacySmsBusiness().getId();
         String from = params.get("From");
         String body = params.getOrDefault("Body", "");
         if (from == null || from.isBlank()) {
@@ -90,15 +97,15 @@ public class TwilioInboundSmsController {
         // Log unconditionally — even a reply that matches no pending flow (or is itself an
         // opt-out) needs to be visible in the hub's inbox (see design.md D9).
         Optional<SmsReplyFlow> pending = replyFlowRepository
-                .findFirstByPhoneNumberAndStateOrderByCreatedAtDesc(from, SmsReplyFlow.STATE_AWAITING_REPLY);
+                .findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(businessId, from, SmsReplyFlow.STATE_AWAITING_REPLY);
         // Only checkout_review_request opens a durable SmsReplyFlow; every other automation
         // (lead_follow_up, same_day_rebooking_discount, lapsed_customer_winback,
         // repeat_customer_winback, ...) falls back to "whatever we most recently texted this
         // number" so a genuine reply still shows up as a tracked reply for that automation instead
         // of being silently unattributed — see SmsMessageLogService#mostRecentAutomationKey.
         String automationKey = pending.map(SmsReplyFlow::getAutomationKey)
-                .orElseGet(() -> messageLogService.mostRecentAutomationKey(from));
-        SmsMessage logged = messageLogService.logInbound(from, body, automationKey);
+                .orElseGet(() -> messageLogService.mostRecentAutomationKey(businessId, from));
+        SmsMessage logged = messageLogService.logInbound(businessId, from, body, automationKey);
         logged.setTwilioMessageSid(params.get("MessageSid"));
         messageLogService.save(logged);
 
@@ -124,7 +131,7 @@ public class TwilioInboundSmsController {
         // matches one of the salon's recent sends, it's also attached as a reaction on that message
         // (see design context: owner wants to see when a customer reacts to a specific message).
         // Best-effort, same reasoning as the media ingestion above.
-        reactionService.tryAttachCustomerReaction(from, body);
+        reactionService.tryAttachCustomerReaction(businessId, from, body);
 
         // A customer reply always needs a human's attention right away, not just a dashboard entry
         // nobody's actively watching — see openspec/changes/sms-automations-hub proposal.md. Name

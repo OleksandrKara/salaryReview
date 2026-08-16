@@ -60,7 +60,7 @@ public class CheckoutReviewReplyService {
         // and to Google's own review-quality checks. Route them to the private feedback form
         // instead, same destination the negative branch already uses, just with warmer copy.
         boolean repeatReviewer = positive
-                && messageLogService.hasClickedLinkTarget(flow.getPhoneNumber(), CheckoutReviewLinks.GOOGLE_REVIEW_TARGET);
+                && messageLogService.hasClickedLinkTarget(flow.getBusinessId(), flow.getPhoneNumber(), CheckoutReviewLinks.GOOGLE_REVIEW_TARGET);
 
         String templateKey = positive
                 ? (repeatReviewer ? "checkout_review_positive_repeat" : "checkout_review_positive")
@@ -71,7 +71,7 @@ public class CheckoutReviewReplyService {
 
         String clickToken = messageLogService.generateUniqueClickToken();
         SmsMessage reserved = messageLogService.logOutboundWithLink(
-                templateKey, AUTOMATION_KEY, flow.getPhoneNumber(),
+                flow.getBusinessId(), templateKey, AUTOMATION_KEY, flow.getPhoneNumber(),
                 "", false, "pending", null, linkTarget, clickToken);
         String shortLink = publicBaseUrl + "/r/" + clickToken;
         String body;
@@ -99,7 +99,7 @@ public class CheckoutReviewReplyService {
     }
 
     private void sendNow(SmsReplyFlow flow, SmsMessage reserved, String body) {
-        TwilioSmsConfig config = configService.getForAutomation();
+        TwilioSmsConfig config = configService.get(flow.getBusinessId());
         if (!config.isConfigured()) {
             log.info("Checkout-review branch reply skipped — Twilio credentials not configured");
             updateReserved(reserved, body, false, "not_configured", null);
