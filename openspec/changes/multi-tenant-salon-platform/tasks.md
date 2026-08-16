@@ -216,13 +216,26 @@ changing behavior for existing callers; `SetupRequiredNotice` is the reusable em
       `/owner/settings/square` instead of the raw 500
 - [x] 6b.2 `/admin/messages` — catches `sms_not_available`, renders `SetupRequiredNotice` (no CTA —
       there's nothing to configure yet, see 2.6) instead of the raw 403
-- [ ] 6b.3 **Not yet covered — same treatment needed wherever else a fresh business can hit a missing
-      Square connection or missing config**: `/owner/overview` and its sub-pages (revenue pulse, net,
-      expenses), `/owner/marketing/**`, `/owner/retention`, `/admin/redos`, `/admin/prepaid`,
-      `/admin/owner-customers`, `/admin/manual-adjustments`, anything under `/reports/[providerId]/**`
-      — audit each for what it actually throws today (some may already go through
-      `BusinessSetupIncompleteException` for free once `SquareClientProvider`/`ProviderDirectory`
-      callers are consistent; others may need a new `code`) before assuming this is done
+- [x] 6b.3 `/reports/[providerId]` (provider detail) — same `SettlementPreviewService` call path as
+      `/reports`, confirmed to throw `square_not_connected` the same way; same treatment applied
+- [x] 6b.3a **Audited, found already non-crashing — do NOT add dead try/catch code here**: verified
+      directly against a real isolated instance (business with no Square connection) that
+      `/api/owner/overview`, `/api/prepaid`, `/api/owner-customers`, `/api/redos`, and
+      `/api/owner/marketing` all return **200 with empty/null data**, not an error — their services
+      already degrade internally (return empty lists / all-null fields) rather than propagating
+      `BusinessSetupIncompleteException`. A `try { ... } catch (ApiError code===square_not_connected)`
+      was written for these pages first, then reverted once this was confirmed — it would never have
+      fired, and shipping dead code that looks like it handles a case it doesn't is worse than not
+      touching these pages at all. `/owner/overview/expenses/**`, `/owner/retention`,
+      `/admin/manual-adjustments` not yet individually re-verified against this same empirical test —
+      assume "probably also degrades gracefully already" only after checking, not from the pattern.
+- [ ] 6b.3b **Real, separate, lower-priority gap**: the pages in 6b.3a don't crash, but a brand-new
+      business sees an unexplained wall of zeros/nulls with no indication *why* — e.g. `/owner/overview`
+      renders 12 months of `cardRevenue: null` etc. with no "connect Square" prompt anywhere. Fixing
+      this needs a different mechanism than 6b.1/6b.2 (there's no exception to catch): check
+      `serverApi.getSquareConnection().accessTokenSet` up front and render `SetupRequiredNotice`
+      preemptively when false, before making the now-pointless data call at all. Worth doing, but a UX
+      polish task, not a crash fix — deprioritized below 2.6/3.7.
 - [ ] 6b.4 RAG assistant, Telegram settings, KB articles, SOPs — once 2.6 gives these real
       per-business scoping (rather than the current Business-A-only block), they'll need this same
       "not set up yet" treatment too, not just a bare 403/500, the first time a second business

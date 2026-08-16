@@ -1,8 +1,9 @@
 import Link from 'next/link';
-import { serverApi } from '../../lib/serverApi';
+import { serverApi, ApiError } from '../../lib/serverApi';
 import type { ProviderDetail } from '../../lib/types';
 import ProviderTrace from '../../components/ProviderTrace';
 import { SyncBadge } from '../../components/SyncBadge';
+import SetupRequiredNotice from '../../components/SetupRequiredNotice';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -23,8 +24,26 @@ export default async function ProviderDetailPage({
   const year = Number(sp.year) || now.getUTCFullYear();
   const month = Number(sp.month) || now.getUTCMonth() + 1;
 
-  const detail: ProviderDetail = await serverApi.getProviderDetail(year, month, Number(providerId));
   const backHref = `/reports?year=${year}&month=${month}`;
+  let detail: ProviderDetail;
+  try {
+    detail = await serverApi.getProviderDetail(year, month, Number(providerId));
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'square_not_connected') {
+      return (
+        <main className="mx-auto max-w-5xl p-4 sm:p-8">
+          <Link href={backHref} className="text-sm text-zinc-500 hover:text-zinc-800">← Report</Link>
+          <SetupRequiredNotice
+            title="Connect Square to see this provider's detail"
+            message="Provider detail traces every line back to real Square bookings, orders, and payments, which needs a Square connection first."
+            ctaHref="/owner/settings/square"
+            ctaLabel="Connect Square"
+          />
+        </main>
+      );
+    }
+    throw err;
+  }
 
   return (
     <main className="mx-auto max-w-5xl p-4 sm:p-8">
