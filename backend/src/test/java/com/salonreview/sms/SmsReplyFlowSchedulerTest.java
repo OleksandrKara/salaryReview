@@ -1,9 +1,9 @@
 package com.salonreview.sms;
 
-import com.salonreview.domain.Business;
 import com.salonreview.domain.SmsReplyFlow;
-import com.salonreview.repo.BusinessRepository;
+import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.SmsReplyFlowRepository;
+import com.salonreview.repo.TwilioSmsConfigRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,7 +30,7 @@ class SmsReplyFlowSchedulerTest {
     private SmsReplyFlowRepository repository;
     private TwilioSmsService smsService;
     private TechnicianNameResolver technicianNameResolver;
-    private BusinessRepository businesses;
+    private TwilioSmsConfigRepository twilioConfigs;
     private SmsReplyFlowScheduler scheduler;
 
     @BeforeEach
@@ -39,10 +39,9 @@ class SmsReplyFlowSchedulerTest {
         smsService = mock(TwilioSmsService.class);
         technicianNameResolver = mock(TechnicianNameResolver.class);
         when(technicianNameResolver.resolveForCustomer(any(), any())).thenReturn(Optional.empty());
-        businesses = mock(BusinessRepository.class);
-        when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(BUSINESS_ID).name("Test")
-                .shortCode("test").timezone("UTC").active(true).build());
-        scheduler = new SmsReplyFlowScheduler(repository, smsService, technicianNameResolver, businesses);
+        twilioConfigs = mock(TwilioSmsConfigRepository.class);
+        when(twilioConfigs.findAll()).thenReturn(List.of(TwilioSmsConfig.builder().businessId(BUSINESS_ID).build()));
+        scheduler = new SmsReplyFlowScheduler(repository, smsService, technicianNameResolver, twilioConfigs);
     }
 
     private static SmsReplyFlow flow(String state) {
@@ -96,6 +95,32 @@ class SmsReplyFlowSchedulerTest {
         scheduler.sendDueRatingRequests();
 
         verify(smsService).sendTemplated(BUSINESS_ID, "checkout_rating_request", PHONE, Map.of());
+    }
+
+    @Test
+    @DisplayName("real per-business iteration: two businesses' due flows both get sent, each with its own businessId")
+    void iteratesEveryBusinessWithATwilioConfig() {
+        Long otherBusinessId = 2L;
+        when(twilioConfigs.findAll()).thenReturn(List.of(
+                TwilioSmsConfig.builder().businessId(BUSINESS_ID).build(),
+                TwilioSmsConfig.builder().businessId(otherBusinessId).build()));
+        SmsReplyFlow dueA = flow(SmsReplyFlow.STATE_AWAITING_SEND);
+        SmsReplyFlow dueB = SmsReplyFlow.builder()
+                .id(2L).businessId(otherBusinessId).automationKey("checkout_review_request")
+                .phoneNumber("+15559998888").customerName("Bob").state(SmsReplyFlow.STATE_AWAITING_SEND)
+                .sendDueAt(Instant.now()).build();
+        when(repository.findByBusinessIdAndStateAndSendDueAtBefore(eq(BUSINESS_ID), eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
+                .thenReturn(List.of(dueA));
+        when(repository.findByBusinessIdAndStateAndSendDueAtBefore(eq(otherBusinessId), eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
+                .thenReturn(List.of(dueB));
+        when(smsService.sendTemplated(any(), any(), any(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
+
+        scheduler.sendDueRatingRequests();
+
+        verify(smsService).sendTemplated(BUSINESS_ID, "checkout_rating_request", PHONE, Map.of("name", "Jane"));
+        verify(smsService).sendTemplated(otherBusinessId, "checkout_rating_request", "+15559998888", Map.of("name", "Bob"));
+        assertThat(dueA.getState()).isEqualTo(SmsReplyFlow.STATE_AWAITING_REPLY);
+        assertThat(dueB.getState()).isEqualTo(SmsReplyFlow.STATE_AWAITING_REPLY);
     }
 
     @Test

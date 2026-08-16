@@ -67,7 +67,7 @@ class SameDayRebookingSchedulerTest {
                 consentRepository, rebookingProperties, messageLogService, configService, client, technicianNameResolver,
                 "https://salon.akluxnails.com");
 
-        when(automationService.isEnabled("same_day_rebooking_discount")).thenReturn(true);
+        when(automationService.isEnabled(1L, "same_day_rebooking_discount")).thenReturn(true);
         when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(true);
         when(square.bookingsForCustomer(eq(CUSTOMER_ID), any())).thenReturn(List.of());
         when(messageLogService.generateUniqueClickToken()).thenReturn("tok123");
@@ -146,7 +146,7 @@ class SameDayRebookingSchedulerTest {
     @Test
     @DisplayName("automation disabled → SKIPPED_DISABLED, never sent")
     void disabledAutomationIsSkipped() throws Exception {
-        when(automationService.isEnabled("same_day_rebooking_discount")).thenReturn(false);
+        when(automationService.isEnabled(1L, "same_day_rebooking_discount")).thenReturn(false);
         SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
         givenDue(s);
 

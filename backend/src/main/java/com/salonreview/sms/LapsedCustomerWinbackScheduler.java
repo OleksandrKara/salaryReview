@@ -132,7 +132,7 @@ public class LapsedCustomerWinbackScheduler {
             return;
         }
 
-        if (!automationService.isEnabled(AUTOMATION_KEY)) {
+        if (!automationService.isEnabled(businessId, AUTOMATION_KEY)) {
             save(customer, phoneNumber, null, LapsedCustomerWinbackSend.STATE_SKIPPED_DISABLED);
             return;
         }

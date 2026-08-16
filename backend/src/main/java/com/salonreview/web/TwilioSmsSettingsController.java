@@ -13,10 +13,9 @@ import java.time.Instant;
  * OWNER-only settings for outbound SMS (Twilio). Falls under the existing {@code /api/owner/**}
  * matcher in {@link com.salonreview.config.SecurityConfig} — no new security config needed. GET
  * only ever returns masked key/secret values; the frontend must not PUT those masked values back
- * (see {@link TwilioSmsConfigService#update}'s null-vs-empty-string contract). In practice only
- * Business A can ever reach this controller ({@link com.salonreview.config.SmsBusinessScopeFilter}
- * blocks every other business), but resolving the business via the session rather than hardcoding
- * it keeps this controller itself correct independent of that filter.
+ * (see {@link TwilioSmsConfigService#update}'s null-vs-empty-string contract). Resolves the
+ * business via the session (not a hardcoded one), so any business can independently manage its own
+ * Twilio config.
  */
 @RestController
 @RequestMapping("/api/owner/settings/sms")

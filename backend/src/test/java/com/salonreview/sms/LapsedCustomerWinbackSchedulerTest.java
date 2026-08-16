@@ -68,7 +68,7 @@ class LapsedCustomerWinbackSchedulerTest {
                 businesses, automationService, consentRepository, rebookingProperties, messageLogService, configService,
                 client, "https://salon.akluxnails.com");
 
-        when(automationService.isEnabled("lapsed_customer_winback")).thenReturn(true);
+        when(automationService.isEnabled(1L, "lapsed_customer_winback")).thenReturn(true);
         when(square.customerPhone(CUSTOMER_ID)).thenReturn(PHONE);
         when(square.customerGivenNames(List.of(CUSTOMER_ID))).thenReturn(Map.of(CUSTOMER_ID, "Jane"));
         when(square.bookingsForCustomer(eq(CUSTOMER_ID), any())).thenReturn(List.of());
@@ -205,7 +205,7 @@ class LapsedCustomerWinbackSchedulerTest {
     @Test
     @DisplayName("automation disabled → SKIPPED_DISABLED, no send")
     void disabledAutomationSkipsWithoutSend() {
-        when(automationService.isEnabled("lapsed_customer_winback")).thenReturn(false);
+        when(automationService.isEnabled(1L, "lapsed_customer_winback")).thenReturn(false);
         givenEligible(eligible("Susan"));
 
         scheduler.sendDueWinbacks();

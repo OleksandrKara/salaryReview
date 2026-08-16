@@ -6,9 +6,11 @@ import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.domain.Business;
 import com.salonreview.marketing.MarketingContactsService;
+import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SmsReplyFlowRepository;
+import com.salonreview.repo.TwilioSmsConfigRepository;
 import com.salonreview.telegram.TelegramNotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -53,6 +55,7 @@ class TwilioInboundSmsControllerTest {
     private SmsMediaService mediaService;
     private SmsReactionService reactionService;
     private BusinessRepository businesses;
+    private TwilioSmsConfigRepository twilioConfigs;
     private MockMvc mvc;
 
     @BeforeEach
@@ -71,6 +74,10 @@ class TwilioInboundSmsControllerTest {
         businesses = mock(BusinessRepository.class);
         when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(BUSINESS_ID).name("Test")
                 .shortCode("test").timezone("UTC").active(true).build());
+        twilioConfigs = mock(TwilioSmsConfigRepository.class);
+        // No "To" param in these tests' payloads by default, so resolution always falls back to
+        // legacySmsBusiness() — see the dedicated "To"-field-resolution test below.
+        when(twilioConfigs.findByFromPhoneNumber(any())).thenReturn(Optional.empty());
         // No name resolvable by default — individual tests override with a specific stub if they
         // care about the resolved-name path.
         when(contactsService.resolveDisplayNames(any())).thenReturn(java.util.Map.of());
@@ -85,7 +92,7 @@ class TwilioInboundSmsControllerTest {
 
         TwilioInboundSmsController controller = new TwilioInboundSmsController(
                 properties, messageLogService, replyFlowRepository, replyService, telegramService, contactsService,
-                blockedNumberRepository, mediaService, reactionService, businesses);
+                blockedNumberRepository, mediaService, reactionService, businesses, twilioConfigs);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -153,6 +160,29 @@ class TwilioInboundSmsControllerTest {
         verify(replyFlowRepository).save(pending);
         verify(telegramService).sendInboundSmsAlert(PHONE, null, p.get("Body"), "checkout_review_request");
         org.assertj.core.api.Assertions.assertThat(pending.getState()).isEqualTo(SmsReplyFlow.STATE_COMPLETED);
+    }
+
+    @Test
+    @DisplayName("\"To\" matches another business's Twilio number → resolves that business, not legacySmsBusiness()")
+    void toFieldResolvesRealBusiness() throws Exception {
+        Long otherBusinessId = 2L;
+        String otherBusinessNumber = "+18885551234";
+        when(twilioConfigs.findByFromPhoneNumber(otherBusinessNumber))
+                .thenReturn(Optional.of(TwilioSmsConfig.builder().businessId(otherBusinessId).fromPhoneNumber(otherBusinessNumber).build()));
+
+        TreeMap<String, String> p = params(PHONE, "hi there");
+        p.put("To", otherBusinessNumber);
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid"))
+                        .param("To", p.get("To")))
+                .andExpect(status().isOk());
+
+        verify(messageLogService).logInbound(otherBusinessId, PHONE, p.get("Body"), null);
+        verify(businesses, never()).legacySmsBusiness();
     }
 
     @Test

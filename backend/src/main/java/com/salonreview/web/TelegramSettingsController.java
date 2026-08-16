@@ -13,10 +13,9 @@ import java.time.Instant;
  * OWNER-only settings for the 4-hand-request Telegram alert. Falls under the existing
  * {@code /api/owner/**} matcher in {@link com.salonreview.config.SecurityConfig} — no new security
  * config needed. GET only ever returns a masked token; the frontend must not PUT that masked value
- * back (see {@link TelegramConfigService#update}'s null-vs-empty-string contract). In practice only
- * Business A can ever reach this controller ({@link com.salonreview.config.SmsBusinessScopeFilter}
- * blocks every other business), but resolving the business via the session rather than hardcoding
- * it keeps this controller itself correct independent of that filter.
+ * back (see {@link TelegramConfigService#update}'s null-vs-empty-string contract). Resolves the
+ * business via the session (not a hardcoded one), so any business can independently manage its own
+ * Telegram alert config.
  */
 @RestController
 @RequestMapping("/api/owner/settings/telegram")

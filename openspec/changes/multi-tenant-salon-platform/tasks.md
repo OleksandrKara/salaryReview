@@ -217,23 +217,59 @@ this file is the plan, not yet executed.
       `@Scheduled` background job; every call site is synchronous and session-triggered (an owner
       clicking sync/approve/ask, or the SMS draft "Generate" button), so each already resolves a real
       `businessId` via `CurrentBusinessContext` with no `legacySmsBusiness()`-shaped stopgap needed
-      (2.6). `ProviderVisitScheduler`, `RevenueSnapshotScheduler`, their `*Startup` counterparts, and
-      D9's six SMS automation schedulers (`RepeatCustomerWinbackScheduler`,
-      `LapsedCustomerWinbackScheduler`, `LeadFollowUpScheduler`, `SameDayRebookingScheduler`,
-      `SameDayRebookingGroupExpiryScheduler`, `SmsReplyFlowScheduler`) plus
-      `CheckoutReviewTriggerService`, `TechnicianNameResolver`, and `InternalNotificationController` —
-      iterate all businesses with an active `square_connection` (SMS ones: also an active
-      `twilio_sms_config`, now business-scoped per 2.6 — `getForAutomation()` on
-      `TwilioSmsConfigService`/`TelegramConfigService` resolves `legacySmsBusiness()` internally so
-      call sites only needed a one-line rename, not real iteration); ShedLock keys gain
-      `-business-{id}` suffix (`config/SchedulerLockConfig.java`). **Interim stopgap shipped
-      2026-08-15**: the SMS/webhook/notification call sites still resolve
-      `BusinessRepository#legacySmsBusiness` (hardcoded to Business A) instead of crashing when a
-      second business exists — correct only because `sms_message` is still global (2.6) so there's no
-      second business's SMS data to route to yet regardless, even though the config tables
-      themselves could now hold a second business's row. This does not scale to a third business's
-      SMS needs and must be replaced by real per-business iteration here, not extended with a second
-      hardcoded business id.
+      (2.6). `ProviderVisitScheduler`, `RevenueSnapshotScheduler`, and their `*Startup` counterparts
+      already do real per-business iteration over `SquareConnectionRepository.findAll()` — no
+      `legacySmsBusiness()`/`.sole()` call sites remain in that path.
+
+      **2026-08-16: real iteration shipped for the part of D9 that's actually safe to iterate.**
+      `sms_message`/`sms_reply_flow` becoming genuinely business-scoped (2.6) plus `sms_automation`
+      becoming business-scoped this same day (composite PK `(business_id, automation_key)`, same
+      surgery as `rag_suggestion_cache`'s V102) unblocked `SmsReplyFlowScheduler`
+      (`sendDueRatingRequests`/`expireStaleReplyWindows`) to really iterate every business with a
+      `twilio_sms_config` row (`TwilioSmsConfigRepository.findAll()`), and `TwilioInboundSmsController`
+      to resolve the real business from Twilio's own `To` field (matched against
+      `twilio_sms_config.from_phone_number`, falling back to `legacySmsBusiness()` + a warning log
+      only for an unrecognized destination number). `SmsBusinessScopeFilter` — the 2026-08-15
+      live-incident stopgap that blocked every business but A from `/api/owner/automations/**`,
+      `/api/owner/settings/sms/**`, `/api/owner/settings/telegram/**` entirely — is now removed;
+      every controller behind those paths resolves via `CurrentBusinessContext` like everything
+      else, so the blanket block was no longer earning its keep. ShedLock names were deliberately
+      **not** given a `-business-{id}` suffix — a single lock still covers the whole per-business
+      loop, which is still correct (no duplicate sends across blue/green), just not maximally
+      parallel across businesses; revisit only if that actually matters at a higher business count.
+
+      **Still NOT real, found 2026-08-16 while doing the above — five of D9's six schedulers
+      (`SameDayRebookingScheduler`, `SameDayRebookingGroupExpiryScheduler`, `LeadFollowUpScheduler`,
+      `RepeatCustomerWinbackScheduler`, `LapsedCustomerWinbackScheduler`) still resolve
+      `legacySmsBusiness()` and were deliberately left that way**, not because it wasn't tried, but
+      because their own supporting tables have zero tenant boundary and making the top-level
+      scheduler "iterate" without first fixing this would trade "never processes business 2" for
+      "processes business 2 against business 1's own rows" — a real double-send/cross-tenant
+      correctness bug, not just a missing feature. Specifically:
+        - `same_day_rebooking_send` + `same_day_rebooking_group_membership` (V55) and
+          `repeat_customer_winback_send` (V72) and `lapsed_customer_winback_send` (V68) have no
+          `business_id` column at all — they're keyed only by `square_customer_id`, a raw string
+          with no FK to anything. These need the same "root table, add `business_id`, backfill to
+          Business A" treatment as every other 2.6 table before their schedulers can safely iterate.
+        - `LeadFollowUpScheduler` additionally reads `marketing.contacts`, owned by a completely
+          separate service (salonLandings) — not fixable from this codebase at all; that boundary
+          needs its own cross-service design, not a migration here.
+      `CheckoutReviewTriggerService` and `TechnicianNameResolver` (Square-payment-webhook-driven)
+      remain on `legacySmsBusiness()` too — blocked on Phase 3.6, which doesn't exist yet:
+      `SquareWebhookController` currently verifies every business's webhook against one single
+      global `SQUARE_WEBHOOK_SIGNATURE_KEY`, not a per-business one, so even signature verification
+      isn't multi-tenant-correct yet, before getting anywhere near routing. `InternalNotificationController`
+      also stays as-is — it's a service-to-service API called by other apps (mani-backend,
+      akluxnails-home) over a shared API key with no session; making it business-aware needs an API
+      contract change on the *caller* side, not a decision to make unilaterally in this codebase.
+
+      **Net effect for the owner-facing question "if I configure Twilio for a second business, do
+      the same automations run?"**: checkout-review-request (via `SmsReplyFlowScheduler`) — yes.
+      four_hand_request (via `InternalNotificationController`) — no, needs that cross-app contract
+      work. The other five D9 automations — no, blocked on giving their own send-tracking tables a
+      `business_id` first (straightforward, same pattern as everything else in 2.6, just not done
+      yet). checkout-review-request's own *trigger* (a Square payment webhook) — no, blocked on
+      Phase 3.6's signature-verification work first.
 - [ ] 3.8 `/api/sync` (manual sync button) becomes business-scoped — `invalidate()` only clears the
       calling business's `SquareClient` cache instance, never the whole registry
 - [ ] 3.9 Integration tests: two businesses' `SquareClientProvider`-resolved clients never share cache

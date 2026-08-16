@@ -34,6 +34,6 @@ public class SmsAutomationController {
 
     @PutMapping("/{key}")
     public void toggle(@PathVariable String key, @RequestBody ToggleRequest body, Principal principal) {
-        service.setEnabled(key, body.enabled(), principal.getName());
+        service.setEnabled(currentBusinessContext.id(), key, body.enabled(), principal.getName());
     }
 }

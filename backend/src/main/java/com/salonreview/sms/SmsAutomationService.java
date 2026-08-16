@@ -42,18 +42,20 @@ public class SmsAutomationService {
     /** {@code true} for a template with no {@code automationKey} (nothing to gate) or for a
      * key with no row yet (fail open — matches every other "unconfigured means don't block" shape
      * in this codebase, though in practice every real automation key always has a seeded row). */
-    public boolean isEnabled(String automationKey) {
+    public boolean isEnabled(Long businessId, String automationKey) {
         if (automationKey == null) {
             return true;
         }
-        return repository.findById(automationKey).map(SmsAutomation::isEnabled).orElse(true);
+        return repository.findByBusinessIdAndAutomationKey(businessId, automationKey)
+                .map(SmsAutomation::isEnabled).orElse(true);
     }
 
     public List<AutomationSummary> list(Long businessId) {
         Instant since = Instant.now().minus(30, ChronoUnit.DAYS);
         return SmsAutomationRegistry.all().values().stream()
                 .map(meta -> {
-                    boolean enabled = repository.findById(meta.key()).map(SmsAutomation::isEnabled).orElse(false);
+                    boolean enabled = repository.findByBusinessIdAndAutomationKey(businessId, meta.key())
+                            .map(SmsAutomation::isEnabled).orElse(false);
 
                     long sent = meta.primaryTemplateKey() != null
                             ? messageRepository.countByBusinessIdAndAutomationKeyAndTemplateKeyAndDirectionAndStatusAndCreatedAtAfter(
@@ -92,9 +94,9 @@ public class SmsAutomationService {
                 .toList();
     }
 
-    public void setEnabled(String automationKey, boolean enabled, String updatedBy) {
-        SmsAutomation automation = repository.findById(automationKey)
-                .orElseGet(() -> SmsAutomation.builder().automationKey(automationKey).build());
+    public void setEnabled(Long businessId, String automationKey, boolean enabled, String updatedBy) {
+        SmsAutomation automation = repository.findByBusinessIdAndAutomationKey(businessId, automationKey)
+                .orElseGet(() -> SmsAutomation.builder().businessId(businessId).automationKey(automationKey).build());
         automation.setEnabled(enabled);
         automation.setUpdatedBy(updatedBy);
         repository.save(automation);

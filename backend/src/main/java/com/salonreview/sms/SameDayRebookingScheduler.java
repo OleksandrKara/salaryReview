@@ -118,7 +118,7 @@ public class SameDayRebookingScheduler {
             return;
         }
 
-        if (!automationService.isEnabled(AUTOMATION_KEY)) {
+        if (!automationService.isEnabled(businessId, AUTOMATION_KEY)) {
             save(send, SameDayRebookingSend.STATE_SKIPPED_DISABLED);
             return;
         }

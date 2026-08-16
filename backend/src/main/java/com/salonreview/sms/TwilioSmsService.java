@@ -85,7 +85,7 @@ public class TwilioSmsService {
             return SmsSendResult.skipped("blocked");
         }
 
-        if (!automationService.isEnabled(automationKey)) {
+        if (!automationService.isEnabled(businessId, automationKey)) {
             log.info("SMS template '{}' skipped — automation '{}' is disabled", templateKey, automationKey);
             messageLogService.logOutbound(businessId, templateKey, automationKey, phoneNumber, body, false, "automation_disabled", null);
             return SmsSendResult.skipped("automation_disabled");
