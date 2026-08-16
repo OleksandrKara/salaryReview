@@ -1,6 +1,8 @@
 package com.salonreview.sms;
 
+import com.salonreview.domain.Business;
 import com.salonreview.domain.SmsReplyFlow;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SmsReplyFlowRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -23,10 +25,12 @@ import static org.mockito.Mockito.*;
 class SmsReplyFlowSchedulerTest {
 
     private static final String PHONE = "+15551234567";
+    private static final Long BUSINESS_ID = 1L;
 
     private SmsReplyFlowRepository repository;
     private TwilioSmsService smsService;
     private TechnicianNameResolver technicianNameResolver;
+    private BusinessRepository businesses;
     private SmsReplyFlowScheduler scheduler;
 
     @BeforeEach
@@ -35,12 +39,15 @@ class SmsReplyFlowSchedulerTest {
         smsService = mock(TwilioSmsService.class);
         technicianNameResolver = mock(TechnicianNameResolver.class);
         when(technicianNameResolver.resolveForCustomer(any(), any())).thenReturn(Optional.empty());
-        scheduler = new SmsReplyFlowScheduler(repository, smsService, technicianNameResolver);
+        businesses = mock(BusinessRepository.class);
+        when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(BUSINESS_ID).name("Test")
+                .shortCode("test").timezone("UTC").active(true).build());
+        scheduler = new SmsReplyFlowScheduler(repository, smsService, technicianNameResolver, businesses);
     }
 
     private static SmsReplyFlow flow(String state) {
         return SmsReplyFlow.builder()
-                .id(1L).automationKey("checkout_review_request").phoneNumber(PHONE)
+                .id(1L).businessId(BUSINESS_ID).automationKey("checkout_review_request").phoneNumber(PHONE)
                 .customerName("Jane").state(state).sendDueAt(Instant.now()).build();
     }
 
@@ -48,9 +55,9 @@ class SmsReplyFlowSchedulerTest {
     @DisplayName("due AWAITING_SEND row: send succeeds → transitions to AWAITING_REPLY with a 24h expiry set")
     void dueRowSendsAndTransitions() {
         SmsReplyFlow due = flow(SmsReplyFlow.STATE_AWAITING_SEND);
-        when(repository.findByStateAndSendDueAtBefore(eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
+        when(repository.findByBusinessIdAndStateAndSendDueAtBefore(eq(BUSINESS_ID), eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
                 .thenReturn(List.of(due));
-        when(smsService.sendTemplated(eq("checkout_rating_request"), eq(PHONE), any()))
+        when(smsService.sendTemplated(eq(BUSINESS_ID), eq("checkout_rating_request"), eq(PHONE), any()))
                 .thenReturn(new TwilioSmsService.SmsSendResult(true, null));
 
         scheduler.sendDueRatingRequests();
@@ -58,16 +65,16 @@ class SmsReplyFlowSchedulerTest {
         assertThat(due.getState()).isEqualTo(SmsReplyFlow.STATE_AWAITING_REPLY);
         assertThat(due.getReplyExpiresAt()).isAfter(Instant.now().plusSeconds(23 * 3600));
         verify(repository).save(due);
-        verify(smsService).sendTemplated("checkout_rating_request", PHONE, Map.of("name", "Jane"));
+        verify(smsService).sendTemplated(BUSINESS_ID, "checkout_rating_request", PHONE, Map.of("name", "Jane"));
     }
 
     @Test
     @DisplayName("due AWAITING_SEND row: send fails → transitions straight to EXPIRED, no reply window")
     void dueRowSendFailureExpires() {
         SmsReplyFlow due = flow(SmsReplyFlow.STATE_AWAITING_SEND);
-        when(repository.findByStateAndSendDueAtBefore(eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
+        when(repository.findByBusinessIdAndStateAndSendDueAtBefore(eq(BUSINESS_ID), eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
                 .thenReturn(List.of(due));
-        when(smsService.sendTemplated(eq("checkout_rating_request"), eq(PHONE), any()))
+        when(smsService.sendTemplated(eq(BUSINESS_ID), eq("checkout_rating_request"), eq(PHONE), any()))
                 .thenReturn(new TwilioSmsService.SmsSendResult(false, "not_configured"));
 
         scheduler.sendDueRatingRequests();
@@ -82,19 +89,19 @@ class SmsReplyFlowSchedulerTest {
     void noNameSendsEmptyVariables() {
         SmsReplyFlow due = flow(SmsReplyFlow.STATE_AWAITING_SEND);
         due.setCustomerName(null);
-        when(repository.findByStateAndSendDueAtBefore(eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
+        when(repository.findByBusinessIdAndStateAndSendDueAtBefore(eq(BUSINESS_ID), eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
                 .thenReturn(List.of(due));
-        when(smsService.sendTemplated(any(), any(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
+        when(smsService.sendTemplated(any(), any(), any(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
 
         scheduler.sendDueRatingRequests();
 
-        verify(smsService).sendTemplated("checkout_rating_request", PHONE, Map.of());
+        verify(smsService).sendTemplated(BUSINESS_ID, "checkout_rating_request", PHONE, Map.of());
     }
 
     @Test
     @DisplayName("not-yet-due row is left untouched — repository query itself is the filter")
     void notDueRowUntouched() {
-        when(repository.findByStateAndSendDueAtBefore(eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
+        when(repository.findByBusinessIdAndStateAndSendDueAtBefore(eq(BUSINESS_ID), eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
                 .thenReturn(List.of());
 
         scheduler.sendDueRatingRequests();
@@ -107,7 +114,7 @@ class SmsReplyFlowSchedulerTest {
     @DisplayName("past-expiry AWAITING_REPLY row transitions to EXPIRED")
     void staleReplyWindowExpires() {
         SmsReplyFlow stale = flow(SmsReplyFlow.STATE_AWAITING_REPLY);
-        when(repository.findByStateAndReplyExpiresAtBefore(eq(SmsReplyFlow.STATE_AWAITING_REPLY), any()))
+        when(repository.findByBusinessIdAndStateAndReplyExpiresAtBefore(eq(BUSINESS_ID), eq(SmsReplyFlow.STATE_AWAITING_REPLY), any()))
                 .thenReturn(List.of(stale));
 
         scheduler.expireStaleReplyWindows();
@@ -121,21 +128,21 @@ class SmsReplyFlowSchedulerTest {
     void resolvedTechnicianIsThreadedIntoVars() {
         SmsReplyFlow due = flow(SmsReplyFlow.STATE_AWAITING_SEND);
         due.setSquareCustomerId("cust1");
-        when(repository.findByStateAndSendDueAtBefore(eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
+        when(repository.findByBusinessIdAndStateAndSendDueAtBefore(eq(BUSINESS_ID), eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
                 .thenReturn(List.of(due));
         when(technicianNameResolver.resolveForCustomer(eq("cust1"), any())).thenReturn(Optional.of("Susan"));
-        when(smsService.sendTemplated(eq("checkout_rating_request"), eq(PHONE), any()))
+        when(smsService.sendTemplated(eq(BUSINESS_ID), eq("checkout_rating_request"), eq(PHONE), any()))
                 .thenReturn(new TwilioSmsService.SmsSendResult(true, null));
 
         scheduler.sendDueRatingRequests();
 
-        verify(smsService).sendTemplated("checkout_rating_request", PHONE, Map.of("name", "Jane", "technician", "Susan"));
+        verify(smsService).sendTemplated(BUSINESS_ID, "checkout_rating_request", PHONE, Map.of("name", "Jane", "technician", "Susan"));
     }
 
     @Test
     @DisplayName("no stale rows → nothing saved")
     void noStaleRowsNoOp() {
-        when(repository.findByStateAndReplyExpiresAtBefore(eq(SmsReplyFlow.STATE_AWAITING_REPLY), any()))
+        when(repository.findByBusinessIdAndStateAndReplyExpiresAtBefore(eq(BUSINESS_ID), eq(SmsReplyFlow.STATE_AWAITING_REPLY), any()))
                 .thenReturn(List.of());
 
         scheduler.expireStaleReplyWindows();

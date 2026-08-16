@@ -85,16 +85,17 @@ public class SameDayRebookingScheduler {
     @SchedulerLock(name = "SameDayRebookingScheduler_sendDueRebookingNudges", lockAtLeastFor = "PT10S", lockAtMostFor = "PT2M")
     public void sendDueRebookingNudges() {
         // See BusinessRepository#legacySmsBusiness, same as LeadFollowUpScheduler.
-        SquareClient square = squareClientProvider.forBusiness(businesses.legacySmsBusiness().getId());
+        Long businessId = businesses.legacySmsBusiness().getId();
+        SquareClient square = squareClientProvider.forBusiness(businessId);
         Instant now = Instant.now();
         List<SameDayRebookingSend> due = repository.findByStateAndSendDueAtBefore(
                 SameDayRebookingSend.STATE_AWAITING_SEND, now);
         for (SameDayRebookingSend send : due) {
-            process(send, now, square);
+            process(send, now, square, businessId);
         }
     }
 
-    private void process(SameDayRebookingSend send, Instant now, SquareClient square) {
+    private void process(SameDayRebookingSend send, Instant now, SquareClient square, Long businessId) {
         // Never send an already-dead offer — see design.md D2's "checkout very late in the day"
         // edge case.
         if (send.getPromoExpiresAt().isBefore(now)) {
@@ -125,12 +126,12 @@ public class SameDayRebookingScheduler {
         // A customer who ever rated a low star count on the checkout-review-request automation
         // is never re-approached with this win-back nudge, regardless of how long ago that was or
         // how this particular visit went — see negative-feedback-tracking design.
-        if (messageLogService.hasNegativeFeedback(send.getPhoneNumber())) {
+        if (messageLogService.hasNegativeFeedback(businessId, send.getPhoneNumber())) {
             save(send, SameDayRebookingSend.STATE_SKIPPED_NEGATIVE_FEEDBACK);
             return;
         }
 
-        sendNudge(send, hasConsent(send, square));
+        sendNudge(send, hasConsent(send, square), businessId);
         save(send, SameDayRebookingSend.STATE_SENT);
     }
 
@@ -156,7 +157,7 @@ public class SameDayRebookingScheduler {
         return square.customerSegmentIds(send.getSquareCustomerId()).contains(segmentId);
     }
 
-    private void sendNudge(SameDayRebookingSend send, boolean consented) {
+    private void sendNudge(SameDayRebookingSend send, boolean consented, Long businessId) {
         String clickToken = messageLogService.generateUniqueClickToken();
         long expEpochSeconds = send.getPromoExpiresAt().getEpochSecond();
         // Reconstructed deterministically by ShortLinkController at click time — see
@@ -166,7 +167,7 @@ public class SameDayRebookingScheduler {
         String linkTarget = "REBOOK:" + expEpochSeconds;
         String templateKey = consented ? TEMPLATE_KEY : TEMPLATE_KEY_TRANSACTIONAL;
         SmsMessage reserved = messageLogService.logOutboundWithLink(
-                templateKey, AUTOMATION_KEY, send.getPhoneNumber(), "", false, "pending", null, linkTarget, clickToken);
+                businessId, templateKey, AUTOMATION_KEY, send.getPhoneNumber(), "", false, "pending", null, linkTarget, clickToken);
 
         String shortLink = publicBaseUrl + "/r/" + clickToken;
         String technician = technicianNameResolver
@@ -176,7 +177,7 @@ public class SameDayRebookingScheduler {
                 ? marketingBody(technician, shortLink)
                 : transactionalBody(technician, shortLink);
 
-        TwilioSmsConfig config = configService.getForAutomation();
+        TwilioSmsConfig config = configService.get(businessId);
         if (!config.isConfigured()) {
             log.info("{} skipped — Twilio credentials not configured", templateKey);
             updateReserved(reserved, body, false, "not_configured", null);

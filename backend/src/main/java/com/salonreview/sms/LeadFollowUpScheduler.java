@@ -72,18 +72,19 @@ public class LeadFollowUpScheduler {
         // See BusinessRepository#legacySmsBusiness — marketing.contacts has no business_id of its
         // own yet, so there's no correct per-business Square routing until that schema is scoped
         // too (tracked separately from this migration).
-        SquareClient square = squareClientProvider.forBusiness(businesses.legacySmsBusiness().getId());
+        Long businessId = businesses.legacySmsBusiness().getId();
+        SquareClient square = squareClientProvider.forBusiness(businessId);
         Instant now = Instant.now();
         List<RawContact> pending = contactsRepository.findPendingFollowUp(now.minus(MIN_AGE), now.minus(MAX_AGE));
         for (RawContact contact : pending) {
             if (sendRepository.existsByContactIdAndContactUpdatedAtGreaterThanEqual(contact.id(), contact.updatedAt())) {
                 continue; // belt-and-suspenders vs. the poll query's own NOT EXISTS
             }
-            process(contact, square);
+            process(contact, square, businessId);
         }
     }
 
-    private void process(RawContact contact, SquareClient square) {
+    private void process(RawContact contact, SquareClient square, Long businessId) {
         boolean upcoming;
         try {
             upcoming = hasUpcomingAppointment(contact, square);
@@ -104,7 +105,7 @@ public class LeadFollowUpScheduler {
             return;
         }
         Map<String, String> vars = contact.givenName() == null ? Map.of() : Map.of("name", contact.givenName());
-        var result = smsService.sendTemplated("lead_follow_up_nudge", contact.phoneNumber(), vars);
+        var result = smsService.sendTemplated(businessId, "lead_follow_up_nudge", contact.phoneNumber(), vars);
         if (!result.sent()) {
             log.warn("lead_follow_up_nudge not sent for contact {} ({}): {}",
                     contact.id(), contact.phoneNumber(), result.reason());

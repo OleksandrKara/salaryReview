@@ -24,12 +24,14 @@ class SmsMessageRepositorySearchTest {
     @Autowired
     private SmsMessageRepository repository;
 
+    private static final Long BUSINESS_ID = 1L;
+
     @Test
     void searchWithAllFiltersNullDoesNotThrow() {
-        repository.save(SmsMessage.builder().direction("OUTBOUND").phoneNumber("+15551234567")
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("OUTBOUND").phoneNumber("+15551234567")
                 .body("hi").status("SENT").build());
 
-        var page = repository.search(null, null, null,
+        var page = repository.search(BUSINESS_ID, null, null, null,
                 PageRequest.of(0, 100, Sort.by(Sort.Direction.DESC, "createdAt")));
 
         assertThat(page.getContent()).isNotEmpty();
@@ -37,10 +39,10 @@ class SmsMessageRepositorySearchTest {
 
     @Test
     void searchWithPhoneNumberFilterStillWorks() {
-        repository.save(SmsMessage.builder().direction("OUTBOUND").phoneNumber("+15559998888")
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("OUTBOUND").phoneNumber("+15559998888")
                 .body("hi").status("SENT").build());
 
-        var page = repository.search("9998888", null, null,
+        var page = repository.search(BUSINESS_ID, "9998888", null, null,
                 PageRequest.of(0, 100, Sort.by(Sort.Direction.DESC, "createdAt")));
 
         assertThat(page.getContent()).anyMatch(m -> m.getPhoneNumber().equals("+15559998888"));

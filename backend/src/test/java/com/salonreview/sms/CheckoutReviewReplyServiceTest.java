@@ -26,6 +26,7 @@ class CheckoutReviewReplyServiceTest {
 
     private static final String PHONE = "+15551234567";
     private static final String PUBLIC_BASE_URL = "https://salon.akluxnails.com";
+    private static final Long BUSINESS_ID = 1L;
 
     private SmsMessageLogService messageLogService;
     private TwilioSmsConfigService configService;
@@ -39,7 +40,7 @@ class CheckoutReviewReplyServiceTest {
     }
 
     private static SmsReplyFlow flow() {
-        return SmsReplyFlow.builder().id(1L).automationKey("checkout_review_request")
+        return SmsReplyFlow.builder().id(1L).businessId(BUSINESS_ID).automationKey("checkout_review_request")
                 .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
     }
 
@@ -52,12 +53,12 @@ class CheckoutReviewReplyServiceTest {
         service = new CheckoutReviewReplyService(messageLogService, configService, client, PUBLIC_BASE_URL, taskScheduler);
 
         when(messageLogService.generateUniqueClickToken()).thenReturn("abc12");
-        when(messageLogService.logOutboundWithLink(anyString(), eq("checkout_review_request"), eq(PHONE),
+        when(messageLogService.logOutboundWithLink(eq(BUSINESS_ID), anyString(), eq("checkout_review_request"), eq(PHONE),
                 eq(""), eq(false), eq("pending"), eq(null), anyString(), anyString()))
-                .thenAnswer(inv -> SmsMessage.builder().id(1L).direction("OUTBOUND")
+                .thenAnswer(inv -> SmsMessage.builder().id(1L).businessId(BUSINESS_ID).direction("OUTBOUND")
                         .automationKey("checkout_review_request").phoneNumber(PHONE)
-                        .templateKey(inv.getArgument(0)).body("").status("NOT_SENT").reason("pending")
-                        .linkTarget(inv.getArgument(7)).clickToken(inv.getArgument(8)).build());
+                        .templateKey(inv.getArgument(1)).body("").status("NOT_SENT").reason("pending")
+                        .linkTarget(inv.getArgument(8)).clickToken(inv.getArgument(9)).build());
     }
 
     /** The actual Twilio send is deliberately delayed by {@link CheckoutReviewReplyService#REPLY_DELAY}
@@ -75,13 +76,13 @@ class CheckoutReviewReplyServiceTest {
     @Test
     @DisplayName("positive branch: reserves a row, body contains a self-referencing /r/{token} short link to the Google review target, sends via Twilio")
     void positiveBranchSendsGoogleReviewLink() throws Exception {
-        when(configService.getForAutomation()).thenReturn(configured());
+        when(configService.get(BUSINESS_ID)).thenReturn(configured());
         when(client.send(any(), eq(PHONE), anyString())).thenReturn("SM_SID_1");
 
         sendBranchReplyAndFireDelayedTask(flow(), true);
 
         var tokenCaptor = ArgumentCaptor.forClass(String.class);
-        verify(messageLogService).logOutboundWithLink(eq("checkout_review_positive"), eq("checkout_review_request"),
+        verify(messageLogService).logOutboundWithLink(eq(BUSINESS_ID), eq("checkout_review_positive"), eq("checkout_review_request"),
                 eq(PHONE), eq(""), eq(false), eq("pending"), eq(null), eq(CheckoutReviewLinks.GOOGLE_REVIEW_TARGET),
                 tokenCaptor.capture());
         String token = tokenCaptor.getValue();
@@ -102,14 +103,14 @@ class CheckoutReviewReplyServiceTest {
     @Test
     @DisplayName("positive branch, repeat reviewer (already clicked the Google review link before): sends the feedback-form link with different copy, not the Google review link again")
     void repeatReviewerGetsFeedbackFormInstead() throws Exception {
-        when(configService.getForAutomation()).thenReturn(configured());
+        when(configService.get(BUSINESS_ID)).thenReturn(configured());
         when(client.send(any(), eq(PHONE), anyString())).thenReturn("SM_SID_3");
-        when(messageLogService.hasClickedLinkTarget(PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
+        when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
 
         sendBranchReplyAndFireDelayedTask(flow(), true);
 
         var tokenCaptor = ArgumentCaptor.forClass(String.class);
-        verify(messageLogService).logOutboundWithLink(eq("checkout_review_positive_repeat"), eq("checkout_review_request"),
+        verify(messageLogService).logOutboundWithLink(eq(BUSINESS_ID), eq("checkout_review_positive_repeat"), eq("checkout_review_request"),
                 eq(PHONE), eq(""), eq(false), eq("pending"), eq(null), eq(CheckoutReviewLinks.FEEDBACK_FORM_TARGET),
                 tokenCaptor.capture());
 
@@ -122,13 +123,13 @@ class CheckoutReviewReplyServiceTest {
     @Test
     @DisplayName("negative branch: body contains a self-referencing short link to the feedback-form target")
     void negativeBranchSendsFeedbackFormLink() throws Exception {
-        when(configService.getForAutomation()).thenReturn(configured());
+        when(configService.get(BUSINESS_ID)).thenReturn(configured());
         when(client.send(any(), eq(PHONE), anyString())).thenReturn("SM_SID_2");
 
         sendBranchReplyAndFireDelayedTask(flow(), false);
 
         var tokenCaptor = ArgumentCaptor.forClass(String.class);
-        verify(messageLogService).logOutboundWithLink(eq("checkout_review_negative"), eq("checkout_review_request"),
+        verify(messageLogService).logOutboundWithLink(eq(BUSINESS_ID), eq("checkout_review_negative"), eq("checkout_review_request"),
                 eq(PHONE), eq(""), eq(false), eq("pending"), eq(null), eq(CheckoutReviewLinks.FEEDBACK_FORM_TARGET),
                 tokenCaptor.capture());
 
@@ -140,7 +141,7 @@ class CheckoutReviewReplyServiceTest {
     @Test
     @DisplayName("Twilio not configured → reserved row finalized as NOT_SENT with reason, never calls the client")
     void notConfiguredSkipsSend() throws Exception {
-        when(configService.getForAutomation()).thenReturn(TwilioSmsConfig.builder().build());
+        when(configService.get(BUSINESS_ID)).thenReturn(TwilioSmsConfig.builder().build());
 
         sendBranchReplyAndFireDelayedTask(flow(), true);
 
@@ -154,7 +155,7 @@ class CheckoutReviewReplyServiceTest {
     @Test
     @DisplayName("Twilio client throws → reserved row finalized as NOT_SENT/send_failed, exception doesn't propagate")
     void sendFailureIsCaughtAndLogged() throws Exception {
-        when(configService.getForAutomation()).thenReturn(configured());
+        when(configService.get(BUSINESS_ID)).thenReturn(configured());
         doThrow(new java.io.IOException("boom")).when(client).send(any(), any(), any());
 
         sendBranchReplyAndFireDelayedTask(flow(), true);
@@ -168,7 +169,7 @@ class CheckoutReviewReplyServiceTest {
     @Test
     @DisplayName("sendBranchReply returns before the Twilio send happens — the send only fires once the scheduled task runs")
     void sendDoesNotHappenSynchronously() throws Exception {
-        when(configService.getForAutomation()).thenReturn(configured());
+        when(configService.get(BUSINESS_ID)).thenReturn(configured());
 
         service.sendBranchReply(flow(), true);
 

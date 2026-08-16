@@ -59,6 +59,8 @@ class CrossTenantIsolationTest {
     @Autowired private RagAgentConfigRepository ragAgentConfigs;
     @Autowired private RagRedactionAuditRepository ragRedactionAudits;
     @Autowired private RagSuggestionCacheRepository ragSuggestionCache;
+    @Autowired private SmsMessageRepository smsMessages;
+    @Autowired private SmsReplyFlowRepository smsReplyFlows;
 
     private Long businessAId;
     private Long businessBId;
@@ -566,5 +568,72 @@ class CrossTenantIsolationTest {
         assertThat(ragSuggestionCache.findById(new RagSuggestionCacheId(businessBId, "EN")))
                 .isPresent().get().extracting(RagSuggestionCache::getSignature).isEqualTo("sig-b");
         assertThat(ragSuggestionCache.findById(new RagSuggestionCacheId(businessAId, "RU"))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("SmsMessageRepository: conversationSummaries (native SQL) never surfaces another business's phone number")
+    void smsMessageConversationSummariesIsolation() {
+        String phoneA = "+15550001111";
+        String phoneB = "+15550002222";
+        smsMessages.save(SmsMessage.builder().businessId(businessAId).direction("OUTBOUND")
+                .phoneNumber(phoneA).body("hi from A").status("SENT").build());
+        smsMessages.save(SmsMessage.builder().businessId(businessBId).direction("OUTBOUND")
+                .phoneNumber(phoneB).body("hi from B").status("SENT").build());
+
+        List<String> phonesForA = smsMessages.conversationSummaries(businessAId).stream()
+                .map(SmsMessageRepository.ConversationSummaryProjection::getPhoneNumber).toList();
+        assertThat(phonesForA).contains(phoneA).doesNotContain(phoneB);
+
+        List<String> phonesForB = smsMessages.conversationSummaries(businessBId).stream()
+                .map(SmsMessageRepository.ConversationSummaryProjection::getPhoneNumber).toList();
+        assertThat(phonesForB).contains(phoneB).doesNotContain(phoneA);
+    }
+
+    @Test
+    @DisplayName("SmsMessageRepository: search never returns another business's messages")
+    void smsMessageSearchIsolation() {
+        String phoneA = "+15550003333";
+        String phoneB = "+15550004444";
+        SmsMessage messageA = smsMessages.save(SmsMessage.builder().businessId(businessAId).direction("OUTBOUND")
+                .phoneNumber(phoneA).body("isolation-test-search-marker").status("SENT").build());
+        SmsMessage messageB = smsMessages.save(SmsMessage.builder().businessId(businessBId).direction("OUTBOUND")
+                .phoneNumber(phoneB).body("isolation-test-search-marker").status("SENT").build());
+
+        var resultsA = smsMessages.search(businessAId, null, null, null,
+                PageRequest.of(0, 100)).getContent();
+        assertThat(resultsA).extracting(SmsMessage::getId).contains(messageA.getId()).doesNotContain(messageB.getId());
+
+        var resultsB = smsMessages.search(businessBId, null, null, null,
+                PageRequest.of(0, 100)).getContent();
+        assertThat(resultsB).extracting(SmsMessage::getId).contains(messageB.getId()).doesNotContain(messageA.getId());
+    }
+
+    @Test
+    @DisplayName("SmsReplyFlowRepository: due-send/reply-lookup queries never cross businesses")
+    void smsReplyFlowRepositoryIsolation() {
+        String phoneA = "+15550005555";
+        String phoneB = "+15550006666";
+        Instant now = Instant.now();
+        SmsReplyFlow flowA = smsReplyFlows.save(SmsReplyFlow.builder().businessId(businessAId)
+                .automationKey("checkout_review_request").phoneNumber(phoneA)
+                .state(SmsReplyFlow.STATE_AWAITING_SEND).sendDueAt(now.minusSeconds(60)).build());
+        SmsReplyFlow flowB = smsReplyFlows.save(SmsReplyFlow.builder().businessId(businessBId)
+                .automationKey("checkout_review_request").phoneNumber(phoneB)
+                .state(SmsReplyFlow.STATE_AWAITING_SEND).sendDueAt(now.minusSeconds(60)).build());
+
+        assertIds(smsReplyFlows.findByBusinessIdAndStateAndSendDueAtBefore(
+                        businessAId, SmsReplyFlow.STATE_AWAITING_SEND, now),
+                flowA.getId(), flowB.getId());
+        assertIds(smsReplyFlows.findByBusinessIdAndStateAndSendDueAtBefore(
+                        businessBId, SmsReplyFlow.STATE_AWAITING_SEND, now),
+                flowB.getId(), flowA.getId());
+
+        assertThat(smsReplyFlows.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(
+                businessAId, phoneA, SmsReplyFlow.STATE_AWAITING_SEND)).isPresent();
+        assertThat(smsReplyFlows.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(
+                businessBId, phoneA, SmsReplyFlow.STATE_AWAITING_SEND)).isEmpty();
+
+        assertThat(smsReplyFlows.findByIdAndBusinessId(flowA.getId(), businessAId)).isPresent();
+        assertThat(smsReplyFlows.findByIdAndBusinessId(flowA.getId(), businessBId)).isEmpty();
     }
 }

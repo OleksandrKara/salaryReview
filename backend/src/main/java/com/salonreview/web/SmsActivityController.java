@@ -127,7 +127,7 @@ public class SmsActivityController {
                                        @RequestParam(required = false) String automationKey,
                                        @RequestParam(defaultValue = "100") int limit) {
         int bounded = Math.min(Math.max(limit, 1), 500);
-        List<SmsMessage> messages = service.search(phoneNumber, direction, automationKey,
+        List<SmsMessage> messages = service.search(currentBusinessContext.id(), phoneNumber, direction, automationKey,
                         PageRequest.of(0, bounded, Sort.by(Sort.Direction.DESC, "createdAt")))
                 .getContent();
         List<Long> ids = messages.stream().map(SmsMessage::getId).toList();
@@ -138,7 +138,7 @@ public class SmsActivityController {
 
     @GetMapping("/unread-count")
     public Map<String, Long> unreadCount() {
-        return Map.of("unreadCount", service.unreadCount());
+        return Map.of("unreadCount", service.unreadCount(currentBusinessContext.id()));
     }
 
     /** Live-update feed for the manager conversation view (design "make Messages update itself
@@ -154,7 +154,7 @@ public class SmsActivityController {
 
     @PostMapping("/{id}/read")
     public void markRead(@PathVariable long id) {
-        service.markRead(id);
+        service.markRead(currentBusinessContext.id(), id);
     }
 
     /** One row per distinct phone number, most-recent-message-first — the manager conversation
@@ -163,7 +163,7 @@ public class SmsActivityController {
      * method's own docs for the phone -> name resolution ladder. */
     @GetMapping("/conversations")
     public List<ConversationDto> conversations() {
-        return enrich(service.conversations());
+        return enrich(service.conversations(currentBusinessContext.id()));
     }
 
     /** Cursor-paginated form of {@link #conversations()} — the manager conversation view's initial
@@ -175,7 +175,7 @@ public class SmsActivityController {
     public ConversationPageDto conversationsPaged(@RequestParam(required = false) Instant cursor,
                                                     @RequestParam(defaultValue = "" + DEFAULT_CONVERSATIONS_PAGE_SIZE) int limit) {
         int bounded = Math.min(Math.max(limit, 1), MAX_CONVERSATIONS_PAGE_SIZE);
-        List<ConversationSummaryProjection> summaries = service.conversationsPage(cursor, bounded);
+        List<ConversationSummaryProjection> summaries = service.conversationsPage(currentBusinessContext.id(), cursor, bounded);
         List<ConversationDto> items = enrich(summaries);
         String nextCursor = items.isEmpty() ? null : items.get(items.size() - 1).lastMessageAt().toString();
         boolean hasMore = items.size() == bounded;
@@ -188,7 +188,7 @@ public class SmsActivityController {
      * number has no messages at all. */
     @GetMapping("/conversations/{phoneNumber}/summary")
     public ResponseEntity<ConversationDto> conversationSummary(@PathVariable String phoneNumber) {
-        return service.conversationSummary(phoneNumber)
+        return service.conversationSummary(currentBusinessContext.id(), phoneNumber)
                 .map(p -> enrich(List.of(p)).get(0))
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
@@ -214,13 +214,13 @@ public class SmsActivityController {
         // conversation list — the fuller sent-vs-clicked-vs-never-sent detail with dates already
         // lives in the contact info panel (see MarketingContactDto.Contact); these two flags are
         // just the at-a-glance version so a manager doesn't have to open that panel to see it.
-        Set<String> clickedGoogleReview = service.phoneNumbersWithClickedLinkTarget(phoneNumbers, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET);
-        Set<String> clickedFeedbackForm = service.phoneNumbersWithClickedLinkTarget(phoneNumbers, CheckoutReviewLinks.FEEDBACK_FORM_TARGET);
+        Set<String> clickedGoogleReview = service.phoneNumbersWithClickedLinkTarget(currentBusinessContext.id(), phoneNumbers, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET);
+        Set<String> clickedFeedbackForm = service.phoneNumbersWithClickedLinkTarget(currentBusinessContext.id(), phoneNumbers, CheckoutReviewLinks.FEEDBACK_FORM_TARGET);
         // Same batching reasoning as above — "has any outbound message to this number ever come
         // back flagged as spam or opted-out" (Twilio error 30007/21610), see
         // SmsMessageLogService#phoneNumbersFlaggedAsSpam. The full reason/date is already visible
         // on the individual message bubble; this is just the at-a-glance list-row version.
-        Set<String> flaggedAsSpam = service.phoneNumbersFlaggedAsSpam(phoneNumbers);
+        Set<String> flaggedAsSpam = service.phoneNumbersFlaggedAsSpam(currentBusinessContext.id(), phoneNumbers);
         return summaries.stream()
                 .map(p -> toConversationDto(p, names.get(p.getPhoneNumber()), blockedSources.containsKey(p.getPhoneNumber()),
                         BlockedNumber.SOURCE_STOP_REQUEST.equals(blockedSources.get(p.getPhoneNumber())),
@@ -233,7 +233,7 @@ public class SmsActivityController {
      * thread panel. */
     @GetMapping("/conversations/{phoneNumber}")
     public List<SmsMessageDto> thread(@PathVariable String phoneNumber) {
-        List<SmsMessage> messages = service.thread(phoneNumber);
+        List<SmsMessage> messages = service.thread(currentBusinessContext.id(), phoneNumber);
         List<Long> ids = messages.stream().map(SmsMessage::getId).toList();
         Map<Long, List<SmsMediaService.MediaInfo>> media = mediaService.mediaForMessages(ids);
         Map<Long, List<SmsReactionService.ReactionDto>> reactions = reactionService.reactionsForMessages(ids);
@@ -247,7 +247,7 @@ public class SmsActivityController {
      * endpoint alone wasn't enough here. */
     @PostMapping("/conversations/{phoneNumber}/read")
     public void markThreadRead(@PathVariable String phoneNumber) {
-        service.markThreadRead(phoneNumber);
+        service.markThreadRead(currentBusinessContext.id(), phoneNumber);
     }
 
     /** "Mark as unread" — a manual reminder flag on the conversation, matching every mainstream
@@ -255,7 +255,7 @@ public class SmsActivityController {
      * SmsMessageLogService#markThreadUnread. */
     @PostMapping("/conversations/{phoneNumber}/unread")
     public void markThreadUnread(@PathVariable String phoneNumber) {
-        service.markThreadUnread(phoneNumber);
+        service.markThreadUnread(currentBusinessContext.id(), phoneNumber);
     }
 
     /** "Block number" — see TwilioSmsService, the single choke point every outbound SMS
@@ -313,7 +313,7 @@ public class SmsActivityController {
      * SmsMessageLogService#searchConversations). */
     @GetMapping("/search")
     public List<ConversationSearchHitDto> search(@RequestParam String q) {
-        return service.searchConversations(q).stream()
+        return service.searchConversations(currentBusinessContext.id(), q).stream()
                 .map(h -> new ConversationSearchHitDto(h.phoneNumber(), h.snippet(), h.direction(), h.matchedAt()))
                 .toList();
     }
@@ -322,7 +322,7 @@ public class SmsActivityController {
      * entirely (design.md D9). */
     @PostMapping("/reply")
     public ReplyResult reply(@RequestBody ReplyRequest request) {
-        var result = smsService.sendManual(request.phoneNumber(), request.body());
+        var result = smsService.sendManual(currentBusinessContext.id(), request.phoneNumber(), request.body());
         return new ReplyResult(result.sent(), result.reason());
     }
 
@@ -334,7 +334,7 @@ public class SmsActivityController {
     public ReplyResult replyWithMedia(@RequestParam String phoneNumber,
                                        @RequestParam(required = false) String body,
                                        @RequestParam("files") List<MultipartFile> files) throws IOException {
-        var result = smsService.sendManualWithMedia(phoneNumber, body, files);
+        var result = smsService.sendManualWithMedia(currentBusinessContext.id(), phoneNumber, body, files);
         return new ReplyResult(result.sent(), result.reason());
     }
 

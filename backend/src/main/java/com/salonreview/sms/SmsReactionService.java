@@ -55,7 +55,7 @@ public class SmsReactionService {
      * tapback or doesn't match one of the salon's own recent outbound messages (a normal inbound
      * reply is completely unaffected). Apple truncates the quoted excerpt with an ellipsis for long
      * messages, so matching is a prefix check, not exact equality — see {@link #stripTrailingEllipsis}. */
-    public boolean tryAttachCustomerReaction(String phoneNumber, String body) {
+    public boolean tryAttachCustomerReaction(Long businessId, String phoneNumber, String body) {
         if (body == null) {
             return false;
         }
@@ -73,7 +73,7 @@ public class SmsReactionService {
         }
 
         Optional<SmsMessage> target = messageRepository
-                .findTop20ByPhoneNumberAndDirectionOrderByCreatedAtDesc(phoneNumber, "OUTBOUND")
+                .findTop20ByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(businessId, phoneNumber, "OUTBOUND")
                 .stream()
                 .filter(candidate -> candidate.getBody() != null && candidate.getBody().startsWith(quoted))
                 .findFirst();

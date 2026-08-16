@@ -17,6 +17,8 @@ import static org.mockito.Mockito.*;
 
 class CheckoutReviewFlowRecoveryServiceTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     private final SmsReplyFlowRepository flows = mock(SmsReplyFlowRepository.class);
     private final SmsMessageRepository messages = mock(SmsMessageRepository.class);
     private final CheckoutReviewReplyService replyService = mock(CheckoutReviewReplyService.class);
@@ -24,18 +26,18 @@ class CheckoutReviewFlowRecoveryServiceTest {
             new CheckoutReviewFlowRecoveryService(flows, messages, replyService);
 
     private static SmsReplyFlow flow(String state) {
-        return SmsReplyFlow.builder().id(9L).phoneNumber("+15551234567").state(state).build();
+        return SmsReplyFlow.builder().id(9L).businessId(BUSINESS_ID).phoneNumber("+15551234567").state(state).build();
     }
 
     @Test
     void retriesUsingTheRealInboundReplyText() {
         SmsReplyFlow flow = flow(SmsReplyFlow.STATE_AWAITING_REPLY);
-        when(flows.findById(9L)).thenReturn(Optional.of(flow));
+        when(flows.findByIdAndBusinessId(9L, BUSINESS_ID)).thenReturn(Optional.of(flow));
         SmsMessage inbound = SmsMessage.builder().body("5!!").build();
-        when(messages.findFirstByPhoneNumberAndDirectionOrderByCreatedAtDesc("+15551234567", "INBOUND"))
+        when(messages.findFirstByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(BUSINESS_ID, "+15551234567", "INBOUND"))
                 .thenReturn(Optional.of(inbound));
 
-        service.retry(9L);
+        service.retry(BUSINESS_ID, 9L);
 
         verify(replyService).sendBranchReply(flow, true);
         verify(flows).save(flow);
@@ -45,37 +47,37 @@ class CheckoutReviewFlowRecoveryServiceTest {
     @Test
     void negativeReplyTextRoutesToTheNegativeBranch() {
         SmsReplyFlow flow = flow(SmsReplyFlow.STATE_AWAITING_REPLY);
-        when(flows.findById(9L)).thenReturn(Optional.of(flow));
-        when(messages.findFirstByPhoneNumberAndDirectionOrderByCreatedAtDesc("+15551234567", "INBOUND"))
+        when(flows.findByIdAndBusinessId(9L, BUSINESS_ID)).thenReturn(Optional.of(flow));
+        when(messages.findFirstByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(BUSINESS_ID, "+15551234567", "INBOUND"))
                 .thenReturn(Optional.of(SmsMessage.builder().body("2, not great").build()));
 
-        service.retry(9L);
+        service.retry(BUSINESS_ID, 9L);
 
         verify(replyService).sendBranchReply(flow, false);
     }
 
     @Test
     void rejectsAFlowThatIsNotAwaitingReply() {
-        when(flows.findById(9L)).thenReturn(Optional.of(flow(SmsReplyFlow.STATE_COMPLETED)));
+        when(flows.findByIdAndBusinessId(9L, BUSINESS_ID)).thenReturn(Optional.of(flow(SmsReplyFlow.STATE_COMPLETED)));
 
-        assertThatThrownBy(() -> service.retry(9L)).isInstanceOf(ResponseStatusException.class);
+        assertThatThrownBy(() -> service.retry(BUSINESS_ID, 9L)).isInstanceOf(ResponseStatusException.class);
         verifyNoInteractions(replyService);
     }
 
     @Test
     void rejectsAMissingFlow() {
-        when(flows.findById(9L)).thenReturn(Optional.empty());
+        when(flows.findByIdAndBusinessId(9L, BUSINESS_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.retry(9L)).isInstanceOf(ResponseStatusException.class);
+        assertThatThrownBy(() -> service.retry(BUSINESS_ID, 9L)).isInstanceOf(ResponseStatusException.class);
     }
 
     @Test
     void rejectsWhenNoInboundMessageIsOnFile() {
-        when(flows.findById(9L)).thenReturn(Optional.of(flow(SmsReplyFlow.STATE_AWAITING_REPLY)));
-        when(messages.findFirstByPhoneNumberAndDirectionOrderByCreatedAtDesc(any(), any()))
+        when(flows.findByIdAndBusinessId(9L, BUSINESS_ID)).thenReturn(Optional.of(flow(SmsReplyFlow.STATE_AWAITING_REPLY)));
+        when(messages.findFirstByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(any(), any(), any()))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.retry(9L)).isInstanceOf(ResponseStatusException.class);
+        assertThatThrownBy(() -> service.retry(BUSINESS_ID, 9L)).isInstanceOf(ResponseStatusException.class);
         verify(replyService, never()).sendBranchReply(any(), anyBoolean());
     }
 }

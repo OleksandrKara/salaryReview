@@ -67,12 +67,12 @@ public class TwilioSmsService {
         return blockedNumberRepository.existsById(PhoneNumbers.normalize(phoneNumber));
     }
 
-    public SmsSendResult sendTemplated(String templateKey, String phoneNumber, Map<String, String> variables) {
+    public SmsSendResult sendTemplated(Long businessId, String templateKey, String phoneNumber, Map<String, String> variables) {
         SmsTemplate template = templateRegistry.find(templateKey);
         if (template == null) {
             // Nothing to render and no automationKey to attribute this to — logged as a bare
             // attempt so it's still visible in the activity view, matching every other outcome.
-            messageLogService.logOutbound(templateKey, null, phoneNumber, "", false, "unknown_template", null);
+            messageLogService.logOutbound(businessId, templateKey, null, phoneNumber, "", false, "unknown_template", null);
             return SmsSendResult.skipped("unknown_template");
         }
 
@@ -81,36 +81,36 @@ public class TwilioSmsService {
 
         if (isBlocked(phoneNumber)) {
             log.info("SMS template '{}' skipped — number is blocked", templateKey);
-            messageLogService.logOutbound(templateKey, automationKey, phoneNumber, body, false, "blocked", null);
+            messageLogService.logOutbound(businessId, templateKey, automationKey, phoneNumber, body, false, "blocked", null);
             return SmsSendResult.skipped("blocked");
         }
 
         if (!automationService.isEnabled(automationKey)) {
             log.info("SMS template '{}' skipped — automation '{}' is disabled", templateKey, automationKey);
-            messageLogService.logOutbound(templateKey, automationKey, phoneNumber, body, false, "automation_disabled", null);
+            messageLogService.logOutbound(businessId, templateKey, automationKey, phoneNumber, body, false, "automation_disabled", null);
             return SmsSendResult.skipped("automation_disabled");
         }
 
         if (template.messageClass() == SmsMessageClass.MARKETING && !consentRepository.hasMarketingConsent(phoneNumber)) {
             log.info("SMS template '{}' skipped — no marketing consent for this contact", templateKey);
-            messageLogService.logOutbound(templateKey, automationKey, phoneNumber, body, false, "no_consent", null);
+            messageLogService.logOutbound(businessId, templateKey, automationKey, phoneNumber, body, false, "no_consent", null);
             return SmsSendResult.skipped("no_consent");
         }
 
-        TwilioSmsConfig config = configService.getForAutomation();
+        TwilioSmsConfig config = configService.get(businessId);
         if (!config.isConfigured()) {
             log.info("SMS template '{}' skipped — Twilio credentials not configured", templateKey);
-            messageLogService.logOutbound(templateKey, automationKey, phoneNumber, body, false, "not_configured", null);
+            messageLogService.logOutbound(businessId, templateKey, automationKey, phoneNumber, body, false, "not_configured", null);
             return SmsSendResult.skipped("not_configured");
         }
 
         try {
             String twilioMessageSid = client.send(config, phoneNumber, body);
-            messageLogService.logOutbound(templateKey, automationKey, phoneNumber, body, true, null, twilioMessageSid);
+            messageLogService.logOutbound(businessId, templateKey, automationKey, phoneNumber, body, true, null, twilioMessageSid);
             return SmsSendResult.ok();
         } catch (Exception e) {
             log.warn("SMS template '{}' send failed (caller unaffected): {}", templateKey, e.getMessage());
-            messageLogService.logOutbound(templateKey, automationKey, phoneNumber, body, false, "send_failed", null);
+            messageLogService.logOutbound(businessId, templateKey, automationKey, phoneNumber, body, false, "send_failed", null);
             return SmsSendResult.skipped("send_failed");
         }
     }
@@ -119,27 +119,27 @@ public class TwilioSmsService {
      * gating entirely — see openspec/changes/lead-followup-and-manager-inbox design.md D9. A
      * manager replying to a customer who just texted the salon is a direct conversational reply,
      * not a marketing send, so it's sendable regardless of {@code sms_marketing_consent}. */
-    public SmsSendResult sendManual(String phoneNumber, String body) {
+    public SmsSendResult sendManual(Long businessId, String phoneNumber, String body) {
         if (isBlocked(phoneNumber)) {
             log.info("Manual reply skipped — number is blocked");
-            messageLogService.logOutbound(null, null, phoneNumber, body, false, "blocked", null);
+            messageLogService.logOutbound(businessId, null, null, phoneNumber, body, false, "blocked", null);
             return SmsSendResult.skipped("blocked");
         }
 
-        TwilioSmsConfig config = configService.getForAutomation();
+        TwilioSmsConfig config = configService.get(businessId);
         if (!config.isConfigured()) {
             log.info("Manual reply skipped — Twilio credentials not configured");
-            messageLogService.logOutbound(null, null, phoneNumber, body, false, "not_configured", null);
+            messageLogService.logOutbound(businessId, null, null, phoneNumber, body, false, "not_configured", null);
             return SmsSendResult.skipped("not_configured");
         }
 
         try {
             String twilioMessageSid = client.send(config, phoneNumber, body);
-            messageLogService.logOutbound(null, null, phoneNumber, body, true, null, twilioMessageSid);
+            messageLogService.logOutbound(businessId, null, null, phoneNumber, body, true, null, twilioMessageSid);
             return SmsSendResult.ok();
         } catch (Exception e) {
             log.warn("Manual reply send failed (caller unaffected): {}", e.getMessage());
-            messageLogService.logOutbound(null, null, phoneNumber, body, false, "send_failed", null);
+            messageLogService.logOutbound(businessId, null, null, phoneNumber, body, false, "send_failed", null);
             return SmsSendResult.skipped("send_failed");
         }
     }
@@ -151,22 +151,22 @@ public class TwilioSmsService {
      * the row is saved first (status {@code NOT_SENT}/"pending"), then updated once the send outcome
      * is known. {@code files} is never empty — a caller with no photos should use {@link #sendManual}
      * instead. */
-    public SmsSendResult sendManualWithMedia(String phoneNumber, String body, List<MultipartFile> files) throws IOException {
+    public SmsSendResult sendManualWithMedia(Long businessId, String phoneNumber, String body, List<MultipartFile> files) throws IOException {
         String safeBody = body == null ? "" : body;
         if (isBlocked(phoneNumber)) {
             log.info("Manual MMS reply skipped — number is blocked");
-            messageLogService.logOutbound(null, null, phoneNumber, safeBody, false, "blocked", null);
+            messageLogService.logOutbound(businessId, null, null, phoneNumber, safeBody, false, "blocked", null);
             return SmsSendResult.skipped("blocked");
         }
 
-        TwilioSmsConfig config = configService.getForAutomation();
+        TwilioSmsConfig config = configService.get(businessId);
         if (!config.isConfigured()) {
             log.info("Manual MMS reply skipped — Twilio credentials not configured");
-            messageLogService.logOutbound(null, null, phoneNumber, safeBody, false, "not_configured", null);
+            messageLogService.logOutbound(businessId, null, null, phoneNumber, safeBody, false, "not_configured", null);
             return SmsSendResult.skipped("not_configured");
         }
 
-        SmsMessage reserved = messageLogService.logOutbound(null, null, phoneNumber, safeBody, false, "pending", null);
+        SmsMessage reserved = messageLogService.logOutbound(businessId, null, null, phoneNumber, safeBody, false, "pending", null);
         List<String> mediaUrls = new ArrayList<>();
         for (MultipartFile file : files) {
             SmsMessageMedia media = mediaService.store(reserved.getId(), file.getContentType(), file.getBytes());

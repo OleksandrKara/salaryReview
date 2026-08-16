@@ -33,6 +33,7 @@ class RepeatCustomerWinbackSchedulerTest {
     private static final String CUSTOMER_ID = "cust1";
     private static final String PHONE = "+15551234567";
     private static final ZoneId SALON_ZONE = ZoneId.of("America/Los_Angeles");
+    private static final Long BUSINESS_ID = 1L;
 
     private RepeatCustomerWinbackEligibilityRepository eligibilityRepository;
     private RepeatCustomerWinbackSendRepository sendRepository;
@@ -74,11 +75,11 @@ class RepeatCustomerWinbackSchedulerTest {
         when(blockedNumberRepository.existsById(PHONE)).thenReturn(false);
         when(messageLogService.generateUniqueClickToken()).thenReturn("tok123");
         SmsMessage reserved = SmsMessage.builder().id(1L).direction("OUTBOUND").phoneNumber(PHONE).body("").status("NOT_SENT").build();
-        when(messageLogService.logOutboundWithLink(any(), any(), any(), any(), anyBoolean(), any(), any(), any(), any()))
+        when(messageLogService.logOutboundWithLink(any(), any(), any(), any(), any(), anyBoolean(), any(), any(), any(), any()))
                 .thenReturn(reserved);
         TwilioSmsConfig configured = mock(TwilioSmsConfig.class);
         when(configured.isConfigured()).thenReturn(true);
-        when(configService.getForAutomation()).thenReturn(configured);
+        when(configService.get(BUSINESS_ID)).thenReturn(configured);
         when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
     }
 
@@ -114,7 +115,7 @@ class RepeatCustomerWinbackSchedulerTest {
 
         ArgumentCaptor<String> linkTargetCaptor = ArgumentCaptor.forClass(String.class);
         verify(messageLogService).logOutboundWithLink(
-                eq("repeat_customer_winback_reminder"), eq("repeat_customer_winback"), eq(PHONE),
+                eq(BUSINESS_ID), eq("repeat_customer_winback_reminder"), eq("repeat_customer_winback"), eq(PHONE),
                 any(), anyBoolean(), any(), any(), linkTargetCaptor.capture(), any());
         assertThat(linkTargetCaptor.getValue()).startsWith("WINBACK:");
 
@@ -166,7 +167,7 @@ class RepeatCustomerWinbackSchedulerTest {
                 .doesNotContain("Alieva").doesNotContain("—");
 
         verify(messageLogService).logOutboundWithLink(
-                eq("repeat_customer_winback_nudge"), eq("repeat_customer_winback"), eq(PHONE),
+                eq(BUSINESS_ID), eq("repeat_customer_winback_nudge"), eq("repeat_customer_winback"), eq(PHONE),
                 any(), anyBoolean(), any(), any(), any(), any());
 
         ArgumentCaptor<RepeatCustomerWinbackSend> captor = ArgumentCaptor.forClass(RepeatCustomerWinbackSend.class);
@@ -215,7 +216,7 @@ class RepeatCustomerWinbackSchedulerTest {
         scheduler.sendDueWinbacks();
 
         verifyNoInteractions(client);
-        verify(messageLogService, never()).hasNegativeFeedback(any());
+        verify(messageLogService, never()).hasNegativeFeedback(any(), any());
         ArgumentCaptor<RepeatCustomerWinbackSend> captor = ArgumentCaptor.forClass(RepeatCustomerWinbackSend.class);
         verify(sendRepository).save(captor.capture());
         assertThat(captor.getValue().getState()).isEqualTo(RepeatCustomerWinbackSend.STATE_SKIPPED_UNRESOLVED);
@@ -232,7 +233,7 @@ class RepeatCustomerWinbackSchedulerTest {
         scheduler.sendDueWinbacks();
 
         verifyNoInteractions(client);
-        verify(messageLogService, never()).hasNegativeFeedback(any());
+        verify(messageLogService, never()).hasNegativeFeedback(any(), any());
         ArgumentCaptor<RepeatCustomerWinbackSend> captor = ArgumentCaptor.forClass(RepeatCustomerWinbackSend.class);
         verify(sendRepository).save(captor.capture());
         assertThat(captor.getValue().getState()).isEqualTo(RepeatCustomerWinbackSend.STATE_SKIPPED_BLOCKED);
@@ -242,7 +243,7 @@ class RepeatCustomerWinbackSchedulerTest {
     @DisplayName("prior negative feedback → SKIPPED_NEGATIVE_FEEDBACK, no send")
     void negativeFeedbackSkipsWithoutSend() throws Exception {
         givenEligible(eligible("Susan Alieva", "Susan Alieva", false));
-        when(messageLogService.hasNegativeFeedback(PHONE)).thenReturn(true);
+        when(messageLogService.hasNegativeFeedback(BUSINESS_ID, PHONE)).thenReturn(true);
 
         scheduler.sendDueWinbacks();
 

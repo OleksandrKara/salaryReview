@@ -60,7 +60,8 @@ public class CheckoutReviewTriggerService {
             // Webhooks are unauthenticated (no session) and today's payload carries no business
             // identifier of its own — see BusinessRepository#legacySmsBusiness, same as the SMS
             // schedulers, until Phase 3.6 (per-business webhook routing) lands.
-            SquareClient square = squareClientProvider.forBusiness(businesses.legacySmsBusiness().getId());
+            Long businessId = businesses.legacySmsBusiness().getId();
+            SquareClient square = squareClientProvider.forBusiness(businessId);
             Optional<SquareClient.Order> order = square.orderById(payment.orderId());
             if (order.isEmpty()) {
                 log.warn("Checkout-review trigger: order {} not found for payment {}", payment.orderId(), payment.id());
@@ -103,9 +104,10 @@ public class CheckoutReviewTriggerService {
             // this payment on a Square retry, and there's still a visible audit row for why no ask
             // went out.
             boolean hasCoveredBothReviewChannels =
-                    messageLogService.hasClickedLinkTarget(phoneNumber, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)
-                            && messageLogService.hasClickedLinkTarget(phoneNumber, CheckoutReviewLinks.FEEDBACK_FORM_TARGET);
+                    messageLogService.hasClickedLinkTarget(businessId, phoneNumber, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)
+                            && messageLogService.hasClickedLinkTarget(businessId, phoneNumber, CheckoutReviewLinks.FEEDBACK_FORM_TARGET);
             repository.save(SmsReplyFlow.builder()
+                    .businessId(businessId)
                     .automationKey(AUTOMATION_KEY)
                     .phoneNumber(phoneNumber)
                     .customerName(customerName)

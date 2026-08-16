@@ -144,7 +144,7 @@ class InternalNotificationControllerTest {
     @DisplayName("sms/send: correct key + sent → 200 sent:true, reason:null")
     void smsSendSentTrue() throws Exception {
         when(props.getKey()).thenReturn("secret");
-        when(sms.sendTemplated(anyString(), anyString(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
+        when(sms.sendTemplated(any(), anyString(), anyString(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
 
         mvc.perform(post("/api/internal/notifications/sms/send")
                         .header("X-Internal-Api-Key", "secret")
@@ -158,7 +158,7 @@ class InternalNotificationControllerTest {
     @DisplayName("sms/send: correct key + blocked → 200 sent:false with reason, not an error")
     void smsSendBlockedWithReason() throws Exception {
         when(props.getKey()).thenReturn("secret");
-        when(sms.sendTemplated(anyString(), anyString(), any())).thenReturn(new TwilioSmsService.SmsSendResult(false, "no_consent"));
+        when(sms.sendTemplated(any(), anyString(), anyString(), any())).thenReturn(new TwilioSmsService.SmsSendResult(false, "no_consent"));
 
         mvc.perform(post("/api/internal/notifications/sms/send")
                         .header("X-Internal-Api-Key", "secret")

@@ -89,7 +89,7 @@ public class SmsDraftService {
         AnthropicClient client = anthropicClientProvider.getIfAvailable();
         if (client == null) return Optional.empty();
 
-        List<SmsMessage> thread = smsMessageLogService.thread(phoneNumber);
+        List<SmsMessage> thread = smsMessageLogService.thread(businessId, phoneNumber);
         MarketingContactDto.Contact contact = contactsService.contactByPhone(phoneNumber).orElse(null);
         List<ChunkMatch> ragMatches = retrieveGrounding(thread, businessId);
 

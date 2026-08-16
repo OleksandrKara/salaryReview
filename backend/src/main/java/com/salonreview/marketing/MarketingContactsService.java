@@ -111,9 +111,10 @@ public class MarketingContactsService {
             SmsMessageLogService.LinkEngagement googleReview, SmsMessageLogService.LinkEngagement feedbackForm) {}
 
     private ContactLinkEngagement linkEngagementFor(String phoneNumber) {
+        Long businessId = currentBusinessContext.id();
         return new ContactLinkEngagement(
-                smsMessageLogService.linkEngagement(phoneNumber, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET),
-                smsMessageLogService.linkEngagement(phoneNumber, CheckoutReviewLinks.FEEDBACK_FORM_TARGET));
+                smsMessageLogService.linkEngagement(businessId, phoneNumber, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET),
+                smsMessageLogService.linkEngagement(businessId, phoneNumber, CheckoutReviewLinks.FEEDBACK_FORM_TARGET));
     }
 
     /** When "Sync appointments" was last actually invoked — null if never (see V50). */

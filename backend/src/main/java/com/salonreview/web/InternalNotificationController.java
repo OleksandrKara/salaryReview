@@ -82,7 +82,10 @@ public class InternalNotificationController {
         if (!keyMatches(key)) {
             return ResponseEntity.status(401).build();
         }
-        TwilioSmsService.SmsSendResult result = sms.sendTemplated(body.templateKey(), body.phoneNumber(), body.variables());
+        // See BusinessRepository#legacySmsBusiness, same as the SMS schedulers — this endpoint has
+        // no session, so there's no business context to resolve beyond Business A.
+        TwilioSmsService.SmsSendResult result = sms.sendTemplated(
+                businesses.legacySmsBusiness().getId(), body.templateKey(), body.phoneNumber(), body.variables());
         Map<String, Object> response = new HashMap<>();
         response.put("sent", result.sent());
         response.put("reason", result.reason());

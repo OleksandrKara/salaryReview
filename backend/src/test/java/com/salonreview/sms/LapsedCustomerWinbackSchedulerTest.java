@@ -33,6 +33,7 @@ class LapsedCustomerWinbackSchedulerTest {
     private static final String CUSTOMER_ID = "cust1";
     private static final String PHONE = "+15551234567";
     private static final String SEGMENT_ID = "gv2:TEXT_SUBSCRIBERS";
+    private static final Long BUSINESS_ID = 1L;
     private static final ZoneId SALON_ZONE = ZoneId.of("America/Los_Angeles");
 
     private LapsedCustomerWinbackEligibilityRepository eligibilityRepository;
@@ -73,11 +74,11 @@ class LapsedCustomerWinbackSchedulerTest {
         when(square.bookingsForCustomer(eq(CUSTOMER_ID), any())).thenReturn(List.of());
         when(messageLogService.generateUniqueClickToken()).thenReturn("tok123");
         SmsMessage reserved = SmsMessage.builder().id(1L).direction("OUTBOUND").phoneNumber(PHONE).body("").status("NOT_SENT").build();
-        when(messageLogService.logOutboundWithLink(any(), any(), any(), any(), anyBoolean(), any(), any(), any(), any()))
+        when(messageLogService.logOutboundWithLink(any(), any(), any(), any(), any(), anyBoolean(), any(), any(), any(), any()))
                 .thenReturn(reserved);
         TwilioSmsConfig configured = mock(TwilioSmsConfig.class);
         when(configured.isConfigured()).thenReturn(true);
-        when(configService.getForAutomation()).thenReturn(configured);
+        when(configService.get(BUSINESS_ID)).thenReturn(configured);
     }
 
     private static LapsedCustomerWinbackEligibilityRepository.EligibleCustomer eligible(String technicianName) {
@@ -110,7 +111,7 @@ class LapsedCustomerWinbackSchedulerTest {
                 .contains("tok123").contains("-Lucy")
                 .doesNotContain("—").doesNotContain("Alieva");
         verify(messageLogService).logOutboundWithLink(
-                eq("lapsed_customer_winback_nudge"), eq("lapsed_customer_winback"), eq(PHONE),
+                eq(BUSINESS_ID), eq("lapsed_customer_winback_nudge"), eq("lapsed_customer_winback"), eq(PHONE),
                 any(), anyBoolean(), any(), any(), any(), any());
 
         ArgumentCaptor<LapsedCustomerWinbackSend> captor = ArgumentCaptor.forClass(LapsedCustomerWinbackSend.class);
@@ -136,7 +137,7 @@ class LapsedCustomerWinbackSchedulerTest {
                 .contains("want me to grab you a spot")
                 .doesNotContain("$5").doesNotContain("—");
         verify(messageLogService).logOutboundWithLink(
-                eq("lapsed_customer_winback_reminder"), any(), any(), any(), anyBoolean(), any(), any(), any(), any());
+                eq(BUSINESS_ID), eq("lapsed_customer_winback_reminder"), any(), any(), any(), anyBoolean(), any(), any(), any(), any());
     }
 
     @Test
@@ -163,7 +164,7 @@ class LapsedCustomerWinbackSchedulerTest {
         scheduler.sendDueWinbacks();
 
         verifyNoInteractions(client);
-        verify(messageLogService, never()).hasNegativeFeedback(any());
+        verify(messageLogService, never()).hasNegativeFeedback(any(), any());
         ArgumentCaptor<LapsedCustomerWinbackSend> captor = ArgumentCaptor.forClass(LapsedCustomerWinbackSend.class);
         verify(sendRepository).save(captor.capture());
         assertThat(captor.getValue().getState()).isEqualTo(LapsedCustomerWinbackSend.STATE_SKIPPED_UNRESOLVED);
@@ -175,7 +176,7 @@ class LapsedCustomerWinbackSchedulerTest {
     @DisplayName("prior negative feedback → SKIPPED_NEGATIVE_FEEDBACK, no send")
     void negativeFeedbackSkipsWithoutSend() {
         givenEligible(eligible("Susan"));
-        when(messageLogService.hasNegativeFeedback(PHONE)).thenReturn(true);
+        when(messageLogService.hasNegativeFeedback(BUSINESS_ID, PHONE)).thenReturn(true);
 
         scheduler.sendDueWinbacks();
 

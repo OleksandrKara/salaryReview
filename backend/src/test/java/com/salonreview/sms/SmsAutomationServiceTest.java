@@ -30,6 +30,7 @@ class SmsAutomationServiceTest {
     private SmsMessageRepository messageRepository;
     private RepeatCustomerWinbackSendRepository repeatCustomerWinbackSendRepository;
     private SmsAutomationService service;
+    private static final Long BUSINESS_ID = 1L;
 
     @BeforeEach
     void setUp() {
@@ -41,14 +42,14 @@ class SmsAutomationServiceTest {
     }
 
     private SmsAutomationService.AutomationSummary find(String key) {
-        return service.list().stream().filter(a -> a.key().equals(key)).findFirst().orElseThrow();
+        return service.list(BUSINESS_ID).stream().filter(a -> a.key().equals(key)).findFirst().orElseThrow();
     }
 
     @Test
     @DisplayName("checkout_review_request: sent count is filtered to the primary template only, not the branch reply")
     void checkoutReviewSentCountExcludesBranchReply() {
-        when(messageRepository.countByAutomationKeyAndTemplateKeyAndDirectionAndStatusAndCreatedAtAfter(
-                eq("checkout_review_request"), eq("checkout_rating_request"), eq("OUTBOUND"), eq("SENT"), any(Instant.class)))
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndTemplateKeyAndDirectionAndStatusAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("checkout_review_request"), eq("checkout_rating_request"), eq("OUTBOUND"), eq("SENT"), any(Instant.class)))
                 .thenReturn(10L);
 
         var summary = find("checkout_review_request");
@@ -59,12 +60,12 @@ class SmsAutomationServiceTest {
     @Test
     @DisplayName("checkout_review_request: tracks both clicks and replies, using the right count queries")
     void checkoutReviewTracksClicksAndReplies() {
-        when(messageRepository.countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
-                eq("checkout_review_request"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(8L);
-        when(messageRepository.countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndClickedAtIsNotNullAndCreatedAtAfter(
-                eq("checkout_review_request"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(5L);
-        when(messageRepository.countByAutomationKeyAndDirectionAndCreatedAtAfter(
-                eq("checkout_review_request"), eq("INBOUND"), any(Instant.class))).thenReturn(8L);
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("checkout_review_request"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(8L);
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndClickedAtIsNotNullAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("checkout_review_request"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(5L);
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("checkout_review_request"), eq("INBOUND"), any(Instant.class))).thenReturn(8L);
 
         var summary = find("checkout_review_request");
 
@@ -78,12 +79,12 @@ class SmsAutomationServiceTest {
     @Test
     @DisplayName("same_day_rebooking_discount: tracks clicks but not replies, sent count is unfiltered by template")
     void sameDayRebookingTracksClicksOnly() {
-        when(messageRepository.countByAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
-                eq("same_day_rebooking_discount"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(20L);
-        when(messageRepository.countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
-                eq("same_day_rebooking_discount"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(20L);
-        when(messageRepository.countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndClickedAtIsNotNullAndCreatedAtAfter(
-                eq("same_day_rebooking_discount"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(6L);
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("same_day_rebooking_discount"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(20L);
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("same_day_rebooking_discount"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(20L);
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndClickedAtIsNotNullAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("same_day_rebooking_discount"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(6L);
 
         var summary = find("same_day_rebooking_discount");
 
@@ -109,23 +110,23 @@ class SmsAutomationServiceTest {
         assertThat(summary.convertedLast30Days()).isEqualTo(0);
 
         org.mockito.Mockito.verify(messageRepository, org.mockito.Mockito.never())
-                .countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
-                        eq("four_hand_request"), anyString(), anyString(), any(Instant.class));
+                .countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
+                        eq(BUSINESS_ID), eq("four_hand_request"), anyString(), anyString(), any(Instant.class));
         org.mockito.Mockito.verify(messageRepository, org.mockito.Mockito.never())
-                .countByAutomationKeyAndDirectionAndCreatedAtAfter(eq("four_hand_request"), anyString(), any(Instant.class));
+                .countByBusinessIdAndAutomationKeyAndDirectionAndCreatedAtAfter(eq(BUSINESS_ID), eq("four_hand_request"), anyString(), any(Instant.class));
     }
 
     @Test
     @DisplayName("repeat_customer_winback: tracks clicks, replies, AND conversion (did the customer actually come back)")
     void repeatCustomerWinbackTracksClicksRepliesAndConversion() {
-        when(messageRepository.countByAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
-                eq("repeat_customer_winback"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(15L);
-        when(messageRepository.countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
-                eq("repeat_customer_winback"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(15L);
-        when(messageRepository.countByAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndClickedAtIsNotNullAndCreatedAtAfter(
-                eq("repeat_customer_winback"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(4L);
-        when(messageRepository.countByAutomationKeyAndDirectionAndCreatedAtAfter(
-                eq("repeat_customer_winback"), eq("INBOUND"), any(Instant.class))).thenReturn(3L);
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("repeat_customer_winback"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(15L);
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("repeat_customer_winback"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(15L);
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndClickedAtIsNotNullAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("repeat_customer_winback"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(4L);
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("repeat_customer_winback"), eq("INBOUND"), any(Instant.class))).thenReturn(3L);
         when(repeatCustomerWinbackSendRepository.countConvertedSince(eq("SENT"), any(Instant.class))).thenReturn(6L);
 
         var summary = find("repeat_customer_winback");

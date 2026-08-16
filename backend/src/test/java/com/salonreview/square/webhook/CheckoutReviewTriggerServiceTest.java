@@ -29,6 +29,7 @@ import static org.mockito.Mockito.*;
 class CheckoutReviewTriggerServiceTest {
 
     private static final String PHONE = "+15551234567";
+    private static final Long BUSINESS_ID = 1L;
 
     private SquareClient square;
     private SmsReplyFlowRepository repository;
@@ -90,8 +91,8 @@ class CheckoutReviewTriggerServiceTest {
         when(square.orderById("order_1")).thenReturn(Optional.of(order("cust_1", null)));
         when(square.customerPhone("cust_1")).thenReturn(PHONE);
         when(square.customerGivenNames(List.of("cust_1"))).thenReturn(Map.of("cust_1", "Jane"));
-        when(messageLogService.hasClickedLinkTarget(PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
-        when(messageLogService.hasClickedLinkTarget(PHONE, CheckoutReviewLinks.FEEDBACK_FORM_TARGET)).thenReturn(true);
+        when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
+        when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.FEEDBACK_FORM_TARGET)).thenReturn(true);
 
         service.handlePaymentUpdated(payment("COMPLETED", "order_1", "cust_1"));
 
@@ -114,8 +115,8 @@ class CheckoutReviewTriggerServiceTest {
         when(square.orderById("order_1")).thenReturn(Optional.of(order("cust_1", null)));
         when(square.customerPhone("cust_1")).thenReturn(PHONE);
         when(square.customerGivenNames(List.of("cust_1"))).thenReturn(Map.of("cust_1", "Jane"));
-        when(messageLogService.hasClickedLinkTarget(PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
-        when(messageLogService.hasClickedLinkTarget(PHONE, CheckoutReviewLinks.FEEDBACK_FORM_TARGET)).thenReturn(false);
+        when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
+        when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.FEEDBACK_FORM_TARGET)).thenReturn(false);
 
         service.handlePaymentUpdated(payment("COMPLETED", "order_1", "cust_1"));
 
