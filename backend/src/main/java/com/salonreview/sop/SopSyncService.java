@@ -60,28 +60,30 @@ public class SopSyncService {
      * SecurityConfig), so a provider-audience SOP has no reader who could ever ask about it;
      * listing it here would just be clutter with nothing to actually sync it for.
      */
-    public List<Sop> list() {
-        return sops.findByStatusOrderByPriorityAscCategoryAscTitleAsc(SopStatus.ACTIVE).stream()
+    public List<Sop> list(Long businessId) {
+        return sops.findByBusinessIdAndStatusOrderByPriorityAscCategoryAscTitleAsc(businessId, SopStatus.ACTIVE).stream()
                 .filter(s -> s.getAudience() != SopAudience.PROVIDER)
                 .toList();
     }
 
-    /** Sync one SOP. Returns the updated SOP (possibly ERROR); empty when it doesn't exist. */
-    public Optional<Sop> syncOne(Long id, String by) {
-        return sops.findById(id).map(s -> doSync(s, by));
+    /** Sync one SOP. Returns the updated SOP (possibly ERROR); empty when it doesn't exist or isn't
+     * this business's. */
+    public Optional<Sop> syncOne(Long id, String by, Long businessId) {
+        return sops.findByIdAndBusinessId(id, businessId).map(s -> doSync(s, by));
     }
 
     /**
-     * Sync every SOP, one at a time (archived/unpublished ones get retired). Rejects a concurrent run
-     * with {@link SyncInProgressException} (→ 409). Returns the refreshed ACTIVE list for the UI.
+     * Sync every SOP in one business, one at a time (archived/unpublished ones get retired). Rejects
+     * a concurrent run with {@link SyncInProgressException} (→ 409). Returns the refreshed ACTIVE
+     * list for the UI.
      */
-    public List<Sop> syncAll(String by) {
+    public List<Sop> syncAll(String by, Long businessId) {
         if (!syncAllRunning.compareAndSet(false, true)) {
             throw new SyncInProgressException();
         }
         try {
-            sops.findAllByOrderByPriorityAscCategoryAscTitleAsc().forEach(s -> doSync(s, by));
-            return list();
+            sops.findAllByBusinessIdOrderByPriorityAscCategoryAscTitleAsc(businessId).forEach(s -> doSync(s, by));
+            return list(businessId);
         } finally {
             syncAllRunning.set(false);
         }

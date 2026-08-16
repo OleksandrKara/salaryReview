@@ -1,6 +1,7 @@
 package com.salonreview.web;
 
 import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.domain.Role;
 import com.salonreview.domain.Sop;
 import com.salonreview.domain.SopAudience;
@@ -27,35 +28,38 @@ public class SopController {
 
     private final SopService sops;
     private final KbAiDraftService aiDraft;
+    private final CurrentBusinessContext currentBusinessContext;
 
-    public SopController(SopService sops, KbAiDraftService aiDraft) {
+    public SopController(SopService sops, KbAiDraftService aiDraft, CurrentBusinessContext currentBusinessContext) {
         this.sops = sops;
         this.aiDraft = aiDraft;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     // ---- reads ----
 
     @GetMapping
     public List<SopDto> list(@AuthenticationPrincipal AppUserPrincipal me) {
-        return sops.list(me.getRole(), me.getUserId()).stream().map(SopController::toDto).toList();
+        return sops.list(me.getRole(), me.getUserId(), currentBusinessContext.id()).stream()
+                .map(SopController::toDto).toList();
     }
 
     /** One SOP, for the shareable-link detail page — same audience rule as {@link #list}. */
     @GetMapping("/{id}")
     public ResponseEntity<SopDto> get(@PathVariable Long id, @AuthenticationPrincipal AppUserPrincipal me) {
-        return sops.getVisible(id, me.getRole(), me.getUserId())
+        return sops.getVisible(id, me.getRole(), me.getUserId(), currentBusinessContext.id())
                 .map(item -> ResponseEntity.ok(toDto(item)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @GetMapping("/{id}/versions")
     public List<SopVersionDto> versions(@PathVariable Long id) {
-        return sops.versionHistory(id).stream().map(SopController::toVersionDto).toList();
+        return sops.versionHistory(id, currentBusinessContext.id()).stream().map(SopController::toVersionDto).toList();
     }
 
     @GetMapping("/{id}/acknowledgment-status")
     public List<RosterDto> roster(@PathVariable Long id) {
-        return sops.roster(id).stream()
+        return sops.roster(id, currentBusinessContext.id()).stream()
                 .map(r -> new RosterDto(r.userId(), r.username(), r.role().name(),
                         r.acknowledged(), r.acknowledgedAt()))
                 .toList();
@@ -70,7 +74,7 @@ public class SopController {
             return ResponseEntity.badRequest().build();
         }
         Sop sop = sops.create(body.title(), body.titleRu(), body.category(), body.audience(), body.priority(),
-                body.body(), body.bodyRu(), me.getUsername());
+                body.body(), body.bodyRu(), me.getUsername(), currentBusinessContext.id());
         return ResponseEntity.ok(toDto(sops.item(sop, null)));
     }
 
@@ -79,7 +83,8 @@ public class SopController {
         if (isBlank(body.title()) || isBlank(body.category()) || body.audience() == null) {
             return ResponseEntity.badRequest().build();
         }
-        return sops.updateMeta(id, body.title(), body.titleRu(), body.category(), body.audience(), body.priority())
+        return sops.updateMeta(id, body.title(), body.titleRu(), body.category(), body.audience(), body.priority(),
+                        currentBusinessContext.id())
                 .map(s -> ResponseEntity.ok(toDto(sops.item(s, null))))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -88,7 +93,7 @@ public class SopController {
     public ResponseEntity<SopVersionDto> addVersion(@PathVariable Long id, @RequestBody VersionRequest body,
                                                     @AuthenticationPrincipal AppUserPrincipal me) {
         return sops.addVersion(id, body.body(), body.bodyRu(), body.changeNote(), body.changeNoteRu(),
-                        me.getUsername())
+                        me.getUsername(), currentBusinessContext.id())
                 .map(v -> ResponseEntity.ok(toVersionDto(v)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -129,7 +134,7 @@ public class SopController {
     @PostMapping("/{id}/versions/{versionId}/publish")
     public ResponseEntity<SopDto> publish(@PathVariable Long id, @PathVariable Long versionId) {
         try {
-            return sops.publish(id, versionId)
+            return sops.publish(id, versionId, currentBusinessContext.id())
                     .map(s -> ResponseEntity.ok(toDto(sops.item(s, null))))
                     .orElseGet(() -> ResponseEntity.notFound().build());
         } catch (SopService.AlreadyPublishedException e) {
@@ -139,14 +144,14 @@ public class SopController {
 
     @PostMapping("/{id}/archive")
     public ResponseEntity<SopDto> archive(@PathVariable Long id) {
-        return sops.setStatus(id, SopStatus.ARCHIVED)
+        return sops.setStatus(id, SopStatus.ARCHIVED, currentBusinessContext.id())
                 .map(s -> ResponseEntity.ok(toDto(sops.item(s, null))))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @PostMapping("/{id}/unarchive")
     public ResponseEntity<SopDto> unarchive(@PathVariable Long id) {
-        return sops.setStatus(id, SopStatus.ACTIVE)
+        return sops.setStatus(id, SopStatus.ACTIVE, currentBusinessContext.id())
                 .map(s -> ResponseEntity.ok(toDto(sops.item(s, null))))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -157,7 +162,7 @@ public class SopController {
     public ResponseEntity<SopDto> acknowledge(@PathVariable Long id,
                                               @AuthenticationPrincipal AppUserPrincipal me) {
         try {
-            return sops.acknowledge(id, me.getUserId(), me.getRole())
+            return sops.acknowledge(id, me.getUserId(), me.getRole(), currentBusinessContext.id())
                     .map(item -> ResponseEntity.ok(toDto(item)))
                     .orElseGet(() -> ResponseEntity.notFound().build());
         } catch (SopService.OutOfAudienceException e) {

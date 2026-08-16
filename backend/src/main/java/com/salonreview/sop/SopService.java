@@ -37,16 +37,13 @@ public class SopService {
     private final SopVersionRepository versions;
     private final SopAcknowledgmentRepository acks;
     private final AppUserRepository users;
-    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
     public SopService(SopRepository sops, SopVersionRepository versions,
-                      SopAcknowledgmentRepository acks, AppUserRepository users,
-                      com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
+                      SopAcknowledgmentRepository acks, AppUserRepository users) {
         this.sops = sops;
         this.versions = versions;
         this.acks = acks;
         this.users = users;
-        this.currentBusinessContext = currentBusinessContext;
     }
 
     // ---------------------------------------------------------------- authoring (owner)
@@ -54,10 +51,10 @@ public class SopService {
     /** Create a SOP and its first draft version (version 1). */
     @Transactional
     public Sop create(String title, String titleRu, String category, SopAudience audience, Integer priority,
-                      String body, String bodyRu, String by) {
+                      String body, String bodyRu, String by, Long businessId) {
         Sop.SopBuilder builder = Sop.builder()
                 .title(title).titleRu(blankToNull(titleRu)).category(category).audience(audience)
-                .status(SopStatus.ACTIVE).createdBy(by);
+                .status(SopStatus.ACTIVE).createdBy(by).businessId(businessId);
         if (priority != null) builder.priority(priority);
         Sop sop = sops.save(builder.build());
         versions.save(SopVersion.builder()
@@ -68,8 +65,9 @@ public class SopService {
 
     /** Update title/category/audience/priority on the SOP itself (not content). Applies immediately. */
     @Transactional
-    public Optional<Sop> updateMeta(Long id, String title, String titleRu, String category, SopAudience audience, Integer priority) {
-        return sops.findById(id).map(s -> {
+    public Optional<Sop> updateMeta(Long id, String title, String titleRu, String category, SopAudience audience,
+                                    Integer priority, Long businessId) {
+        return sops.findByIdAndBusinessId(id, businessId).map(s -> {
             s.setTitle(title);
             s.setTitleRu(blankToNull(titleRu));
             s.setCategory(category);
@@ -86,8 +84,8 @@ public class SopService {
      */
     @Transactional
     public Optional<SopVersion> addVersion(Long id, String body, String bodyRu,
-                                           String changeNote, String changeNoteRu, String by) {
-        if (sops.findById(id).isEmpty()) return Optional.empty();
+                                           String changeNote, String changeNoteRu, String by, Long businessId) {
+        if (sops.findByIdAndBusinessId(id, businessId).isEmpty()) return Optional.empty();
         int next = versions.findTopBySopIdOrderByVersionNumberDesc(id)
                 .map(v -> v.getVersionNumber() + 1).orElse(1);
         return Optional.of(versions.save(SopVersion.builder()
@@ -102,8 +100,8 @@ public class SopService {
 
     /** Publish a draft version: make it live (current) and mark it PUBLISHED. */
     @Transactional
-    public Optional<Sop> publish(Long id, Long versionId) {
-        Optional<Sop> sopOpt = sops.findById(id);
+    public Optional<Sop> publish(Long id, Long versionId, Long businessId) {
+        Optional<Sop> sopOpt = sops.findByIdAndBusinessId(id, businessId);
         if (sopOpt.isEmpty()) return Optional.empty();
         SopVersion v = versions.findById(versionId)
                 .filter(x -> x.getSopId().equals(id))
@@ -120,33 +118,34 @@ public class SopService {
     }
 
     @Transactional
-    public Optional<Sop> setStatus(Long id, SopStatus status) {
-        return sops.findById(id).map(s -> {
+    public Optional<Sop> setStatus(Long id, SopStatus status, Long businessId) {
+        return sops.findByIdAndBusinessId(id, businessId).map(s -> {
             s.setStatus(status);
             return sops.save(s);
         });
     }
 
-    /** Full version history (owner). */
-    public List<SopVersion> versionHistory(Long id) {
+    /** Full version history (owner), empty when the SOP doesn't exist or isn't this business's. */
+    public List<SopVersion> versionHistory(Long id, Long businessId) {
+        if (sops.findByIdAndBusinessId(id, businessId).isEmpty()) return List.of();
         return versions.findBySopIdOrderByVersionNumberAsc(id);
     }
 
     // ---------------------------------------------------------------- reads
 
     /**
-     * SOPs visible to the caller. Owner sees all; managers/providers see only ACTIVE SOPs with a
-     * published version whose audience includes their role, each with the current version content
-     * and the caller's acknowledgment state.
+     * SOPs visible to the caller within one business. Owner sees all; managers/providers see only
+     * ACTIVE SOPs with a published version whose audience includes their role, each with the
+     * current version content and the caller's acknowledgment state.
      */
-    public List<SopListItem> list(Role role, Long userId) {
+    public List<SopListItem> list(Role role, Long userId, Long businessId) {
         if (role == Role.OWNER) {
-            return sops.findAllByOrderByPriorityAscCategoryAscTitleAsc().stream()
+            return sops.findAllByBusinessIdOrderByPriorityAscCategoryAscTitleAsc(businessId).stream()
                     .map(s -> item(s, null))
                     .toList();
         }
         List<SopListItem> out = new ArrayList<>();
-        for (Sop s : sops.findByStatusOrderByPriorityAscCategoryAscTitleAsc(SopStatus.ACTIVE)) {
+        for (Sop s : sops.findByBusinessIdAndStatusOrderByPriorityAscCategoryAscTitleAsc(businessId, SopStatus.ACTIVE)) {
             if (s.getCurrentVersionId() == null || !s.getAudience().includes(role)) continue;
             out.add(item(s, userId));
         }
@@ -156,12 +155,13 @@ public class SopService {
     /**
      * A single SOP for the shareable-link detail page, subject to the exact same visibility rule
      * as {@link #list}: owner sees anything; managers/providers only an ACTIVE SOP with a
-     * published version whose audience includes their role. Empty for "doesn't exist" and "exists
-     * but not visible to you" alike — the detail page shows one generic message either way, same
-     * as {@link com.salonreview.web.KbArticleController#get} does for KB articles.
+     * published version whose audience includes their role. Empty for "doesn't exist", "exists in
+     * another business", and "exists but not visible to you" alike — the detail page shows one
+     * generic message either way, same as {@link com.salonreview.web.KbArticleController#get} does
+     * for KB articles.
      */
-    public Optional<SopListItem> getVisible(Long id, Role role, Long userId) {
-        Optional<Sop> sopOpt = sops.findById(id);
+    public Optional<SopListItem> getVisible(Long id, Role role, Long userId, Long businessId) {
+        Optional<Sop> sopOpt = sops.findByIdAndBusinessId(id, businessId);
         if (sopOpt.isEmpty()) return Optional.empty();
         Sop s = sopOpt.get();
         if (role == Role.OWNER) return Optional.of(item(s, null));
@@ -192,8 +192,8 @@ public class SopService {
      * list item; empty when the SOP doesn't exist.
      */
     @Transactional
-    public Optional<SopListItem> acknowledge(Long id, Long userId, Role role) {
-        Optional<Sop> sopOpt = sops.findById(id);
+    public Optional<SopListItem> acknowledge(Long id, Long userId, Role role, Long businessId) {
+        Optional<Sop> sopOpt = sops.findByIdAndBusinessId(id, businessId);
         if (sopOpt.isEmpty()) return Optional.empty();
         Sop sop = sopOpt.get();
         if (sop.getStatus() != SopStatus.ACTIVE || !sop.getAudience().includes(role)) {
@@ -210,11 +210,11 @@ public class SopService {
     // ---------------------------------------------------------------- roster (owner)
 
     /** Every active user in the SOP's audience with their ack state for the current version. */
-    public List<RosterEntry> roster(Long id) {
-        Sop sop = sops.findById(id).orElse(null);
+    public List<RosterEntry> roster(Long id, Long businessId) {
+        Sop sop = sops.findByIdAndBusinessId(id, businessId).orElse(null);
         if (sop == null) return List.of();
         List<AppUser> audience = users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(
-                currentBusinessContext.id(), sop.getAudience().roles());
+                businessId, sop.getAudience().roles());
         Map<Long, Instant> ackedAt = new HashMap<>();
         if (sop.getCurrentVersionId() != null) {
             for (SopAcknowledgment a : acks.findBySopVersionId(sop.getCurrentVersionId())) {

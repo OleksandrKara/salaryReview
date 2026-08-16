@@ -25,6 +25,8 @@ import static org.mockito.Mockito.when;
 /** Unit tests for {@link SopExportService}: single-file export and the all-SOPs zip. */
 class SopExportServiceTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     private final SopRepository sops = mock(SopRepository.class);
     private final SopVersionRepository versions = mock(SopVersionRepository.class);
     private SopExportService service;
@@ -42,19 +44,19 @@ class SopExportServiceTest {
     @Test
     @DisplayName("exportOne returns null → empty when the SOP has no published version")
     void exportOneUnpublished() {
-        when(sops.findById(1L)).thenReturn(Optional.of(sop(1L, "Cleaning", null, SopStatus.ACTIVE)));
-        assertThat(service.exportOne(1L)).isEmpty();
+        when(sops.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(sop(1L, "Cleaning", null, SopStatus.ACTIVE)));
+        assertThat(service.exportOne(1L, BUSINESS_ID)).isEmpty();
     }
 
     @Test
     @DisplayName("exportOne includes body, and the RU section only when a translation exists")
     void exportOneContent() {
-        when(sops.findById(1L)).thenReturn(Optional.of(sop(1L, "Cleaning Protocol", 10L, SopStatus.ACTIVE)));
+        when(sops.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(sop(1L, "Cleaning Protocol", 10L, SopStatus.ACTIVE)));
         when(versions.findById(10L)).thenReturn(Optional.of(
                 SopVersion.builder().id(10L).sopId(1L).versionNumber(2).body("Wipe down every station.")
                         .bodyRu("Протрите каждую станцию.").build()));
 
-        SopExportService.Export export = service.exportOne(1L).orElseThrow();
+        SopExportService.Export export = service.exportOne(1L, BUSINESS_ID).orElseThrow();
         assertThat(export.filename()).isEqualTo("cleaning-protocol-1.md");
         assertThat(export.markdown()).contains("# Cleaning Protocol", "Wipe down every station.",
                 "Russian translation", "Протрите каждую станцию.");
@@ -63,11 +65,11 @@ class SopExportServiceTest {
     @Test
     @DisplayName("exportOne omits the RU section when there's no translation")
     void exportOneNoTranslation() {
-        when(sops.findById(1L)).thenReturn(Optional.of(sop(1L, "Cleaning", 10L, SopStatus.ACTIVE)));
+        when(sops.findByIdAndBusinessId(1L, BUSINESS_ID)).thenReturn(Optional.of(sop(1L, "Cleaning", 10L, SopStatus.ACTIVE)));
         when(versions.findById(10L)).thenReturn(Optional.of(
                 SopVersion.builder().id(10L).sopId(1L).versionNumber(1).body("Body text.").build()));
 
-        SopExportService.Export export = service.exportOne(1L).orElseThrow();
+        SopExportService.Export export = service.exportOne(1L, BUSINESS_ID).orElseThrow();
         assertThat(export.markdown()).doesNotContain("Russian translation");
     }
 
@@ -76,12 +78,12 @@ class SopExportServiceTest {
     void exportAllSkipsUnpublished() throws IOException {
         Sop published = sop(1L, "Cleaning", 10L, SopStatus.ACTIVE);
         Sop draftOnly = sop(2L, "Draft SOP", null, SopStatus.ACTIVE);
-        when(sops.findByStatusOrderByPriorityAscCategoryAscTitleAsc(SopStatus.ACTIVE))
+        when(sops.findByBusinessIdAndStatusOrderByPriorityAscCategoryAscTitleAsc(BUSINESS_ID, SopStatus.ACTIVE))
                 .thenReturn(List.of(published, draftOnly));
         when(versions.findById(10L)).thenReturn(Optional.of(
                 SopVersion.builder().id(10L).sopId(1L).versionNumber(1).body("Body text.").build()));
 
-        byte[] zip = service.exportAllAsZip();
+        byte[] zip = service.exportAllAsZip(BUSINESS_ID);
 
         List<String> entries = new java.util.ArrayList<>();
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zip))) {

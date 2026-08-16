@@ -38,6 +38,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class SopControllerTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     private SopService sops;
     private MockMvc mvc;
     private final ObjectMapper json = new ObjectMapper();
@@ -45,7 +47,11 @@ class SopControllerTest {
     @BeforeEach
     void setUp() {
         sops = mock(SopService.class);
-        mvc = MockMvcBuilders.standaloneSetup(new SopController(sops, mock(com.salonreview.kb.KbAiDraftService.class)))
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(BUSINESS_ID);
+        mvc = MockMvcBuilders.standaloneSetup(
+                        new SopController(sops, mock(com.salonreview.kb.KbAiDraftService.class), currentBusinessContext))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
 
@@ -73,7 +79,7 @@ class SopControllerTest {
     @Test
     @DisplayName("list returns 200 with mapped SOPs")
     void listSucceeds() throws Exception {
-        when(sops.list(Role.OWNER, 1L)).thenReturn(List.of(item()));
+        when(sops.list(Role.OWNER, 1L, BUSINESS_ID)).thenReturn(List.of(item()));
         mvc.perform(get("/api/sops"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].title").value("Cleaning"))
@@ -84,7 +90,7 @@ class SopControllerTest {
     @Test
     @DisplayName("get returns 200 with the mapped SOP — the shareable-link detail page's request")
     void getSucceeds() throws Exception {
-        when(sops.getVisible(1L, Role.OWNER, 1L)).thenReturn(java.util.Optional.of(item()));
+        when(sops.getVisible(1L, Role.OWNER, 1L, BUSINESS_ID)).thenReturn(java.util.Optional.of(item()));
         mvc.perform(get("/api/sops/1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.title").value("Cleaning"));
@@ -93,7 +99,7 @@ class SopControllerTest {
     @Test
     @DisplayName("get 404s when the SOP doesn't exist or isn't visible to the caller's role")
     void getNotFound() throws Exception {
-        when(sops.getVisible(1L, Role.OWNER, 1L)).thenReturn(java.util.Optional.empty());
+        when(sops.getVisible(1L, Role.OWNER, 1L, BUSINESS_ID)).thenReturn(java.util.Optional.empty());
         mvc.perform(get("/api/sops/1")).andExpect(status().isNotFound());
     }
 
@@ -108,28 +114,28 @@ class SopControllerTest {
     @Test
     @DisplayName("re-publishing a published version → 409")
     void publishConflict() throws Exception {
-        when(sops.publish(1L, 100L)).thenThrow(new SopService.AlreadyPublishedException());
+        when(sops.publish(1L, 100L, BUSINESS_ID)).thenThrow(new SopService.AlreadyPublishedException());
         mvc.perform(post("/api/sops/1/versions/100/publish")).andExpect(status().isConflict());
     }
 
     @Test
     @DisplayName("out-of-audience acknowledge → 403")
     void acknowledgeForbidden() throws Exception {
-        when(sops.acknowledge(anyLong(), any(), any())).thenThrow(new SopService.OutOfAudienceException());
+        when(sops.acknowledge(anyLong(), any(), any(), any())).thenThrow(new SopService.OutOfAudienceException());
         mvc.perform(post("/api/sops/1/acknowledge")).andExpect(status().isForbidden());
     }
 
     @Test
     @DisplayName("acknowledge with no published version → 422")
     void acknowledgeUnprocessable() throws Exception {
-        when(sops.acknowledge(anyLong(), any(), any())).thenThrow(new SopService.NothingToAcknowledgeException());
+        when(sops.acknowledge(anyLong(), any(), any(), any())).thenThrow(new SopService.NothingToAcknowledgeException());
         mvc.perform(post("/api/sops/1/acknowledge")).andExpect(status().isUnprocessableEntity());
     }
 
     @Test
     @DisplayName("roster returns 200")
     void rosterSucceeds() throws Exception {
-        when(sops.roster(1L)).thenReturn(List.of(
+        when(sops.roster(1L, BUSINESS_ID)).thenReturn(List.of(
                 new SopService.RosterEntry(10L, "prov", Role.PROVIDER, true, java.time.Instant.now())));
         mvc.perform(get("/api/sops/1/acknowledgment-status"))
                 .andExpect(status().isOk())
