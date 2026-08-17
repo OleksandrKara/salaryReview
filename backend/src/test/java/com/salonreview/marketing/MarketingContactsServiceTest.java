@@ -233,6 +233,22 @@ class MarketingContactsServiceTest {
     }
 
     @Test
+    @DisplayName("2026-08-17 live incident: resolveDisplayNames returns an empty map, not a thrown exception, when Square "
+            + "fails — this is the exact call TwilioInboundSmsController's Telegram-alert path makes with no try/catch of "
+            + "its own, relying entirely on this method's own \"never throws\" contract")
+    void resolveDisplayNamesSurvivesSquareFailure() {
+        when(repository.findNamesByPhoneNumbers(any())).thenReturn(List.of(
+                new MarketingContactsRepository.PhoneName("(858) 555-0100", "8585550100", "Jane", "SQCUST123", true)));
+        when(square.customerGivenNames(any()))
+                .thenThrow(new org.springframework.web.client.RestClientException("Square: 429 RATE_LIMITED"));
+
+        Map<String, MarketingContactsService.ContactNameInfo> result =
+                service.resolveDisplayNames(List.of("(858) 555-0100"));
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
     @DisplayName("submissions come from our own DB regardless of whether a Square customer is known")
     void submissionsAlwaysPopulated() {
         UUID id = UUID.randomUUID();

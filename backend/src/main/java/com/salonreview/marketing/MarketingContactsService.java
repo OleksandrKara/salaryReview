@@ -30,6 +30,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClientException;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -145,8 +146,8 @@ public class MarketingContactsService {
             Optional<Contact> tracked = repository.findByPhoneNumber(phoneNumber)
                     .map(r -> toContact(r, visitCountsByCustomerId()));
             return tracked.isPresent() ? tracked : contactFromLivePhoneLookup(phoneNumber);
-        } catch (DataAccessException ex) {
-            log.warn("Marketing schema unavailable while resolving contact for phone {}", phoneNumber, ex);
+        } catch (DataAccessException | RestClientException ex) {
+            log.warn("Marketing schema or Square unavailable while resolving contact for phone {}", phoneNumber, ex);
             return Optional.empty();
         }
     }
@@ -198,8 +199,8 @@ public class MarketingContactsService {
                     .filter(r -> squareCustomerId.equals(resolveSquareCustomerId(r)))
                     .findFirst()
                     .map(r -> toContact(r, visitCounts));
-        } catch (DataAccessException ex) {
-            log.warn("Marketing schema unavailable while resolving contact for customer {}", squareCustomerId, ex);
+        } catch (DataAccessException | RestClientException ex) {
+            log.warn("Marketing schema or Square unavailable while resolving contact for customer {}", squareCustomerId, ex);
             return Optional.empty();
         }
     }
@@ -292,8 +293,8 @@ public class MarketingContactsService {
                         vip, visitCount == null ? null : visitCount.intValue()));
             }
             return result;
-        } catch (DataAccessException ex) {
-            log.warn("Marketing schema unavailable while resolving display names for {} phone numbers",
+        } catch (DataAccessException | RestClientException ex) {
+            log.warn("Marketing schema or Square unavailable while resolving display names for {} phone numbers",
                     phoneNumbers.size(), ex);
             return Map.of();
         }
@@ -338,8 +339,8 @@ public class MarketingContactsService {
                     .map(r -> currentBusinessContext.runAsAndGet(businessId, () -> toContact(r, visitCounts)))
                     .collect(Collectors.toList());
             return new MarketingContactDto(true, contacts);
-        } catch (DataAccessException ex) {
-            log.warn("Marketing schema unavailable while building contacts list", ex);
+        } catch (DataAccessException | RestClientException ex) {
+            log.warn("Marketing schema or Square unavailable while building contacts list", ex);
             return MarketingContactDto.unavailable();
         }
     }
