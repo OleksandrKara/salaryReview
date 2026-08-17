@@ -1,5 +1,6 @@
 package com.salonreview.sms;
 
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.config.TwilioInboundProperties;
 import com.salonreview.domain.BlockedNumber;
 import com.salonreview.domain.SmsMessage;
@@ -59,13 +60,14 @@ public class TwilioInboundSmsController {
     private final SmsReactionService reactionService;
     private final BusinessRepository businesses;
     private final TwilioSmsConfigRepository twilioConfigs;
+    private final CurrentBusinessContext currentBusinessContext;
 
     public TwilioInboundSmsController(TwilioInboundProperties properties, SmsMessageLogService messageLogService,
                                        SmsReplyFlowRepository replyFlowRepository, CheckoutReviewReplyService replyService,
                                        TelegramNotificationService telegramService, MarketingContactsService contactsService,
                                        BlockedNumberRepository blockedNumberRepository, SmsMediaService mediaService,
                                        SmsReactionService reactionService, BusinessRepository businesses,
-                                       TwilioSmsConfigRepository twilioConfigs) {
+                                       TwilioSmsConfigRepository twilioConfigs, CurrentBusinessContext currentBusinessContext) {
         this.properties = properties;
         this.messageLogService = messageLogService;
         this.replyFlowRepository = replyFlowRepository;
@@ -77,6 +79,7 @@ public class TwilioInboundSmsController {
         this.reactionService = reactionService;
         this.businesses = businesses;
         this.twilioConfigs = twilioConfigs;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     @PostMapping(value = "/api/public/sms/inbound", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
@@ -154,7 +157,16 @@ public class TwilioInboundSmsController {
         // the message itself is still logged above (so it's visible if anyone opens that thread),
         // just without pinging Telegram for a number already decided not worth engaging with.
         if (!blockedNumberRepository.existsById(normalizedFrom)) {
-            String customerName = resolveCustomerName(from);
+            // 2026-08-16 live incident #2: resolveCustomerName -> MarketingContactsService
+            // .resolveDisplayNames -> linkEngagementFor now reads CurrentBusinessContext.id()
+            // (PR #381), but this webhook has no session to have populated it — every call here
+            // threw IllegalStateException, which propagated uncaught and killed the rest of this
+            // handler (the Telegram alert below, AND the branch-reply/flow-completion logic
+            // further down — this was the actual root cause of the "5 reply never followed up on"
+            // incident from earlier tonight too, not just the missing Telegram alert). businessId
+            // is already resolved above; populate the context explicitly for this one call, same
+            // established pattern every other background/webhook caller in this codebase uses.
+            String customerName = currentBusinessContext.runAsAndGet(businessId, () -> resolveCustomerName(from));
             telegramService.sendInboundSmsAlert(from, customerName, body, logged.getAutomationKey());
         }
 
