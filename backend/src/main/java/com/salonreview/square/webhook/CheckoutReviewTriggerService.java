@@ -65,9 +65,18 @@ public class CheckoutReviewTriggerService {
                 log.warn("Checkout-review trigger: order {} not found for payment {}", payment.orderId(), payment.id());
                 return;
             }
-            if (SquareClient.isBookingLinked(order.get())) {
-                return; // online-booking payment — not an in-salon checkout, see design.md D2
-            }
+            // 2026-08-17 live incident: design.md D2 originally excluded any order with a
+            // fulfillments[].type == "BOOKING" here, on the assumption that meant "an online
+            // prepaid booking, not an in-salon checkout" (see the removed SquareClient
+            // .isBookingLinked). Checked against 99 real completed orders from this account's own
+            // Square history: 27 of them were BOOKING-linked AND source.name == "Point of Sale" —
+            // i.e. an ordinary in-salon checkout for a customer who simply had an appointment on
+            // the books, which is true of nearly every visit here. Zero orders in that sample had
+            // any source value resembling an actual online-prepay flow. The filter was silently
+            // discarding roughly a third of all real in-salon checkouts since this automation
+            // launched. Removed rather than replaced with a source.name-based filter, since there's
+            // no real example in this account's data of what actually needs excluding — see this
+            // commit's message for the full investigation.
 
             String customerId = order.get().customerId();
             if (customerId == null) {
