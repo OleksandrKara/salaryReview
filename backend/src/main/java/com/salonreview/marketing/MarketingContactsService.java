@@ -407,10 +407,10 @@ public class MarketingContactsService {
         return fresh;
     }
 
-    /** Backs the global "Sync now" button (see SquareSyncController) — so forcing a fresh Square
-     * pull also busts this service's own cached contacts list. */
+    /** Backs the "Sync now" button (see SquareSyncController) — busts only this business's own
+     * cached contacts list, not every business's. */
     public void invalidateCache() {
-        cache.invalidateAll();
+        cache.invalidateWhere(k -> k.equals(CONTACTS_CACHE_KEY_PREFIX + currentBusinessContext.id()));
     }
 
     /**

@@ -109,10 +109,11 @@ public class OwnerOverviewService {
         return cache.get(key, CACHE_TTL, () -> computeOverview(fromYear, fromMonth, toYear, toMonth));
     }
 
-    /** Drops every cached range — backs the global "Sync now" button (see SquareSyncController)
-     * so an owner can force a fresh Square pull without waiting out the 30-day TTL. */
+    /** Drops only this business's own cached ranges — backs the "Sync now" button (see
+     * SquareSyncController) so an owner can force a fresh Square pull without waiting out the
+     * 30-day TTL, without also forcing every other business's already-fresh cache to recompute. */
     public void invalidateCache() {
-        cache.invalidateAll();
+        cache.invalidateWhere(k -> k.startsWith(currentBusinessContext.id() + ":"));
     }
 
     private OwnerOverviewDto computeOverview(int fromYear, int fromMonth, int toYear, int toMonth) {

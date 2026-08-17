@@ -38,6 +38,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -699,5 +700,38 @@ class MarketingContactsServiceTest {
                 service.followUpAppointments("mani", null, java.util.Set.of(), java.util.Set.of());
 
         assertThat(appointments).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Phase 3.8/3.9: invalidateCache() drops only the calling business's own cached contacts, "
+            + "never another business's — same TtlCache instance serves every business's requests")
+    void invalidateCacheOnlyDropsCallingBusinesssOwnEntry() {
+        com.salonreview.config.CurrentBusinessContext ctx =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        com.salonreview.square.SquareClientProvider clientProvider =
+                mock(com.salonreview.square.SquareClientProvider.class);
+        when(clientProvider.forBusiness(any())).thenReturn(square);
+        MarketingContactsService twoTenantService = new MarketingContactsService(repository, squareLinks,
+                clientProvider, aggregator, salonConfig, ctx, syncStatus,
+                new RebookingProperties(), smsMessageLogService, providerVisits, 4);
+        when(salonConfig.findByBusinessId(any())).thenReturn(Optional.of(SalonConfig.builder()
+                .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
+        when(providerVisits.findAllByBusinessIdOrderByServiceDateAsc(any())).thenReturn(List.of());
+        when(repository.listAll()).thenReturn(List.of());
+
+        when(ctx.id()).thenReturn(1L);
+        twoTenantService.contacts();
+        when(ctx.id()).thenReturn(2L);
+        twoTenantService.contacts();
+        verify(repository, times(2)).listAll(); // both businesses computed once each, now cached
+
+        when(ctx.id()).thenReturn(1L);
+        twoTenantService.invalidateCache(); // only business 1's entry should drop
+
+        twoTenantService.contacts(); // business 1: cache miss -> recomputes (3rd call)
+        when(ctx.id()).thenReturn(2L);
+        twoTenantService.contacts(); // business 2: still cached -> must NOT recompute
+
+        verify(repository, times(3)).listAll();
     }
 }

@@ -17,6 +17,10 @@ import org.springframework.web.bind.annotation.RestController;
  * (see docs/CACHING.md) — also busts those, so this button means "everything fresh now", not just
  * SquareClient's own layer. Any signed-in user can trigger it (it only busts read caches); the
  * settlement/marketing views then re-fetch and the "synced" timestamp updates.
+ *
+ * <p>Phase 3.8: every cache busted here is scoped to {@code currentBusinessContext.id()} alone —
+ * one business's owner clicking sync must never force every other business's already-fresh cache
+ * to also recompute (see each service's own {@code invalidateCache()} doc for its own key format).
  */
 @RestController
 @RequestMapping("/api/sync")
