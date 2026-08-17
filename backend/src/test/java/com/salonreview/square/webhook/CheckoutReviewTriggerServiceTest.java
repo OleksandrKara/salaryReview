@@ -21,8 +21,14 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
- * The in-salon-checkout vs booking-linked-order filter — see openspec/changes/sms-automations-hub
- * design.md D2, confirmed against real Square payload shapes before this was written (tasks.md 1.1/1.2).
+ * 2026-08-17: this class used to also filter out any order with a {@code BOOKING}-type
+ * fulfillment, on design.md D2's assumption that meant "an online prepaid booking, not an
+ * in-salon checkout." Checked against 99 real completed orders from this account's own Square
+ * history: 27 were BOOKING-linked AND {@code source.name == "Point of Sale"} — an ordinary
+ * in-salon checkout for a customer who simply had an appointment on the books, true of nearly
+ * every visit here. The filter was silently discarding roughly a third of all real checkouts
+ * since this automation launched — removed, see {@link CheckoutReviewTriggerService
+ * #handlePaymentUpdated}'s own comment.
  */
 class CheckoutReviewTriggerServiceTest {
 
@@ -121,16 +127,20 @@ class CheckoutReviewTriggerServiceTest {
     }
 
     @Test
-    @DisplayName("booking-linked order (fulfillments contains BOOKING) → no flow row created")
-    void bookingLinkedOrderSkipped() {
+    @DisplayName("2026-08-17: BOOKING-linked order (customer had an appointment, paid in-salon) still enqueues a flow — "
+            + "this used to be silently skipped, discarding ~1/3 of real checkouts, see this class's own doc comment")
+    void bookingLinkedInSalonOrderStillEnqueuesFlow() {
         when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
         when(square.orderById("order_1"))
-                .thenReturn(Optional.of(order("cust_1", List.of(new SquareClient.Fulfillment("BOOKING", "PROPOSED")))));
+                .thenReturn(Optional.of(order("cust_1", List.of(new SquareClient.Fulfillment("BOOKING", "COMPLETED")))));
+        when(square.customerPhone("cust_1")).thenReturn(PHONE);
+        when(square.customerGivenNames(List.of("cust_1"))).thenReturn(Map.of("cust_1", "Jane"));
 
         service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
 
-        verify(repository, never()).save(any());
-        verify(square, never()).customerPhone(any()); // no phone lookup should even happen
+        var captor = org.mockito.ArgumentCaptor.forClass(SmsReplyFlow.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().getState()).isEqualTo(SmsReplyFlow.STATE_AWAITING_SEND);
     }
 
     @Test

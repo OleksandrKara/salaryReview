@@ -675,17 +675,6 @@ public class SquareClient {
         return cash.compareTo(other) > 0;
     }
 
-    /** Whether an order was placed through an online booking (has a {@code BOOKING}-type
-     * fulfillment) rather than rung up in-salon at the register — confirmed against real Square
-     * data: a booking-driven order carries {@code fulfillments: [{type: "BOOKING", ...}]}, while a
-     * walk-in POS sale has no {@code fulfillments} array at all (see
-     * openspec/changes/sms-automations-hub/design.md D2). Used by the checkout-review automation to
-     * fire only for in-salon checkouts. */
-    public static boolean isBookingLinked(Order o) {
-        return o != null && o.fulfillments() != null
-                && o.fulfillments().stream().anyMatch(f -> "BOOKING".equals(f.type()));
-    }
-
     /** A single order by id, uncached — used by the checkout-review automation's Square webhook
      * handler, which needs a fresh read at the moment of a real payment event rather than whatever
      * a TTL cache happened to have. Empty on any failure (never throws — the automation silently
@@ -879,7 +868,9 @@ public class SquareClient {
         }
     }
 
-    /** Only present on an order created via an online booking — see {@link #isBookingLinked}. */
+    /** Present on any order linked to a Square Appointment — regardless of payment channel; not a
+     * reliable online-vs-in-salon signal (see the 2026-08-17 note on {@link
+     * com.salonreview.square.webhook.CheckoutReviewTriggerService#handlePaymentUpdated}). */
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Fulfillment(String type, String state) {}
