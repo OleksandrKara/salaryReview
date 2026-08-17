@@ -1,5 +1,6 @@
 package com.salonreview.sms;
 
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.config.TwilioInboundProperties;
 import com.salonreview.domain.BlockedNumber;
 import com.salonreview.domain.SmsMessage;
@@ -56,6 +57,7 @@ class TwilioInboundSmsControllerTest {
     private SmsReactionService reactionService;
     private BusinessRepository businesses;
     private TwilioSmsConfigRepository twilioConfigs;
+    private CurrentBusinessContext currentBusinessContext;
     private MockMvc mvc;
 
     @BeforeEach
@@ -90,9 +92,15 @@ class TwilioInboundSmsControllerTest {
                 .thenAnswer(inv -> SmsMessage.builder().id(99L).direction("INBOUND")
                         .automationKey(inv.getArgument(3)).build());
 
+        // Real (not mocked) — a simple ThreadLocal wrapper with no side effects worth mocking, and
+        // using the real thing is what actually proves runAsAndGet correctly populates the context
+        // around the resolveCustomerName call below, rather than just compiling.
+        currentBusinessContext = new CurrentBusinessContext();
+
         TwilioInboundSmsController controller = new TwilioInboundSmsController(
                 properties, messageLogService, replyFlowRepository, replyService, telegramService, contactsService,
-                blockedNumberRepository, mediaService, reactionService, businesses, twilioConfigs);
+                blockedNumberRepository, mediaService, reactionService, businesses, twilioConfigs,
+                currentBusinessContext);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -297,6 +305,34 @@ class TwilioInboundSmsControllerTest {
                 .thenReturn(Optional.empty());
         when(contactsService.resolveDisplayNames(java.util.List.of(PHONE))).thenReturn(java.util.Map.of(
                 PHONE, new MarketingContactsService.ContactNameInfo("Jane", "Doe", false, null, false, null)));
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        verify(telegramService).sendInboundSmsAlert(PHONE, "Jane Doe", p.get("Body"), null);
+    }
+
+    @Test
+    @DisplayName("2026-08-16 live incident: resolveCustomerName runs with CurrentBusinessContext "
+            + "populated, not just compiling with a fully-mocked contactsService that can't catch this")
+    void resolveCustomerNameRunsWithBusinessContextPopulated() throws Exception {
+        var p = params(PHONE, "hello?");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.empty());
+        // Simulates what the real MarketingContactsService.resolveDisplayNames does internally
+        // (reads CurrentBusinessContext.id()) — a fully-mocked contactsService, as every other
+        // test in this file uses, can never catch a bug in that real interaction. This stub
+        // throws exactly like the real thing did in production unless the context is populated.
+        when(contactsService.resolveDisplayNames(java.util.List.of(PHONE))).thenAnswer(inv -> {
+            Long resolvedBusinessId = currentBusinessContext.id(); // throws IllegalStateException if unpopulated
+            assertThat(resolvedBusinessId).isEqualTo(BUSINESS_ID);
+            return java.util.Map.of(PHONE,
+                    new MarketingContactsService.ContactNameInfo("Jane", "Doe", false, null, false, null));
+        });
 
         mvc.perform(post("/api/public/sms/inbound")
                         .contentType(MediaType.APPLICATION_FORM_URLENCODED)
