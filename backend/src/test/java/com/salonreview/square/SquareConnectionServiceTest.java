@@ -134,4 +134,92 @@ class SquareConnectionServiceTest {
         verify(cipher).decrypt("enc:old-token");
         verify(cipher).encrypt("old-token"); // re-encrypted (same plaintext) rather than left untouched
     }
+
+    @Test
+    @DisplayName("getWebhookSignatureKey: no square_connection row at all -> empty")
+    void getWebhookSignatureKeyEmptyWhenNoConnection() {
+        when(repo.findByBusinessId(1L)).thenReturn(Optional.empty());
+
+        assertThat(service.getWebhookSignatureKey(1L)).isEmpty();
+        verifyNoInteractions(cipher); // no decrypt attempt
+    }
+
+    @Test
+    @DisplayName("getWebhookSignatureKey: connection exists but no webhook key configured -> empty")
+    void getWebhookSignatureKeyEmptyWhenUnconfigured() {
+        SquareConnection existing = SquareConnection.builder().id(9L).businessId(1L)
+                .accessTokenEncrypted("enc:tok").webhookSignatureKeyEncrypted(null).build();
+        when(repo.findByBusinessId(1L)).thenReturn(Optional.of(existing));
+
+        assertThat(service.getWebhookSignatureKey(1L)).isEmpty();
+        verify(cipher, never()).decrypt(any());
+    }
+
+    @Test
+    @DisplayName("getWebhookSignatureKey: real key configured -> decrypts and returns it")
+    void getWebhookSignatureKeyDecryptsWhenConfigured() {
+        SquareConnection existing = SquareConnection.builder().id(9L).businessId(1L)
+                .accessTokenEncrypted("enc:tok").webhookSignatureKeyEncrypted("enc:whsec_real123").build();
+        when(repo.findByBusinessId(1L)).thenReturn(Optional.of(existing));
+        when(cipher.decrypt("enc:whsec_real123")).thenReturn("whsec_real123");
+
+        assertThat(service.getWebhookSignatureKey(1L)).contains("whsec_real123");
+    }
+
+    @Test
+    @DisplayName("updateWebhookSignatureKey: no square_connection for the business -> fails loudly, nothing saved")
+    void updateWebhookSignatureKeyRequiresExistingConnection() {
+        when(repo.findByBusinessId(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.updateWebhookSignatureKey(1L, "whsec_new"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Connect Square");
+
+        verify(repo, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateWebhookSignatureKey: null/blank key is a no-op, keeps the existing key unchanged")
+    void updateWebhookSignatureKeyBlankIsNoOp() {
+        SquareConnection existing = SquareConnection.builder().id(9L).businessId(1L)
+                .accessTokenEncrypted("enc:tok").webhookSignatureKeyEncrypted("enc:whsec_old").build();
+        when(repo.findByBusinessId(1L)).thenReturn(Optional.of(existing));
+
+        SquareConnection resultNull = service.updateWebhookSignatureKey(1L, null);
+        SquareConnection resultBlank = service.updateWebhookSignatureKey(1L, "   ");
+
+        assertThat(resultNull.getWebhookSignatureKeyEncrypted()).isEqualTo("enc:whsec_old");
+        assertThat(resultBlank.getWebhookSignatureKeyEncrypted()).isEqualTo("enc:whsec_old");
+        verify(repo, never()).save(any());
+        verify(cipher, never()).encrypt(any());
+    }
+
+    @Test
+    @DisplayName("updateWebhookSignatureKey: real key provided -> encrypts and saves it")
+    void updateWebhookSignatureKeyEncryptsAndSaves() {
+        SquareConnection existing = SquareConnection.builder().id(9L).businessId(1L)
+                .accessTokenEncrypted("enc:tok").webhookSignatureKeyEncrypted(null).build();
+        when(repo.findByBusinessId(1L)).thenReturn(Optional.of(existing));
+
+        SquareConnection saved = service.updateWebhookSignatureKey(1L, "whsec_brand_new");
+
+        assertThat(saved.getWebhookSignatureKeyEncrypted()).isEqualTo("enc:whsec_brand_new");
+        verify(repo).save(existing);
+    }
+
+    @Test
+    @DisplayName("maskedWebhookSignatureKey: null connection or no key configured -> null; real key -> masked")
+    void maskedWebhookSignatureKeyMasksOnlyWhenConfigured() {
+        assertThat(service.maskedWebhookSignatureKey(null)).isNull();
+
+        SquareConnection noKey = SquareConnection.builder().id(9L).businessId(1L)
+                .accessTokenEncrypted("enc:tok").webhookSignatureKeyEncrypted(null).build();
+        assertThat(service.maskedWebhookSignatureKey(noKey)).isNull();
+
+        SquareConnection withKey = SquareConnection.builder().id(9L).businessId(1L)
+                .accessTokenEncrypted("enc:tok").webhookSignatureKeyEncrypted("enc:whsec_abcd1234").build();
+        when(cipher.decrypt("enc:whsec_abcd1234")).thenReturn("whsec_abcd1234");
+
+        assertThat(service.maskedWebhookSignatureKey(withKey)).isEqualTo("••••1234");
+    }
 }

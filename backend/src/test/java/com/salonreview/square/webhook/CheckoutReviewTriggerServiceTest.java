@@ -1,8 +1,6 @@
 package com.salonreview.square.webhook;
 
-import com.salonreview.domain.Business;
 import com.salonreview.domain.SmsReplyFlow;
-import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SmsReplyFlowRepository;
 import com.salonreview.sms.CheckoutReviewLinks;
 import com.salonreview.sms.SameDayRebookingTriggerService;
@@ -41,14 +39,11 @@ class CheckoutReviewTriggerServiceTest {
     void setUp() {
         square = mock(SquareClient.class);
         SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
-        BusinessRepository businesses = mock(BusinessRepository.class);
-        when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
-                .timezone("UTC").active(true).build());
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         repository = mock(SmsReplyFlowRepository.class);
         rebookingTrigger = mock(SameDayRebookingTriggerService.class);
         messageLogService = mock(SmsMessageLogService.class);
-        service = new CheckoutReviewTriggerService(squareClientProvider, businesses, repository, rebookingTrigger,
+        service = new CheckoutReviewTriggerService(squareClientProvider, repository, rebookingTrigger,
                 messageLogService);
     }
 
@@ -69,7 +64,7 @@ class CheckoutReviewTriggerServiceTest {
         when(square.customerPhone("cust_1")).thenReturn(PHONE);
         when(square.customerGivenNames(List.of("cust_1"))).thenReturn(Map.of("cust_1", "Jane"));
 
-        service.handlePaymentUpdated(payment("COMPLETED", "order_1", "cust_1"));
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
 
         var captor = org.mockito.ArgumentCaptor.forClass(SmsReplyFlow.class);
         verify(repository).save(captor.capture());
@@ -94,7 +89,7 @@ class CheckoutReviewTriggerServiceTest {
         when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
         when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.FEEDBACK_FORM_TARGET)).thenReturn(true);
 
-        service.handlePaymentUpdated(payment("COMPLETED", "order_1", "cust_1"));
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
 
         var captor = org.mockito.ArgumentCaptor.forClass(SmsReplyFlow.class);
         // The row is still saved (not skipped outright) so a later Square redelivery of this same
@@ -118,7 +113,7 @@ class CheckoutReviewTriggerServiceTest {
         when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
         when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.FEEDBACK_FORM_TARGET)).thenReturn(false);
 
-        service.handlePaymentUpdated(payment("COMPLETED", "order_1", "cust_1"));
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
 
         var captor = org.mockito.ArgumentCaptor.forClass(SmsReplyFlow.class);
         verify(repository).save(captor.capture());
@@ -132,7 +127,7 @@ class CheckoutReviewTriggerServiceTest {
         when(square.orderById("order_1"))
                 .thenReturn(Optional.of(order("cust_1", List.of(new SquareClient.Fulfillment("BOOKING", "PROPOSED")))));
 
-        service.handlePaymentUpdated(payment("COMPLETED", "order_1", "cust_1"));
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
 
         verify(repository, never()).save(any());
         verify(square, never()).customerPhone(any()); // no phone lookup should even happen
@@ -145,7 +140,7 @@ class CheckoutReviewTriggerServiceTest {
         when(square.orderById("order_1")).thenReturn(Optional.of(order("cust_1", null)));
         when(square.customerPhone("cust_1")).thenReturn(null);
 
-        service.handlePaymentUpdated(payment("COMPLETED", "order_1", "cust_1"));
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
 
         verify(repository, never()).save(any());
     }
@@ -156,7 +151,7 @@ class CheckoutReviewTriggerServiceTest {
         when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
         when(square.orderById("order_1")).thenReturn(Optional.of(order(null, null)));
 
-        service.handlePaymentUpdated(payment("COMPLETED", "order_1", null));
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", null));
 
         verify(repository, never()).save(any());
         verify(square, never()).customerPhone(any());
@@ -165,7 +160,7 @@ class CheckoutReviewTriggerServiceTest {
     @Test
     @DisplayName("payment not COMPLETED → ignored")
     void nonCompletedPaymentIgnored() {
-        service.handlePaymentUpdated(payment("PENDING", "order_1", "cust_1"));
+        service.handlePaymentUpdated(BUSINESS_ID, payment("PENDING", "order_1", "cust_1"));
 
         verifyNoInteractions(square, repository);
     }
@@ -175,7 +170,7 @@ class CheckoutReviewTriggerServiceTest {
     void duplicateEventIsIdempotent() {
         when(repository.existsBySquarePaymentId("pay_1")).thenReturn(true);
 
-        service.handlePaymentUpdated(payment("COMPLETED", "order_1", "cust_1"));
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
 
         verify(repository, never()).save(any());
         verifyNoInteractions(square);
@@ -187,7 +182,7 @@ class CheckoutReviewTriggerServiceTest {
         when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
         when(square.orderById("order_1")).thenReturn(Optional.empty());
 
-        service.handlePaymentUpdated(payment("COMPLETED", "order_1", "cust_1"));
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
 
         verify(repository, never()).save(any());
     }
@@ -197,7 +192,7 @@ class CheckoutReviewTriggerServiceTest {
     void exceptionNeverPropagates() {
         when(repository.existsBySquarePaymentId("pay_1")).thenThrow(new RuntimeException("boom"));
 
-        service.handlePaymentUpdated(payment("COMPLETED", "order_1", "cust_1"));
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
         // no assertion needed beyond "didn't throw" — the @Test method completing is the assertion
     }
 }

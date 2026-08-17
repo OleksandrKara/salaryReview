@@ -1,7 +1,6 @@
 package com.salonreview.sms;
 
 import com.salonreview.domain.Provider;
-import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.ProviderRepository;
 import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
@@ -32,13 +31,10 @@ public class TechnicianNameResolver {
     private static final Duration LOOKBACK = Duration.ofDays(2);
 
     private final SquareClientProvider squareClientProvider;
-    private final BusinessRepository businesses;
     private final ProviderRepository providers;
 
-    public TechnicianNameResolver(SquareClientProvider squareClientProvider, BusinessRepository businesses,
-                                   ProviderRepository providers) {
+    public TechnicianNameResolver(SquareClientProvider squareClientProvider, ProviderRepository providers) {
         this.squareClientProvider = squareClientProvider;
-        this.businesses = businesses;
         this.providers = providers;
     }
 
@@ -47,14 +43,12 @@ public class TechnicianNameResolver {
      * the caller should use its technician-less copy instead. First name only — {@link Provider}'s
      * {@code displayName} is a free-text admin field (payroll, the dashboard) and isn't guaranteed
      * to be first-name-only, so it's never appropriate to send a last name to a customer. */
-    public Optional<String> resolveForCustomer(String customerId, Instant asOf) {
+    public Optional<String> resolveForCustomer(Long businessId, String customerId, Instant asOf) {
         if (customerId == null || customerId.isBlank()) {
             return Optional.empty();
         }
         try {
-            // See BusinessRepository#legacySmsBusiness, same as every scheduler in this package
-            // that calls this resolver — no business_id on the caller side to route on yet.
-            SquareClient square = squareClientProvider.forBusiness(businesses.legacySmsBusiness().getId());
+            SquareClient square = squareClientProvider.forBusiness(businessId);
             return square.bookingsForCustomer(customerId, asOf.minus(LOOKBACK)).stream()
                     .filter(SquareBookingFilters::didHappen)
                     .filter(b -> alreadyHappened(b, asOf))

@@ -24,10 +24,9 @@ import java.util.Map;
  * <p>Real per-business iteration (tasks.md 3.7): {@code sms_reply_flow} is fully business-scoped
  * (V103), so unlike most other schedulers in this package this one can safely iterate every
  * business with a {@code twilio_sms_config} row, not just Business A. {@code TechnicianNameResolver}
- * still internally hardcodes Business A's Square connection (Phase 3.6 territory, out of scope
- * here) — for any other business its lookup will simply find nothing and fail soft to
- * technician-less copy (see its own {@code catch (RuntimeException)}), a cosmetic degradation, not
- * a functional one.
+ * now takes this loop's own {@code businessId} too (Phase 3.6) — a business with no Square
+ * connection at all still fails soft to technician-less copy (see its own
+ * {@code catch (RuntimeException)}), same as before, just genuinely per-business now.
  */
 @Component
 public class SmsReplyFlowScheduler {
@@ -59,17 +58,17 @@ public class SmsReplyFlowScheduler {
             Long businessId = config.getBusinessId();
             for (SmsReplyFlow flow : repository.findByBusinessIdAndStateAndSendDueAtBefore(
                     businessId, SmsReplyFlow.STATE_AWAITING_SEND, now)) {
-                sendOne(flow, now);
+                sendOne(flow, now, businessId);
             }
         }
     }
 
-    private void sendOne(SmsReplyFlow flow, Instant now) {
+    private void sendOne(SmsReplyFlow flow, Instant now, Long businessId) {
         Map<String, String> vars = new java.util.HashMap<>();
         if (flow.getCustomerName() != null) {
             vars.put("name", flow.getCustomerName());
         }
-        technicianNameResolver.resolveForCustomer(flow.getSquareCustomerId(), now)
+        technicianNameResolver.resolveForCustomer(businessId, flow.getSquareCustomerId(), now)
                 .ifPresent(technician -> vars.put("technician", technician));
         var result = smsService.sendTemplated(flow.getBusinessId(), "checkout_rating_request", flow.getPhoneNumber(), vars);
         if (result.sent()) {

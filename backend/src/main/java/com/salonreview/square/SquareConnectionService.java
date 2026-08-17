@@ -63,6 +63,47 @@ public class SquareConnectionService {
         return token.length() <= 4 ? "••••" : "••••" + token.substring(token.length() - 4);
     }
 
+    /** Same masking convention as {@link #maskedAccessToken} — {@code null} if this business
+     * hasn't configured a webhook signature key yet (distinct from not having connected Square at
+     * all — {@code connection} may be non-null with a null {@code webhookSignatureKeyEncrypted}). */
+    public String maskedWebhookSignatureKey(SquareConnection connection) {
+        if (connection == null || connection.getWebhookSignatureKeyEncrypted() == null) return null;
+        String key = cipher.decrypt(connection.getWebhookSignatureKeyEncrypted());
+        return key.length() <= 4 ? "••••" : "••••" + key.substring(key.length() - 4);
+    }
+
+    /** Decrypts and returns this business's Square webhook signing key — for internal use by
+     * {@link com.salonreview.square.webhook.SquareWebhookController} only, to verify an inbound
+     * webhook's HMAC signature. Never expose the plaintext through any DTO/HTTP response. Empty if
+     * nothing configured yet, or the business has no {@code square_connection} row at all — either
+     * way, the webhook controller's job is the same: there's no key to check this business's
+     * requests against. */
+    public Optional<String> getWebhookSignatureKey(Long businessId) {
+        return repo.findByBusinessId(businessId)
+                .map(SquareConnection::getWebhookSignatureKeyEncrypted)
+                .filter(encrypted -> encrypted != null && !encrypted.isBlank())
+                .map(cipher::decrypt);
+    }
+
+    /**
+     * {@code webhookSignatureKey} {@code null}/blank keeps the existing encrypted key unchanged
+     * (same convention as {@link #connect}'s {@code accessToken}) — a no-op, not a clear, when
+     * blank. Requires Square to already be connected for this business ({@link #connect} first) —
+     * a webhook signature key with nothing to authenticate on behalf of doesn't mean anything.
+     */
+    @Transactional
+    public SquareConnection updateWebhookSignatureKey(Long businessId, String webhookSignatureKey) {
+        SquareConnection existing = repo.findByBusinessId(businessId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Connect Square before configuring its webhook signature key"));
+        boolean keyProvided = webhookSignatureKey != null && !webhookSignatureKey.isBlank();
+        if (keyProvided) {
+            existing.setWebhookSignatureKeyEncrypted(cipher.encrypt(webhookSignatureKey));
+            repo.save(existing);
+        }
+        return existing;
+    }
+
     /**
      * {@code accessToken} {@code null}/blank keeps the existing encrypted token (only meaningful
      * when reconnecting to change just the location or environment); required the first time a

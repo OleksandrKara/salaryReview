@@ -44,6 +44,13 @@ public class SquareConnection {
     @Column(name = "merchant_id")
     private String merchantId;
 
+    /** AES-GCM ciphertext for this business's Square webhook HMAC signing key (Phase 3.6) — same
+     * cipher as {@link #accessTokenEncrypted}. Null until the owner configures their Square
+     * Developer Dashboard webhook subscription and pastes the resulting signing key in via
+     * {@code PUT /api/owner/settings/square}. */
+    @Column(name = "webhook_signature_key_encrypted")
+    private String webhookSignatureKeyEncrypted;
+
     @Column(name = "connected_by_user_id", nullable = false)
     private Long connectedByUserId;
 
