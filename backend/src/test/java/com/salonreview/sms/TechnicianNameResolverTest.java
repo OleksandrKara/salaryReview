@@ -1,8 +1,6 @@
 package com.salonreview.sms;
 
-import com.salonreview.domain.Business;
 import com.salonreview.domain.Provider;
-import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.ProviderRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
@@ -23,6 +21,7 @@ import static org.mockito.Mockito.when;
 class TechnicianNameResolverTest {
 
     private static final String CUSTOMER_ID = "cust1";
+    private static final Long BUSINESS_ID = 1L;
 
     private SquareClient square;
     private ProviderRepository providers;
@@ -33,12 +32,9 @@ class TechnicianNameResolverTest {
     void setUp() {
         square = mock(SquareClient.class);
         SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
-        BusinessRepository businesses = mock(BusinessRepository.class);
-        when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
-                .timezone("UTC").active(true).build());
-        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
+        when(squareClientProvider.forBusiness(BUSINESS_ID)).thenReturn(square);
         providers = mock(ProviderRepository.class);
-        resolver = new TechnicianNameResolver(squareClientProvider, businesses, providers);
+        resolver = new TechnicianNameResolver(squareClientProvider, providers);
         asOf = Instant.parse("2026-08-05T18:00:00Z");
     }
 
@@ -56,7 +52,7 @@ class TechnicianNameResolverTest {
         Provider provider = Provider.builder().id(1L).name("Susan").displayName("Susan").build();
         when(providers.findBySquareTeamMemberId("TM1")).thenReturn(Optional.of(provider));
 
-        assertThat(resolver.resolveForCustomer(CUSTOMER_ID, asOf)).contains("Susan");
+        assertThat(resolver.resolveForCustomer(BUSINESS_ID, CUSTOMER_ID, asOf)).contains("Susan");
     }
 
     @Test
@@ -67,7 +63,7 @@ class TechnicianNameResolverTest {
         Provider provider = Provider.builder().id(1L).name("Susan Alieva").displayName("Susan Alieva").build();
         when(providers.findBySquareTeamMemberId("TM1")).thenReturn(Optional.of(provider));
 
-        assertThat(resolver.resolveForCustomer(CUSTOMER_ID, asOf)).contains("Susan");
+        assertThat(resolver.resolveForCustomer(BUSINESS_ID, CUSTOMER_ID, asOf)).contains("Susan");
     }
 
     @Test
@@ -75,7 +71,7 @@ class TechnicianNameResolverTest {
     void noBookingsResolvesEmpty() {
         when(square.bookingsForCustomer(eq(CUSTOMER_ID), any())).thenReturn(List.of());
 
-        assertThat(resolver.resolveForCustomer(CUSTOMER_ID, asOf)).isEmpty();
+        assertThat(resolver.resolveForCustomer(BUSINESS_ID, CUSTOMER_ID, asOf)).isEmpty();
     }
 
     @Test
@@ -84,7 +80,7 @@ class TechnicianNameResolverTest {
         when(square.bookingsForCustomer(eq(CUSTOMER_ID), any()))
                 .thenReturn(List.of(booking("2026-08-06T17:00:00Z", "ACCEPTED", "TM1")));
 
-        assertThat(resolver.resolveForCustomer(CUSTOMER_ID, asOf)).isEmpty();
+        assertThat(resolver.resolveForCustomer(BUSINESS_ID, CUSTOMER_ID, asOf)).isEmpty();
     }
 
     @Test
@@ -93,7 +89,7 @@ class TechnicianNameResolverTest {
         when(square.bookingsForCustomer(eq(CUSTOMER_ID), any()))
                 .thenReturn(List.of(booking("2026-08-05T17:00:00Z", "CANCELLED_BY_CUSTOMER", "TM1")));
 
-        assertThat(resolver.resolveForCustomer(CUSTOMER_ID, asOf)).isEmpty();
+        assertThat(resolver.resolveForCustomer(BUSINESS_ID, CUSTOMER_ID, asOf)).isEmpty();
     }
 
     @Test
@@ -102,7 +98,7 @@ class TechnicianNameResolverTest {
         when(square.bookingsForCustomer(eq(CUSTOMER_ID), any()))
                 .thenReturn(List.of(booking("2026-08-05T17:00:00Z", "ACCEPTED", null)));
 
-        assertThat(resolver.resolveForCustomer(CUSTOMER_ID, asOf)).isEmpty();
+        assertThat(resolver.resolveForCustomer(BUSINESS_ID, CUSTOMER_ID, asOf)).isEmpty();
     }
 
     @Test
@@ -112,7 +108,7 @@ class TechnicianNameResolverTest {
                 .thenReturn(List.of(booking("2026-08-05T17:00:00Z", "ACCEPTED", "TM_UNKNOWN")));
         when(providers.findBySquareTeamMemberId("TM_UNKNOWN")).thenReturn(Optional.empty());
 
-        assertThat(resolver.resolveForCustomer(CUSTOMER_ID, asOf)).isEmpty();
+        assertThat(resolver.resolveForCustomer(BUSINESS_ID, CUSTOMER_ID, asOf)).isEmpty();
     }
 
     @Test
@@ -120,13 +116,13 @@ class TechnicianNameResolverTest {
     void squareFailureResolvesEmpty() {
         when(square.bookingsForCustomer(eq(CUSTOMER_ID), any())).thenThrow(new RuntimeException("Square down"));
 
-        assertThat(resolver.resolveForCustomer(CUSTOMER_ID, asOf)).isEmpty();
+        assertThat(resolver.resolveForCustomer(BUSINESS_ID, CUSTOMER_ID, asOf)).isEmpty();
     }
 
     @Test
     @DisplayName("null/blank customer id → empty without calling Square at all")
     void nullCustomerIdResolvesEmpty() {
-        assertThat(resolver.resolveForCustomer(null, asOf)).isEmpty();
-        assertThat(resolver.resolveForCustomer("", asOf)).isEmpty();
+        assertThat(resolver.resolveForCustomer(BUSINESS_ID, null, asOf)).isEmpty();
+        assertThat(resolver.resolveForCustomer(BUSINESS_ID, "", asOf)).isEmpty();
     }
 }

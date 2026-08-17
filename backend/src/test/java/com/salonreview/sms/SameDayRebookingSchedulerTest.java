@@ -58,7 +58,7 @@ class SameDayRebookingSchedulerTest {
         configService = mock(TwilioSmsConfigService.class);
         client = mock(TwilioSmsClient.class);
         technicianNameResolver = mock(TechnicianNameResolver.class);
-        when(technicianNameResolver.resolveForCustomer(any(), any())).thenReturn(Optional.empty());
+        when(technicianNameResolver.resolveForCustomer(any(), any(), any())).thenReturn(Optional.empty());
         squareClientProvider = mock(SquareClientProvider.class);
         twilioConfigs = mock(TwilioSmsConfigRepository.class);
         when(twilioConfigs.findAll()).thenReturn(List.of(TwilioSmsConfig.builder().businessId(BUSINESS_ID).build()));
@@ -249,7 +249,7 @@ class SameDayRebookingSchedulerTest {
     @Test
     @DisplayName("consented branch: resolved technician name is name-dropped in the body")
     void consentedBranchNamesResolvedTechnician() throws Exception {
-        when(technicianNameResolver.resolveForCustomer(eq(CUSTOMER_ID), any())).thenReturn(Optional.of("Susan"));
+        when(technicianNameResolver.resolveForCustomer(eq(BUSINESS_ID), eq(CUSTOMER_ID), any())).thenReturn(Optional.of("Susan"));
         SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
         givenDue(s);
         when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
@@ -268,7 +268,7 @@ class SameDayRebookingSchedulerTest {
     void transactionalBranchNamesResolvedTechnician() throws Exception {
         when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(false);
         when(square.customerSegmentIds(CUSTOMER_ID)).thenReturn(List.of());
-        when(technicianNameResolver.resolveForCustomer(eq(CUSTOMER_ID), any())).thenReturn(Optional.of("Tatiana"));
+        when(technicianNameResolver.resolveForCustomer(eq(BUSINESS_ID), eq(CUSTOMER_ID), any())).thenReturn(Optional.of("Tatiana"));
         SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
         givenDue(s);
         when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");

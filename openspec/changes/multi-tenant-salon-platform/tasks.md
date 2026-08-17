@@ -208,10 +208,43 @@ this file is the plan, not yet executed.
       `RevenuePulseService`, `RetentionAnalyticsService`, `RevenueSnapshotService`,
       `RevenueSnapshotScheduler`, `SquareMonthAggregator`, `UserController`) to resolve via
       `SquareClientProvider.forBusiness(currentBusinessContext.id())`
-- [ ] 3.6 `SquareWebhookController` — move from one global HMAC key to per-business signature
-      key/notification URL; route `POST /api/public/webhooks/square/{businessId}` (path-based,
-      verified before trusting any payload field, per design's rejection of trusting the unauthenticated
-      `merchant_id` field pre-verification)
+- [x] 3.6 **Shipped 2026-08-17.** `SquareWebhookController` now has two routes, two key sources.
+      `POST /api/public/webhooks/square` is Business A's original, already-configured-in-Square's-
+      dashboard subscription — left completely unchanged (global `SquareWebhookProperties` key,
+      resolves `legacySmsBusiness()`) so its real production webhook keeps working with zero
+      disruption; no dashboard change needed for Business A. `POST
+      /api/public/webhooks/square/{businessId}` (path-based) is the real per-business route for
+      every other business: `square_connection` gained a nullable `webhook_signature_key_encrypted`
+      column (V106, same `SquareCredentialCipher` as `access_token_encrypted`, no SQL backfill —
+      encryption needs the app's own master key), and the new route only ever accepts a request
+      signed with *that* business's own key, verified *before* trusting anything in the payload
+      (rejects Business A's/the global key, or any other business's key, on a mismatched path —
+      covered by two explicit security tests, `perBusinessRouteRejectsWrongBusinessSignature` and
+      `perBusinessRouteRejectsAnotherBusinessOwnSignature`). A business with no key configured yet
+      404s (nothing set up) rather than 401 (wrong key) — a deliberately different signal for
+      debugging, also covered by its own test. `SquareConnectionController`'s
+      `GET/PUT /api/owner/settings/square` gained `webhookSignatureKeyMasked`/`webhookSignatureKeySet`
+      (same null/blank-keeps-existing convention as `accessToken`) and a read-only, computed
+      `webhookNotificationUrl` field — the exact URL (byte-for-byte, since it's part of the HMAC
+      input Square signs) an owner needs to paste into their business's Square Developer Dashboard
+      webhook subscription. `CheckoutReviewTriggerService.handlePaymentUpdated` now takes
+      `businessId` as a parameter instead of resolving `legacySmsBusiness()` internally — the
+      legacy route passes its `legacySmsBusiness()`-resolved id, the new route passes the real
+      per-business id from the URL, so the service itself has no opinion on how that resolution
+      happened. `TechnicianNameResolver.resolveForCustomer` also gained a `businessId` parameter,
+      threaded from `SmsReplyFlowScheduler`/`SameDayRebookingScheduler`'s own already-real
+      per-business loop variable (found while doing this — those two callers already had a real
+      businessId in scope since PR #382/#383, but the resolver itself was still silently querying
+      only Business A's Square bookings for technician-name lookups). Verified against a real,
+      completely fresh local Postgres: 978 tests, 0 failures, 0 errors, including all 8
+      `SquareWebhookControllerTest` scenarios (4 legacy-route, 4 per-business-route). **The code is
+      ready; a second business's own external configuration is not** — AK PMU (or any future
+      business) needs a real webhook subscription created in *their own* Square Developer
+      Dashboard (event: `payment.updated`, URL: their business's `webhookNotificationUrl` from the
+      settings GET response), with the resulting signing key pasted into
+      `/owner/settings/square` before `checkout_review_request`/`same_day_rebooking_discount`
+      actually start firing for them — that's a real action for the business owner to take, not a
+      remaining code gap.
 - [ ] 3.7 **Not applicable to the RAG services** (`RagIngestionService`, `RagRetrievalService`,
       `RagAnswerService`, `RagConfigService`, `RagSuggestionService`) — none of them run as an
       `@Scheduled` background job; every call site is synchronous and session-triggered (an owner
@@ -299,10 +332,22 @@ this file is the plan, not yet executed.
       `SmsReplyFlowScheduler`/`SameDayRebookingScheduler` are to process one once it exists.
       four_hand_request (via `InternalNotificationController`) — no, needs a cross-app API
       contract change. lead_follow_up — no, blocked on a separate service's (salonLandings) own
-      schema. **Bottom line: every D9 automation is now blocked on exactly one of two remaining
-      gaps — Phase 3.6 (checkout_review_request, same_day_rebooking_discount) or a cross-codebase
-      contract change (four_hand_request, lead_follow_up) — not on anything left to do inside this
-      codebase's own schedulers/tables.**
+      schema. **Bottom line at the time: every D9 automation was blocked on exactly one of two
+      remaining gaps — Phase 3.6 (checkout_review_request, same_day_rebooking_discount) or a
+      cross-codebase contract change (four_hand_request, lead_follow_up) — not on anything left to
+      do inside this codebase's own schedulers/tables.**
+
+      **2026-08-17: Phase 3.6 shipped** (see its own task entry above for the full detail).
+      checkout_review_request and same_day_rebooking_discount are no longer blocked at the code
+      level — `CheckoutReviewTriggerService`/`SameDayRebookingTriggerService` are genuinely
+      business-id-correct now, real per-business Square webhook signature verification exists.
+      **Revised bottom line: every D9 automation's code-level gap inside this codebase is now
+      closed.** What's left for a second business to actually get every automation is entirely
+      external to this codebase: AK PMU needs its own Square Developer Dashboard webhook
+      subscription configured (Phase 3.6's own entry has the exact steps) for
+      checkout_review_request/same_day_rebooking_discount, and four_hand_request/lead_follow_up
+      still need the two cross-codebase contract changes described above — neither is a remaining
+      backend task in *this* repository.
 - [ ] 3.8 `/api/sync` (manual sync button) becomes business-scoped — `invalidate()` only clears the
       calling business's `SquareClient` cache instance, never the whole registry
 - [ ] 3.9 Integration tests: two businesses' `SquareClientProvider`-resolved clients never share cache

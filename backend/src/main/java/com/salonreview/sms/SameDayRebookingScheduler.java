@@ -183,7 +183,7 @@ public class SameDayRebookingScheduler {
 
         String shortLink = publicBaseUrl + "/r/" + clickToken;
         String technician = technicianNameResolver
-                .resolveForCustomer(send.getSquareCustomerId(), Instant.now())
+                .resolveForCustomer(businessId, send.getSquareCustomerId(), Instant.now())
                 .orElse(null);
         String body = consented
                 ? marketingBody(technician, shortLink)

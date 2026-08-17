@@ -38,7 +38,7 @@ class SmsReplyFlowSchedulerTest {
         repository = mock(SmsReplyFlowRepository.class);
         smsService = mock(TwilioSmsService.class);
         technicianNameResolver = mock(TechnicianNameResolver.class);
-        when(technicianNameResolver.resolveForCustomer(any(), any())).thenReturn(Optional.empty());
+        when(technicianNameResolver.resolveForCustomer(any(), any(), any())).thenReturn(Optional.empty());
         twilioConfigs = mock(TwilioSmsConfigRepository.class);
         when(twilioConfigs.findAll()).thenReturn(List.of(TwilioSmsConfig.builder().businessId(BUSINESS_ID).build()));
         scheduler = new SmsReplyFlowScheduler(repository, smsService, technicianNameResolver, twilioConfigs);
@@ -155,7 +155,7 @@ class SmsReplyFlowSchedulerTest {
         due.setSquareCustomerId("cust1");
         when(repository.findByBusinessIdAndStateAndSendDueAtBefore(eq(BUSINESS_ID), eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
                 .thenReturn(List.of(due));
-        when(technicianNameResolver.resolveForCustomer(eq("cust1"), any())).thenReturn(Optional.of("Susan"));
+        when(technicianNameResolver.resolveForCustomer(eq(BUSINESS_ID), eq("cust1"), any())).thenReturn(Optional.of("Susan"));
         when(smsService.sendTemplated(eq(BUSINESS_ID), eq("checkout_rating_request"), eq(PHONE), any()))
                 .thenReturn(new TwilioSmsService.SmsSendResult(true, null));
 
