@@ -3,6 +3,7 @@ package com.salonreview.util;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
@@ -31,9 +32,19 @@ public final class TtlCache {
         return value;
     }
 
-    /** Drops every cached response — backs both the global "Sync now" button and any mutation
-     * within the owning service that should be visible immediately rather than after the TTL. */
+    /** Drops every cached response — for a mutation within the owning service that should be
+     * visible immediately rather than after the TTL, where every cached entry (regardless of
+     * which business it belongs to) is genuinely affected. */
     public void invalidateAll() {
         entries.clear();
+    }
+
+    /** Drops only entries whose key matches — the per-tenant "Sync now" button's own cache
+     * (Phase 3.8) shouldn't force every *other* business's already-fresh cached response to also
+     * be recomputed just because one business's owner clicked sync. Each owning service supplies
+     * its own matcher since it alone knows its own key format (e.g. {@code k -> k.contains(":" +
+     * businessId + ":")}). */
+    public void invalidateWhere(Predicate<String> keyMatches) {
+        entries.keySet().removeIf(keyMatches);
     }
 }

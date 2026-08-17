@@ -348,10 +348,27 @@ this file is the plan, not yet executed.
       checkout_review_request/same_day_rebooking_discount, and four_hand_request/lead_follow_up
       still need the two cross-codebase contract changes described above — neither is a remaining
       backend task in *this* repository.
-- [ ] 3.8 `/api/sync` (manual sync button) becomes business-scoped — `invalidate()` only clears the
-      calling business's `SquareClient` cache instance, never the whole registry
-- [ ] 3.9 Integration tests: two businesses' `SquareClientProvider`-resolved clients never share cache
-      state or throttle semaphores; webhook routing test with two businesses' signature keys
+- [x] 3.8 **Shipped 2026-08-17.** `SquareSyncController`'s `SquareClient` invalidation was already
+      per-business (`squareClientProvider.forBusiness(currentBusinessContext.id()).invalidate()`),
+      but the same button's other 5 cache invalidations
+      (`MarketingDashboardService`/`FunnelAnalyticsService`/`MarketingContactsService`
+      /`MarketingAnalyticsService`/`OwnerOverviewService`) all called `TtlCache#invalidateAll()` —
+      a global wipe — even though every one of them already keys its cached entries by
+      `currentBusinessContext.id()`. One business's owner clicking "Sync now" was forcing every
+      *other* business's already-fresh cache to also recompute on its next read (wasteful, not a
+      data leak — reads were already correctly business-scoped). Added `TtlCache#invalidateWhere
+      (Predicate<String>)`; each service's `invalidateCache()` now supplies its own key-format-
+      aware matcher instead of clearing everything.
+- [x] 3.9 **Shipped 2026-08-17, alongside 3.8.** Cache isolation: new `TtlCacheTest` covers
+      `invalidateWhere` directly; new `MarketingContactsServiceTest
+      #invalidateCacheOnlyDropsCallingBusinesssOwnEntry` proves business 1's `invalidateCache()`
+      never evicts business 2's already-cached entry (same `TtlCache` instance, two businesses).
+      Throttle-semaphore isolation was already structurally guaranteed (each business gets its own
+      `SquareClient` instance — `squareCallPermits` is an instance field) and already covered by
+      `SquareClientProviderTest`'s `assertThat(clientA).isNotSameAs(clientB)`. Webhook routing with
+      two businesses' signature keys was already covered by 3.6's own
+      `SquareWebhookControllerTest` (`perBusinessRouteRejectsWrongBusinessSignature`,
+      `perBusinessRouteRejectsAnotherBusinessOwnSignature`).
 
 ## Phase 4 — Business-specific financial configuration
 

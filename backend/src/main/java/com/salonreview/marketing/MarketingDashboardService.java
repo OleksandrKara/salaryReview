@@ -255,8 +255,10 @@ public class MarketingDashboardService {
 
     /** Backs the global "Sync now" button (see SquareSyncController) — so forcing a fresh Square
      * pull also busts this service's own cached dashboard responses, not just SquareClient's. */
+    /** Only this business's own cached entries — see TtlCache#invalidateWhere's own doc for why
+     * a per-tenant "Sync now" shouldn't force every other business's cache to also be dropped. */
     public void invalidateCache() {
-        cache.invalidateAll();
+        cache.invalidateWhere(k -> k.contains(":" + currentBusinessContext.id() + ":"));
     }
 
     private VariantStat toVariantStat(MarketingDashboardRepository.RawVariantStat raw, String slug,
