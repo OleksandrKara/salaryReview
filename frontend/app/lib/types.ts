@@ -56,16 +56,23 @@ export interface SquareConnectionDto {
   merchantId: string | null;
   connectedAt: string | null;
   lastSyncAt: string | null;
+  webhookSignatureKeyMasked: string | null;
+  webhookSignatureKeySet: boolean;
+  // The exact URL to paste into this business's own Square Developer Dashboard webhook
+  // subscription (payment.updated) — purely informational, computed server-side, never stored.
+  webhookNotificationUrl: string;
 }
 
-// accessToken omitted/undefined = keep the existing token (only meaningful when reconnecting to
-// change just the location/environment); required the first time this business connects. Never
-// send the masked value from SquareConnectionDto back here.
+// accessToken/webhookSignatureKey omitted/undefined = keep the existing value (only meaningful
+// when reconnecting to change just the location/environment, or updating one field without
+// touching the other); accessToken is required the first time this business connects. Never send
+// either field's masked value from SquareConnectionDto back here.
 export interface SquareConnectionUpdateRequest {
   accessToken?: string;
   environment: 'SANDBOX' | 'PRODUCTION';
   locationId: string;
   applicationId?: string;
+  webhookSignatureKey?: string;
 }
 
 export interface BusinessSettingsDto {
