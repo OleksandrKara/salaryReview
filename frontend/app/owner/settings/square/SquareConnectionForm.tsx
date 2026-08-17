@@ -16,6 +16,8 @@ export default function SquareConnectionForm({ initialConnection }: { initialCon
   );
   const [locationIdInput, setLocationIdInput] = useState(connection.locationId ?? '');
   const [applicationIdInput, setApplicationIdInput] = useState(connection.applicationId ?? '');
+  // Same blank-starts / undefined-means-keep-existing contract as accessTokenInput above.
+  const [webhookSignatureKeyInput, setWebhookSignatureKeyInput] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
@@ -33,9 +35,11 @@ export default function SquareConnectionForm({ initialConnection }: { initialCon
         environment: environmentInput,
         locationId: locationIdInput,
         applicationId: applicationIdInput === '' ? undefined : applicationIdInput,
+        webhookSignatureKey: webhookSignatureKeyInput === '' ? undefined : webhookSignatureKeyInput,
       });
       setConnection(updated);
       setAccessTokenInput('');
+      setWebhookSignatureKeyInput('');
       setSaved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
@@ -91,6 +95,39 @@ export default function SquareConnectionForm({ initialConnection }: { initialCon
           className="w-full rounded border border-zinc-300 px-2 py-1.5"
         />
       </label>
+
+      <div className="rounded border border-zinc-200 bg-zinc-50 p-3">
+        <p className="mb-1 text-sm font-medium text-zinc-700">Webhook</p>
+        <p className="mb-2 text-xs text-zinc-500">
+          In Square&apos;s Developer Dashboard for this business, add a webhook subscription for the{' '}
+          <code className="rounded bg-zinc-200 px-1">payment.updated</code> event with this exact
+          Notification URL, then paste the Signature Key it gives you below.
+        </p>
+        <label className="text-sm">
+          <span className="mb-1 block text-zinc-600">Notification URL</span>
+          <input
+            readOnly
+            value={connection.webhookNotificationUrl}
+            onFocus={(e) => e.currentTarget.select()}
+            className="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 font-mono text-xs"
+          />
+        </label>
+        <label className="mt-3 block text-sm">
+          <span className="mb-1 block text-zinc-600">Signature Key</span>
+          <input
+            type="password"
+            value={webhookSignatureKeyInput}
+            onChange={(e) => setWebhookSignatureKeyInput(e.target.value)}
+            placeholder={
+              connection.webhookSignatureKeySet
+                ? `Currently set: ${connection.webhookSignatureKeyMasked} — leave blank to keep it`
+                : 'Not set — checkout-review/rebooking-discount texts won\'t fire until this is set'
+            }
+            autoComplete="off"
+            className="w-full rounded border border-zinc-300 px-2 py-1.5"
+          />
+        </label>
+      </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
