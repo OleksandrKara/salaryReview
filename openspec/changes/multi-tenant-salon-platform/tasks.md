@@ -434,27 +434,30 @@ this file is the plan, not yet executed.
 
 ## Phase 6 — UI/business context
 
-- [ ] 6.1 **Backend done 2026-08-18, frontend cookie still open.** `POST /api/business/switch`
-      (`BusinessSwitchController`) lets a platform_admin (or, for a future genuinely-multi-
-      membership user, anyone with a real `business_membership` row for the target) change which
-      business every subsequent request in the session acts on — sets a
+- [x] 6.1 `POST /api/business/switch` (`BusinessSwitchController`) lets a platform_admin (or, for a
+      future genuinely-multi-membership user, anyone with a real `business_membership` row for the
+      target) change which business every subsequent request in the session acts on — sets a
       `CurrentBusinessContextFilter.ACTIVE_BUSINESS_SESSION_ATTR` session attribute, which the
       filter now checks before falling back to the login-time default (deliberately session state,
       not a mutable field on the {@code Serializable}, DB-session-backed `AppUserPrincipal` — see
       that class's own doc comment on the PR #351 `serialVersionUID` incident this avoids
       repeating). `writeMe`/`GET /api/me` both now report `activeBusinessId`
       (`CurrentBusinessContext`-sourced, switch-aware) and `businesses` (every active business for
-      a platform_admin, else just the caller's own real membership(s)). Verified against a real,
-      isolated instance with a real second business: login → `/api/me` shows both businesses →
-      create a provider on business 1 → switch to business 2 → that provider is invisible → switch
-      back → visible again; a non-platform-admin, non-member switch attempt gets a real 403. Still
-      needed: the actual `businessId` browser cookie (`app/api/login/route.ts` +
-      `proxyBackend.ts`, mirroring exactly how `role` is already handled) and the
-      `app/api/business/switch` proxy route calling the above.
-- [ ] 6.2 **Backend done alongside 6.1 (same PR) — `AdminMenu.tsx` dropdown UI still open.**
-      `/api/me`'s new `businesses` array is exactly what the dropdown needs (plain text when it has
-      1 entry, `<select>` calling the new switch proxy route when it has >1 — contingent on Phase
-      0.3's answer, now resolved "yes, required").
+      a platform_admin, else just the caller's own real membership(s)). Frontend: `businessId`
+      browser cookie mirrors `role`'s handling exactly (set at login, refreshed on every proxied
+      call via `proxyBackend.ts`, cleared on logout); `app/api/business/switch/route.ts` proxies
+      the switch and updates the cookie's value from the response (#395). Verified end-to-end
+      against a real, isolated instance restored from a real backup: login as platform_admin sets
+      `businessId=1` → `/api/me` shows both businesses → switch to business 2 flips the cookie and
+      `/api/me.activeBusinessId` → `/api/users` correctly scopes to business 2's own users only →
+      switch back works → a non-admin's switch attempt to a business they don't belong to gets a
+      real 403.
+- [x] 6.2 `AdminMenu.tsx` dropdown: `/api/me`'s `businesses` array drives it — plain text (no
+      visual change) for the ~100% single-membership case, a `<select>` calling the switch proxy
+      route only when it has >1 entry. Every `PageHeader` call site that already pre-fetches `me`
+      for role/language now threads `activeBusinessId`/`businesses` through too, so no extra
+      `/api/me` round-trip was added to any existing page (#395). Verified: a single-membership
+      user's rendered page has no dropdown; the platform_admin's does, with both business names.
 - [ ] 6.3 `app/owner/marketing/period.ts:28`'s hardcoded `SALON_TIME_ZONE` constant replaced with the
       backend-supplied business timezone, matching the existing pattern already used correctly by
       `report.timezone`/`detail.timezone` elsewhere in the frontend
