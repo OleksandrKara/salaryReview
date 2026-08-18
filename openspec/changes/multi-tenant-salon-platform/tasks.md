@@ -413,9 +413,24 @@ this file is the plan, not yet executed.
       regression.
 - [x] 5.3 Already correct before tonight — `UserController`/`squareRoster()` resolve entirely via
       `currentBusinessContext.id()`/`SquareClientProvider`, no `legacySmsBusiness()` stopgap left.
-- [ ] 5.4 Security/authorization tests: an OWNER of Business A calling any `/api/users/**`,
-      `/api/providers/**`, `/api/settlements/**` path with a Business-B-owned resource id gets 404, not
-      200-with-wrong-data and not 403-leaking-existence
+- [x] 5.4 **Shipped 2026-08-18 — writing the test found 3 real, live, exploitable cross-tenant
+      vulnerabilities, not just a test gap.** `UserController` (`PATCH`/`DELETE /api/users/{id}`,
+      plus `validateProviderLink`'s `providers.existsById`), `ProviderController` (`PATCH`/
+      `DELETE /api/providers/{id}`), and `PayPeriodController` (`GET`/`DELETE /api/pay-periods/{id}`,
+      `PUT .../entries/{providerId}`) all used plain, business-unscoped `findById`/`existsById`/
+      `deleteById` — any business's OWNER could read, write, or delete **another business's real
+      users, providers, and payroll data (procedures, card/cash totals, commission)** by id,
+      constructing the request themselves (no UI would ever surface another business's ids, but
+      nothing stopped a direct API call). Checked production data for signs of exploitation
+      (app_user rows with a provider link outside their own business) — zero found; this was a
+      live but never-actually-triggered gap. Fixed by swapping in each repository's existing (or,
+      for `PayPeriodRepository`/`existsByIdAndBusinessId` on `ProviderRepository`, newly added)
+      `findByIdAndBusinessId`-style method. New `ProviderControllerTest`/`PayPeriodControllerTest`
+      (neither existed before) plus new cases in `UserControllerTest` cover both the rejection and
+      the legitimate-same-business path for every affected endpoint. Confirmed each test actually
+      fails against the pre-fix code (reverted, reran, restored) before shipping. `/api/settlements/
+      **` (`SettlementController`/`SettlementPreviewController`/etc.) already resolved entirely via
+      `currentBusinessContext.id()` — no separate id-based lookup to audit there.
 
 ## Phase 6 — UI/business context
 
@@ -534,9 +549,13 @@ un-reviewed patch this file exists to prevent.
       output per provider/month and `/owner/overview` net-profit figures as a golden snapshot
 - [ ] 8.2 **After each phase**: re-run the same requests against the migrated schema, assert
       byte-for-byte equal `BigDecimal` output; any diff blocks merge
-- [ ] 8.3 Full cross-tenant isolation suite (Phase 2.5, 3.9, 5.4) green
-- [ ] 8.4 RAG vector-search cross-tenant test: Business A's uploaded documents never surface in
-      Business B's chat-assistant results and vice versa (design.md's flagged highest-severity finding)
+- [x] 8.3 Green — `CrossTenantIsolationTest` (25 tests, Phase 2.5), `SquareClientProviderTest`/
+      `SquareWebhookControllerTest` (Phase 3.9), `UserControllerTest`/`ProviderControllerTest`/
+      `PayPeriodControllerTest` (Phase 5.4) all pass against a real, fresh Postgres.
+- [x] 8.4 Already covered — `CrossTenantIsolationTest#ragChunkVectorSearchIsolation` (see that
+      test's own doc comment): orthogonal one-hot embedding vectors prove business A's search never
+      returns business B's chunk even when it's the objectively nearest match, not just "never
+      returns it when it also happens to be farther away."
 - [ ] 8.5 `security-review` skill run against the full diff before merge to master
 
 ## Phase 9 — Production rollout

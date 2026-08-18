@@ -67,7 +67,9 @@ public class ProviderController {
     @PatchMapping("/{id}")
     @Transactional
     public ProviderDto patch(@PathVariable Long id, @Valid @RequestBody ProviderPatchRequest req) {
-        Provider p = providers.findById(id)
+        // 2026-08-18: was providers.findById(id) — business-unscoped. Any OWNER could PATCH any
+        // other business's provider by id (name, commission rate, active status).
+        Provider p = providers.findByIdAndBusinessId(id, currentBusinessContext.id())
                 .orElseThrow(() -> new NoSuchElementException("Provider " + id + " not found"));
         if (req.name() != null)           p.setName(req.name());
         if (req.displayName() != null)    p.setDisplayName(req.displayName());
@@ -79,10 +81,11 @@ public class ProviderController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
-        if (!providers.existsById(id)) {
-            throw new NoSuchElementException("Provider " + id + " not found");
-        }
-        providers.deleteById(id);     // FK ON DELETE CASCADE removes period_entries rows
+        // 2026-08-18: was providers.existsById(id)/deleteById(id) — business-unscoped. Any OWNER
+        // could DELETE any other business's provider entirely by id.
+        Provider p = providers.findByIdAndBusinessId(id, currentBusinessContext.id())
+                .orElseThrow(() -> new NoSuchElementException("Provider " + id + " not found"));
+        providers.delete(p);     // FK ON DELETE CASCADE removes period_entries rows
         return ResponseEntity.noContent().build();
     }
 }

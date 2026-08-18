@@ -61,7 +61,9 @@ public class PayPeriodController {
     @GetMapping("/{id}")
     @Transactional(readOnly = true)
     public ResponseEntity<PayPeriodDetailDto> get(@PathVariable Long id) {
-        return periods.findById(id)
+        // 2026-08-18: was periods.findById(id) — business-unscoped. Any OWNER could read any other
+        // business's real payroll numbers (procedures, card/cash totals, commission) by period id.
+        return periods.findByIdAndBusinessId(id, currentBusinessContext.id())
                 .map(period -> {
                     List<PeriodEntryDto> entryDtos = entries.findAllByPayPeriodId(id).stream()
                             .map(PeriodEntryDto::from)
@@ -93,9 +95,13 @@ public class PayPeriodController {
     public PeriodEntryDto upsertEntry(@PathVariable Long periodId,
                                       @PathVariable Long providerId,
                                       @Valid @RequestBody PeriodEntryUpsertRequest req) {
-        PayPeriod period = periods.findById(periodId)
+        // 2026-08-18: both were business-unscoped findById — any OWNER could write payroll entries
+        // (procedures, totals, commission rate) onto another business's period, or attribute an
+        // entry to another business's provider even under their own period.
+        Long businessId = currentBusinessContext.id();
+        PayPeriod period = periods.findByIdAndBusinessId(periodId, businessId)
                 .orElseThrow(() -> new NoSuchElementException("Pay period " + periodId + " not found"));
-        Provider provider = providers.findById(providerId)
+        Provider provider = providers.findByIdAndBusinessId(providerId, businessId)
                 .orElseThrow(() -> new NoSuchElementException("Provider " + providerId + " not found"));
 
         PeriodEntry entry = entries.findByPayPeriodIdAndProviderId(periodId, providerId)
@@ -114,10 +120,11 @@ public class PayPeriodController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
-        if (!periods.existsById(id)) {
-            throw new NoSuchElementException("Pay period " + id + " not found");
-        }
-        periods.deleteById(id);
+        // 2026-08-18: was periods.existsById(id)/deleteById(id) — business-unscoped. Any OWNER
+        // could DELETE any other business's pay period (and its payroll entries) entirely by id.
+        PayPeriod period = periods.findByIdAndBusinessId(id, currentBusinessContext.id())
+                .orElseThrow(() -> new NoSuchElementException("Pay period " + id + " not found"));
+        periods.delete(period);
         return ResponseEntity.noContent().build();
     }
 

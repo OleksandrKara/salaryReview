@@ -133,7 +133,9 @@ public class UserController {
     @PatchMapping("/{id}")
     @Transactional
     public UserView update(@PathVariable Long id, @RequestBody UpdateRequest req) {
-        AppUser u = users.findById(id)
+        // 2026-08-18: was users.findById(id) — business-unscoped. Any OWNER could PATCH any other
+        // business's user by id: change their role, deactivate them, or reset their password.
+        AppUser u = users.findByIdAndBusinessId(id, currentBusinessContext.id())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such user"));
         if (req.role() != null) u.setRole(req.role());
         if (req.active() != null) u.setActive(req.active());
@@ -147,7 +149,9 @@ public class UserController {
     @DeleteMapping("/{id}")
     @Transactional
     public void delete(@PathVariable Long id) {
-        AppUser u = users.findById(id)
+        // 2026-08-18: was users.findById(id) — business-unscoped. Any OWNER could DELETE any other
+        // business's user entirely by id.
+        AppUser u = users.findByIdAndBusinessId(id, currentBusinessContext.id())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such user"));
         // Never lock the salon out: refuse to remove the last active owner.
         if (u.getRole() == Role.OWNER && u.isActive() && activeOwners() <= 1) {
@@ -159,13 +163,17 @@ public class UserController {
         users.delete(u);
     }
 
-    /** A provider account needs a real, unlinked provider; owner/manager accounts must have none. */
+    /** A provider account needs a real, unlinked provider (belonging to this same business —
+     * 2026-08-18: was providers.existsById(providerId), business-unscoped; any OWNER could link a
+     * new account to another business's provider row, giving that account access to that other
+     * business's provider's settlement/payroll data via the self-service endpoints); owner/manager
+     * accounts must have none. */
     private Long validateProviderLink(Role role, Long providerId, Long currentUserId) {
         if (role != Role.PROVIDER) return null;
         if (providerId == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A provider account must be linked to a provider");
         }
-        if (!providers.existsById(providerId)) {
+        if (!providers.existsByIdAndBusinessId(providerId, currentBusinessContext.id())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No such provider");
         }
         boolean takenByOther = users.findAllByBusinessIdOrderByUsernameAsc(currentBusinessContext.id()).stream()
