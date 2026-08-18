@@ -4,9 +4,13 @@ import com.salonreview.domain.AppUser;
 import com.salonreview.domain.Business;
 import com.salonreview.domain.BusinessMembership;
 import com.salonreview.domain.Role;
+import com.salonreview.domain.TelegramNotificationConfig;
+import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.AppUserRepository;
 import com.salonreview.repo.BusinessMembershipRepository;
 import com.salonreview.repo.BusinessRepository;
+import com.salonreview.repo.TelegramNotificationConfigRepository;
+import com.salonreview.repo.TwilioSmsConfigRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,6 +32,8 @@ class BusinessProvisioningServiceTest {
     private AppUserRepository users;
     private BusinessMembershipRepository memberships;
     private PasswordEncoder encoder;
+    private TelegramNotificationConfigRepository telegramConfigs;
+    private TwilioSmsConfigRepository twilioConfigs;
     private BusinessProvisioningService service;
 
     @BeforeEach
@@ -36,7 +42,9 @@ class BusinessProvisioningServiceTest {
         users = mock(AppUserRepository.class);
         memberships = mock(BusinessMembershipRepository.class);
         encoder = mock(PasswordEncoder.class);
-        service = new BusinessProvisioningService(businesses, users, memberships, encoder);
+        telegramConfigs = mock(TelegramNotificationConfigRepository.class);
+        twilioConfigs = mock(TwilioSmsConfigRepository.class);
+        service = new BusinessProvisioningService(businesses, users, memberships, encoder, telegramConfigs, twilioConfigs);
 
         when(businesses.findByShortCode(any())).thenReturn(Optional.empty());
         when(users.findByUsername(any())).thenReturn(Optional.empty());
@@ -76,6 +84,25 @@ class BusinessProvisioningServiceTest {
         assertThat(membershipCaptor.getValue().getBusinessId()).isEqualTo(2L);
         assertThat(membershipCaptor.getValue().getUserId()).isEqualTo(20L);
         assertThat(membershipCaptor.getValue().getRole()).isEqualTo(Role.OWNER);
+    }
+
+    @Test
+    @DisplayName("2026-08-18 live incident: seeds an empty (all-null-credential) telegram + twilio config row "
+            + "for the new business — without this, the owner's own Settings > Telegram/SMS pages 500 the "
+            + "instant they're opened, since those services assume their row already exists")
+    void seedsEmptyTelegramAndTwilioConfigRows() {
+        service.create("AK PMU", "AnnaKaraPMU", "America/Los_Angeles", "annakarapmu", "s3cret!");
+
+        ArgumentCaptor<TelegramNotificationConfig> telegramCaptor = ArgumentCaptor.forClass(TelegramNotificationConfig.class);
+        verify(telegramConfigs).save(telegramCaptor.capture());
+        assertThat(telegramCaptor.getValue().getBusinessId()).isEqualTo(2L);
+        assertThat(telegramCaptor.getValue().getBotToken()).isNull();
+        assertThat(telegramCaptor.getValue().getChatId()).isNull();
+
+        ArgumentCaptor<TwilioSmsConfig> twilioCaptor = ArgumentCaptor.forClass(TwilioSmsConfig.class);
+        verify(twilioConfigs).save(twilioCaptor.capture());
+        assertThat(twilioCaptor.getValue().getBusinessId()).isEqualTo(2L);
+        assertThat(twilioCaptor.getValue().isConfigured()).isFalse();
     }
 
     @Test

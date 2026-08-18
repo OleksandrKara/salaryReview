@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 
 /**
  * Reads the active agent config and creates new versions. Owner edits never mutate the active row —
@@ -22,10 +23,23 @@ public class RagConfigService {
         this.configs = configs;
     }
 
-    /** The single active config for one business (seeded for Business A as version 1 by V25). */
+    /** The single active config for one business (seeded for Business A as version 1 by V25).
+     * Throws if missing — every caller of this method (answer generation, SMS-draft suggestions)
+     * genuinely cannot proceed without a real config, so a hard failure is correct here. For a
+     * caller that needs to distinguish "not set up yet" from every other failure (the settings
+     * page), use {@link #findActive} instead. */
     public RagAgentConfig getActive(Long businessId) {
-        return configs.findByBusinessIdAndActiveTrue(businessId)
+        return findActive(businessId)
                 .orElseThrow(() -> new IllegalStateException("No active rag_agent_config for business " + businessId));
+    }
+
+    /** 2026-08-18 live incident: a second business reaching {@code GET /rag/config} before ever
+     * being seeded a config row (same gap {@link com.salonreview.telegram.TelegramConfigService}/
+     * {@link com.salonreview.sms.TwilioSmsConfigService} had) 500'd instead of showing "not set up
+     * yet" — RAG is deliberately not yet enabled for a second business (tasks.md 7.4), so this is
+     * an expected, not exceptional, state for the settings page to render. */
+    public Optional<RagAgentConfig> findActive(Long businessId) {
+        return configs.findByBusinessIdAndActiveTrue(businessId);
     }
 
     /** Insert a new active version for one business, deactivating that business's previous one.

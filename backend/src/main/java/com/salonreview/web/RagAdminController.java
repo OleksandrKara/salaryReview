@@ -87,11 +87,15 @@ public class RagAdminController {
                 : ResponseEntity.notFound().build();
     }
 
-    /** Read the active agent config. */
+    /** Read the active agent config — 404 both when RAG is globally disabled and when this
+     * specific business has no active config yet (not yet onboarded onto RAG, tasks.md 7.4)
+     * rather than the 500 a missing row used to produce. */
     @GetMapping("/config")
     public ResponseEntity<ConfigDto> getConfig() {
         if (!props.isEnabled()) return ResponseEntity.notFound().build();
-        return ResponseEntity.ok(toDto(configService.getActive(currentBusinessContext.id())));
+        return configService.findActive(currentBusinessContext.id())
+                .map(cfg -> ResponseEntity.ok(toDto(cfg)))
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     /** Create a new active config version (does not mutate the previous one). */
