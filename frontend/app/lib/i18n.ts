@@ -121,6 +121,7 @@ const STRINGS = {
   navSquareSettings: { EN: 'Square Connection', RU: 'Подключение Square' },
   navBusinessSettings: { EN: 'Business Settings', RU: 'Настройки бизнеса' },
   navBusinesses: { EN: 'Businesses', RU: 'Бизнесы' },
+  navOnboarding: { EN: 'Getting Started', RU: 'Начало работы' },
   navDashboard: { EN: 'Dashboard', RU: 'Панель' },
   navMyPay: { EN: 'My pay', RU: 'Моя зарплата' },
   navMyTime: { EN: 'My time', RU: 'Моё время' },

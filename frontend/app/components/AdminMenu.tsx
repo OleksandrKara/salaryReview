@@ -47,6 +47,7 @@ function linksFor(role: Role): NavLink[] {
       { href: '/owner/settings/square', key: 'navSquareSettings' },
       { href: '/owner/settings/business', key: 'navBusinessSettings' },
       { href: '/owner/settings/businesses', key: 'navBusinesses' },
+      { href: '/onboarding', key: 'navOnboarding' },
     ];
   }
   if (role === 'MANAGER') {
