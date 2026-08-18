@@ -348,11 +348,14 @@ export default function FunnelView({
   slug,
   pages,
   role,
+  timeZone,
 }: {
   initialData: FunnelDashboardData[];
   slug: string;
   pages: MarketingLandingPage[];
   role: Role;
+  // Phase 6.3: the business's real configured timezone — see ../period's own doc.
+  timeZone?: string;
 }) {
   const searchParams = useSearchParams();
   const [data, setData] = useState(initialData);
@@ -376,7 +379,7 @@ export default function FunnelView({
     if (otherPages.length === 0) return;
     setLoadingCompare(true);
     try {
-      const bounds = periodToBounds(nextSelection);
+      const bounds = periodToBounds(nextSelection, timeZone);
       const results = await Promise.all(
         otherPages.map((p) => api.getMarketingFunnel(p.slug, nextSources, bounds.from, bounds.to)),
       );
@@ -401,7 +404,7 @@ export default function FunnelView({
     setSources(next);
     setLoadingSources(true);
     try {
-      const bounds = periodToBounds(selection);
+      const bounds = periodToBounds(selection, timeZone);
       const fresh = await api.getMarketingFunnel(slug, next, bounds.from, bounds.to);
       setData(fresh);
       // Compare data was fetched for the old selection — invalidate and refetch if already showing.
@@ -419,7 +422,7 @@ export default function FunnelView({
     setSelection(next);
     setLoadingSources(true);
     try {
-      const bounds = periodToBounds(next);
+      const bounds = periodToBounds(next, timeZone);
       const fresh = await api.getMarketingFunnel(slug, sources, bounds.from, bounds.to);
       setData(fresh);
       if (compareMode) {
@@ -445,7 +448,7 @@ export default function FunnelView({
           />
         </div>
         <div className="mb-4">
-          <PeriodFilter value={selection} onChange={changePeriod} />
+          <PeriodFilter value={selection} onChange={changePeriod} timeZone={timeZone} />
         </div>
         <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">
           No booking-funnel data recorded yet for this landing page under the selected source(s) — try All traffic.
@@ -479,7 +482,7 @@ export default function FunnelView({
       </div>
 
       <div className="mb-4">
-        <PeriodFilter value={selection} onChange={changePeriod} disabled={loadingSources} />
+        <PeriodFilter value={selection} onChange={changePeriod} disabled={loadingSources} timeZone={timeZone} />
       </div>
 
       <div className={compareMode ? 'grid gap-4 lg:grid-cols-2' : 'space-y-4'}>

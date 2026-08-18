@@ -15,17 +15,24 @@ export default async function MarketingFunnelPage({
   const params = await searchParams;
   const { slug } = params;
   const resolvedSlug = slug ?? DEFAULT_SLUG;
+  // getBusinessSettings is OWNER-only (403 for ADS_MANAGER) — fails open, same reasoning as the
+  // Overview tab's own page.tsx: an ADS_MANAGER still gets the funnel, just falling back to
+  // period.ts's own default timezone rather than this business's real configured one.
+  const [me, businessSettings] = await Promise.all([
+    serverApi.getMe(),
+    serverApi.getBusinessSettings().catch(() => null),
+  ]);
+  if (me?.role !== 'OWNER' && me?.role !== 'ADS_MANAGER') redirect('/reports');
+  const timeZone = businessSettings?.timezone;
+
   // Same shared period filter every marketing tab reads (see PeriodFilter/../period) — defaults
   // to 'all' here specifically (not the usual 'mtd'), since a funnel's drop-off shape is normally
   // read over its whole history rather than just the current month.
-  const bounds = periodToBounds(parsePeriodParams(params, 'all'));
-  const [me, data, pages] = await Promise.all([
-    serverApi.getMe(),
+  const bounds = periodToBounds(parsePeriodParams(params, 'all'), timeZone);
+  const [data, pages] = await Promise.all([
     serverApi.getMarketingFunnel(slug, undefined, bounds.from, bounds.to),
     serverApi.getMarketingPages(),
   ]);
-
-  if (me?.role !== 'OWNER' && me?.role !== 'ADS_MANAGER') redirect('/reports');
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
@@ -41,7 +48,7 @@ export default async function MarketingFunnelPage({
       <div className="mt-6">
         {/* Keyed by slug so switching pages via the shared selector actually remounts this with
             fresh initialData instead of the already-mounted instance's stale state. */}
-        <FunnelView key={resolvedSlug} initialData={data} slug={resolvedSlug} pages={pages} role={me.role} />
+        <FunnelView key={resolvedSlug} initialData={data} slug={resolvedSlug} pages={pages} role={me.role} timeZone={timeZone} />
       </div>
     </main>
   );

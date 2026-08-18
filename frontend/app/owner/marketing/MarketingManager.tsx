@@ -23,11 +23,14 @@ export default function MarketingManager({
   initialVariants,
   initialStatsSince,
   readOnly = false,
+  timeZone,
 }: {
   slug: string;
   initialVariants: MarketingVariantStat[];
   initialStatsSince: string | null;
   readOnly?: boolean;
+  // Phase 6.3: the business's real configured timezone, from BusinessSettingsDto — see page.tsx.
+  timeZone?: string;
 }) {
   const searchParams = useSearchParams();
   const [variants, setVariants] = useState(initialVariants);
@@ -44,7 +47,7 @@ export default function MarketingManager({
   const [selection, setSelection] = useState<PeriodSelection>(() => parsePeriodParams(searchParams, 'all'));
 
   async function refresh(nextSources: Set<TrafficSourceKey> = sources, nextSelection: PeriodSelection = selection) {
-    const bounds = periodToBounds(nextSelection);
+    const bounds = periodToBounds(nextSelection, timeZone);
     const data = await api.getMarketingDashboard(slug, nextSources, bounds.from, bounds.to);
     setVariants(data.variants);
     setStatsSince(data.statsSince);
@@ -144,7 +147,7 @@ export default function MarketingManager({
       </div>
 
       <div className="mb-4">
-        <PeriodFilter value={selection} onChange={changePeriod} />
+        <PeriodFilter value={selection} onChange={changePeriod} timeZone={timeZone} />
       </div>
 
       {readOnly ? (

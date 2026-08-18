@@ -22,10 +22,12 @@ export interface PeriodSelection {
 // Every "today"/period boundary in this file resolves against the salon's own business
 // timezone rather than the ambient one (server process or browser) this code happens to run
 // in — this file runs in both, and neither is guaranteed to be Pacific. Matches the backend's
-// own resolveZone() convention (see MarketingDashboardService), except this can't call Square
-// for the salon's *actual* configured zone from a framework-free frontend module, so it
-// hardcodes Pacific directly, same precedent as MarketingAdsReportController's SALON_ZONE.
-const SALON_TIME_ZONE = 'America/Los_Angeles';
+// own resolveZone() convention (see MarketingDashboardService). Phase 6.3: callers now pass the
+// business's real configured timezone (BusinessSettingsDto.timezone, threaded down from each
+// tab's page.tsx); DEFAULT_TIME_ZONE is only the fallback for a caller that hasn't been updated
+// to pass one, same value as the old hardcoded constant so nothing changes for a caller that
+// doesn't (both of today's real businesses are Pacific anyway).
+const DEFAULT_TIME_ZONE = 'America/Los_Angeles';
 
 interface YMD {
   year: number;
@@ -33,13 +35,13 @@ interface YMD {
   day: number;
 }
 
-function todayInSalonZone(): YMD {
-  return dateToYmdInSalonZone(new Date());
+function todayInSalonZone(timeZone: string): YMD {
+  return dateToYmdInSalonZone(new Date(), timeZone);
 }
 
-function dateToYmdInSalonZone(d: Date): YMD {
+function dateToYmdInSalonZone(d: Date, timeZone: string): YMD {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: SALON_TIME_ZONE,
+    timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -74,24 +76,24 @@ function startOfMonth(ymd: YMD): YMD {
 
 /** Today's date (yyyy-MM-dd) in the salon's business timezone — used e.g. as the custom-range
  * date picker's upper bound, so "today" there agrees with what "Month to date" etc. compute. */
-export function todayIso(): string {
-  return isoDate(todayInSalonZone());
+export function todayIso(timeZone: string = DEFAULT_TIME_ZONE): string {
+  return isoDate(todayInSalonZone(timeZone));
 }
 
-export function lastNWeeksRange(n: number): DateRange {
-  const to = todayInSalonZone();
+export function lastNWeeksRange(n: number, timeZone: string = DEFAULT_TIME_ZONE): DateRange {
+  const to = todayInSalonZone(timeZone);
   const from = addDays(to, -(n * 7 - 1));
   return { from: isoDate(from), to: isoDate(to) };
 }
 
-export function lastNMonthsRange(n: number): DateRange {
-  const to = todayInSalonZone();
+export function lastNMonthsRange(n: number, timeZone: string = DEFAULT_TIME_ZONE): DateRange {
+  const to = todayInSalonZone(timeZone);
   const from = addMonths(startOfMonth(to), -(n - 1));
   return { from: isoDate(from), to: isoDate(to) };
 }
 
-export function monthToDateSoFarRange(): DateRange {
-  const today = todayInSalonZone();
+export function monthToDateSoFarRange(timeZone: string = DEFAULT_TIME_ZONE): DateRange {
+  const today = todayInSalonZone(timeZone);
   return { from: isoDate(startOfMonth(today)), to: isoDate(today) };
 }
 
@@ -123,12 +125,15 @@ export function parsePeriodParams(
  * aren't reachable on those tabs (disabled outside Ads Report), so this deliberately doesn't
  * handle them; Ads Report computes its own week/month ranges via its existing rangeCount presets
  * (lastNWeeksRange/lastNMonthsRange above) instead of going through this helper. */
-export function periodToBounds(selection: PeriodSelection): { from?: string; to?: string } {
+export function periodToBounds(
+  selection: PeriodSelection,
+  timeZone: string = DEFAULT_TIME_ZONE,
+): { from?: string; to?: string } {
   switch (selection.period) {
     case 'all':
       return {};
     case 'mtd':
-      return monthToDateSoFarRange();
+      return monthToDateSoFarRange(timeZone);
     case 'custom':
       return { from: selection.from, to: selection.to };
     default:

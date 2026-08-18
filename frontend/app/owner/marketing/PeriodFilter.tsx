@@ -29,12 +29,14 @@ const ORDER: PeriodType[] = ['all', 'week', 'month', 'mtd', 'custom'];
  * `onChange` — called directly, not derived from the URL round-trip, so there's no extra render
  * cycle between a click and the fetch starting. */
 export default function PeriodFilter({
-  value, onChange, enableWeekMonth = false, disabled,
+  value, onChange, enableWeekMonth = false, disabled, timeZone,
 }: {
   value: PeriodSelection;
   onChange: (next: PeriodSelection) => void;
   enableWeekMonth?: boolean;
   disabled?: boolean;
+  // Phase 6.3: the business's real configured timezone — see period.ts's own doc.
+  timeZone?: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -116,7 +118,7 @@ export default function PeriodFilter({
               type="date"
               value={customTo}
               min={customFrom || undefined}
-              max={todayIso()}
+              max={todayIso(timeZone)}
               disabled={disabled}
               onChange={(e) => setCustomTo(e.target.value)}
               className="rounded border border-zinc-300 px-2 py-1.5 text-xs disabled:opacity-50"

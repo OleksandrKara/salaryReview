@@ -110,7 +110,7 @@ function withinRange(iso: string, from: string, to: string): boolean {
   return true;
 }
 
-function applyFilters(contacts: MarketingContact[], f: Filters): MarketingContact[] {
+function applyFilters(contacts: MarketingContact[], f: Filters, timeZone: string | undefined): MarketingContact[] {
   const search = f.search.trim().toLowerCase();
   return contacts.filter((c) => {
     if (search) {
@@ -126,7 +126,7 @@ function applyFilters(contacts: MarketingContact[], f: Filters): MarketingContac
     if (!matchesField(c, f.variant, (x) => x.variantName, (s) => s.variantName)) return false;
     if (f.submissionTypes.size > 0 && !c.submissions.some((s) => f.submissionTypes.has(s.submissionType))) return false;
     if (f.vipOnly && !c.vip) return false;
-    const { from: periodFrom, to: periodTo } = periodToBounds(f.period);
+    const { from: periodFrom, to: periodTo } = periodToBounds(f.period, timeZone);
     if ((periodFrom || periodTo) && !withinRange(c.createdAt, periodFrom ?? '', periodTo ?? '')) return false;
     if ((f.modifiedFrom || f.modifiedTo) && !withinRange(c.updatedAt, f.modifiedFrom, f.modifiedTo)) return false;
     return true;
@@ -154,8 +154,13 @@ function Select({ label, value, options, onChange }: { label: string; value: str
 }
 
 export default function ContactsFilterBar({
-  contacts: initialContacts, initialLandingPage,
-}: { contacts: MarketingContact[]; initialLandingPage?: string }) {
+  contacts: initialContacts, initialLandingPage, timeZone,
+}: {
+  contacts: MarketingContact[];
+  initialLandingPage?: string;
+  // Phase 6.3: the business's real configured timezone — see ../period's own doc.
+  timeZone?: string;
+}) {
   const searchParams = useSearchParams();
   // Pre-populates the "Landing page" facet from the shared page selector's ?slug= when explicitly
   // present (e.g. arriving from "Home Page") — left at "All" (today's default) otherwise, since an
@@ -197,7 +202,7 @@ export default function ContactsFilterBar({
   const landingPages = useMemo(() => distinctValues(contacts, (c) => c.landingPageSlug, (s) => s.landingPageSlug), [contacts]);
   const variants = useMemo(() => distinctValues(contacts, (c) => c.variantName, (s) => s.variantName), [contacts]);
 
-  const filtered = useMemo(() => applyFilters(contacts, filters), [contacts, filters]);
+  const filtered = useMemo(() => applyFilters(contacts, filters, timeZone), [contacts, filters, timeZone]);
 
   function toggleSubmissionType(type: string) {
     setFilters((f) => {
@@ -268,7 +273,7 @@ export default function ContactsFilterBar({
 
         <div className="mt-3">
           <span className="mb-1 block text-xs font-medium text-zinc-500">Period (created)</span>
-          <PeriodFilter value={filters.period} onChange={(next) => setFilters((f) => ({ ...f, period: next }))} />
+          <PeriodFilter value={filters.period} onChange={(next) => setFilters((f) => ({ ...f, period: next }))} timeZone={timeZone} />
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
