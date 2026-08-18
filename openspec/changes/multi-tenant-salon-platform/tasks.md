@@ -501,9 +501,33 @@ this file is the plan, not yet executed.
       for role/language now threads `activeBusinessId`/`businesses` through too, so no extra
       `/api/me` round-trip was added to any existing page (#395). Verified: a single-membership
       user's rendered page has no dropdown; the platform_admin's does, with both business names.
-- [ ] 6.3 `app/owner/marketing/period.ts:28`'s hardcoded `SALON_TIME_ZONE` constant replaced with the
-      backend-supplied business timezone, matching the existing pattern already used correctly by
-      `report.timezone`/`detail.timezone` elsewhere in the frontend
+- [x] 6.3 **Shipped 2026-08-18, mostly.** `period.ts`'s hardcoded `SALON_TIME_ZONE` constant is
+      now `DEFAULT_TIME_ZONE`, an optional `timeZone` parameter on every function in the file
+      (`todayIso`, `lastNWeeksRange`, `lastNMonthsRange`, `monthToDateSoFarRange`,
+      `periodToBounds`), defaulting to the same Pacific value for any caller that doesn't pass one
+      — so this shipped with zero required changes to any existing call site and zero observable
+      behavior change (both real businesses are Pacific today). Threaded the real
+      `BusinessSettingsDto.timezone` down from each tab's `page.tsx` (fetched via
+      `serverApi.getBusinessSettings().catch(() => null)` — that endpoint is OWNER-only, fails
+      open to the default for an ADS_MANAGER, same reasoning as the pre-existing
+      `getSquareConnection()` catch already on the Overview tab) through to `PeriodFilter` for the
+      **Overview, Contacts, and Funnel** tabs — `MarketingManager.tsx`, `ContactsFilterBar.tsx`
+      (fixing a real bug found while doing this: `applyFilters` was a module-level function that
+      would have referenced an out-of-scope `timeZone` if left as a bare closure — made it an
+      explicit parameter instead), `FunnelView.tsx`.
+      **Not done: the Ads Report tab** (`AdsReportView.tsx`) — its own module-level helpers
+      (`thisWeekRange`, `thisMonthRange`, `isCurrentPeriod`) call `period.ts`'s functions with no
+      `timeZone` threaded through yet; left alone rather than risk a mistake in the app's most
+      complex revenue-reporting view for zero observable benefit tonight (still real Pacific-only
+      behavior today, not broken). Verified: `tsc`/`build` clean; a live end-to-end check against
+      an isolated instance restored from a real backup — Overview and Funnel both render with
+      `timeZone: "America/Los_Angeles"` correctly threaded down to `MarketingManager`/`FunnelView`
+      in the actual RSC payload; an ADS_MANAGER account gets the full dashboard with no error,
+      correctly falling back to the default. (Contacts tab 500'd in this specific isolated
+      env — traced to `Failed to decrypt Square credential` / `AEADBadTagException`, an
+      environmental artifact of testing real encrypted prod data against a throwaway
+      `SQUARE_CREDENTIALS_MASTER_KEY`, unrelated to this change — Overview/Funnel's success on the
+      exact same env rules out a real regression.)
 - [ ] 6.4 New `/onboarding` flow (OWNER-only, platform-admin-created business's first login): connect
       Square (paste personal access token + location id → `POST /api/square/connection`), invite
       first MANAGER/PROVIDER users — mirrors today's manual setup process, just moved into the product

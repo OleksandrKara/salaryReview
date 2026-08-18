@@ -9,7 +9,16 @@ export default async function MarketingContactsPage({
 }: {
   searchParams: Promise<{ slug?: string }>;
 }) {
-  const [{ slug }, me, data] = await Promise.all([searchParams, serverApi.getMe(), serverApi.getMarketingContacts()]);
+  // getBusinessSettings is OWNER-only (403 for ADS_MANAGER) — fails open, same reasoning as the
+  // Overview tab's own page.tsx: an ADS_MANAGER still gets the contacts list, just falling back
+  // to period.ts's own default timezone rather than this business's real configured one.
+  const [{ slug }, me, data, businessSettings] = await Promise.all([
+    searchParams,
+    serverApi.getMe(),
+    serverApi.getMarketingContacts(),
+    serverApi.getBusinessSettings().catch(() => null),
+  ]);
+  const timeZone = businessSettings?.timezone;
 
   if (me?.role !== 'OWNER' && me?.role !== 'ADS_MANAGER') redirect('/reports');
 
@@ -35,7 +44,7 @@ export default async function MarketingContactsPage({
           {/* Keyed by slug so switching pages via the shared selector — a client-side navigation
               that wouldn't otherwise remount this component — actually re-applies the "Landing
               page" facet default instead of leaving it at whatever it was already set to. */}
-          <ContactsFilterBar key={slug ?? 'default'} contacts={data.contacts} initialLandingPage={slug} />
+          <ContactsFilterBar key={slug ?? 'default'} contacts={data.contacts} initialLandingPage={slug} timeZone={timeZone} />
         </div>
       )}
     </main>

@@ -14,13 +14,21 @@ export default async function MarketingDashboardPage({
 }) {
   const params = await searchParams;
   const { slug } = params;
+  // getBusinessSettings is OWNER-only (403 for ADS_MANAGER) — same fails-open reasoning as
+  // getSquareConnection below: an ADS_MANAGER still gets the dashboard, just falling back to
+  // period.ts's own default timezone rather than this business's real configured one.
+  const [me, businessSettings] = await Promise.all([
+    serverApi.getMe(),
+    serverApi.getBusinessSettings().catch(() => null),
+  ]);
+  if (me?.role !== 'OWNER' && me?.role !== 'ADS_MANAGER') redirect('/reports');
+  const timeZone = businessSettings?.timezone;
+
   // Same shared period filter every marketing tab reads (see PeriodFilter/./period) — defaults to
   // 'all' here (like Funnel, unlike Overview's usual 'mtd'), layered on top of (never replacing)
   // this page's own permanent "Hide stats before" cutoff, which the backend intersects with these
   // bounds itself.
-  const bounds = periodToBounds(parsePeriodParams(params, 'all'));
-  const me = await serverApi.getMe();
-  if (me?.role !== 'OWNER' && me?.role !== 'ADS_MANAGER') redirect('/reports');
+  const bounds = periodToBounds(parsePeriodParams(params, 'all'), timeZone);
 
   // ADS_MANAGER can't reach the Square settings page (OWNER-only) — the request 403s and this
   // fails open, same reasoning as /admin/redos, letting an ADS_MANAGER through to the normal
@@ -73,6 +81,7 @@ export default async function MarketingDashboardPage({
               initialVariants={data.variants}
               initialStatsSince={data.statsSince}
               readOnly={me.role !== 'OWNER'}
+              timeZone={timeZone}
             />
           </div>
 
