@@ -55,17 +55,18 @@ public class OwnerCustomerService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "squareCustomerId is required");
         }
         String customerId = req.squareCustomerId().trim();
-        if (repo.existsBySquareCustomerId(customerId)) {
+        Long businessId = currentBusinessContext.id();
+        if (repo.existsByBusinessIdAndSquareCustomerId(businessId, customerId)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Customer is already marked as owner");
         }
         // Resolve the name now so the list reads well even if Square is unreachable later.
         String label = req.label();
         if (label == null || label.isBlank()) {
-            label = squareClientProvider.forBusiness(currentBusinessContext.id())
+            label = squareClientProvider.forBusiness(businessId)
                     .customerNames(List.of(customerId)).get(customerId);
         }
         OwnerCustomer saved = repo.save(OwnerCustomer.builder()
-                .businessId(currentBusinessContext.id())
+                .businessId(businessId)
                 .squareCustomerId(customerId)
                 .label(label)
                 .createdBy(createdBy)
@@ -73,8 +74,18 @@ public class OwnerCustomerService {
         return new OwnerCustomerView(saved.getId(), saved.getSquareCustomerId(), label);
     }
 
+    /** @throws ResponseStatusException 404 if {@code id} isn't an owner-customer row of the current
+     * business — a bare {@code deleteById} would let one business delete another's row by guessing
+     * a small sequential id (found live 2026-08-18, see V88's own comment: this table's unique
+     * constraint was widened to include business_id in the same change that added this check). */
+    /** @throws ResponseStatusException 404 if {@code id} isn't an owner-customer row of the current
+     * business — a bare {@code deleteById} would let one business delete another's row by guessing
+     * a small sequential id (found live 2026-08-18, see V88's own comment: this table's unique
+     * constraint was widened to include business_id in the same change that added this check). */
     public void delete(Long id) {
-        repo.deleteById(id);
+        OwnerCustomer row = repo.findByIdAndBusinessId(id, currentBusinessContext.id())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "no such owner customer"));
+        repo.delete(row);
     }
 
     /** Square customers whose name matches {@code query}, for the add picker. */

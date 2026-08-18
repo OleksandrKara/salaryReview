@@ -257,12 +257,19 @@ public class SuspiciousBookingService {
 
     private static boolean isBlank(String s) { return s == null || s.isBlank(); }
 
-    /** Insert (or no-op if already present) a clearance row for this booking. */
+    /** Insert (or no-op if already present) a clearance row for this booking.
+     *
+     * <p>Scoped by business, not just {@code bookingId} — found live 2026-08-18: a bare
+     * {@code findBySquareBookingId}/{@code deleteBySquareBookingId} keyed only on the caller-
+     * controlled path variable would let one business clear or un-clear (re-flag) another
+     * business's suspicious booking (see V88's own comment: this table's unique constraint was
+     * widened to include business_id in the same change that added this scoping). */
     @Transactional
     public void clear(String bookingId, String username, String note) {
-        if (clearances.findBySquareBookingId(bookingId).isPresent()) return;
+        Long businessId = currentBusinessContext.id();
+        if (clearances.findByBusinessIdAndSquareBookingId(businessId, bookingId).isPresent()) return;
         clearances.save(SuspiciousBookingClearance.builder()
-                .businessId(currentBusinessContext.id())
+                .businessId(businessId)
                 .squareBookingId(bookingId)
                 .clearedByUsername(username)
                 .clearedAt(Instant.now())
@@ -274,7 +281,7 @@ public class SuspiciousBookingService {
     /** Remove the clearance row, restoring the booking to the uncleared list. */
     @Transactional
     public void unclear(String bookingId) {
-        clearances.deleteBySquareBookingId(bookingId);
+        clearances.deleteByBusinessIdAndSquareBookingId(currentBusinessContext.id(), bookingId);
         triageFeedbackProvider.ifAvailable(p -> p.onUnclear(bookingId));
     }
 

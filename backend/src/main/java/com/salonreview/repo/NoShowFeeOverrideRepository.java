@@ -7,8 +7,7 @@ import java.util.List;
 import java.util.Optional;
 
 public interface NoShowFeeOverrideRepository extends JpaRepository<NoShowFeeOverride, Long> {
-    Optional<NoShowFeeOverride> findBySquareBookingId(String squareBookingId);
-    boolean existsBySquareBookingId(String squareBookingId);
-    void deleteBySquareBookingId(String squareBookingId);
+    Optional<NoShowFeeOverride> findByBusinessIdAndSquareBookingId(Long businessId, String squareBookingId);
+    void deleteByBusinessIdAndSquareBookingId(Long businessId, String squareBookingId);
     List<NoShowFeeOverride> findAllByBusinessId(Long businessId);
 }

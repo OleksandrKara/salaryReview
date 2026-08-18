@@ -13,7 +13,8 @@ import java.time.Instant;
  * two review flows never interfere.
  */
 @Entity
-@Table(name = "cancellation_clearance")
+@Table(name = "cancellation_clearance",
+       uniqueConstraints = @UniqueConstraint(columnNames = {"business_id", "square_booking_id"}))
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
 public class CancellationClearance {
@@ -25,7 +26,7 @@ public class CancellationClearance {
     @Column(name = "business_id", nullable = false)
     private Long businessId;
 
-    @Column(name = "square_booking_id", nullable = false, unique = true)
+    @Column(name = "square_booking_id", nullable = false)
     private String squareBookingId;
 
     @Column(name = "cleared_by_username", nullable = false, length = 100)

@@ -11,10 +11,10 @@ import java.util.Optional;
 public interface CancellationClearanceRepository
         extends JpaRepository<CancellationClearance, Long> {
 
-    Optional<CancellationClearance> findBySquareBookingId(String squareBookingId);
+    Optional<CancellationClearance> findByBusinessIdAndSquareBookingId(Long businessId, String squareBookingId);
 
     List<CancellationClearance> findAllBySquareBookingIdIn(Collection<String> squareBookingIds);
 
     @Transactional
-    void deleteBySquareBookingId(String squareBookingId);
+    void deleteByBusinessIdAndSquareBookingId(Long businessId, String squareBookingId);
 }

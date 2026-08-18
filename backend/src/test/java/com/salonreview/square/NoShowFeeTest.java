@@ -133,6 +133,54 @@ class NoShowFeeTest {
     }
 
     @Test
+    @DisplayName("2026-08-18 cross-tenant fix: confirm() on a bookingId that collides with another "
+            + "business's override row does NOT take that row over — it creates/updates the "
+            + "current business's own row instead")
+    void confirmDoesNotTakeOverAnotherBusinessRow() {
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        SalonConfigRepository salonConfigRepo = mock(SalonConfigRepository.class);
+        when(salonConfigRepo.findByBusinessId(1L)).thenReturn(Optional.of(
+                SalonConfig.builder().businessId(1L).noShowFeeAmount(new BigDecimal("25.00")).build()));
+        ProviderRepository providers = mock(ProviderRepository.class);
+        when(providers.existsById(1L)).thenReturn(true);
+        NoShowFeeOverrideRepository overrides = mock(NoShowFeeOverrideRepository.class);
+        // Business-1-scoped lookup correctly misses, even though a row for the same bookingId
+        // exists under business 2 (not stubbed here, so a leaked call would see nothing useful
+        // either — the point is the business-1-scoped method is the one actually called).
+        when(overrides.findByBusinessIdAndSquareBookingId(1L, "BK1")).thenReturn(Optional.empty());
+
+        NoShowFeeService svc = new NoShowFeeService(mock(SquareClientProvider.class), mock(ProviderDirectory.class),
+                providers, overrides, currentBusinessContext, salonConfigRepo);
+
+        svc.confirm(new NoShowFeeService.ConfirmRequest("BK1", 1L, null, null, "Julia B.", null, null), "manager");
+
+        org.mockito.ArgumentCaptor<com.salonreview.domain.NoShowFeeOverride> cap =
+                org.mockito.ArgumentCaptor.forClass(com.salonreview.domain.NoShowFeeOverride.class);
+        verify(overrides).save(cap.capture());
+        assertThat(cap.getValue().getBusinessId()).isEqualTo(1L);
+        assertThat(cap.getValue().getSquareBookingId()).isEqualTo("BK1");
+    }
+
+    @Test
+    @DisplayName("2026-08-18 cross-tenant fix: clearOverride() deletes only the current business's "
+            + "row for this bookingId, not any business's row sharing the same Square id")
+    void clearOverrideIsScopedToCurrentBusiness() {
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        NoShowFeeOverrideRepository overrides = mock(NoShowFeeOverrideRepository.class);
+
+        NoShowFeeService svc = new NoShowFeeService(mock(SquareClientProvider.class), mock(ProviderDirectory.class),
+                mock(ProviderRepository.class), overrides, currentBusinessContext, mock(SalonConfigRepository.class));
+
+        svc.clearOverride("BK1");
+
+        verify(overrides).deleteByBusinessIdAndSquareBookingId(1L, "BK1");
+    }
+
+    @Test
     @DisplayName("Payout: a $25 no-show fee is paid to the provider in full (Zelle), not commissioned, no tier effect")
     void paysFullFeeViaAdjustment() {
         SquareMonthAggregator aggregator = mock(SquareMonthAggregator.class);

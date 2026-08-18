@@ -177,12 +177,17 @@ public class CancelledAppointmentService {
         }).toList();
     }
 
-    /** Record that the owner reviewed this cancelled booking (idempotent). */
+    /** Record that the owner reviewed this cancelled booking (idempotent).
+     *
+     * <p>Scoped by business, not just {@code bookingId} — same cross-tenant gap found and closed
+     * across all the Square-ID-keyed clearance/override tables on 2026-08-18 (see
+     * {@code SuspiciousBookingService#clear} for the fuller writeup). */
     @Transactional
     public void clear(String bookingId, String username, String note) {
-        if (clearances.findBySquareBookingId(bookingId).isPresent()) return;
+        Long businessId = currentBusinessContext.id();
+        if (clearances.findByBusinessIdAndSquareBookingId(businessId, bookingId).isPresent()) return;
         clearances.save(CancellationClearance.builder()
-                .businessId(currentBusinessContext.id())
+                .businessId(businessId)
                 .squareBookingId(bookingId)
                 .clearedByUsername(username)
                 .clearedAt(Instant.now())
@@ -193,7 +198,7 @@ public class CancelledAppointmentService {
     /** Undo a review, restoring the booking to the warning list. */
     @Transactional
     public void unclear(String bookingId) {
-        clearances.deleteBySquareBookingId(bookingId);
+        clearances.deleteByBusinessIdAndSquareBookingId(currentBusinessContext.id(), bookingId);
     }
 
     // --- internals ---

@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Optional;
 
 public interface OwnerCustomerRepository extends JpaRepository<OwnerCustomer, Long> {
-    boolean existsBySquareCustomerId(String squareCustomerId);
-    Optional<OwnerCustomer> findBySquareCustomerId(String squareCustomerId);
+    boolean existsByBusinessIdAndSquareCustomerId(Long businessId, String squareCustomerId);
+    Optional<OwnerCustomer> findByIdAndBusinessId(Long id, Long businessId);
     List<OwnerCustomer> findAllByBusinessId(Long businessId);
 }
