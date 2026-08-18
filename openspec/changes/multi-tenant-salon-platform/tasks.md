@@ -394,15 +394,25 @@ this file is the plan, not yet executed.
 
 ## Phase 5 — Authentication/authorization
 
-- [ ] 5.1 `OwnerBootstrap` becomes business-creation-time seeding (new `POST /api/platform/businesses`
-      creates a `business` row + seeds its first OWNER), replacing the current single-shot
-      app-startup `ApplicationRunner` — old env-var-based bootstrap kept only as the one-time path for
-      re-seeding Business A during migration
-- [ ] 5.2 Narrow `platform_admin` table + check (design.md D4) — no new `Role` enum value; a small
-      number of new `/api/platform/*` endpoints (`GET /businesses`, `POST /businesses`,
-      `POST /businesses/{id}/suspend`) gated on this flag, reviewed for accidental broad grants
-- [ ] 5.3 `UserController` (owner-only) — creation/edit scoped to `currentBusinessContext.id()`;
-      Square-roster lookup (`squareRoster()`) resolves via `SquareClientProvider` (depends on Phase 3)
+- [x] 5.1 Already shipped (PR #368, 2026-08-15) — `POST /api/platform/businesses`
+      (`BusinessProvisioningService.create`) creates a `business` row + its first OWNER;
+      `OwnerBootstrap`'s original env-var-based `ApplicationRunner` kept as-is, unconditional on
+      `app_user` being empty, still the one-time path that seeded Business A originally.
+- [x] 5.2 **Shipped 2026-08-18.** `platform_admin(user_id)` table (V107, no data seeded in the
+      migration itself — see its own comment for why: Flyway runs before `OwnerBootstrap` ever
+      creates the first app_user row, so a fresh environment's table would still be empty at that
+      moment). `PlatformBusinessController`'s `GET`/`POST /api/platform/businesses` now both
+      additionally require a `platform_admin` row for the caller (still `hasRole("OWNER")` at the
+      URL level as a baseline) — before this, any business's own OWNER could list every business on
+      the platform and create new ones with arbitrary owner credentials. Seeding: `OwnerBootstrap`'s
+      fresh-instance path grants platform_admin to the very first OWNER it ever creates; a new,
+      separate, idempotent `backfillPlatformAdmin` runner (same "safe on every boot forever" shape
+      as `SquareConnectionBootstrap`) grants it to the existing `owner` account on an
+      already-bootstrapped instance like production. `POST /businesses/{id}/suspend` from the
+      original task text was never built at all (no code exists for it) — out of scope here, not a
+      regression.
+- [x] 5.3 Already correct before tonight — `UserController`/`squareRoster()` resolve entirely via
+      `currentBusinessContext.id()`/`SquareClientProvider`, no `legacySmsBusiness()` stopgap left.
 - [ ] 5.4 Security/authorization tests: an OWNER of Business A calling any `/api/users/**`,
       `/api/providers/**`, `/api/settlements/**` path with a Business-B-owned resource id gets 404, not
       200-with-wrong-data and not 403-leaking-existence
