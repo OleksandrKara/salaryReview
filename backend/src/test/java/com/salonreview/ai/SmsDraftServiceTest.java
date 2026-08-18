@@ -3,6 +3,7 @@ package com.salonreview.ai;
 import com.anthropic.client.AnthropicClient;
 import com.salonreview.ai.SmsDraftService.DraftResult;
 import com.salonreview.config.AiSmsDraftProperties;
+import com.salonreview.config.BusinessFeatureService;
 import com.salonreview.domain.Language;
 import com.salonreview.domain.RagAgentConfig;
 import com.salonreview.domain.SmsMessage;
@@ -54,6 +55,7 @@ class SmsDraftServiceTest {
     private ObjectProvider<RagRetrievalService> ragRetrievalProvider = mock(ObjectProvider.class);
     @SuppressWarnings("unchecked")
     private ObjectProvider<RagConfigService> ragConfigProvider = mock(ObjectProvider.class);
+    private BusinessFeatureService businessFeatures;
 
     private SmsDraftService service;
     private SmsDraftService spied;
@@ -80,8 +82,11 @@ class SmsDraftServiceTest {
         ragConfigProvider = mock(ObjectProvider.class);
         when(ragConfigProvider.getIfAvailable()).thenReturn(null);
 
+        businessFeatures = mock(BusinessFeatureService.class);
+        when(businessFeatures.isEnabled(BUSINESS_ID, BusinessFeatureService.AI_SMS_DRAFT_ENABLED)).thenReturn(true);
+
         service = new SmsDraftService(anthropicProvider, props, smsMessageLogService, contactsService,
-                ragRetrievalProvider, ragConfigProvider);
+                ragRetrievalProvider, ragConfigProvider, businessFeatures);
         spied = spy(service);
     }
 
@@ -103,6 +108,17 @@ class SmsDraftServiceTest {
     @DisplayName("disabled feature flag returns empty without touching Claude")
     void disabledReturnsEmpty() {
         when(props.isEnabled()).thenReturn(false);
+
+        Optional<DraftResult> result = service.draft(PHONE, Language.EN, BUSINESS_ID);
+
+        assertThat(result).isEmpty();
+        verifyNoInteractions(anthropicProvider);
+    }
+
+    @Test
+    @DisplayName("Phase 4.3: globally on, but off for this specific business returns empty without touching Claude")
+    void businessFeatureOffReturnsEmpty() {
+        when(businessFeatures.isEnabled(BUSINESS_ID, BusinessFeatureService.AI_SMS_DRAFT_ENABLED)).thenReturn(false);
 
         Optional<DraftResult> result = service.draft(PHONE, Language.EN, BUSINESS_ID);
 

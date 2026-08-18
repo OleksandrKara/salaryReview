@@ -3,6 +3,7 @@ package com.salonreview.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.config.AiTriageProperties;
 import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.config.BusinessFeatureService;
 import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.config.RagProperties;
 import com.salonreview.domain.AppUser;
@@ -56,8 +57,9 @@ class MeControllerTest {
         memberships = mock(BusinessMembershipRepository.class);
         when(memberships.findByUserId(1L)).thenReturn(List.of());
         businesses = mock(BusinessRepository.class);
+        BusinessFeatureService businessFeatures = mock(BusinessFeatureService.class);
         mvc = MockMvcBuilders.standaloneSetup(new MeController(new AiTriageProperties(), new RagProperties(), users,
-                        currentBusinessContext, platformAdmins, memberships, businesses))
+                        currentBusinessContext, platformAdmins, memberships, businesses, businessFeatures))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
 
@@ -145,6 +147,33 @@ class MeControllerTest {
                 .andExpect(jsonPath("$.businesses.length()").value(2))
                 .andExpect(jsonPath("$.businesses[1].name").value("AK PMU"));
         verify(memberships, never()).findByUserId(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("Phase 4.3: features.ragEnabled/aiTriageEnabled are business-scoped on top of the "
+            + "deployment-level flag, not just deployment-wide")
+    void featuresAreBusinessScoped() throws Exception {
+        AiTriageProperties aiTriage = new AiTriageProperties();
+        aiTriage.setEnabled(true);
+        RagProperties rag = new RagProperties();
+        rag.setEnabled(true);
+        CurrentBusinessContext ctx = mock(CurrentBusinessContext.class);
+        when(ctx.id()).thenReturn(2L);
+        BusinessFeatureService businessFeatures = mock(BusinessFeatureService.class);
+        when(businessFeatures.isEnabled(2L, BusinessFeatureService.RAG_ENABLED)).thenReturn(false);
+        when(businessFeatures.isEnabled(2L, BusinessFeatureService.AI_TRIAGE_ENABLED)).thenReturn(false);
+        when(users.findById(1L)).thenReturn(Optional.of(user(null)));
+        MockMvc scopedMvc = MockMvcBuilders.standaloneSetup(new MeController(aiTriage, rag, users,
+                        ctx, platformAdmins, memberships, businesses, businessFeatures))
+                .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
+                .build();
+
+        // Deployment-level flags are both on, but business 2 has no business_feature row for either
+        // key — the effective, reported value must still be false.
+        scopedMvc.perform(get("/api/me"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.features.ragEnabled").value(false))
+                .andExpect(jsonPath("$.features.aiTriageEnabled").value(false));
     }
 
     @Test

@@ -4,6 +4,8 @@ import com.salonreview.ai.FunnelAnalysisResult;
 import com.salonreview.ai.FunnelAnalysisResult.PrioritizedRecommendation;
 import com.salonreview.ai.FunnelAnalysisService;
 import com.salonreview.config.AiFunnelAnalysisProperties;
+import com.salonreview.config.BusinessFeatureService;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.domain.ImpactLevel;
 import com.salonreview.domain.Language;
 import com.salonreview.repo.AppUserRepository;
@@ -36,9 +38,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class FunnelAnalysisControllerTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     private FunnelAnalysisService service;
     private AiFunnelAnalysisProperties props;
     private AppUserRepository users;
+    private BusinessFeatureService businessFeatures;
     private MockMvc mvc;
 
     @BeforeEach
@@ -46,8 +51,13 @@ class FunnelAnalysisControllerTest {
         service = mock(FunnelAnalysisService.class);
         props = mock(AiFunnelAnalysisProperties.class);
         users = mock(AppUserRepository.class);
+        CurrentBusinessContext currentBusinessContext = mock(CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(BUSINESS_ID);
+        businessFeatures = mock(BusinessFeatureService.class);
+        when(businessFeatures.isEnabled(BUSINESS_ID, BusinessFeatureService.AI_FUNNEL_ANALYSIS_ENABLED)).thenReturn(true);
 
-        FunnelAnalysisController controller = new FunnelAnalysisController(service, props, users);
+        FunnelAnalysisController controller =
+                new FunnelAnalysisController(service, props, users, currentBusinessContext, businessFeatures);
         TriageExceptionHandler advice = new TriageExceptionHandler();
 
         mvc = MockMvcBuilders.standaloneSetup(controller)
@@ -61,6 +71,20 @@ class FunnelAnalysisControllerTest {
     @DisplayName("flag off → 404 without invoking the service")
     void flagOffReturns404() throws Exception {
         when(props.isEnabled()).thenReturn(false);
+
+        mvc.perform(post("/api/owner/marketing/funnel/analyze")
+                        .param("slug", "home")
+                        .param("flowKey", "homepage_booking_v1"))
+                .andExpect(status().isNotFound());
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    @DisplayName("Phase 4.3: globally on, but off for this specific business → 404 without invoking the service")
+    void businessFeatureOffReturns404() throws Exception {
+        when(props.isEnabled()).thenReturn(true);
+        when(businessFeatures.isEnabled(BUSINESS_ID, BusinessFeatureService.AI_FUNNEL_ANALYSIS_ENABLED)).thenReturn(false);
 
         mvc.perform(post("/api/owner/marketing/funnel/analyze")
                         .param("slug", "home")

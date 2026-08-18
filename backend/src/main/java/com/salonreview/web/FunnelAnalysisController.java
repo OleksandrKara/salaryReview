@@ -4,6 +4,8 @@ import com.salonreview.ai.FunnelAnalysisResult;
 import com.salonreview.ai.FunnelAnalysisService;
 import com.salonreview.config.AiFunnelAnalysisProperties;
 import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.config.BusinessFeatureService;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.domain.AppUser;
 import com.salonreview.domain.Language;
 import com.salonreview.repo.AppUserRepository;
@@ -28,11 +30,21 @@ public class FunnelAnalysisController {
     private final FunnelAnalysisService service;
     private final AiFunnelAnalysisProperties props;
     private final AppUserRepository users;
+    private final CurrentBusinessContext currentBusinessContext;
+    private final BusinessFeatureService businessFeatures;
 
-    public FunnelAnalysisController(FunnelAnalysisService service, AiFunnelAnalysisProperties props, AppUserRepository users) {
+    public FunnelAnalysisController(FunnelAnalysisService service, AiFunnelAnalysisProperties props, AppUserRepository users,
+                                    CurrentBusinessContext currentBusinessContext, BusinessFeatureService businessFeatures) {
         this.service = service;
         this.props = props;
         this.users = users;
+        this.currentBusinessContext = currentBusinessContext;
+        this.businessFeatures = businessFeatures;
+    }
+
+    private boolean enabledForCaller() {
+        return props.isEnabled() && businessFeatures.isEnabled(
+                currentBusinessContext.id(), BusinessFeatureService.AI_FUNNEL_ANALYSIS_ENABLED);
     }
 
     /** mode defaults to "ads", same convention as the dashboard endpoints; anything other than
@@ -45,7 +57,7 @@ public class FunnelAnalysisController {
                                                          @RequestParam(defaultValue = "ads") String mode,
                                                          @RequestParam(defaultValue = "false") boolean force,
                                                          @AuthenticationPrincipal AppUserPrincipal me) {
-        if (!props.isEnabled()) return ResponseEntity.notFound().build();
+        if (!enabledForCaller()) return ResponseEntity.notFound().build();
         return service.analyze(slug, flowKey, !"all".equalsIgnoreCase(mode), force, language(me))
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
@@ -64,7 +76,7 @@ public class FunnelAnalysisController {
      * list so a past result stays visible (with its timestamp) without re-running the LLM. */
     @GetMapping("/api/owner/marketing/funnel/analyze/history")
     public ResponseEntity<List<FunnelAnalysisResult>> history(@RequestParam String slug, @RequestParam String flowKey) {
-        if (!props.isEnabled()) return ResponseEntity.notFound().build();
+        if (!enabledForCaller()) return ResponseEntity.notFound().build();
         return ResponseEntity.ok(service.history(slug, flowKey));
     }
 }

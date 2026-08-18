@@ -1,5 +1,6 @@
 package com.salonreview.web;
 
+import com.salonreview.config.BusinessFeatureService;
 import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.config.RagProperties;
 import com.salonreview.domain.RagAgentConfig;
@@ -35,23 +36,29 @@ public class RagAdminController {
     private final RagChunkRepository chunks;
     private final RagProperties props;
     private final CurrentBusinessContext currentBusinessContext;
+    private final BusinessFeatureService businessFeatures;
 
     public RagAdminController(RagIngestionService ingestion, RagConfigService configService,
                              RagDocumentRepository documents, RagChunkRepository chunks, RagProperties props,
-                             CurrentBusinessContext currentBusinessContext) {
+                             CurrentBusinessContext currentBusinessContext, BusinessFeatureService businessFeatures) {
         this.ingestion = ingestion;
         this.configService = configService;
         this.documents = documents;
         this.chunks = chunks;
         this.props = props;
         this.currentBusinessContext = currentBusinessContext;
+        this.businessFeatures = businessFeatures;
+    }
+
+    private boolean ragEnabledForCaller() {
+        return businessFeatures.isEnabled(currentBusinessContext.id(), BusinessFeatureService.RAG_ENABLED);
     }
 
     /** Upload a document. Extracts text immediately and stores it PENDING (awaiting approval). */
     @PostMapping("/documents")
     public ResponseEntity<DocumentSummary> upload(@RequestParam("file") MultipartFile file,
                                                   Principal principal) throws IOException {
-        if (!props.isEnabled()) return ResponseEntity.notFound().build();
+        if (!props.isEnabled() || !ragEnabledForCaller()) return ResponseEntity.notFound().build();
         if (file.isEmpty()) return ResponseEntity.badRequest().build();
         try {
             RagDocument doc = ingestion.upload(file.getOriginalFilename(), file.getBytes(), principal.getName(),
@@ -65,7 +72,7 @@ public class RagAdminController {
     /** List all documents, newest first, with chunk/quarantine counts for the admin view. */
     @GetMapping("/documents")
     public ResponseEntity<List<DocumentSummary>> list() {
-        if (!props.isEnabled()) return ResponseEntity.notFound().build();
+        if (!props.isEnabled() || !ragEnabledForCaller()) return ResponseEntity.notFound().build();
         return ResponseEntity.ok(documents.findAllByBusinessIdOrderByCreatedAtDesc(currentBusinessContext.id())
                 .stream().map(this::toSummary).toList());
     }
@@ -73,7 +80,7 @@ public class RagAdminController {
     /** Approve a PENDING document → run ingestion (chunk → classify → embed). */
     @PostMapping("/documents/{id}/approve")
     public ResponseEntity<DocumentSummary> approve(@PathVariable Long id) {
-        if (!props.isEnabled()) return ResponseEntity.notFound().build();
+        if (!props.isEnabled() || !ragEnabledForCaller()) return ResponseEntity.notFound().build();
         return ingestion.approve(id, currentBusinessContext.id()).map(d -> ResponseEntity.ok(toSummary(d)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -81,7 +88,7 @@ public class RagAdminController {
     /** Delete a document (cascades chunks/vectors; writes a redaction audit row). */
     @DeleteMapping("/documents/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id, Principal principal) {
-        if (!props.isEnabled()) return ResponseEntity.notFound().build();
+        if (!props.isEnabled() || !ragEnabledForCaller()) return ResponseEntity.notFound().build();
         return ingestion.delete(id, principal.getName(), currentBusinessContext.id())
                 ? ResponseEntity.noContent().build()
                 : ResponseEntity.notFound().build();
@@ -92,7 +99,7 @@ public class RagAdminController {
      * rather than the 500 a missing row used to produce. */
     @GetMapping("/config")
     public ResponseEntity<ConfigDto> getConfig() {
-        if (!props.isEnabled()) return ResponseEntity.notFound().build();
+        if (!props.isEnabled() || !ragEnabledForCaller()) return ResponseEntity.notFound().build();
         return configService.findActive(currentBusinessContext.id())
                 .map(cfg -> ResponseEntity.ok(toDto(cfg)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
@@ -101,7 +108,7 @@ public class RagAdminController {
     /** Create a new active config version (does not mutate the previous one). */
     @PostMapping("/config")
     public ResponseEntity<ConfigDto> updateConfig(@RequestBody ConfigRequest body) {
-        if (!props.isEnabled()) return ResponseEntity.notFound().build();
+        if (!props.isEnabled() || !ragEnabledForCaller()) return ResponseEntity.notFound().build();
         RagAgentConfig created = configService.createVersion(
                 body.systemPrompt(), body.model(), body.temperature(), body.k(), body.distanceThreshold(),
                 currentBusinessContext.id());

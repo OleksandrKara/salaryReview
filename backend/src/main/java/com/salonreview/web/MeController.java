@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.salonreview.config.AiTriageProperties;
 import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.config.BusinessFeatureService;
 import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.config.RagProperties;
 import com.salonreview.domain.AppUser;
@@ -44,10 +45,12 @@ public class MeController {
     private final PlatformAdminRepository platformAdmins;
     private final BusinessMembershipRepository memberships;
     private final BusinessRepository businesses;
+    private final BusinessFeatureService businessFeatures;
 
     public MeController(AiTriageProperties aiTriage, RagProperties rag, AppUserRepository users,
                         CurrentBusinessContext currentBusinessContext, PlatformAdminRepository platformAdmins,
-                        BusinessMembershipRepository memberships, BusinessRepository businesses) {
+                        BusinessMembershipRepository memberships, BusinessRepository businesses,
+                        BusinessFeatureService businessFeatures) {
         this.aiTriage = aiTriage;
         this.rag = rag;
         this.users = users;
@@ -55,6 +58,7 @@ public class MeController {
         this.platformAdmins = platformAdmins;
         this.memberships = memberships;
         this.businesses = businesses;
+        this.businessFeatures = businessFeatures;
     }
 
     @GetMapping("/api/me")
@@ -68,9 +72,17 @@ public class MeController {
         body.put("role", principal.getRole().name());
         body.put("providerId", principal.getProviderId());
         body.put("preferredLanguage", lang == null ? null : lang.name());
+        // Phase 4.3: aiTriageEnabled/ragSuggestionsEnabled are now business-scoped on top of the
+        // deployment-level flag (see BusinessFeatureService) — ragFollowupsEnabled deliberately
+        // stays purely deployment-level (not one of the 5 keys business_feature tracks).
+        Long businessId = currentBusinessContext.id();
+        boolean ragEnabled = rag.isEnabled() && businessFeatures.isEnabled(businessId, BusinessFeatureService.RAG_ENABLED);
         body.put("features", Map.of(
-                "aiTriageEnabled", aiTriage.isEnabled(),
-                "ragSuggestionsEnabled", rag.isEnabled() && rag.getSuggestions().isEnabled(),
+                "aiTriageEnabled", aiTriage.isEnabled()
+                        && businessFeatures.isEnabled(businessId, BusinessFeatureService.AI_TRIAGE_ENABLED),
+                "ragEnabled", ragEnabled,
+                "ragSuggestionsEnabled", ragEnabled && rag.getSuggestions().isEnabled()
+                        && businessFeatures.isEnabled(businessId, BusinessFeatureService.RAG_SUGGESTIONS_ENABLED),
                 "ragFollowupsEnabled", rag.isEnabled() && rag.getFollowups().isEnabled()));
         // Phase 6.1/6.2 (design.md D12): activeBusinessId reflects any session-level switch
         // (CurrentBusinessContext is already populated for this request by

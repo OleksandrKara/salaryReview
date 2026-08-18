@@ -6,6 +6,7 @@ import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.TextBlockParam;
 import com.salonreview.config.AiSmsDraftProperties;
+import com.salonreview.config.BusinessFeatureService;
 import com.salonreview.domain.Language;
 import com.salonreview.domain.RagAgentConfig;
 import com.salonreview.domain.SmsMessage;
@@ -64,28 +65,33 @@ public class SmsDraftService {
     private final MarketingContactsService contactsService;
     private final ObjectProvider<RagRetrievalService> ragRetrievalProvider;
     private final ObjectProvider<RagConfigService> ragConfigProvider;
+    private final BusinessFeatureService businessFeatures;
 
     public SmsDraftService(ObjectProvider<AnthropicClient> anthropicClientProvider,
                             AiSmsDraftProperties props,
                             SmsMessageLogService smsMessageLogService,
                             MarketingContactsService contactsService,
                             ObjectProvider<RagRetrievalService> ragRetrievalProvider,
-                            ObjectProvider<RagConfigService> ragConfigProvider) {
+                            ObjectProvider<RagConfigService> ragConfigProvider,
+                            BusinessFeatureService businessFeatures) {
         this.anthropicClientProvider = anthropicClientProvider;
         this.props = props;
         this.smsMessageLogService = smsMessageLogService;
         this.contactsService = contactsService;
         this.ragRetrievalProvider = ragRetrievalProvider;
         this.ragConfigProvider = ragConfigProvider;
+        this.businessFeatures = businessFeatures;
     }
 
     public record DraftResult(String body, String promptVersion, String model) {}
 
-    /** Empty when the feature is off or Claude isn't configured (→ 404 in the controller, mirroring
-     * every other AI feature's ships-dark convention). Never returns empty for "nothing to draft
-     * from" — an empty thread still gets a reasonable generic rebooking nudge. */
+    /** Empty when the feature is off (globally, or for this specific business — Phase 4.3) or
+     * Claude isn't configured (→ 404 in the controller, mirroring every other AI feature's
+     * ships-dark convention). Never returns empty for "nothing to draft from" — an empty thread
+     * still gets a reasonable generic rebooking nudge. */
     public Optional<DraftResult> draft(String phoneNumber, Language lang, Long businessId) {
         if (!props.isEnabled()) return Optional.empty();
+        if (!businessFeatures.isEnabled(businessId, BusinessFeatureService.AI_SMS_DRAFT_ENABLED)) return Optional.empty();
         AnthropicClient client = anthropicClientProvider.getIfAvailable();
         if (client == null) return Optional.empty();
 

@@ -3,6 +3,8 @@ package com.salonreview.web;
 import com.salonreview.ai.SuspiciousBookingTriageService;
 import com.salonreview.ai.TriageResult;
 import com.salonreview.config.AiTriageProperties;
+import com.salonreview.config.BusinessFeatureService;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.domain.TriageClassification;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,10 +33,20 @@ public class SuspiciousTriageController {
 
     private final SuspiciousBookingTriageService service;
     private final AiTriageProperties props;
+    private final CurrentBusinessContext currentBusinessContext;
+    private final BusinessFeatureService businessFeatures;
 
-    public SuspiciousTriageController(SuspiciousBookingTriageService service, AiTriageProperties props) {
+    public SuspiciousTriageController(SuspiciousBookingTriageService service, AiTriageProperties props,
+                                      CurrentBusinessContext currentBusinessContext, BusinessFeatureService businessFeatures) {
         this.service = service;
         this.props = props;
+        this.currentBusinessContext = currentBusinessContext;
+        this.businessFeatures = businessFeatures;
+    }
+
+    private boolean enabledForCaller() {
+        return props.isEnabled()
+                && businessFeatures.isEnabled(currentBusinessContext.id(), BusinessFeatureService.AI_TRIAGE_ENABLED);
     }
 
     /**
@@ -46,7 +58,7 @@ public class SuspiciousTriageController {
     public ResponseEntity<TriageResult> triage(@PathVariable String bookingId,
                                                @RequestParam int year,
                                                @RequestParam int month) {
-        if (!props.isEnabled()) return ResponseEntity.notFound().build();
+        if (!enabledForCaller()) return ResponseEntity.notFound().build();
         return service.triage(bookingId, year, month)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
@@ -61,7 +73,7 @@ public class SuspiciousTriageController {
     @PostMapping("/{bookingId}/triage/feedback")
     public ResponseEntity<Void> feedback(@PathVariable String bookingId,
                                          @RequestBody FeedbackRequest body) {
-        if (!props.isEnabled()) return ResponseEntity.notFound().build();
+        if (!enabledForCaller()) return ResponseEntity.notFound().build();
         boolean recorded = service.recordFeedback(bookingId, body.helpful(), body.correctedClassification());
         return recorded ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
     }

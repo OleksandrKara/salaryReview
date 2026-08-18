@@ -380,11 +380,40 @@ this file is the plan, not yet executed.
       change (verified against Phase 8.1's regression snapshot), add `BusinessBCommissionEngine` (name
       TBD), add `commission_engine` discriminator to `salon_config`, factory resolution in
       `SettlementPreviewService`
-- [ ] 4.3 `V88__business_feature.sql` — `business_feature(business_id, feature_key, enabled,
-      UNIQUE(business_id, feature_key))`; migrate existing global boolean flags (`rag.enabled`,
-      `ai.triage.enabled`, `ai.funnel-analysis.enabled`, `ai.sms-draft.enabled`,
-      `rag.suggestions.enabled`) to per-business rows, defaulting Business A to its current values and
-      Business B to all-off except commission/Square/settlements (core, unconditional)
+- [x] 4.3 **Shipped 2026-08-18.** `V108__business_feature.sql` (numbered ahead of V88, sequenced
+      after everything shipped so far, not the original slot) — `business_feature(id, business_id
+      FK, feature_key, enabled, UNIQUE(business_id, feature_key))`. `BusinessFeatureService
+      .isEnabled(businessId, key)` — a missing row means disabled, same ships-dark convention as
+      the deployment-level flags themselves. Layered on top of (never replacing) each feature's
+      existing `@ConfigurationProperties` flag at every call site: `RagController`/
+      `RagAdminController` (`rag.enabled`, including the `suggestions`/`refreshSuggestions`/
+      `askStream` endpoints, which had NO explicit gate before — only the class-level
+      `@ConditionalOnProperty` — so this closes a real, previously-unguarded per-business gap, not
+      just adds a second layer to an existing one), `RagSuggestionService` (`rag.suggestions
+      .enabled`), `SuspiciousTriageController` (`ai.triage.enabled`), `FunnelAnalysisController`
+      (`ai.funnel-analysis.enabled`), `SmsDraftService` (`ai.sms-draft.enabled`). `MeController`'s
+      `features` block (`aiTriageEnabled`, `ragEnabled` — new field, `ragSuggestionsEnabled`) now
+      reports the effective, business-scoped value; `ragFollowupsEnabled` deliberately stays
+      deployment-only (not one of the 5 keys). Frontend: `AssistantWidget` previously had NO gate
+      at all beyond role (OWNER/MANAGER) — it would render for every business and only fail once a
+      question was actually asked; now hides entirely when `features.ragEnabled` is false. The AI
+      triage Explain button, Funnel "Analyze" button, and SMS "Generate" button already had
+      pre-existing catch/error-handling for a disabled backend, so no frontend change was needed
+      for those three. Migration seeds Business A (id=1) `enabled=true` for all 5 keys, verified
+      against the real production container's actual env (`RAG_ENABLED`/`AI_TRIAGE_ENABLED`/
+      `AI_FUNNEL_ANALYSIS_ENABLED`/`AI_SMS_DRAFT_ENABLED`/`RAG_SUGGESTIONS_ENABLED` all `true`) —
+      this migration changes nothing observable for Business A. Business B (AK PMU, id=2) gets no
+      rows at all — this is the real, intentional behavior change: AK PMU loses the RAG assistant
+      widget, AI triage Explain button, funnel analysis, and SMS draft suggestions it had never
+      asked for and was silently getting anyway, until explicitly turned on for it. Verified via
+      the full test suite (1037 tests, fresh Postgres, 0 failures) plus a live end-to-end check
+      against an isolated instance restored from a real backup: `/api/me` for business 1's owner
+      (platform_admin) shows all 4 business-scoped features true, business 2's owner shows all
+      false; `/api/rag/suggestions` 200s for business 1 and 404s for business 2; `/api/suspicious/
+      {id}/triage` 404s for business 2. `KbRequestController` (knowledge-gap requests, a separate
+      feature that happens to share the `/api/rag` URL prefix) was deliberately left unscoped —
+      not one of the 5 keys, and the frontend already swallows its 404/error into a harmless
+      always-0 nav badge.
 - [ ] 4.4 (Gated on Phase 0.5) Promote `NoShowFeeService`'s hardcoded `$25.00` (`NoShowFeeService.java:50`)
       to a nullable `salon_config`/business-setting field; Business A keeps $25 as its value, Business B
       gets its own value or null (feature off) per 0.5's answer
@@ -535,7 +564,8 @@ changing behavior for existing callers; `SetupRequiredNotice` is the reusable em
       but confirmed no code is needed: `/admin/users` + `UserController` were already fully
       business-scoped (`currentBusinessContext.id()` throughout) before tonight — this is purely a
       user action for the owner to take via the existing UI whenever ready
-- [x] 7.4 Business_feature-style gating isn't built (2.6/4.3 still open), so this landed as a stricter
+- [x] 7.4 At the time this landed, business_feature-style gating wasn't built yet (2.6/4.3 were both
+      still open; 4.3 shipped 2026-08-18, see its own entry), so this landed as a stricter
       "off entirely, not configurable per-business yet" default: SMS/Telegram/KB/RAG/SOPs/staff-docs
       all 403 or are otherwise unusable for Business B until 2.6 closes — see that task for why this
       was judged acceptable for exactly two businesses but not a pattern to repeat
