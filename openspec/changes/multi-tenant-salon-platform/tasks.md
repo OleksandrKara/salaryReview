@@ -528,10 +528,23 @@ this file is the plan, not yet executed.
       environmental artifact of testing real encrypted prod data against a throwaway
       `SQUARE_CREDENTIALS_MASTER_KEY`, unrelated to this change — Overview/Funnel's success on the
       exact same env rules out a real regression.)
-- [ ] 6.4 New `/onboarding` flow (OWNER-only, platform-admin-created business's first login): connect
-      Square (paste personal access token + location id → `POST /api/square/connection`), invite
-      first MANAGER/PROVIDER users — mirrors today's manual setup process, just moved into the product
-      instead of being a deploy-time step
+- [x] 6.4 **Shipped 2026-08-18.** New `/onboarding` page (OWNER-only, no new backend endpoints) —
+      a UX consolidation, not a wizard with its own state machine: embeds the two already-shipped,
+      already-working forms an owner previously had to discover on their own one at a time
+      (`SquareConnectionForm` from `/owner/settings/square`, `UsersManager` from `/admin/users`),
+      stacked as "Step 1 — Connect Square" / "Step 2 — Invite your team." Both sections work
+      independently and neither is hidden after completion — an already-fully-set-up owner can
+      revisit this page anytime, there's nothing to get permanently stuck on if Square isn't
+      connected yet when adding the first manager. Linked from `AdminMenu`'s OWNER link list
+      ("Getting Started" / navOnboarding). This is exactly the vehicle 7b.2 describes for a third
+      business's onboarding needing "zero new backend/frontend code" — a `business` row + owner
+      account through the platform-admin flow (5.1/5.2), then this page for the rest. Verified:
+      `tsc`/`build` clean; a live end-to-end check against an isolated instance restored from a
+      real backup with business 2's `square_connection` row deleted (simulating a genuinely fresh,
+      never-connected business) — the page renders both sections with real data, submitting a
+      (deliberately fake, so rejected) Square token round-trips through the real validation path,
+      and creating a MANAGER account through the embedded Users step correctly lands it scoped to
+      business 2, not leaked cross-tenant.
 - [ ] 6.5 Playwright e2e: business-switcher renders correctly for both 1-membership and 2-membership
       fixtures; onboarding flow end-to-end against Square sandbox credentials
 
