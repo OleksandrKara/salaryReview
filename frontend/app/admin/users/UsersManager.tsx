@@ -96,6 +96,17 @@ export default function UsersManager({
     setUsers((prev) => prev.map((x) => (x.id === u.id ? updated : x)));
   }
 
+  async function changeRole(u: AppUser, newRole: Role) {
+    if (newRole === u.role) return;
+    setError('');
+    try {
+      const updated = await api.updateUser(u.id, { role: newRole });
+      setUsers((prev) => prev.map((x) => (x.id === u.id ? updated : x)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to change role');
+    }
+  }
+
   async function remove(u: AppUser) {
     if (!confirm(`Delete ${u.username}? This cannot be undone.`)) return;
     try {
@@ -186,7 +197,20 @@ export default function UsersManager({
             {users.map((u) => (
               <tr key={u.id} data-testid={`user-row-${u.id}`} className="hover:bg-zinc-50">
                 <td className="px-3 py-2 font-medium">{u.username}</td>
-                <td className="px-3 py-2">{u.role}</td>
+                <td className="px-3 py-2">
+                  <select
+                    data-testid={`user-role-${u.id}`}
+                    value={u.role}
+                    onChange={(e) => changeRole(u, e.target.value as Role)}
+                    className="rounded border border-zinc-300 bg-white px-2 py-1 text-sm"
+                  >
+                    {ROLES.map((r) => (
+                      // PROVIDER needs a providerId link this dropdown can't collect — moving AWAY
+                      // from PROVIDER is fine (clears the link automatically), moving TO it isn't.
+                      <option key={r} value={r} disabled={r === 'PROVIDER' && r !== u.role}>{r}</option>
+                    ))}
+                  </select>
+                </td>
                 <td className="px-3 py-2 text-zinc-600">{personName(u)}</td>
                 <td className="px-3 py-2">
                   {u.active
