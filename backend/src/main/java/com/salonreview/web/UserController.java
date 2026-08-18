@@ -6,6 +6,7 @@ import com.salonreview.domain.Provider;
 import com.salonreview.domain.Role;
 import com.salonreview.repo.AppUserRepository;
 import com.salonreview.repo.BusinessMembershipRepository;
+import com.salonreview.repo.PlatformAdminRepository;
 import com.salonreview.repo.ProviderRepository;
 import com.salonreview.repo.SopAcknowledgmentRepository;
 import com.salonreview.service.ProviderDirectory;
@@ -37,11 +38,13 @@ public class UserController {
     private final PasswordEncoder encoder;
     private final SopAcknowledgmentRepository sopAcks;
     private final BusinessMembershipRepository memberships;
+    private final PlatformAdminRepository platformAdmins;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
     public UserController(AppUserRepository users, ProviderRepository providers,
                           ProviderDirectory directory, SquareClientProvider squareClientProvider, PasswordEncoder encoder,
                           SopAcknowledgmentRepository sopAcks, BusinessMembershipRepository memberships,
+                          PlatformAdminRepository platformAdmins,
                           com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.users = users;
         this.providers = providers;
@@ -50,6 +53,7 @@ public class UserController {
         this.encoder = encoder;
         this.sopAcks = sopAcks;
         this.memberships = memberships;
+        this.platformAdmins = platformAdmins;
         this.currentBusinessContext = currentBusinessContext;
     }
 
@@ -137,6 +141,12 @@ public class UserController {
         // business's user by id: change their role, deactivate them, or reset their password.
         AppUser u = users.findByIdAndBusinessId(id, currentBusinessContext.id())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such user"));
+        // Same "never lock the salon out" guarantee as delete() — role editing wasn't exposed in
+        // the UI before, so this was previously unreachable, not previously safe.
+        if (req.role() != null && req.role() != Role.OWNER
+                && u.getRole() == Role.OWNER && u.isActive() && activeOwners() <= 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot change the last active owner's role");
+        }
         if (req.role() != null) u.setRole(req.role());
         if (req.active() != null) u.setActive(req.active());
         if (req.password() != null && !req.password().isBlank()) u.setPasswordHash(encoder.encode(req.password()));
@@ -157,9 +167,13 @@ public class UserController {
         if (u.getRole() == Role.OWNER && u.isActive() && activeOwners() <= 1) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Cannot remove the last active owner");
         }
-        // Clear this user's SOP acknowledgments first — that FK has no ON DELETE cascade, so leaving
-        // them would fail the delete with a constraint violation (previously surfaced as a 500).
+        // Clear every FK that has no ON DELETE cascade first, or the delete fails with a raw 500
+        // constraint violation. Found live 2026-08-18 for business_membership (added in Phase 1,
+        // never wired into this delete): sopAcks was already handled the same way, platform_admin
+        // is the same shape (a user can hold at most one row in either).
         sopAcks.deleteByUserId(id);
+        memberships.deleteByUserId(id);
+        platformAdmins.deleteByUserId(id);
         users.delete(u);
     }
 
