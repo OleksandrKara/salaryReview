@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.salonreview.ai.LangSmithTracer;
 import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.config.BusinessFeatureService;
 import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.config.RagProperties;
 import com.salonreview.domain.AppUser;
@@ -54,6 +55,7 @@ public class RagController {
     private final AppUserRepository users;
     private final KbAiDraftService aiDraft;
     private final CurrentBusinessContext currentBusinessContext;
+    private final BusinessFeatureService businessFeatures;
     // Streaming runs the (blocking) Anthropic stream off the request thread. Daemon, small pool.
     private final ExecutorService streamExecutor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "rag-stream");
@@ -64,7 +66,7 @@ public class RagController {
     public RagController(RagAnswerService answerService, RagSuggestionService suggestionService,
                         ObjectProvider<LangSmithTracer> tracerProvider, RagProperties props,
                         AppUserRepository users, KbAiDraftService aiDraft,
-                        CurrentBusinessContext currentBusinessContext) {
+                        CurrentBusinessContext currentBusinessContext, BusinessFeatureService businessFeatures) {
         this.answerService = answerService;
         this.suggestionService = suggestionService;
         this.tracerProvider = tracerProvider;
@@ -72,18 +74,28 @@ public class RagController {
         this.users = users;
         this.aiDraft = aiDraft;
         this.currentBusinessContext = currentBusinessContext;
+        this.businessFeatures = businessFeatures;
+    }
+
+    /** True when RAG is both deployment-enabled (this class's own {@code @ConditionalOnProperty}
+     * already guarantees that at the bean level) and turned on for the caller's specific
+     * business — see {@link BusinessFeatureService}'s own doc for why both checks are needed. */
+    private boolean ragEnabledForCaller() {
+        return businessFeatures.isEnabled(currentBusinessContext.id(), BusinessFeatureService.RAG_ENABLED);
     }
 
     /** Stored starter prompts for the chat empty state, in the caller's language (no LLM call). */
     @GetMapping("/suggestions")
-    public StarterSuggestions suggestions(@AuthenticationPrincipal AppUserPrincipal me) {
-        return suggestionService.get(language(me), currentBusinessContext.id());
+    public ResponseEntity<StarterSuggestions> suggestions(@AuthenticationPrincipal AppUserPrincipal me) {
+        if (!ragEnabledForCaller()) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(suggestionService.get(language(me), currentBusinessContext.id()));
     }
 
     /** Regenerate and overwrite the stored starter prompts — the chat's on-demand refresh. */
     @PostMapping("/suggestions/refresh")
-    public StarterSuggestions refreshSuggestions(@AuthenticationPrincipal AppUserPrincipal me) {
-        return suggestionService.refresh(language(me), currentBusinessContext.id());
+    public ResponseEntity<StarterSuggestions> refreshSuggestions(@AuthenticationPrincipal AppUserPrincipal me) {
+        if (!ragEnabledForCaller()) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(suggestionService.refresh(language(me), currentBusinessContext.id()));
     }
 
     /**
@@ -95,6 +107,11 @@ public class RagController {
     @PostMapping(value = "/ask/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter askStream(@RequestBody AskRequest body, @AuthenticationPrincipal AppUserPrincipal me) {
         SseEmitter emitter = new SseEmitter(120_000L); // 2 min ceiling per answer
+        if (!ragEnabledForCaller()) {
+            send(emitter, "error", Map.of("message", "The assistant is not available."));
+            emitter.complete();
+            return emitter;
+        }
         if (body == null || body.question() == null || body.question().isBlank()) {
             send(emitter, "error", Map.of("message", "A question is required."));
             emitter.complete();
@@ -141,7 +158,7 @@ public class RagController {
     /** Ask a question; returns a grounded, cited answer (or a "don't know" when the corpus lacks it). */
     @PostMapping("/ask")
     public ResponseEntity<RagAnswer> ask(@RequestBody AskRequest body, @AuthenticationPrincipal AppUserPrincipal me) {
-        if (!props.isEnabled()) return ResponseEntity.notFound().build();
+        if (!props.isEnabled() || !ragEnabledForCaller()) return ResponseEntity.notFound().build();
         if (body == null || body.question() == null || body.question().isBlank()) {
             return ResponseEntity.badRequest().build();
         }
@@ -155,7 +172,7 @@ public class RagController {
     /** Record thumbs up/down on an answer; ships a graded run to LangSmith linked to its trace. */
     @PostMapping("/ask/feedback")
     public ResponseEntity<Void> feedback(@RequestBody FeedbackRequest body) {
-        if (!props.isEnabled()) return ResponseEntity.notFound().build();
+        if (!props.isEnabled() || !ragEnabledForCaller()) return ResponseEntity.notFound().build();
         if (body == null || body.runId() == null || body.runId().isBlank()) {
             return ResponseEntity.badRequest().build();
         }
@@ -173,7 +190,7 @@ public class RagController {
      */
     @PostMapping("/requests/translate-note")
     public ResponseEntity<TranslateNoteResponse> translateNote(@RequestBody TranslateNoteRequest body) {
-        if (!props.isEnabled()) return ResponseEntity.notFound().build();
+        if (!props.isEnabled() || !ragEnabledForCaller()) return ResponseEntity.notFound().build();
         if (body == null || body.note() == null || body.note().isBlank()) {
             return ResponseEntity.badRequest().build();
         }

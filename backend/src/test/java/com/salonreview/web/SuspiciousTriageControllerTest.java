@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.ai.SuspiciousBookingTriageService;
 import com.salonreview.ai.TriageResult;
 import com.salonreview.config.AiTriageProperties;
+import com.salonreview.config.BusinessFeatureService;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.domain.TriageClassification;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -36,8 +38,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class SuspiciousTriageControllerTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     private SuspiciousBookingTriageService service;
     private AiTriageProperties props;
+    private BusinessFeatureService businessFeatures;
     private MockMvc mvc;
     private final ObjectMapper json = new ObjectMapper();
 
@@ -45,8 +50,13 @@ class SuspiciousTriageControllerTest {
     void setUp() {
         service = mock(SuspiciousBookingTriageService.class);
         props = mock(AiTriageProperties.class);
+        CurrentBusinessContext currentBusinessContext = mock(CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(BUSINESS_ID);
+        businessFeatures = mock(BusinessFeatureService.class);
+        when(businessFeatures.isEnabled(BUSINESS_ID, BusinessFeatureService.AI_TRIAGE_ENABLED)).thenReturn(true);
 
-        SuspiciousTriageController controller = new SuspiciousTriageController(service, props);
+        SuspiciousTriageController controller =
+                new SuspiciousTriageController(service, props, currentBusinessContext, businessFeatures);
         TriageExceptionHandler advice = new TriageExceptionHandler();
 
         mvc = MockMvcBuilders.standaloneSetup(controller)
@@ -58,6 +68,18 @@ class SuspiciousTriageControllerTest {
     @DisplayName("flag off → 404 without invoking the service")
     void flagOffReturns404() throws Exception {
         when(props.isEnabled()).thenReturn(false);
+
+        mvc.perform(post("/api/suspicious/bk1/triage").param("year", "2026").param("month", "6"))
+                .andExpect(status().isNotFound());
+
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    @DisplayName("Phase 4.3: globally on, but off for this specific business → 404 without invoking the service")
+    void businessFeatureOffReturns404() throws Exception {
+        when(props.isEnabled()).thenReturn(true);
+        when(businessFeatures.isEnabled(BUSINESS_ID, BusinessFeatureService.AI_TRIAGE_ENABLED)).thenReturn(false);
 
         mvc.perform(post("/api/suspicious/bk1/triage").param("year", "2026").param("month", "6"))
                 .andExpect(status().isNotFound());

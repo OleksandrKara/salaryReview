@@ -1,6 +1,7 @@
 package com.salonreview.rag;
 
 import com.anthropic.client.AnthropicClient;
+import com.salonreview.config.BusinessFeatureService;
 import com.salonreview.config.RagProperties;
 import com.salonreview.domain.Language;
 import com.salonreview.domain.RagDocument;
@@ -34,20 +35,32 @@ class RagSuggestionServiceTest {
     private final RagDocumentRepository documents = mock(RagDocumentRepository.class);
     private final RagSuggestionCacheRepository cacheRepo = mock(RagSuggestionCacheRepository.class);
     private RagProperties props;
+    private BusinessFeatureService businessFeatures;
     private RagSuggestionService service;
 
     @BeforeEach
     void setUp() {
         props = new RagProperties();
         props.setEnabled(true);
+        businessFeatures = mock(BusinessFeatureService.class);
+        when(businessFeatures.isEnabled(BUSINESS_ID, BusinessFeatureService.RAG_SUGGESTIONS_ENABLED)).thenReturn(true);
         when(cacheRepo.findById(any())).thenReturn(Optional.empty());
-        service = new RagSuggestionService(clientProvider, documents, cacheRepo, props);
+        service = new RagSuggestionService(clientProvider, documents, cacheRepo, props, businessFeatures);
     }
 
     @Test
     @DisplayName("flag off → empty, corpus never queried")
     void flagOff() {
         props.getSuggestions().setEnabled(false);
+
+        assertThat(service.get(Language.EN, BUSINESS_ID).topics()).isEmpty();
+        verify(documents, never()).findByBusinessIdAndStatusOrderByCreatedAtDesc(any(), any());
+    }
+
+    @Test
+    @DisplayName("Phase 4.3: globally on, but off for this specific business → empty, corpus never queried")
+    void businessFeatureOff() {
+        when(businessFeatures.isEnabled(BUSINESS_ID, BusinessFeatureService.RAG_SUGGESTIONS_ENABLED)).thenReturn(false);
 
         assertThat(service.get(Language.EN, BUSINESS_ID).topics()).isEmpty();
         verify(documents, never()).findByBusinessIdAndStatusOrderByCreatedAtDesc(any(), any());

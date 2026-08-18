@@ -4,6 +4,7 @@ import com.anthropic.client.AnthropicClient;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.StructuredMessageCreateParams;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.salonreview.config.BusinessFeatureService;
 import com.salonreview.config.RagProperties;
 import com.salonreview.domain.Language;
 import com.salonreview.domain.RagDocumentStatus;
@@ -64,15 +65,23 @@ public class RagSuggestionService {
     private final RagDocumentRepository documents;
     private final RagSuggestionCacheRepository cacheRepo;
     private final RagProperties props;
+    private final BusinessFeatureService businessFeatures;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public RagSuggestionService(ObjectProvider<AnthropicClient> anthropicClientProvider,
                                 RagDocumentRepository documents, RagSuggestionCacheRepository cacheRepo,
-                                RagProperties props) {
+                                RagProperties props, BusinessFeatureService businessFeatures) {
         this.anthropicClientProvider = anthropicClientProvider;
         this.documents = documents;
         this.cacheRepo = cacheRepo;
         this.props = props;
+        this.businessFeatures = businessFeatures;
+    }
+
+    /** Phase 4.3: the deployment-level sub-flag AND this specific business's own toggle. */
+    private boolean suggestionsEnabled(Long businessId) {
+        return props.getSuggestions().isEnabled()
+                && businessFeatures.isEnabled(businessId, BusinessFeatureService.RAG_SUGGESTIONS_ENABLED);
     }
 
     /**
@@ -80,7 +89,7 @@ public class RagSuggestionService {
      * once (and storing it) only the first time none exist. No LLM call on a normal open.
      */
     public StarterSuggestions get(Language lang, Long businessId) {
-        if (!props.getSuggestions().isEnabled()) return StarterSuggestions.empty();
+        if (!suggestionsEnabled(businessId)) return StarterSuggestions.empty();
 
         RagSuggestionCache row = cacheRepo.findById(new RagSuggestionCacheId(businessId, lang.name())).orElse(null);
         if (row != null) {
@@ -92,7 +101,7 @@ public class RagSuggestionService {
 
     /** Force a fresh generation and overwrite the stored set — the chat's on-demand refresh. */
     public StarterSuggestions refresh(Language lang, Long businessId) {
-        if (!props.getSuggestions().isEnabled()) return StarterSuggestions.empty();
+        if (!suggestionsEnabled(businessId)) return StarterSuggestions.empty();
         return generateAndStore(lang, businessId);
     }
 

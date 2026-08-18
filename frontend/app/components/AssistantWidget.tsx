@@ -35,6 +35,7 @@ const nextId = () => ++counter;
 // PROVIDER / unauthenticated it renders nothing. Streams answers token-by-token over SSE.
 export default function AssistantWidget() {
   const [role, setRole] = useState<Role | null | undefined>(undefined);
+  const [ragEnabled, setRagEnabled] = useState(false);
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -56,6 +57,7 @@ export default function AssistantWidget() {
       .then((me) => {
         if (cancelled) return;
         setRole(me.role);
+        setRagEnabled(me.features.ragEnabled);
         setSuggestEnabled(me.features.ragSuggestionsEnabled);
         if (langRef.current !== null && langRef.current !== me.preferredLanguage) {
           setSuggestions(null); // language changed — re-fetch chips in the new language
@@ -94,6 +96,10 @@ export default function AssistantWidget() {
   }, [messages, open]);
 
   if (role !== 'OWNER' && role !== 'MANAGER') return null;
+  // Phase 4.3: this business hasn't been turned on for the RAG assistant yet (ships dark per
+  // business, not just per deployment) — hide the widget entirely rather than showing a button
+  // that errors the moment it's used.
+  if (!ragEnabled) return null;
 
   // /admin/messages has its own bottom-right control (the SMS composer's Send button) on a
   // 100dvh, edge-to-edge mobile layout — this widget's own fixed bottom-6 right-6 would sit

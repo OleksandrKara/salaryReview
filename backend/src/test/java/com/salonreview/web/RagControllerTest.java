@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.ai.LangSmithTracer;
+import com.salonreview.config.BusinessFeatureService;
 import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.config.RagProperties;
 import com.salonreview.rag.RagAnswer;
@@ -42,6 +43,7 @@ class RagControllerTest {
     private RagAnswerService answerService;
     private RagSuggestionService suggestionService;
     private RagProperties props;
+    private BusinessFeatureService businessFeatures;
     private com.salonreview.kb.KbAiDraftService aiDraft;
     @SuppressWarnings("unchecked")
     private ObjectProvider<LangSmithTracer> tracerProvider = mock(ObjectProvider.class);
@@ -58,8 +60,10 @@ class RagControllerTest {
         aiDraft = mock(com.salonreview.kb.KbAiDraftService.class);
         CurrentBusinessContext currentBusinessContext = mock(CurrentBusinessContext.class);
         when(currentBusinessContext.id()).thenReturn(BUSINESS_ID);
+        businessFeatures = mock(BusinessFeatureService.class);
+        when(businessFeatures.isEnabled(BUSINESS_ID, BusinessFeatureService.RAG_ENABLED)).thenReturn(true);
         RagController controller = new RagController(answerService, suggestionService, tracerProvider, props,
-                mock(com.salonreview.repo.AppUserRepository.class), aiDraft, currentBusinessContext);
+                mock(com.salonreview.repo.AppUserRepository.class), aiDraft, currentBusinessContext, businessFeatures);
         mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setCustomArgumentResolvers(
                         new org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver())
@@ -99,6 +103,21 @@ class RagControllerTest {
                 .andExpect(status().isNotFound());
 
         verifyNoInteractions(answerService);
+    }
+
+    @Test
+    @DisplayName("Phase 4.3: rag.enabled globally on, but off for this specific business → 404, " +
+            "without invoking the service — suggestions endpoint too, which had no explicit gate before")
+    void businessFeatureOffReturns404() throws Exception {
+        when(props.isEnabled()).thenReturn(true);
+        when(businessFeatures.isEnabled(BUSINESS_ID, BusinessFeatureService.RAG_ENABLED)).thenReturn(false);
+
+        mvc.perform(post("/api/rag/ask").contentType("application/json")
+                        .content(json.writeValueAsString(Map.of("question", "hi"))))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("/api/rag/suggestions")).andExpect(status().isNotFound());
+
+        verifyNoInteractions(answerService, suggestionService);
     }
 
     @Test

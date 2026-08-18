@@ -590,6 +590,9 @@ export interface Me {
 
 export interface Features {
   aiTriageEnabled: boolean;
+  // Phase 4.3: whether the RAG assistant (chat widget + admin corpus) is on for this specific
+  // business, not just deployment-wide — see BusinessFeatureService on the backend.
+  ragEnabled: boolean;
   ragSuggestionsEnabled: boolean;
   ragFollowupsEnabled: boolean;
 }
