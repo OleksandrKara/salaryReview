@@ -30,10 +30,13 @@ public class DefaultTriageFeedbackPublisher implements TriageFeedbackPublisher {
 
     private final SuspiciousTriageRepository triages;
     private final LangSmithTracer tracer;
+    private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
-    public DefaultTriageFeedbackPublisher(SuspiciousTriageRepository triages, LangSmithTracer tracer) {
+    public DefaultTriageFeedbackPublisher(SuspiciousTriageRepository triages, LangSmithTracer tracer,
+                                          com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.triages = triages;
         this.tracer = tracer;
+        this.currentBusinessContext = currentBusinessContext;
     }
 
     @Override
@@ -82,6 +85,7 @@ public class DefaultTriageFeedbackPublisher implements TriageFeedbackPublisher {
      * not what produced the triage card the owner reacted to.
      */
     private Optional<SuspiciousTriage> currentTriage(String bookingId) {
-        return triages.findBySquareBookingIdAndPromptVersion(bookingId, TriagePrompts.PROMPT_VERSION);
+        return triages.findByBusinessIdAndSquareBookingIdAndPromptVersion(
+                currentBusinessContext.id(), bookingId, TriagePrompts.PROMPT_VERSION);
     }
 }

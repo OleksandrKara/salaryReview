@@ -47,6 +47,10 @@ class CrossTenantIsolationTest {
     @Autowired private SettlementFeedbackRepository settlementFeedback;
     @Autowired private ManagerTimeEntryRepository managerTimeEntries;
     @Autowired private OwnerCustomerRepository ownerCustomers;
+    @Autowired private SuspiciousBookingClearanceRepository suspiciousClearances;
+    @Autowired private CancellationClearanceRepository cancellationClearances;
+    @Autowired private NoShowFeeOverrideRepository noShowFeeOverrides;
+    @Autowired private SuspiciousTriageRepository suspiciousTriages;
     @Autowired private PrepaidPackageRepository prepaidPackages;
     @Autowired private PrepaidRedemptionRepository prepaidRedemptions;
     @Autowired private ProviderVisitRepository providerVisits;
@@ -283,6 +287,149 @@ class CrossTenantIsolationTest {
 
         assertIds(ownerCustomers.findAllByBusinessId(businessAId), ownerA.getId(), ownerB.getId());
         assertIds(ownerCustomers.findAllByBusinessId(businessBId), ownerB.getId(), ownerA.getId());
+    }
+
+    /**
+     * 2026-08-18 cross-tenant fix: {@code owner_customer}'s unique constraint used to be a
+     * single-column {@code UNIQUE (square_customer_id)}, and {@code OwnerCustomerService#delete}
+     * was a bare {@code repo.deleteById(id)} — any business could delete another business's row by
+     * guessing a small sequential id, and no two businesses could ever mark the SAME Square
+     * customer id as an owner. This test proves both halves of the fix against a real Postgres:
+     * the widened composite constraint lets both businesses use the same squareCustomerId, and
+     * {@code findByIdAndBusinessId} correctly refuses to see the other business's row by id.
+     */
+    @Test
+    @DisplayName("2026-08-18: OwnerCustomerRepository — findByIdAndBusinessId is scoped, and the "
+            + "widened (business_id, square_customer_id) constraint lets both businesses share a "
+            + "squareCustomerId without colliding")
+    void ownerCustomerRepositoryCrossTenantFix() {
+        String sharedCustomerId = "ISO_SHARED_CUST_" + System.nanoTime();
+        OwnerCustomer ownerA = ownerCustomers.save(OwnerCustomer.builder()
+                .businessId(businessAId).squareCustomerId(sharedCustomerId).build());
+        // Same Square customer id, different business — would have violated the old single-column
+        // unique constraint; now succeeds under the widened composite one.
+        OwnerCustomer ownerB = ownerCustomers.save(OwnerCustomer.builder()
+                .businessId(businessBId).squareCustomerId(sharedCustomerId).build());
+
+        assertThat(ownerCustomers.findByIdAndBusinessId(ownerA.getId(), businessAId)).isPresent();
+        assertThat(ownerCustomers.findByIdAndBusinessId(ownerA.getId(), businessBId)).isEmpty();
+        assertThat(ownerCustomers.findByIdAndBusinessId(ownerB.getId(), businessBId)).isPresent();
+        assertThat(ownerCustomers.findByIdAndBusinessId(ownerB.getId(), businessAId)).isEmpty();
+
+        assertThat(ownerCustomers.existsByBusinessIdAndSquareCustomerId(businessAId, sharedCustomerId)).isTrue();
+        assertThat(ownerCustomers.existsByBusinessIdAndSquareCustomerId(businessBId, sharedCustomerId)).isTrue();
+    }
+
+    /**
+     * 2026-08-18 cross-tenant fix: same shape as owner_customer above, for
+     * {@code suspicious_booking_clearance}. {@code SuspiciousBookingService#clear/unclear} used to
+     * resolve/delete by bare {@code square_booking_id}; now scoped by business, and the widened
+     * constraint lets both businesses clear a booking under the same Square id independently.
+     */
+    @Test
+    @DisplayName("2026-08-18: SuspiciousBookingClearanceRepository — business-scoped lookup/delete, "
+            + "widened constraint allows the same squareBookingId across businesses")
+    void suspiciousBookingClearanceCrossTenantFix() {
+        String sharedBookingId = "ISO_SHARED_BK_" + System.nanoTime();
+        SuspiciousBookingClearance clearanceA = suspiciousClearances.save(SuspiciousBookingClearance.builder()
+                .businessId(businessAId).squareBookingId(sharedBookingId)
+                .clearedByUsername("owner-a").clearedAt(Instant.now()).build());
+        SuspiciousBookingClearance clearanceB = suspiciousClearances.save(SuspiciousBookingClearance.builder()
+                .businessId(businessBId).squareBookingId(sharedBookingId)
+                .clearedByUsername("owner-b").clearedAt(Instant.now()).build());
+
+        assertThat(suspiciousClearances.findByBusinessIdAndSquareBookingId(businessAId, sharedBookingId))
+                .isPresent().get().extracting(SuspiciousBookingClearance::getId).isEqualTo(clearanceA.getId());
+        assertThat(suspiciousClearances.findByBusinessIdAndSquareBookingId(businessBId, sharedBookingId))
+                .isPresent().get().extracting(SuspiciousBookingClearance::getId).isEqualTo(clearanceB.getId());
+
+        suspiciousClearances.deleteByBusinessIdAndSquareBookingId(businessAId, sharedBookingId);
+        // Business A's row is gone; business B's row (same Square booking id) is untouched.
+        assertThat(suspiciousClearances.findByBusinessIdAndSquareBookingId(businessAId, sharedBookingId)).isEmpty();
+        assertThat(suspiciousClearances.findByBusinessIdAndSquareBookingId(businessBId, sharedBookingId)).isPresent();
+    }
+
+    /** 2026-08-18 cross-tenant fix: same shape, for {@code cancellation_clearance}. */
+    @Test
+    @DisplayName("2026-08-18: CancellationClearanceRepository — business-scoped lookup/delete, "
+            + "widened constraint allows the same squareBookingId across businesses")
+    void cancellationClearanceCrossTenantFix() {
+        String sharedBookingId = "ISO_SHARED_CANCEL_BK_" + System.nanoTime();
+        CancellationClearance clearanceA = cancellationClearances.save(CancellationClearance.builder()
+                .businessId(businessAId).squareBookingId(sharedBookingId)
+                .clearedByUsername("owner-a").clearedAt(Instant.now()).build());
+        CancellationClearance clearanceB = cancellationClearances.save(CancellationClearance.builder()
+                .businessId(businessBId).squareBookingId(sharedBookingId)
+                .clearedByUsername("owner-b").clearedAt(Instant.now()).build());
+
+        assertThat(cancellationClearances.findByBusinessIdAndSquareBookingId(businessAId, sharedBookingId))
+                .isPresent().get().extracting(CancellationClearance::getId).isEqualTo(clearanceA.getId());
+        assertThat(cancellationClearances.findByBusinessIdAndSquareBookingId(businessBId, sharedBookingId))
+                .isPresent().get().extracting(CancellationClearance::getId).isEqualTo(clearanceB.getId());
+
+        cancellationClearances.deleteByBusinessIdAndSquareBookingId(businessAId, sharedBookingId);
+        assertThat(cancellationClearances.findByBusinessIdAndSquareBookingId(businessAId, sharedBookingId)).isEmpty();
+        assertThat(cancellationClearances.findByBusinessIdAndSquareBookingId(businessBId, sharedBookingId)).isPresent();
+    }
+
+    /**
+     * 2026-08-18 cross-tenant fix: same shape, for {@code no_show_fee_override}. Previously
+     * {@code NoShowFeeService#confirm/suppress} could silently take another business's override
+     * row over (lookup-then-reassign businessId); {@code clearOverride} could delete it outright.
+     */
+    @Test
+    @DisplayName("2026-08-18: NoShowFeeOverrideRepository — business-scoped lookup/delete, widened "
+            + "constraint allows the same squareBookingId across businesses")
+    void noShowFeeOverrideCrossTenantFix() {
+        String sharedBookingId = "ISO_SHARED_NOSHOW_BK_" + System.nanoTime();
+        NoShowFeeOverride overrideA = noShowFeeOverrides.save(NoShowFeeOverride.builder()
+                .businessId(businessAId).squareBookingId(sharedBookingId)
+                .kind(NoShowFeeOverride.SUPPRESS).amount(BigDecimal.ZERO).build());
+        NoShowFeeOverride overrideB = noShowFeeOverrides.save(NoShowFeeOverride.builder()
+                .businessId(businessBId).squareBookingId(sharedBookingId)
+                .kind(NoShowFeeOverride.SUPPRESS).amount(BigDecimal.ZERO).build());
+
+        assertThat(noShowFeeOverrides.findByBusinessIdAndSquareBookingId(businessAId, sharedBookingId))
+                .isPresent().get().extracting(NoShowFeeOverride::getId).isEqualTo(overrideA.getId());
+        assertThat(noShowFeeOverrides.findByBusinessIdAndSquareBookingId(businessBId, sharedBookingId))
+                .isPresent().get().extracting(NoShowFeeOverride::getId).isEqualTo(overrideB.getId());
+
+        noShowFeeOverrides.deleteByBusinessIdAndSquareBookingId(businessAId, sharedBookingId);
+        assertThat(noShowFeeOverrides.findByBusinessIdAndSquareBookingId(businessAId, sharedBookingId)).isEmpty();
+        assertThat(noShowFeeOverrides.findByBusinessIdAndSquareBookingId(businessBId, sharedBookingId)).isPresent();
+    }
+
+    /**
+     * 2026-08-18 cross-tenant fix: {@code suspicious_triage}'s cache lookup used to be keyed by
+     * bare {@code (square_booking_id, prompt_version)} — a cache hit for one business's booking id
+     * would leak that business's AI-generated explanation/draft message to another business on a
+     * collision. Proves the widened 3-column constraint lets both businesses cache a triage under
+     * the same Square booking id, and that each business only ever sees its own.
+     */
+    @Test
+    @DisplayName("2026-08-18: SuspiciousTriageRepository — cache lookup is scoped to business, "
+            + "widened constraint allows the same squareBookingId across businesses")
+    void suspiciousTriageCrossTenantFix() {
+        String sharedBookingId = "ISO_SHARED_TRIAGE_BK_" + System.nanoTime();
+        SuspiciousTriage triageA = suspiciousTriages.save(triage(businessAId, sharedBookingId, "business A's private explanation"));
+        SuspiciousTriage triageB = suspiciousTriages.save(triage(businessBId, sharedBookingId, "business B's private explanation"));
+
+        assertThat(suspiciousTriages.findByBusinessIdAndSquareBookingIdAndPromptVersion(
+                        businessAId, sharedBookingId, "v-iso-test"))
+                .isPresent().get().extracting(SuspiciousTriage::getExplanation)
+                .isEqualTo("business A's private explanation");
+        assertThat(suspiciousTriages.findByBusinessIdAndSquareBookingIdAndPromptVersion(
+                        businessBId, sharedBookingId, "v-iso-test"))
+                .isPresent().get().extracting(SuspiciousTriage::getExplanation)
+                .isEqualTo("business B's private explanation");
+        assertThat(triageA.getId()).isNotEqualTo(triageB.getId());
+    }
+
+    private static SuspiciousTriage triage(Long businessId, String bookingId, String explanation) {
+        return SuspiciousTriage.builder().businessId(businessId).squareBookingId(bookingId)
+                .promptVersion("v-iso-test").classification(TriageClassification.NEEDS_REVIEW)
+                .confidence(new BigDecimal("0.500")).explanation(explanation).draftMessage("")
+                .signals(List.of()).model("claude-haiku-4-5").build();
     }
 
     @Test

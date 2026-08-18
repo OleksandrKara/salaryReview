@@ -9,7 +9,8 @@ import lombok.*;
  * for such bookings ("owner comp"). ({@code created_at} is DB-managed.)
  */
 @Entity
-@Table(name = "owner_customer")
+@Table(name = "owner_customer",
+       uniqueConstraints = @UniqueConstraint(columnNames = {"business_id", "square_customer_id"}))
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
 public class OwnerCustomer {
@@ -22,7 +23,7 @@ public class OwnerCustomer {
     private Long businessId;
 
     /** Square customer id — the join key against booking.customer_id. */
-    @Column(name = "square_customer_id", nullable = false, unique = true)
+    @Column(name = "square_customer_id", nullable = false)
     private String squareCustomerId;
 
     /** Display name shown in the admin list (best-effort; the customer id is the source of truth). */

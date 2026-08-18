@@ -11,7 +11,8 @@ import java.time.Instant;
  * specific booking so it stops showing up on the per-period badge. Delete the row to un-clear.
  */
 @Entity
-@Table(name = "suspicious_booking_clearance")
+@Table(name = "suspicious_booking_clearance",
+       uniqueConstraints = @UniqueConstraint(columnNames = {"business_id", "square_booking_id"}))
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
 public class SuspiciousBookingClearance {
@@ -23,7 +24,7 @@ public class SuspiciousBookingClearance {
     @Column(name = "business_id", nullable = false)
     private Long businessId;
 
-    @Column(name = "square_booking_id", nullable = false, unique = true)
+    @Column(name = "square_booking_id", nullable = false)
     private String squareBookingId;
 
     @Column(name = "cleared_by_username", nullable = false, length = 100)

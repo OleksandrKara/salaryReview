@@ -108,7 +108,7 @@ class SuspiciousBookingTriageServiceTest {
                 .signals(List.of("past_appointment_no_order"))
                 .model("claude-haiku-4-5")
                 .build();
-        when(triages.findBySquareBookingIdAndPromptVersion("bk1", TriagePrompts.PROMPT_VERSION))
+        when(triages.findByBusinessIdAndSquareBookingIdAndPromptVersion(1L, "bk1", TriagePrompts.PROMPT_VERSION))
                 .thenReturn(Optional.of(cached));
 
         Optional<TriageResult> result = spied.triage("bk1", 2026, 6);
@@ -121,9 +121,45 @@ class SuspiciousBookingTriageServiceTest {
     }
 
     @Test
+    @DisplayName("2026-08-18 cross-tenant fix: a cache hit for business 1 is invisible to business 2 — "
+            + "a bare (bookingId, promptVersion) lookup would have leaked business 1's cached AI "
+            + "explanation/draft message on a bookingId collision or guess")
+    void cacheHitIsScopedToCurrentBusiness() throws Exception {
+        // Business 1's cached row exists (as in cacheHitSkipsLlm above), but the current request
+        // is business 2's — the business-scoped lookup must miss, forcing a fresh (business-2-
+        // scoped) candidate lookup instead of silently returning business 1's cached content.
+        SuspiciousTriage business1Cached = SuspiciousTriage.builder()
+                .id(1L).businessId(1L).squareBookingId("bk1").promptVersion(TriagePrompts.PROMPT_VERSION)
+                .classification(TriageClassification.LIKELY_FRAUD)
+                .confidence(BigDecimal.valueOf(0.9))
+                .explanation("business 1's private explanation")
+                .draftMessage("").signals(List.of()).model("claude-haiku-4-5")
+                .build();
+        when(triages.findByBusinessIdAndSquareBookingIdAndPromptVersion(1L, "bk1", TriagePrompts.PROMPT_VERSION))
+                .thenReturn(Optional.of(business1Cached));
+        when(triages.findByBusinessIdAndSquareBookingIdAndPromptVersion(2L, "bk1", TriagePrompts.PROMPT_VERSION))
+                .thenReturn(Optional.empty());
+
+        com.salonreview.config.CurrentBusinessContext business2Context =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(business2Context.id()).thenReturn(2L);
+        SuspiciousBookingTriageService business2Service = new SuspiciousBookingTriageService(
+                anthropicProvider, props, triages, suspiciousBookings, tracerProvider, business2Context);
+        SuspiciousBookingTriageService business2Spied = spy(business2Service);
+        when(suspiciousBookings.findCandidateForTriage(2026, 6, "bk1")).thenReturn(Optional.empty());
+
+        Optional<TriageResult> result = business2Spied.triage("bk1", 2026, 6);
+
+        // Empty (→ 404), not business 1's cached LIKELY_FRAUD row — proves the cache lookup never
+        // fell through to business 1's data.
+        assertThat(result).isEmpty();
+        verify(business2Spied, never()).callClaude(any(), anyString());
+    }
+
+    @Test
     @DisplayName("non-flagged booking returns empty (→ 404 in controller layer)")
     void nonFlaggedReturnsEmpty() throws Exception {
-        when(triages.findBySquareBookingIdAndPromptVersion(any(), any())).thenReturn(Optional.empty());
+        when(triages.findByBusinessIdAndSquareBookingIdAndPromptVersion(any(), any(), any())).thenReturn(Optional.empty());
         when(suspiciousBookings.findCandidateForTriage(anyInt(), anyInt(), anyString()))
                 .thenReturn(Optional.empty());
 
@@ -137,7 +173,7 @@ class SuspiciousBookingTriageServiceTest {
     @Test
     @DisplayName("cache miss + flagged booking → LLM called, result persisted with prompt_version + model overridden")
     void cacheMissCallsLlmAndPersists() throws Exception {
-        when(triages.findBySquareBookingIdAndPromptVersion(any(), any())).thenReturn(Optional.empty());
+        when(triages.findByBusinessIdAndSquareBookingIdAndPromptVersion(any(), any(), any())).thenReturn(Optional.empty());
         whenFindCandidateReturnsSample();
 
         // Canned LLM result — prompt_version + model fields will be overwritten by the service.
@@ -178,7 +214,7 @@ class SuspiciousBookingTriageServiceTest {
                 .explanation("old explanation under v0").draftMessage("old draft")
                 .signals(List.of()).model("claude-haiku-4-5")
                 .build();
-        when(triages.findBySquareBookingIdAndPromptVersion("bk1", TriagePrompts.PROMPT_VERSION))
+        when(triages.findByBusinessIdAndSquareBookingIdAndPromptVersion(1L, "bk1", TriagePrompts.PROMPT_VERSION))
                 .thenReturn(Optional.empty());
         whenFindCandidateReturnsSample();
 
@@ -201,7 +237,7 @@ class SuspiciousBookingTriageServiceTest {
     @Test
     @DisplayName("refusal → persists refusal_category, returns NEEDS_REVIEW with 0 confidence + friendly explanation")
     void refusalProducesFallbackAndPersistsCategory() throws Exception {
-        when(triages.findBySquareBookingIdAndPromptVersion(any(), any())).thenReturn(Optional.empty());
+        when(triages.findByBusinessIdAndSquareBookingIdAndPromptVersion(any(), any(), any())).thenReturn(Optional.empty());
         whenFindCandidateReturnsSample();
         doThrow(new SuspiciousBookingTriageService.RefusalException("cyber"))
                 .when(spied).callClaude(any(), anyString());
@@ -222,7 +258,7 @@ class SuspiciousBookingTriageServiceTest {
     @Test
     @DisplayName("hard LLM failure → TriageFailedException propagates (→ 502 in controller layer)")
     void hardLlmFailurePropagates() throws Exception {
-        when(triages.findBySquareBookingIdAndPromptVersion(any(), any())).thenReturn(Optional.empty());
+        when(triages.findByBusinessIdAndSquareBookingIdAndPromptVersion(any(), any(), any())).thenReturn(Optional.empty());
         whenFindCandidateReturnsSample();
         doThrow(new RuntimeException("anthropic 5xx"))
                 .when(spied).callClaude(any(), anyString());
@@ -241,7 +277,7 @@ class SuspiciousBookingTriageServiceTest {
     @Test
     @DisplayName("recordFeedback with no matching triage row → returns false (→ 404 in controller layer)")
     void recordFeedbackOnMissingRow() {
-        when(triages.findBySquareBookingIdAndPromptVersion("bk1", TriagePrompts.PROMPT_VERSION))
+        when(triages.findByBusinessIdAndSquareBookingIdAndPromptVersion(1L, "bk1", TriagePrompts.PROMPT_VERSION))
                 .thenReturn(Optional.empty());
 
         boolean ok = service.recordFeedback("bk1", true, null);
@@ -258,7 +294,7 @@ class SuspiciousBookingTriageServiceTest {
                 .confidence(BigDecimal.valueOf(0.8))
                 .explanation("e").draftMessage("d").signals(List.of()).model("claude-haiku-4-5")
                 .build();
-        when(triages.findBySquareBookingIdAndPromptVersion("bk1", TriagePrompts.PROMPT_VERSION))
+        when(triages.findByBusinessIdAndSquareBookingIdAndPromptVersion(1L, "bk1", TriagePrompts.PROMPT_VERSION))
                 .thenReturn(Optional.of(row));
 
         boolean ok = service.recordFeedback("bk1", false, TriageClassification.LIKELY_LEGIT);

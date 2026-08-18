@@ -19,7 +19,8 @@ import java.util.List;
  * feedback endpoint and shipped to LangSmith as a graded run.
  */
 @Entity
-@Table(name = "suspicious_triage")
+@Table(name = "suspicious_triage",
+       uniqueConstraints = @UniqueConstraint(columnNames = {"business_id", "square_booking_id", "prompt_version"}))
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
 public class SuspiciousTriage {

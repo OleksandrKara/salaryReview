@@ -24,12 +24,17 @@ import static org.mockito.Mockito.when;
  */
 class SuspiciousBookingServiceTest {
 
+    private static final Long BUSINESS_ID = 1L;
+
     private SuspiciousBookingClearanceRepository repo;
     private SuspiciousBookingService service;
 
     @BeforeEach
     void setUp() {
         repo = mock(SuspiciousBookingClearanceRepository.class);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(BUSINESS_ID);
         service = new SuspiciousBookingService(
                 mock(SquareMonthAggregator.class),
                 mock(SquareClientProvider.class),
@@ -38,19 +43,20 @@ class SuspiciousBookingServiceTest {
                 repo,
                 mock(org.springframework.beans.factory.ObjectProvider.class),
                 mock(com.salonreview.repo.SuspiciousTriageRepository.class),
-                mock(com.salonreview.config.CurrentBusinessContext.class));
+                currentBusinessContext);
     }
 
     @Test
-    @DisplayName("clear() inserts a clearance row")
+    @DisplayName("clear() inserts a clearance row, scoped to the current business")
     void clearInsertsRow() {
-        when(repo.findBySquareBookingId("bk1")).thenReturn(Optional.empty());
+        when(repo.findByBusinessIdAndSquareBookingId(BUSINESS_ID, "bk1")).thenReturn(Optional.empty());
 
         service.clear("bk1", "olexandr.kara2", "looked at it; client paid via Zelle later");
 
         ArgumentCaptor<SuspiciousBookingClearance> cap = ArgumentCaptor.forClass(SuspiciousBookingClearance.class);
         verify(repo).save(cap.capture());
         SuspiciousBookingClearance saved = cap.getValue();
+        assertThat(saved.getBusinessId()).isEqualTo(BUSINESS_ID);
         assertThat(saved.getSquareBookingId()).isEqualTo("bk1");
         assertThat(saved.getClearedByUsername()).isEqualTo("olexandr.kara2");
         assertThat(saved.getNote()).isEqualTo("looked at it; client paid via Zelle later");
@@ -61,9 +67,9 @@ class SuspiciousBookingServiceTest {
     @DisplayName("clear() is idempotent — already-cleared booking does NOT insert again")
     void clearIsIdempotent() {
         SuspiciousBookingClearance existing = SuspiciousBookingClearance.builder()
-                .id(1L).squareBookingId("bk1").clearedByUsername("someone")
+                .id(1L).businessId(BUSINESS_ID).squareBookingId("bk1").clearedByUsername("someone")
                 .clearedAt(java.time.Instant.now()).build();
-        when(repo.findBySquareBookingId("bk1")).thenReturn(Optional.of(existing));
+        when(repo.findByBusinessIdAndSquareBookingId(BUSINESS_ID, "bk1")).thenReturn(Optional.of(existing));
 
         service.clear("bk1", "olexandr.kara2", "second click");
 
@@ -71,9 +77,23 @@ class SuspiciousBookingServiceTest {
     }
 
     @Test
-    @DisplayName("unclear() removes the clearance row")
+    @DisplayName("2026-08-18 cross-tenant fix: clear() checks only THIS business's row, even when "
+            + "another business happens to have already cleared the same bookingId string")
+    void clearDoesNotSeeAnotherBusinessClearance() {
+        // Business 2's clearance for the same bookingId exists, but the mock only answers the
+        // business-1-scoped lookup below — a bare findBySquareBookingId (the pre-fix behavior)
+        // would have returned business 2's row here and skipped the insert entirely.
+        when(repo.findByBusinessIdAndSquareBookingId(BUSINESS_ID, "bk1")).thenReturn(Optional.empty());
+
+        service.clear("bk1", "olexandr.kara2", "business 1's own review");
+
+        verify(repo).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("unclear() removes the clearance row, scoped to the current business")
     void unclearRemovesRow() {
         service.unclear("bk1");
-        verify(repo).deleteBySquareBookingId("bk1");
+        verify(repo).deleteByBusinessIdAndSquareBookingId(BUSINESS_ID, "bk1");
     }
 }

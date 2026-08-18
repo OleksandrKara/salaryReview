@@ -18,7 +18,8 @@ import java.time.LocalDate;
  * ({@code created_at} is DB-managed.)
  */
 @Entity
-@Table(name = "no_show_fee_override")
+@Table(name = "no_show_fee_override",
+       uniqueConstraints = @UniqueConstraint(columnNames = {"business_id", "square_booking_id"}))
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
 public class NoShowFeeOverride {
@@ -33,7 +34,7 @@ public class NoShowFeeOverride {
     @Column(name = "business_id", nullable = false)
     private Long businessId;
 
-    @Column(name = "square_booking_id", nullable = false, unique = true)
+    @Column(name = "square_booking_id", nullable = false)
     private String squareBookingId;
 
     @Column(nullable = false)

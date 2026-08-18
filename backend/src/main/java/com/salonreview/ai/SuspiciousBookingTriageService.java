@@ -91,8 +91,8 @@ public class SuspiciousBookingTriageService {
         if (client == null) return Optional.empty();
 
         // 1. Cache lookup — repeat clicks return the cached row, no LLM call.
-        Optional<SuspiciousTriage> cached =
-                triages.findBySquareBookingIdAndPromptVersion(bookingId, TriagePrompts.PROMPT_VERSION);
+        Optional<SuspiciousTriage> cached = triages.findByBusinessIdAndSquareBookingIdAndPromptVersion(
+                currentBusinessContext.id(), bookingId, TriagePrompts.PROMPT_VERSION);
         if (cached.isPresent()) {
             return Optional.of(toResult(cached.get()));
         }
@@ -156,7 +156,8 @@ public class SuspiciousBookingTriageService {
      */
     @Transactional
     public boolean recordFeedback(String bookingId, boolean helpful, TriageClassification corrected) {
-        return triages.findBySquareBookingIdAndPromptVersion(bookingId, TriagePrompts.PROMPT_VERSION)
+        return triages.findByBusinessIdAndSquareBookingIdAndPromptVersion(
+                        currentBusinessContext.id(), bookingId, TriagePrompts.PROMPT_VERSION)
                 .map(t -> {
                     triages.updateFeedback(t.getId(), helpful, corrected);
                     tracerProvider.ifAvailable(tracer -> {

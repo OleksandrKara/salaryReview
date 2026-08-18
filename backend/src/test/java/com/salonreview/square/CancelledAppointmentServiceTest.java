@@ -14,6 +14,7 @@ import com.salonreview.square.SquareMonthAggregator.CancelledCandidate;
 import com.salonreview.square.SquareMonthAggregator.Diag;
 import com.salonreview.square.SquareMonthAggregator.MonthAggregation;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -27,6 +28,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -125,5 +127,39 @@ class CancelledAppointmentServiceTest {
                 candidate("bk-1", "TM_PROV", Half.SECOND));
 
         assertThat(service.summaryFor(agg).get(10L)).containsExactly(0, 1);
+    }
+
+    @Test
+    @DisplayName("2026-08-18 cross-tenant fix: clear() inserts a clearance row scoped to the "
+            + "current business")
+    void clearInsertsScopedRow() {
+        when(clearances.findByBusinessIdAndSquareBookingId(1L, "bk-1")).thenReturn(java.util.Optional.empty());
+
+        service.clear("bk-1", "owner", "checked the cameras");
+
+        org.mockito.ArgumentCaptor<CancellationClearance> cap =
+                org.mockito.ArgumentCaptor.forClass(CancellationClearance.class);
+        verify(clearances).save(cap.capture());
+        assertThat(cap.getValue().getBusinessId()).isEqualTo(1L);
+        assertThat(cap.getValue().getSquareBookingId()).isEqualTo("bk-1");
+    }
+
+    @Test
+    @DisplayName("2026-08-18 cross-tenant fix: clear() does not see another business's clearance "
+            + "for the same bookingId — it inserts its own row instead of no-op'ing")
+    void clearDoesNotSeeAnotherBusinessClearance() {
+        when(clearances.findByBusinessIdAndSquareBookingId(1L, "bk-1")).thenReturn(java.util.Optional.empty());
+
+        service.clear("bk-1", "owner", "business 1's own review");
+
+        verify(clearances).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("2026-08-18 cross-tenant fix: unclear() removes only the current business's row")
+    void unclearRemovesScopedRow() {
+        service.unclear("bk-1");
+
+        verify(clearances).deleteByBusinessIdAndSquareBookingId(1L, "bk-1");
     }
 }

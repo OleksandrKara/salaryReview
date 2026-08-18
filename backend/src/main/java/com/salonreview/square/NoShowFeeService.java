@@ -272,6 +272,15 @@ public class NoShowFeeService {
     }
 
     // --- overrides (owner/manager) ---
+    //
+    // Found live 2026-08-18: confirm/suppress/clearOverride all used to look up (or delete) the
+    // override row by bare squareBookingId with no business filter. Beyond the obvious
+    // clearOverride cross-tenant delete, confirm/suppress had a subtler write-side variant: on a
+    // bookingId collision with another business's row, findBySquareBookingId would return THAT
+    // row, which the very next line then reassigned via row.setBusinessId(businessId) — silently
+    // taking the row away from its real owner and overwriting its kind/amount/provider with the
+    // caller's. All three now resolve (or delete) strictly within the caller's own business; the
+    // table's unique constraint was widened to (business_id, square_booking_id) in the same change.
 
     public record ConfirmRequest(String bookingId, Long providerId, BigDecimal amount, LocalDate feePaidDate,
                                  String customerName, LocalDate noShowDate, String note) {}
@@ -290,7 +299,8 @@ public class NoShowFeeService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "amount is required — no default no-show fee is configured for this business");
         }
-        NoShowFeeOverride row = overrides.findBySquareBookingId(req.bookingId()).orElseGet(NoShowFeeOverride::new);
+        NoShowFeeOverride row = overrides.findByBusinessIdAndSquareBookingId(businessId, req.bookingId())
+                .orElseGet(NoShowFeeOverride::new);
         row.setBusinessId(businessId);
         row.setSquareBookingId(req.bookingId());
         row.setKind(NoShowFeeOverride.CONFIRM);
@@ -310,7 +320,8 @@ public class NoShowFeeService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "bookingId is required");
         }
         Long businessId = currentBusinessContext.id();
-        NoShowFeeOverride row = overrides.findBySquareBookingId(bookingId).orElseGet(NoShowFeeOverride::new);
+        NoShowFeeOverride row = overrides.findByBusinessIdAndSquareBookingId(businessId, bookingId)
+                .orElseGet(NoShowFeeOverride::new);
         row.setBusinessId(businessId);
         row.setSquareBookingId(bookingId);
         row.setKind(NoShowFeeOverride.SUPPRESS);
@@ -324,7 +335,7 @@ public class NoShowFeeService {
 
     @Transactional
     public void clearOverride(String bookingId) {
-        overrides.deleteBySquareBookingId(bookingId);
+        overrides.deleteByBusinessIdAndSquareBookingId(currentBusinessContext.id(), bookingId);
     }
 
     // --- helpers ---

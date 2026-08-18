@@ -15,10 +15,14 @@ public interface SuspiciousTriageRepository extends JpaRepository<SuspiciousTria
 
     /**
      * Cache lookup — returns the cached triage for this booking under the given prompt version,
-     * or empty if the next click should call the LLM.
+     * or empty if the next click should call the LLM. Scoped by business: found live 2026-08-18
+     * that a bare {@code (squareBookingId, promptVersion)} lookup would let one business read (or,
+     * via the feedback endpoint, overwrite) another business's cached AI triage on a bookingId
+     * collision — the table's unique constraint was widened to include business_id in the same
+     * change that added this scoping.
      */
-    Optional<SuspiciousTriage> findBySquareBookingIdAndPromptVersion(
-            String squareBookingId, String promptVersion);
+    Optional<SuspiciousTriage> findByBusinessIdAndSquareBookingIdAndPromptVersion(
+            Long businessId, String squareBookingId, String promptVersion);
 
     /**
      * Bulk variant — used by the suspicious-bookings list endpoint to hydrate every row's cached
