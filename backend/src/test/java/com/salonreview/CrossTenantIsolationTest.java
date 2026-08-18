@@ -459,6 +459,21 @@ class CrossTenantIsolationTest {
                 businessAId, serviceDate.minusDays(1), serviceDate.plusDays(1)), redA.getId(), redB.getId());
         assertIds(prepaidRedemptions.findByBusinessIdAndServiceDateBetween(
                 businessBId, serviceDate.minusDays(1), serviceDate.plusDays(1)), redB.getId(), redA.getId());
+
+        // 2026-08-18 cross-tenant fix: PrepaidService#delete/redeem/candidates/undoRedemption all
+        // used to resolve by bare id (packages.findById/existsById, redemptions.existsById) with no
+        // business check — any business could delete or redeem against another business's package,
+        // or delete another business's redemption, by guessing a small sequential id. Proves the
+        // fix's id-scoped lookups against a real Postgres.
+        assertThat(prepaidPackages.findByIdAndBusinessId(pkgA.getId(), businessAId)).isPresent();
+        assertThat(prepaidPackages.findByIdAndBusinessId(pkgA.getId(), businessBId)).isEmpty();
+        assertThat(prepaidPackages.findByIdAndBusinessId(pkgB.getId(), businessBId)).isPresent();
+        assertThat(prepaidPackages.findByIdAndBusinessId(pkgB.getId(), businessAId)).isEmpty();
+
+        assertThat(prepaidRedemptions.findByIdAndBusinessId(redA.getId(), businessAId)).isPresent();
+        assertThat(prepaidRedemptions.findByIdAndBusinessId(redA.getId(), businessBId)).isEmpty();
+        assertThat(prepaidRedemptions.findByIdAndBusinessId(redB.getId(), businessBId)).isPresent();
+        assertThat(prepaidRedemptions.findByIdAndBusinessId(redB.getId(), businessAId)).isEmpty();
     }
 
     @Test

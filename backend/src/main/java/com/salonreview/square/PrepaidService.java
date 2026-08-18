@@ -90,17 +90,22 @@ public class PrepaidService {
         return toView(saved);
     }
 
+    /** @throws ResponseStatusException 404 if {@code id} isn't a package of the current business —
+     * found live 2026-08-18 (same audit as PR #404's Square-ID-keyed tables): a bare
+     * {@code existsById}/{@code deleteById} would let one business delete another's prepaid
+     * package by guessing a small sequential id. */
     @Transactional
     public void delete(Long id) {
-        if (!packages.existsById(id)) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such package");
-        packages.deleteById(id);
+        PrepaidPackage pkg = packages.findByIdAndBusinessId(id, currentBusinessContext.id())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such package"));
+        packages.delete(pkg);
     }
 
     // --- draw-downs ---
 
     @Transactional
     public PrepaidRedemption redeem(Long packageId, RedeemRequest req, String by) {
-        PrepaidPackage pkg = packages.findById(packageId)
+        PrepaidPackage pkg = packages.findByIdAndBusinessId(packageId, currentBusinessContext.id())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such package"));
         if (req.squareBookingId() == null || req.serviceVariationId() == null || req.serviceDate() == null
                 || req.menuPrice() == null || req.teamMemberId() == null || req.teamMemberId().isBlank()) {
@@ -129,11 +134,13 @@ public class PrepaidService {
                 .build());
     }
 
+    /** @throws ResponseStatusException 404 if {@code redemptionId} isn't a redemption of a package
+     * belonging to the current business — same finding as {@link #delete}, on the sibling table. */
     @Transactional
     public void undoRedemption(Long redemptionId) {
-        if (!redemptions.existsById(redemptionId))
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such redemption");
-        redemptions.deleteById(redemptionId);
+        PrepaidRedemption redemption = redemptions.findByIdAndBusinessId(redemptionId, currentBusinessContext.id())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such redemption"));
+        redemptions.delete(redemption);
     }
 
     /**
@@ -143,7 +150,7 @@ public class PrepaidService {
      * Each candidate names the provider who performed it; confirming credits that provider.
      */
     public List<Candidate> candidates(Long packageId) {
-        PrepaidPackage pkg = packages.findById(packageId)
+        PrepaidPackage pkg = packages.findByIdAndBusinessId(packageId, currentBusinessContext.id())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such package"));
         if (pkg.getCustomerId() == null) return List.of(); // need a Square customer id to find their bookings
 
