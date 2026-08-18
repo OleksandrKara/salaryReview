@@ -32,7 +32,7 @@ export default async function MarketingAdsReportPage({
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
-      <PageHeader title="Ads Report" role={me.role} language={me.preferredLanguage} />
+      <PageHeader title="Ads Report" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <MarketingTabs />
 
       <p className="mt-4 text-sm text-zinc-500">

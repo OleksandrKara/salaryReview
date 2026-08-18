@@ -13,7 +13,7 @@ export default async function SopAdminPage() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
-      <PageHeader title={t(lang, 'sopAdminTitle')} role={me.role} language={lang} />
+      <PageHeader title={t(lang, 'sopAdminTitle')} role={me.role} language={lang} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <p className="mt-1 text-sm text-zinc-500">{t(lang, 'sopAdminDesc')}</p>
       <SopAdmin initialSops={sops} />
     </main>

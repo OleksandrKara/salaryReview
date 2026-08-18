@@ -52,7 +52,7 @@ export default async function MessagesPage({
     if (err instanceof ApiError && err.code === 'sms_not_available') {
       return (
         <main className="mx-auto max-w-5xl p-4 sm:p-8">
-          <PageHeader title="Messages" role={me.role} language={me.preferredLanguage} />
+          <PageHeader title="Messages" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
           <SetupRequiredNotice
             title="SMS isn't available for this business yet"
             message="Messaging needs its own Twilio number, which isn't set up per-business yet — this is planned for a future release."
@@ -83,7 +83,7 @@ export default async function MessagesPage({
         data-testid="messages-page-title-row"
         className="shrink-0 px-4 pt-4 sm:px-0 sm:pt-0 max-sm:group-has-[.thread-open]/messages:hidden"
       >
-        <PageHeader title="Messages" role={me.role} language={me.preferredLanguage} />
+        <PageHeader title="Messages" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       </div>
       <div className="min-h-0 flex-1">
         <MessagesView

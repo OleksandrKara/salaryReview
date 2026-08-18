@@ -36,7 +36,7 @@ export default async function RevenuePulsePage({
 
   return (
     <main className="mx-auto max-w-4xl p-4 sm:p-8">
-      <PageHeader title="Revenue" role={me.role} language={me.preferredLanguage} />
+      <PageHeader title="Revenue" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <RevenueTabs />
 
       <div className="mb-4">

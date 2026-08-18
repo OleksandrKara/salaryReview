@@ -12,7 +12,7 @@ export default async function SopsPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
-      <PageHeader title={t(lang, 'sopTitle')} role={me.role} language={lang} />
+      <PageHeader title={t(lang, 'sopTitle')} role={me.role} language={lang} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       {me.role === 'OWNER' ? (
         <p className="mt-1 text-sm text-zinc-500">
           {t(lang, 'sopOwnerDescPre')}

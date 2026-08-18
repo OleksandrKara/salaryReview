@@ -15,5 +15,6 @@ export async function GET(): Promise<Response> {
   }
   jar.delete('sid');
   jar.delete('role');
+  jar.delete('businessId');
   return new Response(null, { status: 303, headers: { Location: '/' } });
 }

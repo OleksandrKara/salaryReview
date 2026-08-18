@@ -29,7 +29,7 @@ export default async function MarketingFunnelPage({
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
-      <PageHeader title="Marketing" role={me.role} language={me.preferredLanguage} />
+      <PageHeader title="Marketing" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <MarketingTabs />
 
       <p className="mt-4 text-sm text-zinc-500">

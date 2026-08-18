@@ -69,7 +69,13 @@ export default async function MyReportPage({
 
   return (
     <main className="mx-auto max-w-3xl p-4 sm:p-8">
-      <PageHeader title={t(lang, 'navMyPay')} role={principal.role} language={lang} />
+      <PageHeader
+        title={t(lang, 'navMyPay')}
+        role={principal.role}
+        language={lang}
+        activeBusinessId={principal.activeBusinessId}
+        businesses={principal.businesses}
+      />
       <div className="-mt-4 mb-4">
         <MonthNav base="/me" year={year} month={month} prev={prev} next={next} language={lang} />
       </div>

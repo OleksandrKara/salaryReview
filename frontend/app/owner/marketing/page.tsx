@@ -29,7 +29,7 @@ export default async function MarketingDashboardPage({
   if (squareConnection && !squareConnection.accessTokenSet) {
     return (
       <main className="mx-auto max-w-6xl p-4 sm:p-8">
-        <PageHeader title="Marketing" role={me.role} language={me.preferredLanguage} />
+        <PageHeader title="Marketing" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
         <SetupRequiredNotice
           title="Connect Square to see marketing data"
           message="Marketing tracking is matched against real Square bookings and customers, which needs a Square connection first."
@@ -47,7 +47,7 @@ export default async function MarketingDashboardPage({
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
-      <PageHeader title="Marketing" role={me.role} language={me.preferredLanguage} />
+      <PageHeader title="Marketing" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <MarketingTabs />
 
       {!data.available ? (

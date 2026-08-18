@@ -153,7 +153,7 @@ export default async function ReportsPage({
     if (err instanceof ApiError && err.code === 'square_not_connected') {
       return (
         <main className="mx-auto max-w-6xl p-4 sm:p-8">
-          <PageHeader title="Salary report" role={me.role} language={me.preferredLanguage} />
+          <PageHeader title="Salary report" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
           <SetupRequiredNotice
             title="Connect Square to see reports"
             message="This business's salary reports need a Square connection to pull bookings, orders, and payments from."
@@ -181,7 +181,7 @@ export default async function ReportsPage({
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
-      <PageHeader title="Salary report" role={me.role} language={me.preferredLanguage} />
+      <PageHeader title="Salary report" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <div className="-mt-4 mb-1">
         <MonthNav base="/reports" year={year} month={month} prev={prev} next={next} />
       </div>

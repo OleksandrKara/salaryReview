@@ -46,7 +46,7 @@ export default async function ManagerPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
-      <PageHeader title={t(lang, 'mgrTitle')} role={me.role} language={lang} />
+      <PageHeader title={t(lang, 'mgrTitle')} role={me.role} language={lang} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <p className="mt-1 text-sm text-zinc-500">{t(lang, 'mgrSubtitle')}</p>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">

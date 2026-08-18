@@ -9,7 +9,7 @@ export default async function ImportHistoryPage() {
 
   return (
     <main className="mx-auto max-w-3xl p-4 sm:p-8">
-      <PageHeader title="Import history" role={me.role} language={me.preferredLanguage} />
+      <PageHeader title="Import history" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <ImportHistoryList />
     </main>
   );

@@ -15,7 +15,7 @@ export default async function MarketingContactsPage({
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
-      <PageHeader title="Marketing Contacts" role={me.role} language={me.preferredLanguage} />
+      <PageHeader title="Marketing Contacts" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <MarketingTabs />
 
       {!data.available ? (

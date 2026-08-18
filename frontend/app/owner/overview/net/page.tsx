@@ -37,7 +37,7 @@ export default async function RevenueNetPage({
   if (!squareConnection.accessTokenSet) {
     return (
       <main className="mx-auto max-w-6xl p-4 sm:p-8">
-        <PageHeader title="Revenue" role={me.role} language={me.preferredLanguage} />
+        <PageHeader title="Revenue" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
         <SetupRequiredNotice
           title="Connect Square to see revenue"
           message="This business's revenue dashboard needs a Square connection to pull bookings, orders, and payments from."
@@ -55,7 +55,7 @@ export default async function RevenueNetPage({
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
-      <PageHeader title="Revenue" role={me.role} language={me.preferredLanguage} />
+      <PageHeader title="Revenue" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <RevenueTabs />
 
       <div className="mb-4" data-testid="net-range-picker">

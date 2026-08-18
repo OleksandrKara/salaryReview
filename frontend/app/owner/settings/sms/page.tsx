@@ -22,7 +22,7 @@ export default async function SmsSettingsPage() {
 
   return (
     <main className="mx-auto max-w-4xl p-4 sm:p-8">
-      <PageHeader title="SMS Notifications" role={me.role} language={me.preferredLanguage} />
+      <PageHeader title="SMS Notifications" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
 
       <section>
         <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Automations</h2>

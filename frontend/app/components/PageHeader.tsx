@@ -1,25 +1,34 @@
 import { serverApi } from '../lib/serverApi';
 import AdminMenu from './AdminMenu';
-import type { Language, Role } from '../lib/types';
+import type { Language, MeBusinessOption, Role } from '../lib/types';
 
 // The shared page header: a consistent title row with the navigation menu, on every authenticated
-// page. Pages that already loaded `me` can pass role/language to avoid a second /api/me round-trip;
-// otherwise it fetches them here so a page only has to supply a title.
+// page. Pages that already loaded `me` can pass role/language (and, since Phase 6.1/6.2,
+// activeBusinessId/businesses) to avoid a second /api/me round-trip; otherwise it fetches them
+// here so a page only has to supply a title.
 export default async function PageHeader({
   title,
   role,
   language,
+  activeBusinessId,
+  businesses,
 }: {
   title: string;
   role?: Role;
   language?: Language | null;
+  activeBusinessId?: number;
+  businesses?: MeBusinessOption[];
 }) {
   let r = role;
   let l = language;
+  let abid = activeBusinessId;
+  let biz = businesses;
   if (r === undefined) {
     const me = await serverApi.getMe();
     r = me.role;
     l = me.preferredLanguage;
+    abid = me.activeBusinessId;
+    biz = me.businesses;
   }
   // KB requests stay OWNER-only; the SMS unread badge is now also relevant to MANAGER (see
   // openspec/changes/lead-followup-and-manager-inbox — MANAGER gets read/reply access to the
@@ -34,7 +43,14 @@ export default async function PageHeader({
       {/* AdminMenu is fixed to the viewport corner, not this row — the right padding here just
           keeps a long title from running underneath it on narrow screens. */}
       <h1 className="pr-24 text-xl font-semibold sm:text-2xl">{title}</h1>
-      <AdminMenu role={r} language={l ?? null} kbRequestOpenCount={kbRequestOpenCount} smsUnreadCount={smsUnreadCount} />
+      <AdminMenu
+        role={r}
+        language={l ?? null}
+        kbRequestOpenCount={kbRequestOpenCount}
+        smsUnreadCount={smsUnreadCount}
+        activeBusinessId={abid}
+        businesses={biz}
+      />
     </div>
   );
 }

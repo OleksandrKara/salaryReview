@@ -9,7 +9,7 @@ export default async function MerchantRulesPage() {
 
   return (
     <main className="mx-auto max-w-3xl p-4 sm:p-8">
-      <PageHeader title="Merchant rules" role={me.role} language={me.preferredLanguage} />
+      <PageHeader title="Merchant rules" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <p className="mt-2 text-sm text-zinc-500">
         Every rule learned from a reconciliation decision — view, correct, or remove any of them
         directly, not only reactively through a transaction correction.

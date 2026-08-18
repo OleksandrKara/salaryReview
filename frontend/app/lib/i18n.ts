@@ -106,6 +106,7 @@ const STRINGS = {
   // Navigation menu (AdminMenu)
   navMenu: { EN: 'Menu', RU: 'Меню' },
   navLanguage: { EN: 'Language', RU: 'Язык' },
+  navBusiness: { EN: 'Business', RU: 'Бизнес' },
   navSalaryReport: { EN: 'Salary report', RU: 'Отчёт по зарплате' },
   navRevenue: { EN: 'Revenue', RU: 'Выручка' },
   navMarketing: { EN: 'Marketing', RU: 'Маркетинг' },

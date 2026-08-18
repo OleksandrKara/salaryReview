@@ -15,7 +15,7 @@ export default async function StaffDocumentsPage() {
 
   return (
     <main className="mx-auto max-w-4xl p-4 sm:p-8">
-      <PageHeader title="Staff Documents" role={me.role} language={me.preferredLanguage} />
+      <PageHeader title="Staff Documents" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <p className="mb-6 text-xs text-zinc-500">
         Contracts, licenses, NDAs, and other per-person documents for service providers and
         managers — each with an expiration date so nothing lapses unnoticed.

@@ -20,7 +20,7 @@ export default async function KbArticlePage({ params }: { params: Promise<{ id: 
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
-      <PageHeader title={article ? localized(lang, article.title, article.titleRu) : t(lang, 'kbTitle')} role={me.role} language={lang} />
+      <PageHeader title={article ? localized(lang, article.title, article.titleRu) : t(lang, 'kbTitle')} role={me.role} language={lang} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <Link href="/kb" className="text-sm text-zinc-500 underline hover:text-zinc-700">
         {t(lang, 'back')}
       </Link>

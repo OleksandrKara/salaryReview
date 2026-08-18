@@ -28,7 +28,7 @@ export default async function RetentionPage({
   if (squareConnection && !squareConnection.accessTokenSet) {
     return (
       <main className="mx-auto max-w-6xl p-4 sm:p-8">
-        <PageHeader title="Provider retention" role={me.role} language={me.preferredLanguage} />
+        <PageHeader title="Provider retention" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
         <SetupRequiredNotice
           title="Connect Square to see retention"
           message="Retention is calculated from real Square booking history, which needs a Square connection first."
@@ -75,7 +75,7 @@ export default async function RetentionPage({
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
-      <PageHeader title="Provider retention" role={me.role} language={me.preferredLanguage} />
+      <PageHeader title="Provider retention" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <p className="mb-4 text-xs text-zinc-500">
         New vs returning clients over time — for the whole salon or one provider. Retention (below) = of a
         provider&apos;s new clients in a month, how many returned within {report.retentionWindowDays} days.
