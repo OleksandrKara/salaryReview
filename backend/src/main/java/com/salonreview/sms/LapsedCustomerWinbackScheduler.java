@@ -149,9 +149,32 @@ public class LapsedCustomerWinbackScheduler {
         }
 
         Instant promoExpiresAt = endOfTodayInSalonZone();
+        // Claim the row BEFORE sending, not after — found live 2026-08-18 (a duplicate-key error
+        // on lapsed_customer_winback_send_customer_idx at the exact cron second, most likely two
+        // overlapping scheduler runs — see this class's own doc on ShedLock). Claiming first means
+        // the unique constraint can only ever reject a *second* attempt before any SMS goes out,
+        // never after — so the worst case becomes "processed once, logged once," not "a customer
+        // silently gets the nudge twice because the loser of the race already sent before losing."
+        if (!claim(businessId, customer, phoneNumber, promoExpiresAt)) {
+            log.info("Lapsed-customer-winback: {} already claimed by a concurrent run — skipping to avoid a duplicate send",
+                    customer.squareCustomerId());
+            return;
+        }
         String givenName = square.customerGivenNames(List.of(customer.squareCustomerId())).get(customer.squareCustomerId());
         sendNudge(customer, phoneNumber, givenName, promoExpiresAt, hasConsent(phoneNumber, customer.squareCustomerId(), square), businessId);
-        save(businessId, customer, phoneNumber, promoExpiresAt, LapsedCustomerWinbackSend.STATE_SENT);
+    }
+
+    /** Inserts the {@code STATE_SENT} row first — true if this call won the race (safe to send),
+     * false if a concurrent run already claimed this customer (the unique index on
+     * {@code square_customer_id} enforces it; see {@link #process} for why this order matters). */
+    private boolean claim(Long businessId, LapsedCustomerWinbackEligibilityRepository.EligibleCustomer customer,
+                           String phoneNumber, Instant promoExpiresAt) {
+        try {
+            save(businessId, customer, phoneNumber, promoExpiresAt, LapsedCustomerWinbackSend.STATE_SENT);
+            return true;
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            return false;
+        }
     }
 
     /** Live check for any not-cancelled, not-yet-happened Square appointment — same helper every

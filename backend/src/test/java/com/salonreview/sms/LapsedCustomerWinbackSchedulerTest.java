@@ -229,6 +229,20 @@ class LapsedCustomerWinbackSchedulerTest {
     }
 
     @Test
+    @DisplayName("2026-08-18 live incident: claim loses a concurrent race (duplicate-key on the "
+            + "customer_id unique index) → no SMS sent at all, not sent-then-discovered-duplicate")
+    void claimRaceLossSkipsSendEntirely() {
+        givenEligible(eligible("Susan"));
+        when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(true);
+        doThrow(new org.springframework.dao.DataIntegrityViolationException("duplicate key"))
+                .when(sendRepository).save(any());
+
+        scheduler.sendDueWinbacks();
+
+        verifyNoInteractions(client);
+    }
+
+    @Test
     @DisplayName("Square failure checking upcoming bookings → no row written, retried next run")
     void squareFailureRetriesNextRun() {
         givenEligible(eligible("Susan"));
