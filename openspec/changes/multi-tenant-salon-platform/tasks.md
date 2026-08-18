@@ -545,8 +545,35 @@ this file is the plan, not yet executed.
       (deliberately fake, so rejected) Square token round-trips through the real validation path,
       and creating a MANAGER account through the embedded Users step correctly lands it scoped to
       business 2, not leaked cross-tenant.
-- [ ] 6.5 Playwright e2e: business-switcher renders correctly for both 1-membership and 2-membership
-      fixtures; onboarding flow end-to-end against Square sandbox credentials
+- [x] 6.5 **Shipped 2026-08-18.** `@playwright/test` added (frontend); `e2e/business-switcher
+      .spec.ts` covers both fixtures from design.md D12 (single-membership → plain text, no
+      `<select>`; platform_admin with 2+ businesses → real dropdown, and actually switching
+      changes which business's data is visible) — self-contained, creates its own second business
+      via the platform-admin API rather than depending on any pre-seeded fixture data.
+      `e2e/onboarding.spec.ts` covers the Phase 6.4 page end to end, but **requires real Square
+      sandbox credentials** to exercise the Connect Square step for real (there's no way around
+      that — `SquareConnectionService` validates against a live Square call before saving) —
+      skips itself with a clear reason via `SQUARE_SANDBOX_ACCESS_TOKEN`/
+      `SQUARE_SANDBOX_LOCATION_ID` when they aren't set, same "ships dark until configured"
+      convention as every other optional integration in this codebase, rather than failing or
+      faking success. **Deliberately not wired into GitHub Actions** — this repo's CI is a live
+      production deploy trigger, and this same session already flagged real CI-reliability
+      friction once tonight; a new, timing-sensitive multi-service e2e stage isn't something to
+      bolt onto that pipeline without separate review. `e2e/README.md` documents how to stand up
+      an isolated instance and run them locally (`npm run test:e2e`).
+      **Found and fixed a real, live bug while writing these** (not a test-authoring nitpick — an
+      actual production gap): `Landing.tsx`'s post-login redirect sent a freshly OWNER-role
+      account straight to the hardcoded `/reports`, bypassing the *already-existing*
+      `ownerBusinessConfigured` check that only runs when the browser hits `/` — so a
+      platform-admin-created business's owner's very first login 500'd immediately
+      (`SettlementPreviewService` throwing on the missing `salon_config` row) instead of being
+      guided to `/owner/settings/business`, the exact page that check exists to route them to.
+      Fixed by routing the OWNER case through `/` instead of hardcoding the destination (PROVIDER/
+      MANAGER/ADS_MANAGER unchanged — their routing was already correct and isn't duplicated
+      anywhere else, so there was no matching gap to find for them). Verified: `tsc`/`build`
+      clean; the full switcher suite run twice in a row (fresh random business names each time)
+      against a genuinely fresh isolated instance, all passing, including the fix above (the
+      single-membership test literally could not pass without it — that's how the bug surfaced).
 
 ## Phase 6b — Onboarding UX: graceful "not set up yet" states
 
