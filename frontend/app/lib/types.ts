@@ -376,6 +376,7 @@ export interface CommissionConfig {
   baseRate: number;
   tierRate: number;
   cardTipFeeRate: number;
+  tierEnabled: boolean;
 }
 
 export interface HalfSettlement {

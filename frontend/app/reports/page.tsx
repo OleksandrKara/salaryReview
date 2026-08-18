@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { serverApi, ApiError } from '../lib/serverApi';
-import type { Feedback, ProviderPayout, SettlementPreview } from '../lib/types';
+import type { CommissionConfig, Feedback, ProviderPayout, SettlementPreview } from '../lib/types';
 import PageHeader from '../components/PageHeader';
 import MonthNav from '../components/MonthNav';
 import GrantTierButton from './GrantTierButton';
@@ -20,12 +20,19 @@ function shift(year: number, month: number, by: number) {
   return { year: year + Math.floor(idx / 12), month: ((idx % 12) + 12) % 12 + 1 };
 }
 
-function TierBadge({ p }: { p: ProviderPayout }) {
+// Hidden entirely when this business runs no tier at all (cfg.tierEnabled false) — a badge/counter
+// framed around a threshold that doesn't apply has no meaning to show, not even the "base rate"
+// fallback (found live 2026-08-18 for AK PMU: tierServiceThreshold's own "off" sentinel is 0, which
+// every provider with any counted services at all trivially satisfies).
+function TierBadge({ p, cfg }: { p: ProviderPayout; cfg: CommissionConfig }) {
+  if (!cfg.tierEnabled) return null;
+  const tierPct = Math.round(cfg.tierRate * 100);
+  const basePct = Math.round(cfg.baseRate * 100);
   if (p.autoQualified)
-    return <span className="rounded bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 ring-1 ring-green-300">50/50 · earned</span>;
+    return <span className="rounded bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 ring-1 ring-green-300">{tierPct}/{100 - tierPct} · earned</span>;
   if (p.tierManuallyGranted)
-    return <span className="rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-amber-300">50/50 · granted</span>;
-  return <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 ring-1 ring-zinc-300">45/55</span>;
+    return <span className="rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-amber-300">{tierPct}/{100 - tierPct} · granted</span>;
+  return <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 ring-1 ring-zinc-300">{basePct}/{100 - basePct}</span>;
 }
 
 // Badge linking to the suspicious-bookings review page for one provider × half. Hidden when count = 0.
@@ -187,7 +194,11 @@ export default async function ReportsPage({
       </div>
       <div className="mb-3"><SyncBadge syncedAt={report.syncedAt} timezone={report.timezone} /></div>
       <p className="mb-6 text-xs text-zinc-500">
-        Tier at {cfg.tierServiceThreshold}+ services ≥ {usd(report.priceCutoff)} · {Math.round(cfg.tierRate * 100)}/{Math.round((1 - cfg.tierRate) * 100)} vs {Math.round(cfg.baseRate * 100)}/{Math.round((1 - cfg.baseRate) * 100)} · tips −{(cfg.cardTipFeeRate * 100).toFixed(1)}% · {report.timezone}
+        {cfg.tierEnabled ? (
+          <>Tier at {cfg.tierServiceThreshold}+ services ≥ {usd(report.priceCutoff)} · {Math.round(cfg.tierRate * 100)}/{Math.round((1 - cfg.tierRate) * 100)} vs {Math.round(cfg.baseRate * 100)}/{Math.round((1 - cfg.baseRate) * 100)} · tips −{(cfg.cardTipFeeRate * 100).toFixed(1)}% · {report.timezone}</>
+        ) : (
+          <>Flat {Math.round(cfg.baseRate * 100)}/{Math.round((1 - cfg.baseRate) * 100)}, no tier · tips −{(cfg.cardTipFeeRate * 100).toFixed(1)}% · {report.timezone}</>
+        )}
         <br />Each period shows <span className="font-medium text-zinc-600">Zelle paid to provider</span> over <span className="text-zinc-400">cash returned to salon</span>.
       </p>
 
@@ -210,11 +221,17 @@ export default async function ReportsPage({
                 className="shrink-0 text-xs text-zinc-400 hover:text-zinc-700">Details →</Link>
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-              <TierBadge p={p} />
-              {!p.autoQualified && (
-                <GrantTierButton providerId={p.providerId} year={year} month={month} granted={p.tierManuallyGranted} />
+              {cfg.tierEnabled ? (
+                <>
+                  <TierBadge p={p} cfg={cfg} />
+                  {!p.autoQualified && (
+                    <GrantTierButton providerId={p.providerId} year={year} month={month} granted={p.tierManuallyGranted} />
+                  )}
+                  <span>{p.monthCountedServices}/{cfg.tierServiceThreshold} services</span>
+                </>
+              ) : (
+                <span>{p.monthCountedServices} services</span>
               )}
-              <span>{p.monthCountedServices}/{cfg.tierServiceThreshold} services</span>
             </div>
             <dl className="mt-3 space-y-1 text-sm">
               <MobileMoney label="Month → you" zelle={p.monthZelleToProvider} cash={p.monthCashToSalon} strong />
@@ -258,15 +275,17 @@ export default async function ReportsPage({
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   {p.monthCountedServices}
-                  <span className="text-zinc-400"> / {cfg.tierServiceThreshold}</span>
+                  {cfg.tierEnabled && <span className="text-zinc-400"> / {cfg.tierServiceThreshold}</span>}
                 </td>
                 <td className="px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <TierBadge p={p} />
-                    {!p.autoQualified && (
-                      <GrantTierButton providerId={p.providerId} year={year} month={month} granted={p.tierManuallyGranted} />
-                    )}
-                  </div>
+                  {cfg.tierEnabled && (
+                    <div className="flex items-center gap-2">
+                      <TierBadge p={p} cfg={cfg} />
+                      {!p.autoQualified && (
+                        <GrantTierButton providerId={p.providerId} year={year} month={month} granted={p.tierManuallyGranted} />
+                      )}
+                    </div>
+                  )}
                 </td>
                 <td className="px-3 py-2"><MoneyCell zelle={p.firstHalf.zelleToProvider} cash={p.firstHalf.cashToSalon} bonus={p.firstHalf.tierBonus}
                   badge={<><SuspiciousBadge count={p.firstHalfSuspicious} providerId={p.providerId} year={year} month={month} half="FIRST" /><CancelledBadge count={p.firstHalfCancellations} providerId={p.providerId} year={year} month={month} half="FIRST" /></>} /></td>

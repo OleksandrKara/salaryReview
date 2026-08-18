@@ -6,10 +6,19 @@ context: |
 
   Architecture
   - Backend: Spring Boot 4 / Java 21, Maven (./mvnw). Postgres via JPA/Hibernate; Flyway forward-only
-    migrations under backend/src/main/resources/db/migration (highest is V17 — next new file is V18).
-    Spring Security form login (/api/login); roles PROVIDER, MANAGER, OWNER. Route gating in
+    migrations under backend/src/main/resources/db/migration (highest is V111 — next new file is
+    V112). Spring Security form login (/api/login); roles PROVIDER, MANAGER, OWNER. Route gating in
     SecurityConfig: /api/settlements/me/** = PROVIDER; /api/settlements/**, /api/prepaid/**,
     /api/redos/**, /api/manual-credits/** = OWNER+MANAGER; /api/users/** = OWNER.
+  - Multi-tenant since the multi-tenant-salon-platform change (2026-08): every business-owned table
+    carries (or joins through a table that carries) a business_id column, resolved per-request by
+    CurrentBusinessContext (a ThreadLocal populated by a servlet filter after authentication, or
+    explicitly via runAs/runAsAndGet for scheduled jobs and webhooks with no session). A repository
+    method that resolves/mutates a row by a caller-controlled id (path variable, request body field)
+    must be business-scoped (findByIdAndBusinessId, deleteByBusinessIdAndX, etc.), not a bare
+    findById/existsById/deleteById — two rounds of real, live cross-tenant vulnerabilities were found
+    and fixed this way (PR #393, PR #404) after shipping code that skipped this. See
+    openspec/changes/multi-tenant-salon-platform/tasks.md for the full inventory of scoped tables.
   - Frontend: Next.js 16 App Router (see frontend/AGENTS.md — APIs differ from older Next; read
     node_modules/next/dist/docs before writing Next code). Server components fetch via app/lib/serverApi
     (forwards the JSESSIONID cookie). Browser mutations go through app/lib/api.ts → same-origin proxy
@@ -46,9 +55,11 @@ rules:
     - Keep it tight; always include a "Non-goals" / out-of-scope section.
     - State how the change is verified (which test, and the localhost/Square read-only check).
   design:
-    - Note any new Flyway migration (next is V18) and any SecurityConfig role gating.
+    - Note any new Flyway migration (next is V112) and any SecurityConfig role gating.
     - Respect Square read-only — never propose writing to Square; messy real-world data is handled
       through in-app records (e.g. manual credit), not by mutating Square.
+    - Any new caller-controlled-id repository method must be business-scoped from the start —
+      see the Multi-tenant context note above.
   tasks:
     - Order backend (migration → domain/repo → service/engine → controller → security) before frontend
       (proxy route → api.ts → page/component), then tests and verification.
