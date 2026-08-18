@@ -96,7 +96,14 @@ export default function Landing() {
         role === 'PROVIDER' ? '/me'
           : role === 'MANAGER' ? '/manager'
           : role === 'ADS_MANAGER' ? '/owner/marketing'
-          : '/reports',
+          // OWNER: through `/` rather than straight to `/reports` — its own redirect already
+          // checks whether this business's salon_config exists yet (see ownerBusinessConfigured
+          // in app/page.tsx) and sends a freshly platform-admin-created business's owner to
+          // /owner/settings/business instead. Found live via the Phase 6.5 e2e business-switcher
+          // test: logging straight into /reports for an unconfigured business 500s
+          // (SettlementPreviewService throws on the missing config row) instead of guiding the
+          // owner to set it up — this bypassed that check entirely since it only runs on `/`.
+          : '/',
       );
     } finally {
       setBusy(false);
