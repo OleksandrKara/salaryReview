@@ -2,6 +2,7 @@ package com.salonreview.square;
 
 import com.salonreview.domain.OwnerCustomer;
 import com.salonreview.repo.OwnerCustomerRepository;
+import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.square.SquareClient.AppointmentSegment;
 import com.salonreview.square.SquareClient.Booking;
 import com.salonreview.square.SquareClient.Order;
@@ -46,7 +47,7 @@ class SuspiciousBookingDetectionTest {
         SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         ownerRepo = mock(OwnerCustomerRepository.class);
-        aggregator = new SquareMonthAggregator(squareClientProvider, new CashNoteParser(), ownerRepo, currentBusinessContext);
+        aggregator = new SquareMonthAggregator(squareClientProvider, new CashNoteParser(), ownerRepo, currentBusinessContext, mock(SalonConfigRepository.class));
 
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.allTeamMembers()).thenReturn(List.of(

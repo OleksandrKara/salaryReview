@@ -42,6 +42,13 @@ public class SalonConfig {
     @Column(name = "tier_enabled", nullable = false)
     private boolean tierEnabled;
 
+    /** Phase 4.4: the no-show/late-cancellation fee this business charges, or null when the feature
+     * is off entirely (no fee program) — see {@code NoShowFeeService}'s own doc for what null does
+     * at every call site. Business A keeps its historical $25; a null value is a real, deliberate
+     * choice, not an oversight, so nothing defaults it to a nonzero amount. */
+    @Column(name = "no_show_fee_amount", precision = 10, scale = 2)
+    private BigDecimal noShowFeeAmount;
+
     /** Build the commission engine's config from the stored settings. */
     public CommissionConfig toCommissionConfig() {
         return new CommissionConfig(tierServiceThreshold, baseCommissionRate, tierCommissionRate, cardTipFeeRate,

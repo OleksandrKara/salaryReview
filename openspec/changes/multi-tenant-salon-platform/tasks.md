@@ -414,9 +414,23 @@ this file is the plan, not yet executed.
       feature that happens to share the `/api/rag` URL prefix) was deliberately left unscoped —
       not one of the 5 keys, and the frontend already swallows its 404/error into a harmless
       always-0 nav badge.
-- [ ] 4.4 (Gated on Phase 0.5) Promote `NoShowFeeService`'s hardcoded `$25.00` (`NoShowFeeService.java:50`)
-      to a nullable `salon_config`/business-setting field; Business A keeps $25 as its value, Business B
-      gets its own value or null (feature off) per 0.5's answer
+- [x] 4.4 **Shipped 2026-08-18.** `V109__no_show_fee_amount.sql` adds nullable `salon_config
+      .no_show_fee_amount`; Business A backfilled to $25.00 (its historical hardcoded value, no
+      observable change), every other business starts null. `NoShowFeeService.compute()` now
+      resolves the caller's own configured amount and short-circuits to an empty result (no Square
+      call at all) when null — a real "feature off" no-op, not just a detection change.
+      `isCancellationFeeOrder` (also called from `SquareMonthAggregator`'s cancelled-appointments
+      review — single source of truth for "was a fee already charged") now takes the amount as a
+      parameter instead of a hardcoded ±$1 window around $25; null always returns false.
+      `confirm()` now 400s when neither an explicit amount nor a configured business default
+      exists — "no such thing as $0 by accident." Editable via the existing Business Settings form
+      (`/owner/settings/business`), same "null = leave unchanged" convention as every other
+      optional field there (no way to explicitly re-clear it back to null once set — an existing
+      limitation shared by every other optional numeric field on that form, not new here).
+      Verified: full suite (fresh Postgres, 0 failures) + a live end-to-end check against an
+      isolated instance restored from a real backup — business 1's settings/no-show table
+      unaffected, business 2's `/api/no-show-fees` 200s empty (no Square call), and a `confirm`
+      attempt for business 2 gets a real 400.
 - [ ] 4.5 (Gated on Phase 0.6) Make `CashNoteParser`'s bilingual keyword matching
       (`square/CashNoteParser.java:28-29`) business-scoped: at minimum an on/off flag per business, or a
       configurable keyword list if Business B needs a different convention, per 0.6's answer

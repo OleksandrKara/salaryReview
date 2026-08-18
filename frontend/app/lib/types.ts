@@ -87,6 +87,8 @@ export interface BusinessSettingsDto {
   tierServiceThreshold: number | null;
   servicePriceCutoff: number | null;
   cardTipFeeRate: number | null;
+  // Phase 4.4: null = this business runs no no-show fee program.
+  noShowFeeAmount: number | null;
 }
 
 // shortCode is immutable, not included. Every other field null/undefined = leave unchanged on an
@@ -100,6 +102,7 @@ export interface BusinessSettingsUpdateRequest {
   tierServiceThreshold?: number;
   servicePriceCutoff?: number;
   cardTipFeeRate?: number;
+  noShowFeeAmount?: number;
 }
 
 export interface PlatformBusinessDto {

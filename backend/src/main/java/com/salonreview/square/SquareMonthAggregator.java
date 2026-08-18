@@ -48,14 +48,17 @@ public class SquareMonthAggregator {
     private final CashNoteParser cashNotes;
     private final com.salonreview.repo.OwnerCustomerRepository ownerCustomers;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
+    private final com.salonreview.repo.SalonConfigRepository salonConfig;
 
     public SquareMonthAggregator(SquareClientProvider squareClientProvider, CashNoteParser cashNotes,
                                  com.salonreview.repo.OwnerCustomerRepository ownerCustomers,
-                                 com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
+                                 com.salonreview.config.CurrentBusinessContext currentBusinessContext,
+                                 com.salonreview.repo.SalonConfigRepository salonConfig) {
         this.squareClientProvider = squareClientProvider;
         this.cashNotes = cashNotes;
         this.ownerCustomers = ownerCustomers;
         this.currentBusinessContext = currentBusinessContext;
+        this.salonConfig = salonConfig;
     }
 
     public MonthAggregation aggregate(int year, int month, BigDecimal priceCutoff) {
@@ -463,12 +466,16 @@ public class SquareMonthAggregator {
             }
         }
 
-        // Customers we charged a ~$25 "Cancelation Policy" (no-show) fee, by the fee's local day. A cancelled
+        // Customers we charged a "Cancelation Policy" (no-show) fee, by the fee's local day. A cancelled
         // appointment we already billed a fee on is accounted for — not a cash-fraud risk — so it's dropped
         // below. Fee detection is shared with NoShowFeeService (single source of truth for the fee shape).
+        // Null feeAmount (Phase 4.4 — the no-show fee program is off for this business) means no order can
+        // ever match, same as NoShowFeeService's own compute() short-circuiting entirely in that case.
+        BigDecimal feeAmount = salonConfig.findByBusinessId(businessId)
+                .map(com.salonreview.domain.SalonConfig::getNoShowFeeAmount).orElse(null);
         Map<String, List<LocalDate>> feeDaysByCustomer = new HashMap<>();
         for (Order o : orders) {
-            if (o.customerId() == null || !NoShowFeeService.isCancellationFeeOrder(o)) continue;
+            if (o.customerId() == null || !NoShowFeeService.isCancellationFeeOrder(o, feeAmount)) continue;
             LocalDate fd = localDate(o.closedAt() != null ? o.closedAt() : o.createdAt(), zone);
             if (fd != null) feeDaysByCustomer.computeIfAbsent(o.customerId(), k -> new ArrayList<>()).add(fd);
         }

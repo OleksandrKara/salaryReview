@@ -1,6 +1,7 @@
 package com.salonreview.square;
 
 import com.salonreview.repo.OwnerCustomerRepository;
+import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.square.SquareClient.*;
 import com.salonreview.square.SquareMonthAggregator.AttributedService;
 import com.salonreview.square.SquareMonthAggregator.MonthAggregation;
@@ -47,7 +48,7 @@ class PreferredBookingAttributionTest {
         SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         OwnerCustomerRepository ownerRepo = mock(OwnerCustomerRepository.class);
-        aggregator = new SquareMonthAggregator(squareClientProvider, new CashNoteParser(), ownerRepo, currentBusinessContext);
+        aggregator = new SquareMonthAggregator(squareClientProvider, new CashNoteParser(), ownerRepo, currentBusinessContext, mock(SalonConfigRepository.class));
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.allTeamMembers()).thenReturn(List.of(
                 new TeamMember(BAYAN, "Bayan", "Dandiyeva", "ACTIVE", false, null, null),

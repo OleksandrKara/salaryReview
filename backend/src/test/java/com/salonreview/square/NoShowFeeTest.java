@@ -45,6 +45,9 @@ class NoShowFeeTest {
         ProviderDirectory directory = mock(ProviderDirectory.class);
         ProviderRepository providers = mock(ProviderRepository.class);
         NoShowFeeOverrideRepository overrides = mock(NoShowFeeOverrideRepository.class);
+        SalonConfigRepository salonConfigRepo = mock(SalonConfigRepository.class);
+        SalonConfig sc = SalonConfig.builder().businessId(1L).noShowFeeAmount(new BigDecimal("25.00")).build();
+        when(salonConfigRepo.findByBusinessId(1L)).thenReturn(Optional.of(sc));
 
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.allTeamMembers()).thenReturn(List.of(member("M1", "Susan"), member("M2", "Bayan")));
@@ -69,7 +72,7 @@ class NoShowFeeTest {
         when(providers.findById(2L)).thenReturn(Optional.of(Provider.builder().id(2L).displayName("Bayan").build()));
 
         NoShowFeeService svc = new NoShowFeeService(squareClientProvider, directory, providers, overrides,
-                currentBusinessContext);
+                currentBusinessContext, salonConfigRepo);
 
         // In the payment month (May): $25 split evenly → $12.50 each, both CREDITED.
         NoShowMonth may = svc.compute(2026, 5);
@@ -81,6 +84,52 @@ class NoShowFeeTest {
 
         // The no-show is in May, the fee is paid in May → it does NOT belong to April.
         assertThat(svc.compute(2026, 4).rows()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Phase 4.4: no-show fee program off for this business (no configured amount) — "
+            + "compute() short-circuits to empty without ever calling Square")
+    void computeNoOpsWhenFeatureOff() {
+        SquareClient square = mock(SquareClient.class);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(2L);
+        when(squareClientProvider.forBusiness(2L)).thenReturn(square);
+        SalonConfigRepository salonConfigRepo = mock(SalonConfigRepository.class);
+        when(salonConfigRepo.findByBusinessId(2L)).thenReturn(Optional.of(
+                SalonConfig.builder().businessId(2L).noShowFeeAmount(null).build()));
+
+        NoShowFeeService svc = new NoShowFeeService(squareClientProvider, mock(ProviderDirectory.class),
+                mock(ProviderRepository.class), mock(NoShowFeeOverrideRepository.class),
+                currentBusinessContext, salonConfigRepo);
+
+        NoShowMonth result = svc.compute(2026, 5);
+
+        assertThat(result.rows()).isEmpty();
+        assertThat(result.linesByProvider()).isEmpty();
+        verifyNoInteractions(square);
+    }
+
+    @Test
+    @DisplayName("Phase 4.4: confirm() rejects with no amount and no configured business default")
+    void confirmRejectsWithNoAmountAndNoDefault() {
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(2L);
+        SalonConfigRepository salonConfigRepo = mock(SalonConfigRepository.class);
+        when(salonConfigRepo.findByBusinessId(2L)).thenReturn(Optional.of(
+                SalonConfig.builder().businessId(2L).noShowFeeAmount(null).build()));
+        ProviderRepository providers = mock(ProviderRepository.class);
+        when(providers.existsById(1L)).thenReturn(true);
+
+        NoShowFeeService svc = new NoShowFeeService(mock(SquareClientProvider.class), mock(ProviderDirectory.class),
+                providers, mock(NoShowFeeOverrideRepository.class), currentBusinessContext, salonConfigRepo);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> svc.confirm(
+                new NoShowFeeService.ConfirmRequest("BK1", 1L, null, null, "Julia B.", null, null), "manager"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("amount is required");
     }
 
     @Test
