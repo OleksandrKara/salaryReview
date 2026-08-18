@@ -39,15 +39,20 @@ public class SmsAutomationService {
         this.repeatCustomerWinbackSendRepository = repeatCustomerWinbackSendRepository;
     }
 
-    /** {@code true} for a template with no {@code automationKey} (nothing to gate) or for a
-     * key with no row yet (fail open — matches every other "unconfigured means don't block" shape
-     * in this codebase, though in practice every real automation key always has a seeded row). */
+    /** {@code true} for a template with no {@code automationKey} (nothing to gate) — but a real
+     * key with no row yet fails <b>closed</b> (not open): found live 2026-08-18 as an active gap
+     * for business 2 (AK PMU), which has zero {@code sms_automation} rows for any key at all —
+     * the old {@code orElse(true)} here meant every automation was effectively already enabled
+     * for it, contradicting both this class's own doc ("defaults enabled = false") and
+     * {@link #list}'s already-correct {@code orElse(false)} for the exact same lookup. Business 2
+     * was saved from this in practice only by Twilio not being configured for it yet — a second,
+     * unrelated safety net, not a reason this default was ever actually safe. */
     public boolean isEnabled(Long businessId, String automationKey) {
         if (automationKey == null) {
             return true;
         }
         return repository.findByBusinessIdAndAutomationKey(businessId, automationKey)
-                .map(SmsAutomation::isEnabled).orElse(true);
+                .map(SmsAutomation::isEnabled).orElse(false);
     }
 
     public List<AutomationSummary> list(Long businessId) {

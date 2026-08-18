@@ -4,13 +4,16 @@ import com.salonreview.domain.AppUser;
 import com.salonreview.domain.Business;
 import com.salonreview.domain.BusinessMembership;
 import com.salonreview.domain.Role;
+import com.salonreview.domain.SmsAutomation;
 import com.salonreview.domain.TelegramNotificationConfig;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.AppUserRepository;
 import com.salonreview.repo.BusinessMembershipRepository;
 import com.salonreview.repo.BusinessRepository;
+import com.salonreview.repo.SmsAutomationRepository;
 import com.salonreview.repo.TelegramNotificationConfigRepository;
 import com.salonreview.repo.TwilioSmsConfigRepository;
+import com.salonreview.sms.SmsAutomationRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -34,6 +37,7 @@ class BusinessProvisioningServiceTest {
     private PasswordEncoder encoder;
     private TelegramNotificationConfigRepository telegramConfigs;
     private TwilioSmsConfigRepository twilioConfigs;
+    private SmsAutomationRepository smsAutomations;
     private BusinessProvisioningService service;
 
     @BeforeEach
@@ -44,7 +48,8 @@ class BusinessProvisioningServiceTest {
         encoder = mock(PasswordEncoder.class);
         telegramConfigs = mock(TelegramNotificationConfigRepository.class);
         twilioConfigs = mock(TwilioSmsConfigRepository.class);
-        service = new BusinessProvisioningService(businesses, users, memberships, encoder, telegramConfigs, twilioConfigs);
+        smsAutomations = mock(SmsAutomationRepository.class);
+        service = new BusinessProvisioningService(businesses, users, memberships, encoder, telegramConfigs, twilioConfigs, smsAutomations);
 
         when(businesses.findByShortCode(any())).thenReturn(Optional.empty());
         when(users.findByUsername(any())).thenReturn(Optional.empty());
@@ -103,6 +108,22 @@ class BusinessProvisioningServiceTest {
         verify(twilioConfigs).save(twilioCaptor.capture());
         assertThat(twilioCaptor.getValue().getBusinessId()).isEqualTo(2L);
         assertThat(twilioCaptor.getValue().isConfigured()).isFalse();
+    }
+
+    @Test
+    @DisplayName("2026-08-18 live incident: seeds an explicit enabled=false row for every known SMS "
+            + "automation — without this, a missing row used to fail *open* in SmsAutomationService"
+            + ".isEnabled, silently treating every automation as already on for a new business")
+    void seedsEveryAutomationDisabledByDefault() {
+        service.create("AK PMU", "AnnaKaraPMU", "America/Los_Angeles", "annakarapmu", "s3cret!");
+
+        ArgumentCaptor<SmsAutomation> captor = ArgumentCaptor.forClass(SmsAutomation.class);
+        verify(smsAutomations, times(SmsAutomationRegistry.all().size())).save(captor.capture());
+        assertThat(captor.getAllValues())
+                .allSatisfy(a -> assertThat(a.getBusinessId()).isEqualTo(2L))
+                .allSatisfy(a -> assertThat(a.isEnabled()).isFalse())
+                .extracting(SmsAutomation::getAutomationKey)
+                .containsExactlyInAnyOrderElementsOf(SmsAutomationRegistry.all().keySet());
     }
 
     @Test

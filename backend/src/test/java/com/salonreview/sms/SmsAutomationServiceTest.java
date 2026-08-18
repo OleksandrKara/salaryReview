@@ -141,6 +141,26 @@ class SmsAutomationServiceTest {
     }
 
     @Test
+    @DisplayName("2026-08-18 live incident: isEnabled fails CLOSED (not open) for a business/key "
+            + "with no row at all — found live for business 2, which had zero sms_automation rows "
+            + "for any key, so every automation was effectively already on for it under the old default")
+    void isEnabledFailsClosedForMissingRow() {
+        when(repository.findByBusinessIdAndAutomationKey(BUSINESS_ID, "lead_follow_up")).thenReturn(Optional.empty());
+
+        assertThat(service.isEnabled(BUSINESS_ID, "lead_follow_up")).isFalse();
+    }
+
+    @Test
+    @DisplayName("isEnabled reflects an explicit enabled=true row")
+    void isEnabledReflectsExplicitRow() {
+        when(repository.findByBusinessIdAndAutomationKey(BUSINESS_ID, "lead_follow_up"))
+                .thenReturn(Optional.of(SmsAutomation.builder().businessId(BUSINESS_ID)
+                        .automationKey("lead_follow_up").enabled(true).build()));
+
+        assertThat(service.isEnabled(BUSINESS_ID, "lead_follow_up")).isTrue();
+    }
+
+    @Test
     @DisplayName("enabled state still reflects the DB row, independent of the new metrics")
     void enabledStateUnaffected() {
         when(repository.findByBusinessIdAndAutomationKey(BUSINESS_ID, "lead_follow_up"))

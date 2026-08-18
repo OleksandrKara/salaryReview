@@ -4,13 +4,16 @@ import com.salonreview.domain.AppUser;
 import com.salonreview.domain.Business;
 import com.salonreview.domain.BusinessMembership;
 import com.salonreview.domain.Role;
+import com.salonreview.domain.SmsAutomation;
 import com.salonreview.domain.TelegramNotificationConfig;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.AppUserRepository;
 import com.salonreview.repo.BusinessMembershipRepository;
 import com.salonreview.repo.BusinessRepository;
+import com.salonreview.repo.SmsAutomationRepository;
 import com.salonreview.repo.TelegramNotificationConfigRepository;
 import com.salonreview.repo.TwilioSmsConfigRepository;
+import com.salonreview.sms.SmsAutomationRegistry;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -36,17 +39,20 @@ public class BusinessProvisioningService {
     private final PasswordEncoder encoder;
     private final TelegramNotificationConfigRepository telegramConfigs;
     private final TwilioSmsConfigRepository twilioConfigs;
+    private final SmsAutomationRepository smsAutomations;
 
     public BusinessProvisioningService(BusinessRepository businesses, AppUserRepository users,
                                         BusinessMembershipRepository memberships, PasswordEncoder encoder,
                                         TelegramNotificationConfigRepository telegramConfigs,
-                                        TwilioSmsConfigRepository twilioConfigs) {
+                                        TwilioSmsConfigRepository twilioConfigs,
+                                        SmsAutomationRepository smsAutomations) {
         this.businesses = businesses;
         this.users = users;
         this.memberships = memberships;
         this.encoder = encoder;
         this.telegramConfigs = telegramConfigs;
         this.twilioConfigs = twilioConfigs;
+        this.smsAutomations = smsAutomations;
     }
 
     public List<Business> list() {
@@ -101,6 +107,15 @@ public class BusinessProvisioningService {
         // config row, not an empty one; see RagConfigService#findActive.
         telegramConfigs.save(TelegramNotificationConfig.builder().businessId(business.getId()).build());
         twilioConfigs.save(TwilioSmsConfig.builder().businessId(business.getId()).build());
+
+        // 2026-08-18: explicit, off-by-default rows for every known SMS automation — belt-and-
+        // suspenders alongside SmsAutomationService#isEnabled's own now-fixed fail-closed default
+        // for a missing row. Found live: business 2 (AK PMU) had zero rows for any automation,
+        // which (before that fix) meant every automation was effectively already enabled for it —
+        // masked so far only by Twilio not being configured for it yet, not by anything correct.
+        for (String key : SmsAutomationRegistry.all().keySet()) {
+            smsAutomations.save(SmsAutomation.builder().businessId(business.getId()).automationKey(key).enabled(false).build());
+        }
 
         return business;
     }
