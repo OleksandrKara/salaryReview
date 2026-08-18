@@ -2,8 +2,10 @@ package com.salonreview.square;
 
 import com.salonreview.domain.NoShowFeeOverride;
 import com.salonreview.domain.Provider;
+import com.salonreview.domain.SalonConfig;
 import com.salonreview.repo.NoShowFeeOverrideRepository;
 import com.salonreview.repo.ProviderRepository;
+import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.service.ProviderDirectory;
 import com.salonreview.square.SquareClient.AppointmentSegment;
 import com.salonreview.square.SquareClient.Booking;
@@ -37,49 +39,63 @@ import java.util.stream.Collectors;
 
 /**
  * No-show fee tracking. Reads Square (read-only) to surface every {@code NO_SHOW} booking and detect the
- * paid $25 cancellation fee that sometimes follows it — a COMPLETED order with a "Cancelation Policy"
- * line ≈ $25 for the same customer. Each fee is paired to the nearest preceding no-show for that customer
- * within 2 months; the provider is then compensated the $25 (split evenly across a multi-provider booking)
- * as a {@code NOSHOW} adjustment line, in the month the fee was paid. A no-show with no detected fee shows
- * in its own month as "no fee collected". Only the owner/manager overrides (CONFIRM / SUPPRESS) are
- * persisted — everything else is derived live, so nothing drifts from Square.
+ * paid cancellation fee that sometimes follows it — a COMPLETED order with a "Cancelation Policy" line
+ * within $1 of {@link SalonConfig#getNoShowFeeAmount()} for the same customer. Each fee is paired to the
+ * nearest preceding no-show for that customer within 2 months; the provider is then compensated the full
+ * fee (split evenly across a multi-provider booking) as a {@code NOSHOW} adjustment line, in the month the
+ * fee was paid. A no-show with no detected fee shows in its own month as "no fee collected". Only the
+ * owner/manager overrides (CONFIRM / SUPPRESS) are persisted — everything else is derived live, so nothing
+ * drifts from Square.
+ *
+ * <p>Phase 4.4: {@code noShowFeeAmount} is business-scoped, nullable — null means this business runs no
+ * no-show fee program at all. {@link #compute} short-circuits to an empty result (no Square calls) in that
+ * case; {@link #confirm} requires an explicit amount when there's no configured default to fall back to.
  */
 @Service
 public class NoShowFeeService {
 
-    static final BigDecimal FEE = new BigDecimal("25.00");
-    private static final BigDecimal FEE_MIN = new BigDecimal("24.00");
-    private static final BigDecimal FEE_MAX = new BigDecimal("26.00");
     private static final Pattern CANCEL = Pattern.compile("cancel\\w*\\s*polic", Pattern.CASE_INSENSITIVE);
     private static final int LOOKBACK_MONTHS = 2; // max gap between a no-show and its fee payment
+    private static final BigDecimal MATCH_WINDOW = BigDecimal.ONE; // +/- this much around the configured amount
 
     private final SquareClientProvider squareClientProvider;
     private final ProviderDirectory directory;
     private final ProviderRepository providers;
     private final NoShowFeeOverrideRepository overrides;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
+    private final SalonConfigRepository salonConfig;
 
     public NoShowFeeService(SquareClientProvider squareClientProvider, ProviderDirectory directory,
                             ProviderRepository providers, NoShowFeeOverrideRepository overrides,
-                            com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
+                            com.salonreview.config.CurrentBusinessContext currentBusinessContext,
+                            SalonConfigRepository salonConfig) {
         this.squareClientProvider = squareClientProvider;
         this.directory = directory;
         this.providers = providers;
         this.overrides = overrides;
         this.currentBusinessContext = currentBusinessContext;
+        this.salonConfig = salonConfig;
+    }
+
+    private BigDecimal feeAmount(Long businessId) {
+        return salonConfig.findByBusinessId(businessId).map(SalonConfig::getNoShowFeeAmount).orElse(null);
     }
 
     /**
-     * True if this order is the salon's ~$25 "Cancelation Policy" charge — the no-show / late-cancellation
-     * fee. Same definition used to pair fees to no-shows above; exposed so the cancelled-appointments
-     * review can drop cancellations we already charged a fee on (single source of truth for the fee shape).
+     * True if this order is the salon's "Cancelation Policy" charge — the no-show / late-cancellation
+     * fee, within $1 of {@code feeAmount}. Same definition used to pair fees to no-shows above; exposed so
+     * the cancelled-appointments review can drop cancellations we already charged a fee on (single source
+     * of truth for the fee shape). {@code feeAmount} null (no-show fee program off for this business, or
+     * not yet configured) always returns false — there's nothing to match against.
      */
-    public static boolean isCancellationFeeOrder(Order o) {
-        if (o == null || o.lineItems() == null) return false;
+    public static boolean isCancellationFeeOrder(Order o, BigDecimal feeAmount) {
+        if (o == null || o.lineItems() == null || feeAmount == null) return false;
+        BigDecimal min = feeAmount.subtract(MATCH_WINDOW);
+        BigDecimal max = feeAmount.add(MATCH_WINDOW);
         for (OrderLineItem li : o.lineItems()) {
             if (li.name() == null || !CANCEL.matcher(li.name()).find()) continue;
             BigDecimal amt = SquareClient.toDollars(li.totalMoney());
-            if (amt.compareTo(FEE_MIN) >= 0 && amt.compareTo(FEE_MAX) <= 0) return true;
+            if (amt.compareTo(min) >= 0 && amt.compareTo(max) <= 0) return true;
         }
         return false;
     }
@@ -114,6 +130,11 @@ public class NoShowFeeService {
     @Transactional
     public NoShowMonth compute(int year, int month) {
         Long businessId = currentBusinessContext.id();
+        BigDecimal feeAmount = feeAmount(businessId);
+        // Phase 4.4: no-show fee program off for this business — no-op entirely, not even a Square call.
+        if (feeAmount == null) return new NoShowMonth(List.of(), Map.of());
+        BigDecimal feeMin = feeAmount.subtract(MATCH_WINDOW);
+        BigDecimal feeMax = feeAmount.add(MATCH_WINDOW);
         SquareClient square = squareClientProvider.forBusiness(businessId);
         ZoneId zone = zone(square);
         YearMonth ym = YearMonth.of(year, month);
@@ -159,7 +180,7 @@ public class NoShowFeeService {
             for (OrderLineItem li : o.lineItems()) {
                 if (li.name() == null || !CANCEL.matcher(li.name()).find()) continue;
                 BigDecimal amt = SquareClient.toDollars(li.totalMoney());
-                if (amt.compareTo(FEE_MIN) >= 0 && amt.compareTo(FEE_MAX) <= 0) {
+                if (amt.compareTo(feeMin) >= 0 && amt.compareTo(feeMax) <= 0) {
                     fees.add(new Fee(o.id(), o.customerId(), paid, amt));
                     break;
                 }
@@ -220,7 +241,7 @@ public class NoShowFeeService {
             if (!NoShowFeeOverride.CONFIRM.equals(o.getKind()) || o.getProviderId() == null) continue;
             LocalDate paid = o.getFeePaidDate() != null ? o.getFeePaidDate() : o.getNoShowDate();
             if (paid == null || !sameMonth(paid, year, month)) continue;
-            BigDecimal amt = o.getAmount() == null ? FEE : o.getAmount();
+            BigDecimal amt = o.getAmount() == null ? feeAmount : o.getAmount();
             Long pid = o.getProviderId();
             String dateStr = o.getNoShowDate() == null ? paid.toString() : o.getNoShowDate().toString();
             rows.add(new NoShowRow(o.getSquareBookingId(), pid, providerName(pid), o.getCustomerName(),
@@ -263,12 +284,18 @@ public class NoShowFeeService {
         if (!providers.existsById(req.providerId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "no such provider");
         }
+        Long businessId = currentBusinessContext.id();
+        BigDecimal amount = req.amount() != null ? req.amount() : feeAmount(businessId);
+        if (amount == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "amount is required — no default no-show fee is configured for this business");
+        }
         NoShowFeeOverride row = overrides.findBySquareBookingId(req.bookingId()).orElseGet(NoShowFeeOverride::new);
-        row.setBusinessId(currentBusinessContext.id());
+        row.setBusinessId(businessId);
         row.setSquareBookingId(req.bookingId());
         row.setKind(NoShowFeeOverride.CONFIRM);
         row.setProviderId(req.providerId());
-        row.setAmount(req.amount() == null ? FEE : req.amount());
+        row.setAmount(amount);
         row.setFeePaidDate(req.feePaidDate());
         row.setNoShowDate(req.noShowDate());
         row.setCustomerName(req.customerName());
@@ -282,11 +309,15 @@ public class NoShowFeeService {
         if (bookingId == null || bookingId.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "bookingId is required");
         }
+        Long businessId = currentBusinessContext.id();
         NoShowFeeOverride row = overrides.findBySquareBookingId(bookingId).orElseGet(NoShowFeeOverride::new);
-        row.setBusinessId(currentBusinessContext.id());
+        row.setBusinessId(businessId);
         row.setSquareBookingId(bookingId);
         row.setKind(NoShowFeeOverride.SUPPRESS);
-        row.setAmount(FEE);
+        // Never read back for a SUPPRESS row (the auto-detected fee's own amount is what's displayed) —
+        // just needs to satisfy the DB's NOT NULL column.
+        BigDecimal amount = feeAmount(businessId);
+        row.setAmount(amount == null ? BigDecimal.ZERO : amount);
         row.setCreatedBy(by);
         overrides.save(row);
     }

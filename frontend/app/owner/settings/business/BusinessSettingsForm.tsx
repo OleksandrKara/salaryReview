@@ -25,6 +25,9 @@ export default function BusinessSettingsForm({ initialSettings }: { initialSetti
     settings.servicePriceCutoff === null ? '' : String(settings.servicePriceCutoff),
   );
   const [cardTipFeePct, setCardTipFeePct] = useState(toPercentString(settings.cardTipFeeRate));
+  const [noShowFeeAmount, setNoShowFeeAmount] = useState(
+    settings.noShowFeeAmount === null ? '' : String(settings.noShowFeeAmount),
+  );
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
@@ -44,6 +47,7 @@ export default function BusinessSettingsForm({ initialSettings }: { initialSetti
         tierServiceThreshold: tierServiceThreshold === '' ? undefined : Number(tierServiceThreshold),
         servicePriceCutoff: servicePriceCutoff === '' ? undefined : Number(servicePriceCutoff),
         cardTipFeeRate: cardTipFeePct === '' ? undefined : Number(cardTipFeePct) / 100,
+        noShowFeeAmount: noShowFeeAmount === '' ? undefined : Number(noShowFeeAmount),
       });
       setSettings(updated);
       setSaved(true);
@@ -154,6 +158,21 @@ export default function BusinessSettingsForm({ initialSettings }: { initialSetti
           placeholder="e.g. 3.5"
           className="w-full rounded border border-zinc-300 px-2 py-1.5"
         />
+      </label>
+
+      <label className="text-sm">
+        <span className="mb-1 block text-zinc-600">No-show fee ($, blank = no no-show fee program)</span>
+        <input
+          type="number"
+          step="0.01"
+          value={noShowFeeAmount}
+          onChange={(e) => setNoShowFeeAmount(e.target.value)}
+          placeholder="e.g. 25"
+          className="w-full rounded border border-zinc-300 px-2 py-1.5"
+        />
+        <span className="mt-1 block text-xs text-zinc-400">
+          Once set, this can be changed but not cleared back to &ldquo;no program&rdquo; from this form.
+        </span>
       </label>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

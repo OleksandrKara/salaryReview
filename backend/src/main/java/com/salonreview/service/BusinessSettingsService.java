@@ -45,7 +45,7 @@ public class BusinessSettingsService {
     @Transactional
     public View update(Long businessId, String name, String timezone, String ownerShortName,
                         BigDecimal baseCommissionRate, Boolean tierEnabled, Integer tierServiceThreshold,
-                        BigDecimal servicePriceCutoff, BigDecimal cardTipFeeRate) {
+                        BigDecimal servicePriceCutoff, BigDecimal cardTipFeeRate, BigDecimal noShowFeeAmount) {
         Business business = requireBusiness(businessId);
         if (name != null && !name.isBlank()) business.setName(name.trim());
         if (timezone != null && !timezone.isBlank()) business.setTimezone(timezone.trim());
@@ -79,6 +79,11 @@ public class BusinessSettingsService {
 
         if (servicePriceCutoff != null) config.setServicePriceCutoff(servicePriceCutoff);
         else if (creating) config.setServicePriceCutoff(BigDecimal.ZERO);
+
+        // Phase 4.4: no explicit "unchanged" default needed on creation — null (the field's own
+        // natural default) already means exactly the right thing for a brand-new business: no
+        // no-show fee program until the owner explicitly configures one.
+        if (noShowFeeAmount != null) config.setNoShowFeeAmount(noShowFeeAmount);
 
         salonConfig.save(config);
         return new View(business, config);

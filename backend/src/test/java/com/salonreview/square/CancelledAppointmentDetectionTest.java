@@ -1,6 +1,7 @@
 package com.salonreview.square;
 
 import com.salonreview.repo.OwnerCustomerRepository;
+import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.square.SquareClient.AppointmentSegment;
 import com.salonreview.square.SquareClient.Booking;
 import com.salonreview.square.SquareClient.Money;
@@ -47,7 +48,13 @@ class CancelledAppointmentDetectionTest {
         SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         OwnerCustomerRepository ownerRepo = mock(OwnerCustomerRepository.class);
-        aggregator = new SquareMonthAggregator(squareClientProvider, new CashNoteParser(), ownerRepo, currentBusinessContext);
+        SalonConfigRepository salonConfigRepo = mock(SalonConfigRepository.class);
+        // Phase 4.4: this test's own "fee charged -> not emitted" case relies on cancellation-fee
+        // detection actually being on for this business — matches Business A's real $25 value.
+        when(salonConfigRepo.findByBusinessId(1L)).thenReturn(java.util.Optional.of(
+                com.salonreview.domain.SalonConfig.builder().businessId(1L)
+                        .noShowFeeAmount(new BigDecimal("25.00")).build()));
+        aggregator = new SquareMonthAggregator(squareClientProvider, new CashNoteParser(), ownerRepo, currentBusinessContext, salonConfigRepo);
 
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.allTeamMembers()).thenReturn(List.of(
