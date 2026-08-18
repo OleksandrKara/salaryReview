@@ -643,6 +643,23 @@ public class SquareClient {
         return resp == null || resp.invoices() == null ? List.of() : resp.invoices();
     }
 
+    /** Every recent invoice for the whole location (no customer filter) — for surfacing paid
+     * deposits that haven't been turned into a prepaid package yet. Same single-page, sorted-DESC,
+     * capped-at-100 shape as {@link #invoicesForCustomer} — "recent", not a full historical scan. */
+    public List<Invoice> recentInvoices() {
+        Map<String, Object> body = Map.of(
+                "query", Map.of(
+                        "filter", Map.of("location_ids", List.of(locationId)),
+                        "sort", Map.of("field", "INVOICE_SORT_DATE", "order", "DESC")),
+                "limit", 100);
+        InvoiceSearchResponse resp = throttled(() -> http.post()
+                .uri("/v2/invoices/search")
+                .body(body)
+                .retrieve()
+                .body(InvoiceSearchResponse.class));
+        return resp == null || resp.invoices() == null ? List.of() : resp.invoices();
+    }
+
     private java.util.Optional<Customer> fetchCustomer(String id) {
         try {
             CustomerResponse resp = throttled(() ->
@@ -798,7 +815,7 @@ public class SquareClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Invoice(String id, String invoiceNumber, String title, String status, String createdAt,
-                          List<PaymentRequest> paymentRequests) {
+                          List<PaymentRequest> paymentRequests, PrimaryRecipient primaryRecipient) {
         /** The invoice total (sum of its payment requests' computed amounts), in dollars. */
         public BigDecimal total() {
             if (paymentRequests == null) return BigDecimal.ZERO;
@@ -807,6 +824,10 @@ public class SquareClient {
             return t;
         }
     }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record PrimaryRecipient(String customerId) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)

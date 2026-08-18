@@ -856,6 +856,17 @@ export interface PrepaidInvoice {
   amount: number;
 }
 
+// A PAID Square invoice not yet linked to any prepaid package — see PrepaidService#unattributed.
+export interface UnattributedInvoice {
+  id: string;
+  customerId: string | null;
+  customerName: string | null;
+  number: string | null;
+  title: string | null;
+  date: string | null;
+  amount: number;
+}
+
 // --- Redos (owner/manager) ---
 
 export interface Redo {
