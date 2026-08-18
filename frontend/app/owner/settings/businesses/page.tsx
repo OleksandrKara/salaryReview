@@ -1,12 +1,25 @@
-import { serverApi } from '../../../lib/serverApi';
+import { redirect } from 'next/navigation';
+import { serverApi, ApiError } from '../../../lib/serverApi';
 import PageHeader from '../../../components/PageHeader';
 import BusinessesPanel from './BusinessesPanel';
 
-// Owner-only. Lists every business and lets the owner create a new one (Phase 5.1) — a new
-// business row plus its first OWNER login, so the owner can then log in as it and use the Square
-// connection / business settings forms for that business specifically.
+// Platform-admin only (PlatformBusinessController#requirePlatformAdmin) — an ordinary business's
+// OWNER (e.g. AK PMU's) is still allowed at the URL level (hasRole("OWNER")) but 403s here. Found
+// live 2026-08-18: AdminMenu showed this link to every OWNER regardless (now fixed to hide it for
+// anyone but a platform_admin — see AdminMenu's own comment), but this page still needs its own
+// graceful fallback for direct URL navigation rather than crashing on the raw 403.
+//
+// Lists every business and lets the owner create a new one (Phase 5.1) — a new business row plus
+// its first OWNER login, so the owner can then log in as it and use the Square connection /
+// business settings forms for that business specifically.
 export default async function BusinessesPage() {
-  const businesses = await serverApi.listBusinesses();
+  let businesses;
+  try {
+    businesses = await serverApi.listBusinesses();
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 403) redirect('/');
+    throw err;
+  }
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-10">
