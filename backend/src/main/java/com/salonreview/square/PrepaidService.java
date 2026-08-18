@@ -219,6 +219,53 @@ public class PrepaidService {
                 .toList();
     }
 
+    /**
+     * PAID Square invoices for this business's location that haven't been turned into a prepaid
+     * package yet — surfaced so the owner can decide whether each one is a deposit that needs
+     * associating with a provider (via the normal create-package flow) or something else entirely
+     * (a regular sale invoiced instead of paid at checkout, etc.).
+     *
+     * <p>"Already attributed" is a best-effort match against {@link PrepaidPackage#getInvoiceRef()}
+     * by the invoice's own number — {@code invoiceRef} is a free-text reference field staff can
+     * edit or combine (e.g. {@code "000089, 000090"} when one package covers two invoices), not a
+     * reliable foreign key, so this can occasionally still list an already-handled invoice once;
+     * creating a package for it again is harmless; it isn't the source of truth for anything.
+     */
+    public List<UnattributedInvoice> unattributed() {
+        Long businessId = currentBusinessContext.id();
+        SquareClient square = squareClientProvider.forBusiness(businessId);
+
+        Set<String> referencedNumbers = packages.findAllByBusinessIdOrderByPaidDateDesc(businessId).stream()
+                .map(PrepaidPackage::getInvoiceRef)
+                .filter(java.util.Objects::nonNull)
+                .flatMap(ref -> java.util.Arrays.stream(ref.split(",")))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(java.util.stream.Collectors.toSet());
+
+        List<SquareClient.Invoice> candidates = square.recentInvoices().stream()
+                .filter(i -> "PAID".equalsIgnoreCase(i.status()))
+                .filter(i -> i.invoiceNumber() == null || !referencedNumbers.contains(i.invoiceNumber()))
+                .toList();
+
+        List<String> customerIds = candidates.stream()
+                .map(i -> i.primaryRecipient() == null ? null : i.primaryRecipient().customerId())
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        java.util.Map<String, String> names = customerIds.isEmpty() ? java.util.Map.of() : square.customerNames(customerIds);
+
+        return candidates.stream()
+                .map(i -> {
+                    String customerId = i.primaryRecipient() == null ? null : i.primaryRecipient().customerId();
+                    return new UnattributedInvoice(i.id(), customerId,
+                            customerId == null ? null : names.get(customerId),
+                            blankToNull(i.invoiceNumber()), blankToNull(i.title()),
+                            i.createdAt() == null ? null : i.createdAt().substring(0, 10), i.total());
+                })
+                .toList();
+    }
+
     // --- helpers ---
 
     private boolean alreadyPaidByOrder(List<Order> orders, String customerId, String variationId,
@@ -286,6 +333,10 @@ public class PrepaidService {
 
     public record InvoiceMatch(String id, String number, String title, String status, String date,
                                BigDecimal amount) {}
+
+    /** A PAID Square invoice not yet linked to any prepaid package — see {@link #unattributed}. */
+    public record UnattributedInvoice(String id, String customerId, String customerName, String number,
+                                      String title, String date, BigDecimal amount) {}
 
     public record RedeemRequest(String squareBookingId, String serviceVariationId, String serviceName,
                                 LocalDate serviceDate, BigDecimal menuPrice, String teamMemberId,

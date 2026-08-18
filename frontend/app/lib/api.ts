@@ -15,6 +15,7 @@ import type {
   PrepaidInvoice,
   PrepaidPackage,
   PrepaidRedemption,
+  UnattributedInvoice,
   KbArticle,
   KbWriteRequest,
   Language,
@@ -129,6 +130,8 @@ export const api = {
 
   getCustomerInvoices: (customerId: string) =>
     proxyGet<PrepaidInvoice[]>(`/api/prepaid/invoices?customerId=${encodeURIComponent(customerId)}`),
+
+  getUnattributedInvoices: () => proxyGet<UnattributedInvoice[]>(`/api/prepaid/unattributed`),
 
   redeem: (id: number, body: Omit<PrepaidCandidate, 'counts'>) =>
     proxyJson<PrepaidRedemption>(`/api/prepaid/${id}/redemptions`, 'POST', {

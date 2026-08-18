@@ -80,6 +80,17 @@ public class PrepaidController {
         }
     }
 
+    /** PAID Square invoices not yet turned into a package — "unattributed" deposits the owner may
+     * want to create a package for (calls Square; 502 on fail). */
+    @GetMapping("/unattributed")
+    public ResponseEntity<?> unattributed() {
+        try {
+            return ResponseEntity.ok(prepaid.unattributed());
+        } catch (RestClientResponseException e) {
+            return squareError(e);
+        }
+    }
+
     private static ResponseEntity<?> squareError(RestClientResponseException e) {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
                 "error", "Square API call failed",

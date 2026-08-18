@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
-import type { CustomerMatch, PrepaidCandidate, PrepaidInvoice, PrepaidPackage } from '../../lib/types';
+import type { CustomerMatch, PrepaidCandidate, PrepaidInvoice, PrepaidPackage, UnattributedInvoice } from '../../lib/types';
 
 const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -31,10 +31,48 @@ export default function PrepaidManager({
   const [invoices, setInvoices] = useState<PrepaidInvoice[] | null>(null);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // unattributed deposits — PAID Square invoices with no prepaid package yet (lazy-loaded, calls
+  // Square, same reasoning as candidates/invoices above not being fetched on initial page load).
+  const [unattributedOpen, setUnattributedOpen] = useState(false);
+  const [unattributed, setUnattributed] = useState<UnattributedInvoice[] | null>(null);
+  const [loadingUnattributed, setLoadingUnattributed] = useState(false);
 
   async function refresh() {
     setPackages(await fetch('/api/prepaid', { cache: 'no-store' }).then((r) => r.json()));
     router.refresh();
+  }
+
+  async function toggleUnattributed() {
+    const next = !unattributedOpen;
+    setUnattributedOpen(next);
+    if (next && unattributed === null) {
+      setLoadingUnattributed(true);
+      setError('');
+      try {
+        setUnattributed(await api.getUnattributedInvoices());
+      } catch {
+        setError('Could not load unattributed invoices.');
+      } finally {
+        setLoadingUnattributed(false);
+      }
+    }
+  }
+
+  // Prefill the create form from an unattributed invoice and scroll to it — totalServices is
+  // deliberately left blank (that's a judgment call, not something Square's invoice tells us).
+  function startPackageFromInvoice(inv: UnattributedInvoice) {
+    setCustomerName(inv.customerName ?? '');
+    setCustomerId(inv.customerId ?? '');
+    setPaidDate(inv.date ?? '');
+    setAmount(inv.amount.toFixed(2));
+    setTotalServices('');
+    setInvoiceRef(inv.number ?? '');
+    setMatches(null);
+    setInvoices(null);
+    setPicked(new Set());
+    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async function searchCustomers() {
@@ -122,7 +160,42 @@ export default function PrepaidManager({
 
   return (
     <div className="flex flex-col gap-8">
-      <form onSubmit={create} className="flex flex-col gap-4 rounded-lg p-4 ring-1 ring-zinc-200">
+      <div className="rounded-lg ring-1 ring-zinc-200">
+        <button type="button" onClick={toggleUnattributed}
+          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-50">
+          <span>
+            Unattributed deposits
+            <span className="ml-2 font-normal text-zinc-400">paid Square invoices with no prepaid package yet</span>
+          </span>
+          <span className="text-xs text-zinc-400">{unattributedOpen ? 'Hide' : 'Show'}</span>
+        </button>
+        {unattributedOpen && (
+          <div className="border-t border-zinc-200 p-4">
+            {loadingUnattributed && <p className="text-sm text-zinc-400">Loading recent invoices…</p>}
+            {!loadingUnattributed && unattributed && unattributed.length === 0 && (
+              <p className="text-sm text-zinc-400">No unattributed invoices found among the most recent ones.</p>
+            )}
+            {!loadingUnattributed && unattributed && unattributed.length > 0 && (
+              <ul className="divide-y divide-zinc-100 text-sm">
+                {unattributed.map((inv) => (
+                  <li key={inv.id} className="flex flex-wrap items-center justify-between gap-3 py-1.5">
+                    <span>
+                      {inv.date ?? '—'} · {inv.customerName ?? (inv.customerId ? '(unnamed customer)' : '(no customer)')}
+                      {inv.number ? ` · #${inv.number}` : ''}{inv.title ? ` · ${inv.title}` : ''} · {usd(inv.amount)}
+                    </span>
+                    <button type="button" onClick={() => startPackageFromInvoice(inv)}
+                      className="rounded bg-zinc-100 px-2.5 py-1 text-xs font-medium ring-1 ring-zinc-300 hover:bg-zinc-200">
+                      Create package
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+
+      <form ref={formRef} onSubmit={create} className="flex flex-col gap-4 rounded-lg p-4 ring-1 ring-zinc-200">
         {/* 1 · find the customer by name */}
         <div className="flex flex-wrap items-end gap-3">
           <Field label="Customer name" hint="search Square by name">

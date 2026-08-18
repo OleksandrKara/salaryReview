@@ -97,9 +97,9 @@ class PrepaidServiceTest {
                 mock(PrepaidPackageRepository.class), mock(PrepaidRedemptionRepository.class));
 
         Invoice paid = new Invoice("inv1", "000089", "Prepaid", "PAID", "2026-05-29T10:00:00Z",
-                List.of(new PaymentRequest(new Money(2500L, "USD")), new PaymentRequest(new Money(1500L, "USD"))));
+                List.of(new PaymentRequest(new Money(2500L, "USD")), new PaymentRequest(new Money(1500L, "USD"))), null);
         Invoice unpaid = new Invoice("inv2", "000090", "Pending", "UNPAID", "2026-05-30T10:00:00Z",
-                List.of(new PaymentRequest(new Money(9900L, "USD"))));
+                List.of(new PaymentRequest(new Money(9900L, "USD"))), null);
         when(square.invoicesForCustomer("C1")).thenReturn(List.of(paid, unpaid));
 
         List<PrepaidService.InvoiceMatch> out = svc.invoices("C1");
@@ -230,5 +230,46 @@ class PrepaidServiceTest {
 
         verify(packages).delete(pkg);
         verify(redemptions).delete(redemption);
+    }
+
+    @Test
+    @DisplayName("unattributed(): returns PAID invoices with no matching package, resolves customer "
+            + "names, and excludes non-PAID invoices")
+    void unattributedListsUnmatchedPaidInvoices() {
+        SquareClient square = mock(SquareClient.class);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
+        PrepaidPackageRepository packages = mock(PrepaidPackageRepository.class);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        PrepaidService svc = new PrepaidService(squareClientProvider, mock(ProviderRepository.class),
+                mock(ProviderDirectory.class), mock(SalonConfigRepository.class), currentBusinessContext,
+                packages, mock(PrepaidRedemptionRepository.class));
+
+        // One package already exists, referencing invoice "000089" — that invoice must be excluded.
+        when(packages.findAllByBusinessIdOrderByPaidDateDesc(1L)).thenReturn(List.of(
+                PrepaidPackage.builder().id(1L).businessId(1L).customerName("Alina")
+                        .paidDate(LocalDate.of(2026, 5, 1)).amount(new BigDecimal("100"))
+                        .totalServices(1).invoiceRef("000089").build()));
+
+        Invoice alreadyAttributed = new Invoice("inv1", "000089", "Prepaid", "PAID", "2026-05-01T10:00:00Z",
+                List.of(new PaymentRequest(new Money(10000L, "USD"))), new PrimaryRecipient("C1"));
+        Invoice newDeposit = new Invoice("inv2", "000091", "Deposit", "PAID", "2026-05-10T10:00:00Z",
+                List.of(new PaymentRequest(new Money(20000L, "USD"))), new PrimaryRecipient("C2"));
+        Invoice unpaid = new Invoice("inv3", "000092", "Pending", "UNPAID", "2026-05-11T10:00:00Z",
+                List.of(new PaymentRequest(new Money(30000L, "USD"))), new PrimaryRecipient("C3"));
+        when(square.recentInvoices()).thenReturn(List.of(alreadyAttributed, newDeposit, unpaid));
+        when(square.customerNames(List.of("C2"))).thenReturn(Map.of("C2", "Jane Doe"));
+
+        List<PrepaidService.UnattributedInvoice> out = svc.unattributed();
+
+        assertThat(out).hasSize(1);
+        PrepaidService.UnattributedInvoice u = out.get(0);
+        assertThat(u.id()).isEqualTo("inv2");
+        assertThat(u.customerId()).isEqualTo("C2");
+        assertThat(u.customerName()).isEqualTo("Jane Doe");
+        assertThat(u.number()).isEqualTo("000091");
+        assertThat(u.amount()).isEqualByComparingTo("200.00");
     }
 }
