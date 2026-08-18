@@ -434,11 +434,27 @@ this file is the plan, not yet executed.
 
 ## Phase 6 — UI/business context
 
-- [ ] 6.1 `businessId` cookie added alongside `sid`/`role` (design.md D12), set at login, refreshed
-      per proxied call in `proxyBackend.ts` the same way `role` already is
-- [ ] 6.2 `AdminMenu.tsx` — business-context row: plain text for single-membership users (no visual
-      change from today), `<select>` + new `/api/business/switch` proxy route only when a user has
-      >1 membership row (contingent on Phase 0.3's answer — may ship schema-only with UI deferred)
+- [ ] 6.1 **Backend done 2026-08-18, frontend cookie still open.** `POST /api/business/switch`
+      (`BusinessSwitchController`) lets a platform_admin (or, for a future genuinely-multi-
+      membership user, anyone with a real `business_membership` row for the target) change which
+      business every subsequent request in the session acts on — sets a
+      `CurrentBusinessContextFilter.ACTIVE_BUSINESS_SESSION_ATTR` session attribute, which the
+      filter now checks before falling back to the login-time default (deliberately session state,
+      not a mutable field on the {@code Serializable}, DB-session-backed `AppUserPrincipal` — see
+      that class's own doc comment on the PR #351 `serialVersionUID` incident this avoids
+      repeating). `writeMe`/`GET /api/me` both now report `activeBusinessId`
+      (`CurrentBusinessContext`-sourced, switch-aware) and `businesses` (every active business for
+      a platform_admin, else just the caller's own real membership(s)). Verified against a real,
+      isolated instance with a real second business: login → `/api/me` shows both businesses →
+      create a provider on business 1 → switch to business 2 → that provider is invisible → switch
+      back → visible again; a non-platform-admin, non-member switch attempt gets a real 403. Still
+      needed: the actual `businessId` browser cookie (`app/api/login/route.ts` +
+      `proxyBackend.ts`, mirroring exactly how `role` is already handled) and the
+      `app/api/business/switch` proxy route calling the above.
+- [ ] 6.2 **Backend done alongside 6.1 (same PR) — `AdminMenu.tsx` dropdown UI still open.**
+      `/api/me`'s new `businesses` array is exactly what the dropdown needs (plain text when it has
+      1 entry, `<select>` calling the new switch proxy route when it has >1 — contingent on Phase
+      0.3's answer, now resolved "yes, required").
 - [ ] 6.3 `app/owner/marketing/period.ts:28`'s hardcoded `SALON_TIME_ZONE` constant replaced with the
       backend-supplied business timezone, matching the existing pattern already used correctly by
       `report.timezone`/`detail.timezone` elsewhere in the frontend

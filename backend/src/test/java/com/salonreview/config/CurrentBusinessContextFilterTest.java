@@ -5,6 +5,7 @@ import com.salonreview.domain.Role;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class CurrentBusinessContextFilterTest {
 
@@ -84,6 +86,48 @@ class CurrentBusinessContextFilterTest {
         }
 
         assertThat(context.isPopulated()).isFalse();
+    }
+
+    @Test
+    @DisplayName("2026-08-18 (Phase 6.1/6.2): a session-level business switch overrides the "
+            + "login-time default for the rest of the chain")
+    void sessionOverrideWinsOverLoginTimeDefault() throws Exception {
+        var principal = new AppUserPrincipal(user(), 1L); // login-time default: business 1
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities()));
+        var context = new CurrentBusinessContext();
+        var filter = new CurrentBusinessContextFilter(context);
+        HttpServletRequest req = mock(HttpServletRequest.class);
+        HttpServletResponse res = mock(HttpServletResponse.class);
+        FilterChain chain = mock(FilterChain.class);
+        HttpSession session = mock(HttpSession.class);
+        when(req.getSession(false)).thenReturn(session);
+        when(session.getAttribute(CurrentBusinessContextFilter.ACTIVE_BUSINESS_SESSION_ATTR)).thenReturn(2L);
+        var seenDuringChain = new Long[1];
+        doAnswer(inv -> { seenDuringChain[0] = context.id(); return null; }).when(chain).doFilter(req, res);
+
+        filter.doFilter(req, res, chain);
+
+        assertThat(seenDuringChain[0]).isEqualTo(2L); // switched-to business, not the login-time default
+    }
+
+    @Test
+    @DisplayName("no session (or no override attribute set) falls back to the login-time default, unchanged")
+    void noSessionOverrideFallsBackToLoginTimeDefault() throws Exception {
+        var principal = new AppUserPrincipal(user(), 7L);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities()));
+        var context = new CurrentBusinessContext();
+        var filter = new CurrentBusinessContextFilter(context);
+        HttpServletRequest req = mock(HttpServletRequest.class);
+        HttpServletResponse res = mock(HttpServletResponse.class);
+        FilterChain chain = mock(FilterChain.class);
+        var seenDuringChain = new Long[1];
+        doAnswer(inv -> { seenDuringChain[0] = context.id(); return null; }).when(chain).doFilter(req, res);
+
+        filter.doFilter(req, res, chain);
+
+        assertThat(seenDuringChain[0]).isEqualTo(7L);
     }
 
     @Test

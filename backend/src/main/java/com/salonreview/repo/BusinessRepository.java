@@ -9,6 +9,10 @@ import java.util.Optional;
 public interface BusinessRepository extends JpaRepository<Business, Long> {
     Optional<Business> findByShortCode(String shortCode);
 
+    /** Phase 6.2's switcher list for a platform_admin — every business they can act on regardless
+     * of having a business_membership row for it. */
+    List<Business> findAllByActiveTrue();
+
     /**
      * Resolves the one business a scheduled job or app-boot runner should act on, for use with
      * {@link com.salonreview.config.CurrentBusinessContext#runAs} — those callers have no

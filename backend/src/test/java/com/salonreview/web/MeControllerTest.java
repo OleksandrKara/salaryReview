@@ -3,11 +3,15 @@ package com.salonreview.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.config.AiTriageProperties;
 import com.salonreview.config.AppUserPrincipal;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.config.RagProperties;
 import com.salonreview.domain.AppUser;
 import com.salonreview.domain.Language;
 import com.salonreview.domain.Role;
 import com.salonreview.repo.AppUserRepository;
+import com.salonreview.repo.BusinessMembershipRepository;
+import com.salonreview.repo.BusinessRepository;
+import com.salonreview.repo.PlatformAdminRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -37,13 +41,23 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class MeControllerTest {
 
     private AppUserRepository users;
+    private PlatformAdminRepository platformAdmins;
+    private BusinessMembershipRepository memberships;
+    private BusinessRepository businesses;
     private MockMvc mvc;
     private final ObjectMapper json = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
         users = mock(AppUserRepository.class);
-        mvc = MockMvcBuilders.standaloneSetup(new MeController(new AiTriageProperties(), new RagProperties(), users))
+        CurrentBusinessContext currentBusinessContext = mock(CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        platformAdmins = mock(PlatformAdminRepository.class);
+        memberships = mock(BusinessMembershipRepository.class);
+        when(memberships.findByUserId(1L)).thenReturn(List.of());
+        businesses = mock(BusinessRepository.class);
+        mvc = MockMvcBuilders.standaloneSetup(new MeController(new AiTriageProperties(), new RagProperties(), users,
+                        currentBusinessContext, platformAdmins, memberships, businesses))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
 
@@ -104,5 +118,50 @@ class MeControllerTest {
                         .content(json.writeValueAsString(Map.of("language", "FR"))))
                 .andExpect(status().isBadRequest());
         verify(users, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("2026-08-18 (Phase 6.1/6.2): /api/me reports the effective activeBusinessId from "
+            + "CurrentBusinessContext, session-switch-aware, not the login-time default")
+    void meReportsCurrentBusinessContextsActiveBusinessId() throws Exception {
+        when(users.findById(1L)).thenReturn(Optional.of(user(null)));
+        mvc.perform(get("/api/me"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.activeBusinessId").value(1));
+    }
+
+    @Test
+    @DisplayName("2026-08-18: a platform_admin's switcher list is every active business, regardless "
+            + "of having a business_membership row for it")
+    void platformAdminSeesEveryActiveBusiness() throws Exception {
+        when(users.findById(1L)).thenReturn(Optional.of(user(null)));
+        when(platformAdmins.existsById(1L)).thenReturn(true);
+        when(businesses.findAllByActiveTrue()).thenReturn(List.of(
+                com.salonreview.domain.Business.builder().id(1L).name("AK.LUX.NAILS").active(true).build(),
+                com.salonreview.domain.Business.builder().id(2L).name("AK PMU").active(true).build()));
+
+        mvc.perform(get("/api/me"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.businesses.length()").value(2))
+                .andExpect(jsonPath("$.businesses[1].name").value("AK PMU"));
+        verify(memberships, never()).findByUserId(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("2026-08-18: a non-platform-admin's switcher list is only their own real membership(s)")
+    void regularUserSeesOnlyOwnMemberships() throws Exception {
+        when(users.findById(1L)).thenReturn(Optional.of(user(null)));
+        when(platformAdmins.existsById(1L)).thenReturn(false);
+        when(memberships.findByUserId(1L)).thenReturn(List.of(
+                com.salonreview.domain.BusinessMembership.builder().businessId(1L).userId(1L)
+                        .role(Role.MANAGER).build()));
+        when(businesses.findById(1L)).thenReturn(Optional.of(
+                com.salonreview.domain.Business.builder().id(1L).name("AK.LUX.NAILS").active(true).build()));
+
+        mvc.perform(get("/api/me"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.businesses.length()").value(1))
+                .andExpect(jsonPath("$.businesses[0].name").value("AK.LUX.NAILS"));
+        verify(businesses, never()).findAllByActiveTrue();
     }
 }
