@@ -602,8 +602,15 @@ public class SettlementPreviewService {
                                     int[] suspiciousCounts, int[] suspiciousNoNotesCounts,
                                     int[] cancellationCounts) {
         int monthCounted = m.first.countedServices() + m.second.countedServices();
-        boolean autoQualified = monthCounted >= config.tierServiceThreshold();
-        boolean isGranted = granted.contains(m.providerId);
+        // Found live 2026-08-18 for AK PMU (tierEnabled=false, tierServiceThreshold=0 as its "off"
+        // sentinel): this must mirror TierCommissionEngine#secondHalfFinal's own tierEnabled guard
+        // exactly, or a business with tiering off shows every provider as having "earned" the tier
+        // the moment they have any counted services at all (0 always satisfies >= 0) — the actual
+        // dollar amounts were never wrong (the engine's own qualified check already gated on
+        // tierEnabled correctly), only this display-only flag and everything derived from it
+        // (tierManuallyGranted, tierApplied, and every frontend "50/50" badge/label fed by them).
+        boolean autoQualified = config.tierEnabled() && monthCounted >= config.tierServiceThreshold();
+        boolean isGranted = config.tierEnabled() && granted.contains(m.providerId);
         Boolean tierGrant = isGranted ? Boolean.TRUE : null;
 
         HalfSettlement first = engine.firstHalf(m.first, config);
