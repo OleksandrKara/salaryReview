@@ -464,10 +464,20 @@ changing behavior for existing callers; `SetupRequiredNotice` is the reusable em
       normally for Business A (connected) — no regression. `/owner/overview/expenses/**` and
       `/admin/manual-adjustments` confirmed not Square-dependent at all (no `SquareClientProvider` in
       their service chain) — correctly left untouched.
-- [ ] 6b.4 RAG assistant, Telegram settings, KB articles, SOPs — once 2.6 gives these real
-      per-business scoping (rather than the current Business-A-only block), they'll need this same
-      "not set up yet" treatment too, not just a bare 403/500, the first time a second business
-      actually gets access to them
+- [x] 6b.4 **Telegram/SMS/RAG shipped 2026-08-18, as a live incident** — the instant 2.6 removed
+      the old Business-A-only block, AK PMU's own owner opened Settings > Telegram/SMS and the RAG
+      admin page and got a raw 500 instead ("telegram_notification_config missing for business 2",
+      same for twilio_sms_config and rag_agent_config): those services all assumed their
+      per-business row already existed and nothing ever created it for a business made via
+      `POST /api/platform/businesses`. Fixed two ways — `BusinessProvisioningService.create()` now
+      seeds an empty (all-null-credential) telegram/twilio row for every new business (their own
+      "off" representation, doesn't enable anything); `RagConfigService` gets a non-throwing
+      `findActive()` used only by the settings-page GET, since "no active RAG config" is RAG's own
+      correct "not enabled for this business yet" representation (tasks.md 7.4), not a failure.
+      Business 2 backfilled directly, verified against the live crash. KB articles/SOPs checked:
+      not exposed to this crash class at all — they're list-shaped tables (many rows per business,
+      like `sms_message`), not a singleton "exactly one config row per business" the way telegram/
+      twilio/RAG config are, so there's no missing-row `.orElseThrow()` to hit.
 
 ## Phase 7 — Second salon (Business B / AK PMU) onboarding
 
