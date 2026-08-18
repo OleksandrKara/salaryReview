@@ -23,6 +23,7 @@ export async function forwardToBackend(
   // manager's all-shift-open tab, the owner's constant use) never hits the wall, while a
   // genuinely idle one (a provider between their ~biweekly visits) still expires on schedule.
   const role = jar.get('role')?.value;
+  const businessId = jar.get('businessId')?.value;
   const forwardedProto = (await nextHeaders()).get('x-forwarded-proto');
   const cookieOpts = {
     secure: secureCookie(forwardedProto),
@@ -32,6 +33,7 @@ export async function forwardToBackend(
   };
   jar.set('sid', sid, { ...cookieOpts, httpOnly: true });
   if (role !== undefined) jar.set('role', role, { ...cookieOpts, httpOnly: false });
+  if (businessId !== undefined) jar.set('businessId', businessId, { ...cookieOpts, httpOnly: false });
 
   const headers: Record<string, string> = { Cookie: `JSESSIONID=${sid}` };
   if (body !== undefined) headers['Content-Type'] = 'application/json';

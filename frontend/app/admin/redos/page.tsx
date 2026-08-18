@@ -15,7 +15,7 @@ export default async function RedosPage() {
   if (squareConnection && !squareConnection.accessTokenSet) {
     return (
       <main className="mx-auto max-w-4xl p-4 sm:p-8">
-        <PageHeader title={t(lang, 'mgrRedos')} role={me.role} language={lang} />
+        <PageHeader title={t(lang, 'mgrRedos')} role={me.role} language={lang} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
         <SetupRequiredNotice
           title="Connect Square to manage redos"
           message="A redo moves commission against real Square bookings, which needs a Square connection first."
@@ -31,7 +31,7 @@ export default async function RedosPage() {
 
   return (
     <main className="mx-auto max-w-4xl p-4 sm:p-8">
-      <PageHeader title={t(lang, 'mgrRedos')} role={me.role} language={lang} />
+      <PageHeader title={t(lang, 'mgrRedos')} role={me.role} language={lang} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <p className="mb-6 text-xs text-zinc-500">{t(lang, 'redoDesc')}</p>
       <RedoManager initialRedos={redos} providers={providers.filter((p) => p.active)} language={lang} />
     </main>

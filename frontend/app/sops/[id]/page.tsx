@@ -18,7 +18,7 @@ export default async function SopDetailPage({ params }: { params: Promise<{ id: 
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
-      <PageHeader title={sop ? localized(lang, sop.title, sop.titleRu) : t(lang, 'sopTitle')} role={me.role} language={lang} />
+      <PageHeader title={sop ? localized(lang, sop.title, sop.titleRu) : t(lang, 'sopTitle')} role={me.role} language={lang} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <Link href="/sops" className="text-sm text-zinc-500 underline hover:text-zinc-700">
         {t(lang, 'back')}
       </Link>

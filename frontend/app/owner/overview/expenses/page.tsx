@@ -11,7 +11,7 @@ export default async function RevenueExpensesPage() {
 
   return (
     <main className="mx-auto max-w-3xl p-4 sm:p-8">
-      <PageHeader title="Revenue" role={me.role} language={me.preferredLanguage} />
+      <PageHeader title="Revenue" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <RevenueTabs />
 
       <div className="mt-6 flex flex-wrap items-center gap-2 rounded-lg bg-zinc-50 p-3 ring-1 ring-zinc-200">

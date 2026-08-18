@@ -566,6 +566,12 @@ export type FeedbackStatus = 'APPROVED' | 'CHANGES_REQUESTED';
 
 export type Language = 'EN' | 'RU';
 
+// One business the caller can switch into (design.md D12) — see AdminMenu's switcher row.
+export interface MeBusinessOption {
+  id: number;
+  name: string;
+}
+
 export interface Me {
   username: string;
   role: Role;
@@ -573,6 +579,13 @@ export interface Me {
   // null until an owner/manager has chosen — the frontend uses that to show the one-time prompt.
   preferredLanguage: Language | null;
   features: Features;
+  // Phase 6.1/6.2 (design.md D12): the business CurrentBusinessContext is scoped to for this
+  // request, session-switch-aware (not necessarily the login-time default). `businesses` is the
+  // switcher's own option list — every active business for a platform_admin, otherwise just the
+  // caller's own real membership(s) (today always exactly one, so AdminMenu renders plain text,
+  // not a dropdown, for that case).
+  activeBusinessId: number;
+  businesses: MeBusinessOption[];
 }
 
 export interface Features {

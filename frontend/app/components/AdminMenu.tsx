@@ -5,8 +5,9 @@ import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import LanguageSwitch from './LanguageSwitch';
 import MessagesNotifierIcon from './MessagesNotifierIcon';
+import { api } from '../lib/api';
 import { t } from '../lib/i18n';
-import type { Language, Role } from '../lib/types';
+import type { Language, MeBusinessOption, Role } from '../lib/types';
 
 // The one navigation menu, shown in every page header via PageHeader. A single dropdown at all screen
 // sizes so it's identical everywhere and copes with the owner's long link list. Links are role-scoped
@@ -71,15 +72,36 @@ export default function AdminMenu({
   language,
   kbRequestOpenCount = 0,
   smsUnreadCount = 0,
+  activeBusinessId,
+  businesses,
 }: {
   role: Role;
   language: Language | null;
   kbRequestOpenCount?: number;
   smsUnreadCount?: number;
+  // Phase 6.1/6.2 (design.md D12) — undefined (a caller that hasn't been updated yet) renders
+  // no switcher row at all, same as before this feature existed.
+  activeBusinessId?: number;
+  businesses?: MeBusinessOption[];
 }) {
   const [open, setOpen] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const pathname = usePathname();
   const links = linksFor(role);
+
+  async function switchTo(businessId: number) {
+    if (businessId === activeBusinessId) return;
+    setSwitching(true);
+    try {
+      await api.switchBusiness(businessId);
+      // Every server-rendered page (settings, reports, ...) needs to re-fetch under the new
+      // business context — a client-side refresh() won't re-run their server components' data
+      // fetches reliably here, so a full reload is the simple, correct choice.
+      window.location.reload();
+    } catch {
+      setSwitching(false);
+    }
+  }
 
   // Highlight only the single most specific match — otherwise a nested route like
   // /owner/marketing/contacts would light up both "Marketing" and "Marketing Contacts" at once.
@@ -155,6 +177,23 @@ export default function AdminMenu({
                   {t(language, l.key)}
                 </Link>
               ))}
+              {businesses && businesses.length > 1 ? (
+                <div className="flex items-center gap-2 border-t border-zinc-100 px-4 py-2 text-sm text-zinc-500">
+                  <span className="text-zinc-400">{t(language, 'navBusiness')}</span>
+                  <select
+                    value={activeBusinessId}
+                    disabled={switching}
+                    onChange={(e) => switchTo(Number(e.target.value))}
+                    className="flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-sm text-zinc-700 disabled:opacity-50"
+                  >
+                    {businesses.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
               <div className="flex items-center gap-2 border-t border-zinc-100 px-4 py-2 text-sm text-zinc-500">
                 <span className="text-zinc-400">{t(language, 'navLanguage')}</span>
                 <LanguageSwitch language={language} />

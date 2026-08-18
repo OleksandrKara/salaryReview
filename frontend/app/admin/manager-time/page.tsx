@@ -34,7 +34,7 @@ export default async function ManagerTimeAdminPage({
 
   return (
     <main className="mx-auto max-w-4xl p-4 sm:p-8">
-      <PageHeader title={t(lang, 'timeOwnerTitle')} role={me.role} language={lang} />
+      <PageHeader title={t(lang, 'timeOwnerTitle')} role={me.role} language={lang} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <p className="-mt-3 mb-4 text-sm text-zinc-500">{t(lang, 'timeOwnerSubtitle')}</p>
       <ManagerTimeTabs language={lang} />
       <div className="mb-5">

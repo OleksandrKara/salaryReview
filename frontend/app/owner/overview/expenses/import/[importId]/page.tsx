@@ -11,7 +11,7 @@ export default async function ReconciliationPage({ params }: { params: Promise<{
 
   return (
     <main className="mx-auto max-w-4xl p-4 sm:p-8">
-      <PageHeader title="Reconcile statement" role={me.role} language={me.preferredLanguage} />
+      <PageHeader title="Reconcile statement" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <ReconciliationWorkspace importId={Number(importId)} />
     </main>
   );

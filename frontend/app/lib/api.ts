@@ -444,6 +444,11 @@ export const api = {
   // The authenticated principal — used by the assistant widget to self-gate by role.
   getMe: () => proxyGet<Me>(`/api/me`),
 
+  // Phase 6.1/6.2 (design.md D12): switch the session's active business — AdminMenu's switcher
+  // dropdown. Caller reloads afterward so every server-rendered page picks up the new context.
+  switchBusiness: (businessId: number) =>
+    proxyJson<{ businessId: number; businessName: string }>(`/api/business/switch`, 'POST', { businessId }),
+
   // Set the caller's preferred language (owner/manager).
   setLanguage: (language: Language) => proxyVoid(`/api/me/language`, 'POST', { language }),
 

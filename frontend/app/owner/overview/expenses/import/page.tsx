@@ -9,7 +9,7 @@ export default async function ImportStatementPage() {
 
   return (
     <main className="mx-auto max-w-xl p-4 sm:p-8">
-      <PageHeader title="Import statement" role={me.role} language={me.preferredLanguage} />
+      <PageHeader title="Import statement" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <p className="mt-2 text-sm text-zinc-500">
         Upload this month&apos;s bank statement CSV. Most transactions are categorized
         automatically — you&apos;ll only need to review the handful the system isn&apos;t sure

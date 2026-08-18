@@ -42,6 +42,7 @@ export async function POST(req: Request): Promise<Response> {
   const me = (await res.json().catch(() => ({}))) as {
     role?: string;
     providerId?: number | null;
+    activeBusinessId?: number;
   };
 
   const jar = await cookies();
@@ -55,6 +56,11 @@ export async function POST(req: Request): Promise<Response> {
   jar.set('sid', sid, { ...opts, httpOnly: true });
   // Readable by the proxy (and harmless to expose) so it can route by role.
   jar.set('role', me.role ?? '', { ...opts, httpOnly: false });
+  // Phase 6.1/6.2 (design.md D12): login-time default business, mirrored client-side purely so a
+  // page can render without a round-trip; the backend session (via CurrentBusinessContextFilter's
+  // session-attribute override) remains the actual source of truth once a switch happens — see
+  // app/api/business/switch/route.ts, which updates this cookie's value to match.
+  jar.set('businessId', String(me.activeBusinessId ?? ''), { ...opts, httpOnly: false });
 
   return Response.json({ role: me.role ?? null, providerId: me.providerId ?? null });
 }

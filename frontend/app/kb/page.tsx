@@ -12,7 +12,7 @@ export default async function KbPage() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
-      <PageHeader title={t(lang, 'kbTitle')} role={me.role} language={lang} />
+      <PageHeader title={t(lang, 'kbTitle')} role={me.role} language={lang} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <p className="mt-1 text-sm text-zinc-500">
         {t(lang, 'kbDesc')}
         {me.role !== 'PROVIDER' ? t(lang, 'kbDescEdit') : t(lang, 'kbDescReadOnly')}

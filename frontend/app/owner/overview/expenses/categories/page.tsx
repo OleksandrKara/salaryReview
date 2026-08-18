@@ -9,7 +9,7 @@ export default async function ExpenseCategoriesPage() {
 
   return (
     <main className="mx-auto max-w-3xl p-4 sm:p-8">
-      <PageHeader title="Expense categories" role={me.role} language={me.preferredLanguage} />
+      <PageHeader title="Expense categories" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <p className="mt-2 text-sm text-zinc-500">
         Add, rename, or remove the categories offered when entering an expense or reconciling a
         bank statement. Manager time and provider payroll are built in and can&apos;t be removed.

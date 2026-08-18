@@ -33,7 +33,7 @@ export default async function ManagerTimePage({
 
   return (
     <main className="mx-auto max-w-3xl p-4 sm:p-8">
-      <PageHeader title={t(lang, 'timeMyTitle')} role={me.role} language={lang} />
+      <PageHeader title={t(lang, 'timeMyTitle')} role={me.role} language={lang} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <div className="-mt-3 mb-4 flex items-center justify-between">
         <p className="text-sm text-zinc-500">{t(lang, 'timeMySubtitle')}</p>
       </div>
