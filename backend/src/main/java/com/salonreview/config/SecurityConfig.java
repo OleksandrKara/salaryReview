@@ -176,13 +176,16 @@ public class SecurityConfig {
         return http.build();
     }
 
-    /** Serialize the authenticated principal as {@code {username, role, providerId}} (also used by /api/me). */
+    /** Serialize the authenticated principal as {@code {username, role, providerId, activeBusinessId}}
+     * (also used by /api/me). {@code activeBusinessId} here is always the login-time default — no
+     * session-level switch (Phase 6.1/6.2) can exist yet at the moment this fires. */
     private void writeMe(HttpServletResponse res, Object principal) throws java.io.IOException {
         Map<String, Object> body = new LinkedHashMap<>();
         if (principal instanceof AppUserPrincipal p) {
             body.put("username", p.getUsername());
             body.put("role", p.getRole().name());
             body.put("providerId", p.getProviderId());
+            body.put("activeBusinessId", p.getActiveBusinessId());
         }
         res.setStatus(HttpServletResponse.SC_OK);
         res.setContentType(MediaType.APPLICATION_JSON_VALUE);

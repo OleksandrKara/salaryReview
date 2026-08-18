@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface BusinessMembershipRepository extends JpaRepository<BusinessMembership, Long> {
     List<BusinessMembership> findByUserId(Long userId);
+
+    boolean existsByUserIdAndBusinessId(Long userId, Long businessId);
 }
