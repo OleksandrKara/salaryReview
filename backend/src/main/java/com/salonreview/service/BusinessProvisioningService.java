@@ -4,9 +4,13 @@ import com.salonreview.domain.AppUser;
 import com.salonreview.domain.Business;
 import com.salonreview.domain.BusinessMembership;
 import com.salonreview.domain.Role;
+import com.salonreview.domain.TelegramNotificationConfig;
+import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.AppUserRepository;
 import com.salonreview.repo.BusinessMembershipRepository;
 import com.salonreview.repo.BusinessRepository;
+import com.salonreview.repo.TelegramNotificationConfigRepository;
+import com.salonreview.repo.TwilioSmsConfigRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -30,13 +34,19 @@ public class BusinessProvisioningService {
     private final AppUserRepository users;
     private final BusinessMembershipRepository memberships;
     private final PasswordEncoder encoder;
+    private final TelegramNotificationConfigRepository telegramConfigs;
+    private final TwilioSmsConfigRepository twilioConfigs;
 
     public BusinessProvisioningService(BusinessRepository businesses, AppUserRepository users,
-                                        BusinessMembershipRepository memberships, PasswordEncoder encoder) {
+                                        BusinessMembershipRepository memberships, PasswordEncoder encoder,
+                                        TelegramNotificationConfigRepository telegramConfigs,
+                                        TwilioSmsConfigRepository twilioConfigs) {
         this.businesses = businesses;
         this.users = users;
         this.memberships = memberships;
         this.encoder = encoder;
+        this.telegramConfigs = telegramConfigs;
+        this.twilioConfigs = twilioConfigs;
     }
 
     public List<Business> list() {
@@ -79,6 +89,18 @@ public class BusinessProvisioningService {
                 .userId(owner.getId())
                 .role(Role.OWNER)
                 .build());
+
+        // 2026-08-18 live incident: a business created without these rows 500'd the instant its
+        // owner opened Settings > Telegram or Settings > SMS — both services assume their row
+        // already exists (see TelegramConfigService#get/TwilioSmsConfigService#get) and have no
+        // "not set up yet" fallback of their own. Empty (all-null-credential) rows are this
+        // feature's own correct "off" representation everywhere else it's read (e.g.
+        // TelegramNotificationService's own null-check-and-skip) — this doesn't turn anything on,
+        // it just makes "not configured yet" reachable without a crash. RAG intentionally gets no
+        // such row (tasks.md 7.4) — its own "off" representation is the absence of an active
+        // config row, not an empty one; see RagConfigService#findActive.
+        telegramConfigs.save(TelegramNotificationConfig.builder().businessId(business.getId()).build());
+        twilioConfigs.save(TwilioSmsConfig.builder().businessId(business.getId()).build());
 
         return business;
     }
