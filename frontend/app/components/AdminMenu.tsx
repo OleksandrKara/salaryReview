@@ -88,7 +88,12 @@ export default function AdminMenu({
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
   const pathname = usePathname();
-  const links = linksFor(role);
+  // /owner/settings/businesses (platform_admin only, per PlatformBusinessController) 403s for any
+  // other OWNER — found live 2026-08-18 for AK PMU's owner, who saw the link and got a raw crash on
+  // click. Same signal the switcher dropdown already uses: a non-platform-admin's `businesses`
+  // always has exactly one entry (their own real membership) today, so >1 is platform_admin.
+  const isPlatformAdmin = (businesses?.length ?? 0) > 1;
+  const links = linksFor(role).filter((l) => l.href !== '/owner/settings/businesses' || isPlatformAdmin);
 
   async function switchTo(businessId: number) {
     if (businessId === activeBusinessId) return;
