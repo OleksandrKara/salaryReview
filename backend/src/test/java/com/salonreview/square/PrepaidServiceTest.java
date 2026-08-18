@@ -1,6 +1,7 @@
 package com.salonreview.square;
 
 import com.salonreview.domain.PrepaidPackage;
+import com.salonreview.domain.PrepaidRedemption;
 import com.salonreview.domain.SalonConfig;
 import com.salonreview.repo.PrepaidPackageRepository;
 import com.salonreview.repo.PrepaidRedemptionRepository;
@@ -11,6 +12,7 @@ import com.salonreview.square.PrepaidService.Candidate;
 import com.salonreview.square.SquareClient.*;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -19,6 +21,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -51,9 +54,9 @@ class PrepaidServiceTest {
         PrepaidService svc = new PrepaidService(squareClientProvider, providers, directory, salonConfig,
                 currentBusinessContext, packages, redemptions);
 
-        PrepaidPackage pkg = PrepaidPackage.builder().id(1L).customerId("C1").customerName("Alina")
+        PrepaidPackage pkg = PrepaidPackage.builder().id(1L).businessId(1L).customerId("C1").customerName("Alina")
                 .paidDate(LocalDate.of(2026, 3, 1)).amount(new BigDecimal("300")).totalServices(3).build();
-        when(packages.findById(1L)).thenReturn(Optional.of(pkg));
+        when(packages.findByIdAndBusinessId(1L, 1L)).thenReturn(Optional.of(pkg));
 
         SalonConfig sc = mock(SalonConfig.class);
         when(sc.getServicePriceCutoff()).thenReturn(new BigDecimal("50.00"));
@@ -105,5 +108,127 @@ class PrepaidServiceTest {
         assertThat(out.get(0).number()).isEqualTo("000089");
         assertThat(out.get(0).date()).isEqualTo("2026-05-29");          // created_at date only
         assertThat(out.get(0).amount()).isEqualByComparingTo("40.00");  // 25.00 + 15.00
+    }
+
+    private static PrepaidService serviceWithBusiness(PrepaidPackageRepository packages,
+                                                       PrepaidRedemptionRepository redemptions, Long businessId) {
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(businessId);
+        return new PrepaidService(mock(SquareClientProvider.class), mock(ProviderRepository.class),
+                mock(ProviderDirectory.class), mock(SalonConfigRepository.class), currentBusinessContext,
+                packages, redemptions);
+    }
+
+    // Package 5 genuinely EXISTS — just owned by business 2, not the caller's business 1. Stubbing
+    // the OLD unscoped lookups (existsById/findById) to also find it is what makes these tests a
+    // real proof: the pre-fix code path succeeds in finding the row via those calls and only the
+    // NEW business-scoped lookup correctly misses it — a test that only stubs the new method would
+    // pass even against the old code, since Mockito's unstubbed default (false / Optional.empty())
+    // happens to look identical to "properly rejected" (confirmed by revert-testing before writing
+    // this comment).
+    private static PrepaidPackage anotherBusinessesPackage() {
+        return PrepaidPackage.builder().id(5L).businessId(2L).customerName("Someone Else")
+                .paidDate(LocalDate.of(2026, 3, 1)).amount(new BigDecimal("300")).totalServices(3).build();
+    }
+
+    @Test
+    @DisplayName("2026-08-18 cross-tenant fix: delete() 404s for a package belonging to another "
+            + "business, instead of deleting it by bare id")
+    void deleteRejectsAnotherBusinessesPackage() {
+        PrepaidPackageRepository packages = mock(PrepaidPackageRepository.class);
+        PrepaidRedemptionRepository redemptions = mock(PrepaidRedemptionRepository.class);
+        PrepaidService svc = serviceWithBusiness(packages, redemptions, 1L);
+        when(packages.existsById(5L)).thenReturn(true); // old code's lookup — package DOES exist
+        when(packages.findByIdAndBusinessId(5L, 1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> svc.delete(5L))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("No such package");
+
+        verify(packages, never()).delete(any());
+        verify(packages, never()).deleteById(any());
+    }
+
+    @Test
+    @DisplayName("2026-08-18 cross-tenant fix: redeem() 404s against another business's package")
+    void redeemRejectsAnotherBusinessesPackage() {
+        PrepaidPackageRepository packages = mock(PrepaidPackageRepository.class);
+        PrepaidRedemptionRepository redemptions = mock(PrepaidRedemptionRepository.class);
+        SalonConfigRepository salonConfig = mock(SalonConfigRepository.class);
+        SalonConfig sc = mock(SalonConfig.class);
+        when(sc.getServicePriceCutoff()).thenReturn(new BigDecimal("50.00"));
+        when(salonConfig.findByBusinessId(1L)).thenReturn(Optional.of(sc));
+        ProviderDirectory directory = mock(ProviderDirectory.class);
+        when(directory.resolveOrCreate(any(), any()))
+                .thenReturn(com.salonreview.domain.Provider.builder().id(1L).build());
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        PrepaidService svc = new PrepaidService(mock(SquareClientProvider.class), mock(ProviderRepository.class),
+                directory, salonConfig, currentBusinessContext, packages, redemptions);
+        when(packages.findById(5L)).thenReturn(Optional.of(anotherBusinessesPackage())); // old lookup
+        when(packages.findByIdAndBusinessId(5L, 1L)).thenReturn(Optional.empty());
+        var req = new PrepaidService.RedeemRequest("bk1", "var1", "Mani",
+                LocalDate.of(2026, 5, 1), new BigDecimal("80.00"), "TM1", "Alice");
+
+        assertThatThrownBy(() -> svc.redeem(5L, req, "manager"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("No such package");
+
+        verify(redemptions, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("2026-08-18 cross-tenant fix: candidates() 404s against another business's package")
+    void candidatesRejectsAnotherBusinessesPackage() {
+        PrepaidPackageRepository packages = mock(PrepaidPackageRepository.class);
+        PrepaidRedemptionRepository redemptions = mock(PrepaidRedemptionRepository.class);
+        PrepaidService svc = serviceWithBusiness(packages, redemptions, 1L);
+        when(packages.findById(5L)).thenReturn(Optional.of(anotherBusinessesPackage())); // old lookup
+        when(packages.findByIdAndBusinessId(5L, 1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> svc.candidates(5L))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("No such package");
+    }
+
+    @Test
+    @DisplayName("2026-08-18 cross-tenant fix: undoRedemption() 404s for a redemption belonging to "
+            + "another business's package, instead of deleting it by bare id")
+    void undoRedemptionRejectsAnotherBusinessesRedemption() {
+        PrepaidPackageRepository packages = mock(PrepaidPackageRepository.class);
+        PrepaidRedemptionRepository redemptions = mock(PrepaidRedemptionRepository.class);
+        PrepaidService svc = serviceWithBusiness(packages, redemptions, 1L);
+        when(redemptions.existsById(9L)).thenReturn(true); // old code's lookup — redemption DOES exist
+        when(redemptions.findByIdAndBusinessId(9L, 1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> svc.undoRedemption(9L))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("No such redemption");
+
+        verify(redemptions, never()).delete(any());
+        verify(redemptions, never()).deleteById(any());
+    }
+
+    @Test
+    @DisplayName("delete()/undoRedemption() succeed for the caller's own business")
+    void deleteAndUndoRedemptionSucceedForOwnBusiness() {
+        PrepaidPackageRepository packages = mock(PrepaidPackageRepository.class);
+        PrepaidRedemptionRepository redemptions = mock(PrepaidRedemptionRepository.class);
+        PrepaidService svc = serviceWithBusiness(packages, redemptions, 1L);
+        PrepaidPackage pkg = PrepaidPackage.builder().id(5L).businessId(1L).customerName("Alina")
+                .paidDate(LocalDate.of(2026, 3, 1)).amount(new BigDecimal("300")).totalServices(3).build();
+        when(packages.findByIdAndBusinessId(5L, 1L)).thenReturn(Optional.of(pkg));
+        PrepaidRedemption redemption = PrepaidRedemption.builder().id(9L).packageId(5L).providerId(1L)
+                .squareBookingId("bk1").serviceVariationId("var1").serviceDate(LocalDate.of(2026, 5, 1))
+                .menuPrice(new BigDecimal("80.00")).counts(true).build();
+        when(redemptions.findByIdAndBusinessId(9L, 1L)).thenReturn(Optional.of(redemption));
+
+        svc.delete(5L);
+        svc.undoRedemption(9L);
+
+        verify(packages).delete(pkg);
+        verify(redemptions).delete(redemption);
     }
 }
