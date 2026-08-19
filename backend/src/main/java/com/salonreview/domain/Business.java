@@ -35,6 +35,13 @@ public class Business {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    /** The hostname salonLandings serves this business's public landing page on (e.g.
+     * {@code mani.akluxnails.com}) — resolved via {@code GET /api/internal/businesses/by-domain},
+     * see ~/salonLandings/docs/multi-tenant-akpmu-design.md. Null until a landing page is set up
+     * for this business. */
+    @Column(name = "public_domain")
+    private String publicDomain;
+
     @PrePersist
     void onCreate() {
         if (createdAt == null) createdAt = Instant.now();
