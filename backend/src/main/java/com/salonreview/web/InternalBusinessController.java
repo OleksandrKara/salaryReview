@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -68,10 +69,15 @@ public class InternalBusinessController {
         if (credentials == null) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(Map.of(
-                "accessToken", credentials.accessToken(),
-                "locationId", credentials.locationId(),
-                "environment", credentials.environment().name()));
+        // HashMap, not Map.of(...) — applicationId is nullable (see SquareConnection's own doc:
+        // "not consumed by any current API call... purely informational"), and Map.of() throws on
+        // a null value.
+        Map<String, Object> response = new HashMap<>();
+        response.put("accessToken", credentials.accessToken());
+        response.put("locationId", credentials.locationId());
+        response.put("environment", credentials.environment().name());
+        response.put("applicationId", credentials.applicationId());
+        return ResponseEntity.ok(response);
     }
 
     private boolean keyMatches(String provided) {
