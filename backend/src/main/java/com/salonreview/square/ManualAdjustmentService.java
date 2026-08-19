@@ -60,7 +60,7 @@ public class ManualAdjustmentService {
         if (req.providerId() == null || req.serviceDate() == null || req.gross() == null || req.gross().signum() == 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "provider, date and a nonzero gross are required");
         }
-        if (!providers.existsById(req.providerId())) {
+        if (!providers.existsByIdAndBusinessId(req.providerId(), currentBusinessContext.id())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "no such provider");
         }
         BigDecimal discount = req.discount() == null ? BigDecimal.ZERO : req.discount();
@@ -99,10 +99,16 @@ public class ManualAdjustmentService {
                 saved.getGross(), saved.getDiscount(), saved.getTip(), saved.getServiceName());
     }
 
+    /** @throws ResponseStatusException 404 if {@code id} isn't an adjustment of a provider
+     * belonging to the current business — found live 2026-08-19 (security-review pass): a bare
+     * {@code existsById}/{@code deleteById} let any business delete another's manual adjustment by
+     * guessing a small sequential id (and {@link #create} had the identical gap on the provider
+     * check, letting any business credit/deduct commission on another business's provider). */
     @Transactional
     public void delete(Long id) {
-        if (!adjustments.existsById(id)) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such adjustment");
-        adjustments.deleteById(id);
+        ManualAdjustment adjustment = adjustments.findByIdAndBusinessId(id, currentBusinessContext.id())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "no such adjustment"));
+        adjustments.delete(adjustment);
     }
 
     /** Signed total of every adjustment dated within the given month — for Overview's live-month revenue. */

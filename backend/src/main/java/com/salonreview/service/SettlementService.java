@@ -45,12 +45,17 @@ public class SettlementService {
         this.formatter = formatter;
     }
 
+    /** @throws NoSuchElementException if {@code payPeriodId} isn't a pay period of the current
+     * business — found live 2026-08-19 (security-review pass): a bare {@code findById} let any
+     * business read another business's real pay-period label/date range and its providers'
+     * settlement figures (procedures, card/cash totals, tips) via a direct API call, the same
+     * table {@code PayPeriodController} was already fixed for. */
     @Transactional(readOnly = true)
     public List<SettlementDto> settlementsFor(Long payPeriodId) {
-        PayPeriod period = periods.findById(payPeriodId)
+        Long businessId = currentBusinessContext.id();
+        PayPeriod period = periods.findByIdAndBusinessId(payPeriodId, businessId)
                 .orElseThrow(() -> new NoSuchElementException("Pay period " + payPeriodId + " not found"));
 
-        Long businessId = currentBusinessContext.id();
         String owner = salonConfig.findByBusinessId(businessId)
         .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"))
         .getOwnerShortName();

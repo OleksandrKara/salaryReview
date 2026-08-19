@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 public interface ManualAdjustmentRepository extends JpaRepository<ManualAdjustment, Long> {
     @Query("select a from ManualAdjustment a join Provider p on p.id = a.providerId "
@@ -18,4 +19,11 @@ public interface ManualAdjustmentRepository extends JpaRepository<ManualAdjustme
     List<ManualAdjustment> findAllByBusinessIdAndServiceDateBetween(@Param("businessId") Long businessId,
                                                                      @Param("from") LocalDate from,
                                                                      @Param("to") LocalDate to);
+
+    /** {@code provider_id} has no mapped @ManyToOne here (plain FK column), so tenant scoping for a
+     * single-row lookup by id is an explicit join against {@code providers.business_id}, same
+     * pattern as the bulk queries above. */
+    @Query("select a from ManualAdjustment a join Provider p on p.id = a.providerId "
+            + "where a.id = :id and p.businessId = :businessId")
+    Optional<ManualAdjustment> findByIdAndBusinessId(@Param("id") Long id, @Param("businessId") Long businessId);
 }

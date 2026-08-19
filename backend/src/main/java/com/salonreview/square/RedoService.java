@@ -64,7 +64,9 @@ public class RedoService {
         if (req.originalProviderId().equals(req.redoProviderId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "redo provider must differ from the original");
         }
-        if (!providers.existsById(req.originalProviderId()) || !providers.existsById(req.redoProviderId())) {
+        Long businessId = currentBusinessContext.id();
+        if (!providers.existsByIdAndBusinessId(req.originalProviderId(), businessId)
+                || !providers.existsByIdAndBusinessId(req.redoProviderId(), businessId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "no such provider");
         }
         Redo saved = redos.save(Redo.builder()
@@ -82,9 +84,15 @@ public class RedoService {
                 saved.getRedoDate().toString(), saved.getAmount(), saved.getServiceName());
     }
 
+    /** @throws ResponseStatusException 404 if {@code id} isn't a redo of a provider belonging to
+     * the current business — found live 2026-08-19 (security-review pass): a bare
+     * {@code existsById}/{@code deleteById} let any business delete another's redo record, and
+     * {@link #create} had the identical gap on both provider checks, letting any business move
+     * commission between another business's providers entirely. */
     @Transactional
     public void delete(Long id) {
-        if (!redos.existsById(id)) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such redo");
-        redos.deleteById(id);
+        Redo redo = redos.findByIdAndBusinessId(id, currentBusinessContext.id())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "no such redo"));
+        redos.delete(redo);
     }
 }
