@@ -167,6 +167,31 @@ public class PrepaidService {
         List<Booking> bookings = square.bookings(from, to);
         List<Order> orders = square.completedOrders(from, to);
 
+        // Square can silently merge two duplicate customer profiles into one canonical id (e.g. one
+        // profile from the deposit invoice, one from the in-salon booking/checkout). The package's
+        // own stored customerId, a booking, and the order that paid for it can each carry a
+        // different, permanently un-equal id for the very same real person — same issue
+        // SquareMonthAggregator already resolves for its own order-to-booking matching (see its own
+        // doc comment). Without this, matchOrder below can never find the real checkout order for a
+        // booking, silently falling back to the full catalog price instead of the deposit credit —
+        // confirmed live 2026-08-19 against Hala Wrda's real data (booking and order carried two
+        // different ids). Resolve every id we've seen through Square's live customer record once, up
+        // front, and rewrite the package's own id plus both lists.
+        java.util.Set<String> allCustomerIds = new java.util.HashSet<>();
+        allCustomerIds.add(pkg.getCustomerId());
+        for (Booking b : bookings) if (b.customerId() != null) allCustomerIds.add(b.customerId());
+        for (Order o : orders) if (o.customerId() != null) allCustomerIds.add(o.customerId());
+        java.util.Map<String, String> canonicalCustomerId = square.canonicalCustomerIds(allCustomerIds);
+        String packageCustomerId = canonicalCustomerId.getOrDefault(pkg.getCustomerId(), pkg.getCustomerId());
+        bookings = bookings.stream()
+                .map(b -> b.customerId() == null ? b
+                        : b.withCustomerId(canonicalCustomerId.getOrDefault(b.customerId(), b.customerId())))
+                .toList();
+        orders = orders.stream()
+                .map(o -> o.customerId() == null ? o
+                        : o.withCustomerId(canonicalCustomerId.getOrDefault(o.customerId(), o.customerId())))
+                .toList();
+
         // Team-member names so each candidate shows who performed it (any provider, not just one).
         java.util.Map<String, String> memberNames = new java.util.HashMap<>();
         for (var tm : square.allTeamMembers()) memberNames.put(tm.id(), tm.fullName());
@@ -186,7 +211,7 @@ public class PrepaidService {
         List<Candidate> out = new ArrayList<>();
         for (Booking b : bookings) {
             if (b.appointmentSegments() == null || DID_NOT_HAPPEN.contains(b.status())) continue;
-            if (!pkg.getCustomerId().equals(b.customerId())) continue;
+            if (!packageCustomerId.equals(b.customerId())) continue;
             LocalDate day = localDate(b.startAt(), zone);
             if (day == null || day.isBefore(pkg.getPaidDate())) continue;
             for (var s : b.appointmentSegments()) {

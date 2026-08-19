@@ -339,6 +339,75 @@ class PrepaidServiceTest {
         assertThat(c.providerName()).isEqualTo("Anastasiia M.");
     }
 
+    /** Real production case found 2026-08-19, discovered while manually verifying the fix above
+     * against Hala Wrda's actual live data: the package's own stored customerId and her booking
+     * both carried one Square customer id, but the real checkout order carried a DIFFERENT,
+     * never-equal id (Square silently merges duplicate customer profiles — same issue
+     * CustomerMergeAttributionTest documents for SquareMonthAggregator's own order-to-booking
+     * matching). Before resolving canonical ids first, matchOrder never found the real order at
+     * all, silently falling back to the full $600 catalog price instead of the $100 deposit credit
+     * — reproducing the same wrong number the deposit-discount fix above was meant to prevent, just
+     * via a different path (a customer-id mismatch instead of an outright exclusion).
+     */
+    @Test
+    @DisplayName("A deposit-discounted visit still resolves correctly when the booking and its "
+            + "checkout order carry two different (Square-merged) customer ids")
+    void depositDiscountedVisitResolvesAcrossMergedCustomerIds() {
+        SquareClient square = mock(SquareClient.class);
+        ProviderRepository providers = mock(ProviderRepository.class);
+        ProviderDirectory directory = mock(ProviderDirectory.class);
+        SalonConfigRepository salonConfig = mock(SalonConfigRepository.class);
+        PrepaidPackageRepository packages = mock(PrepaidPackageRepository.class);
+        PrepaidRedemptionRepository redemptions = mock(PrepaidRedemptionRepository.class);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(2L);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(2L)).thenReturn(square);
+
+        PrepaidService svc = new PrepaidService(squareClientProvider, providers, directory, salonConfig,
+                currentBusinessContext, packages, redemptions);
+
+        // The package (and her booking) carry the pre-merge id; the checkout order carries the
+        // canonical post-merge id — exactly the real split found live.
+        PrepaidPackage pkg = PrepaidPackage.builder().id(9L).businessId(2L).customerId("PRE-MERGE-ID").customerName("Hala Wrda")
+                .paidDate(LocalDate.of(2026, 7, 2)).amount(new BigDecimal("100.00")).totalServices(1).build();
+        when(packages.findByIdAndBusinessId(9L, 2L)).thenReturn(Optional.of(pkg));
+
+        SalonConfig sc = mock(SalonConfig.class);
+        when(sc.getServicePriceCutoff()).thenReturn(new BigDecimal("50.00"));
+        when(salonConfig.findByBusinessId(2L)).thenReturn(Optional.of(sc));
+
+        when(square.locationTimeZone()).thenReturn("America/Los_Angeles");
+        when(square.bookings(any(), any())).thenReturn(List.of(
+                new Booking("bkHala", "ACCEPTED", "2026-07-10T22:13:18Z", null, null, "LOC", "PRE-MERGE-ID", null, null,
+                        List.of(new AppointmentSegment("TM-ANASTASIIA", "POWDER-OMBRE", 60)))));
+        when(square.allTeamMembers()).thenReturn(List.of(
+                new TeamMember("TM-ANASTASIIA", "Anastasiia", "M.", "ACTIVE", false, null, null)));
+        when(square.catalogPrices(any())).thenReturn(Map.of("POWDER-OMBRE", new BigDecimal("600.00")));
+        when(square.catalogNames(any())).thenReturn(Map.of("POWDER-OMBRE", "Eyebrows Powder&Ombre Technique"));
+        when(redemptions.existsBySquareBookingIdAndServiceVariationId(any(), any())).thenReturn(false);
+        // Both the pre-merge id (package/booking) and the canonical id (order) resolve to the same
+        // canonical customer — the exact resolution PrepaidService now performs up front.
+        when(square.canonicalCustomerIds(any())).thenReturn(Map.of(
+                "PRE-MERGE-ID", "CANONICAL-ID", "CANONICAL-ID", "CANONICAL-ID"));
+
+        OrderDiscount deposit = new OrderDiscount("deposit-uid", "Deposit ", new Money(10000L, "USD"));
+        AppliedDiscount appliedDeposit = new AppliedDiscount("ap2", "deposit-uid", new Money(10000L, "USD"));
+        OrderLineItem lineItem = new OrderLineItem("li1", "Eyebrows Powder&Ombre Technique by Anastasiia", "1",
+                "POWDER-OMBRE", new Money(60000L, "USD"), new Money(60000L, "USD"), new Money(50000L, "USD"),
+                new Money(10000L, "USD"), List.of(appliedDeposit));
+        Order checkoutOrder = new Order("orderHala", "LOC", "CANONICAL-ID", "COMPLETED", "2026-07-10T22:13:26Z",
+                "2026-07-10T22:13:18Z", List.of(lineItem), new Money(8800L, "USD"), new Money(10000L, "USD"),
+                List.of(), List.of(new Fulfillment("BOOKING", "COMPLETED")), List.of(deposit));
+        when(square.completedOrders(any(), any())).thenReturn(List.of(checkoutOrder));
+
+        List<Candidate> candidates = svc.candidates(9L);
+
+        assertThat(candidates).hasSize(1);
+        assertThat(candidates.get(0).menuPrice()).isEqualByComparingTo("100.00");
+    }
+
     /** Sibling case to the deposit test above: a visit checked out at FULL price (no Deposit
      * discount at all) must still be excluded — the original anti-double-count protection, so a
      * visit genuinely unrelated to the prepaid package never gets drawn down against it.
