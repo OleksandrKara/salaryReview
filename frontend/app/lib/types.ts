@@ -89,6 +89,11 @@ export interface BusinessSettingsDto {
   cardTipFeeRate: number | null;
   // Phase 4.4: null = this business runs no no-show fee program.
   noShowFeeAmount: number | null;
+  // false (default) = every Square discount is absorbed into the provider's commission basis, same
+  // as always. true = only discounts matching coveredDiscountNames are absorbed; every other
+  // discount reduces the provider's commission basis to what was actually collected.
+  restrictDiscountCoverage: boolean;
+  coveredDiscountNames: string | null;
 }
 
 // shortCode is immutable, not included. Every other field null/undefined = leave unchanged on an
@@ -103,6 +108,8 @@ export interface BusinessSettingsUpdateRequest {
   servicePriceCutoff?: number;
   cardTipFeeRate?: number;
   noShowFeeAmount?: number;
+  restrictDiscountCoverage?: boolean;
+  coveredDiscountNames?: string;
 }
 
 export interface PlatformBusinessDto {

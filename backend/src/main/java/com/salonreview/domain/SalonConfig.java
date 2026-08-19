@@ -49,6 +49,38 @@ public class SalonConfig {
     @Column(name = "no_show_fee_amount", precision = 10, scale = 2)
     private BigDecimal noShowFeeAmount;
 
+    /** false (the historical, still-default behavior): every Square order discount is "absorbed" by
+     * the salon — providers are paid commission on the full pre-discount menu price regardless of
+     * what was actually collected. true: only discounts whose name matches {@link
+     * #coveredDiscountNames} are absorbed; every other discount reduces the provider's commission
+     * basis down to what was actually collected. See {@code SquareMonthAggregator}'s own doc for
+     * where this is applied. Deliberately false-means-legacy (not true-means-legacy): a {@code
+     * boolean} field's own Java default, and Mockito's default for an unstubbed mock method, are
+     * both {@code false} — so any existing or future test/code path that never sets this still
+     * behaves exactly like it always has. Found live 2026-08-19: a business wanted ordinary promo
+     * discounts to come out of the salon's own margin (not the provider's pay) while still paying
+     * providers in full on prepaid-deposit discounts specifically. */
+    @Column(name = "restrict_discount_coverage", nullable = false)
+    private boolean restrictDiscountCoverage;
+
+    /** Comma-separated, case-insensitive substrings matched against each Square discount's own name
+     * (e.g. {@code "deposit"} matches the real discount name {@code "Deposit "}) — only consulted
+     * when {@link #restrictDiscountCoverage} is true. Same free-text-list convention as {@code
+     * PrepaidPackage#invoiceRef}. Null/blank with restrictDiscountCoverage true means no discount is
+     * covered at all — every discount reduces the commission basis. */
+    @Column(name = "covered_discount_names", length = 500)
+    private String coveredDiscountNames;
+
+    /** {@link #coveredDiscountNames} split, trimmed, lower-cased, and emptied of blanks — ready to
+     * match against a lower-cased discount name via {@code String#contains}. */
+    public java.util.Set<String> coveredDiscountNameSubstrings() {
+        if (coveredDiscountNames == null || coveredDiscountNames.isBlank()) return java.util.Set.of();
+        return java.util.Arrays.stream(coveredDiscountNames.split(","))
+                .map(String::trim).map(s -> s.toLowerCase(java.util.Locale.ROOT))
+                .filter(s -> !s.isEmpty())
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
     /** Build the commission engine's config from the stored settings. */
     public CommissionConfig toCommissionConfig() {
         return new CommissionConfig(tierServiceThreshold, baseCommissionRate, tierCommissionRate, cardTipFeeRate,

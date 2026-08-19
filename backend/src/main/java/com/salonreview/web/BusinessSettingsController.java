@@ -35,7 +35,7 @@ public class BusinessSettingsController {
         return toDto(service.update(currentBusinessContext.id(), body.name(), body.timezone(),
                 body.ownerShortName(), body.baseCommissionRate(), body.tierEnabled(),
                 body.tierServiceThreshold(), body.servicePriceCutoff(), body.cardTipFeeRate(),
-                body.noShowFeeAmount()));
+                body.noShowFeeAmount(), body.restrictDiscountCoverage(), body.coveredDiscountNames()));
     }
 
     private static BusinessSettingsDto toDto(BusinessSettingsService.View view) {
@@ -49,7 +49,9 @@ public class BusinessSettingsController {
                 c == null ? null : c.getTierServiceThreshold(),
                 c == null ? null : c.getServicePriceCutoff(),
                 c == null ? null : c.getCardTipFeeRate(),
-                c == null ? null : c.getNoShowFeeAmount());
+                c == null ? null : c.getNoShowFeeAmount(),
+                c != null && c.isRestrictDiscountCoverage(),
+                c == null ? null : c.getCoveredDiscountNames());
     }
 
     public record BusinessSettingsDto(Long businessId, String name, String shortCode, String timezone,
@@ -57,7 +59,11 @@ public class BusinessSettingsController {
                                        boolean tierEnabled, Integer tierServiceThreshold,
                                        BigDecimal servicePriceCutoff, BigDecimal cardTipFeeRate,
                                        // Phase 4.4: null = no no-show fee program for this business.
-                                       BigDecimal noShowFeeAmount) {
+                                       BigDecimal noShowFeeAmount,
+                                       // false = cover every Square discount (legacy/default). true = cover only
+                                       // discounts matching coveredDiscountNames; every other discount reduces
+                                       // the provider's commission basis.
+                                       boolean restrictDiscountCoverage, String coveredDiscountNames) {
     }
 
     /** {@code shortCode} is deliberately absent — immutable once created (it's used as a stable
@@ -65,10 +71,11 @@ public class BusinessSettingsController {
      * config; see {@link BusinessSettingsService#update} for which are required on first setup.
      * {@code noShowFeeAmount} shares that same "null = leave unchanged" convention — there is
      * currently no way to explicitly clear it back to null once set, same limitation every other
-     * optional numeric field here already has. */
+     * optional numeric field here already has. {@code coveredDiscountNames} follows suit. */
     public record BusinessSettingsUpdateRequest(String name, String timezone, String ownerShortName,
                                                   BigDecimal baseCommissionRate, Boolean tierEnabled,
                                                   Integer tierServiceThreshold, BigDecimal servicePriceCutoff,
-                                                  BigDecimal cardTipFeeRate, BigDecimal noShowFeeAmount) {
+                                                  BigDecimal cardTipFeeRate, BigDecimal noShowFeeAmount,
+                                                  Boolean restrictDiscountCoverage, String coveredDiscountNames) {
     }
 }

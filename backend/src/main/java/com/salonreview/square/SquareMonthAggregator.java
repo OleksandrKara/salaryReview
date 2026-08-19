@@ -169,6 +169,13 @@ public class SquareMonthAggregator {
 
         Map<String, BigDecimal> catalogPrice = square.catalogPrices(variationIds);
 
+        // Which Square order discounts the salon "absorbs" into the provider's commission basis —
+        // false (the default) covers every discount, same as always. See SalonConfig's own doc.
+        com.salonreview.domain.SalonConfig sc = salonConfig.findByBusinessId(businessId).orElse(null);
+        boolean restrictDiscountCoverage = sc != null && sc.isRestrictDiscountCoverage();
+        java.util.Set<String> coveredDiscountNames = restrictDiscountCoverage
+                ? sc.coveredDiscountNameSubstrings() : java.util.Set.of();
+
         Map<Key, Acc> accs = new LinkedHashMap<>();
         List<AttributedService> services = new ArrayList<>();
         List<UnmatchedLine> unmatched = new ArrayList<>();
@@ -229,12 +236,22 @@ public class SquareMonthAggregator {
                     diag.matchedLineItems++;
                     Half half = halfOf(seg.day);
                     Acc a = accs.computeIfAbsent(new Key(seg.providerId, half), k -> new Acc());
-                    // Full menu price (gross): the salon absorbs Square discounts, the provider is
-                    // paid on the listed price. Matches the salon's manual "Card" figure. The discount
-                    // and net are kept for the trace view, not the payout.
-                    BigDecimal revenue = lineRevenue(li);
-                    BigDecimal discount = SquareClient.toDollars(li.totalDiscountMoney());
+                    // Full menu price (gross): by default the salon absorbs every Square discount, the
+                    // provider is paid on the listed price, matching the salon's manual "Card" figure.
+                    // When restrictDiscountCoverage is on, only discounts matching coveredDiscountNames
+                    // are absorbed (e.g. a prepaid-deposit discount) — every other discount (ordinary
+                    // promos, coupons) instead reduces the provider's commission basis down to what was
+                    // actually collected (see SalonConfig#restrictDiscountCoverage's own doc).
                     BigDecimal net = SquareClient.toDollars(li.totalMoney());
+                    BigDecimal revenue;
+                    BigDecimal discount;
+                    if (restrictDiscountCoverage) {
+                        discount = coveredDiscountOn(o, li, coveredDiscountNames);
+                        revenue = net.add(discount);
+                    } else {
+                        revenue = lineRevenue(li);
+                        discount = SquareClient.toDollars(li.totalDiscountMoney());
+                    }
                     boolean counted = servicePrice(li, catalogPrice).compareTo(priceCutoff) >= 0;
                     if (cashOrder) {
                         a.cashGross = a.cashGross.add(revenue);   // menu price (commission basis)
@@ -863,6 +880,27 @@ public class SquareMonthAggregator {
     private static BigDecimal lineRevenue(OrderLineItem li) {
         if (li.grossSalesMoney() != null) return SquareClient.toDollars(li.grossSalesMoney());
         return SquareClient.toDollars(li.totalMoney());
+    }
+
+    /** This line item's own share of any order-level discount whose name contains one of {@code
+     * coveredNameSubstrings} (case-insensitive) — only called when restrictDiscountCoverage is on.
+     * Same matching approach PrepaidService used to use for its own now-reverted deposit-credit
+     * logic (see its git history) — generalized here to an owner-configurable name list instead of
+     * a hardcoded "deposit" substring. */
+    private static BigDecimal coveredDiscountOn(Order order, OrderLineItem lineItem, java.util.Set<String> coveredNameSubstrings) {
+        if (lineItem.appliedDiscounts() == null || order.discounts() == null || coveredNameSubstrings.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        java.util.Set<String> coveredUids = order.discounts().stream()
+                .filter(d -> d.name() != null && coveredNameSubstrings.stream()
+                        .anyMatch(n -> d.name().toLowerCase(java.util.Locale.ROOT).contains(n)))
+                .map(SquareClient.OrderDiscount::uid)
+                .collect(java.util.stream.Collectors.toSet());
+        if (coveredUids.isEmpty()) return BigDecimal.ZERO;
+        return lineItem.appliedDiscounts().stream()
+                .filter(ad -> coveredUids.contains(ad.discountUid()))
+                .map(ad -> SquareClient.toDollars(ad.appliedMoney()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     // --- internal mutable accumulators ---
