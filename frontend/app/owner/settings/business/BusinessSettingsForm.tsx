@@ -28,6 +28,8 @@ export default function BusinessSettingsForm({ initialSettings }: { initialSetti
   const [noShowFeeAmount, setNoShowFeeAmount] = useState(
     settings.noShowFeeAmount === null ? '' : String(settings.noShowFeeAmount),
   );
+  const [restrictDiscountCoverage, setRestrictDiscountCoverage] = useState(settings.restrictDiscountCoverage);
+  const [coveredDiscountNames, setCoveredDiscountNames] = useState(settings.coveredDiscountNames ?? '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
@@ -48,6 +50,8 @@ export default function BusinessSettingsForm({ initialSettings }: { initialSetti
         servicePriceCutoff: servicePriceCutoff === '' ? undefined : Number(servicePriceCutoff),
         cardTipFeeRate: cardTipFeePct === '' ? undefined : Number(cardTipFeePct) / 100,
         noShowFeeAmount: noShowFeeAmount === '' ? undefined : Number(noShowFeeAmount),
+        restrictDiscountCoverage,
+        coveredDiscountNames: restrictDiscountCoverage ? (coveredDiscountNames || undefined) : undefined,
       });
       setSettings(updated);
       setSaved(true);
@@ -174,6 +178,37 @@ export default function BusinessSettingsForm({ initialSettings }: { initialSetti
           Once set, this can be changed but not cleared back to &ldquo;no program&rdquo; from this form.
         </span>
       </label>
+
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={restrictDiscountCoverage}
+          onChange={(e) => setRestrictDiscountCoverage(e.target.checked)}
+        />
+        <span className="text-zinc-600">Only cover specific discounts (default: cover every discount)</span>
+      </label>
+      <p className="-mt-2 text-xs text-zinc-400">
+        Off (default): providers are paid commission on the full menu price regardless of any Square discount
+        applied — the salon absorbs it. On: only discounts whose name matches the list below are absorbed;
+        every other discount (ordinary promos, coupons) instead reduces the provider&rsquo;s commission basis
+        down to what was actually collected.
+      </p>
+
+      {restrictDiscountCoverage && (
+        <label className="text-sm">
+          <span className="mb-1 block text-zinc-600">Covered discount names (comma-separated, case-insensitive)</span>
+          <input
+            value={coveredDiscountNames}
+            onChange={(e) => setCoveredDiscountNames(e.target.value)}
+            placeholder="e.g. deposit"
+            className="w-full rounded border border-zinc-300 px-2 py-1.5"
+          />
+          <span className="mt-1 block text-xs text-zinc-400">
+            Matched as a substring against each Square discount&rsquo;s own name — e.g. &ldquo;deposit&rdquo;
+            matches a discount named &ldquo;Deposit &rdquo;. Blank means no discount is covered at all.
+          </span>
+        </label>
+      )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 

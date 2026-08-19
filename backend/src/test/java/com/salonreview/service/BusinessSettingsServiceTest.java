@@ -52,15 +52,15 @@ class BusinessSettingsServiceTest {
         when(salonConfig.findByBusinessId(2L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.update(2L, null, null, null,
-                new BigDecimal("0.45"), false, null, null, new BigDecimal("0.035"), null))
+                new BigDecimal("0.45"), false, null, null, new BigDecimal("0.035"), null, null, null))
                 .isInstanceOf(ResponseStatusException.class).hasMessageContaining("ownerShortName");
 
         assertThatThrownBy(() -> service.update(2L, null, null, "AK",
-                null, false, null, null, new BigDecimal("0.035"), null))
+                null, false, null, null, new BigDecimal("0.035"), null, null, null))
                 .isInstanceOf(ResponseStatusException.class).hasMessageContaining("baseCommissionRate");
 
         assertThatThrownBy(() -> service.update(2L, null, null, "AK",
-                new BigDecimal("0.45"), false, null, null, null, null))
+                new BigDecimal("0.45"), false, null, null, null, null, null, null))
                 .isInstanceOf(ResponseStatusException.class).hasMessageContaining("cardTipFeeRate");
 
         verify(salonConfig, never()).save(any());
@@ -73,7 +73,7 @@ class BusinessSettingsServiceTest {
         when(salonConfig.findByBusinessId(2L)).thenReturn(Optional.empty());
 
         BusinessSettingsService.View view = service.update(2L, "AK PMU", "America/Los_Angeles", "AK",
-                new BigDecimal("0.45"), false, null, null, new BigDecimal("0.035"), null);
+                new BigDecimal("0.45"), false, null, null, new BigDecimal("0.035"), null, null, null);
 
         assertThat(view.config().isTierEnabled()).isFalse();
         assertThat(view.config().getTierServiceThreshold()).isEqualTo(0);
@@ -90,7 +90,7 @@ class BusinessSettingsServiceTest {
         when(salonConfig.findByBusinessId(2L)).thenReturn(Optional.empty());
 
         BusinessSettingsService.View view = service.update(2L, null, null, "AK",
-                new BigDecimal("0.45"), null, null, null, new BigDecimal("0.035"), null);
+                new BigDecimal("0.45"), null, null, null, new BigDecimal("0.035"), null, null, null);
 
         assertThat(view.config().isTierEnabled()).isFalse();
     }
@@ -107,7 +107,7 @@ class BusinessSettingsServiceTest {
 
         // Only bump the base commission rate — everything else should survive untouched.
         BusinessSettingsService.View view = service.update(1L, null, null, null,
-                new BigDecimal("0.48"), null, null, null, null, null);
+                new BigDecimal("0.48"), null, null, null, null, null, null, null);
 
         assertThat(view.config().getBaseCommissionRate()).isEqualByComparingTo("0.48");
         assertThat(view.config().getOwnerShortName()).isEqualTo("AK");
@@ -124,12 +124,12 @@ class BusinessSettingsServiceTest {
         when(salonConfig.findByBusinessId(2L)).thenReturn(Optional.empty());
 
         BusinessSettingsService.View created = service.update(2L, "AK PMU", "America/Los_Angeles", "AK",
-                new BigDecimal("0.45"), false, null, null, new BigDecimal("0.035"), null);
+                new BigDecimal("0.45"), false, null, null, new BigDecimal("0.035"), null, null, null);
         assertThat(created.config().getNoShowFeeAmount()).isNull();
 
         when(salonConfig.findByBusinessId(2L)).thenReturn(Optional.of(created.config()));
         BusinessSettingsService.View updated = service.update(2L, null, null, null,
-                null, null, null, null, null, new BigDecimal("20.00"));
+                null, null, null, null, null, new BigDecimal("20.00"), null, null);
         assertThat(updated.config().getNoShowFeeAmount()).isEqualByComparingTo("20.00");
     }
 

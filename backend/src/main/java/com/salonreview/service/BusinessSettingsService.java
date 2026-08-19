@@ -45,7 +45,8 @@ public class BusinessSettingsService {
     @Transactional
     public View update(Long businessId, String name, String timezone, String ownerShortName,
                         BigDecimal baseCommissionRate, Boolean tierEnabled, Integer tierServiceThreshold,
-                        BigDecimal servicePriceCutoff, BigDecimal cardTipFeeRate, BigDecimal noShowFeeAmount) {
+                        BigDecimal servicePriceCutoff, BigDecimal cardTipFeeRate, BigDecimal noShowFeeAmount,
+                        Boolean restrictDiscountCoverage, String coveredDiscountNames) {
         Business business = requireBusiness(businessId);
         if (name != null && !name.isBlank()) business.setName(name.trim());
         if (timezone != null && !timezone.isBlank()) business.setTimezone(timezone.trim());
@@ -85,8 +86,17 @@ public class BusinessSettingsService {
         // no-show fee program until the owner explicitly configures one.
         if (noShowFeeAmount != null) config.setNoShowFeeAmount(noShowFeeAmount);
 
+        // Both default to "off" (false/null) on creation, same as the entity's own DB default — no
+        // explicit branch needed there, unlike the NOT NULL money fields above.
+        if (restrictDiscountCoverage != null) config.setRestrictDiscountCoverage(restrictDiscountCoverage);
+        if (coveredDiscountNames != null) config.setCoveredDiscountNames(blankToNull(coveredDiscountNames));
+
         salonConfig.save(config);
         return new View(business, config);
+    }
+
+    private static String blankToNull(String s) {
+        return s.isBlank() ? null : s.trim();
     }
 
     private Business requireBusiness(Long businessId) {
