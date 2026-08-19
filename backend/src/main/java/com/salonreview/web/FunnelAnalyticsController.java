@@ -27,9 +27,10 @@ public class FunnelAnalyticsController {
      * inclusive) are the shared marketing period filter (see MarketingDashboardController's own
      * from/to) — omitted means "All" (no additional bound beyond the page's permanent stats-since
      * cutoff). Resolved against the salon's own business timezone (not UTC) inside the service —
-     * see FunnelAnalyticsService#resolveZone. */
+     * see FunnelAnalyticsService#resolveZone. slug omitted resolves to the caller's own business's
+     * first landing page — previously hardcoded to "mani" regardless of caller. */
     @GetMapping("/marketing/funnel")
-    public List<FunnelDashboardDto> funnel(@RequestParam(defaultValue = "mani") String slug,
+    public List<FunnelDashboardDto> funnel(@RequestParam(required = false) String slug,
                                             @RequestParam(required = false) String sources,
                                             @RequestParam(required = false) String from,
                                             @RequestParam(required = false) String to) {

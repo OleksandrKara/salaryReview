@@ -68,7 +68,7 @@ class MarketingDashboardServiceTest {
     @Test
     @DisplayName("computes conversion rate from page views and distinct converted customers")
     void computesConversionRate() {
-        when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(repository.findLandingPageId("mani", 1L)).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
                 new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 40, 60, "control", "Baseline, no changes")
         ));
@@ -101,7 +101,7 @@ class MarketingDashboardServiceTest {
     @Test
     @DisplayName("a returning customer's repeat tracked-flow booking on this page doesn't count as a second conversion")
     void repeatCustomerBookingDoesNotInflateConversions() {
-        when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(repository.findLandingPageId("mani", 1L)).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
                 new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 0, 0, "control", null)
         ));
@@ -121,7 +121,7 @@ class MarketingDashboardServiceTest {
     @Test
     @DisplayName("a booking whose customer can't be resolved counts on its own rather than being silently dropped")
     void unresolvableCustomerBookingStillCountsAsConversion() {
-        when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(repository.findLandingPageId("mani", 1L)).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
                 new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 0, 0, "control", null)
         ));
@@ -138,7 +138,7 @@ class MarketingDashboardServiceTest {
     @Test
     @DisplayName("adjusted conversion rate folds in manager follow-up bookings found via Square, on top of the tracked count")
     void adjustedConversionRateIncludesFollowUpBookings() {
-        when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(repository.findLandingPageId("mani", 1L)).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
                 new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 40, 60, "control", null)
         ));
@@ -170,7 +170,7 @@ class MarketingDashboardServiceTest {
     @DisplayName("passes the stored stats_since cutoff through to the stats query and the DTO")
     void statsSinceCutoffIsAppliedAndExposed() {
         Instant cutoff = Instant.parse("2026-07-10T09:00:00Z");
-        when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(repository.findLandingPageId("mani", 1L)).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findStatsSince(LANDING_PAGE_ID)).thenReturn(Optional.of(cutoff));
         when(repository.findVariantStats(LANDING_PAGE_ID, "mani", cutoff, null, TrafficSourceSql.ADS_ONLY)).thenReturn(List.of());
 
@@ -183,7 +183,7 @@ class MarketingDashboardServiceTest {
     @Test
     @DisplayName("deep link is null when the variant has no key yet")
     void deepLinkIsNullWithoutKey() {
-        when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(repository.findLandingPageId("mani", 1L)).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
                 new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 100, 40, 60, null, null)
         ));
@@ -196,7 +196,7 @@ class MarketingDashboardServiceTest {
     @Test
     @DisplayName("conversion rate is zero, not a division error, when there are no page views yet")
     void zeroPageViewsYieldsZeroConversionRate() {
-        when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(repository.findLandingPageId("mani", 1L)).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(repository.findVariantStats(eq(LANDING_PAGE_ID), eq("mani"), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
                 new RawVariantStat(VARIANT_ID.toString(), "Control", 20, 0, 0, 0, "control", null)
         ));
@@ -209,7 +209,7 @@ class MarketingDashboardServiceTest {
     @Test
     @DisplayName("returns the unavailable DTO, not a thrown exception, when the marketing schema is unreachable")
     void unavailableWhenRepositoryThrows() {
-        when(repository.findLandingPageId("mani")).thenThrow(new DataAccessResourceFailureException("relation \"marketing.landing_pages\" does not exist"));
+        when(repository.findLandingPageId("mani", 1L)).thenThrow(new DataAccessResourceFailureException("relation \"marketing.landing_pages\" does not exist"));
 
         MarketingDashboardDto dashboard = service.dashboard("mani", TrafficSourceSql.ADS_ONLY, null, null);
 
@@ -220,7 +220,7 @@ class MarketingDashboardServiceTest {
     @Test
     @DisplayName("returns the unavailable DTO when the requested slug has no landing page")
     void unavailableWhenSlugNotFound() {
-        when(repository.findLandingPageId("unknown-slug")).thenReturn(Optional.empty());
+        when(repository.findLandingPageId("unknown-slug", 1L)).thenReturn(Optional.empty());
 
         MarketingDashboardDto dashboard = service.dashboard("unknown-slug", TrafficSourceSql.ADS_ONLY, null, null);
 
@@ -231,9 +231,11 @@ class MarketingDashboardServiceTest {
     @Test
     @DisplayName("rename regenerates the deep-link key from the new name")
     void renameRegeneratesKey() {
+        when(repository.renameVariant(VARIANT_ID, "Winter Gold!", "winter-gold", 1L)).thenReturn(1);
+
         service.renameVariant(VARIANT_ID, "Winter Gold!");
 
-        verify(repository).renameVariant(VARIANT_ID, "Winter Gold!", "winter-gold");
+        verify(repository).renameVariant(VARIANT_ID, "Winter Gold!", "winter-gold", 1L);
     }
 
     @Test
@@ -247,7 +249,7 @@ class MarketingDashboardServiceTest {
     @Test
     @DisplayName("delete surfaces a friendly conflict instead of a raw DB error when the variant has recorded activity")
     void deleteBlockedByRecordedActivity() {
-        doThrow(new DataIntegrityViolationException("fk violation")).when(repository).deleteVariant(VARIANT_ID);
+        doThrow(new DataIntegrityViolationException("fk violation")).when(repository).deleteVariant(VARIANT_ID, 1L);
 
         assertThatThrownBy(() -> service.deleteVariant(VARIANT_ID))
                 .isInstanceOf(ResponseStatusException.class)
@@ -257,16 +259,18 @@ class MarketingDashboardServiceTest {
     @Test
     @DisplayName("delete succeeds silently when the variant has no recorded activity")
     void deleteSucceedsWithoutActivity() {
+        when(repository.deleteVariant(VARIANT_ID, 1L)).thenReturn(1);
+
         service.deleteVariant(VARIANT_ID);
 
-        verify(repository).deleteVariant(VARIANT_ID);
+        verify(repository).deleteVariant(VARIANT_ID, 1L);
     }
 
     @Test
     @DisplayName("rename surfaces a friendly conflict, not a raw 500, when the generated key collides")
     void renameBlockedByKeyCollision() {
         doThrow(new DataIntegrityViolationException("unique violation"))
-                .when(repository).renameVariant(eq(VARIANT_ID), any(), any());
+                .when(repository).renameVariant(eq(VARIANT_ID), any(), any(), eq(1L));
 
         assertThatThrownBy(() -> service.renameVariant(VARIANT_ID, "Control"))
                 .isInstanceOf(ResponseStatusException.class)
@@ -278,9 +282,9 @@ class MarketingDashboardServiceTest {
             "(e.g. duplicating the same variant twice in a row with the same default name)")
     void duplicateBlockedByKeyCollision() {
         VariantSource source = new VariantSource(LANDING_PAGE_ID, 0, "{}", null);
-        when(repository.findVariantSource(VARIANT_ID)).thenReturn(Optional.of(source));
+        when(repository.findVariantSource(VARIANT_ID, 1L)).thenReturn(Optional.of(source));
         doThrow(new DataIntegrityViolationException("unique violation"))
-                .when(repository).duplicateVariant(eq(source), any(), any());
+                .when(repository).duplicateVariant(eq(source), any(), any(), eq(1L));
 
         assertThatThrownBy(() -> service.duplicateVariant(VARIANT_ID, "Control (copy)"))
                 .isInstanceOf(ResponseStatusException.class)
@@ -292,8 +296,8 @@ class MarketingDashboardServiceTest {
     void duplicateCopiesSourceAndGeneratesKey() {
         VariantSource source = new VariantSource(LANDING_PAGE_ID, 0, "{\"ctaText\":\"Hi\"}", "Testing a friendlier CTA");
         UUID newId = UUID.randomUUID();
-        when(repository.findVariantSource(VARIANT_ID)).thenReturn(Optional.of(source));
-        when(repository.duplicateVariant(source, "Holiday Gold (copy)", "holiday-gold-copy")).thenReturn(newId);
+        when(repository.findVariantSource(VARIANT_ID, 1L)).thenReturn(Optional.of(source));
+        when(repository.duplicateVariant(source, "Holiday Gold (copy)", "holiday-gold-copy", 1L)).thenReturn(newId);
 
         UUID result = service.duplicateVariant(VARIANT_ID, "Holiday Gold (copy)");
 
@@ -303,23 +307,27 @@ class MarketingDashboardServiceTest {
     @Test
     @DisplayName("description is trimmed before being stored")
     void descriptionIsTrimmed() {
+        when(repository.updateVariantDescription(VARIANT_ID, "Testing a bolder headline", 1L)).thenReturn(1);
+
         service.updateVariantDescription(VARIANT_ID, "  Testing a bolder headline  ");
 
-        verify(repository).updateVariantDescription(VARIANT_ID, "Testing a bolder headline");
+        verify(repository).updateVariantDescription(VARIANT_ID, "Testing a bolder headline", 1L);
     }
 
     @Test
     @DisplayName("a blank description clears it to null rather than storing whitespace")
     void blankDescriptionClearsToNull() {
+        when(repository.updateVariantDescription(VARIANT_ID, null, 1L)).thenReturn(1);
+
         service.updateVariantDescription(VARIANT_ID, "   ");
 
-        verify(repository).updateVariantDescription(VARIANT_ID, null);
+        verify(repository).updateVariantDescription(VARIANT_ID, null, 1L);
     }
 
     @Test
     @DisplayName("duplicate 404s when the source variant doesn't exist")
     void duplicateNotFoundWhenSourceMissing() {
-        when(repository.findVariantSource(VARIANT_ID)).thenReturn(Optional.empty());
+        when(repository.findVariantSource(VARIANT_ID, 1L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.duplicateVariant(VARIANT_ID, "Copy"))
                 .isInstanceOf(ResponseStatusException.class)
@@ -330,7 +338,7 @@ class MarketingDashboardServiceTest {
     @DisplayName("updateStatsSince resolves the slug to a landing page id before writing")
     void updateStatsSinceResolvesSlug() {
         Instant cutoff = Instant.parse("2026-07-10T09:00:00Z");
-        when(repository.findLandingPageId("mani")).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(repository.findLandingPageId("mani", 1L)).thenReturn(Optional.of(LANDING_PAGE_ID));
 
         service.updateStatsSince("mani", cutoff);
 

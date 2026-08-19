@@ -66,6 +66,7 @@ class CrossTenantIsolationTest {
     @Autowired private SmsMessageRepository smsMessages;
     @Autowired private SmsReplyFlowRepository smsReplyFlows;
     @Autowired private SameDayRebookingSendRepository sameDayRebookingSends;
+    @Autowired private AdSpendEntryRepository adSpendEntries;
 
     private Long businessAId;
     private Long businessBId;
@@ -819,5 +820,50 @@ class CrossTenantIsolationTest {
         assertIds(sameDayRebookingSends.findByBusinessIdAndStateAndSendDueAtBefore(
                         businessBId, SameDayRebookingSend.STATE_AWAITING_SEND, now),
                 sendB.getId(), sendA.getId());
+    }
+
+    /**
+     * 2026-08-19 cross-tenant fix (V113): ad_spend_entries had no business_id column at all until
+     * this migration, so MarketingAdsReportController's GET/PUT/DELETE /spend endpoints operated
+     * on every business's entries — a business could read, edit, or delete another business's ad
+     * spend by guessing a sequential id. Same shared-slug-across-businesses shape as
+     * suspiciousBookingClearanceCrossTenantFix above: both businesses log spend under the literal
+     * slug "mani" (a plain trusted string, not a business-scoped FK — see AdSpendEntry's own doc),
+     * and only business_id keeps them apart.
+     */
+    @Test
+    @DisplayName("2026-08-19: AdSpendEntryRepository — business-scoped lookup/update/delete, "
+            + "same landing_page_slug string reused across businesses")
+    void adSpendEntryCrossTenantFix() {
+        LocalDate periodStart = LocalDate.of(2026, 8, 1);
+        LocalDate periodEnd = LocalDate.of(2026, 8, 7);
+        AdSpendEntry entryA = adSpendEntries.save(AdSpendEntry.builder()
+                .businessId(businessAId).landingPageSlug("mani")
+                .periodStart(periodStart).periodEnd(periodEnd)
+                .amountSpent(new BigDecimal("100.00")).enteredBy("owner-a").build());
+        AdSpendEntry entryB = adSpendEntries.save(AdSpendEntry.builder()
+                .businessId(businessBId).landingPageSlug("mani")
+                .periodStart(periodStart).periodEnd(periodEnd)
+                .amountSpent(new BigDecimal("200.00")).enteredBy("owner-b").build());
+
+        assertIds(adSpendEntries.findOverlapping("mani", periodStart, periodEnd, businessAId),
+                entryA.getId(), entryB.getId());
+        assertIds(adSpendEntries.findOverlapping("mani", periodStart, periodEnd, businessBId),
+                entryB.getId(), entryA.getId());
+        assertIds(adSpendEntries.findByLandingPageSlugAndBusinessIdOrderByPeriodStartDesc("mani", businessAId),
+                entryA.getId(), entryB.getId());
+
+        assertThat(adSpendEntries.findByIdAndBusinessId(entryA.getId(), businessAId)).isPresent();
+        assertThat(adSpendEntries.findByIdAndBusinessId(entryA.getId(), businessBId)).isEmpty();
+        assertThat(adSpendEntries.existsByIdAndBusinessId(entryA.getId(), businessBId)).isFalse();
+
+        // Business B can't delete business A's entry by guessing its id.
+        adSpendEntries.deleteByIdAndBusinessId(entryA.getId(), businessBId);
+        assertThat(adSpendEntries.findByIdAndBusinessId(entryA.getId(), businessAId)).isPresent();
+
+        adSpendEntries.deleteByIdAndBusinessId(entryA.getId(), businessAId);
+        assertThat(adSpendEntries.findByIdAndBusinessId(entryA.getId(), businessAId)).isEmpty();
+        // Business A's delete never touched business B's same-slug entry.
+        assertThat(adSpendEntries.findByIdAndBusinessId(entryB.getId(), businessBId)).isPresent();
     }
 }

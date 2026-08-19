@@ -55,23 +55,47 @@ public class MarketingDashboardRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public Optional<UUID> findLandingPageId(String slug) {
+    /** Scoped to the caller's own business — {@code marketing.landing_pages.business_id} is a
+     * plain trusted integer written by salonLandings on every page it creates (see
+     * openspec/changes/multi-tenant-salon-platform), never a value this app itself sets. A slug
+     * that's real but belongs to a different business resolves to empty, same as a slug that
+     * doesn't exist at all — this is the single choke point every other marketing query resolves
+     * a landing_page_id through, so scoping it here is what stops a wrong/guessed slug from ever
+     * reaching another business's data.
+     */
+    public Optional<UUID> findLandingPageId(String slug, Long businessId) {
         List<UUID> ids = jdbcTemplate.query(
-                "SELECT id FROM marketing.landing_pages WHERE slug = ?",
+                "SELECT id FROM marketing.landing_pages WHERE slug = ? AND business_id = ?",
                 (rs, rowNum) -> (UUID) rs.getObject("id"),
-                slug);
+                slug, businessId);
         return ids.stream().findFirst();
+    }
+
+    /** This business's own oldest landing page — the fallback used when the owner dashboard's
+     * slug param is omitted, replacing the old hardcoded "mani" default (which silently showed
+     * business 1's page to every business regardless of who was actually asking). Reproduces
+     * today's default for business 1 (mani was created first) while giving every other business
+     * its own first page automatically, with no frontend change required.
+     */
+    public Optional<String> findDefaultSlugForBusiness(Long businessId) {
+        List<String> slugs = jdbcTemplate.query(
+                "SELECT slug FROM marketing.landing_pages WHERE business_id = ? ORDER BY created_at ASC LIMIT 1",
+                (rs, rowNum) -> rs.getString("slug"),
+                businessId);
+        return slugs.stream().findFirst();
     }
 
     public record LandingPageSummary(String slug, String name) {}
 
-    /** Every landing page this schema knows about, oldest first — feeds the owner dashboard's
+    /** Every landing page belonging to this business, oldest first — feeds the owner dashboard's
      * page selector so a newly-added page (see akluxnails-home) shows up with no frontend change.
+     * Scoped by business_id so one business's page selector never lists another's pages.
      */
-    public List<LandingPageSummary> listLandingPages() {
+    public List<LandingPageSummary> listLandingPages(Long businessId) {
         return jdbcTemplate.query(
-                "SELECT slug, name FROM marketing.landing_pages ORDER BY created_at ASC",
-                (rs, rowNum) -> new LandingPageSummary(rs.getString("slug"), rs.getString("name")));
+                "SELECT slug, name FROM marketing.landing_pages WHERE business_id = ? ORDER BY created_at ASC",
+                (rs, rowNum) -> new LandingPageSummary(rs.getString("slug"), rs.getString("name")),
+                businessId);
     }
 
     public Optional<Instant> findStatsSince(UUID landingPageId) {
@@ -237,54 +261,65 @@ public class MarketingDashboardRepository {
         return new java.util.HashSet<>(ids);
     }
 
-    public Optional<UUID> findVariantLandingPageId(UUID variantId) {
+    public Optional<UUID> findVariantLandingPageId(UUID variantId, Long businessId) {
         List<UUID> ids = jdbcTemplate.query(
-                "SELECT landing_page_id FROM marketing.landing_variants WHERE id = ?",
+                "SELECT landing_page_id FROM marketing.landing_variants WHERE id = ? AND business_id = ?",
                 (rs, rowNum) -> (UUID) rs.getObject("landing_page_id"),
-                variantId);
+                variantId, businessId);
         return ids.stream().findFirst();
     }
 
-    public void renameVariant(UUID variantId, String newName, String newKey) {
-        jdbcTemplate.update(
-                "UPDATE marketing.landing_variants SET name = ?, key = ? WHERE id = ?",
-                newName, newKey, variantId);
+    /** Returns the number of rows actually updated — 0 (not an error) when the variant exists but
+     * belongs to a different business, same "found nothing" signal the service layer already
+     * translates into a 404 for a variant that doesn't exist at all. This is what stops one
+     * business's owner from renaming another's variant by guessing/observing its UUID (previously
+     * possible — see the tier-grant/manual-adjustment/redo write-path fix, PR #410, for the same
+     * bare-id-with-no-ownership-check bug class).
+     */
+    public int renameVariant(UUID variantId, String newName, String newKey, Long businessId) {
+        return jdbcTemplate.update(
+                "UPDATE marketing.landing_variants SET name = ?, key = ? WHERE id = ? AND business_id = ?",
+                newName, newKey, variantId, businessId);
     }
 
-    public void updateVariantDescription(UUID variantId, String description) {
-        jdbcTemplate.update("UPDATE marketing.landing_variants SET description = ? WHERE id = ?", description, variantId);
+    public int updateVariantDescription(UUID variantId, String description, Long businessId) {
+        return jdbcTemplate.update(
+                "UPDATE marketing.landing_variants SET description = ? WHERE id = ? AND business_id = ?",
+                description, variantId, businessId);
     }
 
     /** Throws org.springframework.dao.DataIntegrityViolationException if the variant has
      * recorded events/attribution — the service layer translates that into a friendly error.
+     * Returns the number of rows actually deleted — see {@link #renameVariant}'s own doc for why
+     * a business-mismatch is 0 rows, not an exception.
      */
-    public void deleteVariant(UUID variantId) {
-        jdbcTemplate.update("DELETE FROM marketing.landing_variants WHERE id = ?", variantId);
+    public int deleteVariant(UUID variantId, Long businessId) {
+        return jdbcTemplate.update("DELETE FROM marketing.landing_variants WHERE id = ? AND business_id = ?", variantId, businessId);
     }
 
-    public Optional<VariantSource> findVariantSource(UUID variantId) {
+    public Optional<VariantSource> findVariantSource(UUID variantId, Long businessId) {
         List<VariantSource> rows = jdbcTemplate.query(
-                "SELECT landing_page_id, weight, content, description FROM marketing.landing_variants WHERE id = ?",
+                "SELECT landing_page_id, weight, content, description FROM marketing.landing_variants WHERE id = ? AND business_id = ?",
                 (rs, rowNum) -> new VariantSource(
                         (UUID) rs.getObject("landing_page_id"),
                         rs.getInt("weight"),
                         rs.getString("content"),
                         rs.getString("description")),
-                variantId);
+                variantId, businessId);
         return rows.stream().findFirst();
     }
 
     public record VariantSource(UUID landingPageId, int weight, String contentJson, String description) {}
 
-    public UUID duplicateVariant(VariantSource source, String newName, String newKey) {
+    public UUID duplicateVariant(VariantSource source, String newName, String newKey, Long businessId) {
         List<UUID> ids = jdbcTemplate.query(
                 """
-                INSERT INTO marketing.landing_variants (landing_page_id, name, weight, content, active, key, description)
-                VALUES (?, ?, ?, ?::jsonb, true, ?, ?)
+                INSERT INTO marketing.landing_variants (landing_page_id, name, weight, content, active, key, description, business_id)
+                VALUES (?, ?, ?, ?::jsonb, true, ?, ?, ?)
                 RETURNING id
                 """,
                 (rs, rowNum) -> (UUID) rs.getObject("id"),
-                source.landingPageId(), newName, source.weight(), source.contentJson(), newKey, source.description());
+                source.landingPageId(), newName, source.weight(), source.contentJson(), newKey, source.description(), businessId);
         return ids.get(0);
     }
 }

@@ -26,6 +26,9 @@ public class AdSpendEntry {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "business_id", nullable = false)
+    private Long businessId;
+
     @Column(name = "landing_page_slug", nullable = false)
     private String landingPageSlug;
 

@@ -113,7 +113,7 @@ class MarketingContactsServiceTest {
     @DisplayName("a contact's review-link engagement (sent/clicked for both Google review and feedback form) is surfaced on the Contact DTO")
     void contactSurfacesReviewLinkEngagement() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of());
         Instant googleSent = Instant.parse("2026-07-20T10:00:00Z");
         Instant googleClicked = Instant.parse("2026-07-20T10:05:00Z");
@@ -134,7 +134,7 @@ class MarketingContactsServiceTest {
     @DisplayName("a contact with a known Square customer gets a profile link")
     void contactWithSquareCustomerHasProfileLink() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of());
 
         MarketingContactDto dto = service.contacts();
@@ -160,7 +160,7 @@ class MarketingContactsServiceTest {
     void vipFlagReflectsDistinctDayVisitCount() {
         UUID vipId = UUID.randomUUID();
         UUID regularId = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(vipId, "SQCUST_VIP"), rawContact(regularId, "SQCUST_REGULAR")));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(vipId, "SQCUST_VIP"), rawContact(regularId, "SQCUST_REGULAR")));
         when(square.bookingsForCustomer(any(), any())).thenReturn(List.of());
         when(providerVisits.findAllByBusinessIdOrderByServiceDateAsc(1L)).thenReturn(List.of(
                 visit("SQCUST_VIP", java.time.LocalDate.parse("2026-01-05")),
@@ -188,7 +188,7 @@ class MarketingContactsServiceTest {
     @DisplayName("two providers seeing a customer on the same day counts as one visit, not two")
     void sameDayTwoProvidersCountsAsOneVisit() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST_SAMEDAY")));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST_SAMEDAY")));
         when(square.bookingsForCustomer(any(), any())).thenReturn(List.of());
         when(providerVisits.findAllByBusinessIdOrderByServiceDateAsc(1L)).thenReturn(List.of(
                 visit("SQCUST_SAMEDAY", java.time.LocalDate.parse("2026-05-01")),
@@ -213,7 +213,7 @@ class MarketingContactsServiceTest {
     @DisplayName("a lead with no known Square customer has no profile link and an empty appointments list")
     void leadWithoutSquareCustomerHasNoLinkOrAppointments() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, null)));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, null)));
 
         MarketingContactDto dto = service.contacts();
 
@@ -225,7 +225,7 @@ class MarketingContactsServiceTest {
     @Test
     @DisplayName("returns the unavailable DTO, not a thrown exception, when the marketing schema is unreachable")
     void unavailableWhenRepositoryThrows() {
-        when(repository.listAll()).thenThrow(new DataAccessResourceFailureException("relation \"marketing.contacts\" does not exist"));
+        when(repository.listAllForBusiness(1L)).thenThrow(new DataAccessResourceFailureException("relation \"marketing.contacts\" does not exist"));
 
         MarketingContactDto dto = service.contacts();
 
@@ -310,7 +310,7 @@ class MarketingContactsServiceTest {
     @DisplayName("submissions come from our own DB regardless of whether a Square customer is known")
     void submissionsAlwaysPopulated() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, null)));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, null)));
         when(repository.findSubmissionHistory("(858) 555-0100")).thenReturn(List.of(
                 new RawSubmission("step1", Instant.parse("2026-07-01T00:00:00Z"), "mani", "Version_1",
                         "google / cpc / promo", "google", "cpc", "promo", null, null)
@@ -330,7 +330,7 @@ class MarketingContactsServiceTest {
             + "see enrichContacts for where that logic moved")
     void bulkContactsNoLongerEagerlyResolvesAppointments() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
 
         MarketingContactDto dto = service.contacts();
 
@@ -345,7 +345,7 @@ class MarketingContactsServiceTest {
     @DisplayName("appointments resolve Square bookings into service name, price, and provider name")
     void appointmentsResolveFromSquare() {
         UUID id = UUID.randomUUID();
-        when(repository.findByIds(List.of(id))).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.findByIds(List.of(id), 1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
 
         Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2026-07-31T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null,
@@ -373,7 +373,7 @@ class MarketingContactsServiceTest {
     @DisplayName("an appointment that came through our own funnel is enriched with its originating submission's traffic/device info")
     void appointmentEnrichedWithOriginatingSubmission() {
         UUID id = UUID.randomUUID();
-        when(repository.findByIds(List.of(id))).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.findByIds(List.of(id), 1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
 
         Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2026-07-31T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null,
@@ -400,7 +400,7 @@ class MarketingContactsServiceTest {
     @Test
     @DisplayName("contactByPhone falls back to a live Square phone lookup when there's no marketing.contacts row at all")
     void contactByPhoneFallsBackToLivePhoneLookupWhenNoTrackedRow() {
-        when(repository.findByPhoneNumber("(863) 660-3063")).thenReturn(Optional.empty());
+        when(repository.findByPhoneNumber("(863) 660-3063", 1L)).thenReturn(Optional.empty());
         when(square.customerIdsForPhone("(863) 660-3063")).thenReturn(List.of("SQCUST999"));
         when(square.customerGivenNames(List.of("SQCUST999"))).thenReturn(Map.of("SQCUST999", "Lily"));
         when(square.customerFamilyNames(List.of("SQCUST999"))).thenReturn(Map.of("SQCUST999", "Frei"));
@@ -430,7 +430,7 @@ class MarketingContactsServiceTest {
     @Test
     @DisplayName("contactByPhone stays empty when neither marketing.contacts nor a live Square lookup resolves anything")
     void contactByPhoneEmptyWhenNothingResolves() {
-        when(repository.findByPhoneNumber("(555) 000-0000")).thenReturn(Optional.empty());
+        when(repository.findByPhoneNumber("(555) 000-0000", 1L)).thenReturn(Optional.empty());
         when(square.customerIdsForPhone("(555) 000-0000")).thenReturn(List.of());
 
         Optional<Contact> result = service.contactByPhone("(555) 000-0000");
@@ -447,7 +447,7 @@ class MarketingContactsServiceTest {
     @DisplayName("a past appointment shows the real collected amount and channel when a matching payroll line is found")
     void appointmentShowsRealCollectedPayment() {
         UUID id = UUID.randomUUID();
-        when(repository.findByIds(List.of(id))).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.findByIds(List.of(id), 1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2020-06-15T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(booking));
@@ -468,7 +468,7 @@ class MarketingContactsServiceTest {
     @DisplayName("a past appointment with no matching payroll line shows no payment info, without throwing")
     void appointmentWithNoMatchingPaymentShowsNull() {
         UUID id = UUID.randomUUID();
-        when(repository.findByIds(List.of(id))).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.findByIds(List.of(id), 1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2020-06-15T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(booking));
@@ -486,7 +486,7 @@ class MarketingContactsServiceTest {
     @DisplayName("an upcoming appointment never triggers a payroll lookup")
     void upcomingAppointmentSkipsPaymentLookup() {
         UUID id = UUID.randomUUID();
-        when(repository.findByIds(List.of(id))).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.findByIds(List.of(id), 1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking future = new Booking("SQBOOK1", "ACCEPTED", "2099-01-01T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(future));
@@ -503,7 +503,7 @@ class MarketingContactsServiceTest {
     @DisplayName("yields an empty appointments list, not a thrown exception, when Square is unreachable")
     void toleratesSquareFailure() {
         UUID id = UUID.randomUUID();
-        when(repository.findByIds(List.of(id))).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.findByIds(List.of(id), 1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenThrow(new RuntimeException("Square unreachable"));
 
         Map<String, MarketingContactsService.ContactEnrichment> result =
@@ -516,7 +516,7 @@ class MarketingContactsServiceTest {
     @DisplayName("a lead with no stored Square id, but a previously-cached phone link, shows appointments through it")
     void usesCachedLinkAsFallback() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, null)));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, null)));
         when(squareLinks.findByPhoneNumber("(858) 555-0100")).thenReturn(Optional.of(
                 MarketingContactSquareLink.builder().phoneNumber("(858) 555-0100").squareCustomerId("SQCUST999")
                         .lastSyncedAt(Instant.now()).build()));
@@ -532,7 +532,7 @@ class MarketingContactsServiceTest {
     @DisplayName("sync resolves an unlinked lead's Square customer by phone and caches it")
     void syncResolvesUnlinkedLeadByPhone() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, null)));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, null)));
         when(square.customerIdsForPhone("(858) 555-0100")).thenReturn(List.of("SQCUST777"));
         when(square.bookingsForCustomer(eq("SQCUST777"), any())).thenReturn(List.of());
 
@@ -551,7 +551,7 @@ class MarketingContactsServiceTest {
     void syncSkipsAlreadyLinkedContacts() {
         UUID linkedId = UUID.randomUUID();
         UUID cachedId = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(
                 rawContact(linkedId, "SQCUST_STORED"),
                 new RawContact(cachedId, "(858) 555-0200", "Ann", null,
                         "google_ads", "google_ads", "google_ads", "google", "cpc", "promo",
@@ -576,7 +576,7 @@ class MarketingContactsServiceTest {
             + "must stay trustworthy regardless of whether anything new was actually linked")
     void syncRecordsTimestampEvenWhenNothingNewIsLinked() {
         UUID linkedId = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(linkedId, "SQCUST_STORED")));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(linkedId, "SQCUST_STORED")));
         when(square.bookingsForCustomer(any(), any())).thenReturn(List.of());
         MarketingSyncStatus status = MarketingSyncStatus.builder()
                 .lastSyncedAt(Instant.parse("2020-01-01T00:00:00Z")).build();
@@ -603,7 +603,7 @@ class MarketingContactsServiceTest {
     @DisplayName("counts a contact's real appointment as a follow-up booking when its booking_id isn't in the attributed set")
     void followUpCountsRealAppointmentNotInAttribution() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking accepted = new Booking("NEWBOOK", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
@@ -618,7 +618,7 @@ class MarketingContactsServiceTest {
     void followUpCollapsesDuplicateContactRowsForSameCustomer() {
         UUID id1 = UUID.randomUUID();
         UUID id2 = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id1, "SQCUST123"), rawContact(id2, "SQCUST123")));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id1, "SQCUST123"), rawContact(id2, "SQCUST123")));
         Booking accepted = new Booking("NEWBOOK", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
@@ -632,7 +632,7 @@ class MarketingContactsServiceTest {
     @DisplayName("does not count an already-converted customer's later, unrelated real appointment as a follow-up")
     void followUpExcludesAlreadyConvertedCustomersOtherAppointment() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         // A brand-new booking (never attributed) for a customer who already converted on-page
         // through some other tracked booking — e.g. a normal future rebooking. Since SQCUST123 is
         // in convertedCustomerIds, this must not add a second, spurious follow-up for them.
@@ -651,7 +651,7 @@ class MarketingContactsServiceTest {
     @DisplayName("does not count a booking that's already in the attributed set")
     void followUpSkipsAlreadyAttributedBooking() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking accepted = new Booking("TRACKEDBOOK", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
@@ -665,7 +665,7 @@ class MarketingContactsServiceTest {
     @DisplayName("does not count a cancelled booking as a follow-up conversion")
     void followUpIgnoresCancelledBookings() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking cancelled = new Booking("CANCELLEDBOOK", "CANCELLED_BY_SELLER", "2026-07-07T21:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(cancelled));
@@ -679,7 +679,7 @@ class MarketingContactsServiceTest {
     @DisplayName("a lead resolved only through the cached Sync link (never had a stored square_customer_id) also counts")
     void followUpCountsLeadResolvedThroughSyncLink() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, null)));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, null)));
         when(squareLinks.findByPhoneNumber("(858) 555-0100")).thenReturn(Optional.of(
                 MarketingContactSquareLink.builder().phoneNumber("(858) 555-0100").squareCustomerId("SQCUST999")
                         .lastSyncedAt(Instant.now()).build()));
@@ -697,7 +697,7 @@ class MarketingContactsServiceTest {
     void followUpRespectsSlugAndStatsSinceScope() {
         UUID otherPageId = UUID.randomUUID();
         UUID oldContactId = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(
                 new RawContact(otherPageId, "(858) 555-0300", "Other", null,
                         "google_ads", "google_ads", "google_ads", "google", "cpc", "promo",
                         "home", "Version_1", "mobile", "iOS", "17.5", "Mobile Safari", "17.5",
@@ -722,7 +722,7 @@ class MarketingContactsServiceTest {
     @DisplayName("followUpAppointments excludes an already-converted customer's other real appointment")
     void followUpAppointmentsExcludesAlreadyConvertedCustomer() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking futureRebooking = new Booking("FUTUREBOOK", "ACCEPTED", "2026-08-01T21:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(futureRebooking));
@@ -737,7 +737,7 @@ class MarketingContactsServiceTest {
     @DisplayName("followUpAppointments returns the real appointment record (plus its customer id), not just a count")
     void followUpAppointmentsReturnsFullRecord() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking accepted = new Booking("NEWBOOK", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
@@ -754,7 +754,7 @@ class MarketingContactsServiceTest {
     @DisplayName("followUpAppointments never includes a booking already in the attributed set — no double-counting")
     void followUpAppointmentsExcludesAlreadyAttributed() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking tracked = new Booking("TRACKEDBOOK", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(tracked));
@@ -769,7 +769,7 @@ class MarketingContactsServiceTest {
     @DisplayName("followUpAppointments excludes cancelled bookings")
     void followUpAppointmentsExcludesCancelled() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking cancelled = new Booking("CANCELLEDBOOK", "CANCELLED_BY_SELLER", "2026-07-07T21:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(cancelled));
@@ -795,13 +795,13 @@ class MarketingContactsServiceTest {
         when(salonConfig.findByBusinessId(any())).thenReturn(Optional.of(SalonConfig.builder()
                 .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
         when(providerVisits.findAllByBusinessIdOrderByServiceDateAsc(any())).thenReturn(List.of());
-        when(repository.listAll()).thenReturn(List.of());
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of());
 
         when(ctx.id()).thenReturn(1L);
         twoTenantService.contacts();
         when(ctx.id()).thenReturn(2L);
         twoTenantService.contacts();
-        verify(repository, times(2)).listAll(); // both businesses computed once each, now cached
+        verify(repository, times(2)).listAllForBusiness(org.mockito.ArgumentMatchers.anyLong()); // both businesses computed once each, now cached
 
         when(ctx.id()).thenReturn(1L);
         twoTenantService.invalidateCache(); // only business 1's entry should drop
@@ -810,6 +810,6 @@ class MarketingContactsServiceTest {
         when(ctx.id()).thenReturn(2L);
         twoTenantService.contacts(); // business 2: still cached -> must NOT recompute
 
-        verify(repository, times(3)).listAll();
+        verify(repository, times(3)).listAllForBusiness(org.mockito.ArgumentMatchers.anyLong());
     }
 }

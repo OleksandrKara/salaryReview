@@ -109,37 +109,49 @@ public class MarketingContactsRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public List<RawContact> listAll() {
+    /** Scoped to the caller's own business — marketing.contacts.business_id is a plain trusted
+     * integer written by salonLandings on every capture (see
+     * openspec/changes/multi-tenant-salon-platform); previously this method pooled every
+     * business's contacts together with no filter at all, so any business's owner saw every real
+     * customer's name/phone/email from every other business too.
+     */
+    public List<RawContact> listAllForBusiness(Long businessId) {
         String sql = "SELECT " + CONTACT_COLUMNS + ", " + TrafficSourceSql.contactChannelCase("c") + " AS channel"
-                + " FROM marketing.contacts c ORDER BY c.created_at DESC";
-        return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact);
+                + " FROM marketing.contacts c WHERE c.business_id = ? ORDER BY c.created_at DESC";
+        return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact, businessId);
     }
 
     /** Backs {@code MarketingContactsService#enrichContacts} — the lazy, scroll-triggered
-     * follow-up fetch for just the contact rows actually visible on screen (see #listAll's own
-     * "most Square-call-heavy" note, now only paid for on-demand instead of for the whole list).
-     * Empty input returns an empty list, no query fired. */
-    public List<RawContact> findByIds(Collection<UUID> ids) {
+     * follow-up fetch for just the contact rows actually visible on screen (see #listAllForBusiness's
+     * own "most Square-call-heavy" note, now only paid for on-demand instead of for the whole list).
+     * Empty input returns an empty list, no query fired. Scoped by business_id so a contact id
+     * belonging to another business is simply absent from the result, not an error — same
+     * "belongs to another business -> absent" contract as before, now actually enforced. */
+    public List<RawContact> findByIds(Collection<UUID> ids, Long businessId) {
         if (ids.isEmpty()) return List.of();
         String placeholders = ids.stream().map(id -> "?").collect(Collectors.joining(","));
         String sql = "SELECT " + CONTACT_COLUMNS + ", " + TrafficSourceSql.contactChannelCase("c") + " AS channel"
-                + " FROM marketing.contacts c WHERE c.id IN (" + placeholders + ")";
-        return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact, ids.toArray());
+                + " FROM marketing.contacts c WHERE c.id IN (" + placeholders + ") AND c.business_id = ?";
+        List<Object> params = new java.util.ArrayList<>(ids);
+        params.add(businessId);
+        return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact, params.toArray());
     }
 
     /** contacts is unique on phone_number, so this is at most one row — backs the manager
      * conversation view's contact info panel (see openspec/changes, MessagesView contact
      * sidebar). Empty when this phone number never went through the tracked capture flow (e.g. a
      * checkout-review or lead-follow-up text sent purely from Square/booking data). */
-    public Optional<RawContact> findByPhoneNumber(String phoneNumber) {
+    public Optional<RawContact> findByPhoneNumber(String phoneNumber, Long businessId) {
         // Last-10-digits match, not exact string equality — marketing.contacts is owned by the
         // separate salonLandings service, whose own phone-number format isn't guaranteed to match
         // whatever format the caller happens to be holding (e.g. this app's own E.164-normalized
         // numbers vs. a customer-typed "(310) 779-6334") — see PhoneNumbers' own doc comment.
+        // Scoped by business_id so two different businesses' customers who happen to share a phone
+        // number (e.g. a shared family/work line) never cross-resolve to each other's contact.
         String sql = "SELECT " + CONTACT_COLUMNS + ", " + TrafficSourceSql.contactChannelCase("c") + " AS channel"
                 + " FROM marketing.contacts c"
-                + " WHERE RIGHT(regexp_replace(c.phone_number, '[^0-9]', '', 'g'), 10) = ?";
-        return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact, PhoneNumbers.last10Digits(phoneNumber))
+                + " WHERE RIGHT(regexp_replace(c.phone_number, '[^0-9]', '', 'g'), 10) = ? AND c.business_id = ?";
+        return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact, PhoneNumbers.last10Digits(phoneNumber), businessId)
                 .stream().findFirst();
     }
 
@@ -196,15 +208,18 @@ public class MarketingContactsRepository {
      * confirmed live against a real repeat submission that got exactly one nudge, ever, no matter
      * how many times contact info was resubmitted afterward.
      */
-    public List<RawContact> findPendingFollowUp(Instant olderThan, Instant newerThan) {
+    /** Scoped to one business — previously unscoped, meaning {@code LeadFollowUpScheduler} sent
+     * every business's pending leads a follow-up text branded as (and sent from) whichever one
+     * business it happened to be hardcoded to run as. */
+    public List<RawContact> findPendingFollowUp(Instant olderThan, Instant newerThan, Long businessId) {
         String sql = "SELECT " + CONTACT_COLUMNS + ", " + TrafficSourceSql.contactChannelCase("c") + " AS channel"
                 + " FROM marketing.contacts c"
-                + " WHERE c.updated_at <= ? AND c.updated_at >= ?"
+                + " WHERE c.business_id = ? AND c.updated_at <= ? AND c.updated_at >= ?"
                 + " AND NOT EXISTS (SELECT 1 FROM lead_followup_send lfs"
                 + "     WHERE lfs.contact_id = c.id AND lfs.contact_updated_at >= c.updated_at)"
                 + " ORDER BY c.updated_at ASC";
         return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact,
-                Timestamp.from(olderThan), Timestamp.from(newerThan));
+                businessId, Timestamp.from(olderThan), Timestamp.from(newerThan));
     }
 
     /** One channel-attributed contact — phone_number is the stable match key (contacts is unique on
@@ -224,17 +239,20 @@ public class MarketingContactsRepository {
      * contacts is unique on phone_number, so this is naturally one row per contact — no
      * grouping/aggregation needed.
      */
-    public List<AdsAttributedContact> findAdsAttributedContacts(Set<String> sources) {
-        return findAdsAttributedContacts(sources, null);
+    public List<AdsAttributedContact> findAdsAttributedContacts(Set<String> sources, Long businessId) {
+        return findAdsAttributedContacts(sources, null, businessId);
     }
 
-    /** Same as the one-arg overload, optionally scoped to one landing page (e.g. "home" vs "mani") —
-     * {@code landingPageSlug == null} preserves the original pooled-across-all-pages behavior. */
-    public List<AdsAttributedContact> findAdsAttributedContacts(Set<String> sources, String landingPageSlug) {
+    /** Same as the two-arg overload, optionally scoped to one landing page (e.g. "home" vs "mani") —
+     * {@code landingPageSlug == null} pools every page *within this business*, no longer every
+     * business — {@code businessId} is always required now (previously, pooling was unscoped
+     * across businesses entirely when landingPageSlug was also null). */
+    public List<AdsAttributedContact> findAdsAttributedContacts(Set<String> sources, String landingPageSlug, Long businessId) {
         String sql = "SELECT phone_number, square_customer_id, created_at, " + TrafficSourceSql.contactChannelCase("c") + " AS channel"
                 + " FROM marketing.contacts c WHERE " + TrafficSourceSql.contactInSources("c", sources)
+                + " AND c.business_id = ?"
                 + (landingPageSlug != null ? " AND c.landing_page_slug = ?" : "");
-        Object[] params = landingPageSlug != null ? new Object[]{landingPageSlug} : new Object[0];
+        Object[] params = landingPageSlug != null ? new Object[]{businessId, landingPageSlug} : new Object[]{businessId};
         return jdbcTemplate.query(sql, (rs, rowNum) -> new AdsAttributedContact(
                 rs.getString("phone_number"),
                 rs.getString("square_customer_id"),
@@ -249,11 +267,11 @@ public class MarketingContactsRepository {
      * that isn't a recognized bucket; downstream code in "all traffic" mode never filters on it.
      * {@code landingPageSlug == null} pools every page, same convention as above.
      */
-    public List<AdsAttributedContact> findAllAttributedContacts(String landingPageSlug) {
+    public List<AdsAttributedContact> findAllAttributedContacts(String landingPageSlug, Long businessId) {
         String sql = "SELECT phone_number, square_customer_id, created_at, " + TrafficSourceSql.contactChannelCase("c") + " AS channel"
-                + " FROM marketing.contacts c"
-                + (landingPageSlug != null ? " WHERE c.landing_page_slug = ?" : "");
-        Object[] params = landingPageSlug != null ? new Object[]{landingPageSlug} : new Object[0];
+                + " FROM marketing.contacts c WHERE c.business_id = ?"
+                + (landingPageSlug != null ? " AND c.landing_page_slug = ?" : "");
+        Object[] params = landingPageSlug != null ? new Object[]{businessId, landingPageSlug} : new Object[]{businessId};
         return jdbcTemplate.query(sql, (rs, rowNum) -> new AdsAttributedContact(
                 rs.getString("phone_number"),
                 rs.getString("square_customer_id"),
