@@ -54,7 +54,7 @@ class CustomAmountLineItemTest {
     private static OrderLineItem customAmountLine(String name, String amount) {
         Money m = new Money(new BigDecimal(amount).movePointRight(2).longValueExact(), "USD");
         // catalogObjectId is null — this is exactly what Square sends for a "Custom Amount" charge.
-        return new OrderLineItem("u1", name, "1", null, m, m, m, null);
+        return new OrderLineItem("u1", name, "1", null, m, m, m, null, null);
     }
 
     private static Order orderWith(OrderLineItem... lines) {
@@ -64,7 +64,7 @@ class CustomAmountLineItemTest {
     private static Order orderOn(String closedAt, String createdAt, OrderLineItem... lines) {
         return new Order("o1", "LOC", CUST, "COMPLETED", closedAt, createdAt,
                 List.of(lines), null, null,
-                List.of(new Tender("t1", "CARD", lines[0].totalMoney())), null);
+                List.of(new Tender("t1", "CARD", lines[0].totalMoney())), null, null);
     }
 
     @Test
@@ -107,7 +107,7 @@ class CustomAmountLineItemTest {
         var booking = new Booking("bk1", "ACCEPTED", "2026-07-17T15:00:00Z", null, null, "LOC", CUST, null, null,
                 List.of(new AppointmentSegment(TM, "VAR1", 60)));
         Money g = new Money(10000L, "USD");
-        var normalLine = new OrderLineItem("u2", "Manicure", "1", "VAR1", g, g, g, null);
+        var normalLine = new OrderLineItem("u2", "Manicure", "1", "VAR1", g, g, g, null, null);
         when(square.bookings(any(), any())).thenReturn(List.of(booking));
         when(square.completedOrders(any(), any())).thenReturn(List.of(orderWith(normalLine)));
         when(square.catalogPrices(any())).thenReturn(Map.of("VAR1", new BigDecimal("100.00")));

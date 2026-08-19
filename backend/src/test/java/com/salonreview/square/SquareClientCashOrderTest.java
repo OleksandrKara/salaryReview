@@ -22,7 +22,7 @@ class SquareClientCashOrderTest {
 
     private static Order orderWith(List<Tender> tenders) {
         return new Order("o1", "LOC", "CUST", "COMPLETED", "2026-06-10T16:00:00Z", "2026-06-10T16:00:00Z",
-                List.of(), null, null, tenders, null);
+                List.of(), null, null, tenders, null, null);
     }
 
     @Test

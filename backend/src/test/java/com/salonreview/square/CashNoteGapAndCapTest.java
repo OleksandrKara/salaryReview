@@ -70,12 +70,12 @@ class CashNoteGapAndCapTest {
 
     private static OrderLineItem customAmountLine(String amount) {
         Money m = new Money(new BigDecimal(amount).movePointRight(2).longValueExact(), "USD");
-        return new OrderLineItem("u1", null, "1", null, m, m, m, null);
+        return new OrderLineItem("u1", null, "1", null, m, m, m, null, null);
     }
 
     private static Order orderOn(String isoInstant, OrderLineItem... lines) {
         return new Order("o1", "LOC", CUST, "COMPLETED", isoInstant, isoInstant, List.of(lines), null, null,
-                List.of(new Tender("t1", "CARD", lines[0].totalMoney())), null);
+                List.of(new Tender("t1", "CARD", lines[0].totalMoney())), null, null);
     }
 
     private static AttributedService cashNoteLine(MonthAggregation agg) {
@@ -202,7 +202,7 @@ class CashNoteGapAndCapTest {
         when(square.bookings(any(), any())).thenReturn(List.of(cashNoteBooking("cashew $5.00", "VAR1")));
         Order otherCustomerOrder = new Order("o2", "LOC", "SOMEONE-ELSE", "COMPLETED",
                 "2026-07-05T20:00:00Z", "2026-07-05T20:00:00Z", List.of(customAmountLine("100.00")),
-                null, null, List.of(new Tender("t1", "CARD", new Money(10000L, "USD"))), null);
+                null, null, List.of(new Tender("t1", "CARD", new Money(10000L, "USD"))), null, null);
         when(square.completedOrders(any(), any())).thenReturn(List.of(otherCustomerOrder));
         when(square.catalogPrices(any())).thenReturn(Map.of("VAR1", new BigDecimal("105.00")));
 

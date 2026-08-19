@@ -59,7 +59,7 @@ class CheckoutReviewTriggerServiceTest {
 
     private static SquareClient.Order order(String customerId, List<SquareClient.Fulfillment> fulfillments) {
         return new SquareClient.Order("order_1", "loc_1", customerId, "COMPLETED", "2026-07-01T00:00:00Z",
-                "2026-07-01T00:00:00Z", null, null, null, null, fulfillments);
+                "2026-07-01T00:00:00Z", null, null, null, null, fulfillments, null);
     }
 
     @Test

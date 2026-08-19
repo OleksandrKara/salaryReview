@@ -59,9 +59,9 @@ class CustomerMergeAttributionTest {
 
     private static Order order(String customerId) {
         Money g = new Money(10900L, "USD");
-        var li = new OrderLineItem("u1", "Russian Gel-Overlay Manicure", "1", "VAR-MANICURE", null, g, g, null);
+        var li = new OrderLineItem("u1", "Russian Gel-Overlay Manicure", "1", "VAR-MANICURE", null, g, g, null, null);
         return new Order("o1", "LOC", customerId, "COMPLETED", "2026-08-02T19:17:36Z",
-                "2026-08-02T19:17:35Z", List.of(li), null, null, null, null);
+                "2026-08-02T19:17:35Z", List.of(li), null, null, null, null, null);
     }
 
     @Test
