@@ -60,14 +60,16 @@ public class SquareConnectionService {
      * this plaintext to another service, over the trusted internal-API channel). Never expose the
      * plaintext through any owner-facing DTO/HTTP response or log line. Empty if this business
      * hasn't connected Square yet. */
-    public record PlainCredentials(String accessToken, String locationId, SquareProperties.Environment environment) {
+    public record PlainCredentials(String accessToken, String locationId, SquareProperties.Environment environment,
+                                    String applicationId) {
     }
 
     public Optional<PlainCredentials> plainCredentials(Long businessId) {
         return repo.findByBusinessId(businessId).map(connection -> new PlainCredentials(
                 cipher.decrypt(connection.getAccessTokenEncrypted()),
                 connection.getLocationId(),
-                connection.getEnvironment()));
+                connection.getEnvironment(),
+                connection.getApplicationId()));
     }
 
     /** Decrypts the stored token purely to build a display mask ("••••" + last 4) — the plaintext

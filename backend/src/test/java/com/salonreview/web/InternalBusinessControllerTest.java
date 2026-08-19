@@ -109,18 +109,34 @@ class InternalBusinessControllerTest {
     }
 
     @Test
-    @DisplayName("square-credentials: connected business returns decrypted token/location/environment")
+    @DisplayName("square-credentials: connected business returns decrypted token/location/environment/applicationId")
     void credentialsReturnsDecryptedValues() throws Exception {
         when(props.getKey()).thenReturn("secret");
         when(squareConnections.plainCredentials(2L)).thenReturn(Optional.of(
                 new SquareConnectionService.PlainCredentials("sq0atp-real-token", "LOC123",
-                        SquareProperties.Environment.PRODUCTION)));
+                        SquareProperties.Environment.PRODUCTION, "sq0idp-app-id")));
 
         mvc.perform(get("/api/internal/businesses/2/square-credentials")
                         .header("X-Internal-Api-Key", "secret"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").value("sq0atp-real-token"))
                 .andExpect(jsonPath("$.locationId").value("LOC123"))
-                .andExpect(jsonPath("$.environment").value("PRODUCTION"));
+                .andExpect(jsonPath("$.environment").value("PRODUCTION"))
+                .andExpect(jsonPath("$.applicationId").value("sq0idp-app-id"));
+    }
+
+    @Test
+    @DisplayName("square-credentials: a null applicationId (never set for this business) doesn't NPE — "
+            + "confirmed live for business 1, which has never set one")
+    void credentialsToleratesNullApplicationId() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        when(squareConnections.plainCredentials(1L)).thenReturn(Optional.of(
+                new SquareConnectionService.PlainCredentials("sq0atp-real-token", "LOC123",
+                        SquareProperties.Environment.PRODUCTION, null)));
+
+        mvc.perform(get("/api/internal/businesses/1/square-credentials")
+                        .header("X-Internal-Api-Key", "secret"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.applicationId").value(org.hamcrest.Matchers.nullValue()));
     }
 }
