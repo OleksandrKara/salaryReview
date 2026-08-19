@@ -79,14 +79,14 @@ class PreferredBookingAttributionTest {
 
     private static OrderLineItem li(String svid, String name, String amount) {
         Money m = new Money(new BigDecimal(amount).movePointRight(2).longValueExact(), "USD");
-        return new OrderLineItem("u-" + svid, name, "1", svid, m, m, m, null);
+        return new OrderLineItem("u-" + svid, name, "1", svid, m, m, m, null, null);
     }
 
     private static Order paidOrder() {
         return new Order("o1", "LOC", CUST, "COMPLETED", "2026-08-03T02:17:36Z", "2026-08-03T02:17:35Z",
                 List.of(li(PEDICURE, "Pedicure", "104.00"), li(MANICURE, "Manicure", "109.00"),
                         li(REMOVAL, "Removal Gel", "20.00"), li(DESIGN, "Design", "20.00")),
-                null, null, null, null);
+                null, null, null, null, null);
     }
 
     @Test

@@ -272,4 +272,120 @@ class PrepaidServiceTest {
         assertThat(u.number()).isEqualTo("000091");
         assertThat(u.amount()).isEqualByComparingTo("200.00");
     }
+
+    /** Real production case found 2026-08-19 (Hala Wrda, invoice 001688): a $100 deposit invoice
+     * paid ahead of time, then applied as a checkout discount on the real $600 appointment (also
+     * discounted 10% by an unrelated promo), leaving $440 + $88 tip collected via card that day.
+     * Before this fix, candidates() excluded the booking entirely — any matching order at all was
+     * treated as "already paid, nothing to draw down" — permanently losing the $100 deposit credit
+     * for that visit. The deposit-discounted booking must still surface, with menuPrice set to the
+     * deposit amount ($100), not the full $600 catalog price (which would double the salon-absorbed
+     * discount into looking like $500 rather than the real $0 on this specific redemption line).
+     */
+    @Test
+    @DisplayName("A visit already checked out at a reduced price via the salon's own Deposit "
+            + "discount still surfaces as a candidate, priced at the deposit amount")
+    void depositDiscountedVisitStillSurfacesAtDepositAmount() {
+        SquareClient square = mock(SquareClient.class);
+        ProviderRepository providers = mock(ProviderRepository.class);
+        ProviderDirectory directory = mock(ProviderDirectory.class);
+        SalonConfigRepository salonConfig = mock(SalonConfigRepository.class);
+        PrepaidPackageRepository packages = mock(PrepaidPackageRepository.class);
+        PrepaidRedemptionRepository redemptions = mock(PrepaidRedemptionRepository.class);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(2L);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(2L)).thenReturn(square);
+
+        PrepaidService svc = new PrepaidService(squareClientProvider, providers, directory, salonConfig,
+                currentBusinessContext, packages, redemptions);
+
+        PrepaidPackage pkg = PrepaidPackage.builder().id(9L).businessId(2L).customerId("C1").customerName("Hala Wrda")
+                .paidDate(LocalDate.of(2026, 7, 2)).amount(new BigDecimal("100.00")).totalServices(1).build();
+        when(packages.findByIdAndBusinessId(9L, 2L)).thenReturn(Optional.of(pkg));
+
+        SalonConfig sc = mock(SalonConfig.class);
+        when(sc.getServicePriceCutoff()).thenReturn(new BigDecimal("50.00"));
+        when(salonConfig.findByBusinessId(2L)).thenReturn(Optional.of(sc));
+
+        when(square.locationTimeZone()).thenReturn("America/Los_Angeles");
+        when(square.bookings(any(), any())).thenReturn(List.of(
+                booking("bkHala", "2026-07-10T22:13:18Z", "TM-ANASTASIIA", "POWDER-OMBRE")));
+        when(square.allTeamMembers()).thenReturn(List.of(
+                new TeamMember("TM-ANASTASIIA", "Anastasiia", "M.", "ACTIVE", false, null, null)));
+        when(square.catalogPrices(any())).thenReturn(Map.of("POWDER-OMBRE", new BigDecimal("600.00")));
+        when(square.catalogNames(any())).thenReturn(Map.of("POWDER-OMBRE", "Eyebrows Powder&Ombre Technique"));
+        when(redemptions.existsBySquareBookingIdAndServiceVariationId(any(), any())).thenReturn(false);
+
+        OrderDiscount promo = new OrderDiscount("promo-uid", "Discount July 4th", new Money(6000L, "USD"));
+        OrderDiscount deposit = new OrderDiscount("deposit-uid", "Deposit ", new Money(10000L, "USD"));
+        AppliedDiscount appliedPromo = new AppliedDiscount("ap1", "promo-uid", new Money(6000L, "USD"));
+        AppliedDiscount appliedDeposit = new AppliedDiscount("ap2", "deposit-uid", new Money(10000L, "USD"));
+        OrderLineItem lineItem = new OrderLineItem("li1", "Eyebrows Powder&Ombre Technique by Anastasiia", "1",
+                "POWDER-OMBRE", new Money(60000L, "USD"), new Money(60000L, "USD"), new Money(44000L, "USD"),
+                new Money(16000L, "USD"), List.of(appliedPromo, appliedDeposit));
+        Order checkoutOrder = new Order("orderHala", "LOC", "C1", "COMPLETED", "2026-07-10T22:13:26Z",
+                "2026-07-10T22:13:18Z", List.of(lineItem), new Money(8800L, "USD"), new Money(16000L, "USD"),
+                List.of(), List.of(new Fulfillment("BOOKING", "COMPLETED")), List.of(promo, deposit));
+        when(square.completedOrders(any(), any())).thenReturn(List.of(checkoutOrder));
+
+        List<Candidate> candidates = svc.candidates(9L);
+
+        assertThat(candidates).hasSize(1);
+        Candidate c = candidates.get(0);
+        assertThat(c.bookingId()).isEqualTo("bkHala");
+        assertThat(c.menuPrice()).isEqualByComparingTo("100.00"); // the deposit credit, not the $600 catalog price
+        assertThat(c.providerName()).isEqualTo("Anastasiia M.");
+    }
+
+    /** Sibling case to the deposit test above: a visit checked out at FULL price (no Deposit
+     * discount at all) must still be excluded — the original anti-double-count protection, so a
+     * visit genuinely unrelated to the prepaid package never gets drawn down against it.
+     */
+    @Test
+    @DisplayName("A visit checked out at full price with no Deposit discount is still excluded (no double counting)")
+    void fullyPaidVisitWithNoDepositDiscountStaysExcluded() {
+        SquareClient square = mock(SquareClient.class);
+        ProviderRepository providers = mock(ProviderRepository.class);
+        ProviderDirectory directory = mock(ProviderDirectory.class);
+        SalonConfigRepository salonConfig = mock(SalonConfigRepository.class);
+        PrepaidPackageRepository packages = mock(PrepaidPackageRepository.class);
+        PrepaidRedemptionRepository redemptions = mock(PrepaidRedemptionRepository.class);
+        com.salonreview.config.CurrentBusinessContext currentBusinessContext =
+                mock(com.salonreview.config.CurrentBusinessContext.class);
+        when(currentBusinessContext.id()).thenReturn(1L);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        when(squareClientProvider.forBusiness(1L)).thenReturn(square);
+
+        PrepaidService svc = new PrepaidService(squareClientProvider, providers, directory, salonConfig,
+                currentBusinessContext, packages, redemptions);
+
+        PrepaidPackage pkg = PrepaidPackage.builder().id(1L).businessId(1L).customerId("C1").customerName("Alina")
+                .paidDate(LocalDate.of(2026, 3, 1)).amount(new BigDecimal("300")).totalServices(3).build();
+        when(packages.findByIdAndBusinessId(1L, 1L)).thenReturn(Optional.of(pkg));
+
+        SalonConfig sc = mock(SalonConfig.class);
+        when(sc.getServicePriceCutoff()).thenReturn(new BigDecimal("50.00"));
+        when(salonConfig.findByBusinessId(1L)).thenReturn(Optional.of(sc));
+
+        when(square.locationTimeZone()).thenReturn("UTC");
+        when(square.bookings(any(), any())).thenReturn(List.of(
+                booking("bkApr", "2026-04-15T15:00:00Z", "TM1", "VAR1")));
+        when(square.allTeamMembers()).thenReturn(List.of(new TeamMember("TM1", "Alice", "A", "ACTIVE", false, null, null)));
+        when(square.catalogPrices(any())).thenReturn(Map.of("VAR1", new BigDecimal("100.00")));
+        when(square.catalogNames(any())).thenReturn(Map.of("VAR1", "Mani"));
+        when(redemptions.existsBySquareBookingIdAndServiceVariationId(any(), any())).thenReturn(false);
+
+        OrderLineItem lineItem = new OrderLineItem("li1", "Mani", "1", "VAR1",
+                new Money(10000L, "USD"), new Money(10000L, "USD"), new Money(10000L, "USD"), null, null);
+        Order fullyPaidOrder = new Order("orderFull", "LOC", "C1", "COMPLETED", "2026-04-15T15:30:00Z",
+                "2026-04-15T15:00:00Z", List.of(lineItem), new Money(0L, "USD"), null,
+                List.of(), List.of(new Fulfillment("BOOKING", "COMPLETED")), null);
+        when(square.completedOrders(any(), any())).thenReturn(List.of(fullyPaidOrder));
+
+        List<Candidate> candidates = svc.candidates(1L);
+
+        assertThat(candidates).isEmpty();
+    }
 }

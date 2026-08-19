@@ -74,9 +74,9 @@ class CancelledAppointmentDetectionTest {
     /** A ~$25 "Cancelation Policy" fee order for CUST, closed at {@code closedAt}. */
     private static Order feeOrder(Instant closedAt) {
         OrderLineItem line = new OrderLineItem("uid", "Cancelation Policy", "1", null,
-                null, null, new Money(2500L, "USD"), null);
+                null, null, new Money(2500L, "USD"), null, null);
         return new Order("ord-fee", "LOC", CUST, "COMPLETED", closedAt.toString(), closedAt.toString(),
-                List.of(line), null, null, null, null);
+                List.of(line), null, null, null, null, null);
     }
 
     private MonthAggregation runFor(Booking b) {

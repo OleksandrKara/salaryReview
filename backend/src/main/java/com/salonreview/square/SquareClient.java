@@ -868,24 +868,42 @@ public class SquareClient {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record BookingsListResponse(List<Booking> bookings, String cursor) {}
 
+    /** One order-level discount's own applied amount to THIS line item — links back to {@link
+     * OrderDiscount#uid} via {@link #discountUid}. Square applies a discount at the order level but
+     * prorates/records it per line item here, which is what lets {@link
+     * com.salonreview.square.PrepaidService} tell "this line item's price was reduced by the salon's
+     * own 'Deposit' discount" apart from an ordinary promo discount on the same line item. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record AppliedDiscount(String uid, String discountUid, Money appliedMoney) {}
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record OrderLineItem(String uid, String name, String quantity, String catalogObjectId,
                                 Money basePriceMoney, Money grossSalesMoney, Money totalMoney,
-                                Money totalDiscountMoney) {}
+                                Money totalDiscountMoney, List<AppliedDiscount> appliedDiscounts) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Tender(String id, String type, Money amountMoney) {}
 
+    /** One order-level discount definition — {@code name} is what {@link
+     * com.salonreview.square.PrepaidService} matches against to recognize the salon's own "Deposit"
+     * discount (applied at checkout when a client's prepaid balance covers part of a visit) apart
+     * from an ordinary promo discount (e.g. a holiday sale). */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record OrderDiscount(String uid, String name, Money appliedMoney) {}
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Order(String id, String locationId, String customerId, String state, String closedAt,
                         String createdAt, List<OrderLineItem> lineItems, Money totalTipMoney,
-                        Money totalDiscountMoney, List<Tender> tenders, List<Fulfillment> fulfillments) {
+                        Money totalDiscountMoney, List<Tender> tenders, List<Fulfillment> fulfillments,
+                        List<OrderDiscount> discounts) {
         Order withCustomerId(String newCustomerId) {
             return new Order(id, locationId, newCustomerId, state, closedAt, createdAt, lineItems,
-                    totalTipMoney, totalDiscountMoney, tenders, fulfillments);
+                    totalTipMoney, totalDiscountMoney, tenders, fulfillments, discounts);
         }
     }
 
