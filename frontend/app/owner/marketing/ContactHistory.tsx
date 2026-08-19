@@ -59,7 +59,13 @@ function AppointmentStatusBadge({ status }: { status: string }) {
  * ContactsTable (per contact) and the Ads Report breakdown drill-down (per Square customer id,
  * fetched lazily — see AdsReportView's CompletedList/UpcomingList).
  */
-export function HistoryToggle({ label, count, open, onClick }: { label: string; count: number; open: boolean; onClick: () => void }) {
+export function HistoryToggle({ label, count, open, onClick, loading }: { label: string; count: number; open: boolean; onClick: () => void; loading?: boolean }) {
+  // Distinguishes "not fetched yet" (see ContactsTable's scroll-triggered enrichment) from a
+  // genuine zero — showing "No appointments" for a row whose data simply hasn't loaded yet would
+  // read as a real (wrong) answer, not a loading state.
+  if (loading) {
+    return <span className="text-xs text-zinc-400">Loading…</span>;
+  }
   if (count === 0) {
     return <span className="text-xs text-zinc-400">No {label.toLowerCase()}</span>;
   }

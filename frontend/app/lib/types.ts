@@ -1707,6 +1707,14 @@ export interface MarketingContactsData {
   contacts: MarketingContact[];
 }
 
+/** Response shape for POST /api/owner/marketing/contacts/enrich — the lazy follow-up for a
+ * MarketingContact's familyName/appointments, deliberately absent from the bulk contacts list
+ * (see MarketingContact's own field docs). */
+export interface MarketingContactEnrichment {
+  familyName: string | null;
+  appointments: MarketingContactAppointment[];
+}
+
 export interface MarketingSyncStatusData {
   /** ISO-8601 instant "Sync appointments" was last actually run; null if never. */
   lastSyncedAt: string | null;

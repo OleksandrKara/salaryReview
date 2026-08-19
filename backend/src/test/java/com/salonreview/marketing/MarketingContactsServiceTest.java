@@ -250,6 +250,63 @@ class MarketingContactsServiceTest {
     }
 
     @Test
+    @DisplayName("2026-08-19 fix: a second resolveDisplayNames call for the same phone-number set is a cache hit — "
+            + "MessagesNotifierIcon polls this every 25s and was hitting Square's rate limit live before this cache existed")
+    void resolveDisplayNamesCachesRepeatedCallsForTheSamePhoneSet() {
+        when(repository.findNamesByPhoneNumbers(any())).thenReturn(List.of(
+                new MarketingContactsRepository.PhoneName("(858) 555-0100", "8585550100", "Jane", "SQCUST123", true)));
+        when(square.customerGivenNames(any())).thenReturn(Map.of("SQCUST123", "Jane"));
+        when(square.customerFamilyNames(any())).thenReturn(Map.of("SQCUST123", "Doe"));
+        when(square.customerSegmentIdsBatch(any())).thenReturn(Map.of());
+
+        service.resolveDisplayNames(List.of("(858) 555-0100"));
+        service.resolveDisplayNames(List.of("(858) 555-0100"));
+
+        verify(square, times(1)).customerGivenNames(any());
+        verify(square, times(1)).customerFamilyNames(any());
+    }
+
+    @Test
+    @DisplayName("2026-08-19 fix: a genuinely different phone-number set still gets its own fresh Square lookup, "
+            + "not stale-cached data from an unrelated set")
+    void resolveDisplayNamesRefetchesForADifferentPhoneSet() {
+        when(repository.findNamesByPhoneNumbers(eq(List.of("(858) 555-0100")))).thenReturn(List.of(
+                new MarketingContactsRepository.PhoneName("(858) 555-0100", "8585550100", "Jane", "SQCUST123", true)));
+        when(repository.findNamesByPhoneNumbers(eq(List.of("(858) 555-0200")))).thenReturn(List.of(
+                new MarketingContactsRepository.PhoneName("(858) 555-0200", "8585550200", "Bob", "SQCUST456", true)));
+        when(square.customerGivenNames(any())).thenReturn(Map.of("SQCUST123", "Jane", "SQCUST456", "Bob"));
+        when(square.customerFamilyNames(any())).thenReturn(Map.of());
+        when(square.customerSegmentIdsBatch(any())).thenReturn(Map.of());
+
+        service.resolveDisplayNames(List.of("(858) 555-0100"));
+        service.resolveDisplayNames(List.of("(858) 555-0200"));
+
+        verify(square, times(2)).customerGivenNames(any());
+    }
+
+    @Test
+    @DisplayName("2026-08-19 fix: a failed lookup is never cached — the very next call still hits Square again "
+            + "rather than freezing an empty result for the full TTL")
+    void resolveDisplayNamesDoesNotCacheAFailure() {
+        when(repository.findNamesByPhoneNumbers(any())).thenReturn(List.of(
+                new MarketingContactsRepository.PhoneName("(858) 555-0100", "8585550100", "Jane", "SQCUST123", true)));
+        when(square.customerGivenNames(any()))
+                .thenThrow(new org.springframework.web.client.RestClientException("Square: 429 RATE_LIMITED"))
+                .thenReturn(Map.of("SQCUST123", "Jane"));
+        when(square.customerFamilyNames(any())).thenReturn(Map.of());
+        when(square.customerSegmentIdsBatch(any())).thenReturn(Map.of());
+
+        Map<String, MarketingContactsService.ContactNameInfo> first =
+                service.resolveDisplayNames(List.of("(858) 555-0100"));
+        Map<String, MarketingContactsService.ContactNameInfo> second =
+                service.resolveDisplayNames(List.of("(858) 555-0100"));
+
+        assertThat(first).isEmpty();
+        assertThat(second.get("(858) 555-0100").givenName()).isEqualTo("Jane");
+        verify(square, times(2)).customerGivenNames(any());
+    }
+
+    @Test
     @DisplayName("submissions come from our own DB regardless of whether a Square customer is known")
     void submissionsAlwaysPopulated() {
         UUID id = UUID.randomUUID();
@@ -269,10 +326,26 @@ class MarketingContactsServiceTest {
     }
 
     @Test
+    @DisplayName("2026-08-19: bulk contacts() no longer eagerly resolves appointments/family name — "
+            + "see enrichContacts for where that logic moved")
+    void bulkContactsNoLongerEagerlyResolvesAppointments() {
+        UUID id = UUID.randomUUID();
+        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+
+        MarketingContactDto dto = service.contacts();
+
+        Contact c = dto.contacts().get(0);
+        assertThat(c.appointments()).isEmpty();
+        assertThat(c.familyName()).isNull();
+        verify(square, never()).bookingsForCustomer(any(), any());
+        verify(square, never()).customerFamilyNames(any());
+    }
+
+    @Test
     @DisplayName("appointments resolve Square bookings into service name, price, and provider name")
     void appointmentsResolveFromSquare() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.findByIds(List.of(id))).thenReturn(List.of(rawContact(id, "SQCUST123")));
 
         Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2026-07-31T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null,
@@ -282,11 +355,12 @@ class MarketingContactsServiceTest {
         when(square.catalogNames(List.of("VAR1"))).thenReturn(Map.of("VAR1", "Manicure"));
         when(square.catalogPrices(List.of("VAR1"))).thenReturn(Map.of("VAR1", new BigDecimal("85.00")));
 
-        MarketingContactDto dto = service.contacts();
+        Map<String, MarketingContactsService.ContactEnrichment> result =
+                service.enrichContacts(List.of(id.toString()));
 
-        Contact c = dto.contacts().get(0);
-        assertThat(c.appointments()).hasSize(1);
-        var appt = c.appointments().get(0);
+        List<Appointment> appointments = result.get(id.toString()).appointments();
+        assertThat(appointments).hasSize(1);
+        var appt = appointments.get(0);
         assertThat(appt.bookingId()).isEqualTo("SQBOOK1");
         assertThat(appt.serviceName()).isEqualTo("Manicure");
         assertThat(appt.price()).isEqualByComparingTo("85.00");
@@ -299,7 +373,7 @@ class MarketingContactsServiceTest {
     @DisplayName("an appointment that came through our own funnel is enriched with its originating submission's traffic/device info")
     void appointmentEnrichedWithOriginatingSubmission() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.findByIds(List.of(id))).thenReturn(List.of(rawContact(id, "SQCUST123")));
 
         Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2026-07-31T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null,
@@ -313,9 +387,10 @@ class MarketingContactsServiceTest {
                         "google / cpc / promo", "mobile", "iOS", "17.5", "Mobile Safari")
         ));
 
-        MarketingContactDto dto = service.contacts();
+        Map<String, MarketingContactsService.ContactEnrichment> result =
+                service.enrichContacts(List.of(id.toString()));
 
-        var appt = dto.contacts().get(0).appointments().get(0);
+        var appt = result.get(id.toString()).appointments().get(0);
         assertThat(appt.trafficSource()).isEqualTo("google / cpc / promo");
         assertThat(appt.deviceType()).isEqualTo("mobile");
         assertThat(appt.osName()).isEqualTo("iOS");
@@ -372,7 +447,7 @@ class MarketingContactsServiceTest {
     @DisplayName("a past appointment shows the real collected amount and channel when a matching payroll line is found")
     void appointmentShowsRealCollectedPayment() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.findByIds(List.of(id))).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2020-06-15T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(booking));
@@ -381,9 +456,10 @@ class MarketingContactsServiceTest {
                 true, 1, 1, false, "CASH", null, "SQBOOK1", "SQCUST123", null);
         when(aggregator.aggregate(2020, 6, new BigDecimal("60.00"))).thenReturn(aggOf(2020, 6, List.of(line)));
 
-        MarketingContactDto dto = service.contacts();
+        Map<String, MarketingContactsService.ContactEnrichment> result =
+                service.enrichContacts(List.of(id.toString()));
 
-        var appt = dto.contacts().get(0).appointments().get(0);
+        var appt = result.get(id.toString()).appointments().get(0);
         assertThat(appt.paymentChannel()).isEqualTo("CASH");
         assertThat(appt.collectedAmount()).isEqualByComparingTo("50.00");
     }
@@ -392,15 +468,16 @@ class MarketingContactsServiceTest {
     @DisplayName("a past appointment with no matching payroll line shows no payment info, without throwing")
     void appointmentWithNoMatchingPaymentShowsNull() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.findByIds(List.of(id))).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2020-06-15T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(booking));
         when(aggregator.aggregate(2020, 6, new BigDecimal("60.00"))).thenReturn(aggOf(2020, 6, List.of()));
 
-        MarketingContactDto dto = service.contacts();
+        Map<String, MarketingContactsService.ContactEnrichment> result =
+                service.enrichContacts(List.of(id.toString()));
 
-        var appt = dto.contacts().get(0).appointments().get(0);
+        var appt = result.get(id.toString()).appointments().get(0);
         assertThat(appt.paymentChannel()).isNull();
         assertThat(appt.collectedAmount()).isNull();
     }
@@ -409,14 +486,15 @@ class MarketingContactsServiceTest {
     @DisplayName("an upcoming appointment never triggers a payroll lookup")
     void upcomingAppointmentSkipsPaymentLookup() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.findByIds(List.of(id))).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking future = new Booking("SQBOOK1", "ACCEPTED", "2099-01-01T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(future));
 
-        MarketingContactDto dto = service.contacts();
+        Map<String, MarketingContactsService.ContactEnrichment> result =
+                service.enrichContacts(List.of(id.toString()));
 
-        var appt = dto.contacts().get(0).appointments().get(0);
+        var appt = result.get(id.toString()).appointments().get(0);
         assertThat(appt.paymentChannel()).isNull();
         verify(aggregator, never()).aggregate(anyInt(), anyInt(), any());
     }
@@ -425,13 +503,13 @@ class MarketingContactsServiceTest {
     @DisplayName("yields an empty appointments list, not a thrown exception, when Square is unreachable")
     void toleratesSquareFailure() {
         UUID id = UUID.randomUUID();
-        when(repository.listAll()).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        when(repository.findByIds(List.of(id))).thenReturn(List.of(rawContact(id, "SQCUST123")));
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenThrow(new RuntimeException("Square unreachable"));
 
-        MarketingContactDto dto = service.contacts();
+        Map<String, MarketingContactsService.ContactEnrichment> result =
+                service.enrichContacts(List.of(id.toString()));
 
-        assertThat(dto.available()).isTrue();
-        assertThat(dto.contacts().get(0).appointments()).isEmpty();
+        assertThat(result.get(id.toString()).appointments()).isEmpty();
     }
 
     @Test

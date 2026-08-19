@@ -103,6 +103,11 @@ public class SecurityConfig {
                                 .hasAnyRole("OWNER", "ADS_MANAGER")
                         .requestMatchers(HttpMethod.POST, "/api/owner/marketing/ads-report/spend")
                                 .hasAnyRole("OWNER", "ADS_MANAGER")
+                        // Read-only despite being a POST (the contact-id batch needs a body) — the
+                        // Contacts tab's lazy scroll-triggered follow-up fetch, same ADS_MANAGER
+                        // visibility as the bulk GET /api/owner/marketing/contacts above.
+                        .requestMatchers(HttpMethod.POST, "/api/owner/marketing/contacts/enrich")
+                                .hasAnyRole("OWNER", "ADS_MANAGER")
                         // SMS automations hub: MANAGER gets read/reply access to the activity/
                         // conversation view (openspec/changes/lead-followup-and-manager-inbox
                         // design.md D6), but toggling an automation on/off

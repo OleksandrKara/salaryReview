@@ -63,6 +63,16 @@ public class MarketingContactsService {
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
     private static final String CONTACTS_CACHE_KEY_PREFIX = "contacts:";
 
+    // 2026-08-19: MessagesNotifierIcon polls /api/sms/conversations every 25s for the unread badge
+    // (see SmsActivityController#conversations), and every poll re-resolved every conversation's
+    // phone number via a fresh Square batch call with no caching at all — for a salon with hundreds
+    // of conversations, that's 3 Square API calls every 25 seconds from just one open browser tab,
+    // which started tripping Square's own rate limit live. Same TTL as CACHE_TTL above; keyed by
+    // the actual phone-number set so a genuinely new conversation still gets a fresh lookup instead
+    // of waiting out a stale cache entry keyed only by business.
+    private static final Duration NAMES_CACHE_TTL = Duration.ofMinutes(10);
+    private static final String NAMES_CACHE_KEY_PREFIX = "names:";
+
     // See #contactFromLivePhoneLookup and MarketingAnalyticsService#BOOKING_HISTORY_LOOKBACK for
     // the same rationale: with no contact createdAt to anchor the Square scan on, this caps it at
     // a generous window rather than paying for an unbounded "their whole history" lookup.
@@ -229,75 +239,92 @@ public class MarketingContactsService {
         if (phoneNumbers.isEmpty()) {
             return Map.of();
         }
+        String key = NAMES_CACHE_KEY_PREFIX + currentBusinessContext.id() + ":" + phoneNumberSetKey(phoneNumbers);
         try {
-            SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
-            // Keyed by last10Digits, not the raw phone string — marketing.contacts' own stored
-            // format for this row isn't guaranteed to match the format phoneNumbers is holding
-            // (see PhoneNumbers' own doc comment and MarketingContactsRepository#findNamesByPhoneNumbers).
-            Map<String, MarketingContactsRepository.PhoneName> byPhone = repository
-                    .findNamesByPhoneNumbers(phoneNumbers).stream()
-                    .collect(Collectors.toMap(MarketingContactsRepository.PhoneName::last10, r -> r, (a, b) -> a));
-
-            Map<String, String> customerIdByPhone = new HashMap<>();
-            for (String phone : phoneNumbers) {
-                MarketingContactsRepository.PhoneName row = byPhone.get(PhoneNumbers.last10Digits(phone));
-                if (row != null) {
-                    String customerId = row.squareCustomerId() != null
-                            ? row.squareCustomerId()
-                            : squareLinks.findByPhoneNumber(phone).map(MarketingContactSquareLink::getSquareCustomerId).orElse(null);
-                    if (customerId != null) {
-                        customerIdByPhone.put(phone, customerId);
-                    }
-                } else {
-                    // No marketing.contacts row at all (e.g. a checkout-review/rebooking text
-                    // sent from Square data with no tracked capture) — last-resort live lookup,
-                    // same fallback LeadFollowUpScheduler uses.
-                    List<String> candidates = square.customerIdsForPhone(phone);
-                    if (!candidates.isEmpty()) {
-                        customerIdByPhone.put(phone, candidates.get(0));
-                    }
-                }
-            }
-
-            Map<String, String> givenFromSquare = square.customerGivenNames(customerIdByPhone.values());
-            Map<String, String> familyFromSquare = square.customerFamilyNames(customerIdByPhone.values());
-            Map<String, List<String>> segmentsByCustomer = square.customerSegmentIdsBatch(customerIdByPhone.values());
-            if (segmentsByCustomer == null) {
-                segmentsByCustomer = Map.of();
-            }
-            String consentSegmentId = rebookingProperties.getConsentSegmentId();
-            Map<String, Long> visitCounts = visitCountsByCustomerId();
-
-            Map<String, ContactNameInfo> result = new HashMap<>();
-            for (String phone : phoneNumbers) {
-                MarketingContactsRepository.PhoneName row = byPhone.get(PhoneNumbers.last10Digits(phone));
-                String customerId = customerIdByPhone.get(phone);
-                String givenName = row != null && row.givenName() != null && !row.givenName().isBlank()
-                        ? row.givenName()
-                        : (customerId != null ? givenFromSquare.get(customerId) : null);
-                String familyName = customerId != null ? familyFromSquare.get(customerId) : null;
-
-                boolean ownConsent = row != null && Boolean.TRUE.equals(row.smsMarketingConsent());
-                boolean squareConsent = customerId != null
-                        && consentSegmentId != null && !consentSegmentId.isBlank()
-                        && segmentsByCustomer.getOrDefault(customerId, List.of()).contains(consentSegmentId);
-
-                String squareProfileUrl = customerId == null
-                        ? null
-                        : String.format(SQUARE_CUSTOMER_PROFILE_URL, customerId);
-
-                Long visitCount = customerId == null ? null : visitCounts.getOrDefault(customerId, 0L);
-                boolean vip = visitCount != null && visitCount >= vipVisitThreshold;
-
-                result.put(phone, new ContactNameInfo(givenName, familyName, ownConsent || squareConsent, squareProfileUrl,
-                        vip, visitCount == null ? null : visitCount.intValue()));
-            }
-            return result;
+            // A failed load must never be cached — that would freeze "no names" in place for the
+            // full TTL even after Square recovers, so the exception is caught out here, outside
+            // cache.get(), letting TtlCache's own put() never run on a failed loader call.
+            return cache.get(key, NAMES_CACHE_TTL, () -> computeDisplayNames(phoneNumbers));
         } catch (DataAccessException | RestClientException ex) {
             log.warn("Marketing schema or Square unavailable while resolving display names for {} phone numbers",
                     phoneNumbers.size(), ex);
             return Map.of();
         }
+    }
+
+    /** Stable regardless of input order/duplicates/formatting — same normalization
+     * {@link #resolveDisplayNames}'s own lookup already keys on, so two calls for "the same"
+     * conversation list (e.g. two consecutive unread-badge polls) hit the same cache entry even if
+     * the underlying query returned rows in a different order. */
+    private static String phoneNumberSetKey(Collection<String> phoneNumbers) {
+        return phoneNumbers.stream().map(PhoneNumbers::last10Digits).distinct().sorted()
+                .collect(Collectors.joining(","));
+    }
+
+    private Map<String, ContactNameInfo> computeDisplayNames(Collection<String> phoneNumbers) {
+        SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
+        // Keyed by last10Digits, not the raw phone string — marketing.contacts' own stored
+        // format for this row isn't guaranteed to match the format phoneNumbers is holding
+        // (see PhoneNumbers' own doc comment and MarketingContactsRepository#findNamesByPhoneNumbers).
+        Map<String, MarketingContactsRepository.PhoneName> byPhone = repository
+                .findNamesByPhoneNumbers(phoneNumbers).stream()
+                .collect(Collectors.toMap(MarketingContactsRepository.PhoneName::last10, r -> r, (a, b) -> a));
+
+        Map<String, String> customerIdByPhone = new HashMap<>();
+        for (String phone : phoneNumbers) {
+            MarketingContactsRepository.PhoneName row = byPhone.get(PhoneNumbers.last10Digits(phone));
+            if (row != null) {
+                String customerId = row.squareCustomerId() != null
+                        ? row.squareCustomerId()
+                        : squareLinks.findByPhoneNumber(phone).map(MarketingContactSquareLink::getSquareCustomerId).orElse(null);
+                if (customerId != null) {
+                    customerIdByPhone.put(phone, customerId);
+                }
+            } else {
+                // No marketing.contacts row at all (e.g. a checkout-review/rebooking text
+                // sent from Square data with no tracked capture) — last-resort live lookup,
+                // same fallback LeadFollowUpScheduler uses.
+                List<String> candidates = square.customerIdsForPhone(phone);
+                if (!candidates.isEmpty()) {
+                    customerIdByPhone.put(phone, candidates.get(0));
+                }
+            }
+        }
+
+        Map<String, String> givenFromSquare = square.customerGivenNames(customerIdByPhone.values());
+        Map<String, String> familyFromSquare = square.customerFamilyNames(customerIdByPhone.values());
+        Map<String, List<String>> segmentsByCustomer = square.customerSegmentIdsBatch(customerIdByPhone.values());
+        if (segmentsByCustomer == null) {
+            segmentsByCustomer = Map.of();
+        }
+        String consentSegmentId = rebookingProperties.getConsentSegmentId();
+        Map<String, Long> visitCounts = visitCountsByCustomerId();
+
+        Map<String, ContactNameInfo> result = new HashMap<>();
+        for (String phone : phoneNumbers) {
+            MarketingContactsRepository.PhoneName row = byPhone.get(PhoneNumbers.last10Digits(phone));
+            String customerId = customerIdByPhone.get(phone);
+            String givenName = row != null && row.givenName() != null && !row.givenName().isBlank()
+                    ? row.givenName()
+                    : (customerId != null ? givenFromSquare.get(customerId) : null);
+            String familyName = customerId != null ? familyFromSquare.get(customerId) : null;
+
+            boolean ownConsent = row != null && Boolean.TRUE.equals(row.smsMarketingConsent());
+            boolean squareConsent = customerId != null
+                    && consentSegmentId != null && !consentSegmentId.isBlank()
+                    && segmentsByCustomer.getOrDefault(customerId, List.of()).contains(consentSegmentId);
+
+            String squareProfileUrl = customerId == null
+                    ? null
+                    : String.format(SQUARE_CUSTOMER_PROFILE_URL, customerId);
+
+            Long visitCount = customerId == null ? null : visitCounts.getOrDefault(customerId, 0L);
+            boolean vip = visitCount != null && visitCount >= vipVisitThreshold;
+
+            result.put(phone, new ContactNameInfo(givenName, familyName, ownConsent || squareConsent, squareProfileUrl,
+                    vip, visitCount == null ? null : visitCount.intValue()));
+        }
+        return result;
     }
 
     /** Nullable given/family name plus merged SMS-marketing-consent and Square profile link for
@@ -308,10 +335,13 @@ public class MarketingContactsService {
                                    boolean vip, Integer visitCount) {}
 
     /** Never throws: same "this app's health must never depend on the other service's
-     * schema" guarantee as MarketingDashboardService.dashboard. Submissions and (when a Square
-     * customer is known) appointment history are fetched eagerly for every contact here, rather
-     * than lazily per-click, so the UI can show "no appointments"/"no submissions" without an
-     * extra round trip — see the Contact record's field docs.
+     * schema" guarantee as MarketingDashboardService.dashboard. Submissions are fetched eagerly for
+     * every contact here (cheap — our own DB), so the UI can show "no submissions" without an extra
+     * round trip. Appointment history/family name are deliberately NOT fetched eagerly here
+     * (2026-08-19, see {@link #toContact(MarketingContactsRepository.RawContact, Map, boolean)}) —
+     * that's a real Square round trip per Square-linked contact, and doing it for the full list on
+     * every cache miss was hammering Square's rate limit live; the frontend calls
+     * {@link #enrichContacts} for just the rows actually scrolled into view instead.
      */
     public MarketingContactDto contacts() {
         return cache.get(CONTACTS_CACHE_KEY_PREFIX + currentBusinessContext.id(), CACHE_TTL, this::computeContacts);
@@ -336,13 +366,55 @@ public class MarketingContactsService {
             // as OwnerOverviewService/RevenuePulseService's identical async ThreadLocal loss.
             Long businessId = currentBusinessContext.id();
             List<Contact> contacts = repository.listAll().parallelStream()
-                    .map(r -> currentBusinessContext.runAsAndGet(businessId, () -> toContact(r, visitCounts)))
+                    .map(r -> currentBusinessContext.runAsAndGet(businessId, () -> toContact(r, visitCounts, false)))
                     .collect(Collectors.toList());
             return new MarketingContactDto(true, contacts);
         } catch (DataAccessException | RestClientException ex) {
             log.warn("Marketing schema or Square unavailable while building contacts list", ex);
             return MarketingContactDto.unavailable();
         }
+    }
+
+    /** {@code familyName}/{@code appointments} for exactly the given contact ids — the follow-up
+     * call the frontend makes for whichever rows have actually scrolled into view (see
+     * {@link #toContact(MarketingContactsRepository.RawContact, Map, boolean)}'s doc for why the
+     * bulk {@link #contacts} response no longer includes these itself). Not cached: unlike
+     * {@link #contacts}, each call is already scoped to a small, caller-chosen batch (the frontend
+     * only asks once per contact, when it first becomes visible), so there's no repeated-poll
+     * pattern here to protect Square from the way {@link #resolveDisplayNames} needed to. A
+     * contact id that doesn't exist (or belongs to another business — {@link
+     * MarketingContactsRepository#findByIds} has no business scoping of its own, same as every
+     * other read in this class, since marketing.contacts has no business_id column yet) is simply
+     * absent from the result rather than an error. */
+    public record ContactEnrichment(String familyName, List<Appointment> appointments) {}
+
+    public Map<String, ContactEnrichment> enrichContacts(Collection<String> contactIds) {
+        if (contactIds.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            List<java.util.UUID> ids = contactIds.stream().map(java.util.UUID::fromString).toList();
+            List<MarketingContactsRepository.RawContact> raws = repository.findByIds(ids);
+            Long businessId = currentBusinessContext.id();
+            return raws.parallelStream()
+                    .collect(Collectors.toMap(
+                            r -> r.id().toString(),
+                            r -> currentBusinessContext.runAsAndGet(businessId, () -> enrichOne(r))));
+        } catch (DataAccessException | RestClientException | IllegalArgumentException ex) {
+            log.warn("Marketing schema or Square unavailable while enriching {} contacts", contactIds.size(), ex);
+            return Map.of();
+        }
+    }
+
+    private ContactEnrichment enrichOne(MarketingContactsRepository.RawContact raw) {
+        String customerId = resolveSquareCustomerId(raw);
+        if (customerId == null) {
+            return new ContactEnrichment(null, List.of());
+        }
+        SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
+        String familyName = square.customerFamilyNames(List.of(customerId)).get(customerId);
+        List<Appointment> appointments = fetchAppointments(customerId, raw.createdAt());
+        return new ContactEnrichment(familyName, appointments);
     }
 
     /** Distinct-day visit counts per Square customer id, backing the VIP badge/filter (see #toContact
@@ -408,9 +480,11 @@ public class MarketingContactsService {
     }
 
     /** Backs the "Sync now" button (see SquareSyncController) — busts only this business's own
-     * cached contacts list, not every business's. */
+     * cached contacts list and cached name resolutions, not every business's. */
     public void invalidateCache() {
-        cache.invalidateWhere(k -> k.equals(CONTACTS_CACHE_KEY_PREFIX + currentBusinessContext.id()));
+        String businessId = currentBusinessContext.id().toString();
+        cache.invalidateWhere(k -> k.equals(CONTACTS_CACHE_KEY_PREFIX + businessId)
+                || k.startsWith(NAMES_CACHE_KEY_PREFIX + businessId + ":"));
     }
 
     /**
@@ -553,6 +627,24 @@ public class MarketingContactsService {
     }
 
     private Contact toContact(MarketingContactsRepository.RawContact raw, Map<String, Long> visitCounts) {
+        return toContact(raw, visitCounts, true);
+    }
+
+    /**
+     * {@code includeSquareHistory=false} skips {@code familyName}/{@code appointments} — the two
+     * fields that cost a real Square round trip per contact ({@code customerFamilyNames} and,
+     * heaviest of all, {@code fetchAppointments}'s booking/catalog/payment fan-out) — leaving them
+     * at their "unknown yet" defaults (null / empty list, same as a contact with no Square customer
+     * resolved at all). {@link #computeContacts} uses this for the full list (2026-08-19: this was
+     * paying for up to one appointment-history fetch per contact on every cache miss, contributing
+     * to Square rate-limiting seen live); {@link #enrichContacts} backs the frontend's lazy,
+     * scroll-triggered follow-up call that fills these back in only for the rows actually on
+     * screen. Single-contact lookups ({@link #contactByPhone}, {@link #contactByCustomerId}) keep
+     * the eager {@code true} default above — there's no "just the visible rows" concept for one
+     * contact.
+     */
+    private Contact toContact(MarketingContactsRepository.RawContact raw, Map<String, Long> visitCounts,
+                               boolean includeSquareHistory) {
         SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
         String effectiveSquareCustomerId = resolveSquareCustomerId(raw);
 
@@ -564,7 +656,7 @@ public class MarketingContactsService {
         // it's just never persisted there) — Square is the only source, so this is best-effort
         // and only attempted when a customer is already linked, never a fresh phone lookup just
         // for display.
-        String familyName = effectiveSquareCustomerId == null
+        String familyName = effectiveSquareCustomerId == null || !includeSquareHistory
                 ? null
                 : square.customerFamilyNames(List.of(effectiveSquareCustomerId)).get(effectiveSquareCustomerId);
 
@@ -573,7 +665,7 @@ public class MarketingContactsService {
                 .map(MarketingContactsService::toSubmission)
                 .collect(Collectors.toList());
 
-        List<Appointment> appointments = effectiveSquareCustomerId == null
+        List<Appointment> appointments = effectiveSquareCustomerId == null || !includeSquareHistory
                 ? List.of()
                 : fetchAppointments(effectiveSquareCustomerId, raw.createdAt());
 
