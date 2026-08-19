@@ -5,12 +5,20 @@ import com.salonreview.web.dto.MarketingContactDto;
 import com.salonreview.web.dto.MarketingSyncStatusDto;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/owner/marketing/contacts")
 public class MarketingContactsController {
+
+    /** Matches the frontend's scroll-batch size (see ContactsTable) — a generous ceiling against a
+     * malformed/adversarial request, not a normal-path limit. */
+    private static final int MAX_ENRICH_BATCH = 100;
 
     private final MarketingContactsService service;
 
@@ -21,6 +29,17 @@ public class MarketingContactsController {
     @GetMapping
     public MarketingContactDto contacts() {
         return service.contacts();
+    }
+
+    public record EnrichRequest(List<String> contactIds) {}
+
+    /** Lazy follow-up for the rows actually scrolled into view — see
+     * MarketingContactsService#enrichContacts for why {@link #contacts} no longer includes this
+     * itself. */
+    @PostMapping("/enrich")
+    public Map<String, MarketingContactsService.ContactEnrichment> enrich(@RequestBody EnrichRequest request) {
+        List<String> ids = request.contactIds() == null ? List.of() : request.contactIds();
+        return service.enrichContacts(ids.subList(0, Math.min(ids.size(), MAX_ENRICH_BATCH)));
     }
 
     /** When "Sync appointments" was last run — read separately from the POST below so

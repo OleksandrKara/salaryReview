@@ -1,9 +1,16 @@
 'use client';
 
-import { Fragment, useState } from 'react';
-import type { MarketingContact } from '../../../lib/types';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import type { MarketingContact, MarketingContactEnrichment } from '../../../lib/types';
+import { api } from '../../../lib/api';
 import { AppointmentHistoryList, HistoryToggle, SubmissionHistoryList } from '../ContactHistory';
 import VipBadge from './VipBadge';
+
+// How many additional rows reveal per scroll-triggered batch — matches how many contacts get
+// their familyName/appointments lazily fetched from Square at once (see the enrichment effect
+// below), keeping any one batch's Square round trips small instead of paying for the whole
+// (often 300+) filtered list up front.
+const PAGE_SIZE = 15;
 
 function ConsentBadge({ label, value }: { label: string; value: boolean | null }) {
   const text = value === null ? 'Unknown' : value ? 'Yes' : 'No';
@@ -102,50 +109,138 @@ export default function ContactsTable({ contacts }: { contacts: MarketingContact
     setSet(next);
   }
 
+  // Reveals PAGE_SIZE more rows at a time as the sentinel below scrolls into view — reset back to
+  // PAGE_SIZE whenever the (already filtered, by the caller) contacts array itself changes, so
+  // switching filters doesn't leave the reveal window stuck wherever it happened to be for the
+  // previous filter's list. React's own documented "reset state when a prop changes" pattern
+  // (during render, not an effect) — same convention ContactsFilterBar already uses for its own
+  // prevInitialContacts.
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [prevContacts, setPrevContacts] = useState(contacts);
+  if (contacts !== prevContacts) {
+    setPrevContacts(contacts);
+    setVisibleCount(PAGE_SIZE);
+  }
+  const visible = contacts.slice(0, visibleCount);
+  const hasMore = visibleCount < contacts.length;
+
+  // Square-resolved familyName/appointments for whichever contacts have actually been revealed —
+  // fetched lazily in the effect below instead of coming back with the bulk contacts list (see
+  // MarketingContactsService#enrichContacts's own doc for why: it's a real Square round trip per
+  // contact, and eagerly paying for it across a full 300+-contact list was hitting Square's rate
+  // limit live). Keyed by contact id, not reset when the filtered list changes — a contact already
+  // enriched under one filter stays enriched if a different filter reveals it again.
+  const [enrichment, setEnrichment] = useState<Map<string, MarketingContactEnrichment>>(new Map());
+  const requestedIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const newIds = visible.map((c) => c.id).filter((id) => !requestedIdsRef.current.has(id));
+    if (newIds.length === 0) return;
+    for (const id of newIds) requestedIdsRef.current.add(id);
+    api
+      .enrichMarketingContacts(newIds)
+      .then((result) => {
+        setEnrichment((prev) => {
+          const next = new Map(prev);
+          for (const [id, data] of Object.entries(result)) next.set(id, data);
+          return next;
+        });
+      })
+      .catch(() => {
+        // Leave these ids marked requested — a manual retry isn't worth building for a
+        // best-effort display enrichment; the toggle just keeps showing "Loading…" for that row
+        // rather than a dedicated error state, same "not worth it for a background fetch this
+        // minor" call as MessagesView's own load-more error handling.
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible.map((c) => c.id).join(',')]);
+
+  // Two separate sentinels (mobile cards vs. desktop table are two parallel DOM trees, toggled by
+  // CSS breakpoint, never both visible at once) — a single ref can't be attached to both rendered
+  // elements at the same time. The hidden layout's sentinel is `display:none`'d by its ancestor,
+  // so it has no box and never reports as intersecting; only the actually-visible one ever fires.
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
+  const loadMoreSentinelDesktopRef = useRef<HTMLDivElement>(null);
+
+  // Same infinite-scroll convention as MessagesView's conversation list: observe a sentinel div at
+  // the bottom of the rendered rows. Re-attaches whenever `hasMore` flips — unlike MessagesView's
+  // single stable list, this component's `contacts` prop (and so `hasMore`) can change identity on
+  // every filter edit (see the prop-change reset above), which unmounts/remounts the sentinel div
+  // itself; a mount-once effect would only ever observe whichever sentinel existed the very first
+  // time this component rendered.
+  useEffect(() => {
+    if (!hasMore) return;
+    const observers: IntersectionObserver[] = [];
+    for (const ref of [loadMoreSentinelRef, loadMoreSentinelDesktopRef]) {
+      const el = ref.current;
+      if (!el) continue;
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (entries[0]?.isIntersecting) setVisibleCount((c) => c + PAGE_SIZE);
+        },
+        { root: null, rootMargin: '200px' },
+      );
+      observer.observe(el);
+      observers.push(observer);
+    }
+    return () => observers.forEach((o) => o.disconnect());
+  }, [hasMore]);
+
+  function withEnrichment(c: MarketingContact): { contact: MarketingContact; enriched: boolean } {
+    const data = enrichment.get(c.id);
+    if (!data) return { contact: c, enriched: false };
+    return { contact: { ...c, familyName: data.familyName, appointments: data.appointments }, enriched: true };
+  }
+
   return (
     <>
       {/* Mobile cards */}
       <div className="flex flex-col gap-3 sm:hidden">
-        {contacts.map((c) => (
-          <div key={c.id} className="rounded-lg p-4 ring-1 ring-zinc-200">
-            <div className="flex items-center justify-between gap-2">
-              <span className="flex items-center gap-1.5">
-                <span className="font-medium">{c.givenName ?? '—'}</span>
-                {c.vip && <VipBadge visitCount={c.visitCount} />}
-              </span>
-              {c.squareProfileUrl && <SquareProfileLink url={c.squareProfileUrl} />}
+        {visible.map((raw) => {
+          const { contact: c, enriched } = withEnrichment(raw);
+          return (
+            <div key={c.id} className="rounded-lg p-4 ring-1 ring-zinc-200">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5">
+                  <span className="font-medium">{c.givenName ?? '—'}</span>
+                  {c.vip && <VipBadge visitCount={c.visitCount} />}
+                </span>
+                {c.squareProfileUrl && <SquareProfileLink url={c.squareProfileUrl} />}
+              </div>
+              <div className="mt-1 text-sm text-zinc-600">{c.phoneNumber}</div>
+              {c.emailAddress && <div className="text-sm text-zinc-600">{c.emailAddress}</div>}
+              <div className="mt-2">
+                <SourceInfo c={c} />
+              </div>
+              <div className="mt-2">
+                <DeviceInfo c={c} />
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <ConsentBadge label="SMS" value={c.smsMarketingConsent} />
+                <ConsentBadge label="Email" value={c.emailMarketingConsent} />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-zinc-100 pt-3">
+                <HistoryToggle
+                  label="Appointments"
+                  count={c.appointments.length}
+                  loading={!enriched}
+                  open={expandedAppointments.has(c.id)}
+                  onClick={() => toggle(expandedAppointments, setExpandedAppointments, c.id)}
+                />
+                <HistoryToggle
+                  label="Submissions"
+                  count={c.submissions.length}
+                  open={expandedSubmissions.has(c.id)}
+                  onClick={() => toggle(expandedSubmissions, setExpandedSubmissions, c.id)}
+                />
+              </div>
+              <div className="mt-3">
+                <ExpandedSections c={c} showAppointments={expandedAppointments.has(c.id)} showSubmissions={expandedSubmissions.has(c.id)} />
+              </div>
             </div>
-            <div className="mt-1 text-sm text-zinc-600">{c.phoneNumber}</div>
-            {c.emailAddress && <div className="text-sm text-zinc-600">{c.emailAddress}</div>}
-            <div className="mt-2">
-              <SourceInfo c={c} />
-            </div>
-            <div className="mt-2">
-              <DeviceInfo c={c} />
-            </div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              <ConsentBadge label="SMS" value={c.smsMarketingConsent} />
-              <ConsentBadge label="Email" value={c.emailMarketingConsent} />
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-zinc-100 pt-3">
-              <HistoryToggle
-                label="Appointments"
-                count={c.appointments.length}
-                open={expandedAppointments.has(c.id)}
-                onClick={() => toggle(expandedAppointments, setExpandedAppointments, c.id)}
-              />
-              <HistoryToggle
-                label="Submissions"
-                count={c.submissions.length}
-                open={expandedSubmissions.has(c.id)}
-                onClick={() => toggle(expandedSubmissions, setExpandedSubmissions, c.id)}
-              />
-            </div>
-            <div className="mt-3">
-              <ExpandedSections c={c} showAppointments={expandedAppointments.has(c.id)} showSubmissions={expandedSubmissions.has(c.id)} />
-            </div>
-          </div>
-        ))}
+          );
+        })}
+        {hasMore && <div ref={loadMoreSentinelRef} data-testid="contacts-load-more-sentinel" className="h-1" />}
       </div>
 
       {/* Desktop table */}
@@ -162,7 +257,8 @@ export default function ContactsTable({ contacts }: { contacts: MarketingContact
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
-            {contacts.map((c) => {
+            {visible.map((raw) => {
+              const { contact: c, enriched } = withEnrichment(raw);
               const showAppointments = expandedAppointments.has(c.id);
               const showSubmissions = expandedSubmissions.has(c.id);
               return (
@@ -195,6 +291,7 @@ export default function ContactsTable({ contacts }: { contacts: MarketingContact
                       <HistoryToggle
                         label="Appointments"
                         count={c.appointments.length}
+                        loading={!enriched}
                         open={showAppointments}
                         onClick={() => toggle(expandedAppointments, setExpandedAppointments, c.id)}
                       />
@@ -218,6 +315,13 @@ export default function ContactsTable({ contacts }: { contacts: MarketingContact
                 </Fragment>
               );
             })}
+            {hasMore && (
+              <tr>
+                <td colSpan={6}>
+                  <div ref={loadMoreSentinelDesktopRef} data-testid="contacts-load-more-sentinel-desktop" className="h-1" />
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

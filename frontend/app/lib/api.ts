@@ -45,6 +45,7 @@ import type {
   SmsReplyResult,
   SmsDraftResult,
   MarketingContact,
+  MarketingContactEnrichment,
   Me,
   RagAnswer,
   KbRequest,
@@ -356,6 +357,12 @@ export const api = {
   // When "Sync appointments" was last actually run — cheap (a single DB row, no Square calls),
   // safe to fetch on every marketing tab's mount.
   getMarketingSyncStatus: () => proxyGet<MarketingSyncStatusData>(`/api/owner/marketing/contacts/sync`),
+
+  // Lazy per-contact appointment/family-name follow-up (see ContactsTable's scroll-triggered
+  // reveal) — the bulk contacts list above deliberately doesn't include these anymore (2026-08-19,
+  // was paying for a Square round trip per contact on every page load).
+  enrichMarketingContacts: (contactIds: string[]) =>
+    proxyJson<Record<string, MarketingContactEnrichment>>(`/api/owner/marketing/contacts/enrich`, 'POST', { contactIds }),
 
   // Knowledge Base articles. Reads are role-filtered by the backend; writes/sync are OWNER+MANAGER.
   listKbArticles: () => proxyGet<KbArticle[]>(`/api/kb-articles`),

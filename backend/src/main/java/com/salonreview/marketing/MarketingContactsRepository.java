@@ -115,6 +115,18 @@ public class MarketingContactsRepository {
         return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact);
     }
 
+    /** Backs {@code MarketingContactsService#enrichContacts} — the lazy, scroll-triggered
+     * follow-up fetch for just the contact rows actually visible on screen (see #listAll's own
+     * "most Square-call-heavy" note, now only paid for on-demand instead of for the whole list).
+     * Empty input returns an empty list, no query fired. */
+    public List<RawContact> findByIds(Collection<UUID> ids) {
+        if (ids.isEmpty()) return List.of();
+        String placeholders = ids.stream().map(id -> "?").collect(Collectors.joining(","));
+        String sql = "SELECT " + CONTACT_COLUMNS + ", " + TrafficSourceSql.contactChannelCase("c") + " AS channel"
+                + " FROM marketing.contacts c WHERE c.id IN (" + placeholders + ")";
+        return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact, ids.toArray());
+    }
+
     /** contacts is unique on phone_number, so this is at most one row — backs the manager
      * conversation view's contact info panel (see openspec/changes, MessagesView contact
      * sidebar). Empty when this phone number never went through the tracked capture flow (e.g. a
