@@ -275,17 +275,18 @@ class PrepaidServiceTest {
 
     /** Real production case found 2026-08-19 (Hala Wrda, invoice 001688): a $100 deposit invoice
      * paid ahead of time, then applied as a checkout discount on the real $600 appointment (also
-     * discounted 10% by an unrelated promo), leaving $440 + $88 tip collected via card that day.
-     * Before this fix, candidates() excluded the booking entirely — any matching order at all was
-     * treated as "already paid, nothing to draw down" — permanently losing the $100 deposit credit
-     * for that visit. The deposit-discounted booking must still surface, with menuPrice set to the
-     * deposit amount ($100), not the full $600 catalog price (which would double the salon-absorbed
-     * discount into looking like $500 rather than the real $0 on this specific redemption line).
+     * discounted 10% by an unrelated promo), leaving $440 + $88 tip collected via card that day. A
+     * short-lived intermediate version of this method surfaced such visits as a candidate priced at
+     * the $100 deposit credit — but that double-pays the provider: {@code SquareMonthAggregator}
+     * already attributes this same order's line item on its full, pre-discount {@code
+     * grossSalesMoney} ($600), regardless of any discount applied to it. Confirmed live: Anastasiia's
+     * July 2026 trace showed BOTH a $600-gross CARD line and a $100-gross PREPAID line for this one
+     * booking. Reverted to excluding any visit with a matching order, deposit-discounted or not.
      */
     @Test
-    @DisplayName("A visit already checked out at a reduced price via the salon's own Deposit "
-            + "discount still surfaces as a candidate, priced at the deposit amount")
-    void depositDiscountedVisitStillSurfacesAtDepositAmount() {
+    @DisplayName("A visit already checked out through the till — even at a reduced price via the "
+            + "salon's own Deposit discount — is excluded (the order's own gross already covers it)")
+    void depositDiscountedVisitStillExcluded() {
         SquareClient square = mock(SquareClient.class);
         ProviderRepository providers = mock(ProviderRepository.class);
         ProviderDirectory directory = mock(ProviderDirectory.class);
@@ -332,27 +333,24 @@ class PrepaidServiceTest {
 
         List<Candidate> candidates = svc.candidates(9L);
 
-        assertThat(candidates).hasSize(1);
-        Candidate c = candidates.get(0);
-        assertThat(c.bookingId()).isEqualTo("bkHala");
-        assertThat(c.menuPrice()).isEqualByComparingTo("100.00"); // the deposit credit, not the $600 catalog price
-        assertThat(c.providerName()).isEqualTo("Anastasiia M.");
+        assertThat(candidates).isEmpty();
     }
 
-    /** Real production case found 2026-08-19, discovered while manually verifying the fix above
-     * against Hala Wrda's actual live data: the package's own stored customerId and her booking
-     * both carried one Square customer id, but the real checkout order carried a DIFFERENT,
+    /** Real production case found 2026-08-19, discovered while manually verifying the deposit-discount
+     * behavior against Hala Wrda's actual live data: the package's own stored customerId and her
+     * booking both carried one Square customer id, but the real checkout order carried a DIFFERENT,
      * never-equal id (Square silently merges duplicate customer profiles — same issue
      * CustomerMergeAttributionTest documents for SquareMonthAggregator's own order-to-booking
-     * matching). Before resolving canonical ids first, matchOrder never found the real order at
-     * all, silently falling back to the full $600 catalog price instead of the $100 deposit credit
-     * — reproducing the same wrong number the deposit-discount fix above was meant to prevent, just
-     * via a different path (a customer-id mismatch instead of an outright exclusion).
+     * matching). Before resolving canonical ids first, matchOrder never found the real order at all,
+     * so the visit incorrectly surfaced as a candidate at the full $600 catalog price — money the
+     * provider is already paid via the order's own gross. Canonical-id resolution (still in place;
+     * only the deposit-credit part of the original fix was reverted) fixes the match itself, so the
+     * visit is correctly excluded instead.
      */
     @Test
-    @DisplayName("A deposit-discounted visit still resolves correctly when the booking and its "
-            + "checkout order carry two different (Square-merged) customer ids")
-    void depositDiscountedVisitResolvesAcrossMergedCustomerIds() {
+    @DisplayName("A visit is correctly excluded even when the booking and its checkout order carry "
+            + "two different (Square-merged) customer ids")
+    void visitExcludedAcrossMergedCustomerIds() {
         SquareClient square = mock(SquareClient.class);
         ProviderRepository providers = mock(ProviderRepository.class);
         ProviderDirectory directory = mock(ProviderDirectory.class);
@@ -404,8 +402,7 @@ class PrepaidServiceTest {
 
         List<Candidate> candidates = svc.candidates(9L);
 
-        assertThat(candidates).hasSize(1);
-        assertThat(candidates.get(0).menuPrice()).isEqualByComparingTo("100.00");
+        assertThat(candidates).isEmpty();
     }
 
     /** Sibling case to the deposit test above: a visit checked out at FULL price (no Deposit
