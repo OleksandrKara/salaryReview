@@ -9,6 +9,10 @@ import java.util.Optional;
 public interface BusinessRepository extends JpaRepository<Business, Long> {
     Optional<Business> findByShortCode(String shortCode);
 
+    /** Backs {@code GET /api/internal/businesses/by-domain} — salonLandings resolves which
+     * business a landing-page request belongs to from its {@code Host} header. */
+    Optional<Business> findByPublicDomain(String publicDomain);
+
     /** Phase 6.2's switcher list for a platform_admin — every business they can act on regardless
      * of having a business_membership row for it. */
     List<Business> findAllByActiveTrue();

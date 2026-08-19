@@ -55,6 +55,21 @@ public class SquareConnectionService {
         return repo.findByBusinessId(businessId);
     }
 
+    /** Decrypted Square token/location for this business — for
+     * {@link com.salonreview.web.InternalBusinessController} only (the one caller allowed to hand
+     * this plaintext to another service, over the trusted internal-API channel). Never expose the
+     * plaintext through any owner-facing DTO/HTTP response or log line. Empty if this business
+     * hasn't connected Square yet. */
+    public record PlainCredentials(String accessToken, String locationId, SquareProperties.Environment environment) {
+    }
+
+    public Optional<PlainCredentials> plainCredentials(Long businessId) {
+        return repo.findByBusinessId(businessId).map(connection -> new PlainCredentials(
+                cipher.decrypt(connection.getAccessTokenEncrypted()),
+                connection.getLocationId(),
+                connection.getEnvironment()));
+    }
+
     /** Decrypts the stored token purely to build a display mask ("••••" + last 4) — the plaintext
      * never leaves this method. {@code null} if nothing is connected yet. */
     public String maskedAccessToken(SquareConnection connection) {
