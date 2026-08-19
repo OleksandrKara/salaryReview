@@ -145,14 +145,20 @@ public class PrepaidService {
 
     /**
      * Real Square bookings for this package's customer (with ANY provider) since the paid date that can
-     * be drawn down: not cancelled/no-show, not already redeemed, and not already checked out at full
-     * price through the till (±2 days) — so confirming one never double-counts a visit paid normally.
-     * A visit that WAS checked out through the till but at a reduced price because the salon's own
-     * "Deposit" discount was applied still counts as a candidate — its {@link Candidate#menuPrice}
-     * is the deposit amount itself (not the full catalog price), so confirming it adds back exactly
-     * the difference checkout didn't collect, rather than the whole service value on top of what was
-     * already collected (see {@link #matchOrder}). Each candidate names the provider who performed
-     * it; confirming credits that provider.
+     * be drawn down: not cancelled/no-show, not already redeemed, and not already checked out through
+     * the till at all (±2 days) — so confirming one never double-counts a visit paid normally.
+     *
+     * <p>A visit that WAS checked out through the till is always excluded here, even when the salon's
+     * own "Deposit" discount was applied to reduce what was collected at checkout: the normal revenue
+     * pipeline ({@code SquareMonthAggregator}) attributes that order's line item on its full,
+     * pre-discount {@code grossSalesMoney} — the provider is already paid commission on the entire menu
+     * price regardless of any discount, deposit-named or not (the salon absorbs it). A prior version of
+     * this method credited the deposit-discount amount as a separate draw-down on top of that order —
+     * found live 2026-08-19 (Hala Warda) to double-pay the provider: once via the order's full gross,
+     * again via this draw-down. Reverted; draw-down now only exists for visits with no matching order
+     * at all (the classic multi-session package case, where nothing is ever rung up at checkout because
+     * the whole visit was paid for up front). Each candidate names the provider who performed it;
+     * confirming credits that provider.
      */
     public List<Candidate> candidates(Long packageId) {
         PrepaidPackage pkg = packages.findByIdAndBusinessId(packageId, currentBusinessContext.id())
@@ -218,14 +224,11 @@ public class PrepaidService {
                 String sv = s.serviceVariationId();
                 if (sv == null || s.teamMemberId() == null) continue;
                 if (redemptions.existsBySquareBookingIdAndServiceVariationId(b.id(), sv)) continue;
-                OrderMatch match = matchOrder(orders, b.customerId(), sv, day, zone);
-                // A matching order with no deposit credit means this visit was already fully paid
-                // through the till, independent of the package — nothing to draw down (the
-                // original anti-double-count protection). A matching order that DID apply the
-                // salon's own "Deposit" discount still owes a draw-down for exactly that reduced
-                // amount — see matchOrder's own doc.
-                if (match.matched() && match.depositCredit().signum() == 0) continue;
-                BigDecimal price = match.matched() ? match.depositCredit() : catalogPrice.getOrDefault(sv, BigDecimal.ZERO);
+                // A matching order means this visit was already checked out through the till — the
+                // normal revenue pipeline already pays the provider on the order's full gross menu
+                // price regardless of any discount applied, so nothing here needs drawing down.
+                if (matchOrder(orders, b.customerId(), sv, day, zone)) continue;
+                BigDecimal price = catalogPrice.getOrDefault(sv, BigDecimal.ZERO);
                 out.add(new Candidate(b.id(), sv, catalogName.getOrDefault(sv, sv),
                         day.toString(), localTime(b.startAt(), zone), price, price.compareTo(cutoff) >= 0,
                         s.teamMemberId(), memberNames.getOrDefault(s.teamMemberId(), s.teamMemberId())));
@@ -304,55 +307,23 @@ public class PrepaidService {
 
     // --- helpers ---
 
-    /** Whether a real checkout order matches this candidate service (same customer, same variation,
-     * within {@link #MATCH_DAYS} of the booking day), and if so, how much of it — if any — was
-     * covered by the salon's own "Deposit" discount rather than collected fresh. {@code matched}
-     * false means no such order exists at all (the classic multi-session package case: nothing is
-     * ever collected at checkout because the whole visit was paid for up front). {@code matched}
-     * true with a zero {@link #depositCredit} means the order paid the full price with no deposit
-     * involved — already fully accounted for, nothing to draw down. {@code matched} true with a
-     * positive {@link #depositCredit} means checkout collected less than the service was worth
-     * because a prior deposit was applied — that difference is exactly what still needs a
-     * draw-down redemption (see {@link #depositCreditOn}).
+    /** Whether a real checkout order already matches this candidate service (same customer, same
+     * variation, within {@link #MATCH_DAYS} of the booking day) — regardless of any discount applied
+     * to it. If one exists, the normal revenue pipeline already attributes and pays the provider on
+     * that order's full gross menu price (see this method's caller), so there is nothing left for a
+     * draw-down to add; a draw-down only makes sense when no such order exists at all.
      */
-    private record OrderMatch(boolean matched, BigDecimal depositCredit) {
-        static final OrderMatch NONE = new OrderMatch(false, BigDecimal.ZERO);
-    }
-
-    private OrderMatch matchOrder(List<Order> orders, String customerId, String variationId,
-                                   LocalDate bookingDay, ZoneId zone) {
+    private boolean matchOrder(List<Order> orders, String customerId, String variationId,
+                                LocalDate bookingDay, ZoneId zone) {
         for (Order o : orders) {
             if (!customerId.equals(o.customerId()) || o.lineItems() == null) continue;
             LocalDate orderDay = localDate(o.closedAt() != null ? o.closedAt() : o.createdAt(), zone);
             if (orderDay == null || Math.abs(orderDay.toEpochDay() - bookingDay.toEpochDay()) > MATCH_DAYS) continue;
             for (OrderLineItem li : o.lineItems()) {
-                if (variationId.equals(li.catalogObjectId())) return new OrderMatch(true, depositCreditOn(o, li));
+                if (variationId.equals(li.catalogObjectId())) return true;
             }
         }
-        return OrderMatch.NONE;
-    }
-
-    /** This line item's own share of any order-level discount whose name looks like the salon's
-     * "Deposit" discount (case-insensitive "deposit" substring — matches the real discount name
-     * seen live, {@code "Deposit "}, applied at checkout when a client's prepaid balance covers
-     * part of a visit). An ordinary promo discount on the same line item (e.g. a 10% holiday sale)
-     * is deliberately not counted — only a deposit-named discount means the visit still needs a
-     * draw-down entry for the part checkout didn't collect. Found live 2026-08-19: a client whose
-     * $100 deposit was applied as a checkout discount on a $600 service (paying $440 + tip after a
-     * separate 10% promo) was silently excluded from draw-down candidates entirely, permanently
-     * under-crediting the provider by the deposit amount.
-     */
-    private static BigDecimal depositCreditOn(Order order, OrderLineItem lineItem) {
-        if (lineItem.appliedDiscounts() == null || order.discounts() == null) return BigDecimal.ZERO;
-        Set<String> depositDiscountUids = order.discounts().stream()
-                .filter(d -> d.name() != null && d.name().toLowerCase(Locale.ROOT).contains("deposit"))
-                .map(SquareClient.OrderDiscount::uid)
-                .collect(java.util.stream.Collectors.toSet());
-        if (depositDiscountUids.isEmpty()) return BigDecimal.ZERO;
-        return lineItem.appliedDiscounts().stream()
-                .filter(ad -> depositDiscountUids.contains(ad.discountUid()))
-                .map(ad -> SquareClient.toDollars(ad.appliedMoney()))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return false;
     }
 
     private SalonConfig salonConfig() {
