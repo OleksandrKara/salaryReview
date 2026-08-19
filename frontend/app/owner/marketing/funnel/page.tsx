@@ -5,8 +5,6 @@ import MarketingTabs from '../MarketingTabs';
 import FunnelView from './FunnelView';
 import { parsePeriodParams, periodToBounds } from '../period';
 
-const DEFAULT_SLUG = 'mani';
-
 export default async function MarketingFunnelPage({
   searchParams,
 }: {
@@ -14,7 +12,6 @@ export default async function MarketingFunnelPage({
 }) {
   const params = await searchParams;
   const { slug } = params;
-  const resolvedSlug = slug ?? DEFAULT_SLUG;
   // getBusinessSettings is OWNER-only (403 for ADS_MANAGER) — fails open, same reasoning as the
   // Overview tab's own page.tsx: an ADS_MANAGER still gets the funnel, just falling back to
   // period.ts's own default timezone rather than this business's real configured one.
@@ -33,6 +30,13 @@ export default async function MarketingFunnelPage({
     serverApi.getMarketingFunnel(slug, undefined, bounds.from, bounds.to),
     serverApi.getMarketingPages(),
   ]);
+  // FunnelView needs a real, non-empty slug even when `data` came back empty (this business's
+  // page has recorded zero funnel steps yet) — falls back to this business's own default page
+  // (pages is already scoped to the caller's own business, oldest-first, matching the backend's
+  // own findDefaultSlugForBusiness). Previously this hardcoded a literal "mani" fallback, which
+  // meant every button here (page switcher, Analyze, refetch) silently targeted AK.LUX.NAILS'
+  // page for every other business once the backend was scoped by business_id.
+  const resolvedSlug = data[0]?.landingPageSlug ?? slug ?? pages[0]?.slug ?? 'mani';
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-8">
