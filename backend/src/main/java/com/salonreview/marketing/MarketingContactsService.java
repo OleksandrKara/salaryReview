@@ -153,7 +153,7 @@ public class MarketingContactsService {
      * no Square customer resolves either way. */
     public Optional<Contact> contactByPhone(String phoneNumber) {
         try {
-            Optional<Contact> tracked = repository.findByPhoneNumber(phoneNumber)
+            Optional<Contact> tracked = repository.findByPhoneNumber(phoneNumber, currentBusinessContext.id())
                     .map(r -> toContact(r, visitCountsByCustomerId()));
             return tracked.isPresent() ? tracked : contactFromLivePhoneLookup(phoneNumber);
         } catch (DataAccessException | RestClientException ex) {
@@ -205,7 +205,7 @@ public class MarketingContactsService {
     public Optional<Contact> contactByCustomerId(String squareCustomerId) {
         try {
             Map<String, Long> visitCounts = visitCountsByCustomerId();
-            return repository.listAll().stream()
+            return repository.listAllForBusiness(currentBusinessContext.id()).stream()
                     .filter(r -> squareCustomerId.equals(resolveSquareCustomerId(r)))
                     .findFirst()
                     .map(r -> toContact(r, visitCounts));
@@ -365,7 +365,7 @@ public class MarketingContactsService {
             // over there. Resolve it once here and re-establish it explicitly per element, same fix
             // as OwnerOverviewService/RevenuePulseService's identical async ThreadLocal loss.
             Long businessId = currentBusinessContext.id();
-            List<Contact> contacts = repository.listAll().parallelStream()
+            List<Contact> contacts = repository.listAllForBusiness(businessId).parallelStream()
                     .map(r -> currentBusinessContext.runAsAndGet(businessId, () -> toContact(r, visitCounts, false)))
                     .collect(Collectors.toList());
             return new MarketingContactDto(true, contacts);
@@ -394,7 +394,7 @@ public class MarketingContactsService {
         }
         try {
             List<java.util.UUID> ids = contactIds.stream().map(java.util.UUID::fromString).toList();
-            List<MarketingContactsRepository.RawContact> raws = repository.findByIds(ids);
+            List<MarketingContactsRepository.RawContact> raws = repository.findByIds(ids, currentBusinessContext.id());
             Long businessId = currentBusinessContext.id();
             return raws.parallelStream()
                     .collect(Collectors.toMap(
@@ -456,7 +456,7 @@ public class MarketingContactsService {
         SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
         square.invalidate();
         cache.invalidateAll();
-        List<MarketingContactsRepository.RawContact> raw = repository.listAll();
+        List<MarketingContactsRepository.RawContact> raw = repository.listAllForBusiness(currentBusinessContext.id());
         for (MarketingContactsRepository.RawContact r : raw) {
             if (r.squareCustomerId() != null) continue; // already linked via the tracked flow
             if (squareLinks.findByPhoneNumber(r.phoneNumber()).isPresent()) continue; // resolved by an earlier sync
@@ -522,7 +522,7 @@ public class MarketingContactsService {
         // on whatever thread it runs on — parallelStream()'s worker threads don't inherit it. Same
         // fix as computeContacts() above.
         Long businessId = currentBusinessContext.id();
-        return repository.listAll().parallelStream()
+        return repository.listAllForBusiness(businessId).parallelStream()
                 .filter(r -> landingPageSlug.equals(r.landingPageSlug()))
                 .filter(r -> statsSince == null || !r.createdAt().isBefore(statsSince))
                 .filter(r -> periodTo == null || r.createdAt().isBefore(periodTo))
@@ -549,7 +549,7 @@ public class MarketingContactsService {
      * rather than silently dropping it). */
     public Map<String, String> resolveCustomerIdsByBookingId(String landingPageSlug) {
         Map<String, String> byBooking = new java.util.HashMap<>();
-        for (MarketingContactsRepository.RawContact r : repository.listAll()) {
+        for (MarketingContactsRepository.RawContact r : repository.listAllForBusiness(currentBusinessContext.id())) {
             if (!landingPageSlug.equals(r.landingPageSlug()) || r.squareBookingId() == null) continue;
             String customerId = resolveSquareCustomerId(r);
             if (customerId != null) byBooking.put(r.squareBookingId(), customerId);
@@ -578,7 +578,7 @@ public class MarketingContactsService {
             java.util.Set<String> attributedBookingIds, java.util.Set<String> convertedCustomerIds) {
         // Same CurrentBusinessContext-across-parallelStream fix as countFollowUpBookingsByVariant.
         Long businessId = currentBusinessContext.id();
-        return repository.listAll().parallelStream()
+        return repository.listAllForBusiness(businessId).parallelStream()
                 .filter(r -> landingPageSlug.equals(r.landingPageSlug()))
                 .filter(r -> statsSince == null || !r.createdAt().isBefore(statsSince))
                 .filter(r -> !convertedCustomerIds.contains(resolveSquareCustomerId(r)))

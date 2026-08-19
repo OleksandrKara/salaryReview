@@ -99,7 +99,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("sums gross and counts distinct customers/services for ads-attributed customers only, within range")
     void aggregatesAdsAttributedServicesInRange() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-ads-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads"),
                 contact("+16195550002", "cust-ads-2", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
@@ -120,7 +120,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("excludes services outside the requested date range even within the same month")
     void excludesServicesOutsideDateRange() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-ads-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
                 svc("2026-07-05", "cust-ads-1", "93.00"),
@@ -137,7 +137,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("spans multiple calendar months for a custom range crossing a month boundary")
     void spansMultipleMonths() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-ads-1", Instant.parse("2026-06-01T00:00:00Z"), "meta_ads")));
         when(aggregator.aggregate(2026, 6, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 6, List.of(
                 svc("2026-06-28", "cust-ads-1", "93.00")
@@ -156,7 +156,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("short-circuits with zeroed results, skipping Square entirely, when no contact is ads-attributed")
     void shortCircuitsWhenNoAdsAttributedContacts() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of());
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of());
 
         MarketingAnalyticsDto dto = service.analytics(
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY);
@@ -170,7 +170,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("splits fresh-to-Square vs already-existing customers by comparing Square creation date to first ad touch")
     void splitsFreshFromReturningCustomers() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-fresh", Instant.parse("2026-07-05T12:00:00Z"), "meta_ads"),
                 contact("+16195550002", "cust-returning", Instant.parse("2026-07-05T12:00:00Z"), "meta_ads")));
         // Fresh: Square created the record right at the ad touch. Returning: Square had them a year earlier.
@@ -196,7 +196,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("treats an unresolvable Square creation date as returning, not fresh")
     void unknownCreationDateIsTreatedAsReturning() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-unknown", Instant.parse("2026-07-05T12:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-unknown"))).thenReturn(Map.of()); // lookup failed
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
@@ -216,7 +216,7 @@ class MarketingAnalyticsServiceTest {
         // Mirrors a real case: Square merged this customer's profile with a second, separately-created
         // one for the same person, and the surviving record's created_at ended up predating her actual
         // first ad touch — even though her only real booking (and only real history) is from that touch.
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-merged", Instant.parse("2026-07-07T01:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-merged")))
                 .thenReturn(Map.of("cust-merged", Instant.parse("2026-07-03T00:00:00Z"))); // predates the ad touch
@@ -238,7 +238,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("still treats a customer as returning when their earliest booking predates the ad touch")
     void bookingHistoryBeforeAdTouchIsStillReturning() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-old", Instant.parse("2026-07-05T12:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-old")))
                 .thenReturn(Map.of("cust-old", Instant.parse("2026-07-05T12:05:00Z"))); // looks fresh...
@@ -259,7 +259,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("filters out a platform not in the requested sources")
     void filtersByRequestedSources() {
-        when(contactsRepository.findAdsAttributedContacts(Set.of("meta_ads"))).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(Set.of("meta_ads"), 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-meta", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
                 svc("2026-07-05", "cust-meta", "50.00"),
@@ -278,7 +278,7 @@ class MarketingAnalyticsServiceTest {
     void resolvesStaleCustomerIdViaPhone() {
         // The contact was originally linked to cust-old (e.g. from a since-cancelled request); a later
         // appointment got booked/matched against a different Square profile, cust-new, for the same phone.
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-old", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(square.customerIdsForPhone("+16195550001")).thenReturn(List.of("cust-new"));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
@@ -295,7 +295,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("lists upcoming ads-attributed appointments, one row per booking with segments summed, tagged fresh/returning")
     void listsUpcomingAppointments() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-1")))
                 .thenReturn(Map.of("cust-1", Instant.parse("2026-07-01T00:00:00Z")));
@@ -345,7 +345,7 @@ class MarketingAnalyticsServiceTest {
     @DisplayName("still shows a same-day appointment as upcoming even though its exact start time has already passed")
     void showsSameDayAppointmentEvenIfStartTimeAlreadyPassed() {
         // FIXED_CLOCK is 2026-07-07T12:00:00Z (noon) — this booking started at 2am the same day.
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
 
@@ -367,7 +367,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("excludes a same-day appointment from upcoming once it's already been paid this month")
     void excludesAlreadyPaidBookingFromUpcoming() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads")));
         // This month's aggregation already has a paid service tied to bk-1 — same booking as below.
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
@@ -392,7 +392,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("ad spend is zero when no page (slug) is selected — pooled-pages view has nothing unambiguous to show")
     void adSpendDefaultsToZeroWithNoSlug() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of());
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of());
 
         MarketingAnalyticsDto dto = service.analytics(
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY);
@@ -403,8 +403,8 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("ad spend reflects whatever was entered for the current month, for the selected page")
     void adSpendReflectsStoredValue() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of());
-        when(adSpendEntryRepository.findOverlapping("mani", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 7)))
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani", 1L)).thenReturn(List.of());
+        when(adSpendEntryRepository.findOverlapping("mani", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 7), 1L))
                 .thenReturn(List.of(AdSpendEntry.builder().id(1L).landingPageSlug("mani")
                         .periodStart(LocalDate.of(2026, 7, 1)).periodEnd(LocalDate.of(2026, 7, 7))
                         .amountSpent(new BigDecimal("250.00")).build()));
@@ -439,7 +439,7 @@ class MarketingAnalyticsServiceTest {
         AdSpendEntry existing = AdSpendEntry.builder().id(5L).landingPageSlug("mani")
                 .periodStart(LocalDate.of(2026, 7, 1)).periodEnd(LocalDate.of(2026, 7, 7))
                 .amountSpent(new BigDecimal("100.00")).enteredBy("owner1").build();
-        when(adSpendEntryRepository.findById(5L)).thenReturn(java.util.Optional.of(existing));
+        when(adSpendEntryRepository.findByIdAndBusinessId(5L, 1L)).thenReturn(java.util.Optional.of(existing));
         when(adSpendEntryRepository.save(org.mockito.ArgumentMatchers.any(AdSpendEntry.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
@@ -458,7 +458,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("updateAdSpendEntry returns empty for a non-existent id, doesn't call save")
     void updateAdSpendEntryMissingReturnsEmpty() {
-        when(adSpendEntryRepository.findById(99L)).thenReturn(java.util.Optional.empty());
+        when(adSpendEntryRepository.findByIdAndBusinessId(99L, 1L)).thenReturn(java.util.Optional.empty());
 
         assertThat(service.updateAdSpendEntry(99L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 7),
                 new BigDecimal("10.00"))).isEmpty();
@@ -469,32 +469,33 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("deleteAdSpendEntry deletes an existing entry and returns true")
     void deleteAdSpendEntryDeletesExisting() {
-        when(adSpendEntryRepository.existsById(5L)).thenReturn(true);
+        when(adSpendEntryRepository.existsByIdAndBusinessId(5L, 1L)).thenReturn(true);
 
         assertThat(service.deleteAdSpendEntry(5L)).isTrue();
-        org.mockito.Mockito.verify(adSpendEntryRepository).deleteById(5L);
+        org.mockito.Mockito.verify(adSpendEntryRepository).deleteByIdAndBusinessId(5L, 1L);
     }
 
     @Test
     @DisplayName("deleteAdSpendEntry returns false for a non-existent id, doesn't call deleteById")
     void deleteAdSpendEntryMissingReturnsFalse() {
-        when(adSpendEntryRepository.existsById(99L)).thenReturn(false);
+        when(adSpendEntryRepository.existsByIdAndBusinessId(99L, 1L)).thenReturn(false);
 
         assertThat(service.deleteAdSpendEntry(99L)).isFalse();
-        org.mockito.Mockito.verify(adSpendEntryRepository, org.mockito.Mockito.never()).deleteById(org.mockito.ArgumentMatchers.anyLong());
+        org.mockito.Mockito.verify(adSpendEntryRepository, org.mockito.Mockito.never())
+                .deleteByIdAndBusinessId(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong());
     }
 
     @Test
     @DisplayName("analytics() folds a manager-follow-up appointment into the completed list, same as adsReport (design.md D6)")
     void analyticsMergesFollowUpIntoCompletedList() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani", 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-1")))
                 .thenReturn(Map.of("cust-1", Instant.parse("2026-07-01T00:05:00Z")));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
 
         java.util.UUID pageId = java.util.UUID.randomUUID();
-        when(dashboardRepository.findLandingPageId("mani")).thenReturn(java.util.Optional.of(pageId));
+        when(dashboardRepository.findLandingPageId("mani", 1L)).thenReturn(java.util.Optional.of(pageId));
         when(dashboardRepository.findAttributedBookingIds(pageId, null, null)).thenReturn(Set.of());
         var followUpAppt = new com.salonreview.web.dto.MarketingContactDto.Appointment(
                 "bk-followup", "ACCEPTED", Instant.parse("2026-07-05T18:00:00Z"), "Manicure",
@@ -517,7 +518,7 @@ class MarketingAnalyticsServiceTest {
             + "but already surfaced via collectServices) is not re-added — regression guard for the "
             + "same-customer-appears-twice breakdown bug")
     void analyticsDoesNotDoubleCountFollowUpAlreadyInTrackedFlow() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani", 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-1")))
                 .thenReturn(Map.of("cust-1", Instant.parse("2026-07-01T00:05:00Z")));
@@ -531,7 +532,7 @@ class MarketingAnalyticsServiceTest {
         when(square.customerNames(Set.of("cust-1"))).thenReturn(Map.of("cust-1", "Jane Doe"));
 
         java.util.UUID pageId = java.util.UUID.randomUUID();
-        when(dashboardRepository.findLandingPageId("mani")).thenReturn(java.util.Optional.of(pageId));
+        when(dashboardRepository.findLandingPageId("mani", 1L)).thenReturn(java.util.Optional.of(pageId));
         // marketing.attribution has no row for this booking (e.g. attribution capture missed it) —
         // by that check alone, follow-up detection would treat it as "uncounted".
         when(dashboardRepository.findAttributedBookingIds(pageId, null, null)).thenReturn(Set.of());
@@ -556,7 +557,7 @@ class MarketingAnalyticsServiceTest {
             + "Ashanti Williamson breakdown bug where alreadyCountedBookingIds' booking-id-only guard "
             + "missed a same-visit duplicate surfaced through a different bookingId")
     void analyticsDoesNotDoubleCountFollowUpWithDifferentBookingIdSameVisit() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani", 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-1")))
                 .thenReturn(Map.of("cust-1", Instant.parse("2026-07-01T00:05:00Z")));
@@ -569,7 +570,7 @@ class MarketingAnalyticsServiceTest {
         when(square.customerNames(Set.of("cust-1"))).thenReturn(Map.of("cust-1", "Jane Doe"));
 
         java.util.UUID pageId = java.util.UUID.randomUUID();
-        when(dashboardRepository.findLandingPageId("mani")).thenReturn(java.util.Optional.of(pageId));
+        when(dashboardRepository.findLandingPageId("mani", 1L)).thenReturn(java.util.Optional.of(pageId));
         when(dashboardRepository.findAttributedBookingIds(pageId, null, null)).thenReturn(Set.of());
         // Follow-up detection resolves the SAME visit (same customer/date/service) but under a
         // DIFFERENT bookingId — alreadyCountedBookingIds (keyed only on "bk-real") would not catch
@@ -596,7 +597,7 @@ class MarketingAnalyticsServiceTest {
             + "making the frontend's (customerId, date, serviceName) row key collide and rendering as a "
             + "React duplicate-key ghost row on ledger-tab switches")
     void twoSameDayCashNoteAppointmentsGetDistinctBookingIds() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani", 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-1")))
                 .thenReturn(Map.of("cust-1", Instant.parse("2026-07-01T00:05:00Z")));
@@ -619,7 +620,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("default (no slug) call still uses the exact no-arg contacts query — regression guard for byte-identical default behavior")
     void defaultCallUsesNoArgContactsQuery() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-ads-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
                 svc("2026-07-05", "cust-ads-1", "93.00"))));
@@ -628,15 +629,15 @@ class MarketingAnalyticsServiceTest {
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY);
 
         assertThat(dto.all().grossRevenue()).isEqualByComparingTo("93.00");
-        org.mockito.Mockito.verify(contactsRepository).findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY);
+        org.mockito.Mockito.verify(contactsRepository).findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L);
         org.mockito.Mockito.verify(contactsRepository, org.mockito.Mockito.never())
-                .findAdsAttributedContacts(org.mockito.ArgumentMatchers.anySet(), org.mockito.ArgumentMatchers.anyString());
+                .findAdsAttributedContacts(org.mockito.ArgumentMatchers.anySet(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq(1L));
     }
 
     @Test
     @DisplayName("a slug is passed straight through to the ads-attributed-contacts query")
     void slugIsPassedToAdsQuery() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "home")).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "home", 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-home-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
                 svc("2026-07-05", "cust-home-1", "50.00"))));
@@ -645,13 +646,13 @@ class MarketingAnalyticsServiceTest {
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY, "home");
 
         assertThat(dto.all().grossRevenue()).isEqualByComparingTo("50.00");
-        org.mockito.Mockito.verify(contactsRepository).findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "home");
+        org.mockito.Mockito.verify(contactsRepository).findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "home", 1L);
     }
 
     @Test
     @DisplayName("ALL traffic mode includes organic/direct contacts a plain ads query would exclude")
     void allTrafficModeIncludesOrganicContacts() {
-        when(contactsRepository.findAllAttributedContacts(null)).thenReturn(List.of(
+        when(contactsRepository.findAllAttributedContacts(null, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-ads-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads"),
                 contact("+16195550002", "cust-organic-1", Instant.parse("2026-07-01T00:00:00Z"), null)));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
@@ -663,15 +664,15 @@ class MarketingAnalyticsServiceTest {
 
         assertThat(dto.all().customerCount()).isEqualTo(2);
         assertThat(dto.all().grossRevenue()).isEqualByComparingTo("133.00");
-        org.mockito.Mockito.verify(contactsRepository, org.mockito.Mockito.never()).findAdsAttributedContacts(org.mockito.ArgumentMatchers.anySet());
+        org.mockito.Mockito.verify(contactsRepository, org.mockito.Mockito.never()).findAdsAttributedContacts(org.mockito.ArgumentMatchers.anySet(), org.mockito.ArgumentMatchers.eq(1L));
         org.mockito.Mockito.verify(contactsRepository, org.mockito.Mockito.never())
-                .findAdsAttributedContacts(org.mockito.ArgumentMatchers.anySet(), org.mockito.ArgumentMatchers.anyString());
+                .findAdsAttributedContacts(org.mockito.ArgumentMatchers.anySet(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq(1L));
     }
 
     @Test
     @DisplayName("a phone-lookup failure for one contact doesn't fail the whole response — other contacts still aggregate")
     void phoneLookupFailureIsContained() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-broken", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads"),
                 contact("+16195550002", "cust-ok", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(square.customerIdsForPhone("+16195550001"))
@@ -690,7 +691,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("a customerCreatedAts failure falls back to the booking-history freshness check")
     void customerCreatedAtsFailureFallsBackToBookingHistory() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-07-05T12:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-1"))).thenThrow(new RuntimeException("429 Too Many Requests"));
         var onlyBooking = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
@@ -709,7 +710,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("a bookingsForCustomer failure during the freshness check falls back to created_at")
     void bookingsForCustomerFailureFallsBackToCreatedAt() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-07-05T12:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-1")))
                 .thenReturn(Map.of("cust-1", Instant.parse("2025-01-01T00:00:00Z"))); // predates ad touch -> returning
@@ -727,7 +728,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("both freshness signals unavailable falls back to conservative 'returning', without throwing")
     void bothFreshnessSignalsUnavailableIsReturning() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-07-05T12:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-1"))).thenThrow(new RuntimeException("429 Too Many Requests"));
         when(square.bookingsForCustomer(eq("cust-1"), any())).thenThrow(new RuntimeException("429 Too Many Requests"));
@@ -744,7 +745,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("an upcoming-appointments lookup failure for one customer excludes just that customer, not the whole list")
     void upcomingAppointmentsFailureIsPerCustomer() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-broken", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads"),
                 contact("+16195550002", "cust-ok", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
@@ -771,7 +772,7 @@ class MarketingAnalyticsServiceTest {
             + "but tags each one with whether that customer was actually captured within [from, to] "
             + "— the cohort the 'outside period' figures are restricted to")
     void upcomingTagsButDoesNotExcludeCustomersCapturedOutsideRange() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 // Captured back in January — outside the July window below.
                 contact("+16195550001", "cust-old", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads"),
                 // Captured within the July window below.
@@ -804,7 +805,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("lists completed appointments within range with real collected amount and payment channel")
     void listsCompletedAppointmentsWithCollectedAmount() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-cash", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads"),
                 contact("+16195550002", "cust-card", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(square.customerNames(any())).thenReturn(Map.of("cust-cash", "Cash Customer", "cust-card", "Card Customer"));
@@ -831,7 +832,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("sums a multi-service booking's lines into one completed-appointment row")
     void completedAppointmentsSumMultiServiceBooking() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(square.customerNames(any())).thenReturn(Map.of("cust-1", "Jane Doe"));
         var maniLine = new AttributedService("p1", "P", "2026-07-05", "FIRST", "Manicure",
@@ -853,7 +854,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("excludes owner/family comps from the completed-appointments list")
     void completedAppointmentsExcludeComps() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         var compLine = new AttributedService("p1", "P", "2026-07-05", "FIRST", "owner comp",
                 new BigDecimal("50.00"), BigDecimal.ZERO, new BigDecimal("50.00"), BigDecimal.ZERO,
@@ -869,7 +870,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("ALL traffic mode combined with a slug scopes to that landing page")
     void allTrafficModeWithSlugScopesToPage() {
-        when(contactsRepository.findAllAttributedContacts("home")).thenReturn(List.of(
+        when(contactsRepository.findAllAttributedContacts("home", 1L)).thenReturn(List.of(
                 contact("+16195550002", "cust-organic-1", Instant.parse("2026-07-01T00:00:00Z"), null)));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
                 svc("2026-07-06", "cust-organic-1", "40.00"))));
@@ -878,13 +879,13 @@ class MarketingAnalyticsServiceTest {
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), MarketingAnalyticsService.ALL_SOURCES, "home");
 
         assertThat(dto.all().grossRevenue()).isEqualByComparingTo("40.00");
-        org.mockito.Mockito.verify(contactsRepository).findAllAttributedContacts("home");
+        org.mockito.Mockito.verify(contactsRepository).findAllAttributedContacts("home", 1L);
     }
 
     @Test
     @DisplayName("adsReport (monthly): one row per calendar month, most recent first, with real (non-estimated) ad spend")
     void adsReportMonthlyBucketsByCalendarMonth() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani", 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-june", Instant.parse("2026-06-01T00:00:00Z"), "meta_ads"),
                 contact("+16195550002", "cust-july", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(any())).thenReturn(Map.of(
@@ -898,11 +899,11 @@ class MarketingAnalyticsServiceTest {
                 true, 1, 1, false, "CARD", null, "booking-july", "cust-july", null);
         when(aggregator.aggregate(2026, 6, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 6, List.of(juneLine)));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(julyLine)));
-        when(adSpendEntryRepository.findOverlapping("mani", LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30)))
+        when(adSpendEntryRepository.findOverlapping("mani", LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), 1L))
                 .thenReturn(List.of(AdSpendEntry.builder().id(1L).landingPageSlug("mani")
                         .periodStart(LocalDate.of(2026, 6, 1)).periodEnd(LocalDate.of(2026, 6, 30))
                         .amountSpent(new BigDecimal("200.00")).build()));
-        when(adSpendEntryRepository.findOverlapping("mani", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+        when(adSpendEntryRepository.findOverlapping("mani", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), 1L))
                 .thenReturn(List.of(AdSpendEntry.builder().id(2L).landingPageSlug("mani")
                         .periodStart(LocalDate.of(2026, 7, 1)).periodEnd(LocalDate.of(2026, 7, 31))
                         .amountSpent(new BigDecimal("310.00")).build()));
@@ -934,7 +935,7 @@ class MarketingAnalyticsServiceTest {
             + "month, and the totals row dedupes the same customer across two different months rather "
             + "than double-counting them the way completedAppointments (correctly) does")
     void adsReportCustomersCollectedDedupesWithinAndAcrossPeriods() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani", 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-repeat", Instant.parse("2026-06-01T00:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(any())).thenReturn(Map.of(
                 "cust-repeat", Instant.parse("2026-06-01T00:05:00Z")));
@@ -974,7 +975,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("adsReport splits revenueCollected/completedAppointments into first-visit vs. repeat, same freshness check as analytics()")
     void adsReportSplitsFirstVisitFromRepeat() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani", 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-fresh", Instant.parse("2026-07-05T12:00:00Z"), "meta_ads"),
                 contact("+16195550002", "cust-returning", Instant.parse("2026-07-05T12:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-fresh", "cust-returning"))).thenReturn(Map.of(
@@ -1012,8 +1013,8 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("adsReport (weekly): a week straddling two months blends each month's own prorated daily rate")
     void adsReportWeeklyProratesAcrossMonthBoundary() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of());
-        when(adSpendEntryRepository.findOverlapping("mani", LocalDate.of(2026, 7, 27), LocalDate.of(2026, 8, 2)))
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani", 1L)).thenReturn(List.of());
+        when(adSpendEntryRepository.findOverlapping("mani", LocalDate.of(2026, 7, 27), LocalDate.of(2026, 8, 2), 1L))
                 .thenReturn(List.of(
                         // 31 days -> $10.00/day
                         AdSpendEntry.builder().id(1L).landingPageSlug("mani")
@@ -1041,8 +1042,8 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("adsReport still shows ad spend for a period with zero ads-attributed customers")
     void adsReportShowsSpendEvenWithNoMatchedCustomers() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of());
-        when(adSpendEntryRepository.findOverlapping("mani", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani", 1L)).thenReturn(List.of());
+        when(adSpendEntryRepository.findOverlapping("mani", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), 1L))
                 .thenReturn(List.of(AdSpendEntry.builder().id(1L).landingPageSlug("mani")
                         .periodStart(LocalDate.of(2026, 7, 1)).periodEnd(LocalDate.of(2026, 7, 31))
                         .amountSpent(new BigDecimal("310.00")).build()));
@@ -1062,7 +1063,7 @@ class MarketingAnalyticsServiceTest {
     @DisplayName("adsReport (month-to-date): exactly one row for [1st-of-month, today] — a service dated after today doesn't leak in")
     void adsReportMonthToDateDoesNotLeakPastToday() {
         // FIXED_CLOCK's "today" is 2026-07-07.
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(any()))
                 .thenReturn(Map.of("cust-1", Instant.parse("2026-07-01T00:05:00Z")));
@@ -1090,7 +1091,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("adsReport (all): exactly one row spanning the service's all-time start through today, ignoring the given from/to")
     void adsReportAllUsesAllTimeRangeIgnoringFromTo() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of());
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of());
 
         MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2020, 1, 1), LocalDate.of(2020, 1, 2),
                 TrafficSourceSql.ADS_ONLY, null, MarketingAnalyticsService.PeriodKind.ALL);
@@ -1105,7 +1106,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("adsReport buckets a still-upcoming appointment's anticipated revenue into the period it's scheduled in")
     void adsReportBucketsAnticipatedRevenue() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-1")))
                 .thenReturn(Map.of("cust-1", Instant.parse("2026-01-01T00:00:00Z")));
@@ -1132,7 +1133,7 @@ class MarketingAnalyticsServiceTest {
             + "happens — a late-July booking for an August visit is July's anticipated, not August's "
             + "(real production case: a customer booked at the end of one month for a visit early the next)")
     void adsReportBucketsAnticipatedByBookingCreationDate() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-06-01T00:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-1")))
                 .thenReturn(Map.of("cust-1", Instant.parse("2026-06-01T00:00:00Z")));
@@ -1170,7 +1171,7 @@ class MarketingAnalyticsServiceTest {
     @DisplayName("adsReport buckets a completed (paid) appointment by when it was BOOKED, not when the "
             + "visit happened — a late-July booking for an early-August visit is July's completed, not August's")
     void adsReportBucketsCompletedByBookingCreationDate() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-06-01T00:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-1")))
                 .thenReturn(Map.of("cust-1", Instant.parse("2026-06-01T00:00:00Z")));
@@ -1202,7 +1203,7 @@ class MarketingAnalyticsServiceTest {
     @DisplayName("adsReport counts cancelled/declined/no-show bookings dated within the period, "
             + "separately from completed and anticipated")
     void adsReportCountsCancelledBookings() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY)).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-1")))
                 .thenReturn(Map.of("cust-1", Instant.parse("2026-01-01T00:00:00Z")));
@@ -1232,7 +1233,7 @@ class MarketingAnalyticsServiceTest {
     @DisplayName("anticipatedRevenueOutsidePeriod is scoped to each row's own captured-in-that-window "
             + "customers, not every ads customer ever, and the totals row isn't a naive sum of rows")
     void adsReportComputesAnticipatedRevenueOutsidePeriodByCaptureWindow() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani", 1L)).thenReturn(List.of(
                 // Captured in June — has a future booking in July (inside July's own period, and
                 // inside the whole June-July aligned span).
                 contact("+16195550001", "cust-june", Instant.parse("2026-06-05T00:00:00Z"), "meta_ads"),
@@ -1283,7 +1284,7 @@ class MarketingAnalyticsServiceTest {
     @DisplayName("adsReport() does not double-count a follow-up appointment already found by the "
             + "upcoming-appointments scan — regression guard for the same-customer-twice-in-Upcoming bug")
     void adsReportDoesNotDoubleCountFollowUpAlreadyUpcoming() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani")).thenReturn(List.of(
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani", 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-1")))
                 .thenReturn(Map.of("cust-1", Instant.parse("2026-01-01T00:00:00Z")));
@@ -1298,7 +1299,7 @@ class MarketingAnalyticsServiceTest {
         when(square.customerNames(any())).thenReturn(Map.of("cust-1", "Jane Doe"));
 
         java.util.UUID pageId = java.util.UUID.randomUUID();
-        when(dashboardRepository.findLandingPageId("mani")).thenReturn(java.util.Optional.of(pageId));
+        when(dashboardRepository.findLandingPageId("mani", 1L)).thenReturn(java.util.Optional.of(pageId));
         // marketing.attribution has no row for this booking, same gap as the completed-side bug —
         // by that check alone, follow-up detection would treat "bk-1" as undiscovered.
         when(dashboardRepository.findAttributedBookingIds(pageId, null, null)).thenReturn(Set.of());
@@ -1327,7 +1328,7 @@ class MarketingAnalyticsServiceTest {
     @DisplayName("ltv: groups all-time revenue and customer count by acquisition channel")
     void ltvGroupsByChannel() {
         stubEmptyAggregationForEveryMonth();
-        when(contactsRepository.findAllAttributedContacts("mani")).thenReturn(List.of(
+        when(contactsRepository.findAllAttributedContacts("mani", 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-meta-1", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads"),
                 contact("+16195550002", "cust-meta-2", Instant.parse("2026-02-01T00:00:00Z"), "meta_ads"),
                 contact("+16195550003", "cust-direct-1", Instant.parse("2026-03-01T00:00:00Z"), "direct")));
@@ -1368,7 +1369,7 @@ class MarketingAnalyticsServiceTest {
         // every single load of this tab, tripping Square's rate limiting (confirmed via production
         // logs — repeated 429s from connect.squareup.com). Bounding to the earliest attributed
         // customer's firstTouch cuts that down to just the months that could possibly have data.
-        when(contactsRepository.findAllAttributedContacts("mani")).thenReturn(List.of(
+        when(contactsRepository.findAllAttributedContacts("mani", 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-06-15T00:00:00Z"), "meta_ads")));
         when(aggregator.aggregate(2026, 6, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 6, List.of(
                 svc("2026-06-20", "cust-1", "90.00"))));
@@ -1387,7 +1388,7 @@ class MarketingAnalyticsServiceTest {
     @DisplayName("ltv: a customer with zero paid visits is excluded entirely, not counted at $0")
     void ltvExcludesNonPayingCustomersFromDenominator() {
         stubEmptyAggregationForEveryMonth();
-        when(contactsRepository.findAllAttributedContacts("mani")).thenReturn(List.of(
+        when(contactsRepository.findAllAttributedContacts("mani", 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-meta-1", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads"),
                 contact("+16195550002", "cust-meta-2", Instant.parse("2026-02-01T00:00:00Z"), "meta_ads")));
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
@@ -1407,7 +1408,7 @@ class MarketingAnalyticsServiceTest {
     @Test
     @DisplayName("ltv: no attributed contacts yields an empty channel list and zeroed totals, no Square calls")
     void ltvWithNoContactsIsEmpty() {
-        when(contactsRepository.findAllAttributedContacts("mani")).thenReturn(List.of());
+        when(contactsRepository.findAllAttributedContacts("mani", 1L)).thenReturn(List.of());
 
         MarketingLtvDto dto = service.ltv("mani");
 

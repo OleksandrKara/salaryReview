@@ -93,9 +93,14 @@ public class MarketingDashboardService {
         return cache.get(key, CACHE_TTL, () -> computeDashboard(slug, sources, periodFrom, periodTo));
     }
 
-    private MarketingDashboardDto computeDashboard(String slug, Set<String> sources, LocalDate periodFrom, LocalDate periodTo) {
+    private MarketingDashboardDto computeDashboard(String slugParam, Set<String> sources, LocalDate periodFrom, LocalDate periodTo) {
         try {
-            Optional<UUID> landingPageId = repository.findLandingPageId(slug);
+            Long businessId = currentBusinessContext.id();
+            String slug = slugParam != null ? slugParam : repository.findDefaultSlugForBusiness(businessId).orElse(null);
+            if (slug == null) {
+                return MarketingDashboardDto.unavailable(slugParam);
+            }
+            Optional<UUID> landingPageId = repository.findLandingPageId(slug, businessId);
             if (landingPageId.isEmpty()) {
                 return MarketingDashboardDto.unavailable(slug);
             }
@@ -132,8 +137,8 @@ public class MarketingDashboardService {
 
             return new MarketingDashboardDto(true, slug, variants, statsSince == null ? null : statsSince.toString());
         } catch (DataAccessException ex) {
-            log.warn("Marketing schema unavailable while building dashboard for slug={}", slug, ex);
-            return MarketingDashboardDto.unavailable(slug);
+            log.warn("Marketing schema unavailable while building dashboard for slug={}", slugParam, ex);
+            return MarketingDashboardDto.unavailable(slugParam);
         }
     }
 
@@ -176,7 +181,7 @@ public class MarketingDashboardService {
      */
     public List<MarketingDashboardRepository.LandingPageSummary> listLandingPages() {
         try {
-            return repository.listLandingPages();
+            return repository.listLandingPages(currentBusinessContext.id());
         } catch (DataAccessException ex) {
             log.warn("Marketing schema unavailable while listing landing pages", ex);
             return List.of();
@@ -184,14 +189,18 @@ public class MarketingDashboardService {
     }
 
     /** Also regenerates the deep-link key from the new name, same convention as the CLI's
-     * `rename` command, so the ?v=<key> link always matches the current display name.
+     * `rename` command, so the ?v=<key> link always matches the current display name. 404s if
+     * the variant doesn't exist *or* belongs to a different business — see
+     * MarketingDashboardRepository#renameVariant's own doc for why a business mismatch surfaces
+     * as "0 rows updated" rather than an exception.
      */
     public void renameVariant(UUID variantId, String newName) {
         if (newName == null || newName.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Name cannot be blank");
         }
         try {
-            repository.renameVariant(variantId, newName.trim(), Slugs.slugify(newName));
+            int updated = repository.renameVariant(variantId, newName.trim(), Slugs.slugify(newName), currentBusinessContext.id());
+            if (updated == 0) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such variant");
             cache.invalidateAll();
         } catch (DataIntegrityViolationException ex) {
             throw keyCollisionError();
@@ -199,7 +208,9 @@ public class MarketingDashboardService {
     }
 
     public void updateVariantDescription(UUID variantId, String description) {
-        repository.updateVariantDescription(variantId, description == null || description.isBlank() ? null : description.trim());
+        int updated = repository.updateVariantDescription(
+                variantId, description == null || description.isBlank() ? null : description.trim(), currentBusinessContext.id());
+        if (updated == 0) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such variant");
         cache.invalidateAll();
     }
 
@@ -209,7 +220,8 @@ public class MarketingDashboardService {
      */
     public void deleteVariant(UUID variantId) {
         try {
-            repository.deleteVariant(variantId);
+            int deleted = repository.deleteVariant(variantId, currentBusinessContext.id());
+            if (deleted == 0) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such variant");
             cache.invalidateAll();
         } catch (DataIntegrityViolationException ex) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -226,10 +238,11 @@ public class MarketingDashboardService {
         if (newName == null || newName.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Name cannot be blank");
         }
-        MarketingDashboardRepository.VariantSource source = repository.findVariantSource(sourceVariantId)
+        Long businessId = currentBusinessContext.id();
+        MarketingDashboardRepository.VariantSource source = repository.findVariantSource(sourceVariantId, businessId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such variant"));
         try {
-            UUID newId = repository.duplicateVariant(source, newName.trim(), Slugs.slugify(newName));
+            UUID newId = repository.duplicateVariant(source, newName.trim(), Slugs.slugify(newName), businessId);
             cache.invalidateAll();
             return newId;
         } catch (DataIntegrityViolationException ex) {
@@ -246,9 +259,11 @@ public class MarketingDashboardService {
                 "Another variant already uses the link generated from that name — try a slightly different name.");
     }
 
-    public void updateStatsSince(String slug, Instant statsSince) {
-        UUID landingPageId = repository.findLandingPageId(slug)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such landing page"));
+    public void updateStatsSince(String slugParam, Instant statsSince) {
+        Long businessId = currentBusinessContext.id();
+        String slug = slugParam != null ? slugParam : repository.findDefaultSlugForBusiness(businessId).orElse(null);
+        UUID landingPageId = slug == null ? null : repository.findLandingPageId(slug, businessId).orElse(null);
+        if (landingPageId == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such landing page");
         repository.updateStatsSince(landingPageId, statsSince);
         cache.invalidateAll();
     }

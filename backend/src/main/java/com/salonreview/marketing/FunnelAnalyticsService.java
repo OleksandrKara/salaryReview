@@ -84,9 +84,12 @@ public class FunnelAnalyticsService {
         return cache.get(key, CACHE_TTL, () -> computeFunnel(slug, sources, periodFrom, periodTo));
     }
 
-    private List<FunnelDashboardDto> computeFunnel(String slug, Set<String> sources, LocalDate periodFrom, LocalDate periodTo) {
+    private List<FunnelDashboardDto> computeFunnel(String slugParam, Set<String> sources, LocalDate periodFrom, LocalDate periodTo) {
         try {
-            Optional<UUID> landingPageId = landingPageRepository.findLandingPageId(slug);
+            Long businessId = currentBusinessContext.id();
+            String slug = slugParam != null ? slugParam : landingPageRepository.findDefaultSlugForBusiness(businessId).orElse(null);
+            if (slug == null) return List.of();
+            Optional<UUID> landingPageId = landingPageRepository.findLandingPageId(slug, businessId);
             if (landingPageId.isEmpty()) return List.of();
 
             ZoneId zone = resolveZone();
@@ -114,7 +117,7 @@ public class FunnelAnalyticsService {
             }
             return result;
         } catch (DataAccessException ex) {
-            log.warn("Marketing schema unavailable while building funnel for slug={}", slug, ex);
+            log.warn("Marketing schema unavailable while building funnel for slug={}", slugParam, ex);
             return List.of();
         }
     }

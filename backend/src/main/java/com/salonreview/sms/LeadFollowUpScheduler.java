@@ -1,10 +1,11 @@
 package com.salonreview.sms;
 
 import com.salonreview.domain.LeadFollowUpSend;
+import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.marketing.MarketingContactsRepository;
 import com.salonreview.marketing.MarketingContactsRepository.RawContact;
-import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.LeadFollowUpSendRepository;
+import com.salonreview.repo.TwilioSmsConfigRepository;
 import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
@@ -46,41 +47,49 @@ public class LeadFollowUpScheduler {
     private final MarketingContactsRepository contactsRepository;
     private final LeadFollowUpSendRepository sendRepository;
     private final SquareClientProvider squareClientProvider;
-    private final BusinessRepository businesses;
+    private final TwilioSmsConfigRepository twilioConfigs;
     private final SmsAutomationService automationService;
     private final TwilioSmsService smsService;
 
     public LeadFollowUpScheduler(MarketingContactsRepository contactsRepository,
                                   LeadFollowUpSendRepository sendRepository,
                                   SquareClientProvider squareClientProvider,
-                                  BusinessRepository businesses,
+                                  TwilioSmsConfigRepository twilioConfigs,
                                   SmsAutomationService automationService,
                                   TwilioSmsService smsService) {
         this.contactsRepository = contactsRepository;
         this.sendRepository = sendRepository;
         this.squareClientProvider = squareClientProvider;
-        this.businesses = businesses;
+        this.twilioConfigs = twilioConfigs;
         this.automationService = automationService;
         this.smsService = smsService;
     }
 
     // initialDelay: see SameDayRebookingScheduler's identical comment — gives
     // SquareConnectionBootstrap's ApplicationRunner time to finish before the first tick.
+    // Single lock covers the whole per-business loop below — same deliberate simplification
+    // SameDayRebookingScheduler's identical loop already makes (see its own doc comment).
     @Scheduled(fixedDelay = 15_000, initialDelay = 15_000)
     @SchedulerLock(name = "LeadFollowUpScheduler_sendDueFollowUps", lockAtLeastFor = "PT10S", lockAtMostFor = "PT2M")
     public void sendDueFollowUps() {
-        // See BusinessRepository#legacySmsBusiness — marketing.contacts has no business_id of its
-        // own yet, so there's no correct per-business Square routing until that schema is scoped
-        // too (tracked separately from this migration).
-        Long businessId = businesses.legacySmsBusiness().getId();
-        SquareClient square = squareClientProvider.forBusiness(businessId);
         Instant now = Instant.now();
-        List<RawContact> pending = contactsRepository.findPendingFollowUp(now.minus(MIN_AGE), now.minus(MAX_AGE));
-        for (RawContact contact : pending) {
-            if (sendRepository.existsByContactIdAndContactUpdatedAtGreaterThanEqual(contact.id(), contact.updatedAt())) {
-                continue; // belt-and-suspenders vs. the poll query's own NOT EXISTS
+        for (TwilioSmsConfig config : twilioConfigs.findAll()) {
+            Long businessId = config.getBusinessId();
+            SquareClient square;
+            try {
+                square = squareClientProvider.forBusiness(businessId);
+            } catch (RuntimeException e) {
+                log.warn("Lead follow-up nudges skipped for business {} (will be retried at next scheduled run): {}",
+                        businessId, e.getMessage());
+                continue;
             }
-            process(contact, square, businessId);
+            List<RawContact> pending = contactsRepository.findPendingFollowUp(now.minus(MIN_AGE), now.minus(MAX_AGE), businessId);
+            for (RawContact contact : pending) {
+                if (sendRepository.existsByContactIdAndContactUpdatedAtGreaterThanEqual(contact.id(), contact.updatedAt())) {
+                    continue; // belt-and-suspenders vs. the poll query's own NOT EXISTS
+                }
+                process(contact, square, businessId);
+            }
         }
     }
 

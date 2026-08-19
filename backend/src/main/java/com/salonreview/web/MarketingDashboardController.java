@@ -30,9 +30,12 @@ public class MarketingDashboardController {
      * since mani runs ads. from/to (yyyy-MM-dd, both optional, both inclusive) are the shared
      * marketing period filter — omitted means "All" (no additional bound beyond the page's
      * permanent stats-since cutoff). Resolved against the salon's own business timezone (not UTC)
-     * inside the service — see MarketingDashboardService#resolveZone. */
+     * inside the service — see MarketingDashboardService#resolveZone. slug omitted resolves to the
+     * caller's own business's first landing page (see MarketingDashboardRepository#
+     * findDefaultSlugForBusiness) — previously hardcoded to "mani", which showed business 1's page
+     * to every business regardless of who was actually asking. */
     @GetMapping("/marketing")
-    public MarketingDashboardDto marketing(@RequestParam(defaultValue = "mani") String slug,
+    public MarketingDashboardDto marketing(@RequestParam(required = false) String slug,
                                             @RequestParam(required = false) String sources,
                                             @RequestParam(required = false) String from,
                                             @RequestParam(required = false) String to) {
@@ -71,7 +74,7 @@ public class MarketingDashboardController {
     }
 
     @PutMapping("/marketing/stats-since")
-    public void updateStatsSince(@RequestParam(defaultValue = "mani") String slug, @RequestBody StatsSinceRequest req) {
+    public void updateStatsSince(@RequestParam(required = false) String slug, @RequestBody StatsSinceRequest req) {
         Instant statsSince = parseInstantOrNull(req.value());
         service.updateStatsSince(slug, statsSince);
     }

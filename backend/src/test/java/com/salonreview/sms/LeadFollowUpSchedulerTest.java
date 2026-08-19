@@ -1,11 +1,11 @@
 package com.salonreview.sms;
 
-import com.salonreview.domain.Business;
 import com.salonreview.domain.LeadFollowUpSend;
+import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.marketing.MarketingContactsRepository;
 import com.salonreview.marketing.MarketingContactsRepository.RawContact;
-import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.LeadFollowUpSendRepository;
+import com.salonreview.repo.TwilioSmsConfigRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,13 +44,13 @@ class LeadFollowUpSchedulerTest {
         sendRepository = mock(LeadFollowUpSendRepository.class);
         square = mock(SquareClient.class);
         SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
-        BusinessRepository businesses = mock(BusinessRepository.class);
-        when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
-                .timezone("UTC").active(true).build());
+        TwilioSmsConfigRepository twilioConfigs = mock(TwilioSmsConfigRepository.class);
+        when(twilioConfigs.findAll()).thenReturn(List.of(TwilioSmsConfig.builder().id(1L).businessId(1L)
+                .accountSid("AC1").apiKey("k").apiSecret("s").fromPhoneNumber("+15550001111").build()));
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         automationService = mock(SmsAutomationService.class);
         smsService = mock(TwilioSmsService.class);
-        scheduler = new LeadFollowUpScheduler(contactsRepository, sendRepository, squareClientProvider, businesses,
+        scheduler = new LeadFollowUpScheduler(contactsRepository, sendRepository, squareClientProvider, twilioConfigs,
                 automationService, smsService);
 
         when(automationService.isEnabled(1L, "lead_follow_up")).thenReturn(true);
@@ -77,7 +77,7 @@ class LeadFollowUpSchedulerTest {
     }
 
     private void givenPending(RawContact... contacts) {
-        when(contactsRepository.findPendingFollowUp(any(), any())).thenReturn(List.of(contacts));
+        when(contactsRepository.findPendingFollowUp(any(), any(), eq(BUSINESS_ID))).thenReturn(List.of(contacts));
     }
 
     @Test

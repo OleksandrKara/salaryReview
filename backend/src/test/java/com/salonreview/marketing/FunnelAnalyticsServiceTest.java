@@ -46,7 +46,7 @@ class FunnelAnalyticsServiceTest {
     @Test
     @DisplayName("computes reached %, drop-off count/%, and final conversion rate across a 4-step funnel")
     void computesDropOffMath() {
-        when(landingPageRepository.findLandingPageId("home")).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(landingPageRepository.findLandingPageId("home", 1L)).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(landingPageRepository.findStatsSince(LANDING_PAGE_ID)).thenReturn(Optional.empty());
         when(repository.findFunnelSteps(eq(LANDING_PAGE_ID), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
                 new RawFunnelStep("homepage_booking_v1", "services", 0, 4, 100),
@@ -92,7 +92,7 @@ class FunnelAnalyticsServiceTest {
     @Test
     @DisplayName("returns an empty list, not a division error, when totalStarted/totalVisitors are zero")
     void zeroDenominatorsYieldZeroRatesNotCrash() {
-        when(landingPageRepository.findLandingPageId("home")).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(landingPageRepository.findLandingPageId("home", 1L)).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(landingPageRepository.findStatsSince(LANDING_PAGE_ID)).thenReturn(Optional.empty());
         when(repository.findFunnelSteps(eq(LANDING_PAGE_ID), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
                 new RawFunnelStep("homepage_booking_v1", "services", 0, 4, 0)
@@ -111,7 +111,7 @@ class FunnelAnalyticsServiceTest {
     @Test
     @DisplayName("returns an empty list when the requested slug has no landing page")
     void emptyWhenSlugNotFound() {
-        when(landingPageRepository.findLandingPageId("unknown-slug")).thenReturn(Optional.empty());
+        when(landingPageRepository.findLandingPageId("unknown-slug", 1L)).thenReturn(Optional.empty());
 
         assertThat(service.funnel("unknown-slug", TrafficSourceSql.ADS_ONLY, null, null)).isEmpty();
     }
@@ -119,7 +119,7 @@ class FunnelAnalyticsServiceTest {
     @Test
     @DisplayName("returns an empty list when no funnel events have been recorded yet")
     void emptyWhenNoFunnelEvents() {
-        when(landingPageRepository.findLandingPageId("home")).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(landingPageRepository.findLandingPageId("home", 1L)).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(landingPageRepository.findStatsSince(LANDING_PAGE_ID)).thenReturn(Optional.empty());
         when(repository.findFunnelSteps(eq(LANDING_PAGE_ID), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of());
 
@@ -129,7 +129,7 @@ class FunnelAnalyticsServiceTest {
     @Test
     @DisplayName("returns an empty list, not a thrown exception, when the marketing schema is unreachable")
     void emptyWhenRepositoryThrows() {
-        when(landingPageRepository.findLandingPageId("home"))
+        when(landingPageRepository.findLandingPageId("home", 1L))
                 .thenThrow(new DataAccessResourceFailureException("relation \"marketing.landing_pages\" does not exist"));
 
         assertThat(service.funnel("home", TrafficSourceSql.ADS_ONLY, null, null)).isEmpty();
@@ -138,7 +138,7 @@ class FunnelAnalyticsServiceTest {
     @Test
     @DisplayName("groups multiple flow_keys for the same landing page into separate funnels")
     void groupsMultipleFlowKeysSeparately() {
-        when(landingPageRepository.findLandingPageId("home")).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(landingPageRepository.findLandingPageId("home", 1L)).thenReturn(Optional.of(LANDING_PAGE_ID));
         when(landingPageRepository.findStatsSince(LANDING_PAGE_ID)).thenReturn(Optional.empty());
         when(repository.findFunnelSteps(eq(LANDING_PAGE_ID), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
                 new RawFunnelStep("homepage_booking_v1", "services", 0, 4, 100),

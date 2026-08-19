@@ -15,11 +15,22 @@ public interface AdSpendEntryRepository extends JpaRepository<AdSpendEntry, Long
      * counts. */
     @Query("""
             SELECT e FROM AdSpendEntry e
-            WHERE e.landingPageSlug = :slug
+            WHERE e.businessId = :businessId AND e.landingPageSlug = :slug
               AND e.periodStart <= :to AND e.periodEnd >= :from
             ORDER BY e.periodStart ASC
             """)
-    List<AdSpendEntry> findOverlapping(@Param("slug") String slug, @Param("from") LocalDate from, @Param("to") LocalDate to);
+    List<AdSpendEntry> findOverlapping(@Param("slug") String slug, @Param("from") LocalDate from, @Param("to") LocalDate to,
+                                        @Param("businessId") Long businessId);
 
-    List<AdSpendEntry> findByLandingPageSlugOrderByPeriodStartDesc(String landingPageSlug);
+    List<AdSpendEntry> findByLandingPageSlugAndBusinessIdOrderByPeriodStartDesc(String landingPageSlug, Long businessId);
+
+    /** Business-scoped id lookup — the choke point that stops one business's owner/ads-manager
+     * from reading, editing, or deleting another business's spend entry by guessing a sequential
+     * id (previously possible: {@code findById}/{@code existsById}/{@code deleteById} have no
+     * ownership check of their own). */
+    java.util.Optional<AdSpendEntry> findByIdAndBusinessId(Long id, Long businessId);
+
+    boolean existsByIdAndBusinessId(Long id, Long businessId);
+
+    void deleteByIdAndBusinessId(Long id, Long businessId);
 }

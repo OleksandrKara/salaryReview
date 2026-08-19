@@ -509,7 +509,7 @@ public class MarketingAnalyticsService {
      */
     private List<FollowUpAppointment> resolveFollowUps(String slug) {
         if (slug == null) return List.of();
-        return dashboardRepository.findLandingPageId(slug)
+        return dashboardRepository.findLandingPageId(slug, currentBusinessContext.id())
                 .map(pageId -> {
                     Set<String> attributedBookingIds = dashboardRepository.findAttributedBookingIds(pageId, null, null);
                     Map<String, String> customerIdByBooking = contactsService.resolveCustomerIdsByBookingId(slug);
@@ -862,16 +862,20 @@ public class MarketingAnalyticsService {
     /** Resolves ad spend for [from, to] on one landing page from the flexible {@code
      * ad_spend_entries} ledger — see {@link AdSpendResolver}. */
     private AdSpendResolver.Resolved resolveSpend(String slug, LocalDate from, LocalDate to) {
-        List<AdSpendEntry> entries = adSpendEntryRepository.findOverlapping(slug, from, to);
+        List<AdSpendEntry> entries = adSpendEntryRepository.findOverlapping(slug, from, to, currentBusinessContext.id());
         return AdSpendResolver.resolve(entries, from, to);
     }
 
     /** Records a new ad-spend-entry row for one page and period — never upserts; a corrected
      * re-entry is kept alongside the original so spend history stays auditable (see
-     * {@link AdSpendResolver}'s handling of overlapping entries). */
+     * {@link AdSpendResolver}'s handling of overlapping entries). Tagged with the caller's own
+     * business_id — see V113__ad_spend_entries_business_id.sql; previously this table had no
+     * business scoping at all, so any business's ads-manager could read/edit/delete another's
+     * spend entries by guessing a sequential id. */
     @Transactional
     public AdSpendEntry createAdSpendEntry(String slug, LocalDate periodStart, LocalDate periodEnd, BigDecimal amount, String enteredBy) {
         AdSpendEntry entry = AdSpendEntry.builder()
+                .businessId(currentBusinessContext.id())
                 .landingPageSlug(slug)
                 .periodStart(periodStart)
                 .periodEnd(periodEnd)
@@ -886,7 +890,7 @@ public class MarketingAnalyticsService {
     /** Every entered spend row for one page, most recent period first — for the ad-spend-entry
      * management UI (a simple list, not a report). */
     public List<AdSpendEntry> listAdSpendEntries(String slug) {
-        return adSpendEntryRepository.findByLandingPageSlugOrderByPeriodStartDesc(slug);
+        return adSpendEntryRepository.findByLandingPageSlugAndBusinessIdOrderByPeriodStartDesc(slug, currentBusinessContext.id());
     }
 
     /** Edits an existing entry in place (landingPageSlug is fixed — the management UI is always
@@ -894,13 +898,13 @@ public class MarketingAnalyticsService {
      * {@link #createAdSpendEntry}'s "never overwrite" append-only default, this is for fixing an
      * outright mistake (wrong amount/dates) without leaving a confusing extra row behind — enter a
      * new row instead if the intent is a genuine, auditable revision to a period that already
-     * reported correctly. Empty (not thrown) if the id doesn't exist, mirroring
-     * {@link #deleteAdSpendEntry}'s not-found handling.
+     * reported correctly. Empty (not thrown) if the id doesn't exist *or belongs to a different
+     * business* — same not-found handling as {@link #deleteAdSpendEntry}.
      */
     @Transactional
     public java.util.Optional<AdSpendEntry> updateAdSpendEntry(
             Long id, LocalDate periodStart, LocalDate periodEnd, BigDecimal amount) {
-        return adSpendEntryRepository.findById(id).map(entry -> {
+        return adSpendEntryRepository.findByIdAndBusinessId(id, currentBusinessContext.id()).map(entry -> {
             entry.setPeriodStart(periodStart);
             entry.setPeriodEnd(periodEnd);
             entry.setAmountSpent(amount.setScale(2, RoundingMode.HALF_UP));
@@ -911,11 +915,13 @@ public class MarketingAnalyticsService {
     }
 
     /** Removes an outright mistaken entry (duplicate, wrong page/amount typed in) — false if the id
-     * doesn't exist, so the controller can 404 rather than silently no-op. */
+     * doesn't exist *or belongs to a different business*, so the controller 404s rather than
+     * silently no-opping or, worse, deleting another business's row. */
     @Transactional
     public boolean deleteAdSpendEntry(Long id) {
-        if (!adSpendEntryRepository.existsById(id)) return false;
-        adSpendEntryRepository.deleteById(id);
+        Long businessId = currentBusinessContext.id();
+        if (!adSpendEntryRepository.existsByIdAndBusinessId(id, businessId)) return false;
+        adSpendEntryRepository.deleteByIdAndBusinessId(id, businessId);
         cache.invalidateAll();
         return true;
     }
@@ -960,11 +966,12 @@ public class MarketingAnalyticsService {
      * classify into one of the requested buckets.
      */
     private Map<String, AdsCustomer> resolveAdsCustomersUncached(Set<String> sources, String slug) {
+        Long businessId = currentBusinessContext.id();
         List<MarketingContactsRepository.AdsAttributedContact> contacts = sources.equals(ALL_SOURCES)
-                ? contactsRepository.findAllAttributedContacts(slug)
-                // slug == null calls the exact one-arg overload (not findAdsAttributedContacts(sources, null))
-                // so the unscoped default path is untouched, including at the test-mock level.
-                : (slug == null ? contactsRepository.findAdsAttributedContacts(sources) : contactsRepository.findAdsAttributedContacts(sources, slug));
+                ? contactsRepository.findAllAttributedContacts(slug, businessId)
+                // slug == null calls the exact two-arg overload (not findAdsAttributedContacts(sources, slug, businessId))
+                // so the pool-every-page-within-this-business default path is untouched.
+                : (slug == null ? contactsRepository.findAdsAttributedContacts(sources, businessId) : contactsRepository.findAdsAttributedContacts(sources, slug, businessId));
 
         // Resolved once on the calling thread and captured by value below — SquareClientProvider
         // takes an explicit businessId (unlike CurrentBusinessContext.id(), it isn't a ThreadLocal
