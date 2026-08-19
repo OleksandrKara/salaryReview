@@ -4,20 +4,17 @@ import PageHeader from '../../../components/PageHeader';
 import MarketingTabs from '../MarketingTabs';
 import LtvView from './LtvView';
 
-// Deliberately a local literal, not imported from MarketingTabs (a 'use client' module) — a server
-// component importing a named non-component export from a client file gets Next's opaque "client
-// reference" proxy back instead of the real string, which stringifies to a poisoned placeholder
-// (confirmed live: slug arrived at the backend as the literal source of that placeholder function).
-// funnel/page.tsx already does it this way for the same reason.
-const DEFAULT_SLUG = 'mani';
-
 export default async function MarketingLtvPage({
   searchParams,
 }: {
   searchParams: Promise<{ slug?: string }>;
 }) {
   const params = await searchParams;
-  const slug = params.slug ?? DEFAULT_SLUG;
+  // slug is passed through as-is (possibly undefined) — the backend resolves its own
+  // business-scoped default landing page when omitted. Previously this hardcoded a literal
+  // "mani" fallback, which meant any business other than AK.LUX.NAILS always got an explicit
+  // request for AK.LUX.NAILS' own page — same fix as ads-report/page.tsx.
+  const { slug } = params;
   const [me, data] = await Promise.all([
     serverApi.getMe(),
     serverApi.getMarketingLtv(slug),

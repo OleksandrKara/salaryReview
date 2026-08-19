@@ -5,20 +5,18 @@ import AdsReportView from './AdsReportView';
 import MarketingTabs from '../MarketingTabs';
 import { parsePeriodParams } from '../period';
 
-// Deliberately a local literal, not imported from MarketingTabs (a 'use client' module) — a server
-// component importing a named non-component export from a client file gets Next's opaque "client
-// reference" proxy back instead of the real string, which stringifies to a poisoned placeholder
-// (confirmed live on the LTV tab, which shared this exact import). funnel/page.tsx already does it
-// this way for the same reason.
-const DEFAULT_SLUG = 'mani';
-
 export default async function MarketingAdsReportPage({
   searchParams,
 }: {
   searchParams: Promise<{ slug?: string; period?: string; from?: string; to?: string }>;
 }) {
   const params = await searchParams;
-  const slug = params.slug ?? DEFAULT_SLUG;
+  // slug is passed through as-is (possibly undefined) — the backend resolves its own
+  // business-scoped default landing page when omitted (see MarketingDashboardRepository#
+  // findDefaultSlugForBusiness). Previously this hardcoded a literal "mani" fallback, which
+  // meant any business other than AK.LUX.NAILS always got an explicit request for AK.LUX.NAILS'
+  // own page — empty (not leaked, just wrong) after the backend was scoped by business_id.
+  const { slug } = params;
   // Same shared period filter every marketing tab reads (see PeriodFilter/../period) — defaults
   // to Month to date when absent, matching this endpoint's own pre-existing default so a bare
   // /owner/marketing/ads-report link behaves exactly as it always has.

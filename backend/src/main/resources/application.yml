@@ -69,6 +69,7 @@ marketing:
   landing-base-urls:
     mani: ${MARKETING_LANDING_BASE_URL_MANI:https://mani.akluxnails.com}
     home: ${MARKETING_LANDING_BASE_URL_HOME:https://akluxnails.com}
+    pmu: ${MARKETING_LANDING_BASE_URL_PMU:https://book.pmu-annakara.com}
 
 # Single shared owner login (Phase 1). The frontend holds these server-side and proxies calls.
 app:
