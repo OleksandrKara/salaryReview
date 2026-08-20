@@ -176,7 +176,14 @@ export default function AssistantWidget() {
 
       {/* Panel */}
       {open ? (
-        <div className="fixed bottom-6 right-6 z-50 flex h-[32rem] w-[22rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl bg-[var(--paper)] shadow-2xl ring-1 ring-[var(--line)]">
+        // Height was a flat 32rem (512px) regardless of viewport — on anything shorter than
+        // ~600px tall (an iPhone SE, or an iPhone in landscape) the panel ran off the top of the
+        // screen and rendered its own header/close button directly underneath AdminMenu's
+        // top-right icon row instead of stopping short of it (found live 2026-08-20). Capped to
+        // whichever is smaller: the usual 32rem, or the real visible viewport (dvh, not vh — see
+        // the sheet-height comment in PmuBookingModal for why) minus room for AdminMenu's icon row
+        // up top and this panel's own bottom-6 margin.
+        <div className="fixed bottom-6 right-6 z-50 flex h-[min(32rem,calc(100dvh-6rem))] w-[22rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl bg-[var(--paper)] shadow-2xl ring-1 ring-[var(--line)]">
           <div className="flex items-center justify-between bg-[var(--ink)] px-4 py-3 text-[var(--paper)]">
             <span className="flex items-center gap-2 text-base tracking-wide" style={{ fontFamily: 'var(--serif)' }}>
               <SparkleIcon className="h-4 w-4 text-[var(--accent)]" /> Assistant
