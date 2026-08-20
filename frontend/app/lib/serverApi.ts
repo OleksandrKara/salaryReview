@@ -36,6 +36,7 @@ import type {
   ProviderPayout,
   RetentionReport,
   RetentionSeries,
+  ReviewsOverview,
   Redo,
   RevenueDayDetail,
   RevenuePulse,
@@ -146,6 +147,9 @@ export const serverApi = {
       `/api/owner/retention/series?fromYear=${fromYear}&fromMonth=${fromMonth}&toYear=${toYear}&toMonth=${toMonth}` +
         (provider ? `&provider=${encodeURIComponent(provider)}` : ''),
     ),
+
+  // Checkout-review replies grouped by provider, with overall/per-provider average ratings.
+  getReviews: () => serverFetch<ReviewsOverview>(`/api/owner/reviews`),
 
   getSettlementPreview: (year: number, month: number) =>
     serverFetch<SettlementPreview>(`/api/settlements/preview?year=${year}&month=${month}`),

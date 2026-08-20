@@ -44,6 +44,15 @@ public class TechnicianNameResolver {
      * {@code displayName} is a free-text admin field (payroll, the dashboard) and isn't guaranteed
      * to be first-name-only, so it's never appropriate to send a last name to a customer. */
     public Optional<String> resolveForCustomer(Long businessId, String customerId, Instant asOf) {
+        return resolveProviderForCustomer(businessId, customerId, asOf)
+                .map(Provider::getDisplayName)
+                .map(Names::firstNameOnly);
+    }
+
+    /** Same resolution as {@link #resolveForCustomer}, returning the {@link Provider} itself
+     * rather than just its display name — for callers that need the id (e.g. persisting {@code
+     * sms_reply_flow.provider_id}, V120) rather than SMS copy. */
+    public Optional<Provider> resolveProviderForCustomer(Long businessId, String customerId, Instant asOf) {
         if (customerId == null || customerId.isBlank()) {
             return Optional.empty();
         }
@@ -54,11 +63,9 @@ public class TechnicianNameResolver {
                     .filter(b -> alreadyHappened(b, asOf))
                     .findFirst() // list is already sorted most-recent-first
                     .flatMap(TechnicianNameResolver::firstTeamMemberId)
-                    .flatMap(providers::findBySquareTeamMemberId)
-                    .map(Provider::getDisplayName)
-                    .map(Names::firstNameOnly);
+                    .flatMap(providers::findBySquareTeamMemberId);
         } catch (RuntimeException e) {
-            log.warn("Technician-name resolution failed for customer {} (falling back to technician-less copy): {}",
+            log.warn("Technician resolution failed for customer {} (falling back to technician-less copy): {}",
                     customerId, e.getMessage());
             return Optional.empty();
         }

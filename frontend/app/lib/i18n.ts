@@ -120,6 +120,7 @@ const STRINGS = {
   navManualAdjustments: { EN: 'Manual adjustments', RU: 'Ручные корректировки' },
   navUsers: { EN: 'Users', RU: 'Пользователи' },
   navStaffDocuments: { EN: 'Staff Documents', RU: 'Документы сотрудников' },
+  navReviews: { EN: 'Reviews', RU: 'Отзывы' },
   navTelegramSettings: { EN: 'Telegram Notifications', RU: 'Уведомления в Telegram' },
   navSmsSettings: { EN: 'SMS Notifications', RU: 'Уведомления по SMS' },
   navSquareSettings: { EN: 'Square Connection', RU: 'Подключение Square' },

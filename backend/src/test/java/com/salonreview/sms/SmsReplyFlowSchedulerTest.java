@@ -1,5 +1,6 @@
 package com.salonreview.sms;
 
+import com.salonreview.domain.Provider;
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.SmsReplyFlowRepository;
@@ -38,7 +39,7 @@ class SmsReplyFlowSchedulerTest {
         repository = mock(SmsReplyFlowRepository.class);
         smsService = mock(TwilioSmsService.class);
         technicianNameResolver = mock(TechnicianNameResolver.class);
-        when(technicianNameResolver.resolveForCustomer(any(), any(), any())).thenReturn(Optional.empty());
+        when(technicianNameResolver.resolveProviderForCustomer(any(), any(), any())).thenReturn(Optional.empty());
         twilioConfigs = mock(TwilioSmsConfigRepository.class);
         when(twilioConfigs.findAll()).thenReturn(List.of(TwilioSmsConfig.builder().businessId(BUSINESS_ID).build()));
         scheduler = new SmsReplyFlowScheduler(repository, smsService, technicianNameResolver, twilioConfigs);
@@ -149,13 +150,14 @@ class SmsReplyFlowSchedulerTest {
     }
 
     @Test
-    @DisplayName("technician resolves for the flow's customer → threaded into the vars map")
+    @DisplayName("technician resolves for the flow's customer → threaded into the vars map, provider_id persisted on the flow")
     void resolvedTechnicianIsThreadedIntoVars() {
         SmsReplyFlow due = flow(SmsReplyFlow.STATE_AWAITING_SEND);
         due.setSquareCustomerId("cust1");
         when(repository.findByBusinessIdAndStateAndSendDueAtBefore(eq(BUSINESS_ID), eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
                 .thenReturn(List.of(due));
-        when(technicianNameResolver.resolveForCustomer(eq(BUSINESS_ID), eq("cust1"), any())).thenReturn(Optional.of("Susan"));
+        Provider susan = Provider.builder().id(7L).displayName("Susan").build();
+        when(technicianNameResolver.resolveProviderForCustomer(eq(BUSINESS_ID), eq("cust1"), any())).thenReturn(Optional.of(susan));
         when(smsService.sendTemplated(eq(BUSINESS_ID), eq("checkout_rating_request_with_technician"), eq(PHONE), any()))
                 .thenReturn(new TwilioSmsService.SmsSendResult(true, null));
 
@@ -163,6 +165,7 @@ class SmsReplyFlowSchedulerTest {
 
         verify(smsService).sendTemplated(BUSINESS_ID, "checkout_rating_request_with_technician", PHONE,
                 Map.of("greeting", "Hi Jane!", "technician", "Susan"));
+        assertThat(due.getProviderId()).isEqualTo(7L);
     }
 
     @Test
