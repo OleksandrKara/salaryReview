@@ -15,17 +15,19 @@ import java.time.Duration;
 import java.time.Instant;
 
 /**
- * Sends the checkout-review-request automation's two branch replies (Google review link /
- * feedback-form link) — see openspec/changes/sms-automations-hub design.md D4/D6.
+ * Sends the checkout-review-request automation's branch replies (positive: Google review link,
+ * or feedback-form link for a repeat reviewer; negative: a plain ask to reply with what
+ * happened, no link) — see openspec/changes/sms-automations-hub design.md D4/D6.
  *
  * <p>Deliberately bypasses {@link TwilioSmsService#sendTemplated} and
- * {@link SmsTemplateRegistry}: each message's body must contain a self-referencing short link
- * (an opaque {@link ClickTokens}-generated token, not the row's own id — see design.md D6), which
- * is generated up front and reserved on a placeholder row, then the real body is rendered and the
- * row updated once the send outcome is known. Both branches are TRANSACTIONAL (see design.md D5)
- * and sent unconditionally once a flow reaches {@code AWAITING_REPLY} — disabling the automation
- * only stops *new* flows from being enqueued, it doesn't leave an already-replying customer
- * hanging (see tasks.md 10.4).
+ * {@link SmsTemplateRegistry}: the two positive-branch messages must contain a self-referencing
+ * short link (an opaque {@link ClickTokens}-generated token, not the row's own id — see design.md
+ * D6), generated up front and reserved on a placeholder row before the real body is rendered and
+ * the row updated once the send outcome is known. The negative branch carries no link (see
+ * {@code checkout_review_negative}'s catalog doc), so it skips the click-token reservation
+ * entirely. Every branch's template is TRANSACTIONAL (see design.md D5) and sent unconditionally
+ * once a flow reaches {@code AWAITING_REPLY} — disabling the automation only stops *new* flows
+ * from being enqueued, it doesn't leave an already-replying customer hanging (see tasks.md 10.4).
  */
 @Service
 public class CheckoutReviewReplyService {
@@ -65,27 +67,41 @@ public class CheckoutReviewReplyService {
         // A proven repeat 5-star reviewer (already clicked through to Google before) doesn't need
         // to be asked for another public review every single time — that reads as spammy to them
         // and to Google's own review-quality checks. Route them to the private feedback form
-        // instead, same destination the negative branch already uses, just with warmer copy.
+        // instead, same destination the negative branch used to use, just with warmer copy.
         boolean repeatReviewer = positive
                 && messageLogService.hasClickedLinkTarget(flow.getBusinessId(), flow.getPhoneNumber(), CheckoutReviewLinks.GOOGLE_REVIEW_TARGET);
 
         String templateKey = positive
                 ? (repeatReviewer ? "checkout_review_positive_repeat" : "checkout_review_positive")
                 : "checkout_review_negative";
-        String linkTarget = (positive && !repeatReviewer)
-                ? CheckoutReviewLinks.GOOGLE_REVIEW_TARGET
-                : CheckoutReviewLinks.FEEDBACK_FORM_TARGET;
 
-        String clickToken = messageLogService.generateUniqueClickToken();
-        SmsMessage reserved = messageLogService.logOutboundWithLink(
-                flow.getBusinessId(), templateKey, AUTOMATION_KEY, flow.getPhoneNumber(),
-                "", false, "pending", null, linkTarget, clickToken);
-        String shortLink = publicBaseUrl + "/r/" + clickToken;
         String sender = configService.get(flow.getBusinessId()).getSenderName();
         Business business = businessRepository.findById(flow.getBusinessId()).orElse(null);
         String businessName = business == null ? "" : business.getName();
-        String body = templateService.render(flow.getBusinessId(), templateKey,
-                java.util.Map.of("link", shortLink, "sender", sender, "businessName", businessName));
+
+        SmsMessage reserved;
+        String body;
+        if (positive) {
+            // Google review / feedback-form link — see class doc on why these two branches still
+            // need a self-referencing click-tracked short link and the negative branch below doesn't.
+            String linkTarget = repeatReviewer ? CheckoutReviewLinks.FEEDBACK_FORM_TARGET : CheckoutReviewLinks.GOOGLE_REVIEW_TARGET;
+            String clickToken = messageLogService.generateUniqueClickToken();
+            reserved = messageLogService.logOutboundWithLink(
+                    flow.getBusinessId(), templateKey, AUTOMATION_KEY, flow.getPhoneNumber(),
+                    "", false, "pending", null, linkTarget, clickToken);
+            String shortLink = publicBaseUrl + "/r/" + clickToken;
+            body = templateService.render(flow.getBusinessId(), templateKey,
+                    java.util.Map.of("link", shortLink, "sender", sender, "businessName", businessName));
+        } else {
+            // No link — a low rating gets a plain ask to reply and say what happened, handled
+            // directly in the conversation rather than routed to a Google Form (see
+            // checkout_review_negative's own catalog doc for why). No click-token reservation
+            // needed since there's no short link for this branch to carry.
+            reserved = messageLogService.logOutbound(
+                    flow.getBusinessId(), templateKey, AUTOMATION_KEY, flow.getPhoneNumber(), "", false, "pending", null);
+            body = templateService.render(flow.getBusinessId(), templateKey,
+                    java.util.Map.of("sender", sender, "businessName", businessName));
+        }
 
         taskScheduler.schedule(() -> sendNow(flow, reserved, body), Instant.now().plus(REPLY_DELAY));
     }
