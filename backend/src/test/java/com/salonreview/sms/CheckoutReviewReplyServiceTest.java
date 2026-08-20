@@ -15,6 +15,7 @@ import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -132,21 +133,26 @@ class CheckoutReviewReplyServiceTest {
     }
 
     @Test
-    @DisplayName("negative branch: body contains a self-referencing short link to the feedback-form target")
-    void negativeBranchSendsFeedbackFormLink() throws Exception {
+    @DisplayName("negative branch: no link — reserves a plain row and asks the customer to reply with what happened")
+    void negativeBranchAsksForTextInsteadOfLink() throws Exception {
         when(configService.get(BUSINESS_ID)).thenReturn(configured());
         when(client.send(any(), eq(PHONE), anyString())).thenReturn("SM_SID_2");
+        when(messageLogService.logOutbound(eq(BUSINESS_ID), eq("checkout_review_negative"), eq("checkout_review_request"),
+                eq(PHONE), eq(""), eq(false), eq("pending"), eq(null)))
+                .thenReturn(SmsMessage.builder().id(2L).businessId(BUSINESS_ID).direction("OUTBOUND")
+                        .automationKey("checkout_review_request").phoneNumber(PHONE)
+                        .templateKey("checkout_review_negative").body("").status("NOT_SENT").reason("pending").build());
 
         sendBranchReplyAndFireDelayedTask(flow(), false);
 
-        var tokenCaptor = ArgumentCaptor.forClass(String.class);
-        verify(messageLogService).logOutboundWithLink(eq(BUSINESS_ID), eq("checkout_review_negative"), eq("checkout_review_request"),
-                eq(PHONE), eq(""), eq(false), eq("pending"), eq(null), eq(CheckoutReviewLinks.FEEDBACK_FORM_TARGET),
-                tokenCaptor.capture());
+        verify(messageLogService).logOutbound(eq(BUSINESS_ID), eq("checkout_review_negative"), eq("checkout_review_request"),
+                eq(PHONE), eq(""), eq(false), eq("pending"), eq(null));
+        verify(messageLogService, never()).logOutboundWithLink(eq(BUSINESS_ID), eq("checkout_review_negative"), any(), any(), any(), anyBoolean(), any(), any(), any(), any());
 
         var bodyCaptor = ArgumentCaptor.forClass(String.class);
         verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
-        assertThat(bodyCaptor.getValue()).contains(PUBLIC_BASE_URL + "/r/" + tokenCaptor.getValue()).doesNotContain("—");
+        assertThat(bodyCaptor.getValue()).doesNotContain(PUBLIC_BASE_URL).doesNotContain("{{link}}").doesNotContain("—")
+                .contains("reply");
     }
 
     @Test

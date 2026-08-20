@@ -64,13 +64,18 @@ public final class SmsMessageTemplateCatalog {
                             + "{{link}} -{{businessName}}",
                     List.of("link", "businessName")
             )),
+            // No {{link}} here on purpose — a customer who just texted back a low rating is
+            // already mid-conversation and typing replies works fine; routing them to a Google
+            // Form instead just adds friction and loses the objection-handling opportunity a
+            // direct text reply gives us (see owner feedback). checkout_review_positive_repeat
+            // still uses the feedback-form link for a different case (a repeat 5-star reviewer),
+            // untouched here.
             Map.entry("checkout_review_negative", new TemplateDefault(
                     "checkout_review_negative", "checkout_review_request", SmsMessageClass.TRANSACTIONAL,
                     "Low-rating reply: service recovery",
-                    "I'm really sorry today wasn't a 5 for you 💛 I'd love to make it right personally. Reply "
-                            + "and tell me what happened, or share details here if that's easier: {{link}} "
-                            + "-{{sender}}, Manager",
-                    List.of("link", "sender")
+                    "I'm really sorry today wasn't a 5 for you 💛 I'd love to make it right personally. "
+                            + "Just reply and let me know what happened! -{{sender}}, Manager",
+                    List.of("sender")
             )),
             Map.entry("lead_follow_up_nudge", new TemplateDefault(
                     "lead_follow_up_nudge", "lead_follow_up", SmsMessageClass.TRANSACTIONAL,
