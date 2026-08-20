@@ -85,7 +85,7 @@ export default async function MessagesPage({
       // sm:p-8 padding (≈2rem title-row block + 2×2rem padding) and gives everything else to the
       // conversation view, same "fill what's actually available" idea as --vvh below already
       // applies on mobile. min-h keeps it usable if that math ever comes up short.
-      className="group/messages mx-auto flex w-full h-[var(--vvh,100dvh)] max-w-6xl flex-col sm:h-[calc(100vh-8rem)] sm:min-h-[560px] sm:p-8"
+      className="group/messages mx-auto flex w-full h-[var(--vvh,100dvh)] max-w-7xl flex-col sm:h-[calc(100vh-8rem)] sm:min-h-[560px] sm:p-8"
     >
       <div
         data-testid="messages-page-title-row"

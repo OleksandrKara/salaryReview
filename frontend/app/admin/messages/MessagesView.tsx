@@ -669,11 +669,11 @@ export default function MessagesView({
     // page.tsx's doc comment on why that guess didn't track actual available screen space).
     <div data-testid="messages-view-root" className="flex h-full min-h-0 overflow-hidden sm:rounded-lg sm:ring-1 sm:ring-zinc-200">
       {/* Contact list — full width on mobile until a thread is opened, fixed sidebar on desktop.
-          sm:w-80 (not sm:w-72) — narrower than this cut real customer names off mid-word before a
+          sm:w-96 (not sm:w-72) — narrower than this cut real customer names off mid-word before a
           manager could tell who they were looking at without opening the thread. */}
       <div
         data-testid="conversation-list"
-        className={`flex w-full shrink-0 flex-col overflow-hidden border-r border-zinc-200 sm:flex sm:w-80 ${selectedPhone ? 'hidden sm:flex' : ''}`}
+        className={`flex w-full shrink-0 flex-col overflow-hidden border-r border-zinc-200 sm:flex sm:w-96 ${selectedPhone ? 'hidden sm:flex' : ''}`}
       >
         {conversations.length > 0 && (
           // text-base (16px), not text-sm, on mobile — matches the composer input's own note
@@ -1204,7 +1204,7 @@ export default function MessagesView({
       {selectedPhone ? (
         <div
           data-testid="contact-info-panel-wrapper"
-          className={`${showContactPanel ? 'flex' : 'hidden'} fixed inset-0 z-20 flex-col bg-white sm:static sm:z-auto sm:flex sm:w-80 sm:shrink-0 sm:border-l sm:border-zinc-200`}
+          className={`${showContactPanel ? 'flex' : 'hidden'} fixed inset-0 z-20 flex-col bg-white sm:static sm:z-auto sm:flex sm:w-96 sm:shrink-0 sm:border-l sm:border-zinc-200`}
         >
           <ContactInfoPanel
             phoneNumber={selectedPhone}
