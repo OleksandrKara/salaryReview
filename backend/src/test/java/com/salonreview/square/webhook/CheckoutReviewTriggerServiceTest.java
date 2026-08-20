@@ -1,6 +1,8 @@
 package com.salonreview.square.webhook;
 
+import com.salonreview.domain.Business;
 import com.salonreview.domain.SmsReplyFlow;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SmsReplyFlowRepository;
 import com.salonreview.sms.CheckoutReviewLinks;
 import com.salonreview.sms.SameDayRebookingTriggerService;
@@ -39,6 +41,7 @@ class CheckoutReviewTriggerServiceTest {
     private SmsReplyFlowRepository repository;
     private SameDayRebookingTriggerService rebookingTrigger;
     private SmsMessageLogService messageLogService;
+    private BusinessRepository businessRepository;
     private CheckoutReviewTriggerService service;
 
     @BeforeEach
@@ -49,8 +52,12 @@ class CheckoutReviewTriggerServiceTest {
         repository = mock(SmsReplyFlowRepository.class);
         rebookingTrigger = mock(SameDayRebookingTriggerService.class);
         messageLogService = mock(SmsMessageLogService.class);
+        businessRepository = mock(BusinessRepository.class);
+        when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(
+                Business.builder().id(BUSINESS_ID).googleReviewUrl("https://g.page/r/review")
+                        .feedbackFormUrl("https://forms.gle/feedback").build()));
         service = new CheckoutReviewTriggerService(squareClientProvider, repository, rebookingTrigger,
-                messageLogService);
+                messageLogService, businessRepository);
     }
 
     private static SquareWebhookEvent.Payment payment(String status, String orderId, String customerId) {
@@ -82,6 +89,22 @@ class CheckoutReviewTriggerServiceTest {
 
         // Second, independent enqueue off the same qualifying event — see
         // openspec/changes/same-day-rebooking-discount design.md D1.
+        verify(rebookingTrigger).enqueue(BUSINESS_ID, "pay_1", "cust_1", PHONE, "Jane");
+    }
+
+    @Test
+    @DisplayName("business has no Google-review/feedback-form URL configured yet → no checkout_review_request flow, "
+            + "but the independent same-day-rebooking trigger still fires")
+    void reviewLinksNotConfiguredSkipsFlowButNotRebookingTrigger() {
+        when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(Business.builder().id(BUSINESS_ID).build()));
+        when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
+        when(square.orderById("order_1")).thenReturn(Optional.of(order("cust_1", null)));
+        when(square.customerPhone("cust_1")).thenReturn(PHONE);
+        when(square.customerGivenNames(List.of("cust_1"))).thenReturn(Map.of("cust_1", "Jane"));
+
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
+
+        verify(repository, never()).save(any());
         verify(rebookingTrigger).enqueue(BUSINESS_ID, "pay_1", "cust_1", PHONE, "Jane");
     }
 

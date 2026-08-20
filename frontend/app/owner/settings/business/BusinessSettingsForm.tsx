@@ -30,6 +30,8 @@ export default function BusinessSettingsForm({ initialSettings }: { initialSetti
   );
   const [restrictDiscountCoverage, setRestrictDiscountCoverage] = useState(settings.restrictDiscountCoverage);
   const [coveredDiscountNames, setCoveredDiscountNames] = useState(settings.coveredDiscountNames ?? '');
+  const [googleReviewUrl, setGoogleReviewUrl] = useState(settings.googleReviewUrl ?? '');
+  const [feedbackFormUrl, setFeedbackFormUrl] = useState(settings.feedbackFormUrl ?? '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
@@ -52,6 +54,8 @@ export default function BusinessSettingsForm({ initialSettings }: { initialSetti
         noShowFeeAmount: noShowFeeAmount === '' ? undefined : Number(noShowFeeAmount),
         restrictDiscountCoverage,
         coveredDiscountNames: restrictDiscountCoverage ? (coveredDiscountNames || undefined) : undefined,
+        googleReviewUrl: googleReviewUrl || undefined,
+        feedbackFormUrl: feedbackFormUrl || undefined,
       });
       setSettings(updated);
       setSaved(true);
@@ -176,6 +180,31 @@ export default function BusinessSettingsForm({ initialSettings }: { initialSetti
         />
         <span className="mt-1 block text-xs text-zinc-400">
           Once set, this can be changed but not cleared back to &ldquo;no program&rdquo; from this form.
+        </span>
+      </label>
+
+      <label className="text-sm">
+        <span className="mb-1 block text-zinc-600">Google review link</span>
+        <input
+          value={googleReviewUrl}
+          onChange={(e) => setGoogleReviewUrl(e.target.value)}
+          placeholder="https://g.page/r/.../review"
+          className="w-full rounded border border-zinc-300 px-2 py-1.5"
+        />
+      </label>
+
+      <label className="text-sm">
+        <span className="mb-1 block text-zinc-600">Feedback form link</span>
+        <input
+          value={feedbackFormUrl}
+          onChange={(e) => setFeedbackFormUrl(e.target.value)}
+          placeholder="https://forms.gle/..."
+          className="w-full rounded border border-zinc-300 px-2 py-1.5"
+        />
+        <span className="mt-1 block text-xs text-zinc-400">
+          Where the checkout-review-request automation sends a happy customer to leave a public review, and an
+          unhappy one to leave private feedback. Both are required for that automation to run at all — it stays
+          off until you set them.
         </span>
       </label>
 

@@ -1,9 +1,11 @@
 package com.salonreview.sms;
 
 import com.salonreview.config.RebookingProperties;
+import com.salonreview.domain.Business;
 import com.salonreview.domain.LapsedCustomerWinbackSend;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.TwilioSmsConfig;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.LapsedCustomerWinbackSendRepository;
 import com.salonreview.repo.TwilioSmsConfigRepository;
 import com.salonreview.square.SquareBookingFilters;
@@ -64,6 +66,7 @@ public class LapsedCustomerWinbackScheduler {
     private final TwilioSmsClient client;
     private final SmsMessageTemplateService templateService;
     private final String publicBaseUrl;
+    private final BusinessRepository businessRepository;
 
     public LapsedCustomerWinbackScheduler(LapsedCustomerWinbackEligibilityRepository eligibilityRepository,
                                            LapsedCustomerWinbackSendRepository sendRepository,
@@ -72,7 +75,8 @@ public class LapsedCustomerWinbackScheduler {
                                            RebookingProperties rebookingProperties, SmsMessageLogService messageLogService,
                                            TwilioSmsConfigService configService, TwilioSmsClient client,
                                            SmsMessageTemplateService templateService,
-                                           @Value("${app.public-base-url}") String publicBaseUrl) {
+                                           @Value("${app.public-base-url}") String publicBaseUrl,
+                                           BusinessRepository businessRepository) {
         this.eligibilityRepository = eligibilityRepository;
         this.sendRepository = sendRepository;
         this.squareClientProvider = squareClientProvider;
@@ -85,6 +89,7 @@ public class LapsedCustomerWinbackScheduler {
         this.client = client;
         this.templateService = templateService;
         this.publicBaseUrl = publicBaseUrl;
+        this.businessRepository = businessRepository;
     }
 
     // zone is mandatory — the container runs on UTC (confirmed via `date` on
@@ -245,8 +250,10 @@ public class LapsedCustomerWinbackScheduler {
                                 + "full. Want me to grab you a spot"
                         : "It's been 3+ weeks since your last visit. Spots are filling up fast right now, "
                                 + "want me to grab you a spot");
+        Business business = businessRepository.findById(businessId).orElse(null);
         Map<String, String> vars = Map.of("greeting", greeting, "sender", config.getSenderName(),
-                "offerClause", offerClause, "link", shortLink);
+                "offerClause", offerClause, "link", shortLink,
+                "businessName", business == null ? "" : business.getName());
         String body = templateService.render(businessId, templateKey, vars);
 
         if (!config.isConfigured()) {

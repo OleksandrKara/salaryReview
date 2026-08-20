@@ -1,7 +1,9 @@
 package com.salonreview.sms;
 
 import com.salonreview.config.MarketingLandingProperties;
+import com.salonreview.domain.Business;
 import com.salonreview.domain.SmsMessage;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SmsMessageRepository;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -37,6 +39,17 @@ public class ShortLinkController {
     private static final String WINBACK_PREFIX = "WINBACK:";
     private static final String WINBACK_PROMO_CODE = "WINBACK5";
 
+    /** The signed REBOOK10/WINBACK5 promo links only resolve to something that actually applies a
+     * discount for Business A ({@code akluxnails}) — {@code RebookingProperties}' Square customer-
+     * group ids and {@code InternalNotificationController}'s enrollment endpoint are both
+     * hardcoded to that one business/Square account today (see their own doc comments), and no
+     * other business's landing page has any promo-redemption code at all yet. A second business
+     * with these two automations enabled would otherwise generate a live-looking coupon link that
+     * silently sends its own customers to Business A's website instead of failing loudly — 404 is
+     * safer than that. Revisit once a business other than Business A gets its own Square
+     * Catalog/CustomerGroup setup and landing-page redemption flow built. */
+    private static final String PROMO_REDEMPTION_BUSINESS_SHORT_CODE = "akluxnails";
+
     /** Plain redirect to the home landing page, no promo params. {@code repeat_customer_winback}
      * sent this before it started reusing {@link #WINBACK_PREFIX} for its own $5 coupon (see V72,
      * V78/V79) — kept only so any surviving historical {@code sms_message} row with this exact
@@ -46,12 +59,14 @@ public class ShortLinkController {
     static final String BOOK_NOW_TARGET = "BOOK_NOW";
 
     private final SmsMessageRepository repository;
+    private final BusinessRepository businessRepository;
     private final RebookingPromoSigner promoSigner;
     private final MarketingLandingProperties landingProperties;
 
-    public ShortLinkController(SmsMessageRepository repository, RebookingPromoSigner promoSigner,
-                                MarketingLandingProperties landingProperties) {
+    public ShortLinkController(SmsMessageRepository repository, BusinessRepository businessRepository,
+                                RebookingPromoSigner promoSigner, MarketingLandingProperties landingProperties) {
         this.repository = repository;
+        this.businessRepository = businessRepository;
         this.promoSigner = promoSigner;
         this.landingProperties = landingProperties;
     }
@@ -59,7 +74,8 @@ public class ShortLinkController {
     @GetMapping("/r/{token}")
     public ResponseEntity<Void> redirect(@PathVariable String token) {
         SmsMessage message = repository.findByClickToken(token).orElse(null);
-        String target = message == null ? null : resolveTarget(message.getLinkTarget());
+        Business business = message == null ? null : businessRepository.findById(message.getBusinessId()).orElse(null);
+        String target = message == null ? null : resolveTarget(message.getLinkTarget(), business);
         if (target == null) {
             return ResponseEntity.notFound().build();
         }
@@ -75,26 +91,44 @@ public class ShortLinkController {
 
     /** {@code null} if {@code linkTarget} isn't a recognized shape (a fixed
      * {@code CheckoutReviewLinks} target, {@code REBOOK:<epochSeconds>}, or
-     * {@code WINBACK:<epochSeconds>}). */
-    private String resolveTarget(String linkTarget) {
+     * {@code WINBACK:<epochSeconds>}), or if {@code business} can't be resolved at all. */
+    private String resolveTarget(String linkTarget, Business business) {
+        if (business == null) {
+            return null;
+        }
         if (linkTarget != null && linkTarget.startsWith(REBOOK_PREFIX)) {
-            return resolveRebookingPromo(REBOOK_PROMO_CODE, linkTarget.substring(REBOOK_PREFIX.length()));
+            return resolveRebookingPromo(REBOOK_PROMO_CODE, linkTarget.substring(REBOOK_PREFIX.length()), business);
         }
         if (linkTarget != null && linkTarget.startsWith(WINBACK_PREFIX)) {
-            return resolveRebookingPromo(WINBACK_PROMO_CODE, linkTarget.substring(WINBACK_PREFIX.length()));
+            return resolveRebookingPromo(WINBACK_PROMO_CODE, linkTarget.substring(WINBACK_PREFIX.length()), business);
         }
         if (BOOK_NOW_TARGET.equals(linkTarget)) {
-            return landingProperties.baseUrlFor("home");
+            return publicSiteFor(business);
         }
-        return CheckoutReviewLinks.resolve(linkTarget);
+        return CheckoutReviewLinks.resolve(linkTarget, business);
+    }
+
+    /** This business's own public landing page — falls back to the legacy "home" landing config
+     * only for a business that hasn't been set up with one yet (see {@link Business#getPublicDomain()}),
+     * rather than ever pointing a click-tracked link at a domain that isn't this business's own. */
+    private String publicSiteFor(Business business) {
+        String domain = business.getPublicDomain();
+        if (domain != null && !domain.isBlank()) {
+            return "https://" + domain;
+        }
+        return landingProperties.baseUrlFor("home");
     }
 
     /** Builds the signed promo URL on demand — the signature is never stored, only the expiry
-     * epoch (see class doc and RebookingPromoSigner). If signing isn't configured (no secret set
-     * yet), there's no safe way to produce a valid link, so this resolves to {@code null} (404)
-     * rather than an unsigned/forgeable one. {@code promoCode} distinguishes which promo this is
-     * (REBOOK10 or WINBACK5) — {@link RebookingPromoSigner} is already generic over it. */
-    private String resolveRebookingPromo(String promoCode, String epochSecondsRaw) {
+     * epoch (see class doc and RebookingPromoSigner). {@code null} (404) if signing isn't
+     * configured, or if this isn't {@link #PROMO_REDEMPTION_BUSINESS_SHORT_CODE} — see that
+     * constant's own doc for why a coupon link is scoped to one business today. {@code promoCode}
+     * distinguishes which promo this is (REBOOK10 or WINBACK5) — {@link RebookingPromoSigner} is
+     * already generic over it. */
+    private String resolveRebookingPromo(String promoCode, String epochSecondsRaw, Business business) {
+        if (!PROMO_REDEMPTION_BUSINESS_SHORT_CODE.equals(business.getShortCode())) {
+            return null;
+        }
         long expEpochSeconds;
         try {
             expEpochSeconds = Long.parseLong(epochSecondsRaw);

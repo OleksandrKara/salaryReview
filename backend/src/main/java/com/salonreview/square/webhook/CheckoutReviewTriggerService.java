@@ -1,6 +1,8 @@
 package com.salonreview.square.webhook;
 
+import com.salonreview.domain.Business;
 import com.salonreview.domain.SmsReplyFlow;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SmsReplyFlowRepository;
 import com.salonreview.sms.CheckoutReviewLinks;
 import com.salonreview.sms.SameDayRebookingTriggerService;
@@ -34,15 +36,18 @@ public class CheckoutReviewTriggerService {
     private final SmsReplyFlowRepository repository;
     private final SameDayRebookingTriggerService rebookingTrigger;
     private final SmsMessageLogService messageLogService;
+    private final BusinessRepository businessRepository;
 
     public CheckoutReviewTriggerService(SquareClientProvider squareClientProvider,
                                          SmsReplyFlowRepository repository,
                                          SameDayRebookingTriggerService rebookingTrigger,
-                                         SmsMessageLogService messageLogService) {
+                                         SmsMessageLogService messageLogService,
+                                         BusinessRepository businessRepository) {
         this.squareClientProvider = squareClientProvider;
         this.repository = repository;
         this.rebookingTrigger = rebookingTrigger;
         this.messageLogService = messageLogService;
+        this.businessRepository = businessRepository;
     }
 
     /** {@code businessId} is resolved by the caller ({@link
@@ -110,19 +115,29 @@ public class CheckoutReviewTriggerService {
             // entirely, so the existsBySquarePaymentId redelivery guard above keeps working for
             // this payment on a Square retry, and there's still a visible audit row for why no ask
             // went out.
-            boolean hasCoveredBothReviewChannels =
-                    messageLogService.hasClickedLinkTarget(businessId, phoneNumber, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)
-                            && messageLogService.hasClickedLinkTarget(businessId, phoneNumber, CheckoutReviewLinks.FEEDBACK_FORM_TARGET);
-            repository.save(SmsReplyFlow.builder()
-                    .businessId(businessId)
-                    .automationKey(AUTOMATION_KEY)
-                    .phoneNumber(phoneNumber)
-                    .customerName(customerName)
-                    .state(hasCoveredBothReviewChannels ? SmsReplyFlow.STATE_COMPLETED : SmsReplyFlow.STATE_AWAITING_SEND)
-                    .squarePaymentId(payment.id())
-                    .squareCustomerId(customerId)
-                    .sendDueAt(Instant.now().plus(SEND_DELAY))
-                    .build());
+            // A business whose Google-review/feedback-form URLs haven't been set yet gets no
+            // checkout_review_request flow at all, rather than one whose reply eventually resolves
+            // to a dead short link — see CheckoutReviewLinks and Business#getGoogleReviewUrl.
+            Business business = businessRepository.findById(businessId).orElse(null);
+            boolean reviewLinksConfigured = business != null
+                    && isSet(business.getGoogleReviewUrl()) && isSet(business.getFeedbackFormUrl());
+            if (!reviewLinksConfigured) {
+                log.info("Checkout-review flow skipped for business {} — Google review/feedback form URL not configured yet", businessId);
+            } else {
+                boolean hasCoveredBothReviewChannels =
+                        messageLogService.hasClickedLinkTarget(businessId, phoneNumber, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)
+                                && messageLogService.hasClickedLinkTarget(businessId, phoneNumber, CheckoutReviewLinks.FEEDBACK_FORM_TARGET);
+                repository.save(SmsReplyFlow.builder()
+                        .businessId(businessId)
+                        .automationKey(AUTOMATION_KEY)
+                        .phoneNumber(phoneNumber)
+                        .customerName(customerName)
+                        .state(hasCoveredBothReviewChannels ? SmsReplyFlow.STATE_COMPLETED : SmsReplyFlow.STATE_AWAITING_SEND)
+                        .squarePaymentId(payment.id())
+                        .squareCustomerId(customerId)
+                        .sendDueAt(Instant.now().plus(SEND_DELAY))
+                        .build());
+            }
 
             // A second, independent send off the same qualifying event — see
             // openspec/changes/same-day-rebooking-discount design.md D1. Reuses the values
@@ -132,5 +147,9 @@ public class CheckoutReviewTriggerService {
             log.warn("Checkout-review trigger failed for payment {} (event ignored): {}",
                     payment == null ? null : payment.id(), e.getMessage());
         }
+    }
+
+    private static boolean isSet(String value) {
+        return value != null && !value.isBlank();
     }
 }

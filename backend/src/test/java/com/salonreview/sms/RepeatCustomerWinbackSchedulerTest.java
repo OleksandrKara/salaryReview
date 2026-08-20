@@ -1,10 +1,12 @@
 package com.salonreview.sms;
 
 import com.salonreview.config.RebookingProperties;
+import com.salonreview.domain.Business;
 import com.salonreview.domain.RepeatCustomerWinbackSend;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.BlockedNumberRepository;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.RepeatCustomerWinbackSendRepository;
 import com.salonreview.repo.TwilioSmsConfigRepository;
 import com.salonreview.square.SquareClient;
@@ -69,9 +71,13 @@ class RepeatCustomerWinbackSchedulerTest {
         var overrideRepo = mock(com.salonreview.repo.SmsTemplateOverrideRepository.class);
         when(overrideRepo.findByBusinessIdAndTemplateKey(any(), any())).thenReturn(java.util.Optional.empty());
         SmsMessageTemplateService templateService = new SmsMessageTemplateService(overrideRepo);
+        BusinessRepository businessRepository = mock(BusinessRepository.class);
+        when(businessRepository.findById(BUSINESS_ID)).thenReturn(java.util.Optional.of(
+                Business.builder().id(BUSINESS_ID).name("AK.LUX.NAILS").build()));
         scheduler = new RepeatCustomerWinbackScheduler(eligibilityRepository, sendRepository, squareClientProvider,
                 twilioConfigs, automationService, consentRepository, rebookingProperties, messageLogService,
-                blockedNumberRepository, configService, client, templateService, "https://salon.akluxnails.com");
+                blockedNumberRepository, configService, client, templateService, "https://salon.akluxnails.com",
+                businessRepository);
 
         when(automationService.isEnabled(1L, "repeat_customer_winback")).thenReturn(true);
         when(square.customerPhone(CUSTOMER_ID)).thenReturn(PHONE);

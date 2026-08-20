@@ -42,6 +42,17 @@ public class Business {
     @Column(name = "public_domain")
     private String publicDomain;
 
+    /** Owner-set destination for the {@code checkout_review_request} automation's positive-reply
+     * branch — see {@link com.salonreview.sms.CheckoutReviewLinks}. Null/blank means that
+     * automation is treated as not configured for this business (see
+     * {@code CheckoutReviewTriggerService}), never a fallback to some other business's page. */
+    @Column(name = "google_review_url")
+    private String googleReviewUrl;
+
+    /** Same as {@link #googleReviewUrl}, for the negative-reply / repeat-reviewer branch. */
+    @Column(name = "feedback_form_url")
+    private String feedbackFormUrl;
+
     @PrePersist
     void onCreate() {
         if (createdAt == null) createdAt = Instant.now();

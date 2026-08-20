@@ -1,10 +1,12 @@
 package com.salonreview.sms;
 
 import com.salonreview.config.RebookingProperties;
+import com.salonreview.domain.Business;
 import com.salonreview.domain.RepeatCustomerWinbackSend;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.BlockedNumberRepository;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.RepeatCustomerWinbackSendRepository;
 import com.salonreview.repo.TwilioSmsConfigRepository;
 import com.salonreview.square.SquareBookingFilters;
@@ -94,6 +96,7 @@ public class RepeatCustomerWinbackScheduler {
     private final TwilioSmsClient client;
     private final SmsMessageTemplateService templateService;
     private final String publicBaseUrl;
+    private final BusinessRepository businessRepository;
 
     public RepeatCustomerWinbackScheduler(RepeatCustomerWinbackEligibilityRepository eligibilityRepository,
                                            RepeatCustomerWinbackSendRepository sendRepository,
@@ -102,7 +105,8 @@ public class RepeatCustomerWinbackScheduler {
                                            RebookingProperties rebookingProperties, SmsMessageLogService messageLogService,
                                            BlockedNumberRepository blockedNumberRepository, TwilioSmsConfigService configService,
                                            TwilioSmsClient client, SmsMessageTemplateService templateService,
-                                           @Value("${app.public-base-url}") String publicBaseUrl) {
+                                           @Value("${app.public-base-url}") String publicBaseUrl,
+                                           BusinessRepository businessRepository) {
         this.eligibilityRepository = eligibilityRepository;
         this.sendRepository = sendRepository;
         this.squareClientProvider = squareClientProvider;
@@ -116,6 +120,7 @@ public class RepeatCustomerWinbackScheduler {
         this.client = client;
         this.templateService = templateService;
         this.publicBaseUrl = publicBaseUrl;
+        this.businessRepository = businessRepository;
     }
 
     // zone is mandatory here too — see LapsedCustomerWinbackScheduler's own comment on the
@@ -258,16 +263,19 @@ public class RepeatCustomerWinbackScheduler {
                         : "repeat_customer_winback_nudge_default")
                 : ("previous_provider".equals(variant) ? "repeat_customer_winback_reminder_previous_provider"
                         : "repeat_customer_winback_reminder_default");
+        Business business = businessRepository.findById(businessId).orElse(null);
+        String businessName = business == null ? "" : business.getName();
         Map<String, String> vars;
         if ("previous_provider".equals(variant)) {
             vars = Map.of("greeting", greeting, "sender", config.getSenderName(),
-                    "previousProvider", previousProviderFirstName, "link", shortLink);
+                    "previousProvider", previousProviderFirstName, "link", shortLink, "businessName", businessName);
         } else {
             boolean hasTechnician = lastProviderFirstName != null && !lastProviderFirstName.isBlank();
             String visitClause = hasTechnician
                     ? "It's been a while since your last visit with " + lastProviderFirstName
                     : "It's been a while since your last visit";
-            vars = Map.of("greeting", greeting, "sender", config.getSenderName(), "visitClause", visitClause, "link", shortLink);
+            vars = Map.of("greeting", greeting, "sender", config.getSenderName(), "visitClause", visitClause,
+                    "link", shortLink, "businessName", businessName);
         }
         String body = templateService.render(businessId, overrideKey, vars);
 

@@ -1,9 +1,11 @@
 package com.salonreview.sms;
 
+import com.salonreview.domain.Business;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsMessageMedia;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.BlockedNumberRepository;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.util.PhoneNumbers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,11 +46,13 @@ public class TwilioSmsService {
     private final TwilioSmsClient client;
     private final BlockedNumberRepository blockedNumberRepository;
     private final SmsMediaService mediaService;
+    private final BusinessRepository businessRepository;
 
     public TwilioSmsService(SmsMessageTemplateService templateService, TwilioSmsConfigService configService,
                             SmsConsentRepository consentRepository, SmsAutomationService automationService,
                             SmsMessageLogService messageLogService, TwilioSmsClient client,
-                            BlockedNumberRepository blockedNumberRepository, SmsMediaService mediaService) {
+                            BlockedNumberRepository blockedNumberRepository, SmsMediaService mediaService,
+                            BusinessRepository businessRepository) {
         this.templateService = templateService;
         this.configService = configService;
         this.consentRepository = consentRepository;
@@ -57,6 +61,7 @@ public class TwilioSmsService {
         this.client = client;
         this.blockedNumberRepository = blockedNumberRepository;
         this.mediaService = mediaService;
+        this.businessRepository = businessRepository;
     }
 
     /** True if a manager has blocked this number from the conversation view (see V61) — checked
@@ -78,9 +83,11 @@ public class TwilioSmsService {
 
         TwilioSmsConfig config = configService.get(businessId);
         Map<String, String> renderVars = new java.util.HashMap<>(variables == null ? Map.of() : variables);
-        // Every catalog template may reference {{sender}} — resolved once here so callers don't
-        // each need to fetch TwilioSmsConfig just to pass it through.
+        // Every catalog template may reference {{sender}}/{{businessName}} — resolved once here so
+        // callers don't each need to fetch TwilioSmsConfig/Business just to pass them through.
         renderVars.putIfAbsent("sender", config.getSenderName());
+        Business business = businessRepository.findById(businessId).orElse(null);
+        renderVars.putIfAbsent("businessName", business == null ? "" : business.getName());
         String body = templateService.render(businessId, templateKey, renderVars);
         String automationKey = template.automationKey();
 
