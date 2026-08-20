@@ -63,9 +63,14 @@ class SameDayRebookingSchedulerTest {
         twilioConfigs = mock(TwilioSmsConfigRepository.class);
         when(twilioConfigs.findAll()).thenReturn(List.of(TwilioSmsConfig.builder().businessId(BUSINESS_ID).build()));
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
+        // Real instance, mocked override repo (no overrides) — exercises the actual
+        // SmsMessageTemplateCatalog default wording, same as production with no owner customization.
+        var overrideRepo = mock(com.salonreview.repo.SmsTemplateOverrideRepository.class);
+        when(overrideRepo.findByBusinessIdAndTemplateKey(any(), any())).thenReturn(Optional.empty());
+        SmsMessageTemplateService templateService = new SmsMessageTemplateService(overrideRepo);
         scheduler = new SameDayRebookingScheduler(repository, squareClientProvider, twilioConfigs, automationService,
                 consentRepository, rebookingProperties, messageLogService, configService, client, technicianNameResolver,
-                "https://salon.akluxnails.com");
+                templateService, "https://salon.akluxnails.com");
 
         when(automationService.isEnabled(1L, "same_day_rebooking_discount")).thenReturn(true);
         when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(true);

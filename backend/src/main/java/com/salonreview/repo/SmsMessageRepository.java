@@ -263,11 +263,14 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
     long countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
             Long businessId, String automationKey, String direction, String status, Instant since);
 
-    /** Same as above, further narrowed to one template — see the original (pre-scoping) doc
-     * comment on why this exists (avoids double-counting checkout_review_request's branch
-     * reply). */
-    long countByBusinessIdAndAutomationKeyAndTemplateKeyAndDirectionAndStatusAndCreatedAtAfter(
-            Long businessId, String automationKey, String templateKey, String direction, String status, Instant since);
+    /** Same as above, further narrowed to one or more templates — see the original (pre-scoping)
+     * doc comment on why this exists (avoids double-counting checkout_review_request's branch
+     * reply). Plural because an automation can fire under more than one template key (e.g.
+     * checkout_review_request's rating request picks between a with-technician / no-technician
+     * variant — see SmsMessageTemplateCatalog). */
+    long countByBusinessIdAndAutomationKeyAndTemplateKeyInAndDirectionAndStatusAndCreatedAtAfter(
+            Long businessId, String automationKey, java.util.Collection<String> templateKeys, String direction,
+            String status, Instant since);
 
     /** How many of an automation's 30-day sends carried a click-tracked link at all, for one
      * business — the denominator for the automation card's click-through rate. */

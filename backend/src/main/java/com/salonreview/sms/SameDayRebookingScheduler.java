@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Durable, DB-backed delayed-send poller for the {@code same_day_rebooking_discount} automation —
@@ -54,6 +55,7 @@ public class SameDayRebookingScheduler {
     private final TwilioSmsConfigService configService;
     private final TwilioSmsClient client;
     private final TechnicianNameResolver technicianNameResolver;
+    private final SmsMessageTemplateService templateService;
     private final String publicBaseUrl;
 
     public SameDayRebookingScheduler(SameDayRebookingSendRepository repository, SquareClientProvider squareClientProvider,
@@ -61,7 +63,7 @@ public class SameDayRebookingScheduler {
                                       SmsAutomationService automationService, SmsConsentRepository consentRepository,
                                       RebookingProperties rebookingProperties, SmsMessageLogService messageLogService,
                                       TwilioSmsConfigService configService, TwilioSmsClient client,
-                                      TechnicianNameResolver technicianNameResolver,
+                                      TechnicianNameResolver technicianNameResolver, SmsMessageTemplateService templateService,
                                       @Value("${app.public-base-url}") String publicBaseUrl) {
         this.repository = repository;
         this.squareClientProvider = squareClientProvider;
@@ -73,6 +75,7 @@ public class SameDayRebookingScheduler {
         this.configService = configService;
         this.client = client;
         this.technicianNameResolver = technicianNameResolver;
+        this.templateService = templateService;
         this.publicBaseUrl = publicBaseUrl;
     }
 
@@ -185,9 +188,13 @@ public class SameDayRebookingScheduler {
         String technician = technicianNameResolver
                 .resolveForCustomer(businessId, send.getSquareCustomerId(), Instant.now())
                 .orElse(null);
-        String body = consented
-                ? marketingBody(technician, shortLink)
-                : transactionalBody(technician, shortLink);
+        boolean hasTechnician = technician != null && !technician.isBlank();
+        Map<String, String> vars = consented
+                ? Map.of("spotClause", hasTechnician ? "want to lock in your next spot with " + technician
+                        : "want to lock in your next spot", "link", shortLink)
+                : Map.of("urgencyClause", hasTechnician ? technician + "'s spots are filling up fast this time of year"
+                        : "Spots are filling up fast this time of year", "link", shortLink);
+        String body = templateService.render(businessId, templateKey, vars);
 
         TwilioSmsConfig config = configService.get(businessId);
         if (!config.isConfigured()) {
@@ -202,34 +209,6 @@ public class SameDayRebookingScheduler {
             log.warn("{} send failed (caller unaffected): {}", templateKey, e.getMessage());
             updateReserved(reserved, body, false, "send_failed", null);
         }
-    }
-
-    /** {@code technician} is the display name of whoever handled this customer's visit (see
-     * {@link TechnicianNameResolver}), null if unresolvable — falls back to a technician-less
-     * "lock in your next spot" framing rather than an empty mention. The $99-minimum condition
-     * lives on the linked promo page, not spelled out here — see the SMS lifecycle audit. No
-     * greeting or "It's Lucy" signature — by the time this fires same-day, the customer has
-     * already gotten at least one other automated text (checkout_rating_request, maybe its reply)
-     * establishing the sender, so re-introducing it here reads repetitive rather than personal —
-     * no {@code rawName}/greeting parameter for that reason. */
-    private static String marketingBody(String technician, String shortLink) {
-        String spotClause = (technician == null || technician.isBlank())
-                ? "want to lock in your next spot" : "want to lock in your next spot with " + technician;
-        return "Hope you're loving your nails 💛 Since you're already here today, " + spotClause
-                + "? I'll knock $10 off if you book before midnight: " + shortLink;
-    }
-
-    /** Same {@code technician} fallback reasoning as {@link #marketingBody}, and the same
-     * no-greeting/no-signature reasoning too. Deliberately avoids a gendered pronoun for the
-     * technician (no "her"/"his"). Leads with the high-season urgency (spots filling fast, the
-     * usual 3-4 week wait) rather than a vague "around this time" — the point is to get the
-     * customer booking today instead of waiting, not just to remind them a refresh is due. */
-    private static String transactionalBody(String technician, String shortLink) {
-        String body = (technician == null || technician.isBlank())
-                ? "Spots are filling up fast this time of year"
-                : technician + "'s spots are filling up fast this time of year";
-        return body + " 💛 Might be worth grabbing your next one today instead of the usual "
-                + "3-4 week wait: " + shortLink;
     }
 
     private void updateReserved(SmsMessage reserved, String body, boolean sent, String reason, String twilioMessageSid) {

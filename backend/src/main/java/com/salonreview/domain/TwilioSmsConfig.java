@@ -38,6 +38,16 @@ public class TwilioSmsConfig {
     @Column(name = "from_phone_number")
     private String fromPhoneNumber;
 
+    /** Who every automated (and AI-drafted) SMS signs as — e.g. the "It's {{sender}} from
+     * AK.LUX.NAILS 💛" greeting and the "-{{sender}}" signature every template in {@code
+     * SmsMessageTemplateCatalog} can reference. Defaults to "Lucy" at the DB level (see V115) so
+     * an existing business's wording never changes until the owner deliberately edits it; {@code
+     * @Builder.Default} mirrors that default for any Java-side construction (tests, a
+     * not-yet-persisted new row) that doesn't set it explicitly. */
+    @Builder.Default
+    @Column(name = "sender_name", nullable = false)
+    private String senderName = "Lucy";
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 

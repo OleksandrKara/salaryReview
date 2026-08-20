@@ -9,6 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,10 +47,12 @@ class SmsAutomationServiceTest {
     }
 
     @Test
-    @DisplayName("checkout_review_request: sent count is filtered to the primary template only, not the branch reply")
+    @DisplayName("checkout_review_request: sent count is filtered to the primary (rating-request) templates only, not the branch reply")
     void checkoutReviewSentCountExcludesBranchReply() {
-        when(messageRepository.countByBusinessIdAndAutomationKeyAndTemplateKeyAndDirectionAndStatusAndCreatedAtAfter(
-                eq(BUSINESS_ID), eq("checkout_review_request"), eq("checkout_rating_request"), eq("OUTBOUND"), eq("SENT"), any(Instant.class)))
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndTemplateKeyInAndDirectionAndStatusAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("checkout_review_request"),
+                eq(List.of("checkout_rating_request_with_technician", "checkout_rating_request_no_technician")),
+                eq("OUTBOUND"), eq("SENT"), any(Instant.class)))
                 .thenReturn(10L);
 
         var summary = find("checkout_review_request");

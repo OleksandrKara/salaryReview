@@ -90,7 +90,7 @@ class LeadFollowUpSchedulerTest {
 
         scheduler.sendDueFollowUps();
 
-        verify(smsService).sendTemplated(BUSINESS_ID, "lead_follow_up_nudge", PHONE, Map.of("name", "Jane"));
+        verify(smsService).sendTemplated(BUSINESS_ID, "lead_follow_up_nudge", PHONE, Map.of("greeting", "Hi Jane!"));
         ArgumentCaptor<LeadFollowUpSend> captor = ArgumentCaptor.forClass(LeadFollowUpSend.class);
         verify(sendRepository).save(captor.capture());
         assertThat(captor.getValue().getState()).isEqualTo(LeadFollowUpSend.STATE_SENT);
@@ -162,7 +162,7 @@ class LeadFollowUpSchedulerTest {
 
         scheduler.sendDueFollowUps();
 
-        verify(smsService).sendTemplated(BUSINESS_ID, "lead_follow_up_nudge", PHONE, Map.of());
+        verify(smsService).sendTemplated(BUSINESS_ID, "lead_follow_up_nudge", PHONE, Map.of("greeting", "Hi!"));
     }
 
     @Test

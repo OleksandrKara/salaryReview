@@ -18,6 +18,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,9 +65,14 @@ class LapsedCustomerWinbackSchedulerTest {
         twilioConfigs = mock(TwilioSmsConfigRepository.class);
         when(twilioConfigs.findAll()).thenReturn(List.of(TwilioSmsConfig.builder().businessId(BUSINESS_ID).build()));
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
+        // Real instance, mocked override repo (no overrides) — exercises the actual
+        // SmsMessageTemplateCatalog default wording, same as production with no owner customization.
+        var overrideRepo = mock(com.salonreview.repo.SmsTemplateOverrideRepository.class);
+        when(overrideRepo.findByBusinessIdAndTemplateKey(any(), any())).thenReturn(Optional.empty());
+        SmsMessageTemplateService templateService = new SmsMessageTemplateService(overrideRepo);
         scheduler = new LapsedCustomerWinbackScheduler(eligibilityRepository, sendRepository, squareClientProvider,
                 twilioConfigs, automationService, consentRepository, rebookingProperties, messageLogService, configService,
-                client, "https://salon.akluxnails.com");
+                client, templateService, "https://salon.akluxnails.com");
 
         when(automationService.isEnabled(1L, "lapsed_customer_winback")).thenReturn(true);
         when(square.customerPhone(CUSTOMER_ID)).thenReturn(PHONE);
@@ -78,6 +84,7 @@ class LapsedCustomerWinbackSchedulerTest {
                 .thenReturn(reserved);
         TwilioSmsConfig configured = mock(TwilioSmsConfig.class);
         when(configured.isConfigured()).thenReturn(true);
+        when(configured.getSenderName()).thenReturn("Lucy");
         when(configService.get(BUSINESS_ID)).thenReturn(configured);
     }
 
@@ -310,6 +317,7 @@ class LapsedCustomerWinbackSchedulerTest {
         when(automationService.isEnabled(otherBusinessId, "lapsed_customer_winback")).thenReturn(true);
         TwilioSmsConfig otherConfigured = mock(TwilioSmsConfig.class);
         when(otherConfigured.isConfigured()).thenReturn(true);
+        when(otherConfigured.getSenderName()).thenReturn("Lucy");
         when(configService.get(otherBusinessId)).thenReturn(otherConfigured);
         when(client.send(any(), eq(otherPhone), any())).thenReturn("SM999");
 

@@ -37,8 +37,8 @@ public class TwilioSmsSettingsController {
     @PutMapping
     public ResponseEntity<TwilioSmsSettingsDto> update(@RequestBody TwilioSmsSettingsUpdateRequest body, Principal principal) {
         TwilioSmsConfig updated = configService.update(
-                body.accountSid(), body.apiKey(), body.apiSecret(), body.fromPhoneNumber(), principal.getName(),
-                currentBusinessContext.id());
+                body.accountSid(), body.apiKey(), body.apiSecret(), body.fromPhoneNumber(), body.senderName(),
+                principal.getName(), currentBusinessContext.id());
         return ResponseEntity.ok(toDto(updated));
     }
 
@@ -47,7 +47,7 @@ public class TwilioSmsSettingsController {
                 mask(cfg.getAccountSid()), cfg.getAccountSid() != null,
                 mask(cfg.getApiKey()), cfg.getApiKey() != null,
                 mask(cfg.getApiSecret()), cfg.getApiSecret() != null,
-                cfg.getFromPhoneNumber(),
+                cfg.getFromPhoneNumber(), cfg.getSenderName(),
                 cfg.getUpdatedAt(), cfg.getUpdatedBy());
     }
 
@@ -59,12 +59,14 @@ public class TwilioSmsSettingsController {
     public record TwilioSmsSettingsDto(String accountSidMasked, boolean accountSidSet,
                                         String apiKeyMasked, boolean apiKeySet,
                                         String apiSecretMasked, boolean apiSecretSet,
-                                        String fromPhoneNumber,
+                                        String fromPhoneNumber, String senderName,
                                         Instant updatedAt, String updatedBy) {
     }
 
-    /** {@code null} field = leave unchanged; {@code ""} = clear. See {@link TwilioSmsConfigService#update}. */
+    /** {@code null} field = leave unchanged; {@code ""} = clear — except {@code senderName}, a
+     * NOT NULL column with no sensible "cleared" state, where a blank submission is simply
+     * ignored. See {@link TwilioSmsConfigService#update}. */
     public record TwilioSmsSettingsUpdateRequest(String accountSid, String apiKey, String apiSecret,
-                                                  String fromPhoneNumber) {
+                                                  String fromPhoneNumber, String senderName) {
     }
 }

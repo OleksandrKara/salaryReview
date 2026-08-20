@@ -39,15 +39,18 @@ public class CheckoutReviewReplyService {
     private final SmsMessageLogService messageLogService;
     private final TwilioSmsConfigService configService;
     private final TwilioSmsClient client;
+    private final SmsMessageTemplateService templateService;
     private final String publicBaseUrl;
     private final TaskScheduler taskScheduler;
 
     public CheckoutReviewReplyService(SmsMessageLogService messageLogService, TwilioSmsConfigService configService,
-                                       TwilioSmsClient client, @Value("${app.public-base-url}") String publicBaseUrl,
+                                       TwilioSmsClient client, SmsMessageTemplateService templateService,
+                                       @Value("${app.public-base-url}") String publicBaseUrl,
                                        TaskScheduler taskScheduler) {
         this.messageLogService = messageLogService;
         this.configService = configService;
         this.client = client;
+        this.templateService = templateService;
         this.publicBaseUrl = publicBaseUrl;
         this.taskScheduler = taskScheduler;
     }
@@ -74,26 +77,9 @@ public class CheckoutReviewReplyService {
                 flow.getBusinessId(), templateKey, AUTOMATION_KEY, flow.getPhoneNumber(),
                 "", false, "pending", null, linkTarget, clickToken);
         String shortLink = publicBaseUrl + "/r/" + clickToken;
-        String body;
-        if (!positive) {
-            // Empathy-first, ownership-signed — a service-recovery framing rather than a flat
-            // "we'd love to hear more" (see the SMS lifecycle audit). The review-gating question
-            // (should a low rater ever also get the Google review link, not just this form) is a
-            // routing decision above this method, not a copy one — left untouched deliberately.
-            body = "I'm really sorry today wasn't a 5 for you 💛 I'd love to make it right personally. "
-                    + "Reply and tell me what happened, or share details here if that's easier: "
-                    + shortLink + " -Lucy, Manager";
-        } else if (repeatReviewer) {
-            // "Clicked through" is the only fact hasClickedLinkTarget actually establishes — we
-            // have no way to confirm they went on to submit a review on Google's own page, so the
-            // copy shouldn't claim they definitely left one.
-            body = "So glad you loved it again! 💕 You've already clicked through to leave us a Google "
-                    + "review before. If there's any specific feedback this time, we'd love to hear it "
-                    + "here: " + shortLink + " -AK.LUX.NAILS";
-        } else {
-            body = "Yay, so happy to hear that! 🎉 Since you loved it, mind leaving a quick Google review? "
-                    + "Takes 10 seconds and really helps our small business: " + shortLink + " -Lucy";
-        }
+        String sender = configService.get(flow.getBusinessId()).getSenderName();
+        String body = templateService.render(flow.getBusinessId(), templateKey,
+                java.util.Map.of("link", shortLink, "sender", sender));
 
         taskScheduler.schedule(() -> sendNow(flow, reserved, body), Instant.now().plus(REPLY_DELAY));
     }

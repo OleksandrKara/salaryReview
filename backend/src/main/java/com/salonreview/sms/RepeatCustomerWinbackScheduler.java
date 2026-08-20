@@ -26,6 +26,7 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -91,6 +92,7 @@ public class RepeatCustomerWinbackScheduler {
     private final BlockedNumberRepository blockedNumberRepository;
     private final TwilioSmsConfigService configService;
     private final TwilioSmsClient client;
+    private final SmsMessageTemplateService templateService;
     private final String publicBaseUrl;
 
     public RepeatCustomerWinbackScheduler(RepeatCustomerWinbackEligibilityRepository eligibilityRepository,
@@ -99,7 +101,8 @@ public class RepeatCustomerWinbackScheduler {
                                            SmsAutomationService automationService, SmsConsentRepository consentRepository,
                                            RebookingProperties rebookingProperties, SmsMessageLogService messageLogService,
                                            BlockedNumberRepository blockedNumberRepository, TwilioSmsConfigService configService,
-                                           TwilioSmsClient client, @Value("${app.public-base-url}") String publicBaseUrl) {
+                                           TwilioSmsClient client, SmsMessageTemplateService templateService,
+                                           @Value("${app.public-base-url}") String publicBaseUrl) {
         this.eligibilityRepository = eligibilityRepository;
         this.sendRepository = sendRepository;
         this.squareClientProvider = squareClientProvider;
@@ -111,6 +114,7 @@ public class RepeatCustomerWinbackScheduler {
         this.blockedNumberRepository = blockedNumberRepository;
         this.configService = configService;
         this.client = client;
+        this.templateService = templateService;
         this.publicBaseUrl = publicBaseUrl;
     }
 
@@ -247,18 +251,26 @@ public class RepeatCustomerWinbackScheduler {
 
         String variant = (providerChanged && previousProviderFirstName != null && !previousProviderFirstName.isBlank())
                 ? "previous_provider" : "default";
-        String body;
-        if ("previous_provider".equals(variant)) {
-            body = consented
-                    ? previousProviderMarketingBody(name, previousProviderFirstName, shortLink)
-                    : previousProviderTransactionalBody(name, previousProviderFirstName, shortLink);
-        } else {
-            body = consented
-                    ? defaultMarketingBody(name, lastProviderFirstName, shortLink)
-                    : defaultTransactionalBody(name, lastProviderFirstName, shortLink);
-        }
-
         TwilioSmsConfig config = configService.get(businessId);
+        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
+        String overrideKey = templateKey.equals(TEMPLATE_KEY)
+                ? ("previous_provider".equals(variant) ? "repeat_customer_winback_nudge_previous_provider"
+                        : "repeat_customer_winback_nudge_default")
+                : ("previous_provider".equals(variant) ? "repeat_customer_winback_reminder_previous_provider"
+                        : "repeat_customer_winback_reminder_default");
+        Map<String, String> vars;
+        if ("previous_provider".equals(variant)) {
+            vars = Map.of("greeting", greeting, "sender", config.getSenderName(),
+                    "previousProvider", previousProviderFirstName, "link", shortLink);
+        } else {
+            boolean hasTechnician = lastProviderFirstName != null && !lastProviderFirstName.isBlank();
+            String visitClause = hasTechnician
+                    ? "It's been a while since your last visit with " + lastProviderFirstName
+                    : "It's been a while since your last visit";
+            vars = Map.of("greeting", greeting, "sender", config.getSenderName(), "visitClause", visitClause, "link", shortLink);
+        }
+        String body = templateService.render(businessId, overrideKey, vars);
+
         if (!config.isConfigured()) {
             log.info("{} skipped — Twilio credentials not configured", templateKey);
             updateReserved(reserved, body, false, "not_configured", null);
@@ -272,54 +284,6 @@ public class RepeatCustomerWinbackScheduler {
             updateReserved(reserved, body, false, "send_failed", null);
         }
         return variant;
-    }
-
-    /** Used when the customer stayed with the same technician across their last two visits, or
-     * when no technician name is available at all, AND the customer has marketing consent —
-     * names {@code technician} (their apparent regular) if known, otherwise a technician-less
-     * fallback, and mentions the $5-off coupon (see class doc). No em dash (—) in SMS bodies —
-     * it's outside the GSM-7 character set, so Twilio silently switches the whole message to
-     * UCS-2 encoding (70 chars/segment instead of 160, and some older handsets render it as "?"
-     * instead) — same rule every other automation's copy already follows, see e.g.
-     * LapsedCustomerWinbackSchedulerTest's own doesNotContain("—"). */
-    private static String defaultMarketingBody(String name, String technician, String shortLink) {
-        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
-        String body = (technician == null || technician.isBlank())
-                ? "It's been a while since your last visit"
-                : "It's been a while since your last visit with " + technician;
-        return greeting + " It's Lucy from AK.LUX.NAILS 💛 " + body + ". Grabbed you $5 off if you book today: "
-                + shortLink + " -Lucy";
-    }
-
-    /** Same as {@link #defaultMarketingBody}, no discount language — the unconsented/transactional
-     * variant (see class doc). This was the automation's only body before the $5 coupon was added. */
-    private static String defaultTransactionalBody(String name, String technician, String shortLink) {
-        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
-        String body = (technician == null || technician.isBlank())
-                ? "It's been a while since your last visit"
-                : "It's been a while since your last visit with " + technician;
-        return greeting + " It's Lucy from AK.LUX.NAILS 💛 " + body + ". Book your next mani here: " + shortLink + " -Lucy";
-    }
-
-    /** Used when the customer's technician changed between their last two visits AND the customer
-     * has marketing consent — offers to check with the earlier/previous technician by name, per
-     * design.md's "may personalize using the previous provider name" guidance, and mentions the
-     * $5-off coupon. Deliberately offers to "check," not a guarantee — we don't know that
-     * technician's actual current availability at send time. */
-    private static String previousProviderMarketingBody(String name, String previousProvider, String shortLink) {
-        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
-        return greeting + " It's Lucy from AK.LUX.NAILS 💛 It's been a while since we've seen you, want me to check "
-                + "if " + previousProvider + " has an opening for you? Grabbed you $5 off if you book today: "
-                + shortLink + " -Lucy";
-    }
-
-    /** Same as {@link #previousProviderMarketingBody}, no discount language — the unconsented/
-     * transactional variant (see class doc). This was the automation's only body before the $5
-     * coupon was added. */
-    private static String previousProviderTransactionalBody(String name, String previousProvider, String shortLink) {
-        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
-        return greeting + " It's Lucy from AK.LUX.NAILS 💛 It's been a while since we've seen you, want me to check "
-                + "if " + previousProvider + " has an opening for you? Book here: " + shortLink + " -Lucy";
     }
 
     private void updateReserved(SmsMessage reserved, String body, boolean sent, String reason, String twilioMessageSid) {

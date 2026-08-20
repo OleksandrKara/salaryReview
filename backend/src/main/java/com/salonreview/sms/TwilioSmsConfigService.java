@@ -37,12 +37,15 @@ public class TwilioSmsConfigService {
      */
     @Transactional
     public TwilioSmsConfig update(String accountSid, String apiKey, String apiSecret,
-                                  String fromPhoneNumber, String updatedByUsername, Long businessId) {
+                                  String fromPhoneNumber, String senderName, String updatedByUsername, Long businessId) {
         TwilioSmsConfig cfg = get(businessId);
         if (accountSid != null) cfg.setAccountSid(blankToNull(accountSid));
         if (apiKey != null) cfg.setApiKey(blankToNull(apiKey));
         if (apiSecret != null) cfg.setApiSecret(blankToNull(apiSecret));
         if (fromPhoneNumber != null) cfg.setFromPhoneNumber(blankToNull(fromPhoneNumber));
+        // NOT NULL column (unlike the fields above) — a blank submission is ignored rather than
+        // clearing it, since there's no sensible "no sender name" state to clear to.
+        if (senderName != null && !senderName.isBlank()) cfg.setSenderName(senderName.trim());
         cfg.setUpdatedBy(updatedByUsername);
         return repo.save(cfg);
     }

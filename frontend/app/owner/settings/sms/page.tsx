@@ -3,6 +3,7 @@ import { serverApi } from '../../../lib/serverApi';
 import PageHeader from '../../../components/PageHeader';
 import AutomationsPanel from './AutomationsPanel';
 import SmsActivityLog from './SmsActivityLog';
+import TemplatesPanel from './TemplatesPanel';
 import TwilioSmsSettingsForm from './TwilioSmsSettingsForm';
 
 // Owner-only "everything SMS" page: which automations are on, the full sent/received activity
@@ -14,10 +15,11 @@ export default async function SmsSettingsPage() {
   const me = await serverApi.getMe();
   if (me.role !== 'OWNER') redirect('/reports');
 
-  const [settings, automations, activity] = await Promise.all([
+  const [settings, automations, activity, templates] = await Promise.all([
     serverApi.getTwilioSmsSettings(),
     serverApi.listSmsAutomations(),
     serverApi.listSmsActivity(100),
+    serverApi.listSmsTemplates(),
   ]);
 
   return (
@@ -33,6 +35,15 @@ export default async function SmsSettingsPage() {
         <div className="mt-4">
           <AutomationsPanel initialAutomations={automations} />
         </div>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Message wording</h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Edit the exact text each automation sends. {'{{variables}}'} fill in automatically —
+          don&apos;t remove or rename them.
+        </p>
+        <TemplatesPanel initialTemplates={templates} automations={automations} />
       </section>
 
       <section className="mt-8">
