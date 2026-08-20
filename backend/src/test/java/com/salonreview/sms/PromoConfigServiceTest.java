@@ -15,7 +15,6 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -55,7 +54,7 @@ class PromoConfigServiceTest {
 
         var rebook = service.get(BUSINESS_A_ID, "REBOOK10").orElseThrow();
         assertThat(rebook.discountCents()).isEqualTo(1000);
-        assertThat(rebook.minSpendCents()).isNull();
+        assertThat(rebook.minSpendCents()).isEqualTo(9900);
         assertThat(rebook.squareCustomerGroupId()).isEqualTo("GROUPA");
         assertThat(rebook.configured()).isTrue();
 
@@ -95,11 +94,22 @@ class PromoConfigServiceTest {
     }
 
     @Test
-    @DisplayName("save() for Business A is refused — its terms are managed outside this tool")
-    void saveRefusedForBusinessA() {
-        assertThatThrownBy(() -> service.save(BUSINESS_A_ID, "REBOOK10", 1000, null, "owner"))
-                .isInstanceOf(IllegalStateException.class);
-        verifyNoInteractions(squareClientProvider);
+    @DisplayName("save() for Business A updates its real, already-backfilled Square objects in place — never refused, never a second set of objects")
+    void saveForBusinessAUpdatesRealObjects() {
+        BusinessPromoConfig existing = BusinessPromoConfig.builder().businessId(BUSINESS_A_ID).promoCode("REBOOK10")
+                .discountCents(1000).minSpendCents(9900).squareCustomerGroupId("56EKNTWTEQKEC850T9AEWGX20R")
+                .squareDiscountCatalogId("4I4YG3FSTTMWIIS5SDIHCQBV").squarePricingRuleCatalogId("IX7IUCLGNZBHOWLKA6TNS3WI")
+                .squareProductSetCatalogId("KDA5QP6OW2MSGISKT3QQCOEI").build();
+        when(repository.findByBusinessIdAndPromoCode(BUSINESS_A_ID, "REBOOK10")).thenReturn(Optional.of(existing));
+        when(squareClientProvider.forBusiness(BUSINESS_A_ID)).thenReturn(square);
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        var terms = service.save(BUSINESS_A_ID, "REBOOK10", 1000, 9900L, "owner");
+
+        assertThat(terms.minSpendCents()).isEqualTo(9900);
+        verify(square).updatePromoTerms("4I4YG3FSTTMWIIS5SDIHCQBV", "IX7IUCLGNZBHOWLKA6TNS3WI", 1000L, 9900L);
+        verify(square, never()).createCustomerGroup(any());
+        verify(square, never()).createDiscountAndPricingRule(any(), anyLong(), any(), any(), any());
     }
 
     @Test

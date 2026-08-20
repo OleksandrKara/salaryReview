@@ -18,20 +18,26 @@ import java.util.Optional;
  * ({@code REBOOK10}) and {@code lapsed_customer_winback}/{@code repeat_customer_winback}
  * ({@code WINBACK5}) promo links, per business — see {@link BusinessPromoConfig}.
  *
- * <p>Business A (short_code {@code akluxnails}) is the one exception: it has no
- * {@link BusinessPromoConfig} row and never will — its Square Catalog/CustomerGroup objects
- * already exist from before this service did, and their real object ids were never captured
- * anywhere in this app (only in env vars, via {@link RebookingProperties}). {@link #get} falls
- * back to those env values for Business A only; {@link #save} refuses outright for it, so this
- * tool can never create a second, conflicting set of Square objects for an account whose discount
- * already works.
+ * <p>Business A (short_code {@code akluxnails}) had its Square Catalog/CustomerGroup objects
+ * created manually before this service existed — V119 backfilled their real object ids into
+ * {@link BusinessPromoConfig} (looked up live against the real Square account), so it's editable
+ * like any other business now: {@link #save} updates those real, known objects rather than ever
+ * risking a second, conflicting set. {@link #get}'s env-based ({@link RebookingProperties})
+ * fallback only still matters if that row is ever missing (a fresh environment before V119 runs,
+ * or the row somehow gets deleted) — the {@code LEGACY_*} constants below are best-effort mirrors
+ * of that real Square-side config for exactly that narrow case, not a source of truth once the row
+ * exists.
  */
 @Service
 public class PromoConfigService {
 
-    /** Business A's REBOOK10 terms — not owner-editable, see class doc. */
+    /** Business A's REBOOK10 terms if its {@link BusinessPromoConfig} row is ever missing — see
+     * class doc. Mirrors the real Square-side Pricing Rule's minimum (confirmed live 2026-08-20;
+     * an earlier version of this fallback wrongly assumed no minimum here). */
     private static final long LEGACY_REBOOK_DISCOUNT_CENTS = 1000;
-    /** Business A's WINBACK5 terms — not owner-editable, see class doc. */
+    private static final long LEGACY_REBOOK_MIN_SPEND_CENTS = 9900;
+    /** Business A's WINBACK5 terms if its {@link BusinessPromoConfig} row is ever missing — see
+     * class doc. */
     private static final long LEGACY_WINBACK_DISCOUNT_CENTS = 500;
     private static final long LEGACY_WINBACK_MIN_SPEND_CENTS = 9900;
 
@@ -73,7 +79,7 @@ public class PromoConfigService {
             return Optional.empty();
         }
         if (REBOOK_PROMO_CODE.equals(promoCode) && legacyProperties.isAutoDiscountConfigured()) {
-            return Optional.of(new PromoTerms(LEGACY_REBOOK_DISCOUNT_CENTS, null,
+            return Optional.of(new PromoTerms(LEGACY_REBOOK_DISCOUNT_CENTS, LEGACY_REBOOK_MIN_SPEND_CENTS,
                     legacyProperties.getAutoDiscountGroupId(), true));
         }
         if (WINBACK_PROMO_CODE.equals(promoCode) && legacyProperties.isWinbackAutoDiscountConfigured()) {
@@ -86,13 +92,10 @@ public class PromoConfigService {
     /** Creates the Square Customer Group + Discount + Pricing Rule on the first save for a
      * business/promoCode, or updates the existing ones in place on every save after that — see
      * {@link SquareClient#createDiscountAndPricingRule} / {@link SquareClient#updatePromoTerms}.
-     * Refuses for Business A — see class doc. */
+     * Business A already has a row (see class doc), so this always takes the update path for it —
+     * never the create path, never a second set of Square objects. */
     @Transactional
     public PromoTerms save(Long businessId, String promoCode, long discountCents, Long minSpendCents, String updatedBy) {
-        if (businesses.legacySmsBusiness().getId().equals(businessId)) {
-            throw new IllegalStateException(
-                    "Business A's promo terms are managed outside this tool — see PromoConfigService");
-        }
         SquareClient square = squareClientProvider.forBusiness(businessId);
         Optional<BusinessPromoConfig> existing = repository.findByBusinessIdAndPromoCode(businessId, promoCode);
         BusinessPromoConfig config;
