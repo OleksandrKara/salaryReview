@@ -23,6 +23,7 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Once-daily win-back nudge for customers with exactly one all-time visit, 21–35 days ago — see
@@ -61,6 +62,7 @@ public class LapsedCustomerWinbackScheduler {
     private final SmsMessageLogService messageLogService;
     private final TwilioSmsConfigService configService;
     private final TwilioSmsClient client;
+    private final SmsMessageTemplateService templateService;
     private final String publicBaseUrl;
 
     public LapsedCustomerWinbackScheduler(LapsedCustomerWinbackEligibilityRepository eligibilityRepository,
@@ -69,6 +71,7 @@ public class LapsedCustomerWinbackScheduler {
                                            SmsAutomationService automationService, SmsConsentRepository consentRepository,
                                            RebookingProperties rebookingProperties, SmsMessageLogService messageLogService,
                                            TwilioSmsConfigService configService, TwilioSmsClient client,
+                                           SmsMessageTemplateService templateService,
                                            @Value("${app.public-base-url}") String publicBaseUrl) {
         this.eligibilityRepository = eligibilityRepository;
         this.sendRepository = sendRepository;
@@ -80,6 +83,7 @@ public class LapsedCustomerWinbackScheduler {
         this.messageLogService = messageLogService;
         this.configService = configService;
         this.client = client;
+        this.templateService = templateService;
         this.publicBaseUrl = publicBaseUrl;
     }
 
@@ -227,11 +231,24 @@ public class LapsedCustomerWinbackScheduler {
         // originally; caused real sends with full names on 2026-08-07 (see sms_message ids
         // 109-124) before this fix.
         String technician = Names.firstNameOnly(customer.technicianName());
-        String body = consented
-                ? marketingBody(name, technician, shortLink)
-                : transactionalBody(name, technician, shortLink);
-
+        boolean hasTechnician = technician != null && !technician.isBlank();
         TwilioSmsConfig config = configService.get(businessId);
+        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
+        String offerClause = consented
+                ? (hasTechnician
+                        ? "It's been 3+ weeks since your last visit and " + technician + "'s schedule is almost "
+                                + "full. Grabbed you $5 off if you book today"
+                        : "It's been 3+ weeks since your last visit. Spots are filling up fast right now, "
+                                + "grabbed you $5 off if you book today")
+                : (hasTechnician
+                        ? "It's been 3+ weeks since your last visit and " + technician + "'s schedule is almost "
+                                + "full. Want me to grab you a spot"
+                        : "It's been 3+ weeks since your last visit. Spots are filling up fast right now, "
+                                + "want me to grab you a spot");
+        Map<String, String> vars = Map.of("greeting", greeting, "sender", config.getSenderName(),
+                "offerClause", offerClause, "link", shortLink);
+        String body = templateService.render(businessId, templateKey, vars);
+
         if (!config.isConfigured()) {
             log.info("{} skipped — Twilio credentials not configured", templateKey);
             updateReserved(reserved, body, false, "not_configured", null);
@@ -246,35 +263,6 @@ public class LapsedCustomerWinbackScheduler {
         }
     }
 
-    /** {@code technician} is that customer's one-and-only visit's own provider name (see D5), null
-     * if somehow blank — falls back to a technician-less "spots are filling up fast" framing rather
-     * than an empty mention. Uses the technician's own name possessively ("Susan's schedule") so no
-     * pronoun is ever needed — no "their"/"her" ambiguity to resolve either way (though if a
-     * pronoun is ever wanted, "her" is confirmed correct — every current AK.LUX.NAILS technician is
-     * a woman, see the sms_technician_gender memory note). The $99-minimum condition lives on the
-     * linked promo page, not spelled out here — same convention
-     * {@code same_day_rebooking_discount}'s copy already follows. */
-    private static String marketingBody(String name, String technician, String shortLink) {
-        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
-        String body = (technician == null || technician.isBlank())
-                ? "It's been 3+ weeks since your last visit. Spots are filling up fast right now, "
-                        + "grabbed you $5 off if you book today"
-                : "It's been 3+ weeks since your last visit and " + technician + "'s schedule is "
-                        + "almost full. Grabbed you $5 off if you book today";
-        return greeting + " It's Lucy from AK.LUX.NAILS 💛 " + body + ": " + shortLink + " -Lucy";
-    }
-
-    /** Same {@code technician}/pronoun reasoning as {@link #marketingBody}, no discount language —
-     * see design.md D8. */
-    private static String transactionalBody(String name, String technician, String shortLink) {
-        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
-        String body = (technician == null || technician.isBlank())
-                ? "It's been 3+ weeks since your last visit. Spots are filling up fast right now, "
-                        + "want me to grab you a spot"
-                : "It's been 3+ weeks since your last visit and " + technician + "'s schedule is "
-                        + "almost full. Want me to grab you a spot";
-        return greeting + " It's Lucy from AK.LUX.NAILS 💛 " + body + "? " + shortLink + " -Lucy";
-    }
 
     private void updateReserved(SmsMessage reserved, String body, boolean sent, String reason, String twilioMessageSid) {
         reserved.setBody(body);

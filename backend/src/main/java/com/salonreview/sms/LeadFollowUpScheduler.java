@@ -113,7 +113,9 @@ public class LeadFollowUpScheduler {
             save(contact, LeadFollowUpSend.STATE_SKIPPED_DISABLED);
             return;
         }
-        Map<String, String> vars = contact.givenName() == null ? Map.of() : Map.of("name", contact.givenName());
+        String name = com.salonreview.util.Names.capitalizeFirst(contact.givenName());
+        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
+        Map<String, String> vars = Map.of("greeting", greeting);
         var result = smsService.sendTemplated(businessId, "lead_follow_up_nudge", contact.phoneNumber(), vars);
         if (!result.sent()) {
             log.warn("lead_follow_up_nudge not sent for contact {} ({}): {}",

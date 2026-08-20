@@ -64,9 +64,14 @@ class RepeatCustomerWinbackSchedulerTest {
         twilioConfigs = mock(TwilioSmsConfigRepository.class);
         when(twilioConfigs.findAll()).thenReturn(List.of(TwilioSmsConfig.builder().businessId(BUSINESS_ID).build()));
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
+        // Real instance, mocked override repo (no overrides) — exercises the actual
+        // SmsMessageTemplateCatalog default wording, same as production with no owner customization.
+        var overrideRepo = mock(com.salonreview.repo.SmsTemplateOverrideRepository.class);
+        when(overrideRepo.findByBusinessIdAndTemplateKey(any(), any())).thenReturn(java.util.Optional.empty());
+        SmsMessageTemplateService templateService = new SmsMessageTemplateService(overrideRepo);
         scheduler = new RepeatCustomerWinbackScheduler(eligibilityRepository, sendRepository, squareClientProvider,
                 twilioConfigs, automationService, consentRepository, rebookingProperties, messageLogService,
-                blockedNumberRepository, configService, client, "https://salon.akluxnails.com");
+                blockedNumberRepository, configService, client, templateService, "https://salon.akluxnails.com");
 
         when(automationService.isEnabled(1L, "repeat_customer_winback")).thenReturn(true);
         when(square.customerPhone(CUSTOMER_ID)).thenReturn(PHONE);
@@ -79,6 +84,7 @@ class RepeatCustomerWinbackSchedulerTest {
                 .thenReturn(reserved);
         TwilioSmsConfig configured = mock(TwilioSmsConfig.class);
         when(configured.isConfigured()).thenReturn(true);
+        when(configured.getSenderName()).thenReturn("Lucy");
         when(configService.get(BUSINESS_ID)).thenReturn(configured);
         when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
     }
@@ -358,6 +364,7 @@ class RepeatCustomerWinbackSchedulerTest {
         when(automationService.isEnabled(otherBusinessId, "repeat_customer_winback")).thenReturn(true);
         TwilioSmsConfig otherConfigured = mock(TwilioSmsConfig.class);
         when(otherConfigured.isConfigured()).thenReturn(true);
+        when(otherConfigured.getSenderName()).thenReturn("Lucy");
         when(configService.get(otherBusinessId)).thenReturn(otherConfigured);
         when(client.send(any(), eq(otherPhone), any())).thenReturn("SM999");
 

@@ -36,7 +36,7 @@ public class TwilioSmsService {
         }
     }
 
-    private final SmsTemplateRegistry templateRegistry;
+    private final SmsMessageTemplateService templateService;
     private final TwilioSmsConfigService configService;
     private final SmsConsentRepository consentRepository;
     private final SmsAutomationService automationService;
@@ -45,11 +45,11 @@ public class TwilioSmsService {
     private final BlockedNumberRepository blockedNumberRepository;
     private final SmsMediaService mediaService;
 
-    public TwilioSmsService(SmsTemplateRegistry templateRegistry, TwilioSmsConfigService configService,
+    public TwilioSmsService(SmsMessageTemplateService templateService, TwilioSmsConfigService configService,
                             SmsConsentRepository consentRepository, SmsAutomationService automationService,
                             SmsMessageLogService messageLogService, TwilioSmsClient client,
                             BlockedNumberRepository blockedNumberRepository, SmsMediaService mediaService) {
-        this.templateRegistry = templateRegistry;
+        this.templateService = templateService;
         this.configService = configService;
         this.consentRepository = consentRepository;
         this.automationService = automationService;
@@ -68,7 +68,7 @@ public class TwilioSmsService {
     }
 
     public SmsSendResult sendTemplated(Long businessId, String templateKey, String phoneNumber, Map<String, String> variables) {
-        SmsTemplate template = templateRegistry.find(templateKey);
+        SmsMessageTemplateCatalog.TemplateDefault template = templateService.describe(templateKey);
         if (template == null) {
             // Nothing to render and no automationKey to attribute this to — logged as a bare
             // attempt so it's still visible in the activity view, matching every other outcome.
@@ -76,7 +76,12 @@ public class TwilioSmsService {
             return SmsSendResult.skipped("unknown_template");
         }
 
-        String body = template.render().apply(variables == null ? Map.of() : variables);
+        TwilioSmsConfig config = configService.get(businessId);
+        Map<String, String> renderVars = new java.util.HashMap<>(variables == null ? Map.of() : variables);
+        // Every catalog template may reference {{sender}} — resolved once here so callers don't
+        // each need to fetch TwilioSmsConfig just to pass it through.
+        renderVars.putIfAbsent("sender", config.getSenderName());
+        String body = templateService.render(businessId, templateKey, renderVars);
         String automationKey = template.automationKey();
 
         if (isBlocked(phoneNumber)) {
@@ -97,7 +102,6 @@ public class TwilioSmsService {
             return SmsSendResult.skipped("no_consent");
         }
 
-        TwilioSmsConfig config = configService.get(businessId);
         if (!config.isConfigured()) {
             log.info("SMS template '{}' skipped — Twilio credentials not configured", templateKey);
             messageLogService.logOutbound(businessId, templateKey, automationKey, phoneNumber, body, false, "not_configured", null);

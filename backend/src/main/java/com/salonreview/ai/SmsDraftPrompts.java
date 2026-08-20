@@ -144,13 +144,20 @@ public final class SmsDraftPrompts {
     /** Per-language response directive, or null for English (the default — no directive needed).
      * Same technique as RagAnswerService/FunnelAnalysisPrompts' own languageDirective: rides in
      * its own uncached system block after the cached base prompt. */
-    public static String languageDirective(Language lang) {
+    public static String languageDirective(Language lang, String senderName) {
         if (lang == Language.RU) {
             return "Write the SMS reply in Russian (Русский), in the same warm, casual voice — but "
-                    + "keep the salon name (AK.LUX.NAILS), the signature \"-Lucy\", and any service or "
-                    + "product names in English, since that's how this salon's customers already see them "
-                    + "in every other text they get.";
+                    + "keep the salon name (AK.LUX.NAILS), the signature \"-" + senderName + "\", and any "
+                    + "service or product names in English, since that's how this salon's customers already "
+                    + "see them in every other text they get.";
         }
         return null;
+    }
+
+    /** {@link #SYSTEM_PROMPT_V2} with the persona/signature name swapped to this business's own
+     * configured sender — "Lucy" is the literal name baked into the prompt text (and the only
+     * occurrence of that word in it), so a plain substring replace is exact, not fuzzy. */
+    public static String systemPrompt(String senderName) {
+        return SYSTEM_PROMPT_V2.replace("Lucy", senderName);
     }
 }

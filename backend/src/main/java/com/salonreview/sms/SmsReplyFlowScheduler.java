@@ -64,13 +64,18 @@ public class SmsReplyFlowScheduler {
     }
 
     private void sendOne(SmsReplyFlow flow, Instant now, Long businessId) {
+        String name = com.salonreview.util.Names.capitalizeFirst(flow.getCustomerName());
+        String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
+        String technician = technicianNameResolver.resolveForCustomer(businessId, flow.getSquareCustomerId(), now)
+                .orElse(null);
+        boolean hasTechnician = technician != null && !technician.isBlank();
         Map<String, String> vars = new java.util.HashMap<>();
-        if (flow.getCustomerName() != null) {
-            vars.put("name", flow.getCustomerName());
+        vars.put("greeting", greeting);
+        if (hasTechnician) {
+            vars.put("technician", technician);
         }
-        technicianNameResolver.resolveForCustomer(businessId, flow.getSquareCustomerId(), now)
-                .ifPresent(technician -> vars.put("technician", technician));
-        var result = smsService.sendTemplated(flow.getBusinessId(), "checkout_rating_request", flow.getPhoneNumber(), vars);
+        String templateKey = hasTechnician ? "checkout_rating_request_with_technician" : "checkout_rating_request_no_technician";
+        var result = smsService.sendTemplated(flow.getBusinessId(), templateKey, flow.getPhoneNumber(), vars);
         if (result.sent()) {
             flow.setState(SmsReplyFlow.STATE_AWAITING_REPLY);
             flow.setReplyExpiresAt(now.plus(REPLY_WINDOW));

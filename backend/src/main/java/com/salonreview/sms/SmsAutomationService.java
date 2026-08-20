@@ -62,9 +62,9 @@ public class SmsAutomationService {
                     boolean enabled = repository.findByBusinessIdAndAutomationKey(businessId, meta.key())
                             .map(SmsAutomation::isEnabled).orElse(false);
 
-                    long sent = meta.primaryTemplateKey() != null
-                            ? messageRepository.countByBusinessIdAndAutomationKeyAndTemplateKeyAndDirectionAndStatusAndCreatedAtAfter(
-                                    businessId, meta.key(), meta.primaryTemplateKey(), "OUTBOUND", "SENT", since)
+                    long sent = !meta.primaryTemplateKeys().isEmpty()
+                            ? messageRepository.countByBusinessIdAndAutomationKeyAndTemplateKeyInAndDirectionAndStatusAndCreatedAtAfter(
+                                    businessId, meta.key(), meta.primaryTemplateKeys(), "OUTBOUND", "SENT", since)
                             : messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
                                     businessId, meta.key(), "OUTBOUND", "SENT", since);
 

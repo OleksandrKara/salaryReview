@@ -66,6 +66,7 @@ public class SmsDraftService {
     private final ObjectProvider<RagRetrievalService> ragRetrievalProvider;
     private final ObjectProvider<RagConfigService> ragConfigProvider;
     private final BusinessFeatureService businessFeatures;
+    private final com.salonreview.sms.TwilioSmsConfigService twilioSmsConfigService;
 
     public SmsDraftService(ObjectProvider<AnthropicClient> anthropicClientProvider,
                             AiSmsDraftProperties props,
@@ -73,7 +74,8 @@ public class SmsDraftService {
                             MarketingContactsService contactsService,
                             ObjectProvider<RagRetrievalService> ragRetrievalProvider,
                             ObjectProvider<RagConfigService> ragConfigProvider,
-                            BusinessFeatureService businessFeatures) {
+                            BusinessFeatureService businessFeatures,
+                            com.salonreview.sms.TwilioSmsConfigService twilioSmsConfigService) {
         this.anthropicClientProvider = anthropicClientProvider;
         this.props = props;
         this.smsMessageLogService = smsMessageLogService;
@@ -81,6 +83,7 @@ public class SmsDraftService {
         this.ragRetrievalProvider = ragRetrievalProvider;
         this.ragConfigProvider = ragConfigProvider;
         this.businessFeatures = businessFeatures;
+        this.twilioSmsConfigService = twilioSmsConfigService;
     }
 
     public record DraftResult(String body, String promptVersion, String model) {}
@@ -101,7 +104,7 @@ public class SmsDraftService {
 
         String userMessage = buildUserMessage(contact, thread, ragMatches);
         try {
-            return Optional.of(callClaude(client, userMessage, lang));
+            return Optional.of(callClaude(client, userMessage, lang, businessId));
         } catch (RefusalException re) {
             log.warn("SMS draft refused for phone={}: {}", phoneNumber, re.category());
             return Optional.of(refusalFallback(lang));
@@ -193,13 +196,18 @@ public class SmsDraftService {
     }
 
     /** Package-private so tests can override — same pattern as {@link FunnelAnalysisService#callClaude}. */
-    DraftResult callClaude(AnthropicClient client, String userMessage, Language lang) throws RefusalException {
+    DraftResult callClaude(AnthropicClient client, String userMessage, Language lang, Long businessId) throws RefusalException {
+        // "Lucy" only when this business hasn't customized its sender name — the common case, so
+        // prompt caching still hits for nearly every business. A customized sender means a
+        // per-business cache entry instead of the shared one, an acceptable cost/latency trade-off
+        // for a deliberate, rare choice.
+        String senderName = twilioSmsConfigService.get(businessId).getSenderName();
         List<TextBlockParam> system = new ArrayList<>();
         system.add(TextBlockParam.builder()
-                .text(SmsDraftPrompts.SYSTEM_PROMPT_V2)
+                .text(SmsDraftPrompts.systemPrompt(senderName))
                 .cacheControl(CacheControlEphemeral.builder().build())
                 .build());
-        String directive = SmsDraftPrompts.languageDirective(lang);
+        String directive = SmsDraftPrompts.languageDirective(lang, senderName);
         if (directive != null) {
             system.add(TextBlockParam.builder().text(directive).build());
         }

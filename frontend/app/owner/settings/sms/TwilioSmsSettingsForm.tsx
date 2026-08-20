@@ -14,6 +14,7 @@ export default function TwilioSmsSettingsForm({ initialSettings }: { initialSett
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [apiSecretInput, setApiSecretInput] = useState('');
   const [fromPhoneNumberInput, setFromPhoneNumberInput] = useState(initialSettings.fromPhoneNumber ?? '');
+  const [senderNameInput, setSenderNameInput] = useState(initialSettings.senderName);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
@@ -31,6 +32,7 @@ export default function TwilioSmsSettingsForm({ initialSettings }: { initialSett
         apiKey: apiKeyInput === '' ? undefined : apiKeyInput,
         apiSecret: apiSecretInput === '' ? undefined : apiSecretInput,
         fromPhoneNumber: fromPhoneNumberInput,
+        senderName: senderNameInput.trim() === '' ? undefined : senderNameInput,
       });
       setSettings(updated);
       setAccountSidInput('');
@@ -88,6 +90,20 @@ export default function TwilioSmsSettingsForm({ initialSettings }: { initialSett
           autoComplete="off"
           className="w-full rounded border border-zinc-300 px-2 py-1.5"
         />
+      </label>
+      <label className="text-sm">
+        <span className="mb-1 block text-zinc-600">Sender name</span>
+        <input
+          value={senderNameInput}
+          onChange={(e) => setSenderNameInput(e.target.value)}
+          placeholder="e.g. Lucy"
+          autoComplete="off"
+          className="w-full rounded border border-zinc-300 px-2 py-1.5"
+        />
+        <span className="mt-1 block text-xs text-zinc-400">
+          Who every automated (and AI-drafted) text signs as — e.g. &ldquo;It&rsquo;s Lucy from AK.LUX.NAILS 💛&rdquo;.
+          Applies everywhere at once; edit individual message wording below.
+        </span>
       </label>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

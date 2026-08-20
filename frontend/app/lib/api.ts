@@ -36,6 +36,7 @@ import type {
   CreateBusinessRequest,
   TwilioSmsSettingsDto,
   TwilioSmsSettingsUpdateRequest,
+  SmsTemplateView,
   SmsAutomationSummary,
   SmsMessageDto,
   SmsMessageDirection,
@@ -248,6 +249,15 @@ export const api = {
 
   updateTwilioSmsSettings: (body: TwilioSmsSettingsUpdateRequest) =>
     proxyJson<TwilioSmsSettingsDto>(`/api/owner/settings/sms`, 'PUT', body),
+
+  // SMS message template wording (owner) — see SmsMessageTemplateCatalog.
+  listSmsTemplates: () => proxyGet<SmsTemplateView[]>(`/api/owner/settings/sms/templates`),
+
+  updateSmsTemplate: (key: string, body: string) =>
+    proxyJson<SmsTemplateView>(`/api/owner/settings/sms/templates/${encodeURIComponent(key)}`, 'PUT', { body }),
+
+  resetSmsTemplate: (key: string) =>
+    proxyJson<SmsTemplateView>(`/api/owner/settings/sms/templates/${encodeURIComponent(key)}/reset`, 'POST', {}),
 
   // SMS automations hub (owner): registry list/toggle + the full sent/received activity log.
   listSmsAutomations: () => proxyGet<SmsAutomationSummary[]>(`/api/owner/automations`),

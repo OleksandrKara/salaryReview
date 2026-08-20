@@ -88,7 +88,7 @@ class TwilioSmsSettingsControllerTest {
     @Test
     @DisplayName("PUT with null fields passes null through unchanged")
     void putNullFieldsPassThrough() throws Exception {
-        when(configService.update(isNull(), isNull(), isNull(), eq("+15559999999"), any(), eq(BUSINESS_ID)))
+        when(configService.update(isNull(), isNull(), isNull(), eq("+15559999999"), isNull(), any(), eq(BUSINESS_ID)))
                 .thenReturn(TwilioSmsConfig.builder().businessId(BUSINESS_ID).fromPhoneNumber("+15559999999").build());
 
         Principal owner = () -> "owner";
@@ -98,6 +98,6 @@ class TwilioSmsSettingsControllerTest {
                         .content(json.writeValueAsString(Map.of("fromPhoneNumber", "+15559999999"))))
                 .andExpect(status().isOk());
 
-        verify(configService).update(isNull(), isNull(), isNull(), eq("+15559999999"), any(), eq(BUSINESS_ID));
+        verify(configService).update(isNull(), isNull(), isNull(), eq("+15559999999"), isNull(), any(), eq(BUSINESS_ID));
     }
 }

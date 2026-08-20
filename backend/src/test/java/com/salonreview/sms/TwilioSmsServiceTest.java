@@ -25,7 +25,7 @@ class TwilioSmsServiceTest {
     private static final String PHONE = "+15551234567";
     private static final Long BUSINESS_ID = 1L;
 
-    private SmsTemplateRegistry templateRegistry;
+    private SmsMessageTemplateService templateService;
     private TwilioSmsConfigService configService;
     private SmsConsentRepository consentRepository;
     private SmsAutomationService automationService;
@@ -37,7 +37,7 @@ class TwilioSmsServiceTest {
 
     @BeforeEach
     void setUp() {
-        templateRegistry = mock(SmsTemplateRegistry.class);
+        templateService = mock(SmsMessageTemplateService.class);
         configService = mock(TwilioSmsConfigService.class);
         consentRepository = mock(SmsConsentRepository.class);
         automationService = mock(SmsAutomationService.class);
@@ -45,15 +45,23 @@ class TwilioSmsServiceTest {
         client = mock(TwilioSmsClient.class);
         blockedNumberRepository = mock(BlockedNumberRepository.class);
         mediaService = mock(SmsMediaService.class);
-        service = new TwilioSmsService(templateRegistry, configService, consentRepository, automationService,
+        service = new TwilioSmsService(templateService, configService, consentRepository, automationService,
                 messageLogService, client, blockedNumberRepository, mediaService);
 
         when(automationService.isEnabled(any(), any())).thenReturn(true);
         when(blockedNumberRepository.existsById(any())).thenReturn(false);
-        when(templateRegistry.find(TRANSACTIONAL_KEY))
-                .thenReturn(new SmsTemplate(TRANSACTIONAL_KEY, SmsMessageClass.TRANSACTIONAL, vars -> "transactional body"));
-        when(templateRegistry.find(MARKETING_KEY))
-                .thenReturn(new SmsTemplate(MARKETING_KEY, SmsMessageClass.MARKETING, vars -> "marketing body"));
+        // sendTemplated always fetches the config first now (to resolve {{sender}}) — a sensible
+        // default here, overridden per-test where the config itself is what's under test (e.g.
+        // unconfiguredCredentialsSkipsSend).
+        when(configService.get(BUSINESS_ID)).thenReturn(configured());
+        when(templateService.describe(TRANSACTIONAL_KEY)).thenReturn(
+                new SmsMessageTemplateCatalog.TemplateDefault(TRANSACTIONAL_KEY, null, SmsMessageClass.TRANSACTIONAL,
+                        "label", "default", List.of()));
+        when(templateService.render(eq(BUSINESS_ID), eq(TRANSACTIONAL_KEY), any())).thenReturn("transactional body");
+        when(templateService.describe(MARKETING_KEY)).thenReturn(
+                new SmsMessageTemplateCatalog.TemplateDefault(MARKETING_KEY, null, SmsMessageClass.MARKETING,
+                        "label", "default", List.of()));
+        when(templateService.render(eq(BUSINESS_ID), eq(MARKETING_KEY), any())).thenReturn("marketing body");
     }
 
     private static TwilioSmsConfig configured() {
@@ -75,8 +83,6 @@ class TwilioSmsServiceTest {
     @Test
     @DisplayName("TRANSACTIONAL template sends regardless of consent")
     void transactionalSendsWithoutConsentCheck() throws Exception {
-        when(configService.get(BUSINESS_ID)).thenReturn(configured());
-
         var result = service.sendTemplated(BUSINESS_ID, TRANSACTIONAL_KEY, PHONE, Map.of());
 
         assertThat(result.sent()).isTrue();
@@ -100,7 +106,6 @@ class TwilioSmsServiceTest {
     @DisplayName("MARKETING template sent when consent is true and credentials are configured")
     void marketingSentWithConsent() throws Exception {
         when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(true);
-        when(configService.get(BUSINESS_ID)).thenReturn(configured());
 
         var result = service.sendTemplated(BUSINESS_ID, MARKETING_KEY, PHONE, Map.of());
 
@@ -123,7 +128,6 @@ class TwilioSmsServiceTest {
     @Test
     @DisplayName("Twilio client failure → send_failed, never throws")
     void clientFailureReturnsSendFailed() throws Exception {
-        when(configService.get(BUSINESS_ID)).thenReturn(configured());
         doThrow(new java.io.IOException("boom")).when(client).send(any(), any(), any());
 
         var result = service.sendTemplated(BUSINESS_ID, TRANSACTIONAL_KEY, PHONE, Map.of());
@@ -136,8 +140,10 @@ class TwilioSmsServiceTest {
     @DisplayName("Disabled automation → automation_disabled, no consent check, no send attempt")
     void disabledAutomationSkipsSend() throws Exception {
         String key = "test_gated";
-        when(templateRegistry.find(key)).thenReturn(
-                new SmsTemplate(key, SmsMessageClass.TRANSACTIONAL, "some_automation", vars -> "gated body"));
+        when(templateService.describe(key)).thenReturn(
+                new SmsMessageTemplateCatalog.TemplateDefault(key, "some_automation", SmsMessageClass.TRANSACTIONAL,
+                        "label", "default", List.of()));
+        when(templateService.render(eq(BUSINESS_ID), eq(key), any())).thenReturn("gated body");
         when(automationService.isEnabled(BUSINESS_ID, "some_automation")).thenReturn(false);
 
         var result = service.sendTemplated(BUSINESS_ID, key, PHONE, Map.of());
@@ -150,8 +156,6 @@ class TwilioSmsServiceTest {
     @Test
     @DisplayName("Every send attempt, including blocked ones, is logged to the activity log")
     void everyAttemptIsLogged() throws Exception {
-        when(configService.get(BUSINESS_ID)).thenReturn(configured());
-
         service.sendTemplated(BUSINESS_ID, TRANSACTIONAL_KEY, PHONE, Map.of());
         verify(messageLogService).logOutbound(eq(BUSINESS_ID), eq(TRANSACTIONAL_KEY), any(), eq(PHONE), eq("transactional body"),
                 eq(true), eq(null), any());
@@ -164,15 +168,13 @@ class TwilioSmsServiceTest {
     @Test
     @DisplayName("sendManual: sends a freeform body directly, bypassing templates/automation/consent")
     void sendManualSendsDirectly() throws Exception {
-        when(configService.get(BUSINESS_ID)).thenReturn(configured());
-
         var result = service.sendManual(BUSINESS_ID, PHONE, "hand-typed reply");
 
         assertThat(result.sent()).isTrue();
         verify(client).send(any(), eq(PHONE), eq("hand-typed reply"));
         verify(messageLogService).logOutbound(eq(BUSINESS_ID), eq(null), eq(null), eq(PHONE), eq("hand-typed reply"),
                 eq(true), eq(null), any());
-        verifyNoInteractions(templateRegistry, consentRepository, automationService);
+        verifyNoInteractions(templateService, consentRepository, automationService);
     }
 
     @Test
@@ -190,7 +192,6 @@ class TwilioSmsServiceTest {
     @Test
     @DisplayName("sendManual: Twilio client failure → send_failed, never throws")
     void sendManualClientFailureReturnsSendFailed() throws Exception {
-        when(configService.get(BUSINESS_ID)).thenReturn(configured());
         doThrow(new java.io.IOException("boom")).when(client).send(any(), any(), any());
 
         var result = service.sendManual(BUSINESS_ID, PHONE, "hi");
@@ -228,7 +229,6 @@ class TwilioSmsServiceTest {
     @Test
     @DisplayName("sendManualWithMedia: stores each attachment against the reserved row, then sends with media URLs")
     void sendManualWithMediaStoresThenSends() throws Exception {
-        when(configService.get(BUSINESS_ID)).thenReturn(configured());
         SmsMessage reserved = SmsMessage.builder().id(55L).build();
         when(messageLogService.logOutbound(eq(BUSINESS_ID), eq(null), eq(null), eq(PHONE), eq("here's a photo"), eq(false), eq("pending"), eq(null)))
                 .thenReturn(reserved);
@@ -263,7 +263,6 @@ class TwilioSmsServiceTest {
     @Test
     @DisplayName("sendManualWithMedia: Twilio send failure → send_failed, reserved row updated, never throws")
     void sendManualWithMediaSendFailureReturnsSendFailed() throws Exception {
-        when(configService.get(BUSINESS_ID)).thenReturn(configured());
         SmsMessage reserved = SmsMessage.builder().id(56L).build();
         when(messageLogService.logOutbound(eq(BUSINESS_ID), eq(null), eq(null), eq(PHONE), eq("photo"), eq(false), eq("pending"), eq(null)))
                 .thenReturn(reserved);

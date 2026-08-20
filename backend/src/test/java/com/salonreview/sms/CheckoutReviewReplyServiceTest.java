@@ -50,7 +50,12 @@ class CheckoutReviewReplyServiceTest {
         configService = mock(TwilioSmsConfigService.class);
         client = mock(TwilioSmsClient.class);
         taskScheduler = mock(TaskScheduler.class);
-        service = new CheckoutReviewReplyService(messageLogService, configService, client, PUBLIC_BASE_URL, taskScheduler);
+        // Real instance, mocked override repo (no overrides) — exercises the actual
+        // SmsMessageTemplateCatalog default wording, same as production with no owner customization.
+        var overrideRepo = mock(com.salonreview.repo.SmsTemplateOverrideRepository.class);
+        when(overrideRepo.findByBusinessIdAndTemplateKey(any(), any())).thenReturn(java.util.Optional.empty());
+        SmsMessageTemplateService templateService = new SmsMessageTemplateService(overrideRepo);
+        service = new CheckoutReviewReplyService(messageLogService, configService, client, templateService, PUBLIC_BASE_URL, taskScheduler);
 
         when(messageLogService.generateUniqueClickToken()).thenReturn("abc12");
         when(messageLogService.logOutboundWithLink(eq(BUSINESS_ID), anyString(), eq("checkout_review_request"), eq(PHONE),

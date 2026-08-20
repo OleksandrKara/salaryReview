@@ -56,6 +56,7 @@ class SmsDraftServiceTest {
     @SuppressWarnings("unchecked")
     private ObjectProvider<RagConfigService> ragConfigProvider = mock(ObjectProvider.class);
     private BusinessFeatureService businessFeatures;
+    private com.salonreview.sms.TwilioSmsConfigService twilioSmsConfigService;
 
     private SmsDraftService service;
     private SmsDraftService spied;
@@ -85,8 +86,10 @@ class SmsDraftServiceTest {
         businessFeatures = mock(BusinessFeatureService.class);
         when(businessFeatures.isEnabled(BUSINESS_ID, BusinessFeatureService.AI_SMS_DRAFT_ENABLED)).thenReturn(true);
 
+        twilioSmsConfigService = mock(com.salonreview.sms.TwilioSmsConfigService.class);
+
         service = new SmsDraftService(anthropicProvider, props, smsMessageLogService, contactsService,
-                ragRetrievalProvider, ragConfigProvider, businessFeatures);
+                ragRetrievalProvider, ragConfigProvider, businessFeatures, twilioSmsConfigService);
         spied = spy(service);
     }
 
@@ -153,13 +156,13 @@ class SmsDraftServiceTest {
                 outbound("Hi Maria! It's Lucy 💛 Time for your next gel fill?"),
                 inbound("My last polish chipped after 3 days, kind of annoyed")));
 
-        doReturn(canned()).when(spied).callClaude(any(), anyString(), eq(Language.EN));
+        doReturn(canned()).when(spied).callClaude(any(), anyString(), eq(Language.EN), eq(BUSINESS_ID));
 
         Optional<DraftResult> result = spied.draft(PHONE, Language.EN, BUSINESS_ID);
 
         assertThat(result).isPresent();
         org.mockito.ArgumentCaptor<String> userMessageCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(spied).callClaude(any(), userMessageCaptor.capture(), eq(Language.EN));
+        verify(spied).callClaude(any(), userMessageCaptor.capture(), eq(Language.EN), eq(BUSINESS_ID));
         String userMessage = userMessageCaptor.getValue();
         assertThat(userMessage).contains("Maria");
         assertThat(userMessage).contains("Gel Manicure");
@@ -176,7 +179,7 @@ class SmsDraftServiceTest {
         when(ragConfigProvider.getIfAvailable()).thenReturn(configService);
         when(smsMessageLogService.thread(BUSINESS_ID, PHONE)).thenReturn(List.of(outbound("Hi! Time for a fill?")));
 
-        doReturn(canned()).when(spied).callClaude(any(), anyString(), eq(Language.EN));
+        doReturn(canned()).when(spied).callClaude(any(), anyString(), eq(Language.EN), eq(BUSINESS_ID));
 
         spied.draft(PHONE, Language.EN, BUSINESS_ID);
 
@@ -200,12 +203,12 @@ class SmsDraftServiceTest {
                 outbound("Hi! Time for a fill?"),
                 inbound("Do you have a cancellation fee?")));
 
-        doReturn(canned()).when(spied).callClaude(any(), anyString(), eq(Language.EN));
+        doReturn(canned()).when(spied).callClaude(any(), anyString(), eq(Language.EN), eq(BUSINESS_ID));
 
         spied.draft(PHONE, Language.EN, BUSINESS_ID);
 
         org.mockito.ArgumentCaptor<String> userMessageCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(spied).callClaude(any(), userMessageCaptor.capture(), eq(Language.EN));
+        verify(spied).callClaude(any(), userMessageCaptor.capture(), eq(Language.EN), eq(BUSINESS_ID));
         assertThat(userMessageCaptor.getValue()).contains("24 hours notice");
         verify(retrieval).retrieve(eq("Do you have a cancellation fee?"), eq(cfg), eq(BUSINESS_ID));
     }
@@ -214,7 +217,7 @@ class SmsDraftServiceTest {
     @DisplayName("a policy refusal falls back to a friendly manual-reply message, in the requested language")
     void refusalFallsBackToFriendlyMessage() throws Exception {
         doThrow(new SmsDraftService.RefusalException("policy_refusal"))
-                .when(spied).callClaude(any(), anyString(), eq(Language.RU));
+                .when(spied).callClaude(any(), anyString(), eq(Language.RU), eq(BUSINESS_ID));
 
         Optional<DraftResult> result = spied.draft(PHONE, Language.RU, BUSINESS_ID);
 
@@ -226,7 +229,7 @@ class SmsDraftServiceTest {
     @DisplayName("a non-refusal Claude failure is rethrown as DraftFailedException")
     void otherFailuresRethrowAsDraftFailed() throws Exception {
         doThrow(new RuntimeException("anthropic 5xx"))
-                .when(spied).callClaude(any(), anyString(), eq(Language.EN));
+                .when(spied).callClaude(any(), anyString(), eq(Language.EN), eq(BUSINESS_ID));
 
         org.junit.jupiter.api.Assertions.assertThrows(SmsDraftService.DraftFailedException.class,
                 () -> spied.draft(PHONE, Language.EN, BUSINESS_ID));

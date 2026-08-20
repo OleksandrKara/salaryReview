@@ -144,17 +144,33 @@ export interface TwilioSmsSettingsDto {
   apiSecretMasked: string | null;
   apiSecretSet: boolean;
   fromPhoneNumber: string | null;
+  // Who every automated (and AI-drafted) SMS signs as — e.g. "It's Lucy from AK.LUX.NAILS 💛".
+  senderName: string;
   updatedAt: string | null;
   updatedBy: string | null;
 }
 
 // null field = leave unchanged; '' = clear. Never send masked accountSid/apiKey/apiSecret back —
-// only include a field when the owner actually typed a new value.
+// only include a field when the owner actually typed a new value. senderName is NOT NULL on the
+// backend — a blank submission there is simply ignored, not cleared.
 export interface TwilioSmsSettingsUpdateRequest {
   accountSid?: string | null;
   apiKey?: string | null;
   apiSecret?: string | null;
   fromPhoneNumber?: string | null;
+  senderName?: string | null;
+}
+
+// --- SMS message templates (com.salonreview.sms.SmsMessageTemplateCatalog /
+// com.salonreview.web.SmsTemplateSettingsController) — the owner-editable wording behind every
+// automated SMS. automationKey is null for a template not tied to any owner-toggleable automation.
+export interface SmsTemplateView {
+  key: string;
+  automationKey: string | null;
+  label: string;
+  variables: string[];
+  body: string;
+  customized: boolean;
 }
 
 // --- SMS automations hub (com.salonreview.sms / com.salonreview.web.Sms*Controller) ---

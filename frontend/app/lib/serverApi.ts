@@ -14,6 +14,7 @@ import type {
   BusinessSettingsDto,
   PlatformBusinessDto,
   TwilioSmsSettingsDto,
+  SmsTemplateView,
   SmsAutomationSummary,
   SmsMessageDto,
   SmsConversationDto,
@@ -165,6 +166,8 @@ export const serverApi = {
   listBusinesses: () => serverFetch<PlatformBusinessDto[]>(`/api/platform/businesses`),
 
   getTwilioSmsSettings: () => serverFetch<TwilioSmsSettingsDto>(`/api/owner/settings/sms`),
+
+  listSmsTemplates: () => serverFetch<SmsTemplateView[]>(`/api/owner/settings/sms/templates`),
 
   listSmsAutomations: () => serverFetch<SmsAutomationSummary[]>(`/api/owner/automations`),
 

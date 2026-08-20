@@ -56,7 +56,7 @@ class SmsReplyFlowSchedulerTest {
         SmsReplyFlow due = flow(SmsReplyFlow.STATE_AWAITING_SEND);
         when(repository.findByBusinessIdAndStateAndSendDueAtBefore(eq(BUSINESS_ID), eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
                 .thenReturn(List.of(due));
-        when(smsService.sendTemplated(eq(BUSINESS_ID), eq("checkout_rating_request"), eq(PHONE), any()))
+        when(smsService.sendTemplated(eq(BUSINESS_ID), eq("checkout_rating_request_no_technician"), eq(PHONE), any()))
                 .thenReturn(new TwilioSmsService.SmsSendResult(true, null));
 
         scheduler.sendDueRatingRequests();
@@ -64,7 +64,7 @@ class SmsReplyFlowSchedulerTest {
         assertThat(due.getState()).isEqualTo(SmsReplyFlow.STATE_AWAITING_REPLY);
         assertThat(due.getReplyExpiresAt()).isAfter(Instant.now().plusSeconds(23 * 3600));
         verify(repository).save(due);
-        verify(smsService).sendTemplated(BUSINESS_ID, "checkout_rating_request", PHONE, Map.of("name", "Jane"));
+        verify(smsService).sendTemplated(BUSINESS_ID, "checkout_rating_request_no_technician", PHONE, Map.of("greeting", "Hi Jane!"));
     }
 
     @Test
@@ -73,7 +73,7 @@ class SmsReplyFlowSchedulerTest {
         SmsReplyFlow due = flow(SmsReplyFlow.STATE_AWAITING_SEND);
         when(repository.findByBusinessIdAndStateAndSendDueAtBefore(eq(BUSINESS_ID), eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
                 .thenReturn(List.of(due));
-        when(smsService.sendTemplated(eq(BUSINESS_ID), eq("checkout_rating_request"), eq(PHONE), any()))
+        when(smsService.sendTemplated(eq(BUSINESS_ID), eq("checkout_rating_request_no_technician"), eq(PHONE), any()))
                 .thenReturn(new TwilioSmsService.SmsSendResult(false, "not_configured"));
 
         scheduler.sendDueRatingRequests();
@@ -94,7 +94,7 @@ class SmsReplyFlowSchedulerTest {
 
         scheduler.sendDueRatingRequests();
 
-        verify(smsService).sendTemplated(BUSINESS_ID, "checkout_rating_request", PHONE, Map.of());
+        verify(smsService).sendTemplated(BUSINESS_ID, "checkout_rating_request_no_technician", PHONE, Map.of("greeting", "Hi!"));
     }
 
     @Test
@@ -117,8 +117,8 @@ class SmsReplyFlowSchedulerTest {
 
         scheduler.sendDueRatingRequests();
 
-        verify(smsService).sendTemplated(BUSINESS_ID, "checkout_rating_request", PHONE, Map.of("name", "Jane"));
-        verify(smsService).sendTemplated(otherBusinessId, "checkout_rating_request", "+15559998888", Map.of("name", "Bob"));
+        verify(smsService).sendTemplated(BUSINESS_ID, "checkout_rating_request_no_technician", PHONE, Map.of("greeting", "Hi Jane!"));
+        verify(smsService).sendTemplated(otherBusinessId, "checkout_rating_request_no_technician", "+15559998888", Map.of("greeting", "Hi Bob!"));
         assertThat(dueA.getState()).isEqualTo(SmsReplyFlow.STATE_AWAITING_REPLY);
         assertThat(dueB.getState()).isEqualTo(SmsReplyFlow.STATE_AWAITING_REPLY);
     }
@@ -156,12 +156,13 @@ class SmsReplyFlowSchedulerTest {
         when(repository.findByBusinessIdAndStateAndSendDueAtBefore(eq(BUSINESS_ID), eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
                 .thenReturn(List.of(due));
         when(technicianNameResolver.resolveForCustomer(eq(BUSINESS_ID), eq("cust1"), any())).thenReturn(Optional.of("Susan"));
-        when(smsService.sendTemplated(eq(BUSINESS_ID), eq("checkout_rating_request"), eq(PHONE), any()))
+        when(smsService.sendTemplated(eq(BUSINESS_ID), eq("checkout_rating_request_with_technician"), eq(PHONE), any()))
                 .thenReturn(new TwilioSmsService.SmsSendResult(true, null));
 
         scheduler.sendDueRatingRequests();
 
-        verify(smsService).sendTemplated(BUSINESS_ID, "checkout_rating_request", PHONE, Map.of("name", "Jane", "technician", "Susan"));
+        verify(smsService).sendTemplated(BUSINESS_ID, "checkout_rating_request_with_technician", PHONE,
+                Map.of("greeting", "Hi Jane!", "technician", "Susan"));
     }
 
     @Test
