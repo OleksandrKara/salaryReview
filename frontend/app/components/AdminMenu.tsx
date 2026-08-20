@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import LanguageSwitch from './LanguageSwitch';
 import MessagesNotifierIcon from './MessagesNotifierIcon';
 import { api } from '../lib/api';
@@ -20,52 +20,97 @@ import type { Language, MeBusinessOption, Role } from '../lib/types';
 // positioning makes it land in the same physical corner everywhere.
 type NavKey = Parameters<typeof t>[1];
 type NavLink = { href: string; key: NavKey };
+// A named, collapsible cluster of related links (e.g. "Business integrations": Square/SMS/Telegram)
+// — folds rarely-touched settings out of the way so the menu opens short, with everything still one
+// tap away. See linksFor's own doc for why OWNER is the only role that needs this.
+type NavGroup = { key: string; labelKey: NavKey; links: NavLink[] };
+type NavSections = { flat: NavLink[]; groups: NavGroup[] };
 
 const COMMON: NavLink[] = [
   { href: '/kb', key: 'kbTitle' },
   { href: '/sops', key: 'mgrSops' },
 ];
 
-function linksFor(role: Role): NavLink[] {
+/** OWNER alone gets 20 links — the rest of the app's daily nav (Salary/Revenue/Marketing/
+ * Retention/KB/SOPs) plus every back-office tool and settings page. Flattened, that overflowed a
+ * phone screen with no way to reach the last few items (found live 2026-08-20). Split into the
+ * 6 links an owner actually opens often (flat, always visible) and 4 named, collapsed-by-default
+ * groups for everything else — same total reachability, far shorter at rest. Every other role's
+ * list is short enough already to stay flat. */
+function linksFor(role: Role): NavSections {
   if (role === 'OWNER') {
-    return [
-      { href: '/reports', key: 'navSalaryReport' },
-      { href: '/owner/overview', key: 'navRevenue' },
-      { href: '/owner/marketing', key: 'navMarketing' },
-      { href: '/owner/retention', key: 'navRetention' },
-      ...COMMON,
-      { href: '/admin/prepaid', key: 'navPrepaid' },
-      { href: '/admin/owner-customers', key: 'navOwnerComps' },
-      { href: '/admin/redos', key: 'mgrRedos' },
-      { href: '/admin/manual-adjustments', key: 'navManualAdjustments' },
-      { href: '/admin/manager-time', key: 'navManagerTime' },
-      { href: '/sops/admin', key: 'sopAdminTitle' },
-      { href: '/admin/users', key: 'navUsers' },
-      { href: '/admin/documents', key: 'navStaffDocuments' },
-      { href: '/owner/settings/telegram', key: 'navTelegramSettings' },
-      { href: '/owner/settings/sms', key: 'navSmsSettings' },
-      { href: '/owner/settings/square', key: 'navSquareSettings' },
-      { href: '/owner/settings/business', key: 'navBusinessSettings' },
-      { href: '/owner/settings/businesses', key: 'navBusinesses' },
-      { href: '/onboarding', key: 'navOnboarding' },
-    ];
+    return {
+      flat: [
+        { href: '/reports', key: 'navSalaryReport' },
+        { href: '/owner/overview', key: 'navRevenue' },
+        { href: '/owner/marketing', key: 'navMarketing' },
+        { href: '/owner/retention', key: 'navRetention' },
+        ...COMMON,
+      ],
+      groups: [
+        {
+          key: 'payroll',
+          labelKey: 'navGroupPayroll',
+          links: [
+            { href: '/admin/prepaid', key: 'navPrepaid' },
+            { href: '/admin/owner-customers', key: 'navOwnerComps' },
+            { href: '/admin/redos', key: 'mgrRedos' },
+            { href: '/admin/manual-adjustments', key: 'navManualAdjustments' },
+            { href: '/admin/manager-time', key: 'navManagerTime' },
+          ],
+        },
+        {
+          key: 'staff',
+          labelKey: 'navGroupStaff',
+          links: [
+            { href: '/admin/users', key: 'navUsers' },
+            { href: '/admin/documents', key: 'navStaffDocuments' },
+            { href: '/sops/admin', key: 'sopAdminTitle' },
+          ],
+        },
+        {
+          key: 'integrations',
+          labelKey: 'navGroupIntegrations',
+          links: [
+            { href: '/owner/settings/square', key: 'navSquareSettings' },
+            { href: '/owner/settings/sms', key: 'navSmsSettings' },
+            { href: '/owner/settings/telegram', key: 'navTelegramSettings' },
+          ],
+        },
+        {
+          key: 'settings',
+          labelKey: 'navGroupSettings',
+          links: [
+            { href: '/owner/settings/business', key: 'navBusinessSettings' },
+            { href: '/owner/settings/businesses', key: 'navBusinesses' },
+            { href: '/onboarding', key: 'navOnboarding' },
+          ],
+        },
+      ],
+    };
   }
   if (role === 'MANAGER') {
-    return [
-      { href: '/manager', key: 'navDashboard' },
-      { href: '/manager/time', key: 'navMyTime' },
-      { href: '/admin/redos', key: 'mgrRedos' },
-      { href: '/admin/manual-adjustments', key: 'navManualAdjustments' },
-      { href: '/my-documents', key: 'navMyDocuments' },
-      ...COMMON,
-    ];
+    return {
+      flat: [
+        { href: '/manager', key: 'navDashboard' },
+        { href: '/manager/time', key: 'navMyTime' },
+        { href: '/admin/redos', key: 'mgrRedos' },
+        { href: '/admin/manual-adjustments', key: 'navManualAdjustments' },
+        { href: '/my-documents', key: 'navMyDocuments' },
+        ...COMMON,
+      ],
+      groups: [],
+    };
   }
   if (role === 'ADS_MANAGER') {
     // Read-only marketing access only — no salary/SOP/KB data, so no COMMON links here.
-    return [{ href: '/owner/marketing', key: 'navMarketing' }];
+    return { flat: [{ href: '/owner/marketing', key: 'navMarketing' }], groups: [] };
   }
   // PROVIDER
-  return [{ href: '/me', key: 'navMyPay' }, { href: '/my-documents', key: 'navMyDocuments' }, ...COMMON];
+  return {
+    flat: [{ href: '/me', key: 'navMyPay' }, { href: '/my-documents', key: 'navMyDocuments' }, ...COMMON],
+    groups: [],
+  };
 }
 
 export default function AdminMenu({
@@ -85,15 +130,66 @@ export default function AdminMenu({
   activeBusinessId?: number;
   businesses?: MeBusinessOption[];
 }) {
-  const [open, setOpen] = useState(false);
-  const [switching, setSwitching] = useState(false);
   const pathname = usePathname();
   // /owner/settings/businesses (platform_admin only, per PlatformBusinessController) 403s for any
   // other OWNER — found live 2026-08-18 for AK PMU's owner, who saw the link and got a raw crash on
   // click. Same signal the switcher dropdown already uses: a non-platform-admin's `businesses`
   // always has exactly one entry (their own real membership) today, so >1 is platform_admin.
   const isPlatformAdmin = (businesses?.length ?? 0) > 1;
-  const links = linksFor(role).filter((l) => l.href !== '/owner/settings/businesses' || isPlatformAdmin);
+  const sections = linksFor(role);
+  const groups = sections.groups
+    .map((g) => ({ ...g, links: g.links.filter((l) => l.href !== '/owner/settings/businesses' || isPlatformAdmin) }))
+    .filter((g) => g.links.length > 0);
+  const allLinks = [...sections.flat, ...groups.flatMap((g) => g.links)];
+
+  // Highlight only the single most specific match — otherwise a nested route like
+  // /owner/marketing/contacts would light up both "Marketing" and "Marketing Contacts" at once.
+  const bestMatch = allLinks
+    .map((l) => l.href)
+    .filter((href) => pathname === href || pathname.startsWith(href + '/'))
+    .sort((a, b) => b.length - a.length)[0];
+  const isActive = (href: string) => href === bestMatch;
+  const activeGroupKey = groups.find((g) => g.links.some((l) => l.href === bestMatch))?.key;
+
+  const [open, setOpen] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  // Which collapsible groups (see linksFor) are expanded — collapsed by default, except whichever
+  // one holds the current page (so landing on e.g. /owner/settings/square and opening the menu
+  // doesn't hide the very link that's active behind a collapsed "Business integrations" header).
+  // Lazy-initialized once at mount from the page you land on, not kept in sync afterward — the
+  // menu closes on every link click, so a fresh mount is exactly when this matters.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => (activeGroupKey ? new Set([activeGroupKey]) : new Set()));
+
+  // Bottom fade cue for the scrollable link list — expanding a group can push its own links past
+  // the max-height cap with no native scrollbar visible at rest on mobile, which otherwise looks
+  // like the group only has one item instead of hinting there's more below (found live
+  // 2026-08-20). A ResizeObserver, not a dependency on openGroups, so it reacts to the list's
+  // actual rendered height regardless of what changed it (a group toggle, a language switch that
+  // changes label lengths, ...).
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [canScrollDown, setCanScrollDown] = useState(false);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => setCanScrollDown(el.scrollHeight - el.scrollTop - el.clientHeight > 4);
+    update();
+    el.addEventListener('scroll', update);
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      ro.disconnect();
+    };
+  }, [open]);
+
+  function toggleGroup(key: string) {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   async function switchTo(businessId: number) {
     if (businessId === activeBusinessId) return;
@@ -108,14 +204,6 @@ export default function AdminMenu({
       setSwitching(false);
     }
   }
-
-  // Highlight only the single most specific match — otherwise a nested route like
-  // /owner/marketing/contacts would light up both "Marketing" and "Marketing Contacts" at once.
-  const bestMatch = links
-    .map((l) => l.href)
-    .filter((href) => pathname === href || pathname.startsWith(href + '/'))
-    .sort((a, b) => b.length - a.length)[0];
-  const isActive = (href: string) => href === bestMatch;
 
   return (
     // Above the assistant widget's z-50 (button + open panel) — otherwise, on a short viewport,
@@ -168,21 +256,83 @@ export default function AdminMenu({
             <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} aria-hidden />
             <div
               role="menu"
-              className="absolute right-0 z-30 mt-1 w-52 overflow-hidden rounded-lg bg-white py-1 shadow-lg ring-1 ring-zinc-200"
+              className="absolute right-0 z-30 mt-1 flex w-60 flex-col overflow-hidden rounded-lg bg-white shadow-lg ring-1 ring-zinc-200"
             >
-              {links.map((l) => (
-                <Link
-                  key={l.href}
-                  href={l.href}
-                  onClick={() => setOpen(false)}
-                  aria-current={isActive(l.href) ? 'page' : undefined}
-                  className={`flex items-center justify-between gap-2 px-4 py-2 text-sm hover:bg-zinc-50 ${
-                    isActive(l.href) ? 'font-semibold text-zinc-900' : 'text-zinc-700'
-                  }`}
-                >
-                  {t(language, l.key)}
-                </Link>
-              ))}
+              {/* The links themselves scroll independently, capped well under viewport height, so
+                  the business switcher / language / log out footer below always stays reachable
+                  without having to scroll past every link first — and nothing is ever cut off
+                  below the screen edge the way an unbounded list was (found live 2026-08-20). */}
+              <div className="relative">
+              <div ref={scrollRef} className="max-h-[60vh] overflow-y-auto py-1">
+                {sections.flat.map((l) => (
+                  <Link
+                    key={l.href}
+                    href={l.href}
+                    onClick={() => setOpen(false)}
+                    aria-current={isActive(l.href) ? 'page' : undefined}
+                    className={`flex items-center justify-between gap-2 px-4 py-2 text-sm hover:bg-zinc-50 ${
+                      isActive(l.href) ? 'font-semibold text-zinc-900' : 'text-zinc-700'
+                    }`}
+                  >
+                    {t(language, l.key)}
+                  </Link>
+                ))}
+                {groups.map((g) => {
+                  const expanded = openGroups.has(g.key);
+                  return (
+                    <div key={g.key} className="border-t border-zinc-100">
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(g.key)}
+                        aria-expanded={expanded}
+                        className="flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-sm font-medium text-zinc-500 hover:bg-zinc-50"
+                      >
+                        {t(language, g.labelKey)}
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden
+                          className={`shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
+                        >
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </button>
+                      {expanded && (
+                        <div className="bg-zinc-50 pb-1">
+                          {g.links.map((l) => (
+                            <Link
+                              key={l.href}
+                              href={l.href}
+                              onClick={() => setOpen(false)}
+                              aria-current={isActive(l.href) ? 'page' : undefined}
+                              className={`flex items-center justify-between gap-2 py-2 pl-7 pr-4 text-sm hover:bg-zinc-100 ${
+                                isActive(l.href) ? 'font-semibold text-zinc-900' : 'text-zinc-600'
+                              }`}
+                            >
+                              {t(language, l.key)}
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {/* An inset shadow, not a color gradient — the menu background is plain white, so a
+                  white-to-transparent fade was invisible against it. A shadow reads as "there's a
+                  drop-off here" regardless of what's rendered right above it. */}
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-x-0 bottom-0 h-3 transition-opacity"
+                style={{ opacity: canScrollDown ? 1 : 0, boxShadow: 'inset 0 -10px 8px -8px rgba(0,0,0,0.18)' }}
+              />
+              </div>
               {businesses && businesses.length > 1 ? (
                 <div className="flex items-center gap-2 border-t border-zinc-100 px-4 py-2 text-sm text-zinc-500">
                   <span className="text-zinc-400">{t(language, 'navBusiness')}</span>
