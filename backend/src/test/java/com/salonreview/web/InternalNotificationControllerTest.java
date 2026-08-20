@@ -371,44 +371,80 @@ class InternalNotificationControllerTest {
     }
 
     @Test
-    @DisplayName("rebooking-promo/terms: configured business/promo → returns the live discount amount")
-    void termsReturnsConfiguredAmount() throws Exception {
+    @DisplayName("rebooking-promo/verify: valid signature, unexpired, configured business/promo → valid:true with the live discount amount")
+    void verifyReturnsConfiguredAmount() throws Exception {
         when(props.getKey()).thenReturn("secret");
+        when(promoSigner.verify("REBOOK10", 9999999999L, "sig123")).thenReturn(true);
 
         mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .get("/api/internal/rebooking-promo/terms")
+                        .get("/api/internal/rebooking-promo/verify")
                         .header("X-Internal-Api-Key", "secret")
-                        .param("promoCode", "REBOOK10").param("businessShortCode", "test"))
+                        .param("promoCode", "REBOOK10").param("expEpochSeconds", "9999999999")
+                        .param("signature", "sig123").param("businessShortCode", "test"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.configured").value(true))
+                .andExpect(jsonPath("$.valid").value(true))
                 .andExpect(jsonPath("$.discountCents").value(1000));
     }
 
     @Test
-    @DisplayName("rebooking-promo/terms: businessId (no shortCode) → resolves by numeric id")
-    void termsWithBusinessIdResolvesByNumericId() throws Exception {
+    @DisplayName("rebooking-promo/verify: businessId (no shortCode) → resolves by numeric id")
+    void verifyWithBusinessIdResolvesByNumericId() throws Exception {
         when(props.getKey()).thenReturn("secret");
+        when(promoSigner.verify("REBOOK10", 9999999999L, "sig123")).thenReturn(true);
 
         mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .get("/api/internal/rebooking-promo/terms")
+                        .get("/api/internal/rebooking-promo/verify")
                         .header("X-Internal-Api-Key", "secret")
-                        .param("promoCode", "REBOOK10").param("businessId", "1"))
+                        .param("promoCode", "REBOOK10").param("expEpochSeconds", "9999999999")
+                        .param("signature", "sig123").param("businessId", "1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.configured").value(true))
+                .andExpect(jsonPath("$.valid").value(true))
                 .andExpect(jsonPath("$.discountCents").value(1000));
     }
 
     @Test
-    @DisplayName("rebooking-promo/terms: business with no row for this promo → configured:false")
-    void termsUnconfiguredReturnsFalse() throws Exception {
+    @DisplayName("rebooking-promo/verify: bad signature → valid:false, never leaks whether the business/promo would've been configured")
+    void verifyInvalidSignatureReturnsFalse() throws Exception {
         when(props.getKey()).thenReturn("secret");
+        when(promoSigner.verify("REBOOK10", 9999999999L, "wrong")).thenReturn(false);
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/internal/rebooking-promo/verify")
+                        .header("X-Internal-Api-Key", "secret")
+                        .param("promoCode", "REBOOK10").param("expEpochSeconds", "9999999999")
+                        .param("signature", "wrong").param("businessShortCode", "test"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(false));
+    }
+
+    @Test
+    @DisplayName("rebooking-promo/verify: already-expired exp → valid:false even with a real signature")
+    void verifyExpiredReturnsFalse() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        when(promoSigner.verify("REBOOK10", 1L, "sig123")).thenReturn(true);
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/internal/rebooking-promo/verify")
+                        .header("X-Internal-Api-Key", "secret")
+                        .param("promoCode", "REBOOK10").param("expEpochSeconds", "1")
+                        .param("signature", "sig123").param("businessShortCode", "test"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(false));
+    }
+
+    @Test
+    @DisplayName("rebooking-promo/verify: valid signature but business has no row for this promo → valid:false")
+    void verifyUnconfiguredReturnsFalse() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        when(promoSigner.verify("REBOOK10", 9999999999L, "sig123")).thenReturn(true);
         when(promoConfigService.get(1L, "REBOOK10")).thenReturn(java.util.Optional.empty());
 
         mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .get("/api/internal/rebooking-promo/terms")
+                        .get("/api/internal/rebooking-promo/verify")
                         .header("X-Internal-Api-Key", "secret")
-                        .param("promoCode", "REBOOK10").param("businessShortCode", "test"))
+                        .param("promoCode", "REBOOK10").param("expEpochSeconds", "9999999999")
+                        .param("signature", "sig123").param("businessShortCode", "test"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.configured").value(false));
+                .andExpect(jsonPath("$.valid").value(false));
     }
 }
