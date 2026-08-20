@@ -5,7 +5,7 @@
 -- checked as a "contains '5'"/"contains 1-4" boolean, never stored as a real 1-5 value.
 ALTER TABLE sms_reply_flow ADD COLUMN provider_id BIGINT REFERENCES providers(id);
 ALTER TABLE sms_message ADD COLUMN reply_flow_id BIGINT REFERENCES sms_reply_flow(id);
-ALTER TABLE sms_message ADD COLUMN rating SMALLINT;
+ALTER TABLE sms_message ADD COLUMN rating INTEGER;
 
 CREATE INDEX idx_sms_reply_flow_provider ON sms_reply_flow(business_id, provider_id) WHERE provider_id IS NOT NULL;
 CREATE INDEX idx_sms_message_reply_flow ON sms_message(reply_flow_id) WHERE reply_flow_id IS NOT NULL;
