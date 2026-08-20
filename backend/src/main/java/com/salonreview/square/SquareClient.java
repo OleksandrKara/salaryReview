@@ -843,13 +843,20 @@ public class SquareClient {
                 .retrieve()
                 .body(CatalogBatchRetrieveResponse.class));
         Map<String, Long> versions = new HashMap<>();
+        CatalogPricingRuleData existingPricingRule = null;
         if (current != null && current.objects() != null) {
             for (CatalogObject obj : current.objects()) {
                 versions.put(obj.id(), obj.version());
+                if (obj.id().equals(pricingRuleCatalogId)) {
+                    existingPricingRule = obj.pricingRuleData();
+                }
             }
         }
         if (!versions.containsKey(discountCatalogId) || !versions.containsKey(pricingRuleCatalogId)) {
             throw new IllegalStateException("Could not look up current Square catalog object versions for update");
+        }
+        if (existingPricingRule == null) {
+            throw new IllegalStateException("Could not look up the existing pricing rule's own data for update");
         }
 
         Map<String, Object> discountData = new LinkedHashMap<>();
@@ -862,7 +869,16 @@ public class SquareClient {
         discountObject.put("present_at_all_locations", true);
         discountObject.put("discount_data", discountData);
 
+        // Square's catalog upsert replaces pricing_rule_data wholesale, not a partial merge —
+        // discount_id/match_products_id/customer_group_ids_any must be re-sent every time or
+        // Square silently drops them (confirmed live: omitting discount_id alone 400s with
+        // "'discount_id' or 'service_charge_id' should be set", but a *successful* omission of
+        // match_products_id/customer_group_ids_any would be just as real a bug, just a quieter
+        // one — the rule would stop matching anything).
         Map<String, Object> pricingRuleData = new LinkedHashMap<>();
+        pricingRuleData.put("discount_id", existingPricingRule.discountId());
+        pricingRuleData.put("match_products_id", existingPricingRule.matchProductsId());
+        pricingRuleData.put("customer_group_ids_any", existingPricingRule.customerGroupIdsAny());
         if (minSpendCents != null) {
             pricingRuleData.put("minimum_order_subtotal_money", Map.of("amount", minSpendCents, "currency", "USD"));
         }
@@ -1093,11 +1109,19 @@ public class SquareClient {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record CatalogItemData(String name) {}
 
+    /** Only the fields {@link #updatePromoTerms} needs to preserve when it overwrites this
+     * object's version — Square's catalog upsert replaces {@code pricing_rule_data} wholesale, so
+     * every field not re-sent (not just the one actually changing) is silently wiped. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record CatalogPricingRuleData(String discountId, String matchProductsId, List<String> customerGroupIdsAny) {}
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record CatalogObject(String type, String id, Long version,
                                 CatalogItemVariationData itemVariationData,
-                                CatalogItemData itemData) {}
+                                CatalogItemData itemData,
+                                CatalogPricingRuleData pricingRuleData) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
