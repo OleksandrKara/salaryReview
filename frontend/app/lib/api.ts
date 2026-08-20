@@ -37,6 +37,7 @@ import type {
   TwilioSmsSettingsDto,
   TwilioSmsSettingsUpdateRequest,
   SmsTemplateView,
+  PromoTermsDto,
   SmsAutomationSummary,
   SmsMessageDto,
   SmsMessageDirection,
@@ -258,6 +259,16 @@ export const api = {
 
   resetSmsTemplate: (key: string) =>
     proxyJson<SmsTemplateView>(`/api/owner/settings/sms/templates/${encodeURIComponent(key)}/reset`, 'POST', {}),
+
+  // Coupon discount amount/minimum-spend (owner) — see PromoConfigService. First save for a
+  // business with no Square objects yet creates them; every save after that updates them in place.
+  listPromoTerms: () => proxyGet<PromoTermsDto[]>(`/api/owner/settings/promos`),
+
+  updatePromoTerms: (promoCode: string, discountAmount: number, minSpend: number | null) =>
+    proxyJson<PromoTermsDto>(`/api/owner/settings/promos/${encodeURIComponent(promoCode)}`, 'PUT', {
+      discountAmount,
+      minSpend,
+    }),
 
   // SMS automations hub (owner): registry list/toggle + the full sent/received activity log.
   listSmsAutomations: () => proxyGet<SmsAutomationSummary[]>(`/api/owner/automations`),

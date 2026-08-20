@@ -57,6 +57,7 @@ public class SameDayRebookingScheduler {
     private final TechnicianNameResolver technicianNameResolver;
     private final SmsMessageTemplateService templateService;
     private final String publicBaseUrl;
+    private final PromoConfigService promoConfigService;
 
     public SameDayRebookingScheduler(SameDayRebookingSendRepository repository, SquareClientProvider squareClientProvider,
                                       TwilioSmsConfigRepository twilioConfigs,
@@ -64,7 +65,8 @@ public class SameDayRebookingScheduler {
                                       RebookingProperties rebookingProperties, SmsMessageLogService messageLogService,
                                       TwilioSmsConfigService configService, TwilioSmsClient client,
                                       TechnicianNameResolver technicianNameResolver, SmsMessageTemplateService templateService,
-                                      @Value("${app.public-base-url}") String publicBaseUrl) {
+                                      @Value("${app.public-base-url}") String publicBaseUrl,
+                                      PromoConfigService promoConfigService) {
         this.repository = repository;
         this.squareClientProvider = squareClientProvider;
         this.twilioConfigs = twilioConfigs;
@@ -77,6 +79,7 @@ public class SameDayRebookingScheduler {
         this.technicianNameResolver = technicianNameResolver;
         this.templateService = templateService;
         this.publicBaseUrl = publicBaseUrl;
+        this.promoConfigService = promoConfigService;
     }
 
     // initialDelay: @Scheduled triggers can start firing before ApplicationRunners (incl.
@@ -146,7 +149,13 @@ public class SameDayRebookingScheduler {
             return;
         }
 
-        sendNudge(send, hasConsent(send, square), businessId);
+        var promoTerms = promoConfigService.get(businessId, PromoConfigService.REBOOK_PROMO_CODE);
+        if (promoTerms.isEmpty()) {
+            save(send, SameDayRebookingSend.STATE_SKIPPED_PROMO_NOT_CONFIGURED);
+            return;
+        }
+
+        sendNudge(send, hasConsent(send, square), businessId, promoTerms.get());
         save(send, SameDayRebookingSend.STATE_SENT);
     }
 
@@ -172,7 +181,7 @@ public class SameDayRebookingScheduler {
         return square.customerSegmentIds(send.getSquareCustomerId()).contains(segmentId);
     }
 
-    private void sendNudge(SameDayRebookingSend send, boolean consented, Long businessId) {
+    private void sendNudge(SameDayRebookingSend send, boolean consented, Long businessId, PromoConfigService.PromoTerms promoTerms) {
         String clickToken = messageLogService.generateUniqueClickToken();
         long expEpochSeconds = send.getPromoExpiresAt().getEpochSecond();
         // Reconstructed deterministically by ShortLinkController at click time — see
@@ -191,7 +200,8 @@ public class SameDayRebookingScheduler {
         boolean hasTechnician = technician != null && !technician.isBlank();
         Map<String, String> vars = consented
                 ? Map.of("spotClause", hasTechnician ? "want to lock in your next spot with " + technician
-                        : "want to lock in your next spot", "link", shortLink)
+                        : "want to lock in your next spot",
+                        "discountAmount", PromoConfigService.formatDollars(promoTerms.discountCents()), "link", shortLink)
                 : Map.of("urgencyClause", hasTechnician ? technician + "'s spots are filling up fast this time of year"
                         : "Spots are filling up fast this time of year", "link", shortLink);
         String body = templateService.render(businessId, templateKey, vars);

@@ -86,8 +86,8 @@ public final class SmsMessageTemplateCatalog {
                     "same_day_rebooking_nudge", "same_day_rebooking_discount", SmsMessageClass.MARKETING,
                     "Same-day nudge (consented)",
                     "Hope you're loving your nails 💛 Since you're already here today, {{spotClause}}? "
-                            + "I'll knock $10 off if you book before midnight: {{link}}",
-                    List.of("spotClause", "link")
+                            + "I'll knock {{discountAmount}} off if you book before midnight: {{link}}",
+                    List.of("spotClause", "discountAmount", "link")
             )),
             // urgencyClause is pre-computed: "Spots are filling up fast this time of year" or
             // "{technician}'s spots are filling up fast this time of year".
@@ -120,9 +120,9 @@ public final class SmsMessageTemplateCatalog {
             Map.entry("repeat_customer_winback_nudge_default", new TemplateDefault(
                     "repeat_customer_winback_nudge_default", "repeat_customer_winback", SmsMessageClass.MARKETING,
                     "Repeat win-back, same technician (consented)",
-                    "{{greeting}} It's {{sender}} from {{businessName}} 💛 {{visitClause}}. Grabbed you $5 off if "
-                            + "you book today: {{link}} -{{sender}}",
-                    List.of("greeting", "sender", "visitClause", "link", "businessName")
+                    "{{greeting}} It's {{sender}} from {{businessName}} 💛 {{visitClause}}. Grabbed you "
+                            + "{{discountAmount}} off if you book today: {{link}} -{{sender}}",
+                    List.of("greeting", "sender", "visitClause", "discountAmount", "link", "businessName")
             )),
             Map.entry("repeat_customer_winback_reminder_default", new TemplateDefault(
                     "repeat_customer_winback_reminder_default", "repeat_customer_winback", SmsMessageClass.TRANSACTIONAL,
@@ -136,8 +136,8 @@ public final class SmsMessageTemplateCatalog {
                     "Repeat win-back, technician changed (consented)",
                     "{{greeting}} It's {{sender}} from {{businessName}} 💛 It's been a while since we've seen "
                             + "you, want me to check if {{previousProvider}} has an opening for you? Grabbed "
-                            + "you $5 off if you book today: {{link}} -{{sender}}",
-                    List.of("greeting", "sender", "previousProvider", "link", "businessName")
+                            + "you {{discountAmount}} off if you book today: {{link}} -{{sender}}",
+                    List.of("greeting", "sender", "previousProvider", "discountAmount", "link", "businessName")
             )),
             Map.entry("repeat_customer_winback_reminder_previous_provider", new TemplateDefault(
                     "repeat_customer_winback_reminder_previous_provider", "repeat_customer_winback", SmsMessageClass.TRANSACTIONAL,

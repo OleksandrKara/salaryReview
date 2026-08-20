@@ -48,6 +48,7 @@ class RepeatCustomerWinbackSchedulerTest {
     private TwilioSmsClient client;
     private SquareClientProvider squareClientProvider;
     private TwilioSmsConfigRepository twilioConfigs;
+    private PromoConfigService promoConfigService;
     private RepeatCustomerWinbackScheduler scheduler;
 
     @BeforeEach
@@ -74,10 +75,13 @@ class RepeatCustomerWinbackSchedulerTest {
         BusinessRepository businessRepository = mock(BusinessRepository.class);
         when(businessRepository.findById(BUSINESS_ID)).thenReturn(java.util.Optional.of(
                 Business.builder().id(BUSINESS_ID).name("AK.LUX.NAILS").build()));
+        promoConfigService = mock(PromoConfigService.class);
+        when(promoConfigService.get(BUSINESS_ID, PromoConfigService.WINBACK_PROMO_CODE))
+                .thenReturn(java.util.Optional.of(new PromoConfigService.PromoTerms(500, 9900L, "GROUP1", true)));
         scheduler = new RepeatCustomerWinbackScheduler(eligibilityRepository, sendRepository, squareClientProvider,
                 twilioConfigs, automationService, consentRepository, rebookingProperties, messageLogService,
                 blockedNumberRepository, configService, client, templateService, "https://salon.akluxnails.com",
-                businessRepository);
+                businessRepository, promoConfigService);
 
         when(automationService.isEnabled(1L, "repeat_customer_winback")).thenReturn(true);
         when(square.customerPhone(CUSTOMER_ID)).thenReturn(PHONE);
@@ -296,6 +300,20 @@ class RepeatCustomerWinbackSchedulerTest {
     }
 
     @Test
+    @DisplayName("no business_promo_config row for this business's WINBACK5 yet → SKIPPED_PROMO_NOT_CONFIGURED, no send")
+    void promoNotConfiguredSkipsWithoutSend() throws Exception {
+        when(promoConfigService.get(BUSINESS_ID, PromoConfigService.WINBACK_PROMO_CODE)).thenReturn(java.util.Optional.empty());
+        givenEligible(eligible("Susan Alieva", "Susan Alieva", false));
+
+        scheduler.sendDueWinbacks();
+
+        verifyNoInteractions(client);
+        ArgumentCaptor<RepeatCustomerWinbackSend> captor = ArgumentCaptor.forClass(RepeatCustomerWinbackSend.class);
+        verify(sendRepository).save(captor.capture());
+        assertThat(captor.getValue().getState()).isEqualTo(RepeatCustomerWinbackSend.STATE_SKIPPED_PROMO_NOT_CONFIGURED);
+    }
+
+    @Test
     @DisplayName("customer sent within the last 60 days → never reprocessed (belt-and-suspenders)")
     void recentlySentCustomerNeverReprocessed() throws Exception {
         givenEligible(eligible("Susan Alieva", "Susan Alieva", false));
@@ -372,6 +390,8 @@ class RepeatCustomerWinbackSchedulerTest {
         when(otherConfigured.isConfigured()).thenReturn(true);
         when(otherConfigured.getSenderName()).thenReturn("Lucy");
         when(configService.get(otherBusinessId)).thenReturn(otherConfigured);
+        when(promoConfigService.get(otherBusinessId, PromoConfigService.WINBACK_PROMO_CODE))
+                .thenReturn(java.util.Optional.of(new PromoConfigService.PromoTerms(500, 9900L, "GROUP2", true)));
         when(client.send(any(), eq(otherPhone), any())).thenReturn("SM999");
 
         scheduler.sendDueWinbacks();

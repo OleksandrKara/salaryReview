@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { serverApi } from '../../../lib/serverApi';
 import PageHeader from '../../../components/PageHeader';
 import AutomationsPanel from './AutomationsPanel';
+import PromoDiscountsPanel from './PromoDiscountsPanel';
 import SmsActivityLog from './SmsActivityLog';
 import TemplatesPanel from './TemplatesPanel';
 import TwilioSmsSettingsForm from './TwilioSmsSettingsForm';
@@ -15,11 +16,12 @@ export default async function SmsSettingsPage() {
   const me = await serverApi.getMe();
   if (me.role !== 'OWNER') redirect('/reports');
 
-  const [settings, automations, activity, templates] = await Promise.all([
+  const [settings, automations, activity, templates, promoTerms] = await Promise.all([
     serverApi.getTwilioSmsSettings(),
     serverApi.listSmsAutomations(),
     serverApi.listSmsActivity(100),
     serverApi.listSmsTemplates(),
+    serverApi.listPromoTerms(),
   ]);
 
   return (
@@ -44,6 +46,15 @@ export default async function SmsSettingsPage() {
           don&apos;t remove or rename them.
         </p>
         <TemplatesPanel initialTemplates={templates} automations={automations} />
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Coupon discounts</h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Discount amount and minimum spend for the same-day-rebooking and customer-winback text
+          links. The first save creates the actual discount in your connected Square account.
+        </p>
+        <PromoDiscountsPanel initialTerms={promoTerms} />
       </section>
 
       <section className="mt-8">

@@ -49,6 +49,7 @@ class LapsedCustomerWinbackSchedulerTest {
     private TwilioSmsClient client;
     private SquareClientProvider squareClientProvider;
     private TwilioSmsConfigRepository twilioConfigs;
+    private PromoConfigService promoConfigService;
     private LapsedCustomerWinbackScheduler scheduler;
 
     @BeforeEach
@@ -75,9 +76,12 @@ class LapsedCustomerWinbackSchedulerTest {
         BusinessRepository businessRepository = mock(BusinessRepository.class);
         when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(
                 Business.builder().id(BUSINESS_ID).name("AK.LUX.NAILS").build()));
+        promoConfigService = mock(PromoConfigService.class);
+        when(promoConfigService.get(BUSINESS_ID, PromoConfigService.WINBACK_PROMO_CODE))
+                .thenReturn(Optional.of(new PromoConfigService.PromoTerms(500, 9900L, "GROUP1", true)));
         scheduler = new LapsedCustomerWinbackScheduler(eligibilityRepository, sendRepository, squareClientProvider,
                 twilioConfigs, automationService, consentRepository, rebookingProperties, messageLogService, configService,
-                client, templateService, "https://salon.akluxnails.com", businessRepository);
+                client, templateService, "https://salon.akluxnails.com", businessRepository, promoConfigService);
 
         when(automationService.isEnabled(1L, "lapsed_customer_winback")).thenReturn(true);
         when(square.customerPhone(CUSTOMER_ID)).thenReturn(PHONE);
@@ -229,6 +233,20 @@ class LapsedCustomerWinbackSchedulerTest {
     }
 
     @Test
+    @DisplayName("no business_promo_config row for this business's WINBACK5 yet → SKIPPED_PROMO_NOT_CONFIGURED, no send")
+    void promoNotConfiguredSkipsWithoutSend() {
+        when(promoConfigService.get(BUSINESS_ID, PromoConfigService.WINBACK_PROMO_CODE)).thenReturn(Optional.empty());
+        givenEligible(eligible("Susan"));
+
+        scheduler.sendDueWinbacks();
+
+        verifyNoInteractions(client);
+        ArgumentCaptor<LapsedCustomerWinbackSend> captor = ArgumentCaptor.forClass(LapsedCustomerWinbackSend.class);
+        verify(sendRepository).save(captor.capture());
+        assertThat(captor.getValue().getState()).isEqualTo(LapsedCustomerWinbackSend.STATE_SKIPPED_PROMO_NOT_CONFIGURED);
+    }
+
+    @Test
     @DisplayName("customer already present in lapsed_customer_winback_send → never reprocessed")
     void alreadyProcessedCustomerNeverReprocessed() {
         givenEligible(eligible("Susan"));
@@ -324,6 +342,8 @@ class LapsedCustomerWinbackSchedulerTest {
         when(otherConfigured.isConfigured()).thenReturn(true);
         when(otherConfigured.getSenderName()).thenReturn("Lucy");
         when(configService.get(otherBusinessId)).thenReturn(otherConfigured);
+        when(promoConfigService.get(otherBusinessId, PromoConfigService.WINBACK_PROMO_CODE))
+                .thenReturn(Optional.of(new PromoConfigService.PromoTerms(500, 9900L, "GROUP2", true)));
         when(client.send(any(), eq(otherPhone), any())).thenReturn("SM999");
 
         scheduler.sendDueWinbacks();

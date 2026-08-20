@@ -180,6 +180,19 @@ export interface SmsTemplateView {
   customized: boolean;
 }
 
+// --- Coupon discount terms (com.salonreview.sms.PromoConfigService / PromoSettingsController) ---
+// null discountAmount/minSpend + configured=false means this business hasn't set this promo up in
+// Square yet — same_day_rebooking_discount/lapsed_customer_winback stay effectively inert until it
+// does (see ShortLinkController — the coupon link 404s rather than pointing at nothing).
+export interface PromoTermsDto {
+  promoCode: string;
+  automationKey: string;
+  label: string;
+  discountAmount: number | null;
+  minSpend: number | null;
+  configured: boolean;
+}
+
 // --- SMS automations hub (com.salonreview.sms / com.salonreview.web.Sms*Controller) ---
 
 // tracksClicks/tracksReplies/tracksConversion say whether a click-through / reply / "customer

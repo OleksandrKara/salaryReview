@@ -67,6 +67,7 @@ public class LapsedCustomerWinbackScheduler {
     private final SmsMessageTemplateService templateService;
     private final String publicBaseUrl;
     private final BusinessRepository businessRepository;
+    private final PromoConfigService promoConfigService;
 
     public LapsedCustomerWinbackScheduler(LapsedCustomerWinbackEligibilityRepository eligibilityRepository,
                                            LapsedCustomerWinbackSendRepository sendRepository,
@@ -76,7 +77,7 @@ public class LapsedCustomerWinbackScheduler {
                                            TwilioSmsConfigService configService, TwilioSmsClient client,
                                            SmsMessageTemplateService templateService,
                                            @Value("${app.public-base-url}") String publicBaseUrl,
-                                           BusinessRepository businessRepository) {
+                                           BusinessRepository businessRepository, PromoConfigService promoConfigService) {
         this.eligibilityRepository = eligibilityRepository;
         this.sendRepository = sendRepository;
         this.squareClientProvider = squareClientProvider;
@@ -90,6 +91,7 @@ public class LapsedCustomerWinbackScheduler {
         this.templateService = templateService;
         this.publicBaseUrl = publicBaseUrl;
         this.businessRepository = businessRepository;
+        this.promoConfigService = promoConfigService;
     }
 
     // zone is mandatory — the container runs on UTC (confirmed via `date` on
@@ -157,6 +159,12 @@ public class LapsedCustomerWinbackScheduler {
             return;
         }
 
+        var promoTerms = promoConfigService.get(businessId, PromoConfigService.WINBACK_PROMO_CODE);
+        if (promoTerms.isEmpty()) {
+            save(businessId, customer, phoneNumber, null, LapsedCustomerWinbackSend.STATE_SKIPPED_PROMO_NOT_CONFIGURED);
+            return;
+        }
+
         Instant promoExpiresAt = endOfTodayInSalonZone();
         // Claim the row BEFORE sending, not after — found live 2026-08-18 (a duplicate-key error
         // on lapsed_customer_winback_send_customer_idx at the exact cron second, most likely two
@@ -170,7 +178,8 @@ public class LapsedCustomerWinbackScheduler {
             return;
         }
         String givenName = square.customerGivenNames(List.of(customer.squareCustomerId())).get(customer.squareCustomerId());
-        sendNudge(customer, phoneNumber, givenName, promoExpiresAt, hasConsent(phoneNumber, customer.squareCustomerId(), square), businessId);
+        sendNudge(customer, phoneNumber, givenName, promoExpiresAt, hasConsent(phoneNumber, customer.squareCustomerId(), square),
+                businessId, promoTerms.get());
     }
 
     /** Inserts the {@code STATE_SENT} row first — true if this call won the race (safe to send),
@@ -216,7 +225,8 @@ public class LapsedCustomerWinbackScheduler {
     }
 
     private void sendNudge(LapsedCustomerWinbackEligibilityRepository.EligibleCustomer customer, String phoneNumber,
-                            String rawGivenName, Instant promoExpiresAt, boolean consented, Long businessId) {
+                            String rawGivenName, Instant promoExpiresAt, boolean consented, Long businessId,
+                            PromoConfigService.PromoTerms promoTerms) {
         String clickToken = messageLogService.generateUniqueClickToken();
         long expEpochSeconds = promoExpiresAt.getEpochSecond();
         // Reconstructed deterministically by ShortLinkController at click time — see
@@ -239,12 +249,13 @@ public class LapsedCustomerWinbackScheduler {
         boolean hasTechnician = technician != null && !technician.isBlank();
         TwilioSmsConfig config = configService.get(businessId);
         String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
+        String discountAmount = PromoConfigService.formatDollars(promoTerms.discountCents());
         String offerClause = consented
                 ? (hasTechnician
                         ? "It's been 3+ weeks since your last visit and " + technician + "'s schedule is almost "
-                                + "full. Grabbed you $5 off if you book today"
+                                + "full. Grabbed you " + discountAmount + " off if you book today"
                         : "It's been 3+ weeks since your last visit. Spots are filling up fast right now, "
-                                + "grabbed you $5 off if you book today")
+                                + "grabbed you " + discountAmount + " off if you book today")
                 : (hasTechnician
                         ? "It's been 3+ weeks since your last visit and " + technician + "'s schedule is almost "
                                 + "full. Want me to grab you a spot"

@@ -44,6 +44,7 @@ class SameDayRebookingSchedulerTest {
     private TechnicianNameResolver technicianNameResolver;
     private SquareClientProvider squareClientProvider;
     private TwilioSmsConfigRepository twilioConfigs;
+    private PromoConfigService promoConfigService;
     private SameDayRebookingScheduler scheduler;
 
     @BeforeEach
@@ -68,9 +69,12 @@ class SameDayRebookingSchedulerTest {
         var overrideRepo = mock(com.salonreview.repo.SmsTemplateOverrideRepository.class);
         when(overrideRepo.findByBusinessIdAndTemplateKey(any(), any())).thenReturn(Optional.empty());
         SmsMessageTemplateService templateService = new SmsMessageTemplateService(overrideRepo);
+        promoConfigService = mock(PromoConfigService.class);
+        when(promoConfigService.get(BUSINESS_ID, PromoConfigService.REBOOK_PROMO_CODE))
+                .thenReturn(Optional.of(new PromoConfigService.PromoTerms(1000, null, "GROUP1", true)));
         scheduler = new SameDayRebookingScheduler(repository, squareClientProvider, twilioConfigs, automationService,
                 consentRepository, rebookingProperties, messageLogService, configService, client, technicianNameResolver,
-                templateService, "https://salon.akluxnails.com");
+                templateService, "https://salon.akluxnails.com", promoConfigService);
 
         when(automationService.isEnabled(1L, "same_day_rebooking_discount")).thenReturn(true);
         when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(true);
@@ -163,6 +167,22 @@ class SameDayRebookingSchedulerTest {
         ArgumentCaptor<SameDayRebookingSend> captor = ArgumentCaptor.forClass(SameDayRebookingSend.class);
         verify(repository).save(captor.capture());
         assertThat(captor.getValue().getState()).isEqualTo(SameDayRebookingSend.STATE_SKIPPED_DISABLED);
+    }
+
+    @Test
+    @DisplayName("no business_promo_config row for this business yet → SKIPPED_PROMO_NOT_CONFIGURED, never sent "
+            + "(the coupon link would 404)")
+    void promoNotConfiguredIsSkipped() throws Exception {
+        when(promoConfigService.get(BUSINESS_ID, PromoConfigService.REBOOK_PROMO_CODE)).thenReturn(Optional.empty());
+        SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
+        givenDue(s);
+
+        scheduler.sendDueRebookingNudges();
+
+        verifyNoInteractions(client);
+        ArgumentCaptor<SameDayRebookingSend> captor = ArgumentCaptor.forClass(SameDayRebookingSend.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().getState()).isEqualTo(SameDayRebookingSend.STATE_SKIPPED_PROMO_NOT_CONFIGURED);
     }
 
     @Test
@@ -311,6 +331,8 @@ class SameDayRebookingSchedulerTest {
         TwilioSmsConfig otherConfigured = mock(TwilioSmsConfig.class);
         when(otherConfigured.isConfigured()).thenReturn(true);
         when(configService.get(otherBusinessId)).thenReturn(otherConfigured);
+        when(promoConfigService.get(otherBusinessId, PromoConfigService.REBOOK_PROMO_CODE))
+                .thenReturn(Optional.of(new PromoConfigService.PromoTerms(1000, null, "GROUP2", true)));
         when(client.send(any(), eq("+15559998888"), any())).thenReturn("SM999");
 
         scheduler.sendDueRebookingNudges();

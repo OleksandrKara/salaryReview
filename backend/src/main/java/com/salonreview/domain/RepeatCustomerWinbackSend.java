@@ -26,6 +26,9 @@ public class RepeatCustomerWinbackSend {
     public static final String STATE_SKIPPED_NEGATIVE_FEEDBACK = "SKIPPED_NEGATIVE_FEEDBACK";
     public static final String STATE_SKIPPED_UNRESOLVED = "SKIPPED_UNRESOLVED";
     public static final String STATE_SKIPPED_BLOCKED = "SKIPPED_BLOCKED";
+    /** No {@code business_promo_config} row for this business's WINBACK5 yet (shared with
+     * lapsed_customer_winback) — see PromoConfigService. */
+    public static final String STATE_SKIPPED_PROMO_NOT_CONFIGURED = "SKIPPED_PROMO_NOT_CONFIGURED";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

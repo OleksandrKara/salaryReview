@@ -1,9 +1,10 @@
 package com.salonreview.web;
 
 import com.salonreview.config.InternalApiProperties;
-import com.salonreview.config.RebookingProperties;
+import com.salonreview.domain.Business;
 import com.salonreview.domain.SameDayRebookingGroupMembership;
 import com.salonreview.repo.SameDayRebookingGroupMembershipRepository;
+import com.salonreview.sms.PromoConfigService;
 import com.salonreview.sms.RebookingPromoSigner;
 import com.salonreview.repo.BusinessRepository;
 import com.salonreview.sms.TwilioSmsService;
@@ -20,6 +21,7 @@ import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Service-to-service endpoints for mani/akluxnails-home, gated by a shared {@code X-Internal-Api-Key}
@@ -31,30 +33,26 @@ import java.util.Map;
 public class InternalNotificationController {
 
     private static final Logger log = LoggerFactory.getLogger(InternalNotificationController.class);
-    private static final String REBOOK_PROMO_CODE = "REBOOK10";
-    /** See openspec/changes/lapsed-customer-winback-automation design.md D9 — the $5 coupon's own
-     * promo code, enrolling into a separate Square group from {@link #REBOOK_PROMO_CODE}'s. */
-    private static final String WINBACK_PROMO_CODE = "WINBACK5";
 
     private final InternalApiProperties internalApi;
     private final TelegramNotificationService telegram;
     private final TwilioSmsService sms;
     private final RebookingPromoSigner promoSigner;
-    private final RebookingProperties rebookingProperties;
+    private final PromoConfigService promoConfigService;
     private final SameDayRebookingGroupMembershipRepository groupMembershipRepository;
     private final SquareClientProvider squareClientProvider;
     private final BusinessRepository businesses;
 
     public InternalNotificationController(InternalApiProperties internalApi, TelegramNotificationService telegram,
                                           TwilioSmsService sms, RebookingPromoSigner promoSigner,
-                                          RebookingProperties rebookingProperties,
+                                          PromoConfigService promoConfigService,
                                           SameDayRebookingGroupMembershipRepository groupMembershipRepository,
                                           SquareClientProvider squareClientProvider, BusinessRepository businesses) {
         this.internalApi = internalApi;
         this.telegram = telegram;
         this.sms = sms;
         this.promoSigner = promoSigner;
-        this.rebookingProperties = rebookingProperties;
+        this.promoConfigService = promoConfigService;
         this.groupMembershipRepository = groupMembershipRepository;
         this.squareClientProvider = squareClientProvider;
         this.businesses = businesses;
@@ -100,11 +98,15 @@ public class InternalNotificationController {
      * {@code customerName}/{@code phoneNumber}/{@code appointmentStartAt} are only used for the
      * staff Telegram alert (see design.md D7) — never trusted for anything security-relevant.
      * {@code promoCode} is nullable for backward compatibility with callers built before
-     * lapsed-customer-winback-automation existed — {@code null} defaults to {@link #REBOOK_PROMO_CODE}
-     * (see {@link #resolvePromoCode}), the only promo this endpoint supported at first. */
+     * lapsed-customer-winback-automation existed — {@code null} defaults to
+     * {@link PromoConfigService#REBOOK_PROMO_CODE} (see {@link #resolvePromoCode}), the only promo
+     * this endpoint supported at first. {@code businessShortCode} is nullable for the same reason
+     * — akluxnails-home (the only caller before a second business existed) doesn't send one, which
+     * resolves to {@link BusinessRepository#legacySmsBusiness}, same as every other caller here
+     * had before this field existed. A second business's landing page must send its own. */
     public record RebookingPromoEnrollRequest(String squareCustomerId, long expEpochSeconds, String signature,
                                               String customerName, String phoneNumber, String appointmentStartAt,
-                                              String promoCode) {
+                                              String promoCode, String businessShortCode) {
     }
 
     @PostMapping("/rebooking-promo/enroll")
@@ -122,13 +124,16 @@ public class InternalNotificationController {
         if (expiresAt.isBefore(Instant.now())) {
             return ResponseEntity.ok(Map.of("enrolled", false, "reason", "expired"));
         }
-        String groupId = groupIdForPromoCode(promoCode);
-        if (groupId == null) {
+        Business business = resolveBusiness(body.businessShortCode());
+        if (business == null) {
+            return ResponseEntity.ok(Map.of("enrolled", false, "reason", "unknown_business"));
+        }
+        Long businessId = business.getId();
+        Optional<PromoConfigService.PromoTerms> terms = promoConfigService.get(businessId, promoCode);
+        if (terms.isEmpty()) {
             return ResponseEntity.ok(Map.of("enrolled", false, "reason", "not_configured"));
         }
-        // See BusinessRepository#legacySmsBusiness, same as the SMS schedulers — this endpoint
-        // has no session, so there's no business context to resolve beyond business A.
-        Long businessId = businesses.legacySmsBusiness().getId();
+        String groupId = terms.get().squareCustomerGroupId();
         try {
             squareClientProvider.forBusiness(businessId)
                     .addCustomerToGroup(body.squareCustomerId(), groupId);
@@ -148,24 +153,50 @@ public class InternalNotificationController {
         return ResponseEntity.ok(Map.of("enrolled", true));
     }
 
-    /** {@code null}/blank {@code requested} defaults to {@link #REBOOK_PROMO_CODE} — see the
-     * backward-compatibility note on {@link RebookingPromoEnrollRequest#promoCode}. */
-    private static String resolvePromoCode(String requested) {
-        return (requested == null || requested.isBlank()) ? REBOOK_PROMO_CODE : requested;
+    /** For a landing page's promo banner to show the live discount amount/minimum spend — resolved
+     * at click/page-render time from {@link PromoConfigService}, same as every other part of this
+     * feature (see {@code ShortLinkController}), rather than baked into the signed link at send
+     * time. Doesn't take or verify a signature — the amount isn't sensitive, and a business that
+     * hasn't set this promo up simply gets {@code configured: false}, no different from what
+     * clicking the link itself would already reveal. */
+    @GetMapping("/rebooking-promo/terms")
+    public ResponseEntity<Map<String, Object>> rebookingPromoTerms(
+            @RequestHeader(value = "X-Internal-Api-Key", required = false) String key,
+            @RequestParam String promoCode, @RequestParam(required = false) String businessShortCode) {
+        if (!keyMatches(key)) {
+            return ResponseEntity.status(401).build();
+        }
+        Business business = resolveBusiness(businessShortCode);
+        if (business == null) {
+            return ResponseEntity.ok(Map.of("configured", false));
+        }
+        Optional<PromoConfigService.PromoTerms> terms = promoConfigService.get(business.getId(), resolvePromoCode(promoCode));
+        if (terms.isEmpty()) {
+            return ResponseEntity.ok(Map.of("configured", false));
+        }
+        Map<String, Object> response = new HashMap<>();
+        response.put("configured", true);
+        response.put("discountCents", terms.get().discountCents());
+        response.put("minSpendCents", terms.get().minSpendCents());
+        return ResponseEntity.ok(response);
     }
 
-    /** {@code null} for an unrecognized code, or a recognized one whose Square Catalog group
-     * hasn't been set up yet (see openspec/changes/lapsed-customer-winback-automation design.md
-     * D9) — both cases resolve to the same {@code not_configured}/{@code invalid_signature}
-     * (never enrolled) outcome above, never a partial or guessed enrollment. */
-    private String groupIdForPromoCode(String promoCode) {
-        if (REBOOK_PROMO_CODE.equals(promoCode)) {
-            return rebookingProperties.isAutoDiscountConfigured() ? rebookingProperties.getAutoDiscountGroupId() : null;
+    /** {@code null}/blank {@code requested} defaults to {@link PromoConfigService#REBOOK_PROMO_CODE}
+     * — see the backward-compatibility note on {@link RebookingPromoEnrollRequest#promoCode}. */
+    private static String resolvePromoCode(String requested) {
+        return (requested == null || requested.isBlank()) ? PromoConfigService.REBOOK_PROMO_CODE : requested;
+    }
+
+    /** {@code null}/blank {@code shortCode} resolves to Business A — see the backward-compatibility
+     * note on {@link RebookingPromoEnrollRequest#businessShortCode}. An unrecognized non-blank
+     * short code returns {@code null} (never silently falls back to Business A — a second
+     * business's misconfigured deployment must fail loudly, not enroll into the wrong salon's
+     * Square account). */
+    private Business resolveBusiness(String shortCode) {
+        if (shortCode == null || shortCode.isBlank()) {
+            return businesses.legacySmsBusiness();
         }
-        if (WINBACK_PROMO_CODE.equals(promoCode)) {
-            return rebookingProperties.isWinbackAutoDiscountConfigured() ? rebookingProperties.getWinbackAutoDiscountGroupId() : null;
-        }
-        return null;
+        return businesses.findByShortCode(shortCode).orElse(null);
     }
 
     private boolean keyMatches(String provided) {
