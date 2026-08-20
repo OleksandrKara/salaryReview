@@ -365,16 +365,27 @@ export default function MessagesView({
     selectedPhoneRef.current = selectedPhone;
   }, [selectedPhone]);
 
-  // Inserts/moves a single conversation to the top of the list (its lastMessageAt just became the
-  // newest) — the single-conversation refresh used by both the SSE handler and sendReply below, so
-  // a live update or a just-sent reply never has to re-fetch (and truncate) the whole, possibly
-  // paginated, list. A phone number not yet loaded (e.g. a dormant conversation that just got a
-  // new text) is simply prepended, same as if it had always been the most recent row.
+  // Merges a fresh conversation summary into the list and re-sorts by lastMessageAt — the
+  // single-conversation refresh used by both the SSE handler and sendReply below, so a live update
+  // or a just-sent reply never has to re-fetch (and truncate) the whole, possibly paginated, list.
+  // A phone number not yet loaded (e.g. a dormant conversation that just got a new text) is simply
+  // added, then sorted into its correct place like everything else.
+  //
+  // Re-sorts rather than unconditionally moving `fresh` to index 0: this used to always jump the
+  // updated row straight to the top, which was right for an actual new message but wrong for the
+  // *other* thing that broadcasts the exact same SSE "this phone number changed" ping — opening a
+  // thread also calls markSmsThreadRead, which the backend treats as a change worth telling every
+  // open tab about (see SmsMessageLogService#markThreadRead). That meant simply opening a
+  // conversation lower in the list bounced it to the top, even though its lastMessageAt never
+  // actually moved (found live 2026-08-21). Sorting by the real timestamp fixes both at once: a
+  // genuine new message still sorts first (it has the newest lastMessageAt), while a read-only
+  // refresh leaves the row exactly where it already was.
   function upsertConversation(fresh: SmsConversationDto) {
     setConversations((prev) => {
       const idx = prev.findIndex((c) => c.phoneNumber === fresh.phoneNumber);
-      if (idx === -1) return [fresh, ...prev];
-      return [fresh, ...prev.slice(0, idx), ...prev.slice(idx + 1)];
+      const next = idx === -1 ? [...prev, fresh] : [...prev.slice(0, idx), fresh, ...prev.slice(idx + 1)];
+      next.sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
+      return next;
     });
   }
 
@@ -653,11 +664,16 @@ export default function MessagesView({
         });
 
   return (
-    <div data-testid="messages-view-root" className="flex h-full min-h-0 overflow-hidden sm:h-[70vh] sm:min-h-[420px] sm:rounded-lg sm:ring-1 sm:ring-zinc-200">
-      {/* Contact list — full width on mobile until a thread is opened, fixed sidebar on desktop. */}
+    // Desktop height now comes from page.tsx (sm:h-[calc(100vh-8rem)] on `main`) — this just fills
+    // whatever that gives it, rather than inventing its own independent sm:h-[70vh] guess (see
+    // page.tsx's doc comment on why that guess didn't track actual available screen space).
+    <div data-testid="messages-view-root" className="flex h-full min-h-0 overflow-hidden sm:rounded-lg sm:ring-1 sm:ring-zinc-200">
+      {/* Contact list — full width on mobile until a thread is opened, fixed sidebar on desktop.
+          sm:w-80 (not sm:w-72) — narrower than this cut real customer names off mid-word before a
+          manager could tell who they were looking at without opening the thread. */}
       <div
         data-testid="conversation-list"
-        className={`flex w-full shrink-0 flex-col overflow-hidden border-r border-zinc-200 sm:flex sm:w-72 ${selectedPhone ? 'hidden sm:flex' : ''}`}
+        className={`flex w-full shrink-0 flex-col overflow-hidden border-r border-zinc-200 sm:flex sm:w-80 ${selectedPhone ? 'hidden sm:flex' : ''}`}
       >
         {conversations.length > 0 && (
           // text-base (16px), not text-sm, on mobile — matches the composer input's own note
@@ -1188,7 +1204,7 @@ export default function MessagesView({
       {selectedPhone ? (
         <div
           data-testid="contact-info-panel-wrapper"
-          className={`${showContactPanel ? 'flex' : 'hidden'} fixed inset-0 z-20 flex-col bg-white sm:static sm:z-auto sm:flex sm:w-72 sm:shrink-0 sm:border-l sm:border-zinc-200`}
+          className={`${showContactPanel ? 'flex' : 'hidden'} fixed inset-0 z-20 flex-col bg-white sm:static sm:z-auto sm:flex sm:w-80 sm:shrink-0 sm:border-l sm:border-zinc-200`}
         >
           <ContactInfoPanel
             phoneNumber={selectedPhone}

@@ -77,7 +77,15 @@ export default async function MessagesPage({
     // ~950px of horizontal overflow at 320/375/390px viewports; adding it brings overflow to 0.
     <main
       data-testid="messages-page-root"
-      className="group/messages mx-auto flex w-full h-[var(--vvh,100dvh)] max-w-5xl flex-col sm:h-auto sm:p-8"
+      // Desktop height used to be sm:h-auto — this container just shrink-wrapped its content, so
+      // MessagesView had to invent its own fixed sm:h-[70vh] to have *any* bounded height to work
+      // with, and 70% of the viewport doesn't track how much room a given monitor actually has: a
+      // tall external display left a large dead strip below the card, a short laptop screen felt
+      // cramped. calc(100vh-8rem) instead reserves just the title row + this container's own
+      // sm:p-8 padding (≈2rem title-row block + 2×2rem padding) and gives everything else to the
+      // conversation view, same "fill what's actually available" idea as --vvh below already
+      // applies on mobile. min-h keeps it usable if that math ever comes up short.
+      className="group/messages mx-auto flex w-full h-[var(--vvh,100dvh)] max-w-6xl flex-col sm:h-[calc(100vh-8rem)] sm:min-h-[560px] sm:p-8"
     >
       <div
         data-testid="messages-page-title-row"
