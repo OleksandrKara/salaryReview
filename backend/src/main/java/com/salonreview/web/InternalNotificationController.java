@@ -156,30 +156,39 @@ public class InternalNotificationController {
         return ResponseEntity.ok(Map.of("enrolled", true));
     }
 
-    /** For a landing page's promo banner to show the live discount amount/minimum spend — resolved
-     * at click/page-render time from {@link PromoConfigService}, same as every other part of this
-     * feature (see {@code ShortLinkController}), rather than baked into the signed link at send
-     * time. Doesn't take or verify a signature — the amount isn't sensitive, and a business that
-     * hasn't set this promo up simply gets {@code configured: false}, no different from what
-     * clicking the link itself would already reveal. */
-    @GetMapping("/rebooking-promo/terms")
-    public ResponseEntity<Map<String, Object>> rebookingPromoTerms(
+    /** For a landing page's promo banner: verifies the promo/exp/sig query params it loaded with
+     * AND returns the live discount amount/minimum spend, resolved fresh from
+     * {@link PromoConfigService} at page-render time rather than baked into the signed link (an
+     * owner's amount edit takes effect on the next click, same as {@code ShortLinkController}).
+     * Deliberately the only place that ever checks {@link RebookingPromoSigner} outside this app —
+     * no landing-page deployment needs its own copy of the signing secret; it forwards the raw
+     * query params here over the same {@code X-Internal-Api-Key} channel every other internal call
+     * already uses. {@code valid: false} covers every failure the same way (bad signature, expired,
+     * unrecognized business, or the business simply hasn't configured this promo) — the landing
+     * page shows no banner and sends no promo through on booking either way, no need to
+     * distinguish why. */
+    @GetMapping("/rebooking-promo/verify")
+    public ResponseEntity<Map<String, Object>> verifyRebookingPromo(
             @RequestHeader(value = "X-Internal-Api-Key", required = false) String key,
-            @RequestParam String promoCode, @RequestParam(required = false) String businessShortCode,
-            @RequestParam(required = false) Long businessId) {
+            @RequestParam String promoCode, @RequestParam long expEpochSeconds, @RequestParam String signature,
+            @RequestParam(required = false) String businessShortCode, @RequestParam(required = false) Long businessId) {
         if (!keyMatches(key)) {
             return ResponseEntity.status(401).build();
         }
+        String code = resolvePromoCode(promoCode);
+        if (!promoSigner.verify(code, expEpochSeconds, signature) || Instant.ofEpochSecond(expEpochSeconds).isBefore(Instant.now())) {
+            return ResponseEntity.ok(Map.of("valid", false));
+        }
         Business business = resolveBusiness(businessShortCode, businessId);
         if (business == null) {
-            return ResponseEntity.ok(Map.of("configured", false));
+            return ResponseEntity.ok(Map.of("valid", false));
         }
-        Optional<PromoConfigService.PromoTerms> terms = promoConfigService.get(business.getId(), resolvePromoCode(promoCode));
+        Optional<PromoConfigService.PromoTerms> terms = promoConfigService.get(business.getId(), code);
         if (terms.isEmpty()) {
-            return ResponseEntity.ok(Map.of("configured", false));
+            return ResponseEntity.ok(Map.of("valid", false));
         }
         Map<String, Object> response = new HashMap<>();
-        response.put("configured", true);
+        response.put("valid", true);
         response.put("discountCents", terms.get().discountCents());
         response.put("minSpendCents", terms.get().minSpendCents());
         return ResponseEntity.ok(response);
