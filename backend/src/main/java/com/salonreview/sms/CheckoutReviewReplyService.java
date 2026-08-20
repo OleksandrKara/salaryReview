@@ -1,8 +1,10 @@
 package com.salonreview.sms;
 
+import com.salonreview.domain.Business;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.domain.TwilioSmsConfig;
+import com.salonreview.repo.BusinessRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,17 +44,19 @@ public class CheckoutReviewReplyService {
     private final SmsMessageTemplateService templateService;
     private final String publicBaseUrl;
     private final TaskScheduler taskScheduler;
+    private final BusinessRepository businessRepository;
 
     public CheckoutReviewReplyService(SmsMessageLogService messageLogService, TwilioSmsConfigService configService,
                                        TwilioSmsClient client, SmsMessageTemplateService templateService,
                                        @Value("${app.public-base-url}") String publicBaseUrl,
-                                       TaskScheduler taskScheduler) {
+                                       TaskScheduler taskScheduler, BusinessRepository businessRepository) {
         this.messageLogService = messageLogService;
         this.configService = configService;
         this.client = client;
         this.templateService = templateService;
         this.publicBaseUrl = publicBaseUrl;
         this.taskScheduler = taskScheduler;
+        this.businessRepository = businessRepository;
     }
 
     /** Reserves the row and renders the body immediately (cheap, no external calls), but delays
@@ -78,8 +82,10 @@ public class CheckoutReviewReplyService {
                 "", false, "pending", null, linkTarget, clickToken);
         String shortLink = publicBaseUrl + "/r/" + clickToken;
         String sender = configService.get(flow.getBusinessId()).getSenderName();
+        Business business = businessRepository.findById(flow.getBusinessId()).orElse(null);
+        String businessName = business == null ? "" : business.getName();
         String body = templateService.render(flow.getBusinessId(), templateKey,
-                java.util.Map.of("link", shortLink, "sender", sender));
+                java.util.Map.of("link", shortLink, "sender", sender, "businessName", businessName));
 
         taskScheduler.schedule(() -> sendNow(flow, reserved, body), Instant.now().plus(REPLY_DELAY));
     }

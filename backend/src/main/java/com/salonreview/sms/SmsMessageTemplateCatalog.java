@@ -32,8 +32,8 @@ public final class SmsMessageTemplateCatalog {
                     "four_hand_request_received", "four_hand_request", SmsMessageClass.TRANSACTIONAL,
                     "Request confirmation",
                     "Hi {{name}}! Got your 4-Hand request for {{preferredTime}} 💛 Our team will text you "
-                            + "shortly to confirm timing & pricing! -AK.LUX.NAILS",
-                    List.of("name", "preferredTime")
+                            + "shortly to confirm timing & pricing! -{{businessName}}",
+                    List.of("name", "preferredTime", "businessName")
             )),
             Map.entry("checkout_rating_request_with_technician", new TemplateDefault(
                     "checkout_rating_request_with_technician", "checkout_review_request", SmsMessageClass.TRANSACTIONAL,
@@ -45,9 +45,9 @@ public final class SmsMessageTemplateCatalog {
             Map.entry("checkout_rating_request_no_technician", new TemplateDefault(
                     "checkout_rating_request_no_technician", "checkout_review_request", SmsMessageClass.TRANSACTIONAL,
                     "Rating request (technician unknown)",
-                    "{{greeting}} It's {{sender}} from AK.LUX.NAILS 💛 I like to personally check in after "
+                    "{{greeting}} It's {{sender}} from {{businessName}} 💛 I like to personally check in after "
                             + "every visit. How'd we do? Just reply with a number, 1 to 5!",
-                    List.of("greeting", "sender")
+                    List.of("greeting", "sender", "businessName")
             )),
             Map.entry("checkout_review_positive", new TemplateDefault(
                     "checkout_review_positive", "checkout_review_request", SmsMessageClass.TRANSACTIONAL,
@@ -61,8 +61,8 @@ public final class SmsMessageTemplateCatalog {
                     "5-star reply: already reviewed before",
                     "So glad you loved it again! 💕 You've already clicked through to leave us a Google review "
                             + "before. If there's any specific feedback this time, we'd love to hear it here: "
-                            + "{{link}} -AK.LUX.NAILS",
-                    List.of("link")
+                            + "{{link}} -{{businessName}}",
+                    List.of("link", "businessName")
             )),
             Map.entry("checkout_review_negative", new TemplateDefault(
                     "checkout_review_negative", "checkout_review_request", SmsMessageClass.TRANSACTIONAL,
@@ -75,9 +75,9 @@ public final class SmsMessageTemplateCatalog {
             Map.entry("lead_follow_up_nudge", new TemplateDefault(
                     "lead_follow_up_nudge", "lead_follow_up", SmsMessageClass.TRANSACTIONAL,
                     "Lead follow-up",
-                    "{{greeting}} It's {{sender}} from AK.LUX.NAILS 💛 Do you need help with more openings or "
+                    "{{greeting}} It's {{sender}} from {{businessName}} 💛 Do you need help with more openings or "
                             + "is there anything specific you are looking for?",
-                    List.of("greeting", "sender")
+                    List.of("greeting", "sender", "businessName")
             )),
             // spotClause is pre-computed by the caller: "want to lock in your next spot" or
             // "want to lock in your next spot with {technician}" — see class doc on why this is a
@@ -104,48 +104,48 @@ public final class SmsMessageTemplateCatalog {
             Map.entry("lapsed_customer_winback_nudge", new TemplateDefault(
                     "lapsed_customer_winback_nudge", "lapsed_customer_winback", SmsMessageClass.MARKETING,
                     "Lapsed win-back (consented)",
-                    "{{greeting}} It's {{sender}} from AK.LUX.NAILS 💛 {{offerClause}}: {{link}} -{{sender}}",
-                    List.of("greeting", "sender", "offerClause", "link")
+                    "{{greeting}} It's {{sender}} from {{businessName}} 💛 {{offerClause}}: {{link}} -{{sender}}",
+                    List.of("greeting", "sender", "offerClause", "link", "businessName")
             )),
             // offerClause here: "It's been 3+ weeks since your last visit. Spots are filling up
             // fast right now, want me to grab you a spot" (or with technician's schedule inserted).
             Map.entry("lapsed_customer_winback_reminder", new TemplateDefault(
                     "lapsed_customer_winback_reminder", "lapsed_customer_winback", SmsMessageClass.TRANSACTIONAL,
                     "Lapsed win-back (no consent on file)",
-                    "{{greeting}} It's {{sender}} from AK.LUX.NAILS 💛 {{offerClause}}? {{link}} -{{sender}}",
-                    List.of("greeting", "sender", "offerClause", "link")
+                    "{{greeting}} It's {{sender}} from {{businessName}} 💛 {{offerClause}}? {{link}} -{{sender}}",
+                    List.of("greeting", "sender", "offerClause", "link", "businessName")
             )),
             // visitClause is pre-computed: "It's been a while since your last visit" or "...with
             // {technician}".
             Map.entry("repeat_customer_winback_nudge_default", new TemplateDefault(
                     "repeat_customer_winback_nudge_default", "repeat_customer_winback", SmsMessageClass.MARKETING,
                     "Repeat win-back, same technician (consented)",
-                    "{{greeting}} It's {{sender}} from AK.LUX.NAILS 💛 {{visitClause}}. Grabbed you $5 off if "
+                    "{{greeting}} It's {{sender}} from {{businessName}} 💛 {{visitClause}}. Grabbed you $5 off if "
                             + "you book today: {{link}} -{{sender}}",
-                    List.of("greeting", "sender", "visitClause", "link")
+                    List.of("greeting", "sender", "visitClause", "link", "businessName")
             )),
             Map.entry("repeat_customer_winback_reminder_default", new TemplateDefault(
                     "repeat_customer_winback_reminder_default", "repeat_customer_winback", SmsMessageClass.TRANSACTIONAL,
                     "Repeat win-back, same technician (no consent on file)",
-                    "{{greeting}} It's {{sender}} from AK.LUX.NAILS 💛 {{visitClause}}. Book your next mani "
+                    "{{greeting}} It's {{sender}} from {{businessName}} 💛 {{visitClause}}. Book your next mani "
                             + "here: {{link}} -{{sender}}",
-                    List.of("greeting", "sender", "visitClause", "link")
+                    List.of("greeting", "sender", "visitClause", "link", "businessName")
             )),
             Map.entry("repeat_customer_winback_nudge_previous_provider", new TemplateDefault(
                     "repeat_customer_winback_nudge_previous_provider", "repeat_customer_winback", SmsMessageClass.MARKETING,
                     "Repeat win-back, technician changed (consented)",
-                    "{{greeting}} It's {{sender}} from AK.LUX.NAILS 💛 It's been a while since we've seen "
+                    "{{greeting}} It's {{sender}} from {{businessName}} 💛 It's been a while since we've seen "
                             + "you, want me to check if {{previousProvider}} has an opening for you? Grabbed "
                             + "you $5 off if you book today: {{link}} -{{sender}}",
-                    List.of("greeting", "sender", "previousProvider", "link")
+                    List.of("greeting", "sender", "previousProvider", "link", "businessName")
             )),
             Map.entry("repeat_customer_winback_reminder_previous_provider", new TemplateDefault(
                     "repeat_customer_winback_reminder_previous_provider", "repeat_customer_winback", SmsMessageClass.TRANSACTIONAL,
                     "Repeat win-back, technician changed (no consent on file)",
-                    "{{greeting}} It's {{sender}} from AK.LUX.NAILS 💛 It's been a while since we've seen "
+                    "{{greeting}} It's {{sender}} from {{businessName}} 💛 It's been a while since we've seen "
                             + "you, want me to check if {{previousProvider}} has an opening for you? Book "
                             + "here: {{link}} -{{sender}}",
-                    List.of("greeting", "sender", "previousProvider", "link")
+                    List.of("greeting", "sender", "previousProvider", "link", "businessName")
             ))
     );
 

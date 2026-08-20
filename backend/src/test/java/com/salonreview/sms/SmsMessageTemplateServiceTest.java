@@ -35,7 +35,8 @@ class SmsMessageTemplateServiceTest {
     void rendersDefaultWhenNoOverride() {
         when(overrides.findByBusinessIdAndTemplateKey(BUSINESS_ID, KEY)).thenReturn(Optional.empty());
 
-        String body = service.render(BUSINESS_ID, KEY, Map.of("greeting", "Hi Jane!", "sender", "Lucy"));
+        String body = service.render(BUSINESS_ID, KEY,
+                Map.of("greeting", "Hi Jane!", "sender", "Lucy", "businessName", "AK.LUX.NAILS"));
 
         assertThat(body).isEqualTo("Hi Jane! It's Lucy from AK.LUX.NAILS 💛 Do you need help with more openings "
                 + "or is there anything specific you are looking for?");

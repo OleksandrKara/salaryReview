@@ -1,9 +1,11 @@
 package com.salonreview.sms;
 
 import com.salonreview.config.RebookingProperties;
+import com.salonreview.domain.Business;
 import com.salonreview.domain.LapsedCustomerWinbackSend;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.TwilioSmsConfig;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.LapsedCustomerWinbackSendRepository;
 import com.salonreview.repo.TwilioSmsConfigRepository;
 import com.salonreview.square.SquareClient;
@@ -70,9 +72,12 @@ class LapsedCustomerWinbackSchedulerTest {
         var overrideRepo = mock(com.salonreview.repo.SmsTemplateOverrideRepository.class);
         when(overrideRepo.findByBusinessIdAndTemplateKey(any(), any())).thenReturn(Optional.empty());
         SmsMessageTemplateService templateService = new SmsMessageTemplateService(overrideRepo);
+        BusinessRepository businessRepository = mock(BusinessRepository.class);
+        when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(
+                Business.builder().id(BUSINESS_ID).name("AK.LUX.NAILS").build()));
         scheduler = new LapsedCustomerWinbackScheduler(eligibilityRepository, sendRepository, squareClientProvider,
                 twilioConfigs, automationService, consentRepository, rebookingProperties, messageLogService, configService,
-                client, templateService, "https://salon.akluxnails.com");
+                client, templateService, "https://salon.akluxnails.com", businessRepository);
 
         when(automationService.isEnabled(1L, "lapsed_customer_winback")).thenReturn(true);
         when(square.customerPhone(CUSTOMER_ID)).thenReturn(PHONE);

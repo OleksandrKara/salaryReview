@@ -1,7 +1,9 @@
 package com.salonreview.sms;
 
+import com.salonreview.domain.Business;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.BlockedNumberRepository;
+import com.salonreview.repo.BusinessRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,6 +35,7 @@ class TwilioSmsServiceTest {
     private TwilioSmsClient client;
     private BlockedNumberRepository blockedNumberRepository;
     private SmsMediaService mediaService;
+    private BusinessRepository businessRepository;
     private TwilioSmsService service;
 
     @BeforeEach
@@ -45,8 +48,9 @@ class TwilioSmsServiceTest {
         client = mock(TwilioSmsClient.class);
         blockedNumberRepository = mock(BlockedNumberRepository.class);
         mediaService = mock(SmsMediaService.class);
+        businessRepository = mock(BusinessRepository.class);
         service = new TwilioSmsService(templateService, configService, consentRepository, automationService,
-                messageLogService, client, blockedNumberRepository, mediaService);
+                messageLogService, client, blockedNumberRepository, mediaService, businessRepository);
 
         when(automationService.isEnabled(any(), any())).thenReturn(true);
         when(blockedNumberRepository.existsById(any())).thenReturn(false);
@@ -54,6 +58,8 @@ class TwilioSmsServiceTest {
         // default here, overridden per-test where the config itself is what's under test (e.g.
         // unconfiguredCredentialsSkipsSend).
         when(configService.get(BUSINESS_ID)).thenReturn(configured());
+        when(businessRepository.findById(BUSINESS_ID)).thenReturn(
+                java.util.Optional.of(Business.builder().id(BUSINESS_ID).name("AK.LUX.NAILS").build()));
         when(templateService.describe(TRANSACTIONAL_KEY)).thenReturn(
                 new SmsMessageTemplateCatalog.TemplateDefault(TRANSACTIONAL_KEY, null, SmsMessageClass.TRANSACTIONAL,
                         "label", "default", List.of()));

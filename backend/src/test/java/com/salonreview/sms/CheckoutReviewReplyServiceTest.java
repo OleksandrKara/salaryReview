@@ -1,8 +1,10 @@
 package com.salonreview.sms;
 
+import com.salonreview.domain.Business;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.domain.TwilioSmsConfig;
+import com.salonreview.repo.BusinessRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -55,7 +57,11 @@ class CheckoutReviewReplyServiceTest {
         var overrideRepo = mock(com.salonreview.repo.SmsTemplateOverrideRepository.class);
         when(overrideRepo.findByBusinessIdAndTemplateKey(any(), any())).thenReturn(java.util.Optional.empty());
         SmsMessageTemplateService templateService = new SmsMessageTemplateService(overrideRepo);
-        service = new CheckoutReviewReplyService(messageLogService, configService, client, templateService, PUBLIC_BASE_URL, taskScheduler);
+        BusinessRepository businessRepository = mock(BusinessRepository.class);
+        when(businessRepository.findById(BUSINESS_ID)).thenReturn(java.util.Optional.of(
+                Business.builder().id(BUSINESS_ID).name("AK.LUX.NAILS").build()));
+        service = new CheckoutReviewReplyService(messageLogService, configService, client, templateService,
+                PUBLIC_BASE_URL, taskScheduler, businessRepository);
 
         when(messageLogService.generateUniqueClickToken()).thenReturn("abc12");
         when(messageLogService.logOutboundWithLink(eq(BUSINESS_ID), anyString(), eq("checkout_review_request"), eq(PHONE),
