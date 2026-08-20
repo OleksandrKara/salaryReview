@@ -97,6 +97,7 @@ public class RepeatCustomerWinbackScheduler {
     private final SmsMessageTemplateService templateService;
     private final String publicBaseUrl;
     private final BusinessRepository businessRepository;
+    private final PromoConfigService promoConfigService;
 
     public RepeatCustomerWinbackScheduler(RepeatCustomerWinbackEligibilityRepository eligibilityRepository,
                                            RepeatCustomerWinbackSendRepository sendRepository,
@@ -106,7 +107,7 @@ public class RepeatCustomerWinbackScheduler {
                                            BlockedNumberRepository blockedNumberRepository, TwilioSmsConfigService configService,
                                            TwilioSmsClient client, SmsMessageTemplateService templateService,
                                            @Value("${app.public-base-url}") String publicBaseUrl,
-                                           BusinessRepository businessRepository) {
+                                           BusinessRepository businessRepository, PromoConfigService promoConfigService) {
         this.eligibilityRepository = eligibilityRepository;
         this.sendRepository = sendRepository;
         this.squareClientProvider = squareClientProvider;
@@ -121,6 +122,7 @@ public class RepeatCustomerWinbackScheduler {
         this.templateService = templateService;
         this.publicBaseUrl = publicBaseUrl;
         this.businessRepository = businessRepository;
+        this.promoConfigService = promoConfigService;
     }
 
     // zone is mandatory here too — see LapsedCustomerWinbackScheduler's own comment on the
@@ -196,9 +198,16 @@ public class RepeatCustomerWinbackScheduler {
             return;
         }
 
+        var promoTerms = promoConfigService.get(businessId, PromoConfigService.WINBACK_PROMO_CODE);
+        if (promoTerms.isEmpty()) {
+            save(businessId, customer, phoneNumber, daysSinceLastVisit, providerChanged, null, null,
+                    RepeatCustomerWinbackSend.STATE_SKIPPED_PROMO_NOT_CONFIGURED);
+            return;
+        }
+
         Instant promoExpiresAt = endOfTodayInSalonZone();
         String givenName = square.customerGivenNames(List.of(customer.squareCustomerId())).get(customer.squareCustomerId());
-        String variant = sendNudge(customer, phoneNumber, givenName, providerChanged, promoExpiresAt, square, businessId);
+        String variant = sendNudge(customer, phoneNumber, givenName, providerChanged, promoExpiresAt, square, businessId, promoTerms.get());
         save(businessId, customer, phoneNumber, daysSinceLastVisit, providerChanged, promoExpiresAt, variant, RepeatCustomerWinbackSend.STATE_SENT);
     }
 
@@ -235,7 +244,7 @@ public class RepeatCustomerWinbackScheduler {
      * caller to record. */
     private String sendNudge(RepeatCustomerWinbackEligibilityRepository.EligibleCustomer customer, String phoneNumber,
                               String rawGivenName, boolean providerChanged, Instant promoExpiresAt, SquareClient square,
-                              Long businessId) {
+                              Long businessId, PromoConfigService.PromoTerms promoTerms) {
         String clickToken = messageLogService.generateUniqueClickToken();
         // Reconstructed deterministically by ShortLinkController at click time — see
         // RebookingPromoSigner and class doc. No signature stored here; it's recomputed. Identical
@@ -265,17 +274,19 @@ public class RepeatCustomerWinbackScheduler {
                         : "repeat_customer_winback_reminder_default");
         Business business = businessRepository.findById(businessId).orElse(null);
         String businessName = business == null ? "" : business.getName();
+        String discountAmount = PromoConfigService.formatDollars(promoTerms.discountCents());
         Map<String, String> vars;
         if ("previous_provider".equals(variant)) {
             vars = Map.of("greeting", greeting, "sender", config.getSenderName(),
-                    "previousProvider", previousProviderFirstName, "link", shortLink, "businessName", businessName);
+                    "previousProvider", previousProviderFirstName, "discountAmount", discountAmount,
+                    "link", shortLink, "businessName", businessName);
         } else {
             boolean hasTechnician = lastProviderFirstName != null && !lastProviderFirstName.isBlank();
             String visitClause = hasTechnician
                     ? "It's been a while since your last visit with " + lastProviderFirstName
                     : "It's been a while since your last visit";
             vars = Map.of("greeting", greeting, "sender", config.getSenderName(), "visitClause", visitClause,
-                    "link", shortLink, "businessName", businessName);
+                    "discountAmount", discountAmount, "link", shortLink, "businessName", businessName);
         }
         String body = templateService.render(businessId, overrideKey, vars);
 

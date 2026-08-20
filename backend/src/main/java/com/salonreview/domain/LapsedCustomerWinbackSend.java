@@ -23,6 +23,9 @@ public class LapsedCustomerWinbackSend {
     public static final String STATE_SKIPPED_DISABLED = "SKIPPED_DISABLED";
     public static final String STATE_SKIPPED_NEGATIVE_FEEDBACK = "SKIPPED_NEGATIVE_FEEDBACK";
     public static final String STATE_SKIPPED_UNRESOLVED = "SKIPPED_UNRESOLVED";
+    /** No {@code business_promo_config} row for this business's WINBACK5 yet — see
+     * PromoConfigService. */
+    public static final String STATE_SKIPPED_PROMO_NOT_CONFIGURED = "SKIPPED_PROMO_NOT_CONFIGURED";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

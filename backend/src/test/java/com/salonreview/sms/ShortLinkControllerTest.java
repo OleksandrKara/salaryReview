@@ -31,6 +31,7 @@ class ShortLinkControllerTest {
     private BusinessRepository businessRepository;
     private RebookingPromoSigner promoSigner;
     private MarketingLandingProperties landingProperties;
+    private PromoConfigService promoConfigService;
     private ShortLinkController controller;
 
     @BeforeEach
@@ -39,14 +40,20 @@ class ShortLinkControllerTest {
         businessRepository = mock(BusinessRepository.class);
         promoSigner = mock(RebookingPromoSigner.class);
         landingProperties = mock(MarketingLandingProperties.class);
+        promoConfigService = mock(PromoConfigService.class);
         when(landingProperties.baseUrlFor("home")).thenReturn("https://akluxnails.com");
-        when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(
-                Business.builder().id(BUSINESS_ID).shortCode("akluxnails")
-                        .googleReviewUrl(GOOGLE_REVIEW_URL).feedbackFormUrl(FEEDBACK_FORM_URL).build()));
+        Business businessA = Business.builder().id(BUSINESS_ID).shortCode("akluxnails")
+                .googleReviewUrl(GOOGLE_REVIEW_URL).feedbackFormUrl(FEEDBACK_FORM_URL).build();
+        when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(businessA));
+        when(businessRepository.legacySmsBusiness()).thenReturn(businessA);
         when(businessRepository.findById(OTHER_BUSINESS_ID)).thenReturn(Optional.of(
                 Business.builder().id(OTHER_BUSINESS_ID).shortCode("annakarapmu")
                         .publicDomain("book.pmu-annakara.com").build()));
-        controller = new ShortLinkController(repository, businessRepository, promoSigner, landingProperties);
+        when(promoConfigService.get(BUSINESS_ID, "REBOOK10"))
+                .thenReturn(Optional.of(new PromoConfigService.PromoTerms(1000, null, "grp1", true)));
+        when(promoConfigService.get(BUSINESS_ID, "WINBACK5"))
+                .thenReturn(Optional.of(new PromoConfigService.PromoTerms(500, 9900L, "grp2", true)));
+        controller = new ShortLinkController(repository, businessRepository, promoSigner, landingProperties, promoConfigService);
     }
 
     @Test
@@ -210,6 +217,8 @@ class ShortLinkControllerTest {
     @Test
     @DisplayName("REBOOK target for a business other than the one promo redemption is configured for → 404, never leaks a coupon link to the wrong salon's customers")
     void rebookTargetForOtherBusinessReturns404() {
+        // promoConfigService.get(OTHER_BUSINESS_ID, "REBOOK10") is deliberately not stubbed — this
+        // business hasn't set up the promo yet, so the mock's default Optional.empty() applies.
         SmsMessage message = SmsMessage.builder().id(7L).businessId(OTHER_BUSINESS_ID).direction("OUTBOUND")
                 .phoneNumber("+15551234567").body("...").status("SENT").linkTarget("REBOOK:1700000000")
                 .clickToken("rebook0003").build();
@@ -219,5 +228,24 @@ class ShortLinkControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         verifyNoInteractions(promoSigner);
+    }
+
+    @Test
+    @DisplayName("REBOOK target for another business that HAS set up this promo → resolves to a signed link on that "
+            + "business's own public domain, not Business A's")
+    void rebookTargetForConfiguredOtherBusinessResolvesToOwnDomain() {
+        when(promoConfigService.get(OTHER_BUSINESS_ID, "REBOOK10"))
+                .thenReturn(Optional.of(new PromoConfigService.PromoTerms(1500, 30000L, "pmugrp", true)));
+        when(promoSigner.sign("REBOOK10", 1700000000L)).thenReturn("sig-pmu");
+        SmsMessage message = SmsMessage.builder().id(8L).businessId(OTHER_BUSINESS_ID).direction("OUTBOUND")
+                .phoneNumber("+15551234567").body("...").status("SENT").linkTarget("REBOOK:1700000000")
+                .clickToken("rebook0004").build();
+        when(repository.findByClickToken("rebook0004")).thenReturn(Optional.of(message));
+
+        ResponseEntity<Void> response = controller.redirect("rebook0004");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FOUND);
+        assertThat(response.getHeaders().getLocation())
+                .hasToString("https://book.pmu-annakara.com/?promo=REBOOK10&exp=1700000000&sig=sig-pmu");
     }
 }

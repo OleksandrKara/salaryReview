@@ -763,6 +763,148 @@ public class SquareClient {
                 .toBodilessEntity());
     }
 
+    /** Creates a fresh, empty Square customer group — the one-time setup step for a new business's
+     * self-service promo discount (see {@code com.salonreview.sms.PromoConfigService}). Uncached,
+     * mutating; throws on failure so the caller can surface a real error to the owner rather than
+     * silently proceeding with no group. */
+    public String createCustomerGroup(String name) {
+        Map<String, Object> body = Map.of(
+                "idempotency_key", java.util.UUID.randomUUID().toString(),
+                "group", Map.of("name", name));
+        CreateCustomerGroupResponse resp = throttled(() -> http.post()
+                .uri("/v2/customers/groups")
+                .body(body)
+                .retrieve()
+                .body(CreateCustomerGroupResponse.class));
+        if (resp == null || resp.group() == null || resp.group().id() == null) {
+            throw new IllegalStateException("Square did not return a customer group id");
+        }
+        return resp.group().id();
+    }
+
+    /** Creates the one "matches every catalog item" product set a business's pricing rules share —
+     * see {@code CatalogProductSet.all_products}. Called at most once per business (both the
+     * same-day-rebooking and lapsed-winback pricing rules reuse the same set). */
+    public String createAllProductsSet(String name) {
+        Map<String, Object> object = Map.of(
+                "type", "PRODUCT_SET",
+                "id", "#productset",
+                "present_at_all_locations", true,
+                "product_set_data", Map.of("name", name, "all_products", true));
+        return batchUpsertSingle(object, "#productset");
+    }
+
+    public record PromoCatalogIds(String discountCatalogId, String pricingRuleCatalogId) {}
+
+    /** Creates a {@code FIXED_AMOUNT} discount plus the pricing rule that auto-applies it to any
+     * order for a member of {@code customerGroupId} — see {@code CatalogDiscount}/
+     * {@code CatalogPricingRule}. {@code minSpendCents} null means no minimum order subtotal. Both
+     * objects are created in one batch so they're either both there or neither is. */
+    public PromoCatalogIds createDiscountAndPricingRule(String name, long discountCents, String customerGroupId,
+                                                          Long minSpendCents, String productSetCatalogId) {
+        Map<String, Object> discountData = new LinkedHashMap<>();
+        discountData.put("name", name);
+        discountData.put("discount_type", "FIXED_AMOUNT");
+        discountData.put("amount_money", Map.of("amount", discountCents, "currency", "USD"));
+
+        Map<String, Object> discountObject = Map.of(
+                "type", "DISCOUNT", "id", "#discount", "present_at_all_locations", true,
+                "discount_data", discountData);
+
+        Map<String, Object> pricingRuleData = new LinkedHashMap<>();
+        pricingRuleData.put("name", name);
+        pricingRuleData.put("discount_id", "#discount");
+        pricingRuleData.put("match_products_id", productSetCatalogId);
+        pricingRuleData.put("customer_group_ids_any", List.of(customerGroupId));
+        if (minSpendCents != null) {
+            pricingRuleData.put("minimum_order_subtotal_money", Map.of("amount", minSpendCents, "currency", "USD"));
+        }
+        Map<String, Object> pricingRuleObject = Map.of(
+                "type", "PRICING_RULE", "id", "#pricingrule", "present_at_all_locations", true,
+                "pricing_rule_data", pricingRuleData);
+
+        Map<String, String> idMappings = batchUpsert(List.of(discountObject, pricingRuleObject));
+        String discountId = idMappings.get("#discount");
+        String pricingRuleId = idMappings.get("#pricingrule");
+        if (discountId == null || pricingRuleId == null) {
+            throw new IllegalStateException("Square did not return catalog ids for the new discount/pricing rule");
+        }
+        return new PromoCatalogIds(discountId, pricingRuleId);
+    }
+
+    /** Updates an existing discount amount and/or pricing rule minimum spend in place — Square
+     * requires each object's current {@code version} to update it, so this fetches both first (a
+     * stale version would otherwise 409). {@code minSpendCents} null clears the minimum entirely. */
+    public void updatePromoTerms(String discountCatalogId, String pricingRuleCatalogId, long discountCents,
+                                  Long minSpendCents) {
+        CatalogBatchRetrieveResponse current = throttled(() -> http.post()
+                .uri("/v2/catalog/batch-retrieve")
+                .body(Map.of("object_ids", List.of(discountCatalogId, pricingRuleCatalogId)))
+                .retrieve()
+                .body(CatalogBatchRetrieveResponse.class));
+        Map<String, Long> versions = new HashMap<>();
+        if (current != null && current.objects() != null) {
+            for (CatalogObject obj : current.objects()) {
+                versions.put(obj.id(), obj.version());
+            }
+        }
+        if (!versions.containsKey(discountCatalogId) || !versions.containsKey(pricingRuleCatalogId)) {
+            throw new IllegalStateException("Could not look up current Square catalog object versions for update");
+        }
+
+        Map<String, Object> discountData = new LinkedHashMap<>();
+        discountData.put("discount_type", "FIXED_AMOUNT");
+        discountData.put("amount_money", Map.of("amount", discountCents, "currency", "USD"));
+        Map<String, Object> discountObject = new LinkedHashMap<>();
+        discountObject.put("type", "DISCOUNT");
+        discountObject.put("id", discountCatalogId);
+        discountObject.put("version", versions.get(discountCatalogId));
+        discountObject.put("present_at_all_locations", true);
+        discountObject.put("discount_data", discountData);
+
+        Map<String, Object> pricingRuleData = new LinkedHashMap<>();
+        if (minSpendCents != null) {
+            pricingRuleData.put("minimum_order_subtotal_money", Map.of("amount", minSpendCents, "currency", "USD"));
+        }
+        Map<String, Object> pricingRuleObject = new LinkedHashMap<>();
+        pricingRuleObject.put("type", "PRICING_RULE");
+        pricingRuleObject.put("id", pricingRuleCatalogId);
+        pricingRuleObject.put("version", versions.get(pricingRuleCatalogId));
+        pricingRuleObject.put("present_at_all_locations", true);
+        pricingRuleObject.put("pricing_rule_data", pricingRuleData);
+
+        batchUpsert(List.of(discountObject, pricingRuleObject));
+    }
+
+    /** Shared write path for {@link #createDiscountAndPricingRule} and {@link #updatePromoTerms} —
+     * returns the client-supplied {@code #tempId} → real Square catalog id mapping for every
+     * object in the batch (unmapped for objects passed with a real id, i.e. an update). */
+    private Map<String, String> batchUpsert(List<Map<String, Object>> objects) {
+        Map<String, Object> body = Map.of(
+                "idempotency_key", java.util.UUID.randomUUID().toString(),
+                "batches", List.of(Map.of("objects", objects)));
+        CatalogBatchUpsertResponse resp = throttled(() -> http.post()
+                .uri("/v2/catalog/batch-upsert")
+                .body(body)
+                .retrieve()
+                .body(CatalogBatchUpsertResponse.class));
+        Map<String, String> mapped = new HashMap<>();
+        if (resp != null && resp.idMappings() != null) {
+            for (CatalogIdMapping m : resp.idMappings()) {
+                mapped.put(m.clientObjectId(), m.objectId());
+            }
+        }
+        return mapped;
+    }
+
+    private String batchUpsertSingle(Map<String, Object> object, String tempId) {
+        String id = batchUpsert(List.of(object)).get(tempId);
+        if (id == null) {
+            throw new IllegalStateException("Square did not return a catalog id for " + tempId);
+        }
+        return id;
+    }
+
     // --- Response models (only the fields we use; unknown JSON ignored) ---
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -953,7 +1095,7 @@ public class SquareClient {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record CatalogObject(String type, String id,
+    public record CatalogObject(String type, String id, Long version,
                                 CatalogItemVariationData itemVariationData,
                                 CatalogItemData itemData) {}
 
@@ -961,4 +1103,20 @@ public class SquareClient {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record CatalogBatchRetrieveResponse(List<CatalogObject> objects,
                                                List<CatalogObject> relatedObjects) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    record CatalogIdMapping(String clientObjectId, String objectId) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    record CatalogBatchUpsertResponse(List<CatalogIdMapping> idMappings) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    record SquareCustomerGroup(String id, String name) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    record CreateCustomerGroupResponse(SquareCustomerGroup group) {}
 }

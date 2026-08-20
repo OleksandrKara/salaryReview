@@ -2,10 +2,10 @@ package com.salonreview.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.config.InternalApiProperties;
-import com.salonreview.config.RebookingProperties;
 import com.salonreview.domain.Business;
 import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SameDayRebookingGroupMembershipRepository;
+import com.salonreview.sms.PromoConfigService;
 import com.salonreview.sms.RebookingPromoSigner;
 import com.salonreview.sms.TwilioSmsService;
 import com.salonreview.square.SquareClient;
@@ -41,7 +41,7 @@ class InternalNotificationControllerTest {
     private TelegramNotificationService telegram;
     private TwilioSmsService sms;
     private RebookingPromoSigner promoSigner;
-    private RebookingProperties rebookingProperties;
+    private PromoConfigService promoConfigService;
     private SameDayRebookingGroupMembershipRepository groupMembershipRepository;
     private SquareClient square;
     private MockMvc mvc;
@@ -53,18 +53,22 @@ class InternalNotificationControllerTest {
         telegram = mock(TelegramNotificationService.class);
         sms = mock(TwilioSmsService.class);
         promoSigner = mock(RebookingPromoSigner.class);
-        rebookingProperties = new RebookingProperties();
-        rebookingProperties.setAutoDiscountGroupId("grp1");
-        rebookingProperties.setWinbackAutoDiscountGroupId("grp2");
+        promoConfigService = mock(PromoConfigService.class);
+        when(promoConfigService.get(1L, "REBOOK10"))
+                .thenReturn(java.util.Optional.of(new PromoConfigService.PromoTerms(1000, null, "grp1", true)));
+        when(promoConfigService.get(1L, "WINBACK5"))
+                .thenReturn(java.util.Optional.of(new PromoConfigService.PromoTerms(500, 9900L, "grp2", true)));
         groupMembershipRepository = mock(SameDayRebookingGroupMembershipRepository.class);
         square = mock(SquareClient.class);
         SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
         BusinessRepository businesses = mock(BusinessRepository.class);
         when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
                 .timezone("UTC").active(true).build());
+        when(businesses.findByShortCode("test")).thenReturn(java.util.Optional.of(
+                Business.builder().id(1L).name("Test").shortCode("test").timezone("UTC").active(true).build()));
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         InternalNotificationController controller = new InternalNotificationController(
-                props, telegram, sms, promoSigner, rebookingProperties, groupMembershipRepository,
+                props, telegram, sms, promoSigner, promoConfigService, groupMembershipRepository,
                 squareClientProvider, businesses);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
@@ -279,5 +283,84 @@ class InternalNotificationControllerTest {
                 .andExpect(jsonPath("$.enrolled").value(true));
 
         verify(square).addCustomerToGroup("cust1", "grp1");
+    }
+
+    @Test
+    @DisplayName("rebooking-promo/enroll: businessShortCode for another business → resolves and enrolls against that business's own Square account")
+    void enrollWithBusinessShortCodeUsesThatBusiness() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        SquareClient otherSquare = mock(SquareClient.class);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        // rebuild the controller wired to a provider that distinguishes the two businesses
+        BusinessRepository businesses = mock(BusinessRepository.class);
+        when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
+                .timezone("UTC").active(true).build());
+        when(businesses.findByShortCode("pmu")).thenReturn(java.util.Optional.of(
+                Business.builder().id(2L).name("PMU").shortCode("pmu").timezone("UTC").active(true).build()));
+        when(squareClientProvider.forBusiness(2L)).thenReturn(otherSquare);
+        when(promoConfigService.get(2L, "REBOOK10"))
+                .thenReturn(java.util.Optional.of(new PromoConfigService.PromoTerms(1500, null, "pmugrp", true)));
+        InternalNotificationController controller = new InternalNotificationController(
+                props, telegram, sms, promoSigner, promoConfigService, groupMembershipRepository,
+                squareClientProvider, businesses);
+        MockMvc pmuMvc = MockMvcBuilders.standaloneSetup(controller).build();
+        when(promoSigner.verify("REBOOK10", 9999999999L, "sig123")).thenReturn(true);
+        String pmuBody = "{\"squareCustomerId\":\"cust1\",\"expEpochSeconds\":9999999999,"
+                + "\"signature\":\"sig123\",\"businessShortCode\":\"pmu\"}";
+
+        pmuMvc.perform(post("/api/internal/rebooking-promo/enroll")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content(pmuBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enrolled").value(true));
+
+        verify(otherSquare).addCustomerToGroup("cust1", "pmugrp");
+        org.mockito.Mockito.verifyNoInteractions(square);
+    }
+
+    @Test
+    @DisplayName("rebooking-promo/enroll: unrecognized businessShortCode → unknown_business, never falls back to Business A")
+    void enrollUnknownBusinessShortCodeIsRefused() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        when(promoSigner.verify("REBOOK10", 9999999999L, "sig123")).thenReturn(true);
+        String bogusBody = "{\"squareCustomerId\":\"cust1\",\"expEpochSeconds\":9999999999,"
+                + "\"signature\":\"sig123\",\"businessShortCode\":\"nonexistent\"}";
+
+        mvc.perform(post("/api/internal/rebooking-promo/enroll")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content(bogusBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enrolled").value(false))
+                .andExpect(jsonPath("$.reason").value("unknown_business"));
+
+        verifyNoSquareCall();
+    }
+
+    @Test
+    @DisplayName("rebooking-promo/terms: configured business/promo → returns the live discount amount")
+    void termsReturnsConfiguredAmount() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/internal/rebooking-promo/terms")
+                        .header("X-Internal-Api-Key", "secret")
+                        .param("promoCode", "REBOOK10").param("businessShortCode", "test"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.configured").value(true))
+                .andExpect(jsonPath("$.discountCents").value(1000));
+    }
+
+    @Test
+    @DisplayName("rebooking-promo/terms: business with no row for this promo → configured:false")
+    void termsUnconfiguredReturnsFalse() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        when(promoConfigService.get(1L, "REBOOK10")).thenReturn(java.util.Optional.empty());
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/internal/rebooking-promo/terms")
+                        .header("X-Internal-Api-Key", "secret")
+                        .param("promoCode", "REBOOK10").param("businessShortCode", "test"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.configured").value(false));
     }
 }

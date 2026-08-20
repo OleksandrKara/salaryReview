@@ -23,6 +23,9 @@ public class SameDayRebookingSend {
     public static final String STATE_SKIPPED_EXPIRED = "SKIPPED_EXPIRED";
     public static final String STATE_SKIPPED_DISABLED = "SKIPPED_DISABLED";
     public static final String STATE_SKIPPED_NEGATIVE_FEEDBACK = "SKIPPED_NEGATIVE_FEEDBACK";
+    /** No {@code business_promo_config} row for this business's REBOOK10 yet — see
+     * PromoConfigService. Sending would either bake in no amount or generate a link that 404s. */
+    public static final String STATE_SKIPPED_PROMO_NOT_CONFIGURED = "SKIPPED_PROMO_NOT_CONFIGURED";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

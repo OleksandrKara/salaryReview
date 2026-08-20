@@ -39,17 +39,6 @@ public class ShortLinkController {
     private static final String WINBACK_PREFIX = "WINBACK:";
     private static final String WINBACK_PROMO_CODE = "WINBACK5";
 
-    /** The signed REBOOK10/WINBACK5 promo links only resolve to something that actually applies a
-     * discount for Business A ({@code akluxnails}) — {@code RebookingProperties}' Square customer-
-     * group ids and {@code InternalNotificationController}'s enrollment endpoint are both
-     * hardcoded to that one business/Square account today (see their own doc comments), and no
-     * other business's landing page has any promo-redemption code at all yet. A second business
-     * with these two automations enabled would otherwise generate a live-looking coupon link that
-     * silently sends its own customers to Business A's website instead of failing loudly — 404 is
-     * safer than that. Revisit once a business other than Business A gets its own Square
-     * Catalog/CustomerGroup setup and landing-page redemption flow built. */
-    private static final String PROMO_REDEMPTION_BUSINESS_SHORT_CODE = "akluxnails";
-
     /** Plain redirect to the home landing page, no promo params. {@code repeat_customer_winback}
      * sent this before it started reusing {@link #WINBACK_PREFIX} for its own $5 coupon (see V72,
      * V78/V79) — kept only so any surviving historical {@code sms_message} row with this exact
@@ -62,13 +51,16 @@ public class ShortLinkController {
     private final BusinessRepository businessRepository;
     private final RebookingPromoSigner promoSigner;
     private final MarketingLandingProperties landingProperties;
+    private final PromoConfigService promoConfigService;
 
     public ShortLinkController(SmsMessageRepository repository, BusinessRepository businessRepository,
-                                RebookingPromoSigner promoSigner, MarketingLandingProperties landingProperties) {
+                                RebookingPromoSigner promoSigner, MarketingLandingProperties landingProperties,
+                                PromoConfigService promoConfigService) {
         this.repository = repository;
         this.businessRepository = businessRepository;
         this.promoSigner = promoSigner;
         this.landingProperties = landingProperties;
+        this.promoConfigService = promoConfigService;
     }
 
     @GetMapping("/r/{token}")
@@ -121,12 +113,13 @@ public class ShortLinkController {
 
     /** Builds the signed promo URL on demand — the signature is never stored, only the expiry
      * epoch (see class doc and RebookingPromoSigner). {@code null} (404) if signing isn't
-     * configured, or if this isn't {@link #PROMO_REDEMPTION_BUSINESS_SHORT_CODE} — see that
-     * constant's own doc for why a coupon link is scoped to one business today. {@code promoCode}
-     * distinguishes which promo this is (REBOOK10 or WINBACK5) — {@link RebookingPromoSigner} is
-     * already generic over it. */
+     * configured, or if this business has no {@link PromoConfigService} terms for
+     * {@code promoCode} yet (no Square Customer Group/Discount/Pricing Rule exists to actually
+     * apply) — never a live-looking coupon link that silently sends a customer to a page with
+     * nothing to redeem. {@code promoCode} distinguishes which promo this is (REBOOK10 or
+     * WINBACK5) — {@link RebookingPromoSigner} is already generic over it. */
     private String resolveRebookingPromo(String promoCode, String epochSecondsRaw, Business business) {
-        if (!PROMO_REDEMPTION_BUSINESS_SHORT_CODE.equals(business.getShortCode())) {
+        if (promoConfigService.get(business.getId(), promoCode).isEmpty()) {
             return null;
         }
         long expEpochSeconds;
@@ -139,7 +132,18 @@ public class ShortLinkController {
         if (signature == null) {
             return null;
         }
-        String homeBaseUrl = landingProperties.baseUrlFor("home");
-        return homeBaseUrl + "/?promo=" + promoCode + "&exp=" + expEpochSeconds + "&sig=" + signature;
+        return promoRedemptionBaseUrl(business) + "/?promo=" + promoCode + "&exp=" + expEpochSeconds + "&sig=" + signature;
+    }
+
+    /** Business A's promo redemption UI lives on the legacy "home" landing page
+     * (akluxnails-home — see {@link MarketingLandingProperties}), a different domain than its own
+     * {@link Business#getPublicDomain()} (mani.akluxnails.com). Every other business's redemption
+     * UI lives on its own public domain instead — see openspec/changes for the landing-page side
+     * of this feature. */
+    private String promoRedemptionBaseUrl(Business business) {
+        if (businessRepository.legacySmsBusiness().getId().equals(business.getId())) {
+            return landingProperties.baseUrlFor("home");
+        }
+        return publicSiteFor(business);
     }
 }
