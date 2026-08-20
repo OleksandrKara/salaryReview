@@ -100,13 +100,16 @@ public class InternalNotificationController {
      * {@code promoCode} is nullable for backward compatibility with callers built before
      * lapsed-customer-winback-automation existed — {@code null} defaults to
      * {@link PromoConfigService#REBOOK_PROMO_CODE} (see {@link #resolvePromoCode}), the only promo
-     * this endpoint supported at first. {@code businessShortCode} is nullable for the same reason
-     * — akluxnails-home (the only caller before a second business existed) doesn't send one, which
-     * resolves to {@link BusinessRepository#legacySmsBusiness}, same as every other caller here
-     * had before this field existed. A second business's landing page must send its own. */
+     * this endpoint supported at first. {@code businessShortCode}/{@code businessId} are both
+     * nullable for the same reason — akluxnails-home (the only caller before a second business
+     * existed) sends neither, which resolves to {@link BusinessRepository#legacySmsBusiness}, same
+     * as every other caller here had before these fields existed. A second business's landing page
+     * must send one — {@code businessId} takes priority when both are present (salonLandings's own
+     * {@code BusinessContext} already carries the numeric id from its domain lookup, no extra
+     * short-code plumbing needed there). */
     public record RebookingPromoEnrollRequest(String squareCustomerId, long expEpochSeconds, String signature,
                                               String customerName, String phoneNumber, String appointmentStartAt,
-                                              String promoCode, String businessShortCode) {
+                                              String promoCode, String businessShortCode, Long businessId) {
     }
 
     @PostMapping("/rebooking-promo/enroll")
@@ -124,7 +127,7 @@ public class InternalNotificationController {
         if (expiresAt.isBefore(Instant.now())) {
             return ResponseEntity.ok(Map.of("enrolled", false, "reason", "expired"));
         }
-        Business business = resolveBusiness(body.businessShortCode());
+        Business business = resolveBusiness(body.businessShortCode(), body.businessId());
         if (business == null) {
             return ResponseEntity.ok(Map.of("enrolled", false, "reason", "unknown_business"));
         }
@@ -162,11 +165,12 @@ public class InternalNotificationController {
     @GetMapping("/rebooking-promo/terms")
     public ResponseEntity<Map<String, Object>> rebookingPromoTerms(
             @RequestHeader(value = "X-Internal-Api-Key", required = false) String key,
-            @RequestParam String promoCode, @RequestParam(required = false) String businessShortCode) {
+            @RequestParam String promoCode, @RequestParam(required = false) String businessShortCode,
+            @RequestParam(required = false) Long businessId) {
         if (!keyMatches(key)) {
             return ResponseEntity.status(401).build();
         }
-        Business business = resolveBusiness(businessShortCode);
+        Business business = resolveBusiness(businessShortCode, businessId);
         if (business == null) {
             return ResponseEntity.ok(Map.of("configured", false));
         }
@@ -187,12 +191,16 @@ public class InternalNotificationController {
         return (requested == null || requested.isBlank()) ? PromoConfigService.REBOOK_PROMO_CODE : requested;
     }
 
-    /** {@code null}/blank {@code shortCode} resolves to Business A — see the backward-compatibility
-     * note on {@link RebookingPromoEnrollRequest#businessShortCode}. An unrecognized non-blank
-     * short code returns {@code null} (never silently falls back to Business A — a second
-     * business's misconfigured deployment must fail loudly, not enroll into the wrong salon's
-     * Square account). */
-    private Business resolveBusiness(String shortCode) {
+    /** {@code businessId} wins when present (see {@link RebookingPromoEnrollRequest#businessId}).
+     * Otherwise {@code null}/blank {@code shortCode} resolves to Business A — see the backward-
+     * compatibility note on {@link RebookingPromoEnrollRequest#businessShortCode}. An unrecognized
+     * non-blank identifier returns {@code null} (never silently falls back to Business A — a
+     * second business's misconfigured deployment must fail loudly, not enroll into the wrong
+     * salon's Square account). */
+    private Business resolveBusiness(String shortCode, Long businessId) {
+        if (businessId != null) {
+            return businesses.findById(businessId).orElse(null);
+        }
         if (shortCode == null || shortCode.isBlank()) {
             return businesses.legacySmsBusiness();
         }

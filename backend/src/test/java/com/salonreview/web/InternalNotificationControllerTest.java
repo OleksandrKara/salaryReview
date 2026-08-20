@@ -66,6 +66,8 @@ class InternalNotificationControllerTest {
                 .timezone("UTC").active(true).build());
         when(businesses.findByShortCode("test")).thenReturn(java.util.Optional.of(
                 Business.builder().id(1L).name("Test").shortCode("test").timezone("UTC").active(true).build()));
+        when(businesses.findById(1L)).thenReturn(java.util.Optional.of(
+                Business.builder().id(1L).name("Test").shortCode("test").timezone("UTC").active(true).build()));
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         InternalNotificationController controller = new InternalNotificationController(
                 props, telegram, sms, promoSigner, promoConfigService, groupMembershipRepository,
@@ -319,6 +321,38 @@ class InternalNotificationControllerTest {
     }
 
     @Test
+    @DisplayName("rebooking-promo/enroll: businessId (no shortCode) → resolves by numeric id, same as salonLandings's own BusinessContext sends")
+    void enrollWithBusinessIdUsesThatBusiness() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        SquareClient otherSquare = mock(SquareClient.class);
+        SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
+        BusinessRepository businesses = mock(BusinessRepository.class);
+        when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
+                .timezone("UTC").active(true).build());
+        when(businesses.findById(2L)).thenReturn(java.util.Optional.of(
+                Business.builder().id(2L).name("PMU").shortCode("pmu").timezone("UTC").active(true).build()));
+        when(squareClientProvider.forBusiness(2L)).thenReturn(otherSquare);
+        when(promoConfigService.get(2L, "REBOOK10"))
+                .thenReturn(java.util.Optional.of(new PromoConfigService.PromoTerms(1500, null, "pmugrp", true)));
+        InternalNotificationController controller = new InternalNotificationController(
+                props, telegram, sms, promoSigner, promoConfigService, groupMembershipRepository,
+                squareClientProvider, businesses);
+        MockMvc pmuMvc = MockMvcBuilders.standaloneSetup(controller).build();
+        when(promoSigner.verify("REBOOK10", 9999999999L, "sig123")).thenReturn(true);
+        String pmuBody = "{\"squareCustomerId\":\"cust1\",\"expEpochSeconds\":9999999999,"
+                + "\"signature\":\"sig123\",\"businessId\":2}";
+
+        pmuMvc.perform(post("/api/internal/rebooking-promo/enroll")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content(pmuBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enrolled").value(true));
+
+        verify(otherSquare).addCustomerToGroup("cust1", "pmugrp");
+        verify(businesses, org.mockito.Mockito.never()).findByShortCode(any());
+    }
+
+    @Test
     @DisplayName("rebooking-promo/enroll: unrecognized businessShortCode → unknown_business, never falls back to Business A")
     void enrollUnknownBusinessShortCodeIsRefused() throws Exception {
         when(props.getKey()).thenReturn("secret");
@@ -345,6 +379,20 @@ class InternalNotificationControllerTest {
                         .get("/api/internal/rebooking-promo/terms")
                         .header("X-Internal-Api-Key", "secret")
                         .param("promoCode", "REBOOK10").param("businessShortCode", "test"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.configured").value(true))
+                .andExpect(jsonPath("$.discountCents").value(1000));
+    }
+
+    @Test
+    @DisplayName("rebooking-promo/terms: businessId (no shortCode) → resolves by numeric id")
+    void termsWithBusinessIdResolvesByNumericId() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/internal/rebooking-promo/terms")
+                        .header("X-Internal-Api-Key", "secret")
+                        .param("promoCode", "REBOOK10").param("businessId", "1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.configured").value(true))
                 .andExpect(jsonPath("$.discountCents").value(1000));
