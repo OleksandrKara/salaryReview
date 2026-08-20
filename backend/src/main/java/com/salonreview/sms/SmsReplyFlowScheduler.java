@@ -66,8 +66,12 @@ public class SmsReplyFlowScheduler {
     private void sendOne(SmsReplyFlow flow, Instant now, Long businessId) {
         String name = com.salonreview.util.Names.capitalizeFirst(flow.getCustomerName());
         String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
-        String technician = technicianNameResolver.resolveForCustomer(businessId, flow.getSquareCustomerId(), now)
-                .orElse(null);
+        // Resolved once and reused for both the greeting's technician name and the persisted
+        // provider_id (V120, backs /owner/reviews) — same lookup, two uses.
+        var provider = technicianNameResolver.resolveProviderForCustomer(businessId, flow.getSquareCustomerId(), now);
+        flow.setProviderId(provider.map(com.salonreview.domain.Provider::getId).orElse(null));
+        String technician = provider.map(com.salonreview.domain.Provider::getDisplayName)
+                .map(com.salonreview.util.Names::firstNameOnly).orElse(null);
         boolean hasTechnician = technician != null && !technician.isBlank();
         Map<String, String> vars = new java.util.HashMap<>();
         vars.put("greeting", greeting);

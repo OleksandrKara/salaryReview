@@ -66,6 +66,7 @@ function linksFor(role: Role): NavSections {
             { href: '/admin/users', key: 'navUsers' },
             { href: '/admin/documents', key: 'navStaffDocuments' },
             { href: '/sops/admin', key: 'sopAdminTitle' },
+            { href: '/owner/reviews', key: 'navReviews' },
           ],
         },
         {

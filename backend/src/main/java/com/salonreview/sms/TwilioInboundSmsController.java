@@ -123,6 +123,13 @@ public class TwilioInboundSmsController {
                 .orElseGet(() -> messageLogService.mostRecentAutomationKey(businessId, from));
         SmsMessage logged = messageLogService.logInbound(businessId, from, body, automationKey);
         logged.setTwilioMessageSid(params.get("MessageSid"));
+        // Links this reply back to the flow it answered and records its parsed 1-5 rating (V120,
+        // backs /owner/reviews) — independent of the positive/negative branch decision below,
+        // which stays exactly as it already was (see CheckoutReviewRatingParser's own doc).
+        pending.ifPresent(flow -> {
+            logged.setReplyFlowId(flow.getId());
+            CheckoutReviewRatingParser.parse(body).ifPresent(logged::setRating);
+        });
         messageLogService.save(logged);
 
         // A STOP-style reply is a legally binding opt-out (TCPA/CTIA) — block the number right

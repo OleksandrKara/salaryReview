@@ -314,4 +314,17 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
             + "AND LOWER(m.body) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%')) "
             + "ORDER BY m.createdAt DESC")
     List<SmsMessage> searchByBodyContaining(@Param("businessId") Long businessId, @Param("q") String q, Pageable pageable);
+
+    /** Every reply to the checkout-review-request rating request, for one business — the
+     * {@code /owner/reviews} dashboard's full review list (see V120). Not filtered to rows with a
+     * {@link SmsMessage#getReplyFlowId()}/{@link SmsMessage#getRating()} set — a reply with
+     * neither (no digit in the text, or predating V120's backfill) is still a real review, just
+     * one with no attributable provider/rating. */
+    List<SmsMessage> findByBusinessIdAndAutomationKeyAndDirectionOrderByCreatedAtDesc(
+            Long businessId, String automationKey, String direction);
+
+    /** Rows V120's one-time startup backfill still needs to link back to the flow they replied to
+     * (and parse a rating from) — see {@code CheckoutReviewProviderRatingBackfillStartup}. */
+    List<SmsMessage> findByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNull(
+            Long businessId, String automationKey, String direction);
 }

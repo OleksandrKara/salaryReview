@@ -171,6 +171,72 @@ class TwilioInboundSmsControllerTest {
     }
 
     @Test
+    @DisplayName("reply to a pending flow → logged row links back to the flow and carries its parsed 1-5 rating (V120)")
+    void pendingFlowReplyIsLinkedWithParsedRating() throws Exception {
+        var p = params(PHONE, "2, not happy with the service");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        SmsReplyFlow pending = SmsReplyFlow.builder().id(42L).automationKey("checkout_review_request")
+                .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.of(pending));
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<SmsMessage> captor = ArgumentCaptor.forClass(SmsMessage.class);
+        verify(messageLogService, atLeastOnce()).save(captor.capture());
+        SmsMessage saved = captor.getAllValues().get(captor.getAllValues().size() - 1);
+        assertThat(saved.getReplyFlowId()).isEqualTo(42L);
+        assertThat(saved.getRating()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("reply to a pending flow with no digit at all → linked to the flow, rating left null")
+    void pendingFlowReplyWithNoDigitLeavesRatingNull() throws Exception {
+        var p = params(PHONE, "honestly not great");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        SmsReplyFlow pending = SmsReplyFlow.builder().id(43L).automationKey("checkout_review_request")
+                .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.of(pending));
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<SmsMessage> captor = ArgumentCaptor.forClass(SmsMessage.class);
+        verify(messageLogService, atLeastOnce()).save(captor.capture());
+        SmsMessage saved = captor.getAllValues().get(captor.getAllValues().size() - 1);
+        assertThat(saved.getReplyFlowId()).isEqualTo(43L);
+        assertThat(saved.getRating()).isNull();
+    }
+
+    @Test
+    @DisplayName("reply with no pending flow at all → not linked, no rating parsed")
+    void noPendingFlowReplyIsNotLinked() throws Exception {
+        var p = params(PHONE, "5 stars!");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.empty());
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<SmsMessage> captor = ArgumentCaptor.forClass(SmsMessage.class);
+        verify(messageLogService).save(captor.capture());
+        assertThat(captor.getValue().getReplyFlowId()).isNull();
+        assertThat(captor.getValue().getRating()).isNull();
+    }
+
+    @Test
     @DisplayName("\"To\" matches another business's Twilio number → resolves that business, not legacySmsBusiness()")
     void toFieldResolvesRealBusiness() throws Exception {
         Long otherBusinessId = 2L;

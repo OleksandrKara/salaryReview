@@ -51,6 +51,13 @@ public class SmsReplyFlow {
     @Column(name = "square_customer_id")
     private String squareCustomerId;
 
+    /** The {@link Provider} resolved for this flow's customer at send time (see
+     * {@code TechnicianNameResolver}), if any — best-effort, same as the technician-name greeting
+     * it's resolved alongside. Backs the {@code /owner/reviews} per-provider dashboard; {@code
+     * null} means either resolution failed/found nothing, or this row predates V120. */
+    @Column(name = "provider_id")
+    private Long providerId;
+
     @Column(name = "send_due_at", nullable = false)
     private Instant sendDueAt;
 

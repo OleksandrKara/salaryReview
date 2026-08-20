@@ -90,6 +90,20 @@ public class SmsMessage {
     @Column(name = "negative_feedback_at")
     private Instant negativeFeedbackAt;
 
+    /** The {@link SmsReplyFlow} this INBOUND row is a reply to, if it answered a {@code
+     * checkout_review_request} flow — {@code null} for every OUTBOUND row and for any INBOUND row
+     * that didn't match a pending flow. Backs the {@code /owner/reviews} dashboard's join back to
+     * {@link SmsReplyFlow#getProviderId()}. */
+    @Column(name = "reply_flow_id")
+    private Long replyFlowId;
+
+    /** The 1-5 star rating parsed from this INBOUND row's body, if it's a reply to a {@code
+     * checkout_review_request} flow and actually contains a standalone digit 1-5 — {@code null}
+     * for a reply with no digit at all (still a real review, just unrated) or any unrelated
+     * message. See {@code CheckoutReviewRatingParser}. */
+    @Column(name = "rating")
+    private Integer rating;
+
     @Column(name = "created_at", nullable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();

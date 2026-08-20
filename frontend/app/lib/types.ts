@@ -1082,6 +1082,37 @@ export interface RetentionSeries {
   points: RetentionSeriesPoint[];
 }
 
+// /owner/reviews — every checkout-review-request reply, grouped by provider (see backend V120 /
+// CheckoutReviewInsightsService). providerId is null on a review whose flow never resolved a
+// provider; rating is null on a reply with no digit in the text at all — both are still real
+// reviews, just unattributed/unrated, not dropped.
+export interface ReviewView {
+  messageId: number;
+  providerId: number | null;
+  providerName: string | null;
+  rating: number | null;
+  body: string;
+  phoneNumber: string;
+  customerName: string | null;
+  createdAt: string;
+}
+
+export interface ProviderRatingSummary {
+  providerId: number;
+  providerName: string;
+  averageRating: number | null;
+  ratedCount: number;
+  unratedCount: number;
+}
+
+export interface ReviewsOverview {
+  averageRating: number | null;
+  ratedCount: number;
+  totalCount: number;
+  byProvider: ProviderRatingSummary[];
+  reviews: ReviewView[];
+}
+
 // --- Owner overview dashboard (owner-only) ---
 
 export interface MonthSummary {
