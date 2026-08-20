@@ -844,11 +844,15 @@ public class SquareClient {
                 .body(CatalogBatchRetrieveResponse.class));
         Map<String, Long> versions = new HashMap<>();
         CatalogPricingRuleData existingPricingRule = null;
+        CatalogDiscountData existingDiscount = null;
         if (current != null && current.objects() != null) {
             for (CatalogObject obj : current.objects()) {
                 versions.put(obj.id(), obj.version());
                 if (obj.id().equals(pricingRuleCatalogId)) {
                     existingPricingRule = obj.pricingRuleData();
+                }
+                if (obj.id().equals(discountCatalogId)) {
+                    existingDiscount = obj.discountData();
                 }
             }
         }
@@ -858,8 +862,14 @@ public class SquareClient {
         if (existingPricingRule == null) {
             throw new IllegalStateException("Could not look up the existing pricing rule's own data for update");
         }
+        if (existingDiscount == null || existingDiscount.name() == null) {
+            throw new IllegalStateException("Could not look up the existing discount's own data for update");
+        }
 
+        // Same "replace, not merge" trap as pricing_rule_data below — Square 400s on an update
+        // that omits discount_data.name ("Attribute name required"), confirmed live.
         Map<String, Object> discountData = new LinkedHashMap<>();
+        discountData.put("name", existingDiscount.name());
         discountData.put("discount_type", "FIXED_AMOUNT");
         discountData.put("amount_money", Map.of("amount", discountCents, "currency", "USD"));
         Map<String, Object> discountObject = new LinkedHashMap<>();
@@ -876,6 +886,9 @@ public class SquareClient {
         // match_products_id/customer_group_ids_any would be just as real a bug, just a quieter
         // one — the rule would stop matching anything).
         Map<String, Object> pricingRuleData = new LinkedHashMap<>();
+        if (existingPricingRule.name() != null) {
+            pricingRuleData.put("name", existingPricingRule.name());
+        }
         pricingRuleData.put("discount_id", existingPricingRule.discountId());
         pricingRuleData.put("match_products_id", existingPricingRule.matchProductsId());
         pricingRuleData.put("customer_group_ids_any", existingPricingRule.customerGroupIdsAny());
@@ -1114,14 +1127,23 @@ public class SquareClient {
      * every field not re-sent (not just the one actually changing) is silently wiped. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record CatalogPricingRuleData(String discountId, String matchProductsId, List<String> customerGroupIdsAny) {}
+    public record CatalogPricingRuleData(String name, String discountId, String matchProductsId,
+                                         List<String> customerGroupIdsAny) {}
+
+    /** Same "must re-send every field on update, not just the one changing" reasoning as
+     * {@link CatalogPricingRuleData} — {@code name} specifically is Square-required and confirmed
+     * live to 400 ("Attribute name required") when omitted on an update. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record CatalogDiscountData(String name) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record CatalogObject(String type, String id, Long version,
                                 CatalogItemVariationData itemVariationData,
                                 CatalogItemData itemData,
-                                CatalogPricingRuleData pricingRuleData) {}
+                                CatalogPricingRuleData pricingRuleData,
+                                CatalogDiscountData discountData) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
