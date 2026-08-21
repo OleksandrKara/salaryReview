@@ -71,7 +71,7 @@ class RepeatCustomerWinbackSchedulerTest {
         // SmsMessageTemplateCatalog default wording, same as production with no owner customization.
         var overrideRepo = mock(com.salonreview.repo.SmsTemplateOverrideRepository.class);
         when(overrideRepo.findByBusinessIdAndTemplateKey(any(), any())).thenReturn(java.util.Optional.empty());
-        SmsMessageTemplateService templateService = new SmsMessageTemplateService(overrideRepo);
+        SmsMessageTemplateService templateService = new SmsMessageTemplateService(overrideRepo, mock(com.salonreview.repo.SmsMessageRepository.class));
         BusinessRepository businessRepository = mock(BusinessRepository.class);
         when(businessRepository.findById(BUSINESS_ID)).thenReturn(java.util.Optional.of(
                 Business.builder().id(BUSINESS_ID).name("AK.LUX.NAILS").build()));

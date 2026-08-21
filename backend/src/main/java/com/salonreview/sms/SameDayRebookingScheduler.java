@@ -204,7 +204,7 @@ public class SameDayRebookingScheduler {
                         "discountAmount", PromoConfigService.formatDollars(promoTerms.discountCents()), "link", shortLink)
                 : Map.of("urgencyClause", hasTechnician ? technician + "'s spots are filling up fast this time of year"
                         : "Spots are filling up fast this time of year", "link", shortLink);
-        String body = templateService.render(businessId, templateKey, vars);
+        String body = templateService.render(businessId, templateKey, send.getPhoneNumber(), vars);
 
         TwilioSmsConfig config = configService.get(businessId);
         if (!config.isConfigured()) {

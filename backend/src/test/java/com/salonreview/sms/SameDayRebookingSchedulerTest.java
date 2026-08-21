@@ -68,7 +68,7 @@ class SameDayRebookingSchedulerTest {
         // SmsMessageTemplateCatalog default wording, same as production with no owner customization.
         var overrideRepo = mock(com.salonreview.repo.SmsTemplateOverrideRepository.class);
         when(overrideRepo.findByBusinessIdAndTemplateKey(any(), any())).thenReturn(Optional.empty());
-        SmsMessageTemplateService templateService = new SmsMessageTemplateService(overrideRepo);
+        SmsMessageTemplateService templateService = new SmsMessageTemplateService(overrideRepo, mock(com.salonreview.repo.SmsMessageRepository.class));
         promoConfigService = mock(PromoConfigService.class);
         when(promoConfigService.get(BUSINESS_ID, PromoConfigService.REBOOK_PROMO_CODE))
                 .thenReturn(Optional.of(new PromoConfigService.PromoTerms(1000, null, "GROUP1", true)));

@@ -287,6 +287,14 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
     long countByBusinessIdAndAutomationKeyAndDirectionAndCreatedAtAfter(
             Long businessId, String automationKey, String direction, Instant since);
 
+    /** All-time successful-send count of one exact template to one phone number, for one business
+     * — used by {@code SmsMessageTemplateService} to deterministically rotate a multi-variant
+     * template's wording (count mod variant count) so the same regular customer sees a different
+     * body each time instead of an identical one every visit. {@code phoneNumber} must already be
+     * E.164-normalized. */
+    long countByBusinessIdAndPhoneNumberAndTemplateKeyAndDirectionAndStatus(
+            Long businessId, String phoneNumber, String templateKey, String direction, String status);
+
     /** Newest unread inbound rows first, for one business — the inbox view's default sort. */
     List<SmsMessage> findByBusinessIdAndDirectionAndReadAtIsNullOrderByCreatedAtDesc(Long businessId, String direction);
 

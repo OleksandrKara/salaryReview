@@ -178,6 +178,11 @@ export interface SmsTemplateView {
   variables: string[];
   body: string;
   customized: boolean;
+  // >1 means the in-code default rotates through this many differently-worded variants (a repeat
+  // customer sees a different one each time instead of an identical script) — see backend
+  // SmsMessageTemplateCatalog's own doc. Saving a custom body here replaces all of them with that
+  // one wording; `body` is just the first variant as a representative starting point to edit.
+  variantCount: number;
 }
 
 // --- Coupon discount terms (com.salonreview.sms.PromoConfigService / PromoSettingsController) ---

@@ -1,6 +1,7 @@
 package com.salonreview.sms;
 
 import com.salonreview.domain.SmsTemplateOverride;
+import com.salonreview.repo.SmsMessageRepository;
 import com.salonreview.repo.SmsTemplateOverrideRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -19,15 +20,19 @@ import static org.mockito.Mockito.*;
 class SmsMessageTemplateServiceTest {
 
     private static final Long BUSINESS_ID = 1L;
-    private static final String KEY = "lead_follow_up_nudge";
+    private static final String KEY = "lead_follow_up_nudge"; // single-variant key
+    private static final String MULTI_VARIANT_KEY = "checkout_review_negative";
+    private static final String PHONE = "+15551234567";
 
     private SmsTemplateOverrideRepository overrides;
+    private SmsMessageRepository messages;
     private SmsMessageTemplateService service;
 
     @BeforeEach
     void setUp() {
         overrides = mock(SmsTemplateOverrideRepository.class);
-        service = new SmsMessageTemplateService(overrides);
+        messages = mock(SmsMessageRepository.class);
+        service = new SmsMessageTemplateService(overrides, messages);
     }
 
     @Test
@@ -35,7 +40,7 @@ class SmsMessageTemplateServiceTest {
     void rendersDefaultWhenNoOverride() {
         when(overrides.findByBusinessIdAndTemplateKey(BUSINESS_ID, KEY)).thenReturn(Optional.empty());
 
-        String body = service.render(BUSINESS_ID, KEY,
+        String body = service.render(BUSINESS_ID, KEY, PHONE,
                 Map.of("greeting", "Hi Jane!", "sender", "Lucy", "businessName", "AK.LUX.NAILS"));
 
         assertThat(body).isEqualTo("Hi Jane! It's Lucy from AK.LUX.NAILS 💛 Do you need help with more openings "
@@ -49,7 +54,7 @@ class SmsMessageTemplateServiceTest {
                 Optional.of(SmsTemplateOverride.builder().businessId(BUSINESS_ID).templateKey(KEY)
                         .body("{{greeting}} custom text from {{sender}}").build()));
 
-        String body = service.render(BUSINESS_ID, KEY, Map.of("greeting", "Hi Jane!", "sender", "Lucy"));
+        String body = service.render(BUSINESS_ID, KEY, PHONE, Map.of("greeting", "Hi Jane!", "sender", "Lucy"));
 
         assertThat(body).isEqualTo("Hi Jane! custom text from Lucy");
     }
@@ -57,8 +62,43 @@ class SmsMessageTemplateServiceTest {
     @Test
     @DisplayName("unknown template key throws — a programmer error, not a data condition")
     void unknownKeyThrows() {
-        assertThatThrownBy(() -> service.render(BUSINESS_ID, "does_not_exist", Map.of()))
+        assertThatThrownBy(() -> service.render(BUSINESS_ID, "does_not_exist", PHONE, Map.of()))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("a multi-variant key with no override cycles through every variant by prior send count, not the same one every time")
+    void multiVariantKeyRotatesByPriorSendCount() {
+        when(overrides.findByBusinessIdAndTemplateKey(BUSINESS_ID, MULTI_VARIANT_KEY)).thenReturn(Optional.empty());
+        int variantCount = SmsMessageTemplateCatalog.get(MULTI_VARIANT_KEY).defaultBodies().size();
+        assertThat(variantCount).isGreaterThan(1);
+
+        List<String> renderedBodies = new java.util.ArrayList<>();
+        for (long sentBefore = 0; sentBefore < variantCount; sentBefore++) {
+            when(messages.countByBusinessIdAndPhoneNumberAndTemplateKeyAndDirectionAndStatus(
+                    BUSINESS_ID, PHONE, MULTI_VARIANT_KEY, "OUTBOUND", "SENT")).thenReturn(sentBefore);
+            renderedBodies.add(service.render(BUSINESS_ID, MULTI_VARIANT_KEY, PHONE, Map.of("sender", "Lucy")));
+        }
+
+        assertThat(renderedBodies).doesNotHaveDuplicates();
+        // wraps back to the first variant once every variant has been used once
+        when(messages.countByBusinessIdAndPhoneNumberAndTemplateKeyAndDirectionAndStatus(
+                BUSINESS_ID, PHONE, MULTI_VARIANT_KEY, "OUTBOUND", "SENT")).thenReturn((long) variantCount);
+        String wrapped = service.render(BUSINESS_ID, MULTI_VARIANT_KEY, PHONE, Map.of("sender", "Lucy"));
+        assertThat(wrapped).isEqualTo(renderedBodies.get(0));
+    }
+
+    @Test
+    @DisplayName("an override on a multi-variant key wins for every send — no rotation once customized")
+    void overrideDisablesRotation() {
+        when(overrides.findByBusinessIdAndTemplateKey(BUSINESS_ID, MULTI_VARIANT_KEY)).thenReturn(
+                Optional.of(SmsTemplateOverride.builder().businessId(BUSINESS_ID).templateKey(MULTI_VARIANT_KEY)
+                        .body("custom -{{sender}}").build()));
+
+        String body = service.render(BUSINESS_ID, MULTI_VARIANT_KEY, PHONE, Map.of("sender", "Lucy"));
+
+        assertThat(body).isEqualTo("custom -Lucy");
+        verifyNoInteractions(messages);
     }
 
     @Test
