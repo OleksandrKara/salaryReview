@@ -51,7 +51,7 @@ class SmsAutomationServiceTest {
     void checkoutReviewSentCountExcludesBranchReply() {
         when(messageRepository.countByBusinessIdAndAutomationKeyAndTemplateKeyInAndDirectionAndStatusAndCreatedAtAfter(
                 eq(BUSINESS_ID), eq("checkout_review_request"),
-                eq(List.of("checkout_rating_request_with_technician", "checkout_rating_request_no_technician")),
+                eq(List.of("checkout_rating_request", "checkout_rating_request_with_technician", "checkout_rating_request_no_technician")),
                 eq("OUTBOUND"), eq("SENT"), any(Instant.class)))
                 .thenReturn(10L);
 

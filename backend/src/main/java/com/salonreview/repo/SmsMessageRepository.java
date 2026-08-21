@@ -348,7 +348,18 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
             Long businessId, String automationKey, String direction);
 
     /** Rows V120's one-time startup backfill still needs to link back to the flow they replied to
-     * (and parse a rating from) — see {@code CheckoutReviewProviderRatingBackfillStartup}. */
-    List<SmsMessage> findByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNull(
+     * (and parse a rating from) — see {@code CheckoutReviewProviderRatingBackfillStartup}. Ordered
+     * oldest-first so, when several unlinked messages could plausibly match the same flow (a
+     * genuine reply followed by conversational follow-ups), the earliest one is the one the
+     * backfill considers for that flow — see that class's own "claim" doc for why. */
+    List<SmsMessage> findByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNullOrderByCreatedAtAsc(
             Long businessId, String automationKey, String direction);
+
+    /** Every {@code reply_flow_id} already in use for this business/automation — the backfill's
+     * "claimed" set, so it never links a second message to a flow that already has one (see
+     * {@code CheckoutReviewProviderRatingBackfillStartup}). */
+    @Query("SELECT DISTINCT m.replyFlowId FROM SmsMessage m WHERE m.businessId = :businessId "
+            + "AND m.automationKey = :automationKey AND m.direction = 'INBOUND' AND m.replyFlowId IS NOT NULL")
+    List<Long> findDistinctReplyFlowIdsByBusinessIdAndAutomationKey(
+            @Param("businessId") Long businessId, @Param("automationKey") String automationKey);
 }
