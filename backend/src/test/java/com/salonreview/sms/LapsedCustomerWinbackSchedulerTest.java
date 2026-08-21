@@ -25,6 +25,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -71,7 +72,7 @@ class LapsedCustomerWinbackSchedulerTest {
         // Real instance, mocked override repo (no overrides) — exercises the actual
         // SmsMessageTemplateCatalog default wording, same as production with no owner customization.
         var overrideRepo = mock(com.salonreview.repo.SmsTemplateOverrideRepository.class);
-        when(overrideRepo.findByBusinessIdAndTemplateKey(any(), any())).thenReturn(Optional.empty());
+        when(overrideRepo.findByBusinessIdAndTemplateKeyAndVariantIndex(any(), any(), anyInt())).thenReturn(Optional.empty());
         SmsMessageTemplateService templateService = new SmsMessageTemplateService(overrideRepo, mock(com.salonreview.repo.SmsMessageRepository.class));
         BusinessRepository businessRepository = mock(BusinessRepository.class);
         when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(

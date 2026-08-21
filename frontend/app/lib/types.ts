@@ -171,18 +171,23 @@ export interface TwilioSmsSettingsUpdateRequest {
 // --- SMS message templates (com.salonreview.sms.SmsMessageTemplateCatalog /
 // com.salonreview.web.SmsTemplateSettingsController) — the owner-editable wording behind every
 // automated SMS. automationKey is null for a template not tied to any owner-toggleable automation.
+// One rotating-wording slot of a template — a key with variants.length > 1 rotates through all of
+// them automatically (a repeat customer sees a different one each time instead of an identical
+// script every visit) so a repeat customer doesn't see the same text every time — see backend
+// SmsMessageTemplateCatalog's own doc. Editing one slot only overrides that slot; the rest keep
+// rotating on their own in-code defaults.
+export interface SmsTemplateVariantView {
+  index: number;
+  body: string;
+  customized: boolean;
+}
+
 export interface SmsTemplateView {
   key: string;
   automationKey: string | null;
   label: string;
   variables: string[];
-  body: string;
-  customized: boolean;
-  // >1 means the in-code default rotates through this many differently-worded variants (a repeat
-  // customer sees a different one each time instead of an identical script) — see backend
-  // SmsMessageTemplateCatalog's own doc. Saving a custom body here replaces all of them with that
-  // one wording; `body` is just the first variant as a representative starting point to edit.
-  variantCount: number;
+  variants: SmsTemplateVariantView[];
 }
 
 // --- Coupon discount terms (com.salonreview.sms.PromoConfigService / PromoSettingsController) ---
