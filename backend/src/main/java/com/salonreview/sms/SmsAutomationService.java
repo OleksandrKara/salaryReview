@@ -77,9 +77,18 @@ public class SmsAutomationService {
                                 businessId, meta.key(), "OUTBOUND", "SENT", since);
                     }
 
-                    long replies = meta.tracksReplies()
-                            ? messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndCreatedAtAfter(businessId, meta.key(), "INBOUND", since)
-                            : 0;
+                    // A flow-scoped count (see that query's own doc) for the one automation that
+                    // can spawn an open-ended back-and-forth under its own automationKey —
+                    // signaled by the same non-empty primaryTemplateKeys already used above to
+                    // separate its "sent" count from a branch reply that isn't a new firing.
+                    // Every other tracksReplies automation only ever sends one text expecting at
+                    // most one reply, so the plain inbound count is already correct for it.
+                    long replies = !meta.tracksReplies() ? 0
+                            : !meta.primaryTemplateKeys().isEmpty()
+                                    ? messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNotNullAndCreatedAtAfter(
+                                            businessId, meta.key(), "INBOUND", since)
+                                    : messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndCreatedAtAfter(
+                                            businessId, meta.key(), "INBOUND", since);
 
                     // Conversion (did the customer actually come back for a visit) is computed from
                     // repeat_customer_winback_send + provider_visit, not sms_message — a different

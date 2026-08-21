@@ -21,6 +21,12 @@ public final class SmsAutomationRegistry {
      * (see {@code SmsMessageTemplateCatalog}) — either counts as one firing. Empty for every other
      * automation, which only ever logs one template per key, so no filtering is needed.
      *
+     * <p>{@code SmsAutomationService#list()} also reuses "non-empty" here as the signal for
+     * whether the reply count needs to be flow-scoped rather than a plain inbound-message count —
+     * the same "more than one template/interaction under one automationKey" property that makes
+     * the sent count need filtering is what lets a reply thread balloon past the actual number of
+     * rating requests sent (see that query's own doc).
+     *
      * <p>{@code tracksClicks}/{@code tracksReplies} say whether a click-through rate / reply rate
      * is even a meaningful thing to show for this automation — see
      * {@code SmsAutomationService#list()}, which only queries those counts when true rather than
