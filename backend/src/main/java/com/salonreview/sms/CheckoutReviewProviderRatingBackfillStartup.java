@@ -32,7 +32,8 @@ import java.util.Optional;
  * {@code asOf} (it's created within {@link
  * com.salonreview.square.webhook.CheckoutReviewTriggerService#SEND_DELAY} of the real checkout, so
  * this reproduces what the live lookup would have seen); (2) link each old, unlinked reply to the
- * newest flow that already existed when it arrived, and parse its rating — pure DB matching, no
+ * newest flow that already existed when it arrived and doesn't already have a reply linked (see
+ * {@link #backfillMessageLinks}'s own "claim" doc), and parse its rating — pure DB matching, no
  * Square call needed.
  */
 @Component
@@ -77,7 +78,7 @@ public class CheckoutReviewProviderRatingBackfillStartup {
         t.start();
     }
 
-    private int backfillFlowProviders(Long businessId) {
+    int backfillFlowProviders(Long businessId) {
         int resolved = 0;
         for (SmsReplyFlow flow : flows.findByBusinessIdAndAutomationKeyAndProviderIdIsNullAndSquareCustomerIdIsNotNull(
                 businessId, AUTOMATION_KEY)) {
@@ -96,18 +97,30 @@ public class CheckoutReviewProviderRatingBackfillStartup {
         return resolved;
     }
 
-    private int backfillMessageLinks(Long businessId) {
+    /** "Claim" semantics: a flow gets linked from at most one message, ever. Without this, every
+     * message in a negative-rating back-and-forth (the customer's actual reply, then any
+     * follow-up explaining more) matched the same "newest flow that existed before it" and all
+     * got linked to that one flow — inflating {@code checkout_review_request}'s reply-rate stat
+     * past 100% (found live 2026-08-21: 857%, "60/7") and, on {@code /owner/reviews}, showing a
+     * single visit's conversation as several separate reviews. Processes oldest-unlinked-first
+     * (see the repository query's own doc) and tracks claimed flow ids both from rows already
+     * linked (a prior backfill run, or live linking) and from this same pass, so a message whose
+     * matching flow is already spoken for is left unlinked rather than double-claiming it. */
+    int backfillMessageLinks(Long businessId) {
         int linked = 0;
-        for (SmsMessage message : messages.findByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNull(
+        java.util.Set<Long> claimedFlowIds = new java.util.HashSet<>(
+                messages.findDistinctReplyFlowIdsByBusinessIdAndAutomationKey(businessId, AUTOMATION_KEY));
+        for (SmsMessage message : messages.findByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNullOrderByCreatedAtAsc(
                 businessId, AUTOMATION_KEY, "INBOUND")) {
             Optional<SmsReplyFlow> flow = flows.findFirstByBusinessIdAndPhoneNumberAndAutomationKeyAndCreatedAtBeforeOrderByCreatedAtDesc(
                     businessId, message.getPhoneNumber(), AUTOMATION_KEY, message.getCreatedAt());
-            if (flow.isEmpty()) {
-                continue; // no flow existed yet when this reply arrived — nothing to link to
+            if (flow.isEmpty() || claimedFlowIds.contains(flow.get().getId())) {
+                continue; // no flow existed yet, or it already has a reply — this is a follow-up, not the answer
             }
             message.setReplyFlowId(flow.get().getId());
             CheckoutReviewRatingParser.parse(message.getBody()).ifPresent(message::setRating);
             messages.save(message);
+            claimedFlowIds.add(flow.get().getId());
             linked++;
         }
         return linked;

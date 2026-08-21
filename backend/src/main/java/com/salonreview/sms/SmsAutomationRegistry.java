@@ -55,7 +55,15 @@ public final class SmsAutomationRegistry {
                     "Post-checkout satisfaction request",
                     "Every customer who completes an in-salon checkout at the register — 2 minutes later, "
                             + "asked to rate their visit 1–5, then routed to a Google review or a private feedback form",
-                    List.of("checkout_rating_request_with_technician", "checkout_rating_request_no_technician"),
+                    // "checkout_rating_request" (no suffix) is the pre-2026-08-20 template key,
+                    // from before the with-technician/no-technician split — still real, recent
+                    // history inside any 30-day window until 2026-09-20, after which no row will
+                    // carry it anymore and this entry becomes safe to delete. Found live
+                    // 2026-08-21: omitting it undercounted "sent" by 117 messages for business 1
+                    // alone, which is what actually produced the 857% ("60/7") reply-rate bug —
+                    // not just the reply-count overcounting fixed alongside this.
+                    List.of("checkout_rating_request", "checkout_rating_request_with_technician",
+                            "checkout_rating_request_no_technician"),
                     true, true, false
             ),
             "lead_follow_up", new AutomationMeta(
