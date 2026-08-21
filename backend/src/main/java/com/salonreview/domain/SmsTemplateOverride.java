@@ -6,11 +6,12 @@ import lombok.*;
 import java.time.Instant;
 
 /**
- * An owner's custom body for one SMS template, business-scoped. Absence of a row for a given
- * (business_id, template_key) is the common case — it means "use the in-code default" — see
- * {@code com.salonreview.sms.SmsMessageTemplateCatalog}. Only the raw text lives here;
- * {@code SmsMessageClass} (transactional vs. marketing) stays fixed in code per template_key,
- * never owner-editable — see that catalog's own doc for why.
+ * An owner's custom body for one variant slot of one SMS template, business-scoped. Absence of a
+ * row for a given (business_id, template_key, variant_index) is the common case — it means "use
+ * the in-code default for that slot" — see {@code com.salonreview.sms.SmsMessageTemplateCatalog}.
+ * A single-variant template key only ever has a row at {@link #variantIndex} 0. Only the raw text
+ * lives here; {@code SmsMessageClass} (transactional vs. marketing) stays fixed in code per
+ * template_key, never owner-editable — see that catalog's own doc for why.
  */
 @Entity
 @Table(name = "sms_template_override")
@@ -27,6 +28,11 @@ public class SmsTemplateOverride {
 
     @Column(name = "template_key", nullable = false)
     private String templateKey;
+
+    /** Which of the catalog key's {@code defaultBodies} this overrides — see V122. */
+    @Column(name = "variant_index", nullable = false)
+    @Builder.Default
+    private int variantIndex = 0;
 
     @Column(name = "body", nullable = false)
     private String body;

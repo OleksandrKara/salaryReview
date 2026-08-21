@@ -37,6 +37,7 @@ import type {
   TwilioSmsSettingsDto,
   TwilioSmsSettingsUpdateRequest,
   SmsTemplateView,
+  SmsTemplateVariantView,
   PromoTermsDto,
   SmsAutomationSummary,
   SmsMessageDto,
@@ -251,14 +252,18 @@ export const api = {
   updateTwilioSmsSettings: (body: TwilioSmsSettingsUpdateRequest) =>
     proxyJson<TwilioSmsSettingsDto>(`/api/owner/settings/sms`, 'PUT', body),
 
-  // SMS message template wording (owner) — see SmsMessageTemplateCatalog.
+  // SMS message template wording (owner), per rotating-variant slot — see SmsMessageTemplateCatalog.
   listSmsTemplates: () => proxyGet<SmsTemplateView[]>(`/api/owner/settings/sms/templates`),
 
-  updateSmsTemplate: (key: string, body: string) =>
-    proxyJson<SmsTemplateView>(`/api/owner/settings/sms/templates/${encodeURIComponent(key)}`, 'PUT', { body }),
+  updateSmsTemplateVariant: (key: string, index: number, body: string) =>
+    proxyJson<SmsTemplateVariantView>(
+      `/api/owner/settings/sms/templates/${encodeURIComponent(key)}/variants/${index}`, 'PUT', { body },
+    ),
 
-  resetSmsTemplate: (key: string) =>
-    proxyJson<SmsTemplateView>(`/api/owner/settings/sms/templates/${encodeURIComponent(key)}/reset`, 'POST', {}),
+  resetSmsTemplateVariant: (key: string, index: number) =>
+    proxyJson<SmsTemplateVariantView>(
+      `/api/owner/settings/sms/templates/${encodeURIComponent(key)}/variants/${index}/reset`, 'POST', {},
+    ),
 
   // Coupon discount amount/minimum-spend (owner) — see PromoConfigService. First save for a
   // business with no Square objects yet creates them; every save after that updates them in place.

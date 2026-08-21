@@ -8,9 +8,10 @@ import java.util.Optional;
 
 public interface SmsTemplateOverrideRepository extends JpaRepository<SmsTemplateOverride, Long> {
 
-    Optional<SmsTemplateOverride> findByBusinessIdAndTemplateKey(Long businessId, String templateKey);
+    Optional<SmsTemplateOverride> findByBusinessIdAndTemplateKeyAndVariantIndex(
+            Long businessId, String templateKey, int variantIndex);
 
     List<SmsTemplateOverride> findAllByBusinessId(Long businessId);
 
-    void deleteByBusinessIdAndTemplateKey(Long businessId, String templateKey);
+    void deleteByBusinessIdAndTemplateKeyAndVariantIndex(Long businessId, String templateKey, int variantIndex);
 }

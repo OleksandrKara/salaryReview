@@ -16,11 +16,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Renders an SMS body from {@link SmsMessageTemplateCatalog}: an owner's {@link
- * SmsTemplateOverride} if one exists for that (business, key), otherwise one of the in-code
- * default variants. Every automation/scheduler in this package should call {@link #render}
- * instead of hand-building its own body string — see each catalog entry's own doc for what
- * variables it expects.
+ * Renders an SMS body from {@link SmsMessageTemplateCatalog}: for a multi-variant key, one of its
+ * default variants (see that class's own doc on rotation), with an owner's per-variant {@link
+ * SmsTemplateOverride} substituted in wherever one exists for that (business, key, variant)
+ * slot — a single-variant key just always resolves variant 0. Every automation/scheduler in this
+ * package should call {@link #render} instead of hand-building its own body string — see each
+ * catalog entry's own doc for what variables it expects.
  */
 @Service
 public class SmsMessageTemplateService {
@@ -43,11 +44,13 @@ public class SmsMessageTemplateService {
         return SmsMessageTemplateCatalog.get(templateKey);
     }
 
-    /** {@code phoneNumber} only matters when the catalog entry has more than one default variant
-     * (see its own doc) and the business hasn't overridden it — picked deterministically by how
-     * many times this exact (business, phone, template) combination has already sent successfully,
-     * so the same regular customer cycles through every variant in order rather than the same one
-     * repeating, or a random pick occasionally repeating back-to-back by chance.
+    /** {@code phoneNumber} picks which variant slot this send rotates to when the catalog entry
+     * has more than one default variant (see that class's own doc) — deterministic by how many
+     * times this exact (business, phone, template) combination has already sent successfully, so
+     * the same regular customer cycles through every variant in order rather than the same one
+     * repeating, or a random pick occasionally repeating back-to-back by chance. Whichever slot
+     * that lands on, an owner's override for that specific slot (if any) wins over the catalog
+     * default for it — other slots keep rotating on their own catalog defaults independently.
      *
      * @throws IllegalArgumentException {@code templateKey} isn't registered in the catalog — a
      * programmer error, not a data condition. */
@@ -56,66 +59,81 @@ public class SmsMessageTemplateService {
         if (def == null) {
             throw new IllegalArgumentException("Unknown SMS template key: " + templateKey);
         }
-        String body = overrides.findByBusinessIdAndTemplateKey(businessId, templateKey)
+        int variantIndex = pickVariantIndex(def, businessId, phoneNumber);
+        String body = overrides.findByBusinessIdAndTemplateKeyAndVariantIndex(businessId, templateKey, variantIndex)
                 .map(SmsTemplateOverride::getBody)
-                .orElseGet(() -> pickVariant(def, businessId, phoneNumber));
+                .orElseGet(() -> def.defaultBodies().get(variantIndex));
         return substitute(body, variables);
     }
 
-    private String pickVariant(TemplateDefault def, Long businessId, String phoneNumber) {
-        List<String> variants = def.defaultBodies();
-        if (variants.size() == 1) {
-            return variants.get(0);
+    private int pickVariantIndex(TemplateDefault def, Long businessId, String phoneNumber) {
+        int variantCount = def.defaultBodies().size();
+        if (variantCount == 1) {
+            return 0;
         }
         long sentBefore = messages.countByBusinessIdAndPhoneNumberAndTemplateKeyAndDirectionAndStatus(
                 businessId, PhoneNumbers.normalize(phoneNumber), def.key(), "OUTBOUND", "SENT");
-        return variants.get((int) (sentBefore % variants.size()));
+        return (int) (sentBefore % variantCount);
     }
 
-    public record TemplateView(String key, String automationKey, String label, List<String> variables,
-                                String body, boolean customized, int variantCount) {}
+    public record VariantView(int index, String body, boolean customized) {}
 
-    /** Every catalog entry for this business, its current effective body (override or the first
-     * default variant), whether it's actually customized, and how many variants it rotates
-     * through — for the owner-facing template editor, grouped by automation on the frontend. */
+    public record TemplateView(String key, String automationKey, String label, List<String> variables,
+                                List<VariantView> variants) {}
+
+    /** Every catalog entry for this business, every variant slot it has with its current
+     * effective body (override or default) and whether that slot is customized — for the
+     * owner-facing template editor, grouped by automation on the frontend. */
     public List<TemplateView> list(Long businessId) {
-        Map<String, String> overrideBodies = overrides.findAllByBusinessId(businessId).stream()
-                .collect(java.util.stream.Collectors.toMap(SmsTemplateOverride::getTemplateKey, SmsTemplateOverride::getBody));
+        Map<String, SmsTemplateOverride> overrideBySlot = overrides.findAllByBusinessId(businessId).stream()
+                .collect(java.util.stream.Collectors.toMap(o -> o.getTemplateKey() + "#" + o.getVariantIndex(), o -> o));
         return SmsMessageTemplateCatalog.all().values().stream()
                 .map(def -> new TemplateView(def.key(), def.automationKey(), def.label(), def.variables(),
-                        overrideBodies.getOrDefault(def.key(), def.defaultBody()),
-                        overrideBodies.containsKey(def.key()), def.defaultBodies().size()))
+                        variantViews(def, overrideBySlot)))
                 .sorted((a, b) -> a.key().compareTo(b.key()))
                 .toList();
     }
 
-    @Transactional
-    public TemplateView save(Long businessId, String templateKey, String body, String updatedBy) {
-        TemplateDefault def = SmsMessageTemplateCatalog.get(templateKey);
-        if (def == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown SMS template key: " + templateKey);
+    private static List<VariantView> variantViews(TemplateDefault def, Map<String, SmsTemplateOverride> overrideBySlot) {
+        List<VariantView> views = new java.util.ArrayList<>();
+        for (int i = 0; i < def.defaultBodies().size(); i++) {
+            SmsTemplateOverride override = overrideBySlot.get(def.key() + "#" + i);
+            views.add(new VariantView(i, override != null ? override.getBody() : def.defaultBodies().get(i), override != null));
         }
-        if (body == null || body.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Template body can't be blank");
-        }
-        SmsTemplateOverride override = overrides.findByBusinessIdAndTemplateKey(businessId, templateKey)
-                .orElseGet(() -> SmsTemplateOverride.builder().businessId(businessId).templateKey(templateKey).build());
-        override.setBody(body.trim());
-        override.setUpdatedBy(updatedBy);
-        overrides.save(override);
-        return new TemplateView(def.key(), def.automationKey(), def.label(), def.variables(), override.getBody(),
-                true, def.defaultBodies().size());
+        return views;
     }
 
     @Transactional
-    public TemplateView resetToDefault(Long businessId, String templateKey) {
+    public VariantView save(Long businessId, String templateKey, int variantIndex, String body, String updatedBy) {
+        TemplateDefault def = requireVariantIndex(templateKey, variantIndex);
+        if (body == null || body.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Template body can't be blank");
+        }
+        SmsTemplateOverride override = overrides.findByBusinessIdAndTemplateKeyAndVariantIndex(businessId, templateKey, variantIndex)
+                .orElseGet(() -> SmsTemplateOverride.builder().businessId(businessId).templateKey(templateKey)
+                        .variantIndex(variantIndex).build());
+        override.setBody(body.trim());
+        override.setUpdatedBy(updatedBy);
+        overrides.save(override);
+        return new VariantView(variantIndex, override.getBody(), true);
+    }
+
+    @Transactional
+    public VariantView resetToDefault(Long businessId, String templateKey, int variantIndex) {
+        TemplateDefault def = requireVariantIndex(templateKey, variantIndex);
+        overrides.deleteByBusinessIdAndTemplateKeyAndVariantIndex(businessId, templateKey, variantIndex);
+        return new VariantView(variantIndex, def.defaultBodies().get(variantIndex), false);
+    }
+
+    private static TemplateDefault requireVariantIndex(String templateKey, int variantIndex) {
         TemplateDefault def = SmsMessageTemplateCatalog.get(templateKey);
         if (def == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown SMS template key: " + templateKey);
         }
-        overrides.deleteByBusinessIdAndTemplateKey(businessId, templateKey);
-        return new TemplateView(def.key(), def.automationKey(), def.label(), def.variables(), def.defaultBody(),
-                false, def.defaultBodies().size());
+        if (variantIndex < 0 || variantIndex >= def.defaultBodies().size()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No such variant index for " + templateKey);
+        }
+        return def;
     }
 
     private static String substitute(String template, Map<String, String> variables) {
