@@ -282,9 +282,25 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
     long countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndClickedAtIsNotNullAndCreatedAtAfter(
             Long businessId, String automationKey, String direction, String status, Instant since);
 
-    /** 30-day inbound-reply count for an automation, for one business — only meaningful for
-     * automations that open an {@code SmsReplyFlow}. */
+    /** 30-day inbound count for an automation, for one business — every inbound message tagged
+     * with that automationKey, regardless of what it's actually answering. Correct for an
+     * automation that only ever sends one text and expects at most one reply to it (e.g. {@code
+     * repeat_customer_winback}); overcounts for {@code checkout_review_request}, where a single
+     * rating request can spawn an open-ended back-and-forth (the negative-branch reply invites
+     * the customer to keep explaining what happened) that all lands under this same automationKey
+     * — see {@link #countByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNotNullAndCreatedAtAfter}
+     * for the query that automation actually needs. */
     long countByBusinessIdAndAutomationKeyAndDirectionAndCreatedAtAfter(
+            Long businessId, String automationKey, String direction, Instant since);
+
+    /** 30-day count of inbound messages that actually answered a pending {@code SmsReplyFlow} —
+     * one per flow, since a flow leaves {@code AWAITING_REPLY} (and stops matching new inbound
+     * messages) the instant its first reply arrives (see {@code TwilioInboundSmsController}). Used
+     * for {@code checkout_review_request}'s reply rate instead of the plain inbound count above:
+     * found live 2026-08-21, a reply rate showing 857% ("60/7") — the plain count also swept up
+     * every follow-up message in a negative-rating back-and-forth conversation, not just the
+     * customer's actual answer to the rating request. */
+    long countByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNotNullAndCreatedAtAfter(
             Long businessId, String automationKey, String direction, Instant since);
 
     /** All-time successful-send count of one exact template to one phone number, for one business

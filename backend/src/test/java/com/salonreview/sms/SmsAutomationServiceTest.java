@@ -67,7 +67,7 @@ class SmsAutomationServiceTest {
                 eq(BUSINESS_ID), eq("checkout_review_request"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(8L);
         when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndClickedAtIsNotNullAndCreatedAtAfter(
                 eq(BUSINESS_ID), eq("checkout_review_request"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(5L);
-        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndCreatedAtAfter(
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNotNullAndCreatedAtAfter(
                 eq(BUSINESS_ID), eq("checkout_review_request"), eq("INBOUND"), any(Instant.class))).thenReturn(8L);
 
         var summary = find("checkout_review_request");
@@ -77,6 +77,31 @@ class SmsAutomationServiceTest {
         assertThat(summary.clickedLast30Days()).isEqualTo(5);
         assertThat(summary.tracksReplies()).isTrue();
         assertThat(summary.replyLast30Days()).isEqualTo(8);
+    }
+
+    @Test
+    @DisplayName("2026-08-21 live incident: checkout_review_request's reply count is flow-scoped, "
+            + "not a raw inbound count — a real business saw 857% (\"60/7\") because a negative-rating "
+            + "back-and-forth conversation kept adding inbound messages under the same automationKey "
+            + "well past the number of rating requests actually sent")
+    void checkoutReviewReplyCountIsFlowScopedNotRawInboundCount() {
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndTemplateKeyInAndDirectionAndStatusAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("checkout_review_request"), any(), eq("OUTBOUND"), eq("SENT"), any(Instant.class)))
+                .thenReturn(7L);
+        // The bug: 60 raw inbound messages (a back-and-forth conversation) vs. only 7 actual rating
+        // requests sent — the fix must not use this raw count for checkout_review_request at all.
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("checkout_review_request"), eq("INBOUND"), any(Instant.class))).thenReturn(60L);
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNotNullAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("checkout_review_request"), eq("INBOUND"), any(Instant.class))).thenReturn(6L);
+
+        var summary = find("checkout_review_request");
+
+        assertThat(summary.sentLast30Days()).isEqualTo(7);
+        assertThat(summary.replyLast30Days()).isEqualTo(6);
+        org.mockito.Mockito.verify(messageRepository, org.mockito.Mockito.never())
+                .countByBusinessIdAndAutomationKeyAndDirectionAndCreatedAtAfter(
+                        eq(BUSINESS_ID), eq("checkout_review_request"), anyString(), any(Instant.class));
     }
 
     @Test
