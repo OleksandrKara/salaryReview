@@ -83,41 +83,63 @@ function StatusPill({ message }: { message: SmsMessageDto }) {
   );
 }
 
-export default function SmsActivityLog({ initialActivity }: { initialActivity: SmsMessageDto[] }) {
-  const [messages, setMessages] = useState(initialActivity);
+// Collapsed by default — nothing is fetched at all until the owner actually expands this
+// section. The log can run to 100 real message rows/bodies, and this page already loads
+// automations, every template variant, and coupon terms up front; shipping the activity log too
+// on every single page load was both unnecessary payload and (owner feedback, same as the
+// message-wording section above) "too many messages" clutter on first paint.
+export default function SmsActivityLog() {
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState<SmsMessageDto[] | null>(null);
   const [phoneQuery, setPhoneQuery] = useState('');
   const [direction, setDirection] = useState<SmsMessageDirection | ''>('');
   const [automationKey, setAutomationKey] = useState('');
   const [loading, setLoading] = useState(false);
   const mounted = useRef(false);
 
+  async function fetchMessages() {
+    setLoading(true);
+    try {
+      const data = await api.listSmsActivity({
+        phoneNumber: phoneQuery || undefined,
+        direction: direction || undefined,
+        automationKey: automationKey || undefined,
+        limit: 100,
+      });
+      setMessages(data);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function toggleOpen() {
+    setOpen((prev) => {
+      const next = !prev;
+      if (next && messages === null) {
+        void fetchMessages();
+      }
+      return next;
+    });
+  }
+
   // Debounced re-fetch on any filter change — phone search included, so typing doesn't fire a
-  // request per keystroke. Skips the very first run since initialActivity (server-fetched with no
-  // filters) already covers the unfiltered case.
+  // request per keystroke. Only runs once the section is actually open and has fetched at least
+  // once (the toggle above handles that very first fetch itself).
   useEffect(() => {
     if (!mounted.current) {
       mounted.current = true;
       return;
     }
-    const handle = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const data = await api.listSmsActivity({
-          phoneNumber: phoneQuery || undefined,
-          direction: direction || undefined,
-          automationKey: automationKey || undefined,
-          limit: 100,
-        });
-        setMessages(data);
-      } finally {
-        setLoading(false);
-      }
-    }, 300);
+    if (!open || messages === null) {
+      return;
+    }
+    const handle = setTimeout(() => void fetchMessages(), 300);
     return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phoneQuery, direction, automationKey]);
 
   async function markRead(id: number) {
-    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, readAt: new Date().toISOString() } : m)));
+    setMessages((prev) => (prev ? prev.map((m) => (m.id === id ? { ...m, readAt: new Date().toISOString() } : m)) : prev));
     try {
       await api.markSmsMessageRead(id);
     } catch {
@@ -128,6 +150,33 @@ export default function SmsActivityLog({ initialActivity }: { initialActivity: S
 
   return (
     <div className="mt-4 flex flex-col gap-3">
+      <button
+        type="button"
+        onClick={toggleOpen}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 rounded-lg px-4 py-3 text-left ring-1 ring-zinc-200"
+      >
+        <span className="font-medium text-zinc-900">Activity log</span>
+        <span className="flex items-center gap-2 text-xs text-zinc-400">
+          {open ? 'Hide' : 'Show'}
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+            className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </span>
+      </button>
+      {open && (
+      <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <input
           value={phoneQuery}
@@ -156,9 +205,9 @@ export default function SmsActivityLog({ initialActivity }: { initialActivity: S
         </select>
       </div>
 
-      {messages.length === 0 ? (
+      {!messages || messages.length === 0 ? (
         <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">
-          {loading ? 'Loading…' : 'No messages match these filters.'}
+          {loading || !messages ? 'Loading…' : 'No messages match these filters.'}
         </div>
       ) : (
         <>
@@ -209,6 +258,8 @@ export default function SmsActivityLog({ initialActivity }: { initialActivity: S
             </table>
           </div>
         </>
+      )}
+      </div>
       )}
     </div>
   );
