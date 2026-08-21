@@ -265,7 +265,7 @@ public class LapsedCustomerWinbackScheduler {
         Map<String, String> vars = Map.of("greeting", greeting, "sender", config.getSenderName(),
                 "offerClause", offerClause, "link", shortLink,
                 "businessName", business == null ? "" : business.getName());
-        String body = templateService.render(businessId, templateKey, vars);
+        String body = templateService.render(businessId, templateKey, phoneNumber, vars);
 
         if (!config.isConfigured()) {
             log.info("{} skipped — Twilio credentials not configured", templateKey);

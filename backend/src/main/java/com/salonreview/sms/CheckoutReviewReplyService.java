@@ -90,7 +90,7 @@ public class CheckoutReviewReplyService {
                     flow.getBusinessId(), templateKey, AUTOMATION_KEY, flow.getPhoneNumber(),
                     "", false, "pending", null, linkTarget, clickToken);
             String shortLink = publicBaseUrl + "/r/" + clickToken;
-            body = templateService.render(flow.getBusinessId(), templateKey,
+            body = templateService.render(flow.getBusinessId(), templateKey, flow.getPhoneNumber(),
                     java.util.Map.of("link", shortLink, "sender", sender, "businessName", businessName));
         } else {
             // No link — a low rating gets a plain ask to reply and say what happened, handled
@@ -99,7 +99,7 @@ public class CheckoutReviewReplyService {
             // needed since there's no short link for this branch to carry.
             reserved = messageLogService.logOutbound(
                     flow.getBusinessId(), templateKey, AUTOMATION_KEY, flow.getPhoneNumber(), "", false, "pending", null);
-            body = templateService.render(flow.getBusinessId(), templateKey,
+            body = templateService.render(flow.getBusinessId(), templateKey, flow.getPhoneNumber(),
                     java.util.Map.of("sender", sender, "businessName", businessName));
         }
 

@@ -137,6 +137,13 @@ function TemplateEditor({ template, onSaved }: { template: SmsTemplateView; onSa
         <span className="text-sm font-medium text-zinc-700">{template.label}</span>
         {template.customized && <span className="text-xs text-zinc-400">Customized</span>}
       </div>
+      {template.variantCount > 1 && (
+        <p className="mb-1.5 text-xs text-zinc-400">
+          {template.customized
+            ? `Normally rotates through ${template.variantCount} differently-worded variants so a repeat customer doesn't see the same text every time — your custom wording below replaces all of them.`
+            : `Shown below is 1 of ${template.variantCount} variants this rotates through automatically, so a repeat customer sees different wording each time. Saving here replaces every variant with this one.`}
+        </p>
+      )}
       <textarea
         value={value}
         onChange={(e) => setValue(e.target.value)}

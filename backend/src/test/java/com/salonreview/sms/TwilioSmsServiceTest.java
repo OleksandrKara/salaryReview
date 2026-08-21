@@ -62,12 +62,12 @@ class TwilioSmsServiceTest {
                 java.util.Optional.of(Business.builder().id(BUSINESS_ID).name("AK.LUX.NAILS").build()));
         when(templateService.describe(TRANSACTIONAL_KEY)).thenReturn(
                 new SmsMessageTemplateCatalog.TemplateDefault(TRANSACTIONAL_KEY, null, SmsMessageClass.TRANSACTIONAL,
-                        "label", "default", List.of()));
-        when(templateService.render(eq(BUSINESS_ID), eq(TRANSACTIONAL_KEY), any())).thenReturn("transactional body");
+                        "label", List.of("default"), List.of()));
+        when(templateService.render(eq(BUSINESS_ID), eq(TRANSACTIONAL_KEY), any(), any())).thenReturn("transactional body");
         when(templateService.describe(MARKETING_KEY)).thenReturn(
                 new SmsMessageTemplateCatalog.TemplateDefault(MARKETING_KEY, null, SmsMessageClass.MARKETING,
-                        "label", "default", List.of()));
-        when(templateService.render(eq(BUSINESS_ID), eq(MARKETING_KEY), any())).thenReturn("marketing body");
+                        "label", List.of("default"), List.of()));
+        when(templateService.render(eq(BUSINESS_ID), eq(MARKETING_KEY), any(), any())).thenReturn("marketing body");
     }
 
     private static TwilioSmsConfig configured() {
@@ -148,8 +148,8 @@ class TwilioSmsServiceTest {
         String key = "test_gated";
         when(templateService.describe(key)).thenReturn(
                 new SmsMessageTemplateCatalog.TemplateDefault(key, "some_automation", SmsMessageClass.TRANSACTIONAL,
-                        "label", "default", List.of()));
-        when(templateService.render(eq(BUSINESS_ID), eq(key), any())).thenReturn("gated body");
+                        "label", List.of("default"), List.of()));
+        when(templateService.render(eq(BUSINESS_ID), eq(key), any(), any())).thenReturn("gated body");
         when(automationService.isEnabled(BUSINESS_ID, "some_automation")).thenReturn(false);
 
         var result = service.sendTemplated(BUSINESS_ID, key, PHONE, Map.of());

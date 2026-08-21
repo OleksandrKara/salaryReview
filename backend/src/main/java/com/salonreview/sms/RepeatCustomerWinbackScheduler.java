@@ -288,7 +288,7 @@ public class RepeatCustomerWinbackScheduler {
             vars = Map.of("greeting", greeting, "sender", config.getSenderName(), "visitClause", visitClause,
                     "discountAmount", discountAmount, "link", shortLink, "businessName", businessName);
         }
-        String body = templateService.render(businessId, overrideKey, vars);
+        String body = templateService.render(businessId, overrideKey, phoneNumber, vars);
 
         if (!config.isConfigured()) {
             log.info("{} skipped — Twilio credentials not configured", templateKey);

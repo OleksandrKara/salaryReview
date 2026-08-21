@@ -88,7 +88,7 @@ public class TwilioSmsService {
         renderVars.putIfAbsent("sender", config.getSenderName());
         Business business = businessRepository.findById(businessId).orElse(null);
         renderVars.putIfAbsent("businessName", business == null ? "" : business.getName());
-        String body = templateService.render(businessId, templateKey, renderVars);
+        String body = templateService.render(businessId, templateKey, phoneNumber, renderVars);
         String automationKey = template.automationKey();
 
         if (isBlocked(phoneNumber)) {
