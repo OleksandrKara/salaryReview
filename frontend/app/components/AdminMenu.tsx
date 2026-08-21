@@ -67,6 +67,7 @@ function linksFor(role: Role): NavSections {
             { href: '/admin/documents', key: 'navStaffDocuments' },
             { href: '/sops/admin', key: 'sopAdminTitle' },
             { href: '/owner/reviews', key: 'navReviews' },
+            { href: '/admin/missed-bookings', key: 'missedBookingsTitle' },
           ],
         },
         {
@@ -96,6 +97,7 @@ function linksFor(role: Role): NavSections {
         { href: '/manager', key: 'navDashboard' },
         { href: '/manager/time', key: 'navMyTime' },
         { href: '/admin/redos', key: 'mgrRedos' },
+        { href: '/admin/missed-bookings', key: 'missedBookingsTitle' },
         { href: '/admin/manual-adjustments', key: 'navManualAdjustments' },
         { href: '/my-documents', key: 'navMyDocuments' },
         ...COMMON,

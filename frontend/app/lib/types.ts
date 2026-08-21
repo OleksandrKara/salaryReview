@@ -933,6 +933,25 @@ export interface RedoCreateRequest {
   serviceName?: string | null;
 }
 
+// --- Missed bookings (owner/manager) — a quick "no capacity to book this customer" log, for
+// later analysis of whether demand justifies hiring another provider. See backend V121.
+export interface MissedBooking {
+  id: number;
+  requestedDate: string;
+  requestedTime: string | null;
+  estimatedRevenue: number;
+  serviceName: string | null;
+  createdBy: string | null;
+  createdAt: string;
+}
+
+export interface MissedBookingCreateRequest {
+  requestedDate: string;
+  requestedTime?: string | null;
+  estimatedRevenue: number;
+  serviceName?: string | null;
+}
+
 // --- Manual settlement adjustments (owner/manager) ---
 
 export interface ManualAdjustment {
