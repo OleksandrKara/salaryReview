@@ -300,12 +300,25 @@ public class SmsMessageLogService {
      * updated its own local state; the backend's read_at never changed, so the next unread-count
      * poll (MessagesNotifierIcon, ~25s) would see the thread as still unread and the badge would
      * silently revert — the automation hub's SmsActivityLog page didn't have this problem because
-     * it already called the single-message {@link #markRead} endpoint per row on click. */
+     * it already called the single-message {@link #markRead} endpoint per row on click.
+     *
+     * Only broadcasts when it actually flipped a row — same conditional-broadcast convention as
+     * {@link #markRead}. MessagesView also calls this every time a live SSE "update" for the
+     * open thread arrives (so a message that comes in while the manager is already looking at it
+     * gets marked read too), which — before this guard — always re-broadcast even when every
+     * message was already read, producing a self-sustaining broadcast → refetch → re-mark-read →
+     * broadcast loop for as long as a thread stayed open. That loop kept forcing the thread's
+     * message list to re-render and snap back to the bottom (see MessagesView's
+     * isNearBottomRef-driven scrollIntoView), which is what actually showed up as the view
+     * "jittering" while a manager tried to scroll a long, already-read thread (found live
+     * 2026-08-21). */
     @Transactional
     public void markThreadRead(Long businessId, String phoneNumber) {
         String normalized = PhoneNumbers.normalize(phoneNumber);
-        repository.markThreadRead(businessId, normalized, Instant.now());
-        events.broadcast(normalized);
+        int updated = repository.markThreadRead(businessId, normalized, Instant.now());
+        if (updated > 0) {
+            events.broadcast(normalized);
+        }
     }
 
     /** "Mark as unread" — a manual reminder flag on a conversation, same convention as every

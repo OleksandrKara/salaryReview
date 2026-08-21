@@ -112,11 +112,24 @@ class SmsMessageLogServiceTest {
     }
 
     @Test
-    @DisplayName("markThreadRead normalizes the phone number and delegates to the bulk repository update")
+    @DisplayName("markThreadRead normalizes the phone number, delegates to the bulk repository update, and broadcasts when it actually marked something")
     void markThreadReadNormalizesAndDelegates() {
+        when(repository.markThreadRead(eq(BUSINESS_ID), eq("+15551234567"), any(Instant.class))).thenReturn(2);
+
         service.markThreadRead(BUSINESS_ID, "(555) 123-4567");
 
         verify(repository).markThreadRead(eq(BUSINESS_ID), eq("+15551234567"), any(Instant.class));
+        verify(events).broadcast("+15551234567");
+    }
+
+    @Test
+    @DisplayName("marking an already-fully-read thread read again doesn't broadcast — breaks the self-triggering SSE loop that used to jitter the open thread's scroll position")
+    void markThreadReadOnAlreadyReadThreadDoesNotBroadcast() {
+        when(repository.markThreadRead(eq(BUSINESS_ID), eq("+15551234567"), any(Instant.class))).thenReturn(0);
+
+        service.markThreadRead(BUSINESS_ID, "(555) 123-4567");
+
+        verify(events, never()).broadcast(any());
     }
 
     @Test
