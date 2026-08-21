@@ -16,10 +16,9 @@ export default async function SmsSettingsPage() {
   const me = await serverApi.getMe();
   if (me.role !== 'OWNER') redirect('/reports');
 
-  const [settings, automations, activity, templates, promoTerms] = await Promise.all([
+  const [settings, automations, templates, promoTerms] = await Promise.all([
     serverApi.getTwilioSmsSettings(),
     serverApi.listSmsAutomations(),
-    serverApi.listSmsActivity(100),
     serverApi.listSmsTemplates(),
     serverApi.listPromoTerms(),
   ]);
@@ -67,7 +66,7 @@ export default async function SmsSettingsPage() {
           </a>{' '}
           instead — this log is read-only.
         </p>
-        <SmsActivityLog initialActivity={activity} />
+        <SmsActivityLog />
       </section>
 
       <section className="mt-8">

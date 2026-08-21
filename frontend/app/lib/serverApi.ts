@@ -17,7 +17,6 @@ import type {
   SmsTemplateView,
   PromoTermsDto,
   SmsAutomationSummary,
-  SmsMessageDto,
   SmsConversationDto,
   SmsConversationPageDto,
   FunnelDashboardData,
@@ -178,9 +177,6 @@ export const serverApi = {
   listPromoTerms: () => serverFetch<PromoTermsDto[]>(`/api/owner/settings/promos`),
 
   listSmsAutomations: () => serverFetch<SmsAutomationSummary[]>(`/api/owner/automations`),
-
-  listSmsActivity: (limit = 100) =>
-    serverFetch<SmsMessageDto[]>(`/api/owner/automations/activity?limit=${limit}`),
 
   listSmsConversations: () =>
     serverFetch<SmsConversationDto[]>(`/api/owner/automations/activity/conversations`),
