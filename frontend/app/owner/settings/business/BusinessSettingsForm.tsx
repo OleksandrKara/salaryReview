@@ -202,9 +202,9 @@ export default function BusinessSettingsForm({ initialSettings }: { initialSetti
           className="w-full rounded border border-zinc-300 px-2 py-1.5"
         />
         <span className="mt-1 block text-xs text-zinc-400">
-          Where the checkout-review-request automation sends a happy customer to leave a public review, and an
-          unhappy one to leave private feedback. Both are required for that automation to run at all — it stays
-          off until you set them.
+          Where the checkout-review-request automation sends a happy customer to leave a public review, and a
+          repeat 5-star reviewer (who already left one) to leave private feedback instead of being asked to
+          review again. Both are required for that automation to run at all — it stays off until you set them.
         </span>
       </label>
 
