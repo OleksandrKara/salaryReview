@@ -241,12 +241,14 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
 
     /** Marks every unread inbound message in one phone number's thread read in a single write, for
      * one business — backs the manager conversation view's "opening a thread marks it read"
-     * behavior. Bulk, not a loop of the single-message endpoint. */
+     * behavior. Bulk, not a loop of the single-message endpoint. Returns the number of rows it
+     * actually touched, so the caller (SmsMessageLogService#markThreadRead) can skip broadcasting
+     * an SSE update when there was nothing to mark — see that method's own doc for why this matters. */
     @Modifying
     @Query("UPDATE SmsMessage m SET m.readAt = :now "
             + "WHERE m.businessId = :businessId AND m.phoneNumber = :phoneNumber "
             + "AND m.direction = 'INBOUND' AND m.readAt IS NULL")
-    void markThreadRead(@Param("businessId") Long businessId, @Param("phoneNumber") String phoneNumber,
+    int markThreadRead(@Param("businessId") Long businessId, @Param("phoneNumber") String phoneNumber,
                         @Param("now") Instant now);
 
     /** "Mark as unread", for one business (see SmsMessageLogService#markThreadUnread) — un-reads
