@@ -245,7 +245,7 @@ public class MarketingAnalyticsService {
         // (every booking the tracked flow already surfaced, completed or upcoming) keeps a follow-up
         // from re-adding the same visit a second time under the same customer.
         Set<String> alreadyCountedBookingIds = bookingIdsOf(inRange, upcomingResult.bookingIds());
-        mergeFollowUpsInto(resolveFollowUps(slug), freshCustomerIds, today, completed, upcoming,
+        mergeFollowUpsInto(resolveFollowUps(slug, sources), freshCustomerIds, today, completed, upcoming,
                 alreadyCountedBookingIds, customersCapturedInRange);
 
         return new MarketingAnalyticsDto(
@@ -365,7 +365,7 @@ public class MarketingAnalyticsService {
                 : upcomingAppointments(adsCustomers.keySet(), freshCustomerIds, paidBookingIds, today, bookingHistory, null);
         List<UpcomingAppointment> upcoming = new ArrayList<>(upcomingResult.appointments());
 
-        List<FollowUpAppointment> followUps = resolveFollowUps(slug);
+        List<FollowUpAppointment> followUps = resolveFollowUps(slug, sources);
         Set<String> alreadyCountedBookingIds = bookingIdsOf(inRange, upcomingResult.bookingIds());
         mergeFollowUpsInto(followUps, freshCustomerIds, today, completed, upcoming, alreadyCountedBookingIds, null);
 
@@ -507,7 +507,7 @@ public class MarketingAnalyticsService {
      * converted on this page from also showing up as a follow-up for some later, unrelated real
      * appointment of theirs.
      */
-    private List<FollowUpAppointment> resolveFollowUps(String slug) {
+    private List<FollowUpAppointment> resolveFollowUps(String slug, Set<String> sources) {
         if (slug == null) return List.of();
         return dashboardRepository.findLandingPageId(slug, currentBusinessContext.id())
                 .map(pageId -> {
@@ -517,7 +517,7 @@ public class MarketingAnalyticsService {
                             .map(customerIdByBooking::get)
                             .filter(Objects::nonNull)
                             .collect(java.util.stream.Collectors.toSet());
-                    return contactsService.followUpAppointments(slug, null, attributedBookingIds, convertedCustomerIds);
+                    return contactsService.followUpAppointments(slug, null, attributedBookingIds, convertedCustomerIds, sources);
                 })
                 .orElse(List.of());
     }

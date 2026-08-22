@@ -608,7 +608,7 @@ class MarketingContactsServiceTest {
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
 
-        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of("OTHERBOOK"), java.util.Set.of());
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of("OTHERBOOK"), java.util.Set.of(), TrafficSourceSql.ALL);
 
         assertThat(byVariant).containsEntry("Version_1", 1L);
     }
@@ -623,7 +623,7 @@ class MarketingContactsServiceTest {
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
 
-        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of("OTHERBOOK"), java.util.Set.of());
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of("OTHERBOOK"), java.util.Set.of(), TrafficSourceSql.ALL);
 
         assertThat(byVariant).containsEntry("Version_1", 1L);
     }
@@ -641,7 +641,7 @@ class MarketingContactsServiceTest {
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(futureRebooking));
 
         Map<String, Long> byVariant = service.countFollowUpBookingsByVariant(
-                "mani", null, null, java.util.Set.of("OTHERBOOK"), java.util.Set.of("SQCUST123"));
+                "mani", null, null, java.util.Set.of("OTHERBOOK"), java.util.Set.of("SQCUST123"), TrafficSourceSql.ALL);
 
         assertThat(byVariant).isEmpty();
         verify(square, never()).bookingsForCustomer(eq("SQCUST123"), any());
@@ -656,7 +656,7 @@ class MarketingContactsServiceTest {
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
 
-        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of("TRACKEDBOOK"), java.util.Set.of());
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of("TRACKEDBOOK"), java.util.Set.of(), TrafficSourceSql.ALL);
 
         assertThat(byVariant).isEmpty();
     }
@@ -670,7 +670,7 @@ class MarketingContactsServiceTest {
                 "LOC1", "SQCUST123", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(cancelled));
 
-        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of(), java.util.Set.of());
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of(), java.util.Set.of(), TrafficSourceSql.ALL);
 
         assertThat(byVariant).isEmpty();
     }
@@ -687,7 +687,7 @@ class MarketingContactsServiceTest {
                 "LOC1", "SQCUST999", null, null, List.of());
         when(square.bookingsForCustomer(eq("SQCUST999"), any())).thenReturn(List.of(accepted));
 
-        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of(), java.util.Set.of());
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of(), java.util.Set.of(), TrafficSourceSql.ALL);
 
         assertThat(byVariant).containsEntry("Version_1", 1L);
     }
@@ -711,7 +711,7 @@ class MarketingContactsServiceTest {
         ));
 
         Map<String, Long> byVariant = service.countFollowUpBookingsByVariant(
-                "mani", Instant.parse("2026-07-01T00:00:00Z"), null, java.util.Set.of(), java.util.Set.of());
+                "mani", Instant.parse("2026-07-01T00:00:00Z"), null, java.util.Set.of(), java.util.Set.of(), TrafficSourceSql.ALL);
 
         assertThat(byVariant).isEmpty();
         verify(square, never()).bookingsForCustomer(eq("SQCUST_OTHERPAGE"), any());
@@ -728,7 +728,7 @@ class MarketingContactsServiceTest {
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(futureRebooking));
 
         List<MarketingContactsService.FollowUpAppointment> appointments = service.followUpAppointments(
-                "mani", null, java.util.Set.of("OTHERBOOK"), java.util.Set.of("SQCUST123"));
+                "mani", null, java.util.Set.of("OTHERBOOK"), java.util.Set.of("SQCUST123"), TrafficSourceSql.ALL);
 
         assertThat(appointments).isEmpty();
     }
@@ -743,7 +743,7 @@ class MarketingContactsServiceTest {
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
 
         List<MarketingContactsService.FollowUpAppointment> appointments =
-                service.followUpAppointments("mani", null, java.util.Set.of("OTHERBOOK"), java.util.Set.of());
+                service.followUpAppointments("mani", null, java.util.Set.of("OTHERBOOK"), java.util.Set.of(), TrafficSourceSql.ALL);
 
         assertThat(appointments).hasSize(1);
         assertThat(appointments.get(0).customerId()).isEqualTo("SQCUST123");
@@ -760,7 +760,7 @@ class MarketingContactsServiceTest {
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(tracked));
 
         List<MarketingContactsService.FollowUpAppointment> appointments =
-                service.followUpAppointments("mani", null, java.util.Set.of("TRACKEDBOOK"), java.util.Set.of());
+                service.followUpAppointments("mani", null, java.util.Set.of("TRACKEDBOOK"), java.util.Set.of(), TrafficSourceSql.ALL);
 
         assertThat(appointments).isEmpty();
     }
@@ -775,7 +775,7 @@ class MarketingContactsServiceTest {
         when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(cancelled));
 
         List<MarketingContactsService.FollowUpAppointment> appointments =
-                service.followUpAppointments("mani", null, java.util.Set.of(), java.util.Set.of());
+                service.followUpAppointments("mani", null, java.util.Set.of(), java.util.Set.of(), TrafficSourceSql.ALL);
 
         assertThat(appointments).isEmpty();
     }
