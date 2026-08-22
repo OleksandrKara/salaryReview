@@ -509,7 +509,8 @@ public class MarketingContactsService {
      */
     public Map<String, Long> countFollowUpBookingsByVariant(
             String landingPageSlug, Instant statsSince, Instant periodTo,
-            java.util.Set<String> attributedBookingIds, java.util.Set<String> convertedCustomerIds) {
+            java.util.Set<String> attributedBookingIds, java.util.Set<String> convertedCustomerIds,
+            java.util.Set<String> sources) {
         // uncountedAppointments is a Square round trip per candidate contact — same
         // parallelization reasoning as contacts() above. Grouped by resolved customer id first,
         // keeping only the earliest qualifying contact row per real client, before counting by
@@ -521,11 +522,18 @@ public class MarketingContactsService {
         // uncountedAppointments() -> fetchAppointments() -> priceCutoff() needs CurrentBusinessContext
         // on whatever thread it runs on — parallelStream()'s worker threads don't inherit it. Same
         // fix as computeContacts() above.
+        //
+        // sources filters by the contact's own classified channel — without this, a follow-up
+        // booking showed up under every traffic-source filter regardless of where that contact
+        // actually came from (a Direct-traffic lead's booking still counted while viewing
+        // "Meta ads" only, since only the *attributed* path was ever source-scoped). Found live
+        // 2026-08-22.
         Long businessId = currentBusinessContext.id();
         return repository.listAllForBusiness(businessId).parallelStream()
                 .filter(r -> landingPageSlug.equals(r.landingPageSlug()))
                 .filter(r -> statsSince == null || !r.createdAt().isBefore(statsSince))
                 .filter(r -> periodTo == null || r.createdAt().isBefore(periodTo))
+                .filter(r -> sources.equals(TrafficSourceSql.ALL) || sources.contains(r.channel()))
                 .filter(r -> !convertedCustomerIds.contains(resolveSquareCustomerId(r)))
                 .filter(r -> currentBusinessContext.runAsAndGet(businessId,
                         () -> !uncountedAppointments(r, attributedBookingIds).isEmpty()))
@@ -575,12 +583,15 @@ public class MarketingContactsService {
      */
     public List<FollowUpAppointment> followUpAppointments(
             String landingPageSlug, Instant statsSince,
-            java.util.Set<String> attributedBookingIds, java.util.Set<String> convertedCustomerIds) {
-        // Same CurrentBusinessContext-across-parallelStream fix as countFollowUpBookingsByVariant.
+            java.util.Set<String> attributedBookingIds, java.util.Set<String> convertedCustomerIds,
+            java.util.Set<String> sources) {
+        // Same CurrentBusinessContext-across-parallelStream fix, and same sources filter, as
+        // countFollowUpBookingsByVariant — see its doc comment for why the filter matters.
         Long businessId = currentBusinessContext.id();
         return repository.listAllForBusiness(businessId).parallelStream()
                 .filter(r -> landingPageSlug.equals(r.landingPageSlug()))
                 .filter(r -> statsSince == null || !r.createdAt().isBefore(statsSince))
+                .filter(r -> sources.equals(TrafficSourceSql.ALL) || sources.contains(r.channel()))
                 .filter(r -> !convertedCustomerIds.contains(resolveSquareCustomerId(r)))
                 .flatMap(r -> currentBusinessContext.runAsAndGet(businessId, () -> {
                     String customerId = resolveSquareCustomerId(r);

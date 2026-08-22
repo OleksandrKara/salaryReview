@@ -128,7 +128,7 @@ public class MarketingDashboardService {
                     .filter(java.util.Objects::nonNull)
                     .collect(Collectors.toSet());
             Map<String, Long> followUpByVariant = contactsService.countFollowUpBookingsByVariant(
-                    slug, effectiveFrom, periodToInstant, attributedBookingIds, convertedCustomerIds);
+                    slug, effectiveFrom, periodToInstant, attributedBookingIds, convertedCustomerIds, sources);
             List<VariantStat> variants = repository.findVariantStats(landingPageId.get(), slug, effectiveFrom, periodToInstant, sources).stream()
                     .map(raw -> toVariantStat(raw, slug,
                             conversionsByVariant.getOrDefault(raw.variantId(), 0L),
