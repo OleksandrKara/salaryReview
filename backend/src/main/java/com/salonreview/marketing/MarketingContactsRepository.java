@@ -137,7 +137,7 @@ public class MarketingContactsRepository {
         return jdbcTemplate.query(sql, MarketingContactsRepository::mapContact, params.toArray());
     }
 
-    /** contacts is unique on phone_number, so this is at most one row — backs the manager
+    /** contacts is unique on (business_id, phone_number), so this is at most one row — backs the manager
      * conversation view's contact info panel (see openspec/changes, MessagesView contact
      * sidebar). Empty when this phone number never went through the tracked capture flow (e.g. a
      * checkout-review or lead-follow-up text sent purely from Square/booking data). */
@@ -222,8 +222,9 @@ public class MarketingContactsRepository {
                 businessId, Timestamp.from(olderThan), Timestamp.from(newerThan));
     }
 
-    /** One channel-attributed contact — phone_number is the stable match key (contacts is unique on
-     * it), squareCustomerId the customer profile we happened to link at the time (nullable: none
+    /** One channel-attributed contact — phone_number is the stable match key within this business
+     * (contacts is unique on (business_id, phone_number), and callers here always scope by
+     * businessId), squareCustomerId the customer profile we happened to link at the time (nullable: none
      * captured yet), channel which {@link TrafficSourceSql} bucket the contact's own utm/referrer
      * columns classify as (null for the rare edge case that fits none of the five). The linked
      * square_customer_id can go stale — e.g. a follow-up appointment booked by phone gets matched or
@@ -236,8 +237,8 @@ public class MarketingContactsRepository {
     /** Every contact whose channel classifies into one of the given sources, each with the earliest
      * moment we ever captured them — used to tell a customer whose Square record was created fresh
      * off this touch from one who already existed in Square and simply came back through one.
-     * contacts is unique on phone_number, so this is naturally one row per contact — no
-     * grouping/aggregation needed.
+     * contacts is unique on (business_id, phone_number), and this query is already scoped to one
+     * business, so this is naturally one row per contact — no grouping/aggregation needed.
      */
     public List<AdsAttributedContact> findAdsAttributedContacts(Set<String> sources, Long businessId) {
         return findAdsAttributedContacts(sources, null, businessId);
