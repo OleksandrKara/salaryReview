@@ -73,8 +73,10 @@ class RevenuePulseServiceAsyncBusinessContextTest {
         RevenueSnapshotRepository snapshots = mock(RevenueSnapshotRepository.class);
         when(snapshots.findByBusinessIdAndSnapshotDate(eq(42L), any())).thenReturn(java.util.Optional.empty());
 
+        com.salonreview.repo.OwnerCustomerRepository ownerCustomers = mock(com.salonreview.repo.OwnerCustomerRepository.class);
+
         RevenuePulseService service = new RevenuePulseService(squareClientProvider, forecaster, aggregator, salonConfig,
-                realContext, snapshots, manualAdjustments);
+                realContext, snapshots, manualAdjustments, ownerCustomers);
 
         // A past month (not the current month) so both mtdSplit() calls run through the full window —
         // mirrors the real request filter: sets the context for the duration, exactly as
