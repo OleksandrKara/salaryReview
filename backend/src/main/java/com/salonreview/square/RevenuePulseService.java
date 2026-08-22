@@ -1,7 +1,9 @@
 package com.salonreview.square;
 
+import com.salonreview.domain.OwnerCustomer;
 import com.salonreview.domain.RevenueSnapshot;
 import com.salonreview.domain.SalonConfig;
+import com.salonreview.repo.OwnerCustomerRepository;
 import com.salonreview.repo.RevenueSnapshotRepository;
 import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.web.dto.RevenuePulseDto;
@@ -23,7 +25,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 @Service
 public class RevenuePulseService {
@@ -38,21 +42,24 @@ public class RevenuePulseService {
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final RevenueSnapshotRepository snapshots;
     private final ManualAdjustmentService manualAdjustments;
+    private final OwnerCustomerRepository ownerCustomers;
     private final Clock clock;
 
     @Autowired
     public RevenuePulseService(SquareClientProvider squareClientProvider, RevenueForecastService forecaster,
                                SquareMonthAggregator aggregator, SalonConfigRepository salonConfig,
                                com.salonreview.config.CurrentBusinessContext currentBusinessContext,
-                               RevenueSnapshotRepository snapshots, ManualAdjustmentService manualAdjustments) {
+                               RevenueSnapshotRepository snapshots, ManualAdjustmentService manualAdjustments,
+                               OwnerCustomerRepository ownerCustomers) {
         this(squareClientProvider, forecaster, aggregator, salonConfig, currentBusinessContext, snapshots,
-                manualAdjustments, Clock.systemUTC());
+                manualAdjustments, ownerCustomers, Clock.systemUTC());
     }
 
     RevenuePulseService(SquareClientProvider squareClientProvider, RevenueForecastService forecaster,
                         SquareMonthAggregator aggregator, SalonConfigRepository salonConfig,
                         com.salonreview.config.CurrentBusinessContext currentBusinessContext,
-                        RevenueSnapshotRepository snapshots, ManualAdjustmentService manualAdjustments, Clock clock) {
+                        RevenueSnapshotRepository snapshots, ManualAdjustmentService manualAdjustments,
+                        OwnerCustomerRepository ownerCustomers, Clock clock) {
         this.squareClientProvider = squareClientProvider;
         this.forecaster = forecaster;
         this.aggregator = aggregator;
@@ -60,6 +67,7 @@ public class RevenuePulseService {
         this.currentBusinessContext = currentBusinessContext;
         this.snapshots = snapshots;
         this.manualAdjustments = manualAdjustments;
+        this.ownerCustomers = ownerCustomers;
         this.clock = clock;
     }
 
@@ -197,6 +205,12 @@ public class RevenuePulseService {
             }
             if ("CASH".equals(s.channel()) || "CASH-NOTE".equals(s.channel())) {
                 cash = cash.add(s.gross());
+            } else if ("COMP".equals(s.channel())) {
+                // Owner/family comp (see SquareMonthAggregator's own doc) — the provider is paid
+                // their commission on it, but the salon never actually collects a cent, so it must
+                // not count as real revenue here. Found live 2026-08-22: this widget was crediting
+                // every owner-comp appointment's full menu price as if it were card revenue.
+                continue;
             } else {
                 card = card.add(s.gross());
             }
@@ -231,12 +245,30 @@ public class RevenuePulseService {
         return cfg.getServicePriceCutoff();
     }
 
+    /** This business's configured owner/family Square customer ids (see OwnerCustomerRepository) —
+     * used to keep their bookings out of upcoming/projected revenue. Doesn't resolve a stale id
+     * across a later Square customer merge the way SquareMonthAggregator's own owner-comp matching
+     * does (see that class's canonicalCustomerIds use) — a display-only projection figure being
+     * briefly out of sync after a rare merge is an acceptable gap this doesn't need to close. */
+    private Set<String> ownerCustomerIds() {
+        return ownerCustomers.findAllByBusinessId(currentBusinessContext.id()).stream()
+                .map(OwnerCustomer::getSquareCustomerId)
+                .collect(Collectors.toSet());
+    }
+
     // --- upcoming bookings ---
 
     private UpcomingResult processUpcoming(List<SquareClient.Booking> bookings,
                                            int year, int month, ZoneId zone) {
+        Set<String> ownerIds = ownerCustomerIds();
         List<SquareClient.Booking> valid = bookings.stream()
                 .filter(b -> isValidStatus(b.status()) && isInMonth(b.startAt(), year, month, zone))
+                // A future booking for an owner/family customer (see OwnerCustomerRepository) never
+                // produces a real order once it happens — it becomes an owner comp, credited to the
+                // provider but collected from nobody (see SquareMonthAggregator). Counting its menu
+                // price here would project revenue the salon will never actually receive. Found live
+                // 2026-08-22, alongside the identical gap for already-realized comps in mtdSplit above.
+                .filter(b -> b.customerId() == null || !ownerIds.contains(b.customerId()))
                 .toList();
 
         List<String> varIds = valid.stream()

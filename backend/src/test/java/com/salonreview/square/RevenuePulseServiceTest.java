@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,6 +42,7 @@ class RevenuePulseServiceTest {
     private com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private RevenueSnapshotRepository snapshots;
     private ManualAdjustmentService manualAdjustments;
+    private com.salonreview.repo.OwnerCustomerRepository ownerCustomers;
     private RevenuePulseService service;
 
     @BeforeEach
@@ -51,6 +53,7 @@ class RevenuePulseServiceTest {
         salonConfig = mock(SalonConfigRepository.class);
         snapshots = mock(RevenueSnapshotRepository.class);
         manualAdjustments = mock(ManualAdjustmentService.class);
+        ownerCustomers = mock(com.salonreview.repo.OwnerCustomerRepository.class);
 
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.bookings(any(), any())).thenReturn(List.of());
@@ -70,9 +73,11 @@ class RevenuePulseServiceTest {
         when(snapshots.findByBusinessIdAndSnapshotDate(eq(1L), any())).thenReturn(Optional.empty());
         // No manual adjustments by default — individual tests override to exercise the fold-in.
         when(manualAdjustments.totalGrossThrough(any())).thenReturn(BigDecimal.ZERO);
+        // No owner customers by default — the owner-comp test below overrides this.
+        when(ownerCustomers.findAllByBusinessId(1L)).thenReturn(List.of());
 
         service = new RevenuePulseService(squareClientProvider, forecaster, aggregator, salonConfig, currentBusinessContext,
-                snapshots, manualAdjustments);
+                snapshots, manualAdjustments, ownerCustomers);
     }
 
     private static AttributedService svc(String date, String channel, String gross) {
@@ -126,7 +131,7 @@ class RevenuePulseServiceTest {
         // Fix 'now' to Aug 15 2026, 12:00 PM UTC. Both months are compared through day 15 at noon.
         Clock clock = Clock.fixed(Instant.parse("2026-08-15T12:00:00Z"), ZoneOffset.UTC);
         RevenuePulseService timed = new RevenuePulseService(squareClientProvider, forecaster, aggregator, salonConfig,
-                currentBusinessContext, snapshots, manualAdjustments, clock);
+                currentBusinessContext, snapshots, manualAdjustments, ownerCustomers, clock);
 
         when(aggregator.aggregate(eq(2026), eq(8), any())).thenReturn(aggOf(2026, 8, List.of(
                 svcAt("2026-08-03", "9:00 AM", "CARD", "50.00"),   // earlier day → counted
@@ -163,7 +168,7 @@ class RevenuePulseServiceTest {
         // e.g. before daily snapshotting started, or a genuine gap in the data.
         Clock clock = Clock.fixed(Instant.parse("2026-08-01T00:01:00Z"), ZoneOffset.UTC);
         RevenuePulseService timed = new RevenuePulseService(squareClientProvider, forecaster, aggregator, salonConfig,
-                currentBusinessContext, snapshots, manualAdjustments, clock);
+                currentBusinessContext, snapshots, manualAdjustments, ownerCustomers, clock);
 
         when(aggregator.aggregate(eq(2026), eq(8), any())).thenReturn(aggOf(2026, 8, List.of()));
         when(aggregator.aggregate(eq(2026), eq(7), any())).thenReturn(aggOf(2026, 7, List.of()));
@@ -212,5 +217,64 @@ class RevenuePulseServiceTest {
 
         assertThat(p.projectedCard()).isEqualByComparingTo("300.00");
         assertThat(p.projectedCash()).isEqualByComparingTo("100.00");
+    }
+
+    // --- owner comps must not count as revenue (found live 2026-08-22) ---
+    //
+    // Mirrors the real production booking OwnerCompAggregatorTest is built from: Anna Comegys did a
+    // $99 service for owner-customer Anna Kara, no payment taken. SquareMonthAggregator still
+    // credits Anna Comegys her commission on it (channel "COMP") — correct, that's the whole point
+    // of owner comps — but the salon never actually collected that $99, so it must not show up here
+    // as card revenue, either already realized or still upcoming.
+
+    @Test
+    @DisplayName("Anna Kara's $99 owner comp is excluded from current card/gross — only the real card sale counts")
+    void ownerCompExcludedFromCurrentCard() {
+        // Past month so the window is the full month (deterministic, no 'today' dependency).
+        List<AttributedService> may = List.of(
+                svc("2026-05-03", "CARD", "100.00"),
+                svc("2026-05-18", "COMP", "99.00")); // Anna Comegys's comp'd service for Anna Kara
+        when(aggregator.aggregate(eq(2026), eq(5), any())).thenReturn(aggOf(2026, 5, may));
+        when(aggregator.aggregate(eq(2026), eq(4), any())).thenReturn(aggOf(2026, 4, List.of()));
+        when(forecaster.forecast(anyInt(), anyInt(), any(), any()))
+                .thenReturn(new ForecastResult(new BigDecimal("100.00"), null, null, 0, 0));
+
+        RevenuePulseDto p = service.pulse(2026, 5);
+
+        assertThat(p.currentCard()).isEqualByComparingTo("100.00");
+        assertThat(p.currentCash()).isEqualByComparingTo("0.00");
+        assertThat(p.currentGross()).isEqualByComparingTo("100.00");
+    }
+
+    @Test
+    @DisplayName("a future booking for owner-customer Anna Kara is excluded from upcoming/projected revenue")
+    void ownerCompBookingExcludedFromUpcoming() {
+        // Fixed 'now' inside the target month so fetchUpcoming actually engages (a genuinely past
+        // month, like the other tests above use, never calls square.bookings() at all).
+        Clock clock = Clock.fixed(Instant.parse("2026-05-15T12:00:00Z"), ZoneOffset.UTC);
+        RevenuePulseService timed = new RevenuePulseService(squareClientProvider, forecaster, aggregator, salonConfig,
+                currentBusinessContext, snapshots, manualAdjustments, ownerCustomers, clock);
+
+        when(ownerCustomers.findAllByBusinessId(1L)).thenReturn(List.of(
+                com.salonreview.domain.OwnerCustomer.builder().squareCustomerId("OWNER-ANNA-KARA").build()));
+        when(aggregator.aggregate(eq(2026), eq(5), any())).thenReturn(aggOf(2026, 5, List.of()));
+        when(aggregator.aggregate(eq(2026), eq(4), any())).thenReturn(aggOf(2026, 4, List.of()));
+        when(forecaster.forecast(anyInt(), anyInt(), any(), any()))
+                .thenReturn(new ForecastResult(new BigDecimal("0.00"), null, null, 0, 0));
+
+        SquareClient.Booking ownerBooking = new SquareClient.Booking("bk-owner", "ACCEPTED",
+                "2026-05-20T15:00:00Z", null, null, "LOC", "OWNER-ANNA-KARA", null, null,
+                List.of(new SquareClient.AppointmentSegment("TM1", "VAR1", 60)));
+        SquareClient.Booking realBooking = new SquareClient.Booking("bk-client", "ACCEPTED",
+                "2026-05-21T15:00:00Z", null, null, "LOC", "CUSTREAL", null, null,
+                List.of(new SquareClient.AppointmentSegment("TM1", "VAR1", 60)));
+        when(square.bookings(any(), any())).thenReturn(List.of(ownerBooking, realBooking));
+        when(square.catalogPrices(any())).thenReturn(Map.of("VAR1", new BigDecimal("99.00")));
+
+        RevenuePulseDto p = timed.pulse(2026, 5);
+
+        // Only the one real (non-owner) booking counts — Anna Kara's future appointment doesn't.
+        assertThat(p.upcomingBookings()).isEqualTo(1);
+        assertThat(p.upcomingGross()).isEqualByComparingTo("99.00");
     }
 }

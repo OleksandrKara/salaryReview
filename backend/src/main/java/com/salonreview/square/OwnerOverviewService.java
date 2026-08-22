@@ -272,6 +272,20 @@ public class OwnerOverviewService {
                 tips       = tips.add(pm.firstHalf().cardTips()).add(pm.secondHalf().cardTips());
                 procedures += pm.firstHalf().countedServices() + pm.secondHalf().countedServices();
             }
+            // Owner/family comps (channel "COMP" — see SquareMonthAggregator's own doc) are folded
+            // into cardRevenue/countedServices above so the provider still gets paid commission on
+            // them, same as a real card sale — correct for payroll, the whole reason comps exist.
+            // But the salon never actually collects that money, so it must not count as this
+            // dashboard's Gross Revenue (and everything derived from it: Net Profit, average
+            // ticket). Backed out here, from the per-service list, rather than upstream in the
+            // aggregator, so payroll/SettlementPreviewService are completely untouched. Found live
+            // 2026-08-22: a $99 comp'd service for owner-customer Anna Kara was inflating Gross
+            // Revenue (and therefore Net Profit) by its full menu price every time it recurred.
+            for (SquareMonthAggregator.AttributedService s : agg.services()) {
+                if (!"COMP".equals(s.channel())) continue;
+                card = card.subtract(s.gross());
+                if (s.counted()) procedures--;
+            }
             // Manual adjustments (credits or deductions like a refund) aren't Square orders, so the
             // aggregator above never sees them — fold them in here too, the same way
             // SettlementPreviewService does for payroll, so this "live" revenue figure isn't
