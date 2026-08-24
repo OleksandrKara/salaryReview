@@ -6,5 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 
 public interface ServiceLifecycleRoleRepository extends JpaRepository<ServiceLifecycleRole, Long> {
+    List<ServiceLifecycleRole> findAllByBusinessId(Long businessId);
     List<ServiceLifecycleRole> findAllByBusinessIdAndRole(Long businessId, String role);
 }

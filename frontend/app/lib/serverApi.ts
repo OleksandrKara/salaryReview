@@ -16,6 +16,7 @@ import type {
   TwilioSmsSettingsDto,
   SmsTemplateView,
   PromoTermsDto,
+  ServiceLifecycleRoleDto,
   SmsAutomationSummary,
   SmsConversationDto,
   SmsConversationPageDto,
@@ -175,6 +176,8 @@ export const serverApi = {
   listSmsTemplates: () => serverFetch<SmsTemplateView[]>(`/api/owner/settings/sms/templates`),
 
   listPromoTerms: () => serverFetch<PromoTermsDto[]>(`/api/owner/settings/promos`),
+
+  listServiceLifecycleRoles: () => serverFetch<ServiceLifecycleRoleDto[]>(`/api/owner/settings/service-lifecycle-roles`),
 
   listSmsAutomations: () => serverFetch<SmsAutomationSummary[]>(`/api/owner/automations`),
 
