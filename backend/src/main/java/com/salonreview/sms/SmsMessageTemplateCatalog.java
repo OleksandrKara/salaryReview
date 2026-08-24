@@ -155,6 +155,17 @@ public final class SmsMessageTemplateCatalog {
                             + "is there anything specific you are looking for?"),
                     List.of("greeting", "sender", "businessName")
             )),
+            // Plain service reminder, no discount/link — a helpful nudge, not a promo, so
+            // TRANSACTIONAL (same reasoning as lead_follow_up_nudge above). Wording is a starting
+            // point, not final copy — owner-editable like every other template here.
+            Map.entry("touchup_reminder_nudge", new TemplateDefault(
+                    "touchup_reminder_nudge", "touchup_reminder", SmsMessageClass.TRANSACTIONAL,
+                    "Touch-up reminder",
+                    List.of("{{greeting}} It's {{sender}} from {{businessName}} 💛 It's been about 4 weeks since your "
+                            + "procedure — touch-ups done in the 4-6 week window help lock in your result best. "
+                            + "Want me to grab you a spot?"),
+                    List.of("greeting", "sender", "businessName")
+            )),
             // spotClause is pre-computed by the caller: "want to lock in your next spot" or
             // "want to lock in your next spot with {technician}" — see class doc on why this is a
             // clause variable rather than a second key.
