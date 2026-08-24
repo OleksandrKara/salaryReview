@@ -3,6 +3,7 @@ import { serverApi } from '../../../lib/serverApi';
 import PageHeader from '../../../components/PageHeader';
 import AutomationsPanel from './AutomationsPanel';
 import PromoDiscountsPanel from './PromoDiscountsPanel';
+import ServiceLifecycleRolesPanel from './ServiceLifecycleRolesPanel';
 import SmsActivityLog from './SmsActivityLog';
 import TemplatesPanel from './TemplatesPanel';
 import TwilioSmsSettingsForm from './TwilioSmsSettingsForm';
@@ -16,11 +17,12 @@ export default async function SmsSettingsPage() {
   const me = await serverApi.getMe();
   if (me.role !== 'OWNER') redirect('/reports');
 
-  const [settings, automations, templates, promoTerms] = await Promise.all([
+  const [settings, automations, templates, promoTerms, serviceLifecycleRoles] = await Promise.all([
     serverApi.getTwilioSmsSettings(),
     serverApi.listSmsAutomations(),
     serverApi.listSmsTemplates(),
     serverApi.listPromoTerms(),
+    serverApi.listServiceLifecycleRoles(),
   ]);
 
   return (
@@ -54,6 +56,16 @@ export default async function SmsSettingsPage() {
           links. The first save creates the actual discount in your connected Square account.
         </p>
         <PromoDiscountsPanel initialTerms={promoTerms} />
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Service lifecycle</h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Which of your Square services count as a touch-up, color booster, etc. — used by
+          lifecycle-reminder automations to know when a customer is due. Search picks a real
+          service from your Square catalog; you never need to know its id.
+        </p>
+        <ServiceLifecycleRolesPanel initialRoles={serviceLifecycleRoles} />
       </section>
 
       <section className="mt-8">

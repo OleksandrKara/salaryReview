@@ -39,6 +39,8 @@ import type {
   SmsTemplateView,
   SmsTemplateVariantView,
   PromoTermsDto,
+  ServiceLifecycleRoleDto,
+  CatalogSearchResultDto,
   SmsAutomationSummary,
   SmsMessageDto,
   SmsMessageDirection,
@@ -274,6 +276,20 @@ export const api = {
       discountAmount,
       minSpend,
     }),
+
+  // Service lifecycle roles (owner): which Square service counts as a touch-up/color booster/etc.
+  // for this business — see ServiceLifecycleRoleController. Search hits the business's own live
+  // Square catalog so the owner picks a real service instead of typing a raw id.
+  listServiceLifecycleRoles: () => proxyGet<ServiceLifecycleRoleDto[]>(`/api/owner/settings/service-lifecycle-roles`),
+
+  searchServiceLifecycleRoleCatalog: (q: string) =>
+    proxyGet<CatalogSearchResultDto[]>(`/api/owner/settings/service-lifecycle-roles/search?q=${encodeURIComponent(q)}`),
+
+  createServiceLifecycleRole: (role: string, squareVariationId: string) =>
+    proxyJson<ServiceLifecycleRoleDto>(`/api/owner/settings/service-lifecycle-roles`, 'POST', { role, squareVariationId }),
+
+  deleteServiceLifecycleRole: (id: number) =>
+    proxyVoid(`/api/owner/settings/service-lifecycle-roles/${id}`, 'DELETE'),
 
   // SMS automations hub (owner): registry list/toggle + the full sent/received activity log.
   listSmsAutomations: () => proxyGet<SmsAutomationSummary[]>(`/api/owner/automations`),

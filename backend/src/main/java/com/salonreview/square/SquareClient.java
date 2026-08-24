@@ -463,6 +463,64 @@ public class SquareClient {
         return i + " · " + v;
     }
 
+    /** One bookable service-variation, as offered to an owner picking it from a search box — the
+     * variation id is what actually needs storing (it's what an order line item/{@code
+     * AttributedService} carries), never the parent item id, which looks similar but never matches
+     * anything downstream. See {@code ServiceLifecycleRoleController}. */
+    public record CatalogSearchResult(String variationId, String displayName) {}
+
+    /**
+     * Every catalog item's variations, matched by a case-insensitive substring against the
+     * combined item+variation display name — lets an owner type "touch" or "color booster" and
+     * pick a real service instead of hand-copying an opaque Square id (which a human can't tell
+     * apart from that item's own, structurally similar but never-matching, parent item id — see
+     * {@link CatalogSearchResult}'s own doc; found live 2026-08-24, a first pass at this feature
+     * had an owner-supplied item id stored where a variation id belonged). Full item list is
+     * cached process-wide for 10 minutes (same TTL as {@link #catalogNames}) so repeated searches
+     * while typing don't each re-page the whole catalog.
+     */
+    public List<CatalogSearchResult> searchCatalogItemVariations(String query, int limit) {
+        String q = query == null ? "" : query.trim().toLowerCase(java.util.Locale.US);
+        if (q.isBlank()) return List.of();
+        List<CatalogObject> items = cached("catalogListItems", Duration.ofMinutes(10), this::catalogListItemsUncached);
+
+        List<CatalogSearchResult> results = new ArrayList<>();
+        for (CatalogObject item : items) {
+            if (item.itemData() == null || item.itemData().variations() == null) continue;
+            String itemName = item.itemData().name();
+            for (CatalogObject variation : item.itemData().variations()) {
+                if (variation.itemVariationData() == null || variation.id() == null) continue;
+                String combined = combineCatalogName(itemName, variation.itemVariationData().name());
+                String display = combined != null ? combined : itemName;
+                if (display == null) continue;
+                if (display.toLowerCase(java.util.Locale.US).contains(q)) {
+                    results.add(new CatalogSearchResult(variation.id(), display));
+                }
+                if (results.size() >= limit) return results;
+            }
+        }
+        return results;
+    }
+
+    private List<CatalogObject> catalogListItemsUncached() {
+        List<CatalogObject> all = new ArrayList<>();
+        String cursor = null;
+        do {
+            final String c = cursor;
+            CatalogListResponse resp = throttled(() -> http.get()
+                    .uri(b -> {
+                        b.path("/v2/catalog/list").queryParam("types", "ITEM");
+                        if (c != null) b.queryParam("cursor", c);
+                        return b.build();
+                    })
+                    .retrieve()
+                    .body(CatalogListResponse.class));
+            if (resp != null && resp.objects() != null) all.addAll(resp.objects());
+            cursor = resp == null ? null : resp.cursor();
+        } while (cursor != null && !cursor.isBlank());
+        return all;
+    }
+
     // Square's bulk-retrieve-customers endpoint 404s on this account, so customers are fetched one GET
     // each — but cached process-wide (names/creation dates never change) and the misses fetched in
     // parallel, so a month's worth of customers only ever costs one round of lookups. A sentinel
@@ -1117,10 +1175,13 @@ public class SquareClient {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record CatalogItemVariationData(String name, String itemId, Money priceMoney) {}
 
-    /** Parent catalog item — Square models a "service" as an item with one or more variations. */
+    /** Parent catalog item — Square models a "service" as an item with one or more variations.
+     * {@code variations} is only populated by {@code /v2/catalog/list} (each variation embedded
+     * inline as its own {@link CatalogObject}) — {@link #catalogNames}/{@link #catalogPrices}'
+     * batch-retrieve calls don't need it and leave it null. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record CatalogItemData(String name) {}
+    public record CatalogItemData(String name, List<CatalogObject> variations) {}
 
     /** Only the fields {@link #updatePromoTerms} needs to preserve when it overwrites this
      * object's version — Square's catalog upsert replaces {@code pricing_rule_data} wholesale, so
@@ -1149,6 +1210,10 @@ public class SquareClient {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record CatalogBatchRetrieveResponse(List<CatalogObject> objects,
                                                List<CatalogObject> relatedObjects) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record CatalogListResponse(List<CatalogObject> objects, String cursor) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)

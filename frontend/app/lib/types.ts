@@ -203,6 +203,24 @@ export interface PromoTermsDto {
   configured: boolean;
 }
 
+// --- Service lifecycle roles (com.salonreview.web.ServiceLifecycleRoleController) ---
+// Which Square service plays which role (touch-up, color booster, ...) in this business's own
+// customer service lifecycle — owner-editable, never hardcoded; see ServiceLifecycleRole's own doc
+// for why role is a free string, not a fixed set, and why squareVariationId (not shown raw to the
+// owner — see displayName) has to be a real Square variation id, picked via search, not typed.
+export interface ServiceLifecycleRoleDto {
+  id: number;
+  role: string;
+  squareVariationId: string;
+  displayName: string;
+  createdBy: string | null;
+}
+
+export interface CatalogSearchResultDto {
+  variationId: string;
+  displayName: string;
+}
+
 // --- SMS automations hub (com.salonreview.sms / com.salonreview.web.Sms*Controller) ---
 
 // tracksClicks/tracksReplies/tracksConversion say whether a click-through / reply / "customer
