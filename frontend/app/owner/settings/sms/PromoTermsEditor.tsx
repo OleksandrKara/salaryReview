@@ -5,28 +5,14 @@ import { api } from '../../../lib/api';
 import { Spinner } from '../../../components/Spinner';
 import type { PromoTermsDto } from '../../../lib/types';
 
-// Owner-editable discount amount/minimum-spend for the same-day-rebooking and customer-winback
-// SMS coupon links. The first save for a business creates real objects in that business's own
-// Square account (Customer Group + Discount + Pricing Rule) — see PromoConfigService — so that
-// one requires an explicit second click to confirm; every save after that just updates the
-// amounts in place.
-export default function PromoDiscountsPanel({ initialTerms }: { initialTerms: PromoTermsDto[] }) {
-  const [terms, setTerms] = useState(initialTerms);
-
-  function applyUpdate(updated: PromoTermsDto) {
-    setTerms((prev) => prev.map((t) => (t.promoCode === updated.promoCode ? updated : t)));
-  }
-
-  return (
-    <div className="mt-4 flex flex-col gap-3">
-      {terms.map((t) => (
-        <PromoEditor key={t.promoCode} terms={t} onSaved={applyUpdate} />
-      ))}
-    </div>
-  );
-}
-
-function PromoEditor({ terms, onSaved }: { terms: PromoTermsDto; onSaved: (t: PromoTermsDto) => void }) {
+// Owner-editable discount amount/minimum-spend for one coupon (see PromoConfigService) — extracted
+// out of the former standalone "Coupon discounts" section so it can render inside whichever
+// automation card(s) actually use this promo code (see AutomationsPanel's AUTOMATION_PROMO_CODES —
+// WINBACK5 is used by two automations, REBOOK10 by one). The first save for a business creates
+// real objects in that business's own Square account (Customer Group + Discount + Pricing Rule) —
+// see PromoConfigService — so that one requires an explicit second click to confirm; every save
+// after that just updates the amounts in place.
+export default function PromoTermsEditor({ terms, onSaved }: { terms: PromoTermsDto; onSaved: (t: PromoTermsDto) => void }) {
   const [discountAmount, setDiscountAmount] = useState(terms.discountAmount === null ? '' : String(terms.discountAmount));
   const [minSpend, setMinSpend] = useState(terms.minSpend === null ? '' : String(terms.minSpend));
   const [saving, setSaving] = useState(false);
