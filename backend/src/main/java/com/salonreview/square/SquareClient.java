@@ -533,7 +533,9 @@ public class SquareClient {
     }
 
     private static String dashboardUrl(String itemId) {
-        return "https://app.squareup.com/dashboard/items/library/" + itemId;
+        // "/items/services/" (not "/items/library/") is the real path for a service item's own
+        // detail page — confirmed against the owner's actual dashboard 2026-08-25.
+        return "https://app.squareup.com/dashboard/items/services/" + itemId;
     }
 
     private List<CatalogObject> catalogListItemsUncached() {
