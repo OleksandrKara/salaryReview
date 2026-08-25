@@ -24,6 +24,24 @@ const AUTOMATION_SERVICE_ROLES: Record<string, { role: string; label: string }[]
   ],
 };
 
+// Which vertical each automation is actually about — purely a display grouping/badge (doesn't
+// affect eligibility or config), added per direct request now that PMU automations sit alongside
+// the original nail-salon ones. "general" covers every automation whose mechanism was already
+// business-agnostic before PMU existed (checkout review, lead follow-up, both winbacks, same-day
+// rebooking) — none of them reference nails or PMU specifically in their own logic.
+type AutomationCategory = 'nails' | 'pmu' | 'general';
+const AUTOMATION_CATEGORY: Record<string, AutomationCategory> = {
+  four_hand_request: 'nails',
+  consultation_lead_sms: 'pmu',
+  touchup_reminder: 'pmu',
+  color_booster_reminder: 'pmu',
+};
+const CATEGORY_META: Record<AutomationCategory, { label: string; className: string }> = {
+  nails: { label: 'Nails', className: 'bg-rose-50 text-rose-700' },
+  pmu: { label: 'PMU', className: 'bg-violet-50 text-violet-700' },
+  general: { label: 'General', className: 'bg-zinc-100 text-zinc-600' },
+};
+
 // Which coupon(s) (PromoConfigService promoCode) each automation's SMS link actually applies —
 // see PromoSettingsController. WINBACK5 deliberately maps to two automations: repeat_customer_
 // winback reuses lapsed_customer_winback's own coupon rather than standing up a separate one
@@ -70,31 +88,61 @@ export default function AutomationsPanel({
     setPromoTerms((prev) => prev.map((t) => (t.promoCode === updated.promoCode ? updated : t)));
   }
 
+  // Enabled automations surface first — what's actually live day-to-day is what an owner checking
+  // in on this page wants to see without scrolling past a wall of off switches first. Off ones are
+  // grouped in their own section below, not just sorted down inline, so it reads as "here's what's
+  // running" vs. "here's what's available" rather than one long mixed list. Stable partition (not
+  // a comparator sort) keeps each group in the registry's own order rather than reshuffling by key.
+  const enabledAutomations = automations.filter((a) => a.enabled);
+  const disabledAutomations = automations.filter((a) => !a.enabled);
+
+  function renderCard(a: SmsAutomationSummary) {
+    return (
+      <AutomationCard
+        key={a.key}
+        automation={a}
+        category={AUTOMATION_CATEGORY[a.key] ?? 'general'}
+        onToggle={(enabled) => toggle(a.key, enabled)}
+        serviceRoles={AUTOMATION_SERVICE_ROLES[a.key]}
+        serviceLifecycleRoles={serviceLifecycleRoles}
+        onServiceLifecycleRolesChange={setServiceLifecycleRoles}
+        promoCodes={AUTOMATION_PROMO_CODES[a.key]}
+        promoTerms={promoTerms}
+        onPromoTermsSaved={updatePromoTerms}
+        sharedWith={AUTOMATION_PROMO_CODES[a.key]?.flatMap((code) =>
+          Object.entries(AUTOMATION_PROMO_CODES)
+            .filter(([otherKey, codes]) => otherKey !== a.key && codes.includes(code))
+            .map(([otherKey]) => automations.find((x) => x.key === otherKey)?.name ?? otherKey),
+        )}
+        sharedRoleNames={(role) =>
+          Object.entries(AUTOMATION_SERVICE_ROLES)
+            .filter(([otherKey, roles]) => otherKey !== a.key && roles.some((r) => r.role === role))
+            .map(([otherKey]) => automations.find((x) => x.key === otherKey)?.name ?? otherKey)
+        }
+      />
+    );
+  }
+
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {automations.map((a) => (
-        <AutomationCard
-          key={a.key}
-          automation={a}
-          onToggle={(enabled) => toggle(a.key, enabled)}
-          serviceRoles={AUTOMATION_SERVICE_ROLES[a.key]}
-          serviceLifecycleRoles={serviceLifecycleRoles}
-          onServiceLifecycleRolesChange={setServiceLifecycleRoles}
-          promoCodes={AUTOMATION_PROMO_CODES[a.key]}
-          promoTerms={promoTerms}
-          onPromoTermsSaved={updatePromoTerms}
-          sharedWith={AUTOMATION_PROMO_CODES[a.key]?.flatMap((code) =>
-            Object.entries(AUTOMATION_PROMO_CODES)
-              .filter(([otherKey, codes]) => otherKey !== a.key && codes.includes(code))
-              .map(([otherKey]) => automations.find((x) => x.key === otherKey)?.name ?? otherKey),
+    <div className="flex flex-col gap-5">
+      {enabledAutomations.length > 0 && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {enabledAutomations.map(renderCard)}
+        </div>
+      )}
+      {disabledAutomations.length > 0 && (
+        <div>
+          {enabledAutomations.length > 0 && (
+            <div className="mb-3 flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Off</span>
+              <div className="h-px flex-1 bg-zinc-100" />
+            </div>
           )}
-          sharedRoleNames={(role) =>
-            Object.entries(AUTOMATION_SERVICE_ROLES)
-              .filter(([otherKey, roles]) => otherKey !== a.key && roles.some((r) => r.role === role))
-              .map(([otherKey]) => automations.find((x) => x.key === otherKey)?.name ?? otherKey)
-          }
-        />
-      ))}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {disabledAutomations.map(renderCard)}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -108,6 +156,7 @@ function formatRate(numerator: number, denominator: number): string | undefined 
 
 function AutomationCard({
   automation,
+  category,
   onToggle,
   serviceRoles,
   serviceLifecycleRoles,
@@ -119,6 +168,7 @@ function AutomationCard({
   sharedRoleNames,
 }: {
   automation: SmsAutomationSummary;
+  category: AutomationCategory;
   onToggle: (enabled: boolean) => void;
   serviceRoles?: { role: string; label: string }[];
   serviceLifecycleRoles: ServiceLifecycleRoleDto[];
@@ -153,7 +203,12 @@ function AutomationCard({
     <div className="flex flex-col gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="font-medium text-zinc-900">{automation.name}</div>
+          <div className="flex items-center gap-1.5">
+            <span className="font-medium text-zinc-900">{automation.name}</span>
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${CATEGORY_META[category].className}`}>
+              {CATEGORY_META[category].label}
+            </span>
+          </div>
           <div className="mt-0.5 text-xs text-zinc-500">{automation.audienceDescription}</div>
         </div>
         {/* Full-size touch target, not shrunk to fit next to the label — see design.md D10. */}
