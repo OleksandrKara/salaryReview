@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { api } from '../../../lib/api';
+import PromoTermsEditor from './PromoTermsEditor';
 import ServiceRolePicker from './ServiceRolePicker';
-import type { ServiceLifecycleRoleDto, SmsAutomationSummary } from '../../../lib/types';
+import type { PromoTermsDto, ServiceLifecycleRoleDto, SmsAutomationSummary } from '../../../lib/types';
 
 // Automation keys whose settings need more than an on/off toggle — each maps to the specific
 // ServiceLifecycleRole roles that automation's own eligibility depends on (see
@@ -17,18 +18,32 @@ const AUTOMATION_SERVICE_ROLES: Record<string, { role: string; label: string }[]
   ],
 };
 
+// Which coupon(s) (PromoConfigService promoCode) each automation's SMS link actually applies —
+// see PromoSettingsController. WINBACK5 deliberately maps to two automations: repeat_customer_
+// winback reuses lapsed_customer_winback's own coupon rather than standing up a separate one
+// (Square pricing rules are amount-specific, so there's nothing to gain from a second $5/$99 rule)
+// — shown under both cards since editing it from either one updates the same underlying discount.
+const AUTOMATION_PROMO_CODES: Record<string, string[]> = {
+  same_day_rebooking_discount: ['REBOOK10'],
+  lapsed_customer_winback: ['WINBACK5'],
+  repeat_customer_winback: ['WINBACK5'],
+};
+
 // Toggle grid for owner-controlled SMS automations — extracted from the former standalone
 // /owner/automations hub, now folded into this page so every SMS-related control (automations,
 // activity, credentials) lives on one page (see openspec/changes consolidation request).
 export default function AutomationsPanel({
   initialAutomations,
   initialServiceLifecycleRoles,
+  initialPromoTerms,
 }: {
   initialAutomations: SmsAutomationSummary[];
   initialServiceLifecycleRoles: ServiceLifecycleRoleDto[];
+  initialPromoTerms: PromoTermsDto[];
 }) {
   const [automations, setAutomations] = useState(initialAutomations);
   const [serviceLifecycleRoles, setServiceLifecycleRoles] = useState(initialServiceLifecycleRoles);
+  const [promoTerms, setPromoTerms] = useState(initialPromoTerms);
 
   async function toggle(key: string, enabled: boolean) {
     // Optimistic — the toggle is the whole interaction, a spinner-then-flip would feel laggy for
@@ -41,6 +56,10 @@ export default function AutomationsPanel({
     }
   }
 
+  function updatePromoTerms(updated: PromoTermsDto) {
+    setPromoTerms((prev) => prev.map((t) => (t.promoCode === updated.promoCode ? updated : t)));
+  }
+
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {automations.map((a) => (
@@ -51,6 +70,14 @@ export default function AutomationsPanel({
           serviceRoles={AUTOMATION_SERVICE_ROLES[a.key]}
           serviceLifecycleRoles={serviceLifecycleRoles}
           onServiceLifecycleRolesChange={setServiceLifecycleRoles}
+          promoCodes={AUTOMATION_PROMO_CODES[a.key]}
+          promoTerms={promoTerms}
+          onPromoTermsSaved={updatePromoTerms}
+          sharedWith={AUTOMATION_PROMO_CODES[a.key]?.flatMap((code) =>
+            Object.entries(AUTOMATION_PROMO_CODES)
+              .filter(([otherKey, codes]) => otherKey !== a.key && codes.includes(code))
+              .map(([otherKey]) => automations.find((x) => x.key === otherKey)?.name ?? otherKey),
+          )}
         />
       ))}
     </div>
@@ -70,12 +97,20 @@ function AutomationCard({
   serviceRoles,
   serviceLifecycleRoles,
   onServiceLifecycleRolesChange,
+  promoCodes,
+  promoTerms,
+  onPromoTermsSaved,
+  sharedWith,
 }: {
   automation: SmsAutomationSummary;
   onToggle: (enabled: boolean) => void;
   serviceRoles?: { role: string; label: string }[];
   serviceLifecycleRoles: ServiceLifecycleRoleDto[];
   onServiceLifecycleRolesChange: (next: ServiceLifecycleRoleDto[]) => void;
+  promoCodes?: string[];
+  promoTerms: PromoTermsDto[];
+  onPromoTermsSaved: (t: PromoTermsDto) => void;
+  sharedWith?: string[];
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const clickRate = automation.tracksClicks ? formatRate(automation.clickedLast30Days, automation.linkSentLast30Days) : undefined;
@@ -84,8 +119,14 @@ function AutomationCard({
     ? formatRate(automation.convertedLast30Days, automation.sentLast30Days)
     : undefined;
 
-  const configuredCount = serviceRoles?.filter((r) => serviceLifecycleRoles.some((x) => x.role === r.role)).length ?? 0;
-  const fullyConfigured = serviceRoles ? configuredCount === serviceRoles.length : true;
+  const hasSettings = !!(serviceRoles || promoCodes);
+  const configuredRoleCount = serviceRoles?.filter((r) => serviceLifecycleRoles.some((x) => x.role === r.role)).length ?? 0;
+  const roleTotal = serviceRoles?.length ?? 0;
+  const configuredPromoCount = promoCodes?.filter((code) => promoTerms.find((t) => t.promoCode === code)?.configured).length ?? 0;
+  const promoTotal = promoCodes?.length ?? 0;
+  const configuredCount = configuredRoleCount + configuredPromoCount;
+  const totalCount = roleTotal + promoTotal;
+  const fullyConfigured = totalCount === 0 || configuredCount === totalCount;
 
   return (
     <div className="flex flex-col gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
@@ -177,7 +218,7 @@ function AutomationCard({
         </div>
       )}
 
-      {serviceRoles && (
+      {hasSettings && (
         <div className="-mx-1 border-t border-zinc-100 pt-2.5">
           <button
             type="button"
@@ -186,17 +227,17 @@ function AutomationCard({
           >
             <span className="inline-flex items-center gap-1.5">
               <span className={`transition-transform ${settingsOpen ? 'rotate-90' : ''}`}>›</span>
-              Configure services
+              Settings
             </span>
             {!fullyConfigured && (
               <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
-                {configuredCount}/{serviceRoles.length} set up
+                {configuredCount}/{totalCount} set up
               </span>
             )}
           </button>
           {settingsOpen && (
             <div className="mx-1 mt-2.5 flex flex-col gap-3">
-              {serviceRoles.map((r) => (
+              {serviceRoles?.map((r) => (
                 <div key={r.role}>
                   <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">{r.label}</div>
                   <ServiceRolePicker
@@ -211,6 +252,20 @@ function AutomationCard({
                   />
                 </div>
               ))}
+              {promoCodes?.map((code) => {
+                const terms = promoTerms.find((t) => t.promoCode === code);
+                if (!terms) return null;
+                return (
+                  <div key={code}>
+                    <PromoTermsEditor terms={terms} onSaved={onPromoTermsSaved} />
+                    {sharedWith && sharedWith.length > 0 && (
+                      <p className="mt-1.5 text-xs text-zinc-400">
+                        Same coupon as {sharedWith.join(', ')} — editing it here updates it there too.
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
