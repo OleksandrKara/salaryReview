@@ -61,6 +61,7 @@ public class TouchupReminderScheduler {
     private final ServiceLifecycleReminderSendRepository sendRepository;
     private final SquareClientProvider squareClientProvider;
     private final TwilioSmsConfigRepository twilioConfigs;
+    private final SmsAutomationService automationService;
     private final SmsMessageLogService messageLogService;
     private final TwilioSmsService smsService;
     private final TouchupReminderProperties properties;
@@ -69,6 +70,7 @@ public class TouchupReminderScheduler {
                                      ServiceLifecycleReminderSendRepository sendRepository,
                                      SquareClientProvider squareClientProvider,
                                      TwilioSmsConfigRepository twilioConfigs,
+                                     SmsAutomationService automationService,
                                      SmsMessageLogService messageLogService,
                                      TwilioSmsService smsService,
                                      TouchupReminderProperties properties) {
@@ -76,6 +78,7 @@ public class TouchupReminderScheduler {
         this.sendRepository = sendRepository;
         this.squareClientProvider = squareClientProvider;
         this.twilioConfigs = twilioConfigs;
+        this.automationService = automationService;
         this.messageLogService = messageLogService;
         this.smsService = smsService;
         this.properties = properties;
@@ -96,6 +99,19 @@ public class TouchupReminderScheduler {
             Set<String> touchUpIds = eligibleRoleIds(businessId, "TOUCH_UP");
             if (initialProcedureIds.isEmpty() || touchUpIds.isEmpty()) {
                 continue; // nothing configured for this business yet — see class doc
+            }
+            // Checked here, before any Square calls or idempotency rows get written — not lazily
+            // inside TwilioSmsService.sendTemplated the way a normal send would be. Found live
+            // 2026-08-25: sendTemplated's own disabled check happens only after this scheduler had
+            // already written a permanent NOT_SENT row for that customer/procedure-date, which
+            // (correctly, by design, everywhere else in this codebase) blocks ever reconsidering
+            // them again — meaning every real customer whose ~4-week window passed while this
+            // automation was still being configured would be silently skipped forever, even after
+            // the owner turned it on. Skipping the whole business here instead means nothing is
+            // recorded while off, so every candidate is simply re-evaluated fresh on the next run
+            // once enabled — see design decision, 2026-08-25.
+            if (!automationService.isEnabled(businessId, AUTOMATION_KEY)) {
+                continue;
             }
 
             SquareClient square;
