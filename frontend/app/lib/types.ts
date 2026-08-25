@@ -219,6 +219,9 @@ export interface ServiceLifecycleRoleDto {
 export interface CatalogSearchResultDto {
   variationId: string;
   displayName: string;
+  // Opens this exact item in the Square Seller Dashboard, so the owner can check it (e.g. tell
+  // apart a real item from a same-named duplicate) before picking it — see SquareClient's own doc.
+  dashboardUrl: string;
 }
 
 // --- SMS automations hub (com.salonreview.sms / com.salonreview.web.Sms*Controller) ---

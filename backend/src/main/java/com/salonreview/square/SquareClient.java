@@ -466,18 +466,32 @@ public class SquareClient {
     /** One bookable service-variation, as offered to an owner picking it from a search box — the
      * variation id is what actually needs storing (it's what an order line item/{@code
      * AttributedService} carries), never the parent item id, which looks similar but never matches
-     * anything downstream. See {@code ServiceLifecycleRoleController}. */
-    public record CatalogSearchResult(String variationId, String displayName) {}
+     * anything downstream. See {@code ServiceLifecycleRoleController}. {@code dashboardUrl} opens
+     * this exact item in the Square Seller Dashboard so the owner can check it before picking —
+     * added live 2026-08-25 after an owner spotted a same-named duplicate in search results and
+     * had no way to tell which one was real without this. */
+    public record CatalogSearchResult(String variationId, String displayName, String dashboardUrl) {}
 
     /**
-     * Every catalog item's variations, matched by a case-insensitive substring against the
-     * combined item+variation display name — lets an owner type "touch" or "color booster" and
-     * pick a real service instead of hand-copying an opaque Square id (which a human can't tell
-     * apart from that item's own, structurally similar but never-matching, parent item id — see
-     * {@link CatalogSearchResult}'s own doc; found live 2026-08-24, a first pass at this feature
-     * had an owner-supplied item id stored where a variation id belonged). Full item list is
-     * cached process-wide for 10 minutes (same TTL as {@link #catalogNames}) so repeated searches
-     * while typing don't each re-page the whole catalog.
+     * Every catalog item's variations that are actually present at this business's own {@link
+     * #locationId}, matched by a case-insensitive substring against the combined item+variation
+     * display name — lets an owner type "touch" or "color booster" and pick a real service instead
+     * of hand-copying an opaque Square id (which a human can't tell apart from that item's own,
+     * structurally similar but never-matching, parent item id — see {@link CatalogSearchResult}'s
+     * own doc; found live 2026-08-24, a first pass at this feature had an owner-supplied item id
+     * stored where a variation id belonged).
+     *
+     * <p>The location filter (added 2026-08-25, same incident as the doc above) matters because
+     * {@code /v2/catalog/list} returns every catalog item on the whole Square seller account, not
+     * just this location's — a seller with old/inactive locations under the same account (confirmed
+     * live: two inactive legacy PMU locations alongside this one active one) gets every one of
+     * those locations' items back too, including same-named near-duplicates of real, current items
+     * (an owner searching "lips" saw "Lips 3D Effect Technique" twice — one real, one a stale
+     * duplicate from an inactive location last touched months earlier). See
+     * {@link #isPresentAtLocation}.
+     *
+     * <p>Full item list is cached process-wide for 10 minutes (same TTL as {@link #catalogNames})
+     * so repeated searches while typing don't each re-page the whole catalog.
      */
     public List<CatalogSearchResult> searchCatalogItemVariations(String query, int limit) {
         String q = query == null ? "" : query.trim().toLowerCase(java.util.Locale.US);
@@ -487,19 +501,39 @@ public class SquareClient {
         List<CatalogSearchResult> results = new ArrayList<>();
         for (CatalogObject item : items) {
             if (item.itemData() == null || item.itemData().variations() == null) continue;
+            if (!isPresentAtLocation(item, locationId)) continue;
             String itemName = item.itemData().name();
             for (CatalogObject variation : item.itemData().variations()) {
                 if (variation.itemVariationData() == null || variation.id() == null) continue;
+                if (!isPresentAtLocation(variation, locationId)) continue;
                 String combined = combineCatalogName(itemName, variation.itemVariationData().name());
                 String display = combined != null ? combined : itemName;
                 if (display == null) continue;
                 if (display.toLowerCase(java.util.Locale.US).contains(q)) {
-                    results.add(new CatalogSearchResult(variation.id(), display));
+                    results.add(new CatalogSearchResult(variation.id(), display, dashboardUrl(item.id())));
                 }
                 if (results.size() >= limit) return results;
             }
         }
         return results;
+    }
+
+    /** {@code presentAtAllLocations == null} is treated as {@code true} — Square's own default
+     * when the field is simply absent from a response, same fail-open reading the JSON schema
+     * implies (every real object this codebase has seen sets it explicitly, but nothing guarantees
+     * that forever). */
+    static boolean isPresentAtLocation(CatalogObject obj, String locationId) {
+        boolean presentAll = obj.presentAtAllLocations() == null || obj.presentAtAllLocations();
+        if (presentAll) {
+            List<String> absent = obj.absentAtLocationIds();
+            return absent == null || !absent.contains(locationId);
+        }
+        List<String> present = obj.presentAtLocationIds();
+        return present != null && present.contains(locationId);
+    }
+
+    private static String dashboardUrl(String itemId) {
+        return "https://app.squareup.com/dashboard/items/library/" + itemId;
     }
 
     private List<CatalogObject> catalogListItemsUncached() {
@@ -1198,13 +1232,25 @@ public class SquareClient {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record CatalogDiscountData(String name) {}
 
+    /** {@code presentAtAllLocations}/{@code presentAtLocationIds}/{@code absentAtLocationIds} are
+     * top-level fields on every catalog object (item AND its variations each carry their own copy)
+     * controlling per-location visibility — see {@link #isPresentAtLocation}. Found live
+     * 2026-08-25: a Square seller account can carry catalog items from other, unrelated (including
+     * fully inactive) locations under the same merchant, and {@code /v2/catalog/list} returns them
+     * all with no location filter of its own — an owner searching this business's own catalog
+     * (see {@link #searchCatalogItemVariations}) saw items like "Full Lips"/"Eyebrows" that don't
+     * exist anywhere in this business's own Square dashboard, because they belonged to two
+     * inactive legacy locations on the same account. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record CatalogObject(String type, String id, Long version,
                                 CatalogItemVariationData itemVariationData,
                                 CatalogItemData itemData,
                                 CatalogPricingRuleData pricingRuleData,
-                                CatalogDiscountData discountData) {}
+                                CatalogDiscountData discountData,
+                                Boolean presentAtAllLocations,
+                                List<String> presentAtLocationIds,
+                                List<String> absentAtLocationIds) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
