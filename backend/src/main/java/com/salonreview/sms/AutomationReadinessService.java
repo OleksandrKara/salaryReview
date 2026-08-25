@@ -49,7 +49,10 @@ public class AutomationReadinessService {
             // doc on why it reuses lapsed_customer_winback's coupon rather than a separate one.
             case "lapsed_customer_winback", "repeat_customer_winback" ->
                     promoReadiness(businessId, PromoConfigService.WINBACK_PROMO_CODE, "customer win-back discount");
-            case "touchup_reminder" -> touchupReminderReadiness(businessId);
+            case "touchup_reminder" ->
+                    rolesConfiguredReadiness(businessId, "INITIAL_PROCEDURE", "Initial procedure", "TOUCH_UP", "Touch-up");
+            case "color_booster_reminder" ->
+                    rolesConfiguredReadiness(businessId, "INITIAL_PROCEDURE", "Initial procedure", "COLOR_BOOSTER", "Color booster");
             default -> Readiness.READY;
         };
     }
@@ -67,11 +70,16 @@ public class AutomationReadinessService {
         return ok ? Readiness.READY : Readiness.notReady("Set up the " + label + " coupon below first");
     }
 
-    private Readiness touchupReminderReadiness(Long businessId) {
-        boolean hasInitial = !roleRepository.findAllByBusinessIdAndRole(businessId, "INITIAL_PROCEDURE").isEmpty();
-        boolean hasTouchUp = !roleRepository.findAllByBusinessIdAndRole(businessId, "TOUCH_UP").isEmpty();
-        if (hasInitial && hasTouchUp) return Readiness.READY;
-        return Readiness.notReady("Add at least one Initial procedure and one Touch-up service below first");
+    /** Shared by every lifecycle-reminder automation that needs exactly two roles configured
+     * (currently touchup_reminder and color_booster_reminder, both anchored on the same
+     * INITIAL_PROCEDURE role) — see each automation's own scheduler doc for why both are
+     * required before it can do anything. */
+    private Readiness rolesConfiguredReadiness(Long businessId, String roleAKey, String roleALabel,
+                                                String roleBKey, String roleBLabel) {
+        boolean hasA = !roleRepository.findAllByBusinessIdAndRole(businessId, roleAKey).isEmpty();
+        boolean hasB = !roleRepository.findAllByBusinessIdAndRole(businessId, roleBKey).isEmpty();
+        if (hasA && hasB) return Readiness.READY;
+        return Readiness.notReady("Add at least one " + roleALabel + " and one " + roleBLabel + " service below first");
     }
 
     private static boolean isSet(String value) {

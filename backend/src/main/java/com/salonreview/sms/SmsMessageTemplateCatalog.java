@@ -183,6 +183,14 @@ public final class SmsMessageTemplateCatalog {
                             + "Want me to grab you a spot?"),
                     List.of("greeting", "sender", "businessName")
             )),
+            // Same shape as touchup_reminder_nudge — no discount/link, a plain service reminder.
+            Map.entry("color_booster_reminder_nudge", new TemplateDefault(
+                    "color_booster_reminder_nudge", "color_booster_reminder", SmsMessageClass.TRANSACTIONAL,
+                    "Color booster reminder",
+                    List.of("{{greeting}} It's {{sender}} from {{businessName}} 💛 It's been about a year since your "
+                            + "procedure — a color booster helps keep your result looking fresh. Want me to grab you a spot?"),
+                    List.of("greeting", "sender", "businessName")
+            )),
             // spotClause is pre-computed by the caller: "want to lock in your next spot" or
             // "want to lock in your next spot with {technician}" — see class doc on why this is a
             // clause variable rather than a second key.
