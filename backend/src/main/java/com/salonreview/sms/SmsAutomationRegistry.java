@@ -50,6 +50,13 @@ public final class SmsAutomationRegistry {
                     "Every customer who submits a 4-Hand manicure/pedicure request on mani or akluxnails-home",
                     List.of(), false, false, false
             ),
+            "consultation_lead_sms", new AutomationMeta(
+                    "consultation_lead_sms",
+                    "Consultation booking confirmation",
+                    "Every customer who books a PMU consultation — Square's own confirmation text doesn't "
+                            + "reliably fire for this booking type, so a custom one is sent instead",
+                    List.of(), false, false, false
+            ),
             "checkout_review_request", new AutomationMeta(
                     "checkout_review_request",
                     "Post-checkout satisfaction request",

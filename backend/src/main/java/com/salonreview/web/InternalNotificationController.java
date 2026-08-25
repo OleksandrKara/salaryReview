@@ -69,8 +69,13 @@ public class InternalNotificationController {
     }
 
     /** {@code messageClass} is deliberately not a field on {@link SmsSendRequest} — it is fixed
-     * per {@code templateKey} inside {@link TwilioSmsService}, never accepted from a caller. */
-    public record SmsSendRequest(String templateKey, String phoneNumber, Map<String, String> variables) {
+     * per {@code templateKey} inside {@link TwilioSmsService}, never accepted from a caller.
+     * {@code businessShortCode}/{@code businessId} mirror {@link RebookingPromoEnrollRequest}'s
+     * own fields exactly, resolved the same way via {@link #resolveBusiness} — both nullable for
+     * backward compatibility with mani's existing caller (which sends neither), which resolves to
+     * {@link BusinessRepository#legacySmsBusiness}, its unchanged prior behavior. */
+    public record SmsSendRequest(String templateKey, String phoneNumber, Map<String, String> variables,
+                                  String businessShortCode, Long businessId) {
     }
 
     @PostMapping("/notifications/sms/send")
@@ -80,10 +85,12 @@ public class InternalNotificationController {
         if (!keyMatches(key)) {
             return ResponseEntity.status(401).build();
         }
-        // See BusinessRepository#legacySmsBusiness, same as the SMS schedulers — this endpoint has
-        // no session, so there's no business context to resolve beyond Business A.
+        Business business = resolveBusiness(body.businessShortCode(), body.businessId());
+        if (business == null) {
+            return ResponseEntity.ok(Map.of("sent", false, "reason", "unknown_business"));
+        }
         TwilioSmsService.SmsSendResult result = sms.sendTemplated(
-                businesses.legacySmsBusiness().getId(), body.templateKey(), body.phoneNumber(), body.variables());
+                business.getId(), body.templateKey(), body.phoneNumber(), body.variables());
         Map<String, Object> response = new HashMap<>();
         response.put("sent", result.sent());
         response.put("reason", result.reason());

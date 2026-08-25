@@ -44,6 +44,7 @@ class InternalNotificationControllerTest {
     private PromoConfigService promoConfigService;
     private SameDayRebookingGroupMembershipRepository groupMembershipRepository;
     private SquareClient square;
+    private BusinessRepository businessesMock;
     private MockMvc mvc;
     private final ObjectMapper json = new ObjectMapper();
 
@@ -61,17 +62,17 @@ class InternalNotificationControllerTest {
         groupMembershipRepository = mock(SameDayRebookingGroupMembershipRepository.class);
         square = mock(SquareClient.class);
         SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
-        BusinessRepository businesses = mock(BusinessRepository.class);
-        when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
+        businessesMock = mock(BusinessRepository.class);
+        when(businessesMock.legacySmsBusiness()).thenReturn(Business.builder().id(1L).name("Test").shortCode("test")
                 .timezone("UTC").active(true).build());
-        when(businesses.findByShortCode("test")).thenReturn(java.util.Optional.of(
+        when(businessesMock.findByShortCode("test")).thenReturn(java.util.Optional.of(
                 Business.builder().id(1L).name("Test").shortCode("test").timezone("UTC").active(true).build()));
-        when(businesses.findById(1L)).thenReturn(java.util.Optional.of(
+        when(businessesMock.findById(1L)).thenReturn(java.util.Optional.of(
                 Business.builder().id(1L).name("Test").shortCode("test").timezone("UTC").active(true).build()));
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         InternalNotificationController controller = new InternalNotificationController(
                 props, telegram, sms, promoSigner, promoConfigService, groupMembershipRepository,
-                squareClientProvider, businesses);
+                squareClientProvider, businessesMock);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -172,6 +173,58 @@ class InternalNotificationControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sent").value(false))
                 .andExpect(jsonPath("$.reason").value("no_consent"));
+    }
+
+    @Test
+    @DisplayName("sms/send: no businessId/businessShortCode → resolves to legacySmsBusiness (mani's existing caller, unchanged)")
+    void smsSendNoBusinessDefaultsToLegacy() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        when(sms.sendTemplated(any(), anyString(), anyString(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
+
+        mvc.perform(post("/api/internal/notifications/sms/send")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content(SMS_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sent").value(true));
+
+        verify(sms).sendTemplated(1L, "four_hand_request_received", "+15551234567", java.util.Map.of("name", "Jane"));
+    }
+
+    @Test
+    @DisplayName("sms/send: businessId present → sends for that business, not the legacy default")
+    void smsSendWithBusinessIdUsesThatBusiness() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        when(businessesMock.findById(2L)).thenReturn(java.util.Optional.of(
+                Business.builder().id(2L).name("PMU").shortCode("pmu").timezone("UTC").active(true).build()));
+        when(sms.sendTemplated(org.mockito.ArgumentMatchers.eq(2L), anyString(), anyString(), any()))
+                .thenReturn(new TwilioSmsService.SmsSendResult(true, null));
+        String pmuBody = "{\"templateKey\":\"consultation_request_confirmation\","
+                + "\"phoneNumber\":\"+15551234567\",\"variables\":{\"name\":\"Jane\"},\"businessId\":2}";
+
+        mvc.perform(post("/api/internal/notifications/sms/send")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content(pmuBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sent").value(true));
+
+        verify(sms).sendTemplated(2L, "consultation_request_confirmation", "+15551234567", java.util.Map.of("name", "Jane"));
+    }
+
+    @Test
+    @DisplayName("sms/send: unrecognized businessShortCode → sent:false unknown_business, never falls back to legacy business")
+    void smsSendUnknownBusinessShortCodeRefused() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        String bogusBody = "{\"templateKey\":\"four_hand_request_received\","
+                + "\"phoneNumber\":\"+15551234567\",\"variables\":{\"name\":\"Jane\"},\"businessShortCode\":\"nonexistent\"}";
+
+        mvc.perform(post("/api/internal/notifications/sms/send")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content(bogusBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sent").value(false))
+                .andExpect(jsonPath("$.reason").value("unknown_business"));
+
+        org.mockito.Mockito.verifyNoInteractions(sms);
     }
 
     private static final String ENROLL_BODY = "{\"squareCustomerId\":\"cust1\",\"expEpochSeconds\":9999999999,\"signature\":\"sig123\"}";

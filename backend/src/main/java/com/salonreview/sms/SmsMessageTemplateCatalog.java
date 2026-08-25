@@ -56,6 +56,18 @@ public final class SmsMessageTemplateCatalog {
                             + "shortly to confirm timing & pricing! -{{businessName}}"),
                     List.of("name", "preferredTime", "businessName")
             )),
+            // Same shape as four_hand_request_received (a booking-confirmation text, not a reply-
+            // ask) — added because Square's own confirmation text doesn't reliably fire for a PMU
+            // consultation booking (Business 2 automation #1). Relayed through the same
+            // businessId-parameterized /api/internal/notifications/sms/send endpoint, not a new
+            // one — see InternalNotificationController's own doc.
+            Map.entry("consultation_request_confirmation", new TemplateDefault(
+                    "consultation_request_confirmation", "consultation_lead_sms", SmsMessageClass.TRANSACTIONAL,
+                    "Consultation confirmation",
+                    List.of("Hi {{name}}! Your consultation with {{businessName}} is confirmed for {{preferredTime}} "
+                            + "💛 We can't wait to meet you!"),
+                    List.of("name", "preferredTime", "businessName")
+            )),
             Map.entry("checkout_rating_request_with_technician", new TemplateDefault(
                     "checkout_rating_request_with_technician", "checkout_review_request", SmsMessageClass.TRANSACTIONAL,
                     "Rating request (technician known)",
