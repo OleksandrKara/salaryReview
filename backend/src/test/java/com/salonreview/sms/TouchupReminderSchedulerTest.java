@@ -37,6 +37,7 @@ class TouchupReminderSchedulerTest {
     private ServiceLifecycleRoleRepository roleRepository;
     private ServiceLifecycleReminderSendRepository sendRepository;
     private SquareClient square;
+    private SmsAutomationService automationService;
     private SmsMessageLogService messageLogService;
     private TwilioSmsService smsService;
     private TouchupReminderScheduler scheduler;
@@ -51,12 +52,14 @@ class TouchupReminderSchedulerTest {
         when(twilioConfigs.findAll()).thenReturn(List.of(TwilioSmsConfig.builder().id(1L).businessId(BUSINESS_ID)
                 .accountSid("AC1").apiKey("k").apiSecret("s").fromPhoneNumber("+15550001111").build()));
         when(squareClientProvider.forBusiness(BUSINESS_ID)).thenReturn(square);
+        automationService = mock(SmsAutomationService.class);
+        when(automationService.isEnabled(BUSINESS_ID, "touchup_reminder")).thenReturn(true);
         messageLogService = mock(SmsMessageLogService.class);
         smsService = mock(TwilioSmsService.class);
         TouchupReminderProperties properties = new TouchupReminderProperties();
 
         scheduler = new TouchupReminderScheduler(roleRepository, sendRepository, squareClientProvider, twilioConfigs,
-                messageLogService, smsService, properties);
+                automationService, messageLogService, smsService, properties);
 
         givenRoles(List.of(role("INITIAL_PROCEDURE", INITIAL_ID)), List.of(role("TOUCH_UP", TOUCHUP_ID)));
         when(smsService.sendTemplated(any(), any(), any(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
@@ -194,11 +197,25 @@ class TouchupReminderSchedulerTest {
     }
 
     @Test
-    @DisplayName("automation disabled (via TwilioSmsService) → writes NOT_SENT, no crash")
-    void automationDisabledWritesNotSent() {
+    @DisplayName("automation disabled → business skipped entirely, no row written (retried once enabled, not skipped forever)")
+    void automationDisabledSkipsWithoutRecording() {
+        when(automationService.isEnabled(BUSINESS_ID, "touchup_reminder")).thenReturn(false);
+        when(square.bookings(any(), any())).thenReturn(List.of(initialProcedureBooking(28)));
+
+        scheduler.sendDueReminders();
+
+        // No row for this candidate at all — a real customer whose ~4-week window passes while
+        // the owner is still configuring roles/toggle must not be permanently excluded once the
+        // automation is later turned on (see class doc, found live 2026-08-25).
+        verifyNoInteractions(square, smsService, sendRepository);
+    }
+
+    @Test
+    @DisplayName("Twilio not configured (via TwilioSmsService, automation itself enabled) → writes NOT_SENT")
+    void notConfiguredWritesNotSent() {
         when(square.bookings(any(), any())).thenReturn(List.of(initialProcedureBooking(28)));
         when(smsService.sendTemplated(any(), any(), any(), any()))
-                .thenReturn(new TwilioSmsService.SmsSendResult(false, "automation_disabled"));
+                .thenReturn(new TwilioSmsService.SmsSendResult(false, "not_configured"));
 
         scheduler.sendDueReminders();
 
