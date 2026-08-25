@@ -96,4 +96,24 @@ class AutomationReadinessServiceTest {
                 .thenReturn(List.of(com.salonreview.domain.ServiceLifecycleRole.builder().build()));
         assertThat(service.readiness(BUSINESS_ID, "touchup_reminder").ready()).isTrue();
     }
+
+    @Test
+    @DisplayName("color_booster_reminder needs at least one INITIAL_PROCEDURE and one COLOR_BOOSTER service")
+    void colorBoosterReminderNeedsBothRoles() {
+        when(roleRepository.findAllByBusinessIdAndRole(eq(BUSINESS_ID), eq("INITIAL_PROCEDURE"))).thenReturn(List.of());
+        when(roleRepository.findAllByBusinessIdAndRole(eq(BUSINESS_ID), eq("COLOR_BOOSTER"))).thenReturn(List.of());
+        assertThat(service.readiness(BUSINESS_ID, "color_booster_reminder").ready()).isFalse();
+
+        when(roleRepository.findAllByBusinessIdAndRole(eq(BUSINESS_ID), eq("INITIAL_PROCEDURE")))
+                .thenReturn(List.of(com.salonreview.domain.ServiceLifecycleRole.builder().build()));
+        assertThat(service.readiness(BUSINESS_ID, "color_booster_reminder").ready()).isFalse();
+
+        when(roleRepository.findAllByBusinessIdAndRole(eq(BUSINESS_ID), eq("COLOR_BOOSTER")))
+                .thenReturn(List.of(com.salonreview.domain.ServiceLifecycleRole.builder().build()));
+        assertThat(service.readiness(BUSINESS_ID, "color_booster_reminder").ready()).isTrue();
+
+        // INITIAL_PROCEDURE is shared with touchup_reminder — confirms both automations read the
+        // same role independently rather than one clobbering the other's readiness check.
+        assertThat(service.readiness(BUSINESS_ID, "touchup_reminder").ready()).isFalse(); // no TOUCH_UP configured
+    }
 }

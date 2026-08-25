@@ -8,13 +8,19 @@ import type { PromoTermsDto, ServiceLifecycleRoleDto, SmsAutomationSummary } fro
 
 // Automation keys whose settings need more than an on/off toggle — each maps to the specific
 // ServiceLifecycleRole roles that automation's own eligibility depends on (see
-// TouchupReminderScheduler's own doc: inert until both are configured for this business). Adding a
-// future lifecycle-reminder automation (e.g. an eventual color-booster reminder) means adding one
-// entry here, not building a new settings surface.
+// TouchupReminderScheduler's/ColorBoosterReminderScheduler's own docs: inert until both are
+// configured for this business). Adding a future lifecycle-reminder automation means adding one
+// entry here, not building a new settings surface. INITIAL_PROCEDURE deliberately appears under
+// both — the same qualifying procedure anchors both reminders (see sharedRoleNames below, which
+// surfaces that sharing in the UI the same way coupon sharing already is).
 const AUTOMATION_SERVICE_ROLES: Record<string, { role: string; label: string }[]> = {
   touchup_reminder: [
     { role: 'INITIAL_PROCEDURE', label: 'Initial procedure' },
     { role: 'TOUCH_UP', label: 'Touch-up' },
+  ],
+  color_booster_reminder: [
+    { role: 'INITIAL_PROCEDURE', label: 'Initial procedure' },
+    { role: 'COLOR_BOOSTER', label: 'Color booster' },
   ],
 };
 
@@ -82,6 +88,11 @@ export default function AutomationsPanel({
               .filter(([otherKey, codes]) => otherKey !== a.key && codes.includes(code))
               .map(([otherKey]) => automations.find((x) => x.key === otherKey)?.name ?? otherKey),
           )}
+          sharedRoleNames={(role) =>
+            Object.entries(AUTOMATION_SERVICE_ROLES)
+              .filter(([otherKey, roles]) => otherKey !== a.key && roles.some((r) => r.role === role))
+              .map(([otherKey]) => automations.find((x) => x.key === otherKey)?.name ?? otherKey)
+          }
         />
       ))}
     </div>
@@ -105,6 +116,7 @@ function AutomationCard({
   promoTerms,
   onPromoTermsSaved,
   sharedWith,
+  sharedRoleNames,
 }: {
   automation: SmsAutomationSummary;
   onToggle: (enabled: boolean) => void;
@@ -115,6 +127,7 @@ function AutomationCard({
   promoTerms: PromoTermsDto[];
   onPromoTermsSaved: (t: PromoTermsDto) => void;
   sharedWith?: string[];
+  sharedRoleNames?: (role: string) => string[];
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const clickRate = automation.tracksClicks ? formatRate(automation.clickedLast30Days, automation.linkSentLast30Days) : undefined;
@@ -250,21 +263,29 @@ function AutomationCard({
           </button>
           {settingsOpen && (
             <div className="mx-1 mt-2.5 flex flex-col gap-3">
-              {serviceRoles?.map((r) => (
-                <div key={r.role}>
-                  <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">{r.label}</div>
-                  <ServiceRolePicker
-                    role={r.role}
-                    entries={serviceLifecycleRoles.filter((x) => x.role === r.role)}
-                    onChange={(nextForRole) =>
-                      onServiceLifecycleRolesChange([
-                        ...serviceLifecycleRoles.filter((x) => x.role !== r.role),
-                        ...nextForRole,
-                      ])
-                    }
-                  />
-                </div>
-              ))}
+              {serviceRoles?.map((r) => {
+                const sharedRoleWith = sharedRoleNames?.(r.role) ?? [];
+                return (
+                  <div key={r.role}>
+                    <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">{r.label}</div>
+                    <ServiceRolePicker
+                      role={r.role}
+                      entries={serviceLifecycleRoles.filter((x) => x.role === r.role)}
+                      onChange={(nextForRole) =>
+                        onServiceLifecycleRolesChange([
+                          ...serviceLifecycleRoles.filter((x) => x.role !== r.role),
+                          ...nextForRole,
+                        ])
+                      }
+                    />
+                    {sharedRoleWith.length > 0 && (
+                      <p className="mt-1.5 text-xs text-zinc-400">
+                        Also used by {sharedRoleWith.join(', ')} — editing it here updates it there too.
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
               {promoCodes?.map((code) => {
                 const terms = promoTerms.find((t) => t.promoCode === code);
                 if (!terms) return null;
