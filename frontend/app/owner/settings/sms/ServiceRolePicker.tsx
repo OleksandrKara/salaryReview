@@ -136,9 +136,14 @@ function SearchAndAdd({
       {selected ? (
         <div className="flex items-center justify-between gap-2 rounded border border-zinc-300 bg-zinc-50 px-2 py-1.5 text-sm">
           <span>{selected.displayName}</span>
-          <button type="button" onClick={() => { setSelected(null); setQuery(''); }} className="text-xs text-zinc-400 hover:text-zinc-700">
-            Change
-          </button>
+          <span className="flex items-center gap-2">
+            <a href={selected.dashboardUrl} target="_blank" rel="noopener noreferrer" title="Open in Square" className="text-xs text-zinc-400 hover:text-zinc-700">
+              ↗
+            </a>
+            <button type="button" onClick={() => { setSelected(null); setQuery(''); }} className="text-xs text-zinc-400 hover:text-zinc-700">
+              Change
+            </button>
+          </span>
         </div>
       ) : (
         <input
@@ -161,14 +166,28 @@ function SearchAndAdd({
             <div className="px-3 py-2 text-xs text-zinc-400">No matching services found</div>
           )}
           {!searching && results?.map((r) => (
-            <button
-              key={r.variationId}
-              type="button"
-              onClick={() => { setSelected(r); setResults(null); }}
-              className="block w-full px-3 py-2 text-left text-sm hover:bg-zinc-50"
-            >
-              {r.displayName}
-            </button>
+            <div key={r.variationId} className="flex items-center justify-between gap-2 px-1 hover:bg-zinc-50">
+              <button
+                type="button"
+                onClick={() => { setSelected(r); setResults(null); }}
+                className="flex-1 py-2 pl-2 text-left text-sm"
+              >
+                {r.displayName}
+              </button>
+              {/* Opens the real item in Square's own dashboard so the owner can tell apart a
+                  same-named duplicate before picking — found live 2026-08-25, an owner spotted
+                  two identically-named results with no way to tell which was real. */}
+              <a
+                href={r.dashboardUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                title="Open in Square"
+                className="shrink-0 px-2 py-2 text-xs text-zinc-400 hover:text-zinc-700"
+              >
+                ↗
+              </a>
+            </div>
           ))}
         </div>
       )}
