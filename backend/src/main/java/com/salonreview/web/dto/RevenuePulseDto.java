@@ -23,12 +23,17 @@ public record RevenuePulseDto(
         BigDecimal currentCard,
         /** Cash portion of {@link #currentGross} (orders paid mostly in cash). */
         BigDecimal currentCash,
+        /** Tips earned day 1 → currentEndDay — separate from {@link #currentGross} (not a tender, not
+         * part of the card/cash total), same as tips are tracked apart from gross revenue elsewhere. */
+        BigDecimal currentTip,
         /** Gross revenue day 1 → priorEndDay of last month. */
         BigDecimal priorGross,
         /** Card portion of {@link #priorGross}. */
         BigDecimal priorCard,
         /** Cash portion of {@link #priorGross}. */
         BigDecimal priorCash,
+        /** Tips earned day 1 → priorEndDay of last month. */
+        BigDecimal priorTip,
         /** (currentGross − priorGross) / priorGross × 100; null when priorGross = 0. */
         BigDecimal deltaPct,
         /** Non-cancelled future appointments remaining this month. */
@@ -43,6 +48,9 @@ public record RevenuePulseDto(
         BigDecimal projectedCard,
         /** Projected month-end cash revenue — {@link #projectedMid} split by the recent cash share. */
         BigDecimal projectedCash,
+        /** Projected month-end tips — {@link #projectedMid} × the recent tip-to-gross ratio; zero when
+         * there's no realized revenue yet to infer a ratio from. */
+        BigDecimal projectedTip,
         /** Confidence range floor — null in cold-start mode (insufficient history). */
         BigDecimal projectedLow,
         /** Confidence range ceiling — null in cold-start mode. */

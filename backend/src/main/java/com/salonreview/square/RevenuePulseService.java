@@ -147,10 +147,10 @@ public class RevenuePulseService {
 
         return new RevenuePulseDto(
                 year, month, currentEndDay, currentEndDay, priorEndDay, asOfTime,
-                current.total(), current.card(), current.cash(),
-                prior.total(), prior.card(), prior.cash(), deltaPct,
+                current.total(), current.card(), current.cash(), current.tip(),
+                prior.total(), prior.card(), prior.cash(), prior.tip(), deltaPct,
                 upcoming.count(), upcoming.gross(), naiveProjected,
-                forecast.projectedMid(), projectedSplit.card(), projectedSplit.cash(),
+                forecast.projectedMid(), projectedSplit.card(), projectedSplit.cash(), projectedSplit.tip(),
                 forecast.projectedLow(), forecast.projectedHigh(),
                 forecast.calibrationDataPoints(), forecast.historyMonths(),
                 ym.lengthOfMonth(), priorYm.lengthOfMonth(),
@@ -168,16 +168,21 @@ public class RevenuePulseService {
                 .orElse(null);
     }
 
-    /** Split a forecast total into card/cash using the card share of {@code current}, else {@code prior}. */
+    /** Split a forecast total into card/cash using the card share of {@code current}, else {@code prior}.
+     * Tips aren't part of {@code projectedMid} (that's gross service revenue only) — projected tip is
+     * estimated separately, as the same tip-to-gross ratio {@code basis} realized, applied to the
+     * forecast total. */
     private static Split splitProjection(BigDecimal projectedMid, Split current, Split prior) {
         Split basis = current.total().signum() > 0 ? current : prior;
         if (projectedMid == null || basis.total().signum() == 0) {
-            return new Split(BigDecimal.ZERO, BigDecimal.ZERO); // no realized revenue to infer the mix
+            return new Split(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO); // no realized revenue to infer the mix
         }
         BigDecimal card = projectedMid.multiply(basis.card())
                 .divide(basis.total(), 2, RoundingMode.HALF_UP);
         BigDecimal cash = projectedMid.subtract(card).setScale(2, RoundingMode.HALF_UP);
-        return new Split(card, cash);
+        BigDecimal tip = projectedMid.multiply(basis.tip())
+                .divide(basis.total(), 2, RoundingMode.HALF_UP);
+        return new Split(card, cash, tip);
     }
 
     /**
@@ -189,11 +194,18 @@ public class RevenuePulseService {
      * with /owner/overview's for the same month instead of silently omitting real revenue
      * corrections. Adjustments have no time-of-day, so (like a same-day service with no known time)
      * they're always included in full on the cutoff day, never split by {@code cutoffTime}.
+     *
+     * <p>Tips are summed separately from {@code s.tip()} (already split across order lines by
+     * {@code SquareMonthAggregator}) — real money the salon/providers earned on top of gross, so
+     * kept out of {@code card}/{@code cash}/{@code total()} entirely rather than folded into either
+     * tender, matching how {@code OwnerOverviewService} also tracks tips apart from gross revenue.
+     * Owner-comp lines are skipped before this (via the {@code continue} below), so a comp'd
+     * service's tip (if any) is excluded the same way its gross is.
      */
     private Split mtdSplit(int year, int month, int throughDay, LocalTime cutoffTime, BigDecimal cutoff) {
         SquareMonthAggregator.MonthAggregation agg = aggregator.aggregate(year, month, cutoff);
         LocalDate cutoffDay = LocalDate.of(year, month, throughDay);
-        BigDecimal card = BigDecimal.ZERO, cash = BigDecimal.ZERO;
+        BigDecimal card = BigDecimal.ZERO, cash = BigDecimal.ZERO, tip = BigDecimal.ZERO;
         for (SquareMonthAggregator.AttributedService s : agg.services()) {
             LocalDate day = parseIso(s.date());
             if (day == null || day.isAfter(cutoffDay)) continue;
@@ -203,20 +215,25 @@ public class RevenuePulseService {
                 LocalTime t = parseLocalTime(s.time());
                 if (t != null && t.isAfter(cutoffTime)) continue;
             }
-            if ("CASH".equals(s.channel()) || "CASH-NOTE".equals(s.channel())) {
-                cash = cash.add(s.gross());
-            } else if ("COMP".equals(s.channel())) {
+            if ("COMP".equals(s.channel())) {
                 // Owner/family comp (see SquareMonthAggregator's own doc) — the provider is paid
                 // their commission on it, but the salon never actually collects a cent, so it must
                 // not count as real revenue here. Found live 2026-08-22: this widget was crediting
                 // every owner-comp appointment's full menu price as if it were card revenue.
                 continue;
+            }
+            if ("CASH".equals(s.channel()) || "CASH-NOTE".equals(s.channel())) {
+                cash = cash.add(s.gross());
             } else {
                 card = card.add(s.gross());
             }
+            if (s.tip() != null) {
+                tip = tip.add(s.tip());
+            }
         }
         card = card.add(manualAdjustments.totalGrossThrough(cutoffDay));
-        return new Split(card.setScale(2, RoundingMode.HALF_UP), cash.setScale(2, RoundingMode.HALF_UP));
+        return new Split(card.setScale(2, RoundingMode.HALF_UP), cash.setScale(2, RoundingMode.HALF_UP),
+                tip.setScale(2, RoundingMode.HALF_UP));
     }
 
     private static LocalDate parseIso(String iso) {
@@ -314,8 +331,9 @@ public class RevenuePulseService {
         }
     }
 
-    /** Card + cash dollars (total is derived); used for both realized periods and the projection split. */
-    private record Split(BigDecimal card, BigDecimal cash) {
+    /** Card + cash dollars (total is derived) plus tips (kept separate, not part of total()); used
+     * for both realized periods and the projection split. */
+    private record Split(BigDecimal card, BigDecimal cash, BigDecimal tip) {
         BigDecimal total() {
             return card.add(cash).setScale(2, RoundingMode.HALF_UP);
         }

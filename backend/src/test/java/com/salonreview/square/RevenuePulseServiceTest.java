@@ -85,8 +85,12 @@ class RevenuePulseServiceTest {
     }
 
     private static AttributedService svcAt(String date, String time, String channel, String gross) {
+        return svcWithTip(date, time, channel, gross, "0.00");
+    }
+
+    private static AttributedService svcWithTip(String date, String time, String channel, String gross, String tip) {
         return new AttributedService("p1", "P", date, "FIRST", "Manicure", new BigDecimal(gross),
-                BigDecimal.ZERO, new BigDecimal(gross), BigDecimal.ZERO, true, 1, 1, false, channel,
+                BigDecimal.ZERO, new BigDecimal(gross), new BigDecimal(tip), true, 1, 1, false, channel,
                 time, null, null, null);
     }
 
@@ -217,6 +221,43 @@ class RevenuePulseServiceTest {
 
         assertThat(p.projectedCard()).isEqualByComparingTo("300.00");
         assertThat(p.projectedCash()).isEqualByComparingTo("100.00");
+    }
+
+    @Test
+    @DisplayName("tips are summed separately from card/cash and excluded for owner-comp lines")
+    void tipsSummedSeparatelyFromCardCash() {
+        // Past month so the window is the full month (deterministic, no 'today' dependency).
+        List<AttributedService> may = List.of(
+                svcWithTip("2026-05-03", null, "CARD", "100.00", "20.00"),
+                svcWithTip("2026-05-10", null, "CASH", "40.00", "5.00"),
+                svcWithTip("2026-05-18", null, "COMP", "99.00", "10.00")); // comp'd — tip excluded too
+        when(aggregator.aggregate(eq(2026), eq(5), any())).thenReturn(aggOf(2026, 5, may));
+        when(aggregator.aggregate(eq(2026), eq(4), any())).thenReturn(aggOf(2026, 4, List.of()));
+        when(forecaster.forecast(anyInt(), anyInt(), any(), any()))
+                .thenReturn(new ForecastResult(new BigDecimal("140.00"), null, null, 0, 0));
+
+        RevenuePulseDto p = service.pulse(2026, 5);
+
+        assertThat(p.currentTip()).isEqualByComparingTo("25.00"); // 20 + 5, not the comp'd 10
+        assertThat(p.currentCard()).isEqualByComparingTo("100.00");
+        assertThat(p.currentCash()).isEqualByComparingTo("40.00");
+        // Tips aren't part of gross/total — the comp'd line's exclusion is already covered elsewhere.
+        assertThat(p.currentGross()).isEqualByComparingTo("140.00");
+    }
+
+    @Test
+    @DisplayName("projected tips apply the realized tip-to-gross ratio to the forecast")
+    void projectedTipsUseRealizedRatio() {
+        // Current month: $150 gross, $30 tip → 20% ratio. A $400 forecast projects $80 tip.
+        when(aggregator.aggregate(eq(2026), eq(5), any())).thenReturn(aggOf(2026, 5, List.of(
+                svcWithTip("2026-05-03", null, "CARD", "150.00", "30.00"))));
+        when(aggregator.aggregate(eq(2026), eq(4), any())).thenReturn(aggOf(2026, 4, List.of()));
+        when(forecaster.forecast(anyInt(), anyInt(), any(), any()))
+                .thenReturn(new ForecastResult(new BigDecimal("400.00"), null, null, 0, 0));
+
+        RevenuePulseDto p = service.pulse(2026, 5);
+
+        assertThat(p.projectedTip()).isEqualByComparingTo("80.00");
     }
 
     // --- owner comps must not count as revenue (found live 2026-08-22) ---

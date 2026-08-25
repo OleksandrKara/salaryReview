@@ -1033,9 +1033,12 @@ export interface RevenuePulse {
   currentGross: number;
   currentCard: number;
   currentCash: number;
+  // Earned separately from card/cash — not a tender, not part of currentGross's total.
+  currentTip: number;
   priorGross: number;
   priorCard: number;
   priorCash: number;
+  priorTip: number;
   deltaPct: number | null;
   // Non-cancelled upcoming bookings remaining this month.
   upcomingBookings: number;
@@ -1047,6 +1050,8 @@ export interface RevenuePulse {
   // projectedMid split by the recent card:cash mix (0 when there's no realized revenue to infer from).
   projectedCard: number;
   projectedCash: number;
+  // projectedMid × the recent tip-to-gross ratio (0 when there's no realized revenue to infer from).
+  projectedTip: number;
   projectedLow: number | null;        // null in cold-start mode
   projectedHigh: number | null;       // null in cold-start mode
   forecastCalibrationDataPoints: number;

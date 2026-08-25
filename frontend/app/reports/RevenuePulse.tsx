@@ -19,10 +19,10 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
 
   const {
     currentEndDay, priorEndDay, asOfTime,
-    currentGross, currentCard, currentCash,
-    priorGross, priorCard, priorCash, deltaPct,
+    currentGross, currentCard, currentCash, currentTip,
+    priorGross, priorCard, priorCash, priorTip, deltaPct,
     upcomingBookings, upcomingGross,
-    projectedMid, projectedCard, projectedCash, projectedLow, projectedHigh,
+    projectedMid, projectedCard, projectedCash, projectedTip, projectedLow, projectedHigh,
     forecastCalibrationDataPoints, forecastHistoryMonths,
     currentMonthLength, priorMonthLength,
     priorProjected, projectedDeltaPct,
@@ -83,11 +83,11 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
               </span>
             )}
           </div>
-          <TenderSplit card={currentCard} cash={currentCash} />
+          <TenderSplit card={currentCard} cash={currentCash} tip={currentTip} />
           <p className="mt-2 text-xs text-zinc-400">
             vs {priorLabel}: <span className="tabular-nums">{usd(priorGross)}</span>
             {priorGross > 0 && (
-              <span className="text-zinc-400"> ({usd(priorCard)} card · {usd(priorCash)} cash)</span>
+              <span className="text-zinc-400"> ({usd(priorCard)} card · {usd(priorCash)} cash · {usd(priorTip)} tips)</span>
             )}
             {deltaPct == null && priorGross === 0 && (
               <span className="ml-1">(no prior data)</span>
@@ -156,7 +156,7 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
             </p>
           )}
           {projectedCard + projectedCash > 0 && (
-            <TenderSplit card={projectedCard} cash={projectedCash} approx />
+            <TenderSplit card={projectedCard} cash={projectedCash} tip={projectedTip} approx />
           )}
           {projectedDeltaPct != null && (
             <p className="mt-1.5 text-[11px] text-zinc-400">
@@ -182,8 +182,10 @@ export default async function RevenuePulse({ year, month }: { year: number; mont
   );
 }
 
-// Card vs cash breakdown shown under a revenue figure — a colored dot per tender + its dollar amount.
-function TenderSplit({ card, cash, approx }: { card: number; cash: number; approx?: boolean }) {
+// Card vs cash vs tips breakdown shown under a revenue figure — a colored dot per stream + its
+// dollar amount. Tips sit alongside card/cash at the same visual weight even though they aren't a
+// tender (they're not part of the total above) — what the salon/providers actually earned, in full.
+function TenderSplit({ card, cash, tip, approx }: { card: number; cash: number; tip?: number; approx?: boolean }) {
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
       <span className="flex items-center gap-1.5 text-zinc-600">
@@ -194,6 +196,12 @@ function TenderSplit({ card, cash, approx }: { card: number; cash: number; appro
         <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
         Cash <span className="font-medium tabular-nums text-zinc-800">{approx ? '~' : ''}{usd(cash)}</span>
       </span>
+      {tip != null && tip > 0 && (
+        <span className="flex items-center gap-1.5 text-zinc-600">
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
+          Tips <span className="font-medium tabular-nums text-zinc-800">{approx ? '~' : ''}{usd(tip)}</span>
+        </span>
+      )}
     </div>
   );
 }
