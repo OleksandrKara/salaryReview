@@ -2,6 +2,7 @@ package com.salonreview.sms;
 
 import com.salonreview.domain.SmsAutomation;
 import com.salonreview.repo.RepeatCustomerWinbackSendRepository;
+import com.salonreview.repo.ServiceLifecycleReminderSendRepository;
 import com.salonreview.repo.SmsAutomationRepository;
 import com.salonreview.repo.SmsMessageRepository;
 import org.springframework.stereotype.Service;
@@ -38,14 +39,17 @@ public class SmsAutomationService {
     private final SmsAutomationRepository repository;
     private final SmsMessageRepository messageRepository;
     private final RepeatCustomerWinbackSendRepository repeatCustomerWinbackSendRepository;
+    private final ServiceLifecycleReminderSendRepository serviceLifecycleReminderSendRepository;
     private final AutomationReadinessService readinessService;
 
     public SmsAutomationService(SmsAutomationRepository repository, SmsMessageRepository messageRepository,
                                  RepeatCustomerWinbackSendRepository repeatCustomerWinbackSendRepository,
+                                 ServiceLifecycleReminderSendRepository serviceLifecycleReminderSendRepository,
                                  AutomationReadinessService readinessService) {
         this.repository = repository;
         this.messageRepository = messageRepository;
         this.repeatCustomerWinbackSendRepository = repeatCustomerWinbackSendRepository;
+        this.serviceLifecycleReminderSendRepository = serviceLifecycleReminderSendRepository;
         this.readinessService = readinessService;
     }
 
@@ -101,15 +105,19 @@ public class SmsAutomationService {
                                             businessId, meta.key(), "INBOUND", since);
 
                     // Conversion (did the customer actually come back for a visit) is computed from
-                    // repeat_customer_winback_send + provider_visit, not sms_message — a different
-                    // source table than clicks/replies, so it's the one stat here that isn't a
-                    // messageRepository count. Only repeat_customer_winback sets tracksConversion
-                    // today; see SmsAutomationRegistry.AutomationMeta's own doc for why. Rate is
+                    // a send-tracking table + provider_visit, not sms_message — a different source
+                    // than clicks/replies, so it's the one stat here that isn't a messageRepository
+                    // count. Which table depends on which automation: repeat_customer_winback has
+                    // its own dedicated one; touchup_reminder/color_booster_reminder share
+                    // service_lifecycle_reminder_send, keyed by automationKey. Rate is
                     // convertedLast30Days / sentLast30Days on the frontend, same denominator
                     // convention as reply rate — no separate denominator field needed here.
-                    long converted = meta.tracksConversion()
-                            ? repeatCustomerWinbackSendRepository.countConvertedSince(businessId, "SENT", since)
-                            : 0;
+                    long converted = switch (meta.key()) {
+                        case "repeat_customer_winback" -> repeatCustomerWinbackSendRepository.countConvertedSince(businessId, "SENT", since);
+                        case "touchup_reminder", "color_booster_reminder" ->
+                                serviceLifecycleReminderSendRepository.countConvertedSince(businessId, meta.key(), "SENT", since);
+                        default -> 0L;
+                    };
 
                     AutomationReadinessService.Readiness readiness = readinessService.readiness(businessId, meta.key());
 
