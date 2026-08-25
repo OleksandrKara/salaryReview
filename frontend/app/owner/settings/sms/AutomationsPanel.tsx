@@ -2,13 +2,33 @@
 
 import { useState } from 'react';
 import { api } from '../../../lib/api';
-import type { SmsAutomationSummary } from '../../../lib/types';
+import ServiceRolePicker from './ServiceRolePicker';
+import type { ServiceLifecycleRoleDto, SmsAutomationSummary } from '../../../lib/types';
+
+// Automation keys whose settings need more than an on/off toggle — each maps to the specific
+// ServiceLifecycleRole roles that automation's own eligibility depends on (see
+// TouchupReminderScheduler's own doc: inert until both are configured for this business). Adding a
+// future lifecycle-reminder automation (e.g. an eventual color-booster reminder) means adding one
+// entry here, not building a new settings surface.
+const AUTOMATION_SERVICE_ROLES: Record<string, { role: string; label: string }[]> = {
+  touchup_reminder: [
+    { role: 'INITIAL_PROCEDURE', label: 'Initial procedure' },
+    { role: 'TOUCH_UP', label: 'Touch-up' },
+  ],
+};
 
 // Toggle grid for owner-controlled SMS automations — extracted from the former standalone
 // /owner/automations hub, now folded into this page so every SMS-related control (automations,
 // activity, credentials) lives on one page (see openspec/changes consolidation request).
-export default function AutomationsPanel({ initialAutomations }: { initialAutomations: SmsAutomationSummary[] }) {
+export default function AutomationsPanel({
+  initialAutomations,
+  initialServiceLifecycleRoles,
+}: {
+  initialAutomations: SmsAutomationSummary[];
+  initialServiceLifecycleRoles: ServiceLifecycleRoleDto[];
+}) {
   const [automations, setAutomations] = useState(initialAutomations);
+  const [serviceLifecycleRoles, setServiceLifecycleRoles] = useState(initialServiceLifecycleRoles);
 
   async function toggle(key: string, enabled: boolean) {
     // Optimistic — the toggle is the whole interaction, a spinner-then-flip would feel laggy for
@@ -24,7 +44,14 @@ export default function AutomationsPanel({ initialAutomations }: { initialAutoma
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {automations.map((a) => (
-        <AutomationCard key={a.key} automation={a} onToggle={(enabled) => toggle(a.key, enabled)} />
+        <AutomationCard
+          key={a.key}
+          automation={a}
+          onToggle={(enabled) => toggle(a.key, enabled)}
+          serviceRoles={AUTOMATION_SERVICE_ROLES[a.key]}
+          serviceLifecycleRoles={serviceLifecycleRoles}
+          onServiceLifecycleRolesChange={setServiceLifecycleRoles}
+        />
       ))}
     </div>
   );
@@ -40,15 +67,25 @@ function formatRate(numerator: number, denominator: number): string | undefined 
 function AutomationCard({
   automation,
   onToggle,
+  serviceRoles,
+  serviceLifecycleRoles,
+  onServiceLifecycleRolesChange,
 }: {
   automation: SmsAutomationSummary;
   onToggle: (enabled: boolean) => void;
+  serviceRoles?: { role: string; label: string }[];
+  serviceLifecycleRoles: ServiceLifecycleRoleDto[];
+  onServiceLifecycleRolesChange: (next: ServiceLifecycleRoleDto[]) => void;
 }) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const clickRate = automation.tracksClicks ? formatRate(automation.clickedLast30Days, automation.linkSentLast30Days) : undefined;
   const replyRate = automation.tracksReplies ? formatRate(automation.replyLast30Days, automation.sentLast30Days) : undefined;
   const conversionRate = automation.tracksConversion
     ? formatRate(automation.convertedLast30Days, automation.sentLast30Days)
     : undefined;
+
+  const configuredCount = serviceRoles?.filter((r) => serviceLifecycleRoles.some((x) => x.role === r.role)).length ?? 0;
+  const fullyConfigured = serviceRoles ? configuredCount === serviceRoles.length : true;
 
   return (
     <div className="flex flex-col gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
@@ -136,6 +173,45 @@ function AutomationCard({
                 · {automation.convertedLast30Days}/{automation.sentLast30Days}
               </span>
             </span>
+          )}
+        </div>
+      )}
+
+      {serviceRoles && (
+        <div className="-mx-1 border-t border-zinc-100 pt-2.5">
+          <button
+            type="button"
+            onClick={() => setSettingsOpen((v) => !v)}
+            className="mx-1 flex w-[calc(100%-8px)] items-center justify-between text-xs font-medium text-zinc-600 hover:text-zinc-900"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <span className={`transition-transform ${settingsOpen ? 'rotate-90' : ''}`}>›</span>
+              Configure services
+            </span>
+            {!fullyConfigured && (
+              <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
+                {configuredCount}/{serviceRoles.length} set up
+              </span>
+            )}
+          </button>
+          {settingsOpen && (
+            <div className="mx-1 mt-2.5 flex flex-col gap-3">
+              {serviceRoles.map((r) => (
+                <div key={r.role}>
+                  <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">{r.label}</div>
+                  <ServiceRolePicker
+                    role={r.role}
+                    entries={serviceLifecycleRoles.filter((x) => x.role === r.role)}
+                    onChange={(nextForRole) =>
+                      onServiceLifecycleRolesChange([
+                        ...serviceLifecycleRoles.filter((x) => x.role !== r.role),
+                        ...nextForRole,
+                      ])
+                    }
+                  />
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}

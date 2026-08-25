@@ -90,6 +90,15 @@ public final class SmsAutomationRegistry {
                             + "midnight that day, everyone else gets the same link with no discount language",
                     List.of(), true, false, false
             ),
+            "touchup_reminder", new AutomationMeta(
+                    "touchup_reminder",
+                    "Touch-up reminder",
+                    "Every customer roughly 4 weeks after a service configured as an \"initial procedure\" "
+                            + "(see Service lifecycle settings) — skipped if they've already had or booked a "
+                            + "service configured as the matching \"touch-up\". Inert until both roles have at "
+                            + "least one service configured for this business.",
+                    List.of(), false, false, false
+            ),
             "repeat_customer_winback", new AutomationMeta(
                     "repeat_customer_winback",
                     "Repeat customer win-back",
