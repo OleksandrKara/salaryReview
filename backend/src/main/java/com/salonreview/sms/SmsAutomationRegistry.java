@@ -104,7 +104,11 @@ public final class SmsAutomationRegistry {
                             + "(see Service lifecycle settings) — skipped if they've already had or booked a "
                             + "service configured as the matching \"touch-up\". Inert until both roles have at "
                             + "least one service configured for this business.",
-                    List.of(), false, false, false
+                    // tracksConversion, like repeat_customer_winback: did the customer actually
+                    // come back for a real visit, not just receive the text — see
+                    // ServiceLifecycleReminderSendRepository#countConvertedSince's own doc for why
+                    // this checks "any subsequent visit," not specifically a touch-up.
+                    List.of(), false, false, true
             ),
             "color_booster_reminder", new AutomationMeta(
                     "color_booster_reminder",
@@ -113,7 +117,7 @@ public final class SmsAutomationRegistry {
                             + "\"color booster\" (see Service lifecycle settings) — skipped if they've already "
                             + "booked a color booster. Recurs roughly annually for a customer who never books. "
                             + "Inert until both roles have at least one service configured for this business.",
-                    List.of(), false, false, false
+                    List.of(), false, false, true
             ),
             "repeat_customer_winback", new AutomationMeta(
                     "repeat_customer_winback",

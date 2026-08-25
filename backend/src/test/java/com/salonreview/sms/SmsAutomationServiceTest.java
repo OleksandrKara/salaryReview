@@ -2,6 +2,7 @@ package com.salonreview.sms;
 
 import com.salonreview.domain.SmsAutomation;
 import com.salonreview.repo.RepeatCustomerWinbackSendRepository;
+import com.salonreview.repo.ServiceLifecycleReminderSendRepository;
 import com.salonreview.repo.SmsAutomationRepository;
 import com.salonreview.repo.SmsMessageRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,6 +32,7 @@ class SmsAutomationServiceTest {
     private SmsAutomationRepository repository;
     private SmsMessageRepository messageRepository;
     private RepeatCustomerWinbackSendRepository repeatCustomerWinbackSendRepository;
+    private ServiceLifecycleReminderSendRepository serviceLifecycleReminderSendRepository;
     private AutomationReadinessService readinessService;
     private SmsAutomationService service;
     private static final Long BUSINESS_ID = 1L;
@@ -40,9 +42,11 @@ class SmsAutomationServiceTest {
         repository = mock(SmsAutomationRepository.class);
         messageRepository = mock(SmsMessageRepository.class);
         repeatCustomerWinbackSendRepository = mock(RepeatCustomerWinbackSendRepository.class);
+        serviceLifecycleReminderSendRepository = mock(ServiceLifecycleReminderSendRepository.class);
         readinessService = mock(AutomationReadinessService.class);
         when(readinessService.readiness(eq(BUSINESS_ID), anyString())).thenReturn(AutomationReadinessService.Readiness.READY);
-        service = new SmsAutomationService(repository, messageRepository, repeatCustomerWinbackSendRepository, readinessService);
+        service = new SmsAutomationService(repository, messageRepository, repeatCustomerWinbackSendRepository,
+                serviceLifecycleReminderSendRepository, readinessService);
         when(repository.findByBusinessIdAndAutomationKey(eq(BUSINESS_ID), anyString())).thenReturn(Optional.empty());
     }
 
@@ -170,6 +174,36 @@ class SmsAutomationServiceTest {
         assertThat(summary.replyLast30Days()).isEqualTo(3);
         assertThat(summary.tracksConversion()).isTrue();
         assertThat(summary.convertedLast30Days()).isEqualTo(6);
+    }
+
+    @Test
+    @DisplayName("touchup_reminder: tracks conversion via service_lifecycle_reminder_send, not the repeat-winback table")
+    void touchupReminderTracksConversionViaSharedTable() {
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("touchup_reminder"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(12L);
+        when(serviceLifecycleReminderSendRepository.countConvertedSince(
+                eq(BUSINESS_ID), eq("touchup_reminder"), eq("SENT"), any(Instant.class))).thenReturn(5L);
+
+        var summary = find("touchup_reminder");
+
+        assertThat(summary.sentLast30Days()).isEqualTo(12);
+        assertThat(summary.tracksConversion()).isTrue();
+        assertThat(summary.convertedLast30Days()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("color_booster_reminder: tracks conversion via the same shared table, scoped by its own automationKey")
+    void colorBoosterReminderTracksConversionViaSharedTable() {
+        when(serviceLifecycleReminderSendRepository.countConvertedSince(
+                eq(BUSINESS_ID), eq("color_booster_reminder"), eq("SENT"), any(Instant.class))).thenReturn(2L);
+        when(serviceLifecycleReminderSendRepository.countConvertedSince(
+                eq(BUSINESS_ID), eq("touchup_reminder"), eq("SENT"), any(Instant.class))).thenReturn(99L);
+
+        var summary = find("color_booster_reminder");
+
+        assertThat(summary.tracksConversion()).isTrue();
+        // Scoped by automationKey — color_booster_reminder's own count, not touchup_reminder's.
+        assertThat(summary.convertedLast30Days()).isEqualTo(2);
     }
 
     @Test
