@@ -47,12 +47,16 @@ export default function AutomationsPanel({
 
   async function toggle(key: string, enabled: boolean) {
     // Optimistic — the toggle is the whole interaction, a spinner-then-flip would feel laggy for
-    // something this small. Reverted on failure.
+    // something this small. Reverted on failure. The toggle is already disabled client-side when
+    // turning ON would fail readiness (see AutomationCard), so a failure here is either a stale
+    // client (config changed elsewhere in another tab) or turning ON — the backend is the final
+    // word either way (see SmsAutomationService#setEnabled), so the reason is always shown.
     setAutomations((prev) => prev.map((a) => (a.key === key ? { ...a, enabled } : a)));
     try {
       await api.toggleSmsAutomation(key, enabled);
-    } catch {
+    } catch (err) {
       setAutomations((prev) => prev.map((a) => (a.key === key ? { ...a, enabled: !enabled } : a)));
+      alert(err instanceof Error ? err.message : 'Failed to update automation');
     }
   }
 
@@ -127,6 +131,10 @@ function AutomationCard({
   const configuredCount = configuredRoleCount + configuredPromoCount;
   const totalCount = roleTotal + promoTotal;
   const fullyConfigured = totalCount === 0 || configuredCount === totalCount;
+  // Turning ON is blocked when required config is missing — never blocks turning OFF, and never
+  // affects an automation that's already on (see AutomationReadinessService's own doc: config
+  // removed after enabling doesn't retroactively disable it here).
+  const blockedFromEnabling = !automation.enabled && !automation.ready;
 
   return (
     <div className="flex flex-col gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
@@ -141,10 +149,12 @@ function AutomationCard({
           role="switch"
           aria-checked={automation.enabled}
           aria-label={`${automation.enabled ? 'Disable' : 'Enable'} ${automation.name}`}
+          disabled={blockedFromEnabling}
+          title={blockedFromEnabling ? automation.readinessReason ?? undefined : undefined}
           onClick={() => onToggle(!automation.enabled)}
           className={`relative inline-flex h-8 w-14 shrink-0 items-center rounded-full transition-colors ${
             automation.enabled ? 'bg-emerald-600' : 'bg-zinc-300'
-          }`}
+          } ${blockedFromEnabling ? 'cursor-not-allowed opacity-50' : ''}`}
         >
           <span
             className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition-transform ${
@@ -153,6 +163,9 @@ function AutomationCard({
           />
         </button>
       </div>
+      {blockedFromEnabling && (
+        <p className="-mt-1.5 text-xs text-amber-600">⚠ {automation.readinessReason}</p>
+      )}
       <div className="flex items-center justify-between text-xs text-zinc-500">
         <span
           className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium ${

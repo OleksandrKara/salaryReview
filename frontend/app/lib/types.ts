@@ -246,6 +246,11 @@ export interface SmsAutomationSummary {
   replyLast30Days: number;
   tracksConversion: boolean;
   convertedLast30Days: number;
+  // Whether required config (a coupon, review links, lifecycle-role services, ...) is present —
+  // separate from `enabled`. false blocks turning the toggle ON (never blocks turning it OFF) —
+  // see AutomationReadinessService.
+  ready: boolean;
+  readinessReason: string | null;
 }
 
 export type SmsMessageDirection = 'OUTBOUND' | 'INBOUND';

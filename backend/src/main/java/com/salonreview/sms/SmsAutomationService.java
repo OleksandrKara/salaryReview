@@ -21,22 +21,32 @@ public class SmsAutomationService {
     /** {@code tracksClicks}/{@code tracksReplies}/{@code tracksConversion} mirror
      * {@code SmsAutomationRegistry.AutomationMeta} — when false, the paired count is always 0 and
      * the frontend card omits that stat entirely rather than showing a misleading "0%" for an
-     * automation with no link, no reply-ask, or no measurable real-world outcome at all. */
+     * automation with no link, no reply-ask, or no measurable real-world outcome at all.
+     *
+     * <p>{@code ready}/{@code readinessReason} (see {@link AutomationReadinessService}) are
+     * separate from {@code enabled}: an automation can be enabled yet not ready (config removed
+     * after being turned on) or ready yet not enabled (normal pre-launch state) — the frontend
+     * uses {@code ready} to decide whether the toggle can be turned ON at all, not to reflect
+     * current on/off state. */
     public record AutomationSummary(String key, String name, String audienceDescription,
                                      boolean enabled, long sentLast30Days,
                                      boolean tracksClicks, long linkSentLast30Days, long clickedLast30Days,
                                      boolean tracksReplies, long replyLast30Days,
-                                     boolean tracksConversion, long convertedLast30Days) {}
+                                     boolean tracksConversion, long convertedLast30Days,
+                                     boolean ready, String readinessReason) {}
 
     private final SmsAutomationRepository repository;
     private final SmsMessageRepository messageRepository;
     private final RepeatCustomerWinbackSendRepository repeatCustomerWinbackSendRepository;
+    private final AutomationReadinessService readinessService;
 
     public SmsAutomationService(SmsAutomationRepository repository, SmsMessageRepository messageRepository,
-                                 RepeatCustomerWinbackSendRepository repeatCustomerWinbackSendRepository) {
+                                 RepeatCustomerWinbackSendRepository repeatCustomerWinbackSendRepository,
+                                 AutomationReadinessService readinessService) {
         this.repository = repository;
         this.messageRepository = messageRepository;
         this.repeatCustomerWinbackSendRepository = repeatCustomerWinbackSendRepository;
+        this.readinessService = readinessService;
     }
 
     /** {@code true} for a template with no {@code automationKey} (nothing to gate) — but a real
@@ -101,14 +111,28 @@ public class SmsAutomationService {
                             ? repeatCustomerWinbackSendRepository.countConvertedSince(businessId, "SENT", since)
                             : 0;
 
+                    AutomationReadinessService.Readiness readiness = readinessService.readiness(businessId, meta.key());
+
                     return new AutomationSummary(meta.key(), meta.name(), meta.audienceDescription(), enabled, sent,
                             meta.tracksClicks(), linkSent, clicked, meta.tracksReplies(), replies,
-                            meta.tracksConversion(), converted);
+                            meta.tracksConversion(), converted, readiness.ready(), readiness.reason());
                 })
                 .toList();
     }
 
+    /** Turning an automation ON is refused (400, see {@code GlobalExceptionHandler}'s
+     * {@code IllegalArgumentException} mapping) while it isn't {@link AutomationReadinessService
+     * ready} — the frontend already disables the toggle for this case, this is the server-side
+     * backstop so the API itself can't be used to silently enable something that would just do
+     * nothing (or, if config is later removed, keep an automation nominally "on" is fine — this
+     * only guards the ON transition, never blocks turning something OFF). */
     public void setEnabled(Long businessId, String automationKey, boolean enabled, String updatedBy) {
+        if (enabled) {
+            AutomationReadinessService.Readiness readiness = readinessService.readiness(businessId, automationKey);
+            if (!readiness.ready()) {
+                throw new IllegalArgumentException(readiness.reason());
+            }
+        }
         SmsAutomation automation = repository.findByBusinessIdAndAutomationKey(businessId, automationKey)
                 .orElseGet(() -> SmsAutomation.builder().businessId(businessId).automationKey(automationKey).build());
         automation.setEnabled(enabled);

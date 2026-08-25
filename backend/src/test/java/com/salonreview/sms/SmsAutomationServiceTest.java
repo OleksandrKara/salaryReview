@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -30,6 +31,7 @@ class SmsAutomationServiceTest {
     private SmsAutomationRepository repository;
     private SmsMessageRepository messageRepository;
     private RepeatCustomerWinbackSendRepository repeatCustomerWinbackSendRepository;
+    private AutomationReadinessService readinessService;
     private SmsAutomationService service;
     private static final Long BUSINESS_ID = 1L;
 
@@ -38,7 +40,9 @@ class SmsAutomationServiceTest {
         repository = mock(SmsAutomationRepository.class);
         messageRepository = mock(SmsMessageRepository.class);
         repeatCustomerWinbackSendRepository = mock(RepeatCustomerWinbackSendRepository.class);
-        service = new SmsAutomationService(repository, messageRepository, repeatCustomerWinbackSendRepository);
+        readinessService = mock(AutomationReadinessService.class);
+        when(readinessService.readiness(eq(BUSINESS_ID), anyString())).thenReturn(AutomationReadinessService.Readiness.READY);
+        service = new SmsAutomationService(repository, messageRepository, repeatCustomerWinbackSendRepository, readinessService);
         when(repository.findByBusinessIdAndAutomationKey(eq(BUSINESS_ID), anyString())).thenReturn(Optional.empty());
     }
 
@@ -197,5 +201,48 @@ class SmsAutomationServiceTest {
         var summary = find("lead_follow_up");
 
         assertThat(summary.enabled()).isTrue();
+    }
+
+    @Test
+    @DisplayName("list() surfaces readiness per automation, independent of enabled state")
+    void listSurfacesReadiness() {
+        when(readinessService.readiness(BUSINESS_ID, "checkout_review_request"))
+                .thenReturn(AutomationReadinessService.Readiness.notReady("Set your Google review link first"));
+
+        var summary = find("checkout_review_request");
+
+        assertThat(summary.ready()).isFalse();
+        assertThat(summary.readinessReason()).isEqualTo("Set your Google review link first");
+    }
+
+    @Test
+    @DisplayName("setEnabled(true) is refused when the automation isn't ready — no row written")
+    void setEnabledRefusedWhenNotReady() {
+        when(readinessService.readiness(BUSINESS_ID, "touchup_reminder"))
+                .thenReturn(AutomationReadinessService.Readiness.notReady("Add at least one service first"));
+
+        assertThatThrownBy(() -> service.setEnabled(BUSINESS_ID, "touchup_reminder", true, "owner@test"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Add at least one service first");
+        org.mockito.Mockito.verify(repository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    @DisplayName("setEnabled(true) succeeds when ready")
+    void setEnabledSucceedsWhenReady() {
+        service.setEnabled(BUSINESS_ID, "touchup_reminder", true, "owner@test");
+
+        org.mockito.Mockito.verify(repository).save(any());
+    }
+
+    @Test
+    @DisplayName("setEnabled(false) is never blocked by readiness, even if not ready")
+    void setEnabledFalseNeverBlocked() {
+        when(readinessService.readiness(BUSINESS_ID, "touchup_reminder"))
+                .thenReturn(AutomationReadinessService.Readiness.notReady("Add at least one service first"));
+
+        service.setEnabled(BUSINESS_ID, "touchup_reminder", false, "owner@test");
+
+        org.mockito.Mockito.verify(repository).save(any());
     }
 }
