@@ -49,7 +49,14 @@ public class Business {
     @Column(name = "google_review_url")
     private String googleReviewUrl;
 
-    /** Same as {@link #googleReviewUrl}, for the negative-reply / repeat-reviewer branch. */
+    /** Owner-set destination for the {@code checkout_review_request} automation's positive-reply
+     * branch once a customer has already clicked through to {@link #googleReviewUrl} before — see
+     * {@link com.salonreview.sms.CheckoutReviewLinks}. Same null/blank convention as that field. */
+    @Column(name = "yelp_review_url")
+    private String yelpReviewUrl;
+
+    /** Same as {@link #googleReviewUrl}, for the final branch — a customer who's already clicked
+     * through to both {@link #googleReviewUrl} and {@link #yelpReviewUrl} before. */
     @Column(name = "feedback_form_url")
     private String feedbackFormUrl;
 

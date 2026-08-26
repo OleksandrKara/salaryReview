@@ -94,10 +94,11 @@ export interface BusinessSettingsDto {
   // discount reduces the provider's commission basis to what was actually collected.
   restrictDiscountCoverage: boolean;
   coveredDiscountNames: string | null;
-  // null = the checkout_review_request automation stays off for this business — see
-  // CheckoutReviewTriggerService/CheckoutReviewLinks. Every other business's Google review page and
-  // feedback form is its own, never AK.LUX.NAILS's.
+  // null on any one of these three = the checkout_review_request automation stays off for this
+  // business — see CheckoutReviewTriggerService/CheckoutReviewLinks. Every other business's Google
+  // review page, Yelp review page, and feedback form is its own, never AK.LUX.NAILS's.
   googleReviewUrl: string | null;
+  yelpReviewUrl: string | null;
   feedbackFormUrl: string | null;
 }
 
@@ -116,6 +117,7 @@ export interface BusinessSettingsUpdateRequest {
   restrictDiscountCoverage?: boolean;
   coveredDiscountNames?: string;
   googleReviewUrl?: string;
+  yelpReviewUrl?: string;
   feedbackFormUrl?: string;
 }
 

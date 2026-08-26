@@ -31,6 +31,7 @@ export default function BusinessSettingsForm({ initialSettings }: { initialSetti
   const [restrictDiscountCoverage, setRestrictDiscountCoverage] = useState(settings.restrictDiscountCoverage);
   const [coveredDiscountNames, setCoveredDiscountNames] = useState(settings.coveredDiscountNames ?? '');
   const [googleReviewUrl, setGoogleReviewUrl] = useState(settings.googleReviewUrl ?? '');
+  const [yelpReviewUrl, setYelpReviewUrl] = useState(settings.yelpReviewUrl ?? '');
   const [feedbackFormUrl, setFeedbackFormUrl] = useState(settings.feedbackFormUrl ?? '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -55,6 +56,7 @@ export default function BusinessSettingsForm({ initialSettings }: { initialSetti
         restrictDiscountCoverage,
         coveredDiscountNames: restrictDiscountCoverage ? (coveredDiscountNames || undefined) : undefined,
         googleReviewUrl: googleReviewUrl || undefined,
+        yelpReviewUrl: yelpReviewUrl || undefined,
         feedbackFormUrl: feedbackFormUrl || undefined,
       });
       setSettings(updated);
@@ -194,6 +196,16 @@ export default function BusinessSettingsForm({ initialSettings }: { initialSetti
       </label>
 
       <label className="text-sm">
+        <span className="mb-1 block text-zinc-600">Yelp review link</span>
+        <input
+          value={yelpReviewUrl}
+          onChange={(e) => setYelpReviewUrl(e.target.value)}
+          placeholder="https://www.yelp.com/writeareview/biz/..."
+          className="w-full rounded border border-zinc-300 px-2 py-1.5"
+        />
+      </label>
+
+      <label className="text-sm">
         <span className="mb-1 block text-zinc-600">Feedback form link</span>
         <input
           value={feedbackFormUrl}
@@ -202,9 +214,11 @@ export default function BusinessSettingsForm({ initialSettings }: { initialSetti
           className="w-full rounded border border-zinc-300 px-2 py-1.5"
         />
         <span className="mt-1 block text-xs text-zinc-400">
-          Where the checkout-review-request automation sends a happy customer to leave a public review, and a
-          repeat 5-star reviewer (who already left one) to leave private feedback instead of being asked to
-          review again. Both are required for that automation to run at all — it stays off until you set them.
+          Where the checkout-review-request automation sends a happy customer to leave a public review. First
+          ask is Google; once that link's been clicked, the next 5-star customer is asked for a Yelp review
+          instead; once both have been clicked, later 5-star customers are sent to the private feedback form
+          instead of being asked to review again. All three are required for that automation to run at all — it
+          stays off until you set them.
         </span>
       </label>
 

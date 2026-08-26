@@ -15,9 +15,10 @@ import java.time.Duration;
 import java.time.Instant;
 
 /**
- * Sends the checkout-review-request automation's branch replies (positive: Google review link,
- * or feedback-form link for a repeat reviewer; negative: a plain ask to reply with what
- * happened, no link) — see openspec/changes/sms-automations-hub design.md D4/D6.
+ * Sends the checkout-review-request automation's branch replies — positive replies escalate
+ * through three rungs (Google review link, then Yelp review link once Google's already been
+ * clicked, then the private feedback-form link once both have); negative replies get a plain ask
+ * to reply with what happened, no link. See openspec/changes/sms-automations-hub design.md D4/D6.
  *
  * <p>Deliberately bypasses {@link TwilioSmsService#sendTemplated} and
  * {@link SmsTemplateRegistry}: the two positive-branch messages must contain a self-referencing
@@ -64,16 +65,21 @@ public class CheckoutReviewReplyService {
     /** Reserves the row and renders the body immediately (cheap, no external calls), but delays
      * the actual Twilio send by {@link #REPLY_DELAY} — see that constant's own doc for why. */
     public void sendBranchReply(SmsReplyFlow flow, boolean positive) {
-        // A proven repeat 5-star reviewer (already clicked through to Google before) doesn't need
-        // to be asked for another public review every single time — that reads as spammy to them
-        // and to Google's own review-quality checks. Route them to the private feedback form
-        // instead, same destination the negative branch used to use, just with warmer copy.
-        boolean repeatReviewer = positive
+        // Three-rung escalation for a 5-star reply: Google review first; once that link's already
+        // been clicked, Yelp review; once *both* have been clicked, the private feedback form
+        // instead of asking for a third public review — that reads as spammy to the customer and
+        // to the review platforms' own quality checks. Each check only runs once the prior rung is
+        // already confirmed clicked (clickedYelp is only ever evaluated when clickedGoogle is
+        // true), matching the ladder's own order.
+        boolean clickedGoogle = positive
                 && messageLogService.hasClickedLinkTarget(flow.getBusinessId(), flow.getPhoneNumber(), CheckoutReviewLinks.GOOGLE_REVIEW_TARGET);
+        boolean clickedYelp = clickedGoogle
+                && messageLogService.hasClickedLinkTarget(flow.getBusinessId(), flow.getPhoneNumber(), CheckoutReviewLinks.YELP_REVIEW_TARGET);
 
-        String templateKey = positive
-                ? (repeatReviewer ? "checkout_review_positive_repeat" : "checkout_review_positive")
-                : "checkout_review_negative";
+        String templateKey = !positive ? "checkout_review_negative"
+                : !clickedGoogle ? "checkout_review_positive"
+                : !clickedYelp ? "checkout_review_positive_yelp"
+                : "checkout_review_positive_repeat";
 
         String sender = configService.get(flow.getBusinessId()).getSenderName();
         Business business = businessRepository.findById(flow.getBusinessId()).orElse(null);
@@ -82,9 +88,11 @@ public class CheckoutReviewReplyService {
         SmsMessage reserved;
         String body;
         if (positive) {
-            // Google review / feedback-form link — see class doc on why these two branches still
-            // need a self-referencing click-tracked short link and the negative branch below doesn't.
-            String linkTarget = repeatReviewer ? CheckoutReviewLinks.FEEDBACK_FORM_TARGET : CheckoutReviewLinks.GOOGLE_REVIEW_TARGET;
+            // Google / Yelp / feedback-form link — see class doc on why these branches still need
+            // a self-referencing click-tracked short link and the negative branch below doesn't.
+            String linkTarget = !clickedGoogle ? CheckoutReviewLinks.GOOGLE_REVIEW_TARGET
+                    : !clickedYelp ? CheckoutReviewLinks.YELP_REVIEW_TARGET
+                    : CheckoutReviewLinks.FEEDBACK_FORM_TARGET;
             String clickToken = messageLogService.generateUniqueClickToken();
             reserved = messageLogService.logOutboundWithLink(
                     flow.getBusinessId(), templateKey, AUTOMATION_KEY, flow.getPhoneNumber(),

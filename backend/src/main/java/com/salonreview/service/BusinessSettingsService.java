@@ -47,15 +47,16 @@ public class BusinessSettingsService {
                         BigDecimal baseCommissionRate, Boolean tierEnabled, Integer tierServiceThreshold,
                         BigDecimal servicePriceCutoff, BigDecimal cardTipFeeRate, BigDecimal noShowFeeAmount,
                         Boolean restrictDiscountCoverage, String coveredDiscountNames,
-                        String googleReviewUrl, String feedbackFormUrl) {
+                        String googleReviewUrl, String yelpReviewUrl, String feedbackFormUrl) {
         Business business = requireBusiness(businessId);
         if (name != null && !name.isBlank()) business.setName(name.trim());
         if (timezone != null && !timezone.isBlank()) business.setTimezone(timezone.trim());
         // checkout_review_request stays off for this business (see CheckoutReviewTriggerService)
-        // until both are set — null/blank here means "leave unchanged", same convention as name/
-        // timezone above, not "clear it back out" (no UI path for that yet, matching
+        // until all three are set — null/blank here means "leave unchanged", same convention as
+        // name/timezone above, not "clear it back out" (no UI path for that yet, matching
         // coveredDiscountNames' own limitation below).
         if (googleReviewUrl != null && !googleReviewUrl.isBlank()) business.setGoogleReviewUrl(googleReviewUrl.trim());
+        if (yelpReviewUrl != null && !yelpReviewUrl.isBlank()) business.setYelpReviewUrl(yelpReviewUrl.trim());
         if (feedbackFormUrl != null && !feedbackFormUrl.isBlank()) business.setFeedbackFormUrl(feedbackFormUrl.trim());
         businesses.save(business);
 

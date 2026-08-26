@@ -36,7 +36,7 @@ public class BusinessSettingsController {
                 body.ownerShortName(), body.baseCommissionRate(), body.tierEnabled(),
                 body.tierServiceThreshold(), body.servicePriceCutoff(), body.cardTipFeeRate(),
                 body.noShowFeeAmount(), body.restrictDiscountCoverage(), body.coveredDiscountNames(),
-                body.googleReviewUrl(), body.feedbackFormUrl()));
+                body.googleReviewUrl(), body.yelpReviewUrl(), body.feedbackFormUrl()));
     }
 
     private static BusinessSettingsDto toDto(BusinessSettingsService.View view) {
@@ -53,7 +53,7 @@ public class BusinessSettingsController {
                 c == null ? null : c.getNoShowFeeAmount(),
                 c != null && c.isRestrictDiscountCoverage(),
                 c == null ? null : c.getCoveredDiscountNames(),
-                b.getGoogleReviewUrl(), b.getFeedbackFormUrl());
+                b.getGoogleReviewUrl(), b.getYelpReviewUrl(), b.getFeedbackFormUrl());
     }
 
     public record BusinessSettingsDto(Long businessId, String name, String shortCode, String timezone,
@@ -66,9 +66,9 @@ public class BusinessSettingsController {
                                        // discounts matching coveredDiscountNames; every other discount reduces
                                        // the provider's commission basis.
                                        boolean restrictDiscountCoverage, String coveredDiscountNames,
-                                       // null = checkout_review_request stays off for this business — see
-                                       // CheckoutReviewTriggerService/CheckoutReviewLinks.
-                                       String googleReviewUrl, String feedbackFormUrl) {
+                                       // null on any one of these three = checkout_review_request stays off for
+                                       // this business — see CheckoutReviewTriggerService/CheckoutReviewLinks.
+                                       String googleReviewUrl, String yelpReviewUrl, String feedbackFormUrl) {
     }
 
     /** {@code shortCode} is deliberately absent — immutable once created (it's used as a stable
@@ -76,13 +76,13 @@ public class BusinessSettingsController {
      * config; see {@link BusinessSettingsService#update} for which are required on first setup.
      * {@code noShowFeeAmount} shares that same "null = leave unchanged" convention — there is
      * currently no way to explicitly clear it back to null once set, same limitation every other
-     * optional numeric field here already has. {@code coveredDiscountNames}, {@code googleReviewUrl}
-     * and {@code feedbackFormUrl} follow suit. */
+     * optional numeric field here already has. {@code coveredDiscountNames}, {@code googleReviewUrl},
+     * {@code yelpReviewUrl} and {@code feedbackFormUrl} follow suit. */
     public record BusinessSettingsUpdateRequest(String name, String timezone, String ownerShortName,
                                                   BigDecimal baseCommissionRate, Boolean tierEnabled,
                                                   Integer tierServiceThreshold, BigDecimal servicePriceCutoff,
                                                   BigDecimal cardTipFeeRate, BigDecimal noShowFeeAmount,
                                                   Boolean restrictDiscountCoverage, String coveredDiscountNames,
-                                                  String googleReviewUrl, String feedbackFormUrl) {
+                                                  String googleReviewUrl, String yelpReviewUrl, String feedbackFormUrl) {
     }
 }
