@@ -55,6 +55,7 @@ class CheckoutReviewTriggerServiceTest {
         businessRepository = mock(BusinessRepository.class);
         when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(
                 Business.builder().id(BUSINESS_ID).googleReviewUrl("https://g.page/r/review")
+                        .yelpReviewUrl("https://www.yelp.com/writeareview/biz/review")
                         .feedbackFormUrl("https://forms.gle/feedback").build()));
         service = new CheckoutReviewTriggerService(squareClientProvider, repository, rebookingTrigger,
                 messageLogService, businessRepository);
@@ -93,7 +94,7 @@ class CheckoutReviewTriggerServiceTest {
     }
 
     @Test
-    @DisplayName("business has no Google-review/feedback-form URL configured yet → no checkout_review_request flow, "
+    @DisplayName("business has no Google-review/Yelp-review/feedback-form URL configured yet → no checkout_review_request flow, "
             + "but the independent same-day-rebooking trigger still fires")
     void reviewLinksNotConfiguredSkipsFlowButNotRebookingTrigger() {
         when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(Business.builder().id(BUSINESS_ID).build()));
@@ -109,13 +110,14 @@ class CheckoutReviewTriggerServiceTest {
     }
 
     @Test
-    @DisplayName("phone has already clicked both GOOGLE_REVIEW and FEEDBACK_FORM at least once → row saved COMPLETED, not sent")
-    void bothReviewChannelsCoveredSkipsSendButStaysIdempotent() {
+    @DisplayName("phone has already clicked GOOGLE_REVIEW, YELP_REVIEW, and FEEDBACK_FORM at least once each → row saved COMPLETED, not sent")
+    void allReviewChannelsCoveredSkipsSendButStaysIdempotent() {
         when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
         when(square.orderById("order_1")).thenReturn(Optional.of(order("cust_1", null)));
         when(square.customerPhone("cust_1")).thenReturn(PHONE);
         when(square.customerGivenNames(List.of("cust_1"))).thenReturn(Map.of("cust_1", "Jane"));
         when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
+        when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.YELP_REVIEW_TARGET)).thenReturn(true);
         when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.FEEDBACK_FORM_TARGET)).thenReturn(true);
 
         service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
@@ -133,7 +135,7 @@ class CheckoutReviewTriggerServiceTest {
     }
 
     @Test
-    @DisplayName("phone has clicked only one of the two review channels → still enqueues a real ask")
+    @DisplayName("phone has clicked only one of the three review channels → still enqueues a real ask")
     void onlyOneReviewChannelCoveredStillEnqueues() {
         when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
         when(square.orderById("order_1")).thenReturn(Optional.of(order("cust_1", null)));

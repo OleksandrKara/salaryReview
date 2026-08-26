@@ -124,20 +124,37 @@ public final class SmsMessageTemplateCatalog {
                     ),
                     List.of("link", "sender")
             )),
+            Map.entry("checkout_review_positive_yelp", new TemplateDefault(
+                    "checkout_review_positive_yelp", "checkout_review_request", SmsMessageClass.TRANSACTIONAL,
+                    "5-star reply: already reviewed on Google, ask for a Yelp review",
+                    List.of(
+                            "Yay, so happy to hear that! 🎉 Since you're already one of our Google reviewers, mind "
+                                    + "also leaving us a quick Yelp review? Takes 10 seconds: {{link}} -{{sender}}",
+                            "Yay!! 🎉 So glad you loved it again! Would you mind also dropping us a quick review on "
+                                    + "Yelp this time? It really helps: {{link}} -{{sender}}",
+                            "That makes my day! 🎉 You've already got us covered on Google — a Yelp review would "
+                                    + "mean just as much: {{link}} -{{sender}}",
+                            "So happy to hear that!! 🎉 If you have a spare moment, a Yelp review would help just "
+                                    + "as much as your Google one did: {{link}} -{{sender}}",
+                            "Love that! 🎉 Since you're already a Google reviewer of ours, could you share the love "
+                                    + "on Yelp too? Takes just a moment: {{link}} -{{sender}}"
+                    ),
+                    List.of("link", "sender")
+            )),
             Map.entry("checkout_review_positive_repeat", new TemplateDefault(
                     "checkout_review_positive_repeat", "checkout_review_request", SmsMessageClass.TRANSACTIONAL,
-                    "5-star reply: already reviewed before",
+                    "5-star reply: already reviewed on both Google and Yelp before",
                     List.of(
-                            "So glad you loved it again! 💕 You've already clicked through to leave us a Google review "
+                            "So glad you loved it again! 💕 You've already left us reviews on Google and Yelp "
                                     + "before. If there's any specific feedback this time, we'd love to hear it here: "
                                     + "{{link}} -{{businessName}}",
-                            "Amazing, another 5 stars! 💕 You've already left us a Google review, so if there's "
-                                    + "anything specific about today we'd love to hear it: {{link}} -{{businessName}}",
-                            "So glad it was another great visit! 💕 Since you've already reviewed us, feel free to "
-                                    + "share any thoughts on today here instead: {{link}} -{{businessName}}",
-                            "You're the best 💕 Since you've already left us a review, if anything stood out about "
+                            "Amazing, another 5 stars! 💕 You've already left us a Google and a Yelp review, so if "
+                                    + "there's anything specific about today we'd love to hear it: {{link}} -{{businessName}}",
+                            "So glad it was another great visit! 💕 Since you've already reviewed us on Google and "
+                                    + "Yelp, feel free to share any thoughts on today here instead: {{link}} -{{businessName}}",
+                            "You're the best 💕 Since you've already left us reviews, if anything stood out about "
                                     + "today we'd love to know: {{link}} -{{businessName}}",
-                            "Thrilled you loved it again! 💕 No need for another Google review, but if you have "
+                            "Thrilled you loved it again! 💕 No need for another public review, but if you have "
                                     + "any feedback on today specifically, share it here: {{link}} -{{businessName}}"
                     ),
                     List.of("link", "businessName")

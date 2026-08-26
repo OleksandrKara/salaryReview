@@ -101,13 +101,13 @@ public class CheckoutReviewTriggerService {
             // com.salonreview.square.SquareClient#customerGivenNames' own doc comment).
             String customerName = square.customerGivenNames(List.of(customerId)).get(customerId);
 
-            // Once this phone number has clicked through *both* reply-branch link types at least
-            // once each — a Google review and the private feedback form — they've given us
-            // everything this automation is for. Repeatedly asking a customer who's already
-            // covered both reads as spammy rather than as care, so stop asking permanently once
-            // both flags are set (mirrors SameDayRebookingScheduler's own permanent-exclusion-on-
-            // prior-behavior pattern for negative feedback). Doesn't affect the independent
-            // same-day-rebooking trigger below — that's a different automation.
+            // Once this phone number has clicked through *all three* reply-branch link types at
+            // least once each — a Google review, a Yelp review, and the private feedback form —
+            // they've given us everything this automation is for. Repeatedly asking a customer
+            // who's already covered all three reads as spammy rather than as care, so stop asking
+            // permanently once every flag is set (mirrors SameDayRebookingScheduler's own
+            // permanent-exclusion-on-prior-behavior pattern for negative feedback). Doesn't affect
+            // the independent same-day-rebooking trigger below — that's a different automation.
             //
             // The row is still saved either way (just straight to COMPLETED, which
             // SmsReplyFlowScheduler never picks up for sending — see its own
@@ -115,24 +115,27 @@ public class CheckoutReviewTriggerService {
             // entirely, so the existsBySquarePaymentId redelivery guard above keeps working for
             // this payment on a Square retry, and there's still a visible audit row for why no ask
             // went out.
-            // A business whose Google-review/feedback-form URLs haven't been set yet gets no
-            // checkout_review_request flow at all, rather than one whose reply eventually resolves
-            // to a dead short link — see CheckoutReviewLinks and Business#getGoogleReviewUrl.
+            // A business whose Google-review/Yelp-review/feedback-form URLs haven't all been set
+            // yet gets no checkout_review_request flow at all, rather than one whose reply
+            // eventually resolves to a dead short link — see CheckoutReviewLinks and
+            // Business#getGoogleReviewUrl.
             Business business = businessRepository.findById(businessId).orElse(null);
             boolean reviewLinksConfigured = business != null
-                    && isSet(business.getGoogleReviewUrl()) && isSet(business.getFeedbackFormUrl());
+                    && isSet(business.getGoogleReviewUrl()) && isSet(business.getYelpReviewUrl())
+                    && isSet(business.getFeedbackFormUrl());
             if (!reviewLinksConfigured) {
-                log.info("Checkout-review flow skipped for business {} — Google review/feedback form URL not configured yet", businessId);
+                log.info("Checkout-review flow skipped for business {} — Google review/Yelp review/feedback form URL not configured yet", businessId);
             } else {
-                boolean hasCoveredBothReviewChannels =
+                boolean hasCoveredAllReviewChannels =
                         messageLogService.hasClickedLinkTarget(businessId, phoneNumber, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)
+                                && messageLogService.hasClickedLinkTarget(businessId, phoneNumber, CheckoutReviewLinks.YELP_REVIEW_TARGET)
                                 && messageLogService.hasClickedLinkTarget(businessId, phoneNumber, CheckoutReviewLinks.FEEDBACK_FORM_TARGET);
                 repository.save(SmsReplyFlow.builder()
                         .businessId(businessId)
                         .automationKey(AUTOMATION_KEY)
                         .phoneNumber(phoneNumber)
                         .customerName(customerName)
-                        .state(hasCoveredBothReviewChannels ? SmsReplyFlow.STATE_COMPLETED : SmsReplyFlow.STATE_AWAITING_SEND)
+                        .state(hasCoveredAllReviewChannels ? SmsReplyFlow.STATE_COMPLETED : SmsReplyFlow.STATE_AWAITING_SEND)
                         .squarePaymentId(payment.id())
                         .squareCustomerId(customerId)
                         .sendDueAt(Instant.now().plus(SEND_DELAY))

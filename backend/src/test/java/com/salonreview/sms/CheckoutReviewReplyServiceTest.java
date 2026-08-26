@@ -114,11 +114,32 @@ class CheckoutReviewReplyServiceTest {
     }
 
     @Test
-    @DisplayName("positive branch, repeat reviewer (already clicked the Google review link before): sends the feedback-form link with different copy, not the Google review link again")
-    void repeatReviewerGetsFeedbackFormInstead() throws Exception {
+    @DisplayName("positive branch, already clicked Google but not Yelp: sends the Yelp review link, not Google again")
+    void secondPositiveReplyGetsYelpLink() throws Exception {
         when(configService.get(BUSINESS_ID)).thenReturn(configured());
         when(client.send(any(), eq(PHONE), anyString())).thenReturn("SM_SID_3");
         when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
+
+        sendBranchReplyAndFireDelayedTask(flow(), true);
+
+        var tokenCaptor = ArgumentCaptor.forClass(String.class);
+        verify(messageLogService).logOutboundWithLink(eq(BUSINESS_ID), eq("checkout_review_positive_yelp"), eq("checkout_review_request"),
+                eq(PHONE), eq(""), eq(false), eq("pending"), eq(null), eq(CheckoutReviewLinks.YELP_REVIEW_TARGET),
+                tokenCaptor.capture());
+
+        var bodyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
+        assertThat(bodyCaptor.getValue()).contains(PUBLIC_BASE_URL + "/r/" + tokenCaptor.getValue());
+        assertThat(bodyCaptor.getValue()).doesNotContain("—");
+    }
+
+    @Test
+    @DisplayName("positive branch, already clicked both Google and Yelp: sends the feedback-form link with different copy, not another public review ask")
+    void repeatReviewerGetsFeedbackFormInstead() throws Exception {
+        when(configService.get(BUSINESS_ID)).thenReturn(configured());
+        when(client.send(any(), eq(PHONE), anyString())).thenReturn("SM_SID_4");
+        when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
+        when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.YELP_REVIEW_TARGET)).thenReturn(true);
 
         sendBranchReplyAndFireDelayedTask(flow(), true);
 
@@ -131,6 +152,19 @@ class CheckoutReviewReplyServiceTest {
         verify(client).send(any(), eq(PHONE), bodyCaptor.capture());
         assertThat(bodyCaptor.getValue()).contains(PUBLIC_BASE_URL + "/r/" + tokenCaptor.getValue());
         assertThat(bodyCaptor.getValue()).doesNotContain("share your experience").doesNotContain("—");
+    }
+
+    @Test
+    @DisplayName("clickedYelp is only checked once Google's already been clicked — an unclicked Google with a stray clicked-Yelp record still gets the Google link")
+    void yelpNeverCheckedIfGoogleNotClickedYet() throws Exception {
+        when(configService.get(BUSINESS_ID)).thenReturn(configured());
+        when(client.send(any(), eq(PHONE), anyString())).thenReturn("SM_SID_5");
+
+        sendBranchReplyAndFireDelayedTask(flow(), true);
+
+        verify(messageLogService, never()).hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.YELP_REVIEW_TARGET);
+        verify(messageLogService).logOutboundWithLink(eq(BUSINESS_ID), eq("checkout_review_positive"), eq("checkout_review_request"),
+                eq(PHONE), eq(""), eq(false), eq("pending"), eq(null), eq(CheckoutReviewLinks.GOOGLE_REVIEW_TARGET), anyString());
     }
 
     @Test

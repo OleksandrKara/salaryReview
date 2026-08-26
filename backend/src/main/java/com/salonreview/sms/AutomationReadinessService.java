@@ -59,9 +59,10 @@ public class AutomationReadinessService {
 
     private Readiness checkoutReviewReadiness(Long businessId) {
         Business business = businessRepository.findById(businessId).orElse(null);
-        boolean ok = business != null && isSet(business.getGoogleReviewUrl()) && isSet(business.getFeedbackFormUrl());
+        boolean ok = business != null && isSet(business.getGoogleReviewUrl())
+                && isSet(business.getYelpReviewUrl()) && isSet(business.getFeedbackFormUrl());
         return ok ? Readiness.READY
-                : Readiness.notReady("Set your Google review and feedback form links in Business settings first");
+                : Readiness.notReady("Set your Google review, Yelp review, and feedback form links in Business settings first");
     }
 
     private Readiness promoReadiness(Long businessId, String promoCode, String label) {

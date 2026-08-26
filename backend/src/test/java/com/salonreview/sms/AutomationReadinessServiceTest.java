@@ -41,18 +41,21 @@ class AutomationReadinessServiceTest {
     }
 
     @Test
-    @DisplayName("checkout_review_request needs both a Google review URL and a feedback form URL")
-    void checkoutReviewNeedsBothUrls() {
+    @DisplayName("checkout_review_request needs a Google review URL, a Yelp review URL, and a feedback form URL")
+    void checkoutReviewNeedsAllThreeUrls() {
         when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(
-                Business.builder().id(BUSINESS_ID).googleReviewUrl(null).feedbackFormUrl(null).build()));
+                Business.builder().id(BUSINESS_ID).googleReviewUrl(null).yelpReviewUrl(null).feedbackFormUrl(null).build()));
         assertThat(service.readiness(BUSINESS_ID, "checkout_review_request").ready()).isFalse();
 
         when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(
-                Business.builder().id(BUSINESS_ID).googleReviewUrl("https://g.co/review").feedbackFormUrl(null).build()));
+                Business.builder().id(BUSINESS_ID).googleReviewUrl("https://g.co/review")
+                        .yelpReviewUrl("https://www.yelp.com/writeareview/biz/x").feedbackFormUrl(null).build()));
         assertThat(service.readiness(BUSINESS_ID, "checkout_review_request").ready()).isFalse();
 
         when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(
-                Business.builder().id(BUSINESS_ID).googleReviewUrl("https://g.co/review").feedbackFormUrl("https://forms.example/x").build()));
+                Business.builder().id(BUSINESS_ID).googleReviewUrl("https://g.co/review")
+                        .yelpReviewUrl("https://www.yelp.com/writeareview/biz/x")
+                        .feedbackFormUrl("https://forms.example/x").build()));
         assertThat(service.readiness(BUSINESS_ID, "checkout_review_request").ready()).isTrue();
     }
 
