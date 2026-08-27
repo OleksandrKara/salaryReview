@@ -1129,10 +1129,12 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
-    @DisplayName("adsReport buckets an upcoming appointment by when it was BOOKED, not when the visit "
-            + "happens — a late-July booking for an August visit is July's anticipated, not August's "
-            + "(real production case: a customer booked at the end of one month for a visit early the next)")
-    void adsReportBucketsAnticipatedByBookingCreationDate() {
+    @DisplayName("2026-08-27 fix: adsReport buckets an upcoming appointment by when the visit HAPPENS, "
+            + "not when it was booked — a late-July booking for an August visit is August's anticipated, "
+            + "not July's (real production case: MTD + Meta-ads filter showed September bookings under "
+            + "August's 'Anticipated (this period)' because a customer had booked late in August for a "
+            + "September slot)")
+    void adsReportBucketsAnticipatedByAppointmentDate() {
         when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-06-01T00:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-1")))
@@ -1161,10 +1163,10 @@ class MarketingAnalyticsServiceTest {
         PeriodRow august = dto.periods().get(0); // most-recent-first
         PeriodRow july = dto.periods().get(1);
 
-        assertThat(july.anticipatedAppointments()).isEqualTo(1);
-        assertThat(july.anticipatedRevenue()).isEqualByComparingTo("85.00");
-        assertThat(august.anticipatedAppointments()).isZero();
-        assertThat(august.anticipatedRevenue()).isEqualByComparingTo("0.00");
+        assertThat(august.anticipatedAppointments()).isEqualTo(1);
+        assertThat(august.anticipatedRevenue()).isEqualByComparingTo("85.00");
+        assertThat(july.anticipatedAppointments()).isZero();
+        assertThat(july.anticipatedRevenue()).isEqualByComparingTo("0.00");
     }
 
     @Test
