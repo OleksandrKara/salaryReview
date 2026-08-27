@@ -11,6 +11,7 @@ import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /** See openspec/changes/same-day-rebooking-discount design.md D1/D2. */
@@ -50,6 +51,17 @@ class SameDayRebookingTriggerServiceTest {
         when(repository.existsBySquarePaymentId("pay1")).thenReturn(true);
 
         trigger.enqueue(1L, "pay1", "cust1", "+15551234567", "Jane");
+
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("same phone number already sent one today (different payment id) → not enqueued twice")
+    void doesNotEnqueueTwiceForSamePhoneSameDay() {
+        when(repository.existsByBusinessIdAndPhoneNumberAndCreatedAtAfter(eq(1L), eq("+15551234567"), any()))
+                .thenReturn(true);
+
+        trigger.enqueue(1L, "pay2", "cust1", "+15551234567", "Jane");
 
         verify(repository, never()).save(any());
     }

@@ -12,6 +12,16 @@ public interface SmsReplyFlowRepository extends JpaRepository<SmsReplyFlow, Long
     /** Square may redeliver the same webhook event — this makes enqueueing idempotent. */
     boolean existsBySquarePaymentId(String squarePaymentId);
 
+    /** Whether this phone number already got a {@code checkout_review_request} today — found live
+     * 2026-08-27: two family members checked out on separate Square payments (different
+     * {@code square_payment_id}, same phone number on the account) within a minute of each other,
+     * and the payment-id dedup above correctly treated them as two distinct real events, so the
+     * customer got the same "How'd your visit with {tech} go?" text twice. One ask per phone
+     * number per day is enough regardless of how many separate payments that visit produced — see
+     * {@code CheckoutReviewTriggerService}. */
+    boolean existsByBusinessIdAndPhoneNumberAndAutomationKeyAndCreatedAtAfter(
+            Long businessId, String phoneNumber, String automationKey, Instant after);
+
     /** Rows the {@code SmsReplyFlowScheduler} should send now, for one business. */
     List<SmsReplyFlow> findByBusinessIdAndStateAndSendDueAtBefore(Long businessId, String state, Instant now);
 

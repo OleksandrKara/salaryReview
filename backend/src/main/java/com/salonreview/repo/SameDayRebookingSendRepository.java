@@ -14,5 +14,11 @@ public interface SameDayRebookingSendRepository extends JpaRepository<SameDayReb
      * even knows which business the payment belongs to (see {@code SameDayRebookingTriggerService}). */
     boolean existsBySquarePaymentId(String squarePaymentId);
 
+    /** Whether this phone number already got a same-day-rebooking nudge today — see
+     * {@code SmsReplyFlowRepository#existsByBusinessIdAndPhoneNumberAndAutomationKeyAndCreatedAtAfter}'s
+     * own doc for the incident this guards against (two family members checked out on separate
+     * Square payments during the same visit). */
+    boolean existsByBusinessIdAndPhoneNumberAndCreatedAtAfter(Long businessId, String phoneNumber, Instant after);
+
     List<SameDayRebookingSend> findByBusinessIdAndStateAndSendDueAtBefore(Long businessId, String state, Instant now);
 }
