@@ -36,6 +36,8 @@ import type {
   CreateBusinessRequest,
   TwilioSmsSettingsDto,
   TwilioSmsSettingsUpdateRequest,
+  MailchimpSettingsDto,
+  MailchimpSettingsUpdateRequest,
   SmsTemplateView,
   SmsTemplateVariantView,
   PromoTermsDto,
@@ -253,6 +255,12 @@ export const api = {
 
   updateTwilioSmsSettings: (body: TwilioSmsSettingsUpdateRequest) =>
     proxyJson<TwilioSmsSettingsDto>(`/api/owner/settings/sms`, 'PUT', body),
+
+  // Mailchimp email settings (owner).
+  getMailchimpSettings: () => proxyGet<MailchimpSettingsDto>(`/api/owner/settings/mailchimp`),
+
+  updateMailchimpSettings: (body: MailchimpSettingsUpdateRequest) =>
+    proxyJson<MailchimpSettingsDto>(`/api/owner/settings/mailchimp`, 'PUT', body),
 
   // SMS message template wording (owner), per rotating-variant slot — see SmsMessageTemplateCatalog.
   listSmsTemplates: () => proxyGet<SmsTemplateView[]>(`/api/owner/settings/sms/templates`),

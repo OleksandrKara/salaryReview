@@ -5,6 +5,7 @@ import AutomationsPanel from './AutomationsPanel';
 import SmsActivityLog from './SmsActivityLog';
 import TemplatesPanel from './TemplatesPanel';
 import TwilioSmsSettingsForm from './TwilioSmsSettingsForm';
+import MailchimpSettingsForm from './MailchimpSettingsForm';
 
 // Owner-only "everything SMS" page: which automations are on, the full sent/received activity
 // log, and the Twilio credentials that make sending possible at all — consolidated here (was
@@ -15,8 +16,9 @@ export default async function SmsSettingsPage() {
   const me = await serverApi.getMe();
   if (me.role !== 'OWNER') redirect('/reports');
 
-  const [settings, automations, templates, promoTerms, serviceLifecycleRoles] = await Promise.all([
+  const [settings, mailchimpSettings, automations, templates, promoTerms, serviceLifecycleRoles] = await Promise.all([
     serverApi.getTwilioSmsSettings(),
+    serverApi.getMailchimpSettings(),
     serverApi.listSmsAutomations(),
     serverApi.listSmsTemplates(),
     serverApi.listPromoTerms(),
@@ -71,6 +73,15 @@ export default async function SmsSettingsPage() {
           SMS off — nothing else breaks if credentials are unset.
         </p>
         <TwilioSmsSettingsForm initialSettings={settings} />
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Mailchimp credentials</h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Sends marketing win-back emails (lapsed &amp; repeat customer) alongside the matching SMS automations.
+          Leave any field blank to keep win-back emails off — nothing else breaks if credentials are unset.
+        </p>
+        <MailchimpSettingsForm initialSettings={mailchimpSettings} />
       </section>
     </main>
   );
