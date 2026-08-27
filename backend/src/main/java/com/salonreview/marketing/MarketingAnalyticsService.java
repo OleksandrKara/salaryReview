@@ -224,10 +224,11 @@ public class MarketingAnalyticsService {
         // customer's own firstTouch falls within [from, to], the same cohort the Ads Report's
         // "Anticipated (outside period)"/"Cancelled (outside period)" figures use. upcoming/
         // cancelled themselves are fetched for every ads customer (unrestricted), matching
-        // adsReport()'s own scope for "this period" figures (Completed, Anticipated (this period),
-        // Cancelled (this period) all count any ads customer whose booking date falls in range) —
-        // so the drill-down's own filtered totals can reconcile exactly against every headline
-        // number above it, not just the ones a narrower fetch happened to include.
+        // adsReport()'s own scope for "this period" figures (Completed and Cancelled (this period)
+        // count any ads customer whose booking date falls in range; Anticipated (this period)
+        // counts any ads customer whose appointment date — startAt, fixed 2026-08-27 — falls in
+        // range) — so the drill-down's own filtered totals can reconcile exactly against every
+        // headline number above it, not just the ones a narrower fetch happened to include.
         Set<String> customersCapturedInRange = adsCustomers.entrySet().stream()
                 .filter(e -> withinPeriod(e.getValue().firstTouch().atZone(java.time.ZoneOffset.UTC).toLocalDate(), from, to))
                 .map(Map.Entry::getKey)
@@ -388,7 +389,7 @@ public class MarketingAnalyticsService {
                 .filter(c -> withinPeriod(c.bookedDate(), alignedFrom, alignedTo))
                 .map(CompletedAppointment::customerId).distinct().count();
         long totalsCustomersAnticipated = upcoming.stream()
-                .filter(u -> withinPeriod(u.bookedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), alignedFrom, alignedTo))
+                .filter(u -> withinPeriod(u.startAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), alignedFrom, alignedTo))
                 .map(UpcomingAppointment::customerId).distinct().count();
         long totalsCustomersCancelled = cancelledBookingsIn(bookingHistory, alignedFrom, alignedTo).customers();
         PeriodRow totals = totalsRow(alignedFrom, alignedTo, rows, totalsOutsidePeriod,
@@ -639,7 +640,7 @@ public class MarketingAnalyticsService {
         CountSplit completedAppointmentsSplit = countSplit(bucketCompleted, CompletedAppointment::freshFromAds);
 
         List<UpcomingAppointment> bucketUpcoming = upcoming.stream()
-                .filter(u -> withinPeriod(u.bookedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), periodStart, periodEnd))
+                .filter(u -> withinPeriod(u.startAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), periodStart, periodEnd))
                 .toList();
         BigDecimal anticipatedRevenue = bucketUpcoming.stream().map(UpcomingAppointment::price)
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);
@@ -651,9 +652,10 @@ public class MarketingAnalyticsService {
         CancelledIn cancelledIn = cancelledBookingsIn(bookingHistory, periodStart, periodEnd);
         long cancelledBookings = cancelledIn.bookings();
 
-        // Still bucketed by the follow-up's own visit date, not booking-creation date — unlike the
-        // tracked-flow paths above, a manager follow-up's underlying Appointment DTO carries no
-        // created_at (see MarketingContactDto.Appointment), so there's nothing to bucket by here.
+        // Bucketed by the follow-up's own visit date — same as the anticipated-revenue bucketing
+        // above now does (both key on startAt/visit date, not booking-creation date). A manager
+        // follow-up's underlying Appointment DTO carries no created_at anyway (see
+        // MarketingContactDto.Appointment), so there'd be nothing to bucket by otherwise.
         long customersFollowedUp = followUps.stream()
                 .filter(f -> f.appointment().startAt() != null && withinPeriod(
                         f.appointment().startAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), periodStart, periodEnd))
@@ -718,7 +720,7 @@ public class MarketingAnalyticsService {
         Set<String> customerIds = customersCapturedIn(adsCustomers, periodStart, periodEnd);
         List<UpcomingAppointment> outside = upcoming.stream()
                 .filter(u -> customerIds.contains(u.customerId()))
-                .filter(u -> !withinPeriod(u.bookedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), periodStart, periodEnd))
+                .filter(u -> !withinPeriod(u.startAt().atZone(java.time.ZoneOffset.UTC).toLocalDate(), periodStart, periodEnd))
                 .toList();
         BigDecimal revenue = outside.stream().map(UpcomingAppointment::price)
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.HALF_UP);

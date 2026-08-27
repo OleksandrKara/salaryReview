@@ -68,14 +68,14 @@ public record MarketingAnalyticsDto(
             String serviceName,
             Instant startAt,
             /** When this reservation was actually made (the Square booking's own {@code
-             * created_at}) — the field period-bucketing (Ads Report's week/month rows) keys on,
-             * so a customer who books late in one period for a visit that lands in the next
-             * period is still counted in the period they actually booked in, not the one their
-             * visit happens to fall in. {@code startAt} above is kept purely for display ("when
-             * is this appointment"). Falls back to {@code startAt} when the booking's creation
-             * date couldn't be resolved (e.g. a manager follow-up appointment, or Square's own
-             * created_at being unavailable) — the same period {@code startAt} would suggest,
-             * rather than dropping the row from every period's bucket entirely.
+             * created_at}) — display-only (e.g. "booked on..." context), not what period-bucketing
+             * keys on. {@code startAt} above is what Ads Report's week/month rows and the "this
+             * period"/"outside period" split actually bucket by (fixed 2026-08-27: a customer who
+             * booked late in one period for a visit landing in the next period used to be counted
+             * as "anticipated" in the period they booked in rather than the one their visit falls
+             * in, which read as the report showing next month's bookings under this month). Falls
+             * back to {@code startAt} when the booking's creation date couldn't be resolved (e.g. a
+             * manager follow-up appointment, or Square's own created_at being unavailable).
              */
             Instant bookedAt,
             BigDecimal price,
