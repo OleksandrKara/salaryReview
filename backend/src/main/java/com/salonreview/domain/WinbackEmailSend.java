@@ -52,6 +52,18 @@ public class WinbackEmailSend {
     @Column(name = "mailchimp_campaign_id")
     private String mailchimpCampaignId;
 
+    /** Earliest open event Mailchimp's per-recipient email-activity report reported for this
+     * campaign, or {@code null} if not opened (yet) — see {@code MailchimpActivitySyncScheduler}.
+     * Not synced for a {@code SKIPPED_*}/{@code SEND_FAILED} row (no campaign id to look up). */
+    @Column(name = "opened_at")
+    private Instant openedAt;
+
+    /** Earliest click event from the same report — Mailchimp's own click tracking on the email's
+     * links, not {@code sms_message.clicked_at} (which is the shared short-link's click, and could
+     * have come from the earlier SMS instead of this email). */
+    @Column(name = "email_clicked_at")
+    private Instant emailClickedAt;
+
     @Column(name = "created_at", nullable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();

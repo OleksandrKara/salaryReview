@@ -192,6 +192,36 @@ export interface MailchimpSettingsUpdateRequest {
   replyToEmail?: string | null;
 }
 
+// com.salonreview.web.MailchimpActivityController — the win-back email fallback's activity log:
+// which email went to which customer, when, whether they opened/clicked it, and whether they
+// actually came back (a real completed visit, not just a click).
+export interface MailchimpActivitySendView {
+  id: number;
+  automationKey: string;
+  emailAddress: string | null;
+  state: string;
+  sentAt: string;
+  openedAt: string | null;
+  clickedAt: string | null;
+  converted: boolean;
+}
+
+export interface MailchimpActivityStats {
+  windowDays: number;
+  sentCount: number;
+  openedCount: number;
+  clickedCount: number;
+  convertedCount: number;
+  openRate: number;
+  clickRate: number;
+  conversionRate: number;
+}
+
+export interface MailchimpActivityResponse {
+  sends: MailchimpActivitySendView[];
+  stats: MailchimpActivityStats;
+}
+
 // --- SMS message templates (com.salonreview.sms.SmsMessageTemplateCatalog /
 // com.salonreview.web.SmsTemplateSettingsController) — the owner-editable wording behind every
 // automated SMS. automationKey is null for a template not tied to any owner-toggleable automation.
