@@ -75,7 +75,7 @@ function linksFor(role: Role): NavSections {
           labelKey: 'navGroupIntegrations',
           links: [
             { href: '/owner/settings/square', key: 'navSquareSettings' },
-            { href: '/owner/settings/sms', key: 'navSmsSettings' },
+            { href: '/owner/settings/automations', key: 'navAutomationsSettings' },
             { href: '/owner/settings/telegram', key: 'navTelegramSettings' },
           ],
         },

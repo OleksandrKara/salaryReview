@@ -8,7 +8,7 @@ import SetupRequiredNotice from '../../components/SetupRequiredNotice';
 // Shared OWNER+MANAGER conversation view — see openspec/changes/lead-followup-and-manager-inbox
 // design.md D6/D7. Lives under /admin/* (not /owner/*) since both roles use it, matching this
 // app's existing /admin/redos, /admin/manual-adjustments convention. The automation registry +
-// toggle + activity log now live at /owner/settings/sms.
+// toggle + activity log now live at /owner/settings/automations.
 //
 // Mobile is edge-to-edge, full-height (var(--vvh, 100dvh)) so this reads as a real chat app
 // rather than a bounded card floating in page padding. Desktop keeps the bounded two-column card

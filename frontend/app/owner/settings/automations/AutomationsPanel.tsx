@@ -42,6 +42,20 @@ const CATEGORY_META: Record<AutomationCategory, { label: string; className: stri
   general: { label: 'General', className: 'bg-zinc-100 text-zinc-600' },
 };
 
+// Which channel(s) each automation actually sends over — a display badge so it's obvious at a
+// glance without opening the SMS/Email tabs. Only the two win-back automations have an email leg
+// right now (see WinbackEmailFallbackScheduler): SMS goes out first, email only follows up on
+// customers who neither clicked nor replied by evening — everything else here is SMS-only.
+type Channel = 'sms' | 'sms+email';
+const AUTOMATION_CHANNEL: Record<string, Channel> = {
+  lapsed_customer_winback: 'sms+email',
+  repeat_customer_winback: 'sms+email',
+};
+const CHANNEL_META: Record<Channel, { label: string; dotClassName: string }> = {
+  sms: { label: 'SMS', dotClassName: 'bg-sky-500' },
+  'sms+email': { label: 'SMS + Email', dotClassName: 'bg-gradient-to-r from-sky-500 to-violet-500' },
+};
+
 // Which coupon(s) (PromoConfigService promoCode) each automation's SMS link actually applies —
 // see PromoSettingsController. WINBACK5 deliberately maps to two automations: repeat_customer_
 // winback reuses lapsed_customer_winback's own coupon rather than standing up a separate one
@@ -102,6 +116,7 @@ export default function AutomationsPanel({
         key={a.key}
         automation={a}
         category={AUTOMATION_CATEGORY[a.key] ?? 'general'}
+        channel={AUTOMATION_CHANNEL[a.key] ?? 'sms'}
         onToggle={(enabled) => toggle(a.key, enabled)}
         serviceRoles={AUTOMATION_SERVICE_ROLES[a.key]}
         serviceLifecycleRoles={serviceLifecycleRoles}
@@ -157,6 +172,7 @@ function formatRate(numerator: number, denominator: number): string | undefined 
 function AutomationCard({
   automation,
   category,
+  channel,
   onToggle,
   serviceRoles,
   serviceLifecycleRoles,
@@ -169,6 +185,7 @@ function AutomationCard({
 }: {
   automation: SmsAutomationSummary;
   category: AutomationCategory;
+  channel: Channel;
   onToggle: (enabled: boolean) => void;
   serviceRoles?: { role: string; label: string }[];
   serviceLifecycleRoles: ServiceLifecycleRoleDto[];
@@ -207,6 +224,13 @@ function AutomationCard({
             <span className="font-medium text-zinc-900">{automation.name}</span>
             <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${CATEGORY_META[category].className}`}>
               {CATEGORY_META[category].label}
+            </span>
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600"
+              title={channel === 'sms+email' ? 'Sends SMS first, email as a fallback for non-responders' : 'Sends SMS only'}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${CHANNEL_META[channel].dotClassName}`} aria-hidden />
+              {CHANNEL_META[channel].label}
             </span>
           </div>
           <div className="mt-0.5 text-xs text-zinc-500">{automation.audienceDescription}</div>
