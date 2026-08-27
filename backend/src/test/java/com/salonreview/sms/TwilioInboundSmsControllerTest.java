@@ -304,6 +304,46 @@ class TwilioInboundSmsControllerTest {
     }
 
     @Test
+    @DisplayName("2026-08-27 fix: reply of \"10!\" (better than the 1-5 max, not a low rating) → positive branch sent, negative feedback flag never set")
+    void tenIsPositiveNotLowRating() throws Exception {
+        var p = params(PHONE, "10!");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        SmsReplyFlow pending = SmsReplyFlow.builder().id(11L).automationKey("checkout_review_request")
+                .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.of(pending));
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        verify(replyService).sendBranchReply(pending, true);
+        verify(messageLogService, times(1)).save(any());
+    }
+
+    @Test
+    @DisplayName("2026-08-27 fix: a \"4.5\"-style decimal reply resolves to positive only, not both branches' flags at once")
+    void decimalReplyResolvesToHigherNumberOnly() throws Exception {
+        var p = params(PHONE, "4.5, would recommend");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        SmsReplyFlow pending = SmsReplyFlow.builder().id(12L).automationKey("checkout_review_request")
+                .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.of(pending));
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        verify(replyService).sendBranchReply(pending, true);
+        verify(messageLogService, times(1)).save(any());
+    }
+
+    @Test
     @DisplayName("valid signature, positive reply with no low-rating digit → negative feedback flag never set, saved only once")
     void noLowRatingDigitLeavesNegativeFeedbackUnset() throws Exception {
         var p = params(PHONE, "5 stars! love it");
