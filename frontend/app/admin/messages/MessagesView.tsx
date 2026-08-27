@@ -14,6 +14,7 @@ import FeedbackFormClickedIcon from './FeedbackFormClickedIcon';
 import SpamFlagIcon from './SpamFlagIcon';
 import ConversationMenu from './ConversationMenu';
 import EmojiPicker from './EmojiPicker';
+import EmailFollowUpCard from './EmailFollowUpCard';
 import { dispatchSmsUnreadCountChanged } from '../../lib/smsUnreadEvent';
 
 // A compact, generally-useful set for the composer's "insert emoji" button — not exhaustive (no
@@ -1008,6 +1009,7 @@ export default function MessagesView({
                               </p>
                             ) : null}
                           </div>
+                          {m.emailFollowUp && <EmailFollowUpCard followUp={m.emailFollowUp} />}
                           {m.reactions.length > 0 && (
                             <div data-testid="thread-message-reactions" className="mt-0.5 flex flex-wrap gap-1">
                               {m.reactions.map((r, ri) => (

@@ -11,6 +11,7 @@ import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.repo.AppUserRepository;
 import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.repo.SmsMessageRepository.ConversationSummaryProjection;
+import com.salonreview.repo.WinbackEmailSendRepository;
 import com.salonreview.sms.SmsEventBroadcaster;
 import com.salonreview.sms.SmsMediaService;
 import com.salonreview.sms.SmsMessageLogService;
@@ -61,6 +62,7 @@ class SmsActivityControllerTest {
     private SmsReactionService reactionService;
     private SmsDraftService draftService;
     private AppUserRepository users;
+    private WinbackEmailSendRepository winbackEmailSendRepository;
     private MockMvc mvc;
 
     @BeforeEach
@@ -74,13 +76,15 @@ class SmsActivityControllerTest {
         reactionService = mock(SmsReactionService.class);
         draftService = mock(SmsDraftService.class);
         users = mock(AppUserRepository.class);
+        winbackEmailSendRepository = mock(WinbackEmailSendRepository.class);
         CurrentBusinessContext currentBusinessContext = mock(CurrentBusinessContext.class);
         when(currentBusinessContext.id()).thenReturn(BUSINESS_ID);
         when(blockedNumberRepository.findByPhoneNumberIn(any())).thenReturn(List.of());
         when(mediaService.mediaForMessages(any())).thenReturn(Map.of());
         when(reactionService.reactionsForMessages(any())).thenReturn(Map.of());
+        when(winbackEmailSendRepository.findBySmsMessageIdIn(any())).thenReturn(List.of());
         mvc = MockMvcBuilders.standaloneSetup(
-                new SmsActivityController(service, smsService, contactsService, blockedNumberRepository, events, mediaService, reactionService, draftService, users, currentBusinessContext)).build();
+                new SmsActivityController(service, smsService, contactsService, blockedNumberRepository, events, mediaService, reactionService, draftService, users, currentBusinessContext, winbackEmailSendRepository)).build();
     }
 
     private static Contact contact(String givenName, String emailAddress) {

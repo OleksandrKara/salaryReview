@@ -10,7 +10,9 @@ import com.salonreview.domain.SmsMessage;
 import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.repo.AppUserRepository;
 import com.salonreview.repo.BlockedNumberRepository;
+import com.salonreview.domain.WinbackEmailSend;
 import com.salonreview.repo.SmsMessageRepository.ConversationSummaryProjection;
+import com.salonreview.repo.WinbackEmailSendRepository;
 import com.salonreview.sms.CheckoutReviewLinks;
 import com.salonreview.sms.SmsEventBroadcaster;
 import com.salonreview.sms.SmsMediaService;
@@ -60,13 +62,15 @@ public class SmsActivityController {
     private final SmsDraftService draftService;
     private final AppUserRepository users;
     private final CurrentBusinessContext currentBusinessContext;
+    private final WinbackEmailSendRepository winbackEmailSendRepository;
 
     public SmsActivityController(SmsMessageLogService service, TwilioSmsService smsService,
                                   MarketingContactsService contactsService,
                                   BlockedNumberRepository blockedNumberRepository,
                                   SmsEventBroadcaster events, SmsMediaService mediaService,
                                   SmsReactionService reactionService, SmsDraftService draftService,
-                                  AppUserRepository users, CurrentBusinessContext currentBusinessContext) {
+                                  AppUserRepository users, CurrentBusinessContext currentBusinessContext,
+                                  WinbackEmailSendRepository winbackEmailSendRepository) {
         this.service = service;
         this.smsService = smsService;
         this.contactsService = contactsService;
@@ -77,6 +81,7 @@ public class SmsActivityController {
         this.draftService = draftService;
         this.users = users;
         this.currentBusinessContext = currentBusinessContext;
+        this.winbackEmailSendRepository = winbackEmailSendRepository;
     }
 
     public record SmsMediaDto(String url, String contentType) {}
@@ -85,11 +90,21 @@ public class SmsActivityController {
      * {@code Loved "..."}), matched back to it — see {@code SmsReactionService}. */
     public record SmsReactionDto(String emoji) {}
 
+    /** The evening email follow-up tied to this specific outbound SMS, if this send was a
+     * candidate for one (see {@code WinbackEmailFallbackScheduler}) — {@code null} on every other
+     * message. {@code state} is {@code SENT} or one of the {@code SKIPPED_*}/{@code SEND_FAILED}
+     * reasons (see {@link WinbackEmailSend}); {@code contentHtml} is only ever set for {@code SENT}.
+     * Lets the manager conversation view show the whole story under the original SMS bubble:
+     * sent → (no click/reply) → followed up by email → opened/clicked or not. */
+    public record EmailFollowUpDto(String state, String emailAddress, Instant sentAt, Instant openedAt,
+                                    Instant clickedAt, String contentHtml) {}
+
     public record SmsMessageDto(long id, String direction, String automationKey, String phoneNumber,
                                  String templateKey, String body, String status, String reason,
                                  String linkTarget, Instant clickedAt, Instant readAt, Instant createdAt,
                                  String deliveryStatus, String deliveryErrorMessage, Instant deliveryUpdatedAt,
-                                 List<SmsMediaDto> media, List<SmsReactionDto> reactions) {}
+                                 List<SmsMediaDto> media, List<SmsReactionDto> reactions,
+                                 EmailFollowUpDto emailFollowUp) {}
 
     public record ConversationDto(String phoneNumber, Instant lastMessageAt, String lastMessageBody,
                                    String lastMessageDirection, long unreadCount,
@@ -133,7 +148,7 @@ public class SmsActivityController {
         List<Long> ids = messages.stream().map(SmsMessage::getId).toList();
         Map<Long, List<SmsMediaService.MediaInfo>> media = mediaService.mediaForMessages(ids);
         Map<Long, List<SmsReactionService.ReactionDto>> reactions = reactionService.reactionsForMessages(ids);
-        return messages.stream().map(m -> toDto(m, media, reactions)).toList();
+        return messages.stream().map(m -> toDto(m, media, reactions, Map.of())).toList();
     }
 
     @GetMapping("/unread-count")
@@ -237,7 +252,9 @@ public class SmsActivityController {
         List<Long> ids = messages.stream().map(SmsMessage::getId).toList();
         Map<Long, List<SmsMediaService.MediaInfo>> media = mediaService.mediaForMessages(ids);
         Map<Long, List<SmsReactionService.ReactionDto>> reactions = reactionService.reactionsForMessages(ids);
-        return messages.stream().map(m -> toDto(m, media, reactions)).toList();
+        Map<Long, WinbackEmailSend> emailFollowUps = winbackEmailSendRepository.findBySmsMessageIdIn(ids).stream()
+                .collect(java.util.stream.Collectors.toMap(WinbackEmailSend::getSmsMessageId, w -> w));
+        return messages.stream().map(m -> toDto(m, media, reactions, emailFollowUps)).toList();
     }
 
     /** Marks every unread inbound message in this phone number's thread read — called when the
@@ -339,17 +356,23 @@ public class SmsActivityController {
     }
 
     private static SmsMessageDto toDto(SmsMessage m, Map<Long, List<SmsMediaService.MediaInfo>> mediaByMessage,
-                                        Map<Long, List<SmsReactionService.ReactionDto>> reactionsByMessage) {
+                                        Map<Long, List<SmsReactionService.ReactionDto>> reactionsByMessage,
+                                        Map<Long, WinbackEmailSend> emailFollowUpsByMessage) {
         List<SmsMediaDto> media = mediaByMessage.getOrDefault(m.getId(), Collections.emptyList()).stream()
                 .map(mi -> new SmsMediaDto(mi.url(), mi.contentType()))
                 .toList();
         List<SmsReactionDto> reactions = reactionsByMessage.getOrDefault(m.getId(), Collections.emptyList()).stream()
                 .map(r -> new SmsReactionDto(r.emoji()))
                 .toList();
+        WinbackEmailSend w = emailFollowUpsByMessage.get(m.getId());
+        EmailFollowUpDto emailFollowUp = w == null ? null
+                : new EmailFollowUpDto(w.getState(), w.getEmailAddress(), w.getCreatedAt(), w.getOpenedAt(),
+                        w.getEmailClickedAt(), w.getContentHtml());
         return new SmsMessageDto(m.getId(), m.getDirection(), m.getAutomationKey(), m.getPhoneNumber(),
                 m.getTemplateKey(), m.getBody(), m.getStatus(), m.getReason(),
                 m.getLinkTarget(), m.getClickedAt(), m.getReadAt(), m.getCreatedAt(),
-                m.getDeliveryStatus(), m.getDeliveryErrorMessage(), m.getDeliveryUpdatedAt(), media, reactions);
+                m.getDeliveryStatus(), m.getDeliveryErrorMessage(), m.getDeliveryUpdatedAt(), media, reactions,
+                emailFollowUp);
     }
 
     private static ConversationDto toConversationDto(ConversationSummaryProjection p,

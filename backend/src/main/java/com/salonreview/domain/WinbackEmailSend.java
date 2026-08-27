@@ -52,6 +52,12 @@ public class WinbackEmailSend {
     @Column(name = "mailchimp_campaign_id")
     private String mailchimpCampaignId;
 
+    /** The exact HTML sent, stored only for a real {@code STATE_SENT} row — lets the manager
+     * conversation view preview the email without a live Mailchimp API call. {@code null} for
+     * every {@code SKIPPED_*}/{@code SEND_FAILED} row (nothing was ever finalized/sent). */
+    @Column(name = "content_html", columnDefinition = "TEXT")
+    private String contentHtml;
+
     /** Earliest open event Mailchimp's per-recipient email-activity report reported for this
      * campaign, or {@code null} if not opened (yet) — see {@code MailchimpActivitySyncScheduler}.
      * Not synced for a {@code SKIPPED_*}/{@code SEND_FAILED} row (no campaign id to look up). */

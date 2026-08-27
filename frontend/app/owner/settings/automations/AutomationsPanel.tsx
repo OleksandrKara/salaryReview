@@ -202,6 +202,12 @@ function AutomationCard({
   const conversionRate = automation.tracksConversion
     ? formatRate(automation.convertedLast30Days, automation.sentLast30Days)
     : undefined;
+  const emailOpenRate = automation.tracksEmail
+    ? formatRate(automation.emailOpenedLast30Days, automation.emailSentLast30Days)
+    : undefined;
+  const emailClickRate = automation.tracksEmail
+    ? formatRate(automation.emailClickedLast30Days, automation.emailSentLast30Days)
+    : undefined;
 
   const hasSettings = !!(serviceRoles || promoCodes);
   const configuredRoleCount = serviceRoles?.filter((r) => serviceLifecycleRoles.some((x) => x.role === r.role)).length ?? 0;
@@ -317,6 +323,40 @@ function AutomationCard({
               {conversionRate} returned
               <span className="font-normal text-emerald-600/70 tabular-nums">
                 · {automation.convertedLast30Days}/{automation.sentLast30Days}
+              </span>
+            </span>
+          )}
+        </div>
+      )}
+      {/* Email fallback stats — a separate channel from the SMS row above (see WinbackEmailFallback
+          Scheduler), so kept on its own row with a small envelope marker rather than mixed into the
+          SMS pills, which would blur which channel each number is actually about. Omitted the same
+          way as the SMS pills when the automation doesn't track email or hasn't sent one yet. */}
+      {(emailOpenRate || emailClickRate) && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0 text-zinc-400">
+            <rect x="3" y="5" width="18" height="14" rx="2" />
+            <path d="m3 6 9 6 9-6" />
+          </svg>
+          {emailOpenRate && (
+            <span
+              data-testid="automation-email-open-rate"
+              className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700"
+            >
+              {emailOpenRate} opened
+              <span className="font-normal text-amber-600/70 tabular-nums">
+                · {automation.emailOpenedLast30Days}/{automation.emailSentLast30Days}
+              </span>
+            </span>
+          )}
+          {emailClickRate && (
+            <span
+              data-testid="automation-email-click-rate"
+              className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700"
+            >
+              {emailClickRate} clicked
+              <span className="font-normal text-indigo-600/70 tabular-nums">
+                · {automation.emailClickedLast30Days}/{automation.emailSentLast30Days}
               </span>
             </span>
           )}

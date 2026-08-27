@@ -1,10 +1,12 @@
 package com.salonreview.sms;
 
 import com.salonreview.domain.SmsAutomation;
+import com.salonreview.repo.LapsedCustomerWinbackSendRepository;
 import com.salonreview.repo.RepeatCustomerWinbackSendRepository;
 import com.salonreview.repo.ServiceLifecycleReminderSendRepository;
 import com.salonreview.repo.SmsAutomationRepository;
 import com.salonreview.repo.SmsMessageRepository;
+import com.salonreview.repo.WinbackEmailSendRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,8 +33,10 @@ class SmsAutomationServiceTest {
 
     private SmsAutomationRepository repository;
     private SmsMessageRepository messageRepository;
+    private LapsedCustomerWinbackSendRepository lapsedCustomerWinbackSendRepository;
     private RepeatCustomerWinbackSendRepository repeatCustomerWinbackSendRepository;
     private ServiceLifecycleReminderSendRepository serviceLifecycleReminderSendRepository;
+    private WinbackEmailSendRepository winbackEmailSendRepository;
     private AutomationReadinessService readinessService;
     private SmsAutomationService service;
     private static final Long BUSINESS_ID = 1L;
@@ -41,12 +45,15 @@ class SmsAutomationServiceTest {
     void setUp() {
         repository = mock(SmsAutomationRepository.class);
         messageRepository = mock(SmsMessageRepository.class);
+        lapsedCustomerWinbackSendRepository = mock(LapsedCustomerWinbackSendRepository.class);
         repeatCustomerWinbackSendRepository = mock(RepeatCustomerWinbackSendRepository.class);
         serviceLifecycleReminderSendRepository = mock(ServiceLifecycleReminderSendRepository.class);
+        winbackEmailSendRepository = mock(WinbackEmailSendRepository.class);
         readinessService = mock(AutomationReadinessService.class);
         when(readinessService.readiness(eq(BUSINESS_ID), anyString())).thenReturn(AutomationReadinessService.Readiness.READY);
-        service = new SmsAutomationService(repository, messageRepository, repeatCustomerWinbackSendRepository,
-                serviceLifecycleReminderSendRepository, readinessService);
+        service = new SmsAutomationService(repository, messageRepository, lapsedCustomerWinbackSendRepository,
+                repeatCustomerWinbackSendRepository, serviceLifecycleReminderSendRepository,
+                winbackEmailSendRepository, readinessService);
         when(repository.findByBusinessIdAndAutomationKey(eq(BUSINESS_ID), anyString())).thenReturn(Optional.empty());
     }
 
