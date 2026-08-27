@@ -34,6 +34,13 @@ public class MailchimpConfig {
     @Column(name = "from_name")
     private String fromName;
 
+    /** Must be on a domain verified/authenticated in this Mailchimp account (Account →
+     * Domains) — otherwise Mailchimp silently falls back to the account's own
+     * campaign_defaults.from_email, which can be a different business's address entirely if the
+     * account is shared. See V129's migration doc. */
+    @Column(name = "from_email")
+    private String fromEmail;
+
     @Column(name = "reply_to_email")
     private String replyToEmail;
 
@@ -51,7 +58,7 @@ public class MailchimpConfig {
 
     /** True once every field needed to actually send a campaign/automation email is present. */
     public boolean isConfigured() {
-        return notBlank(apiKey) && notBlank(audienceId) && notBlank(fromName) && notBlank(replyToEmail);
+        return notBlank(apiKey) && notBlank(audienceId) && notBlank(fromName) && notBlank(fromEmail) && notBlank(replyToEmail);
     }
 
     /** The datacenter/server prefix Mailchimp's API base URL is built from — the substring after

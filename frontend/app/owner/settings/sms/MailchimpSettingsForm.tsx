@@ -12,6 +12,7 @@ export default function MailchimpSettingsForm({ initialSettings }: { initialSett
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [audienceIdInput, setAudienceIdInput] = useState(initialSettings.audienceId ?? '');
   const [fromNameInput, setFromNameInput] = useState(initialSettings.fromName ?? '');
+  const [fromEmailInput, setFromEmailInput] = useState(initialSettings.fromEmail ?? '');
   const [replyToEmailInput, setReplyToEmailInput] = useState(initialSettings.replyToEmail ?? '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -27,6 +28,7 @@ export default function MailchimpSettingsForm({ initialSettings }: { initialSett
         apiKey: apiKeyInput === '' ? undefined : apiKeyInput,
         audienceId: audienceIdInput,
         fromName: fromNameInput,
+        fromEmail: fromEmailInput,
         replyToEmail: replyToEmailInput,
       });
       setSettings(updated);
@@ -78,6 +80,22 @@ export default function MailchimpSettingsForm({ initialSettings }: { initialSett
           autoComplete="off"
           className="w-full rounded border border-zinc-300 px-2 py-1.5"
         />
+      </label>
+      <label className="text-sm">
+        <span className="mb-1 block text-zinc-600">From email</span>
+        <input
+          type="email"
+          value={fromEmailInput}
+          onChange={(e) => setFromEmailInput(e.target.value)}
+          placeholder="e.g. lucy@akluxnails.com"
+          autoComplete="off"
+          className="w-full rounded border border-zinc-300 px-2 py-1.5"
+        />
+        <span className="mt-1 block text-xs text-zinc-400">
+          Must be on a domain verified &amp; authenticated in this Mailchimp account (Account → Domains) — otherwise
+          Mailchimp silently sends from the account&apos;s own default address instead, which can be a different
+          business entirely if the Mailchimp account is shared.
+        </span>
       </label>
       <label className="text-sm">
         <span className="mb-1 block text-zinc-600">Reply-to email</span>

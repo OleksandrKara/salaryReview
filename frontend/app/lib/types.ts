@@ -175,6 +175,7 @@ export interface MailchimpSettingsDto {
   apiKeySet: boolean;
   audienceId: string | null;
   fromName: string | null;
+  fromEmail: string | null;
   replyToEmail: string | null;
   configured: boolean;
   updatedAt: string | null;
@@ -187,6 +188,7 @@ export interface MailchimpSettingsUpdateRequest {
   apiKey?: string | null;
   audienceId?: string | null;
   fromName?: string | null;
+  fromEmail?: string | null;
   replyToEmail?: string | null;
 }
 

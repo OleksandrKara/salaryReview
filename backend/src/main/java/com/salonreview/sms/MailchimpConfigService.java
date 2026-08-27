@@ -29,13 +29,14 @@ public class MailchimpConfigService {
      * contract as {@link TwilioSmsConfigService#update}, since the owner UI's GET only ever
      * returns a masked {@code apiKey}. */
     @Transactional
-    public MailchimpConfig update(String apiKey, String audienceId, String fromName, String replyToEmail,
+    public MailchimpConfig update(String apiKey, String audienceId, String fromName, String fromEmail, String replyToEmail,
                                    String updatedByUsername, Long businessId) {
         MailchimpConfig cfg = repo.findByBusinessId(businessId)
                 .orElseGet(() -> MailchimpConfig.builder().businessId(businessId).build());
         if (apiKey != null) cfg.setApiKey(blankToNull(apiKey));
         if (audienceId != null) cfg.setAudienceId(blankToNull(audienceId));
         if (fromName != null) cfg.setFromName(blankToNull(fromName));
+        if (fromEmail != null) cfg.setFromEmail(blankToNull(fromEmail));
         if (replyToEmail != null) cfg.setReplyToEmail(blankToNull(replyToEmail));
         cfg.setUpdatedBy(updatedByUsername);
         return repo.save(cfg);
