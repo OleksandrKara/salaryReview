@@ -110,6 +110,23 @@ class CheckoutReviewTriggerServiceTest {
     }
 
     @Test
+    @DisplayName("phone already got a checkout_review_request today (different payment, e.g. a family member's separate checkout) → "
+            + "no second flow row, but the independent same-day-rebooking trigger still fires")
+    void alreadyAskedTodaySkipsFlowButNotRebookingTrigger() {
+        when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
+        when(repository.existsByBusinessIdAndPhoneNumberAndAutomationKeyAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq(PHONE), eq("checkout_review_request"), any())).thenReturn(true);
+        when(square.orderById("order_1")).thenReturn(Optional.of(order("cust_1", null)));
+        when(square.customerPhone("cust_1")).thenReturn(PHONE);
+        when(square.customerGivenNames(List.of("cust_1"))).thenReturn(Map.of("cust_1", "Jane"));
+
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
+
+        verify(repository, never()).save(any());
+        verify(rebookingTrigger).enqueue(BUSINESS_ID, "pay_1", "cust_1", PHONE, "Jane");
+    }
+
+    @Test
     @DisplayName("phone has already clicked GOOGLE_REVIEW, YELP_REVIEW, and FEEDBACK_FORM at least once each → row saved COMPLETED, not sent")
     void allReviewChannelsCoveredSkipsSendButStaysIdempotent() {
         when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);

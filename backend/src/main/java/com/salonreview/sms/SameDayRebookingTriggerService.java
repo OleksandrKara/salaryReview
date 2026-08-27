@@ -44,6 +44,16 @@ public class SameDayRebookingTriggerService {
             if (repository.existsBySquarePaymentId(paymentId)) {
                 return; // Square redelivered an event we already enqueued a send for
             }
+            Instant startOfToday = ZonedDateTime.now(SALON_ZONE).toLocalDate().atStartOfDay(SALON_ZONE).toInstant();
+            if (repository.existsByBusinessIdAndPhoneNumberAndCreatedAtAfter(businessId, phoneNumber, startOfToday)) {
+                // Found live 2026-08-27 alongside CheckoutReviewTriggerService's own version of
+                // this same fix: two family members checked out on separate real Square payments
+                // during the same visit, and the payment-id dedup above correctly treats them as
+                // two distinct events — but one same-day-rebooking nudge per visit is enough.
+                log.info("Same-day-rebooking trigger skipped for {} — already sent one today (payment {} is a separate checkout on the same visit)",
+                        phoneNumber, paymentId);
+                return;
+            }
             Instant now = Instant.now();
             // Midnight at the *start* of tomorrow, salon-local — i.e. the end of the calendar day
             // the payment completed on (see design.md D2).

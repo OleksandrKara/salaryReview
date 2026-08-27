@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,6 +33,9 @@ public class CheckoutReviewTriggerService {
     private static final Logger log = LoggerFactory.getLogger(CheckoutReviewTriggerService.class);
     static final String AUTOMATION_KEY = "checkout_review_request";
     static final Duration SEND_DELAY = Duration.ofMinutes(2);
+    /** DST-safe — always resolves to the salon's real local midnight, not a fixed UTC offset. Same
+     * zone every other scheduler in this package uses. */
+    private static final ZoneId SALON_ZONE = ZoneId.of("America/Los_Angeles");
 
     private final SquareClientProvider squareClientProvider;
     private final SmsReplyFlowRepository repository;
@@ -125,6 +130,14 @@ public class CheckoutReviewTriggerService {
                     && isSet(business.getFeedbackFormUrl());
             if (!reviewLinksConfigured) {
                 log.info("Checkout-review flow skipped for business {} — Google review/Yelp review/feedback form URL not configured yet", businessId);
+            } else if (alreadyAskedToday(businessId, phoneNumber)) {
+                // Found live 2026-08-27: a customer paying for herself and a family member on the
+                // same visit produces two distinct, real Square payments (different payment id
+                // each) within a minute of each other — the payment-id dedup above correctly
+                // treats them as two separate events, but the customer only needs to be asked
+                // about "the visit" once. See SmsReplyFlowRepository's own doc on this method.
+                log.info("Checkout-review flow skipped for {} — already asked once today (payment {} is a separate checkout on the same visit)",
+                        phoneNumber, payment.id());
             } else {
                 boolean hasCoveredAllReviewChannels =
                         messageLogService.hasClickedLinkTarget(businessId, phoneNumber, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)
@@ -150,6 +163,12 @@ public class CheckoutReviewTriggerService {
             log.warn("Checkout-review trigger failed for payment {} (event ignored): {}",
                     payment == null ? null : payment.id(), e.getMessage());
         }
+    }
+
+    private boolean alreadyAskedToday(Long businessId, String phoneNumber) {
+        Instant startOfToday = ZonedDateTime.now(SALON_ZONE).toLocalDate().atStartOfDay(SALON_ZONE).toInstant();
+        return repository.existsByBusinessIdAndPhoneNumberAndAutomationKeyAndCreatedAtAfter(
+                businessId, phoneNumber, AUTOMATION_KEY, startOfToday);
     }
 
     private static boolean isSet(String value) {
