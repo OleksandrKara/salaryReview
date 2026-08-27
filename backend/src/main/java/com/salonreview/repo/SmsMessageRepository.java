@@ -357,6 +357,23 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
     List<SmsMessage> findByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNullOrderByCreatedAtAsc(
             Long businessId, String automationKey, String direction);
 
+    /** Candidate outbound sends for {@code WinbackEmailFallbackScheduler}'s evening pass: real
+     * sends of either win-back automation, in the given window, that nobody has clicked yet — the
+     * scheduler still has to check for an inbound reply separately (an inbound message doesn't
+     * imply a click, and isn't itself filterable in this same query without conflating the two
+     * directions). {@code automationKeys} plural covers both {@code lapsed_customer_winback} and
+     * {@code repeat_customer_winback} in one query. */
+    List<SmsMessage> findByBusinessIdAndAutomationKeyInAndDirectionAndStatusAndClickedAtIsNullAndCreatedAtBetween(
+            Long businessId, Collection<String> automationKeys, String direction, String status,
+            Instant from, Instant to);
+
+    /** Whether this phone number sent any inbound message after the given time, for one business —
+     * used by {@code WinbackEmailFallbackScheduler} to skip the email follow-up for anyone who
+     * already replied to their SMS, even if they never clicked the link. {@code phoneNumber} must
+     * already be E.164-normalized. */
+    boolean existsByBusinessIdAndPhoneNumberAndDirectionAndCreatedAtAfter(
+            Long businessId, String phoneNumber, String direction, Instant after);
+
     /** Every {@code reply_flow_id} already in use for this business/automation — the backfill's
      * "claimed" set, so it never links a second message to a flow that already has one (see
      * {@code CheckoutReviewProviderRatingBackfillStartup}). */
