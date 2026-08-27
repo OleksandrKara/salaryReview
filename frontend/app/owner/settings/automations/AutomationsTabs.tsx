@@ -1,5 +1,6 @@
 'use client';
 
+import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import AutomationsPanel from './AutomationsPanel';
 import SmsActivityLog from './SmsActivityLog';
@@ -7,6 +8,7 @@ import TemplatesPanel from './TemplatesPanel';
 import TwilioSmsSettingsForm from './TwilioSmsSettingsForm';
 import MailchimpSettingsForm from './MailchimpSettingsForm';
 import MailchimpActivityLog from './MailchimpActivityLog';
+import TelegramSettingsForm from './TelegramSettingsForm';
 import type {
   MailchimpActivityResponse,
   MailchimpSettingsDto,
@@ -14,22 +16,34 @@ import type {
   ServiceLifecycleRoleDto,
   SmsAutomationSummary,
   SmsTemplateView,
+  TelegramSettingsDto,
   TwilioSmsSettingsDto,
 } from '../../../lib/types';
 
-type TabKey = 'overview' | 'sms' | 'email';
+type TabKey = 'overview' | 'sms' | 'email' | 'telegram';
 
 const TABS: { key: TabKey; label: string; dot: string }[] = [
   { key: 'overview', label: 'Overview', dot: 'bg-zinc-400' },
   { key: 'sms', label: 'SMS', dot: 'bg-sky-500' },
   { key: 'email', label: 'Email', dot: 'bg-violet-500' },
+  { key: 'telegram', label: 'Telegram', dot: 'bg-cyan-500' },
 ];
 
-/** Client-side tabs so switching between Overview/SMS/Email is instant (no navigation, no
+function isTabKey(v: string | null): v is TabKey {
+  return v === 'overview' || v === 'sms' || v === 'email' || v === 'telegram';
+}
+
+/** Client-side tabs so switching between Overview/SMS/Email/Telegram is instant (no navigation, no
  * re-fetch) — all the data these tabs render is already fetched once, server-side, by page.tsx.
  * Splitting by channel exists so an owner who only cares about, say, email deliverability can go
  * straight there without scrolling past the SMS template editor (which can run long — see
- * TemplatesPanel). */
+ * TemplatesPanel).
+ *
+ * <p>Initial tab reads once from {@code ?tab=} (not kept in sync afterward — clicking a tab is
+ * plain local state, no router.push) purely so a deep link — e.g. the old
+ * {@code /owner/settings/telegram} redirect — can land on the right tab instead of always
+ * Overview. Not synced continuously so switching tabs never re-triggers this page's server-side
+ * data fetch (Promise.all in page.tsx). */
 export default function AutomationsTabs({
   automations,
   serviceLifecycleRoles,
@@ -38,6 +52,7 @@ export default function AutomationsTabs({
   twilioSettings,
   mailchimpSettings,
   mailchimpActivity,
+  telegramSettings,
 }: {
   automations: SmsAutomationSummary[];
   serviceLifecycleRoles: ServiceLifecycleRoleDto[];
@@ -46,8 +61,11 @@ export default function AutomationsTabs({
   twilioSettings: TwilioSmsSettingsDto;
   mailchimpSettings: MailchimpSettingsDto;
   mailchimpActivity: MailchimpActivityResponse;
+  telegramSettings: TelegramSettingsDto;
 }) {
-  const [tab, setTab] = useState<TabKey>('overview');
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get('tab');
+  const [tab, setTab] = useState<TabKey>(isTabKey(initialTab) ? initialTab : 'overview');
 
   return (
     <div>
@@ -75,10 +93,10 @@ export default function AutomationsTabs({
         <section className="mt-6">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Automations</h2>
           <p className="mt-1 text-sm text-zinc-500">
-            Automated messages we send, across both channels. New automations always ship off —
-            turn one on once you&apos;ve tested it. The channel dot next to each one shows whether
-            it sends SMS, email, or both (SMS first, email only as a fallback for non-responders —
-            see the Email tab).
+            Automated messages we send, across every channel. New automations always ship off —
+            turn one on once you&apos;ve tested it. The channel dots next to each one show whether
+            it sends SMS, email (SMS first, email only as a fallback for non-responders — see the
+            Email tab), and/or a Telegram alert to staff.
           </p>
           <div className="mt-4">
             <AutomationsPanel
@@ -147,6 +165,17 @@ export default function AutomationsTabs({
             <MailchimpActivityLog data={mailchimpActivity} />
           </section>
         </>
+      )}
+
+      {tab === 'telegram' && (
+        <section className="mt-6">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Telegram credentials</h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            Alerts staff on Telegram when a 4-hand request comes in from either booking site. Leave
+            either field blank to turn alerts off — nothing else breaks if they&apos;re unset.
+          </p>
+          <TelegramSettingsForm initialSettings={telegramSettings} />
+        </section>
       )}
     </div>
   );

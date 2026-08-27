@@ -19,7 +19,12 @@ import type { Language, MeBusinessOption, Role } from '../lib/types';
 // button in a different visual spot than on mobile (where the column is nearly full-width). Fixed
 // positioning makes it land in the same physical corner everywhere.
 type NavKey = Parameters<typeof t>[1];
-type NavLink = { href: string; key: NavKey };
+// subLinks: a link that's itself an expandable cluster of deep links (e.g. Automations' own
+// Overview/SMS/Email/Telegram tabs) — one level deeper than a NavGroup, same expand/collapse
+// interaction, so every tab of a multi-tab settings page is one tap away from the menu instead of
+// landing on the page and hunting for the right tab. Only Automations uses this today; kept
+// generic (not hardcoded to that one link) so a future multi-tab page can reuse it.
+type NavLink = { href: string; key: NavKey; subLinks?: NavLink[] };
 // A named, collapsible cluster of related links (e.g. "Business integrations": Square/SMS/Telegram)
 // — folds rarely-touched settings out of the way so the menu opens short, with everything still one
 // tap away. See linksFor's own doc for why OWNER is the only role that needs this.
@@ -75,8 +80,16 @@ function linksFor(role: Role): NavSections {
           labelKey: 'navGroupIntegrations',
           links: [
             { href: '/owner/settings/square', key: 'navSquareSettings' },
-            { href: '/owner/settings/automations', key: 'navAutomationsSettings' },
-            { href: '/owner/settings/telegram', key: 'navTelegramSettings' },
+            {
+              href: '/owner/settings/automations',
+              key: 'navAutomationsSettings',
+              subLinks: [
+                { href: '/owner/settings/automations', key: 'navAutomationsOverview' },
+                { href: '/owner/settings/automations?tab=sms', key: 'navAutomationsSms' },
+                { href: '/owner/settings/automations?tab=email', key: 'navAutomationsEmail' },
+                { href: '/owner/settings/automations?tab=telegram', key: 'navAutomationsTelegram' },
+              ],
+            },
           ],
         },
         {
@@ -143,7 +156,7 @@ export default function AdminMenu({
   const groups = sections.groups
     .map((g) => ({ ...g, links: g.links.filter((l) => l.href !== '/owner/settings/businesses' || isPlatformAdmin) }))
     .filter((g) => g.links.length > 0);
-  const allLinks = [...sections.flat, ...groups.flatMap((g) => g.links)];
+  const allLinks = [...sections.flat, ...groups.flatMap((g) => g.links), ...groups.flatMap((g) => g.links.flatMap((l) => l.subLinks ?? []))];
 
   // Highlight only the single most specific match — otherwise a nested route like
   // /owner/marketing/contacts would light up both "Marketing" and "Marketing Contacts" at once.
@@ -161,7 +174,13 @@ export default function AdminMenu({
   // doesn't hide the very link that's active behind a collapsed "Business integrations" header).
   // Lazy-initialized once at mount from the page you land on, not kept in sync afterward — the
   // menu closes on every link click, so a fresh mount is exactly when this matters.
-  const [openGroups, setOpenGroups] = useState<Set<string>>(() => (activeGroupKey ? new Set([activeGroupKey]) : new Set()));
+  const activeSubLinkParent = groups.flatMap((g) => g.links).find((l) => l.subLinks && l.href === bestMatch)?.href;
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
+    const init = new Set<string>();
+    if (activeGroupKey) init.add(activeGroupKey);
+    if (activeSubLinkParent) init.add(activeSubLinkParent);
+    return init;
+  });
 
   // Bottom fade cue for the scrollable link list — expanding a group can push its own links past
   // the max-height cap with no native scrollbar visible at rest on mobile, which otherwise looks
@@ -308,19 +327,62 @@ export default function AdminMenu({
                       </button>
                       {expanded && (
                         <div className="bg-zinc-50 pb-1">
-                          {g.links.map((l) => (
-                            <Link
-                              key={l.href}
-                              href={l.href}
-                              onClick={() => setOpen(false)}
-                              aria-current={isActive(l.href) ? 'page' : undefined}
-                              className={`flex items-center justify-between gap-2 py-2 pl-7 pr-4 text-sm hover:bg-zinc-100 ${
-                                isActive(l.href) ? 'font-semibold text-zinc-900' : 'text-zinc-600'
-                              }`}
-                            >
-                              {t(language, l.key)}
-                            </Link>
-                          ))}
+                          {g.links.map((l) => {
+                            if (!l.subLinks || l.subLinks.length === 0) {
+                              return (
+                                <Link
+                                  key={l.href}
+                                  href={l.href}
+                                  onClick={() => setOpen(false)}
+                                  aria-current={isActive(l.href) ? 'page' : undefined}
+                                  className={`flex items-center justify-between gap-2 py-2 pl-7 pr-4 text-sm hover:bg-zinc-100 ${
+                                    isActive(l.href) ? 'font-semibold text-zinc-900' : 'text-zinc-600'
+                                  }`}
+                                >
+                                  {t(language, l.key)}
+                                </Link>
+                              );
+                            }
+                            // A link that's itself an expandable cluster (see NavLink.subLinks) —
+                            // every tab of a multi-tab page (e.g. Automations' Overview/SMS/Email/
+                            // Telegram) reachable in one more tap, not just "land on the page and
+                            // hunt for the right tab yourself".
+                            const subExpanded = openGroups.has(l.href);
+                            return (
+                              <div key={l.href}>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleGroup(l.href)}
+                                  aria-expanded={subExpanded}
+                                  className={`flex w-full items-center justify-between gap-2 py-2 pl-7 pr-4 text-left text-sm hover:bg-zinc-100 ${
+                                    isActive(l.href) ? 'font-semibold text-zinc-900' : 'text-zinc-600'
+                                  }`}
+                                >
+                                  {t(language, l.key)}
+                                  <svg
+                                    width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden
+                                    className={`shrink-0 transition-transform ${subExpanded ? 'rotate-180' : ''}`}
+                                  >
+                                    <polyline points="6 9 12 15 18 9" />
+                                  </svg>
+                                </button>
+                                {subExpanded && (
+                                  <div className="bg-zinc-100/70">
+                                    {l.subLinks.map((sl) => (
+                                      <Link
+                                        key={sl.href}
+                                        href={sl.href}
+                                        onClick={() => setOpen(false)}
+                                        className="block py-1.5 pl-11 pr-4 text-sm text-zinc-600 hover:bg-zinc-100"
+                                      >
+                                        {t(language, sl.key)}
+                                      </Link>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
