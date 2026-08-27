@@ -1,21 +1,8 @@
-import { serverApi } from '../../../lib/serverApi';
-import PageHeader from '../../../components/PageHeader';
-import TelegramSettingsForm from './TelegramSettingsForm';
+import { redirect } from 'next/navigation';
 
-// Owner-only. Configures the bot token/chat id used to alert staff on Telegram when a 4-hand
-// request comes in from mani or akluxnails-home. Both apps call salaryReview's internal relay
-// endpoint to send the alert — they never see the bot token themselves (see PR description).
-export default async function TelegramSettingsPage() {
-  const settings = await serverApi.getTelegramSettings();
-
-  return (
-    <main className="mx-auto max-w-2xl px-4 py-10">
-      <PageHeader title="Telegram notifications" />
-      <p className="mt-1 text-sm text-zinc-500">
-        Alerts staff on Telegram when a 4-hand request comes in from either booking site. Leave
-        either field blank to turn alerts off — nothing else breaks if they&rsquo;re unset.
-      </p>
-      <TelegramSettingsForm initialSettings={settings} />
-    </main>
-  );
+// Moved into /owner/settings/automations as a tab — Telegram sits alongside SMS/Email as a third
+// notification channel now, not a separate settings page. This route stays only to catch old
+// bookmarks/links; ?tab=telegram deep-links straight to the right tab.
+export default function TelegramSettingsRedirectPage() {
+  redirect('/owner/settings/automations?tab=telegram');
 }
