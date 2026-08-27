@@ -184,8 +184,19 @@ public class TwilioInboundSmsController {
             // no-op, per the comment above
         } else if (pending.isPresent()) {
             SmsReplyFlow flow = pending.get();
-            boolean positive = body.contains("5"); // digits only — "Five" spelled out doesn't match, see design.md D4
-            if (containsLowRatingDigit(body)) {
+            // 2026-08-27 live incident: a customer replying "10!" (meaning "better than your 1-5
+            // max", not a low rating) used to get misread as negative — the old check was a bare
+            // body.contains("5") for positive plus an independent "does the body contain any of
+            // 1-4 anywhere" for the negative-feedback flag, so "10" tripped the low-rating check
+            // (it contains a "1") while never satisfying the positive one (no literal "5"
+            // character). Deriving both from the single highest standalone number in the reply
+            // fixes that: "10", "100%", and "4.5"-style decimal replies (previously flagged BOTH
+            // positive and negative-feedback at once, since the two checks weren't mutually
+            // exclusive) now resolve to exactly one outcome. Digits only, same as before — no
+            // attempt to parse spelled-out numbers ("Five" still doesn't match).
+            Optional<Integer> highestNumber = highestStandaloneNumber(body);
+            boolean positive = highestNumber.map(n -> n >= 5).orElse(false);
+            if (highestNumber.map(n -> n >= 1 && n <= 4).orElse(false)) {
                 logged.setNegativeFeedbackAt(Instant.now());
                 messageLogService.save(logged);
             }
@@ -230,11 +241,20 @@ public class TwilioInboundSmsController {
                 : info.givenName() + " " + info.familyName();
     }
 
-    /** A reply containing any of 1-4 — a low star rating — permanently excludes this customer
-     * from the same-day-rebooking win-back nudge (see {@code SameDayRebookingScheduler}); see
-     * negative-feedback-tracking design. Digits only, same convention as the positive check
-     * above — no attempt to parse spelled-out numbers. */
-    private static boolean containsLowRatingDigit(String body) {
-        return body.chars().anyMatch(c -> c >= '1' && c <= '4');
+    private static final java.util.regex.Pattern STANDALONE_NUMBER = java.util.regex.Pattern.compile("\\b(\\d{1,3})\\b");
+
+    /** The highest standalone number in the reply (word-boundary safe, so a number embedded in a
+     * longer token — a phone-number fragment, "$50" — never counts), not just the first one found:
+     * a "4.5"-style decimal reply is two separate standalone tokens (4 and 5) to this regex, and
+     * taking the max reads it as the 5 the customer meant, not the 4. {@code empty} for a reply
+     * with no standalone number at all. */
+    private static Optional<Integer> highestStandaloneNumber(String body) {
+        var matcher = STANDALONE_NUMBER.matcher(body);
+        Integer max = null;
+        while (matcher.find()) {
+            int n = Integer.parseInt(matcher.group(1));
+            if (max == null || n > max) max = n;
+        }
+        return Optional.ofNullable(max);
     }
 }
