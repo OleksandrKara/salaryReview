@@ -14,6 +14,7 @@ import type {
   BusinessSettingsDto,
   PlatformBusinessDto,
   TwilioSmsSettingsDto,
+  MailchimpSettingsDto,
   SmsTemplateView,
   PromoTermsDto,
   ServiceLifecycleRoleDto,
@@ -172,6 +173,8 @@ export const serverApi = {
   listBusinesses: () => serverFetch<PlatformBusinessDto[]>(`/api/platform/businesses`),
 
   getTwilioSmsSettings: () => serverFetch<TwilioSmsSettingsDto>(`/api/owner/settings/sms`),
+
+  getMailchimpSettings: () => serverFetch<MailchimpSettingsDto>(`/api/owner/settings/mailchimp`),
 
   listSmsTemplates: () => serverFetch<SmsTemplateView[]>(`/api/owner/settings/sms/templates`),
 

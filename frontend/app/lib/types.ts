@@ -170,6 +170,26 @@ export interface TwilioSmsSettingsUpdateRequest {
   senderName?: string | null;
 }
 
+export interface MailchimpSettingsDto {
+  apiKeyMasked: string | null;
+  apiKeySet: boolean;
+  audienceId: string | null;
+  fromName: string | null;
+  replyToEmail: string | null;
+  configured: boolean;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+// null field = leave unchanged; '' = clear. Never send the masked apiKey back — only include a
+// field when the owner actually typed a new value.
+export interface MailchimpSettingsUpdateRequest {
+  apiKey?: string | null;
+  audienceId?: string | null;
+  fromName?: string | null;
+  replyToEmail?: string | null;
+}
+
 // --- SMS message templates (com.salonreview.sms.SmsMessageTemplateCatalog /
 // com.salonreview.web.SmsTemplateSettingsController) — the owner-editable wording behind every
 // automated SMS. automationKey is null for a template not tied to any owner-toggleable automation.
