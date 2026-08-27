@@ -13,9 +13,12 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 /**
  * Thin hand-rolled client for the Mailchimp Marketing API (audience/campaign-based) — same
@@ -103,6 +106,40 @@ public class MailchimpClient {
         requireSuccess(res, "send campaign");
     }
 
+    /** Per-recipient open/click events for a single-recipient campaign — since every campaign this
+     * integration creates has exactly one recipient (see class doc), {@code emails[0]}'s activity
+     * list is unambiguously this one customer's own opens/clicks, not an aggregate across many
+     * people. Returns (earliest open, earliest click), either possibly empty if that action hasn't
+     * happened (yet). Used by {@code MailchimpActivitySyncScheduler} to back the win-back email
+     * activity dashboard. */
+    public EmailActivity fetchEmailActivity(MailchimpConfig config, String campaignId) throws IOException, InterruptedException {
+        HttpRequest req = baseRequest(config, "/reports/" + campaignId + "/email-activity")
+                .GET()
+                .build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        requireSuccess(res, "fetch email activity");
+        EmailActivityResponse parsed = mapper.readValue(res.body(), EmailActivityResponse.class);
+        List<ActivityEvent> events = parsed.emails() == null || parsed.emails().isEmpty()
+                ? List.of() : parsed.emails().get(0).activity();
+        if (events == null) events = List.of();
+        Optional<Instant> firstOpen = events.stream()
+                .filter(e -> "open".equals(e.action())).map(e -> parseTimestamp(e.timestamp())).min(Instant::compareTo);
+        Optional<Instant> firstClick = events.stream()
+                .filter(e -> "click".equals(e.action())).map(e -> parseTimestamp(e.timestamp())).min(Instant::compareTo);
+        return new EmailActivity(firstOpen.orElse(null), firstClick.orElse(null));
+    }
+
+    /** Mailchimp's timestamps use a {@code +00:00} offset suffix (e.g.
+     * {@code "2026-08-27T21:09:05+00:00"}), not {@code Instant.parse}'s required {@code Z} — this
+     * {@code ObjectMapper} instance has no JSR-310 module registered (a hand-rolled client, not the
+     * Spring-managed bean), so timestamps come through as plain strings and are parsed here instead
+     * of relying on Jackson's java.time support. */
+    private static Instant parseTimestamp(String raw) {
+        return java.time.OffsetDateTime.parse(raw).toInstant();
+    }
+
+    public record EmailActivity(Instant openedAt, Instant clickedAt) {}
+
     private HttpRequest.Builder baseRequest(MailchimpConfig config, String path) {
         String dc = config.serverPrefix();
         String auth = Base64.getEncoder().encodeToString(
@@ -150,4 +187,13 @@ public class MailchimpClient {
     private record CampaignIdResponse(String id) {}
 
     private record SetContentRequest(String html) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record EmailActivityResponse(List<EmailActivityEntry> emails) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record EmailActivityEntry(String email_address, List<ActivityEvent> activity) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record ActivityEvent(String action, String timestamp) {}
 }
