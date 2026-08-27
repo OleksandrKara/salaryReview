@@ -35,6 +35,40 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
         boolean getHasNegativeFeedback();
     }
 
+    /** Shared by all three conversation-summary queries below: a phone number's most recent
+     * activity across *both* channels, not just {@code sms_message}. Found live 2026-08-27 — a
+     * customer whose only new activity was an evening win-back email follow-up (see
+     * {@code WinbackEmailFallbackScheduler}) never moved to the top of the conversation list,
+     * since the old query only ever looked at {@code sms_message.created_at}. The email's own body
+     * can't be shown as a preview snippet (it's a full HTML document, not a text message), so it
+     * gets a synthetic one instead — same "something to show, not the raw payload" reasoning
+     * {@link com.salonreview.web.SmsActivityController.EmailFollowUpDto} already applies to the
+     * per-message thread annotation. Deliberately excludes {@code SKIPPED_*}/{@code SEND_FAILED}
+     * rows and open/click timestamps — only a real send counts as new "activity" here, matching how
+     * an SMS being clicked never bumps the conversation either (only new sends/replies do). */
+    String LATEST_ACTIVITY_SQL = """
+                SELECT DISTINCT ON (phone_number) phone_number, last_message_at, last_message_body,
+                       last_message_direction, last_message_delivery_status, last_message_delivery_error_message
+                FROM (
+                    SELECT phone_number, created_at AS last_message_at, body AS last_message_body,
+                           direction AS last_message_direction,
+                           delivery_status AS last_message_delivery_status,
+                           delivery_error_message AS last_message_delivery_error_message
+                    FROM sms_message
+                    WHERE business_id = :businessId
+                    UNION ALL
+                    SELECT sm.phone_number, wes.created_at AS last_message_at,
+                           '📧 Sent a follow-up email' AS last_message_body,
+                           'OUTBOUND' AS last_message_direction,
+                           NULL AS last_message_delivery_status,
+                           NULL AS last_message_delivery_error_message
+                    FROM winback_email_send wes
+                    JOIN sms_message sm ON sm.id = wes.sms_message_id
+                    WHERE wes.business_id = :businessId AND wes.state = 'SENT'
+                ) combined
+                ORDER BY phone_number, last_message_at DESC
+            """;
+
     @Query(value = """
             SELECT latest.phone_number AS phoneNumber,
                    latest.last_message_at AS lastMessageAt,
@@ -44,16 +78,7 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
                    latest.last_message_delivery_status AS lastMessageDeliveryStatus,
                    latest.last_message_delivery_error_message AS lastMessageDeliveryErrorMessage,
                    COALESCE(negative.has_negative_feedback, false) AS hasNegativeFeedback
-            FROM (
-                SELECT DISTINCT ON (phone_number) phone_number,
-                       created_at AS last_message_at,
-                       body AS last_message_body,
-                       direction AS last_message_direction,
-                       delivery_status AS last_message_delivery_status,
-                       delivery_error_message AS last_message_delivery_error_message
-                FROM sms_message
-                WHERE business_id = :businessId
-                ORDER BY phone_number, created_at DESC
+            FROM (""" + LATEST_ACTIVITY_SQL + """
             ) latest
             LEFT JOIN (
                 SELECT phone_number, COUNT(*) AS unread_count
@@ -81,16 +106,7 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
                    latest.last_message_delivery_status AS lastMessageDeliveryStatus,
                    latest.last_message_delivery_error_message AS lastMessageDeliveryErrorMessage,
                    COALESCE(negative.has_negative_feedback, false) AS hasNegativeFeedback
-            FROM (
-                SELECT DISTINCT ON (phone_number) phone_number,
-                       created_at AS last_message_at,
-                       body AS last_message_body,
-                       direction AS last_message_direction,
-                       delivery_status AS last_message_delivery_status,
-                       delivery_error_message AS last_message_delivery_error_message
-                FROM sms_message
-                WHERE business_id = :businessId
-                ORDER BY phone_number, created_at DESC
+            FROM (""" + LATEST_ACTIVITY_SQL + """
             ) latest
             LEFT JOIN (
                 SELECT phone_number, COUNT(*) AS unread_count
@@ -124,14 +140,11 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
                    latest.last_message_delivery_error_message AS lastMessageDeliveryErrorMessage,
                    COALESCE(negative.has_negative_feedback, false) AS hasNegativeFeedback
             FROM (
-                SELECT phone_number, created_at AS last_message_at, body AS last_message_body,
-                       direction AS last_message_direction,
-                       delivery_status AS last_message_delivery_status,
-                       delivery_error_message AS last_message_delivery_error_message
-                FROM sms_message
-                WHERE business_id = :businessId AND phone_number = :phoneNumber
-                ORDER BY created_at DESC
-                LIMIT 1
+                SELECT phone_number, last_message_at, last_message_body, last_message_direction,
+                       last_message_delivery_status, last_message_delivery_error_message
+                FROM (""" + LATEST_ACTIVITY_SQL + """
+                ) all_phones
+                WHERE phone_number = :phoneNumber
             ) latest
             LEFT JOIN (
                 SELECT phone_number, COUNT(*) AS unread_count
