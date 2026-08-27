@@ -561,7 +561,7 @@ public class SquareClient {
     // each — but cached process-wide (names/creation dates never change) and the misses fetched in
     // parallel, so a month's worth of customers only ever costs one round of lookups. A sentinel
     // "not found" Customer (all-null fields) is cached too, so a bad id isn't refetched forever.
-    private static final Customer NOT_FOUND = new Customer(null, null, null, null, null, null);
+    private static final Customer NOT_FOUND = new Customer(null, null, null, null, null, null, null);
     private final Map<String, Customer> customerCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** Display names for the given customer ids. Best-effort, cached; blanks for any we can't resolve. */
@@ -807,6 +807,17 @@ public class SquareClient {
     public String customerPhone(String customerId) {
         return fetchCustomer(customerId).map(Customer::phoneNumber)
                 .filter(p -> p != null && !p.isBlank())
+                .orElse(null);
+    }
+
+    /** The email address on file for a Square customer, or {@code null} if absent/unresolvable —
+     * same "no error, just no value" contract as {@link #customerPhone}. Used by the win-back email
+     * fallback (see {@code WinbackEmailFallbackScheduler}) to resolve who to send to; email consent
+     * is implied by the customer having provided it at booking (see salonLandings'
+     * {@code EMAIL_CONSENT_VERSION}), independent of SMS marketing consent. */
+    public String customerEmail(String customerId) {
+        return fetchCustomer(customerId).map(Customer::emailAddress)
+                .filter(e -> e != null && !e.isBlank())
                 .orElse(null);
     }
 
@@ -1063,7 +1074,7 @@ public class SquareClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Customer(String id, String givenName, String familyName, String createdAt, String phoneNumber,
-                           List<String> segmentIds) {
+                           String emailAddress, List<String> segmentIds) {
         public String fullName() {
             return ((givenName == null ? "" : givenName) + " " + (familyName == null ? "" : familyName)).trim();
         }
