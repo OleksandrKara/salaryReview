@@ -97,8 +97,10 @@ public final class SmsAutomationRegistry {
                     "Every customer with exactly one all-time visit, 21–35 days after that visit, if they "
                             + "haven't already rebooked — a one-time nudge naming their technician's own "
                             + "schedule; consented customers see a $5-off coupon (min. $99 order) valid until "
-                            + "midnight that day, everyone else gets the same link with no discount language",
-                    List.of(), true, false, false
+                            + "midnight that day, everyone else gets the same link with no discount language. "
+                            + "Customers who neither click nor reply by evening also get a follow-up email — "
+                            + "see WinbackEmailFallbackScheduler.",
+                    List.of(), true, true, true
             ),
             "touchup_reminder", new AutomationMeta(
                     "touchup_reminder",
@@ -129,7 +131,8 @@ public final class SmsAutomationRegistry {
                             + "already rebooked — a plain, no-discount check-in with a booking link; if their "
                             + "technician changed at their last visit, the text offers to check with their "
                             + "earlier technician by name instead. Repeats every time a customer re-lapses, "
-                            + "subject to a 60-day cooldown per customer",
+                            + "subject to a 60-day cooldown per customer. Customers who neither click nor reply "
+                            + "by evening also get a follow-up email — see WinbackEmailFallbackScheduler.",
                     List.of(), true, true, true
             )
     );

@@ -33,6 +33,29 @@ public interface WinbackEmailSendRepository extends JpaRepository<WinbackEmailSe
 
     long countByBusinessIdAndStateAndEmailClickedAtIsNotNullAndCreatedAtAfter(Long businessId, String state, Instant since);
 
+    /** Per-automation forms of the three counts above — backs each automation card's own email
+     * stats line (see {@code SmsAutomationService#list}), as opposed to the Email tab's dashboard,
+     * which aggregates across every automation. */
+    long countByBusinessIdAndAutomationKeyAndStateAndCreatedAtAfter(
+            Long businessId, String automationKey, String state, Instant since);
+
+    long countByBusinessIdAndAutomationKeyAndStateAndOpenedAtIsNotNullAndCreatedAtAfter(
+            Long businessId, String automationKey, String state, Instant since);
+
+    long countByBusinessIdAndAutomationKeyAndStateAndEmailClickedAtIsNotNullAndCreatedAtAfter(
+            Long businessId, String automationKey, String state, Instant since);
+
+    /** The follow-up email tied to a specific SMS send, if one exists — backs the manager
+     * conversation view's inline "email sent that evening" annotation under the original SMS
+     * bubble (see {@code SmsMessageLogService#thread}). At most one row per {@code sms_message.id}
+     * (unique constraint — see V130). */
+    java.util.Optional<com.salonreview.domain.WinbackEmailSend> findBySmsMessageId(Long smsMessageId);
+
+    /** Batch form of {@link #findBySmsMessageId} — one query per thread load, not one per message
+     * row, same "batch not per-row" convention {@code SmsActivityController#enrich} already follows
+     * for every other per-message annotation (media, reactions, link-click flags). */
+    List<com.salonreview.domain.WinbackEmailSend> findBySmsMessageIdIn(java.util.Collection<Long> smsMessageIds);
+
     /** Whether this customer completed a new visit after this specific email went out — the
      * dashboard's per-row "Converted" column. Same "a real completed visit, not a click" outcome
      * definition {@link RepeatCustomerWinbackSendRepository#countConvertedSince} already uses for

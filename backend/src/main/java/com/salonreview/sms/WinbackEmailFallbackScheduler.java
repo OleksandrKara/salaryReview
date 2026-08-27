@@ -117,11 +117,11 @@ public class WinbackEmailFallbackScheduler {
 
         if (smsMessageRepository.existsByBusinessIdAndPhoneNumberAndDirectionAndCreatedAtAfter(
                 businessId, sms.getPhoneNumber(), "INBOUND", sms.getCreatedAt())) {
-            save(sms, null, null, WinbackEmailSend.STATE_SKIPPED_REPLIED, null);
+            save(sms, null, null, WinbackEmailSend.STATE_SKIPPED_REPLIED, null, null);
             return;
         }
         if (!automationService.isEnabled(businessId, automationKey)) {
-            save(sms, null, null, WinbackEmailSend.STATE_SKIPPED_DISABLED, null);
+            save(sms, null, null, WinbackEmailSend.STATE_SKIPPED_DISABLED, null, null);
             return;
         }
 
@@ -137,12 +137,12 @@ public class WinbackEmailFallbackScheduler {
 
         String customerId = square.customerIdsForPhone(sms.getPhoneNumber()).stream().findFirst().orElse(null);
         if (customerId == null) {
-            save(sms, null, null, WinbackEmailSend.STATE_SKIPPED_NO_EMAIL, null);
+            save(sms, null, null, WinbackEmailSend.STATE_SKIPPED_NO_EMAIL, null, null);
             return;
         }
         String email = square.customerEmail(customerId);
         if (email == null || email.isBlank()) {
-            save(sms, customerId, null, WinbackEmailSend.STATE_SKIPPED_NO_EMAIL, null);
+            save(sms, customerId, null, WinbackEmailSend.STATE_SKIPPED_NO_EMAIL, null, null);
             return;
         }
 
@@ -165,7 +165,7 @@ public class WinbackEmailFallbackScheduler {
 
         Optional<String> html = templateService.render(businessId, automationKey, vars);
         if (html.isEmpty()) {
-            save(sms, customerId, email, WinbackEmailSend.STATE_SKIPPED_NO_TEMPLATE, null);
+            save(sms, customerId, email, WinbackEmailSend.STATE_SKIPPED_NO_TEMPLATE, null, null);
             return;
         }
 
@@ -176,10 +176,10 @@ public class WinbackEmailFallbackScheduler {
         try {
             String campaignId = mailchimpEmailService.sendWinbackEmail(
                     config, email, subjectLine, previewText, campaignTitle, html.get());
-            save(sms, customerId, email, WinbackEmailSend.STATE_SENT, campaignId);
+            save(sms, customerId, email, WinbackEmailSend.STATE_SENT, campaignId, html.get());
         } catch (Exception e) {
             log.warn("Winback email send failed for sms_message {} (not retried): {}", sms.getId(), e.getMessage());
-            save(sms, customerId, email, WinbackEmailSend.STATE_SEND_FAILED, null);
+            save(sms, customerId, email, WinbackEmailSend.STATE_SEND_FAILED, null, null);
         }
     }
 
@@ -198,7 +198,8 @@ public class WinbackEmailFallbackScheduler {
         return (name == null || name.isBlank()) ? null : name;
     }
 
-    private void save(SmsMessage sms, String squareCustomerId, String email, String state, String campaignId) {
+    private void save(SmsMessage sms, String squareCustomerId, String email, String state, String campaignId,
+                       String contentHtml) {
         winbackEmailSendRepository.save(WinbackEmailSend.builder()
                 .businessId(sms.getBusinessId())
                 .automationKey(sms.getAutomationKey())
@@ -207,6 +208,7 @@ public class WinbackEmailFallbackScheduler {
                 .emailAddress(email)
                 .state(state)
                 .mailchimpCampaignId(campaignId)
+                .contentHtml(contentHtml)
                 .build());
     }
 }

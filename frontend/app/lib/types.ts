@@ -300,6 +300,14 @@ export interface SmsAutomationSummary {
   replyLast30Days: number;
   tracksConversion: boolean;
   convertedLast30Days: number;
+  // The email fallback leg (see WinbackEmailFallbackScheduler) — only lapsed_customer_winback and
+  // repeat_customer_winback set tracksEmail true. A distinct channel from the SMS click/reply
+  // stats above, shown as its own line — conversion isn't split by channel (see
+  // SmsAutomationService#list's own doc), so there's no separate emailConverted count.
+  tracksEmail: boolean;
+  emailSentLast30Days: number;
+  emailOpenedLast30Days: number;
+  emailClickedLast30Days: number;
   // Whether required config (a coupon, review links, lifecycle-role services, ...) is present —
   // separate from `enabled`. false blocks turning the toggle ON (never blocks turning it OFF) —
   // see AutomationReadinessService.
@@ -328,6 +336,19 @@ export interface SmsReactionDto {
   emoji: string;
 }
 
+// The evening email follow-up tied to one specific outbound SMS (see
+// SmsActivityController.EmailFollowUpDto / WinbackEmailFallbackScheduler) — only present on the
+// SMS that was a candidate for one. state is 'SENT' or one of the SKIPPED_*/SEND_FAILED reasons;
+// contentHtml is only ever set for 'SENT'.
+export interface EmailFollowUpDto {
+  state: string;
+  emailAddress: string | null;
+  sentAt: string;
+  openedAt: string | null;
+  clickedAt: string | null;
+  contentHtml: string | null;
+}
+
 export interface SmsMessageDto {
   id: number;
   direction: SmsMessageDirection;
@@ -346,6 +367,7 @@ export interface SmsMessageDto {
   deliveryUpdatedAt: string | null;
   media: SmsMediaDto[];
   reactions: SmsReactionDto[];
+  emailFollowUp: EmailFollowUpDto | null;
 }
 
 // One conversation (grouped by phone number) in the manager-facing /admin/messages inbox — see
