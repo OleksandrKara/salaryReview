@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 
-// Moved into /owner/settings/sms — everything SMS-related (automations, activity, credentials)
-// now lives on one page. This route stays only to catch old bookmarks/links.
+// Moved into /owner/settings/automations — every automation (SMS + email), its activity, and its
+// credentials now live on one page. This route stays only to catch old bookmarks/links.
 export default function AutomationsRedirectPage() {
-  redirect('/owner/settings/sms');
+  redirect('/owner/settings/automations');
 }
