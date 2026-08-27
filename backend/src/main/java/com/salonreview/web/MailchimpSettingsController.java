@@ -35,7 +35,7 @@ public class MailchimpSettingsController {
     @PutMapping
     public ResponseEntity<MailchimpSettingsDto> update(@RequestBody MailchimpSettingsUpdateRequest body, Principal principal) {
         MailchimpConfig updated = configService.update(
-                body.apiKey(), body.audienceId(), body.fromName(), body.replyToEmail(),
+                body.apiKey(), body.audienceId(), body.fromName(), body.fromEmail(), body.replyToEmail(),
                 principal.getName(), currentBusinessContext.id());
         return ResponseEntity.ok(toDto(updated));
     }
@@ -43,7 +43,7 @@ public class MailchimpSettingsController {
     private static MailchimpSettingsDto toDto(MailchimpConfig cfg) {
         return new MailchimpSettingsDto(
                 mask(cfg.getApiKey()), cfg.getApiKey() != null,
-                cfg.getAudienceId(), cfg.getFromName(), cfg.getReplyToEmail(),
+                cfg.getAudienceId(), cfg.getFromName(), cfg.getFromEmail(), cfg.getReplyToEmail(),
                 cfg.isConfigured(), cfg.getUpdatedAt(), cfg.getUpdatedBy());
     }
 
@@ -53,13 +53,13 @@ public class MailchimpSettingsController {
     }
 
     public record MailchimpSettingsDto(String apiKeyMasked, boolean apiKeySet,
-                                        String audienceId, String fromName, String replyToEmail,
+                                        String audienceId, String fromName, String fromEmail, String replyToEmail,
                                         boolean configured, Instant updatedAt, String updatedBy) {
     }
 
     /** {@code null} field = leave unchanged; {@code ""} = clear. See
      * {@link MailchimpConfigService#update}. */
     public record MailchimpSettingsUpdateRequest(String apiKey, String audienceId,
-                                                   String fromName, String replyToEmail) {
+                                                   String fromName, String fromEmail, String replyToEmail) {
     }
 }
