@@ -143,6 +143,9 @@ export default function MessagesView({
   useEffect(() => { nextCursorRef.current = nextCursor; }, [nextCursor]);
   useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
   useEffect(() => { loadingMoreRef.current = loadingMore; }, [loadingMore]);
+  // Guards the bulk-load-everything effect below against spawning a second overlapping loop on
+  // every keystroke — see that effect's own doc for the freeze this caused (found live 2026-08-27).
+  const bulkLoadingRef = useRef(false);
   const [selectedPhone, setSelectedPhone] = useState<string | null>(initialSelectedPhone ?? null);
   const [thread, setThread] = useState<SmsMessageDto[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
@@ -463,17 +466,34 @@ export default function MessagesView({
   // match already-loaded rows. Loading the rest of the pages the moment a query starts typed keeps
   // that filter's old (pre-pagination) behavior of covering every conversation, not just the first
   // page; clearing the query leaves whatever got loaded in place rather than discarding it.
+  //
+  // bulkLoadingRef guards against a real bug found live 2026-08-27: this effect depends on
+  // `[query]`, so it re-fires on every keystroke. The old version started a brand new `while`
+  // loop each time, relying on that closure's own `cancelled` flag to stop the *previous* one —
+  // but a call to loadMoreConversations() made while another one is already in flight returns
+  // immediately (see its own `loadingMoreRef.current` guard), with no real await/delay. The instant
+  // a second keystroke's loop overlapped the first's in-flight request, its `while` condition kept
+  // re-passing and re-calling on every microtask tick — a tight busy-loop pinning the main thread,
+  // not a real infinite network loop, which is why it froze the tab (mobile and desktop alike)
+  // with no console error and no failed request to point at. Guarding so only one loop ever runs
+  // at a time removes the overlap entirely; queryActiveRef (not a captured `cancelled` closure)
+  // lets that one loop still stop the instant the search is cleared.
+  const queryActiveRef = useRef(false);
   useEffect(() => {
-    if (query.trim() === '') return;
-    let cancelled = false;
+    queryActiveRef.current = query.trim() !== '';
+  }, [query]);
+  useEffect(() => {
+    if (query.trim() === '' || bulkLoadingRef.current) return;
+    bulkLoadingRef.current = true;
     (async () => {
-      while (!cancelled && hasMoreRef.current) {
-        await loadMoreConversations();
+      try {
+        while (queryActiveRef.current && hasMoreRef.current) {
+          await loadMoreConversations();
+        }
+      } finally {
+        bulkLoadingRef.current = false;
       }
     })();
-    return () => {
-      cancelled = true;
-    };
   }, [query]);
 
   // Live updates — an inbound text, a delivery-status change, a read/block toggle from another
