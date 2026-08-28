@@ -24,9 +24,14 @@ function ChannelTag({ channel }: { channel: string }) {
 export default function ProviderTrace({
   detail,
   showUnmatched,
+  showPayoutSplit = false,
 }: {
   detail: ProviderDetail;
   showUnmatched: boolean;
+  /** Owner-only: adds a per-service "who keeps what" column (see ServiceLinesTable's own doc) —
+   * never passed true from the provider's own /me self-view (ServiceBreakdown.tsx), which reuses
+   * these same shared components directly without going through this one. */
+  showPayoutSplit?: boolean;
 }) {
   const firstHalf = detail.services.filter((s) => s.half === 'FIRST');
   const secondHalf = detail.services.filter((s) => s.half === 'SECOND');
@@ -35,8 +40,8 @@ export default function ProviderTrace({
     <div className="flex flex-col gap-3">
       {detail.payout && (
         <>
-          <CollapsibleHalf title="1–15" lines={firstHalf} settlement={detail.payout.firstHalf} message={detail.firstHalfMessage} tierApplied={detail.payout.tierApplied} baseRate={detail.payout.firstHalf.appliedRate} />
-          <CollapsibleHalf title="16–end" lines={secondHalf} settlement={detail.payout.secondHalf} message={detail.secondHalfMessage} tierApplied={detail.payout.tierApplied} baseRate={detail.payout.firstHalf.appliedRate} />
+          <CollapsibleHalf title="1–15" lines={firstHalf} settlement={detail.payout.firstHalf} message={detail.firstHalfMessage} tierApplied={detail.payout.tierApplied} baseRate={detail.payout.firstHalf.appliedRate} showPayoutSplit={showPayoutSplit} />
+          <CollapsibleHalf title="16–end" lines={secondHalf} settlement={detail.payout.secondHalf} message={detail.secondHalfMessage} tierApplied={detail.payout.tierApplied} baseRate={detail.payout.firstHalf.appliedRate} showPayoutSplit={showPayoutSplit} />
         </>
       )}
 

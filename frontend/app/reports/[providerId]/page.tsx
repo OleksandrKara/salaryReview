@@ -24,6 +24,7 @@ export default async function ProviderDetailPage({
   const year = Number(sp.year) || now.getUTCFullYear();
   const month = Number(sp.month) || now.getUTCMonth() + 1;
 
+  const me = await serverApi.getMe();
   const backHref = `/reports?year=${year}&month=${month}`;
   let detail: ProviderDetail;
   try {
@@ -62,7 +63,7 @@ export default async function ProviderDetailPage({
       {!detail.payout ? (
         <p className="mt-8 text-center text-zinc-400">No activity for this provider this month.</p>
       ) : (
-        <ProviderTrace detail={detail} showUnmatched />
+        <ProviderTrace detail={detail} showUnmatched showPayoutSplit={me.role === 'OWNER'} />
       )}
     </main>
   );
