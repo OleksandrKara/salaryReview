@@ -46,6 +46,8 @@ class SquareWebhookControllerTest {
 
     private SquareWebhookProperties properties;
     private CheckoutReviewTriggerService triggerService;
+    private SquareBookingWebhookHandler bookingWebhookHandler;
+    private SquareOrderWebhookHandler orderWebhookHandler;
     private BusinessRepository businesses;
     private SquareConnectionService connectionService;
     private MockMvc mvc;
@@ -56,12 +58,14 @@ class SquareWebhookControllerTest {
         properties.setSignatureKey(SIGNATURE_KEY);
         properties.setNotificationUrl(NOTIFICATION_URL);
         triggerService = mock(CheckoutReviewTriggerService.class);
+        bookingWebhookHandler = mock(SquareBookingWebhookHandler.class);
+        orderWebhookHandler = mock(SquareOrderWebhookHandler.class);
         businesses = mock(BusinessRepository.class);
         when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(BUSINESS_A_ID).name("Test")
                 .shortCode("test").timezone("UTC").active(true).build());
         connectionService = mock(SquareConnectionService.class);
-        SquareWebhookController controller = new SquareWebhookController(properties, triggerService, businesses,
-                connectionService, PUBLIC_BASE_URL);
+        SquareWebhookController controller = new SquareWebhookController(properties, triggerService,
+                bookingWebhookHandler, orderWebhookHandler, businesses, connectionService, PUBLIC_BASE_URL);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -182,5 +186,59 @@ class SquareWebhookControllerTest {
                 .andExpect(status().isNotFound());
 
         verifyNoInteractions(triggerService);
+    }
+
+    // ---------------------------------------------------------------- Square-data mirror (Phase 1)
+
+    private static final String BOOKING_BODY = "{\"type\":\"booking.created\",\"event_id\":\"evt_2\",\"data\":{\"type\":\"booking\","
+            + "\"id\":\"bk_1\",\"object\":{\"booking\":{\"id\":\"bk_1\",\"status\":\"ACCEPTED\","
+            + "\"customer_id\":\"cust_1\",\"start_at\":\"2026-06-01T15:00:00Z\"}}}}";
+    private static final String ORDER_BODY = "{\"type\":\"order.updated\",\"event_id\":\"evt_3\",\"data\":{\"type\":\"order_updated\","
+            + "\"id\":\"order_1\",\"object\":{\"order_updated\":{\"order_id\":\"order_1\",\"state\":\"COMPLETED\"}}}}";
+
+    @Test
+    @DisplayName("booking.created is dispatched to the booking mirror handler, independent of payment handling")
+    void bookingCreatedDispatchedToMirrorHandler() throws Exception {
+        String signature = sign(SIGNATURE_KEY, NOTIFICATION_URL + BOOKING_BODY);
+
+        mvc.perform(post("/api/public/webhooks/square")
+                        .header("x-square-hmacsha256-signature", signature)
+                        .contentType("application/json").content(BOOKING_BODY))
+                .andExpect(status().isOk());
+
+        verify(bookingWebhookHandler).handleBookingEvent(eq(BUSINESS_A_ID), any());
+        verifyNoInteractions(triggerService);
+        verifyNoInteractions(orderWebhookHandler);
+    }
+
+    @Test
+    @DisplayName("order.updated is dispatched to the order mirror handler")
+    void orderUpdatedDispatchedToMirrorHandler() throws Exception {
+        String signature = sign(SIGNATURE_KEY, NOTIFICATION_URL + ORDER_BODY);
+
+        mvc.perform(post("/api/public/webhooks/square")
+                        .header("x-square-hmacsha256-signature", signature)
+                        .contentType("application/json").content(ORDER_BODY))
+                .andExpect(status().isOk());
+
+        verify(orderWebhookHandler).handleOrderUpdated(eq(BUSINESS_A_ID), any());
+        verifyNoInteractions(triggerService);
+        verifyNoInteractions(bookingWebhookHandler);
+    }
+
+    @Test
+    @DisplayName("an unparseable payload still 200s and triggers no handler at all")
+    void unparseablePayloadStillOk() throws Exception {
+        String garbage = "not json";
+        String signature = sign(SIGNATURE_KEY, NOTIFICATION_URL + garbage);
+
+        mvc.perform(post("/api/public/webhooks/square")
+                        .header("x-square-hmacsha256-signature", signature)
+                        .contentType("application/json").content(garbage))
+                .andExpect(status().isOk());
+
+        verifyNoInteractions(triggerService);
+        verifyNoInteractions(bookingWebhookHandler);
+        verifyNoInteractions(orderWebhookHandler);
     }
 }
