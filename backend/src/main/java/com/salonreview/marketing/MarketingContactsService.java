@@ -4,12 +4,12 @@ import com.salonreview.config.RebookingProperties;
 import com.salonreview.domain.MarketingContactSquareLink;
 import com.salonreview.domain.MarketingSyncStatus;
 import com.salonreview.domain.ProviderVisit;
-import com.salonreview.domain.SalonConfig;
+import com.salonreview.domain.SquareBookingMirror;
 import com.salonreview.repo.MarketingContactSquareLinkRepository;
 import com.salonreview.repo.MarketingSyncStatusRepository;
 import com.salonreview.repo.ProviderVisitRepository;
+import com.salonreview.repo.SquareBookingMirrorRepository;
 import com.salonreview.util.TtlCache;
-import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.sms.CheckoutReviewLinks;
 import com.salonreview.sms.SmsMessageLogService;
 import com.salonreview.square.SquareClient;
@@ -17,7 +17,6 @@ import com.salonreview.square.SquareClient.AppointmentSegment;
 import com.salonreview.square.SquareClient.Booking;
 import com.salonreview.square.SquareClient.TeamMember;
 import com.salonreview.square.SquareClientProvider;
-import com.salonreview.square.SquareMonthAggregator;
 import com.salonreview.square.SquareMonthAggregator.BookingPayment;
 import com.salonreview.util.PhoneNumbers;
 import com.salonreview.web.dto.MarketingContactDto;
@@ -35,16 +34,12 @@ import org.springframework.web.client.RestClientException;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.YearMonth;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -81,8 +76,8 @@ public class MarketingContactsService {
     private final MarketingContactsRepository repository;
     private final MarketingContactSquareLinkRepository squareLinks;
     private final SquareClientProvider squareClientProvider;
-    private final SquareMonthAggregator aggregator;
-    private final SalonConfigRepository salonConfig;
+    private final SquareBookingMirrorRepository bookingMirrorRepository;
+    private final MarketingBookingPaymentMatcher paymentMatcher;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final MarketingSyncStatusRepository syncStatus;
     private final RebookingProperties rebookingProperties;
@@ -94,8 +89,8 @@ public class MarketingContactsService {
     public MarketingContactsService(MarketingContactsRepository repository,
                                      MarketingContactSquareLinkRepository squareLinks,
                                      SquareClientProvider squareClientProvider,
-                                     SquareMonthAggregator aggregator,
-                                     SalonConfigRepository salonConfig,
+                                     SquareBookingMirrorRepository bookingMirrorRepository,
+                                     MarketingBookingPaymentMatcher paymentMatcher,
                                      com.salonreview.config.CurrentBusinessContext currentBusinessContext,
                                      MarketingSyncStatusRepository syncStatus,
                                      RebookingProperties rebookingProperties,
@@ -105,8 +100,8 @@ public class MarketingContactsService {
         this.repository = repository;
         this.squareLinks = squareLinks;
         this.squareClientProvider = squareClientProvider;
-        this.aggregator = aggregator;
-        this.salonConfig = salonConfig;
+        this.bookingMirrorRepository = bookingMirrorRepository;
+        this.paymentMatcher = paymentMatcher;
         this.currentBusinessContext = currentBusinessContext;
         this.syncStatus = syncStatus;
         this.rebookingProperties = rebookingProperties;
@@ -353,14 +348,15 @@ public class MarketingContactsService {
             // rather than per-contact inside the parallelStream below — every contact shares the
             // same visit ledger, so there's no reason to recount it once per row.
             Map<String, Long> visitCounts = visitCountsByCustomerId();
-            // Each contact with a known Square customer needs its own round trip(s) to Square
-            // (toContact -> fetchAppointments) — parallelizing across contacts, on top of the
-            // per-customer window fan-out inside SquareClient.bookingsForCustomer, is what keeps
-            // this page from taking many seconds to load once there are more than a couple of
-            // Square-linked contacts.
+            // toContact(..., includeSquareHistory=false) below skips fetchAppointments() entirely
+            // for the bulk list (2026-08-19 fix — see toContact's own doc), so the once-per-contact
+            // Square round trip that motivated this comment no longer happens here; enrichContacts()
+            // (the lazy, scroll-triggered per-row call) is the one that pays for fetchAppointments()
+            // now, and since Phase 1 (see SquareBookingMirrorRepository), that itself is a local DB
+            // read, not a live Square call, for the bookings side of it at least.
             //
-            // toContact() -> fetchAppointments() -> paymentsForBookings() -> priceCutoff() reaches
-            // CurrentBusinessContext.id(), but parallelStream() runs each element on a common
+            // toContact() itself still reaches CurrentBusinessContext.id() (e.g. resolving the
+            // Square customer id, visit counts), but parallelStream() runs each element on a common
             // ForkJoinPool worker thread — a ThreadLocal set on the calling thread doesn't carry
             // over there. Resolve it once here and re-establish it explicitly per element, same fix
             // as OwnerOverviewService/RevenuePulseService's identical async ThreadLocal loss.
@@ -519,9 +515,9 @@ public class MarketingContactsService {
         // follow-up as two. A repeat contact row surfacing the exact same follow-up doesn't
         // deserve a second count just because the client happened to re-submit.
         //
-        // uncountedAppointments() -> fetchAppointments() -> priceCutoff() needs CurrentBusinessContext
-        // on whatever thread it runs on — parallelStream()'s worker threads don't inherit it. Same
-        // fix as computeContacts() above.
+        // uncountedAppointments() -> fetchAppointments() needs CurrentBusinessContext on whatever
+        // thread it runs on — parallelStream()'s worker threads don't inherit it. Same fix as
+        // computeContacts() above.
         //
         // sources filters by the contact's own classified channel — without this, a follow-up
         // booking showed up under every traffic-source filter regardless of where that contact
@@ -742,10 +738,18 @@ public class MarketingContactsService {
      */
     private List<Appointment> fetchAppointments(String squareCustomerId, Instant since) {
         try {
-            SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
-            List<Booking> bookings = square.bookingsForCustomer(squareCustomerId, since);
-            if (bookings.isEmpty()) return List.of();
+            Long businessId = currentBusinessContext.id();
+            // Local mirror, not a live Square round trip — see the Phase 1 sync plan. This one
+            // customer-keyed lookup used to be the single most expensive part of both the Contacts
+            // tab and the Overview dashboard's follow-up count: one real Square API call (fanned
+            // out per 30-day window) per contact, hundreds of them on a cold cache for a business
+            // with a large contact list.
+            List<SquareBookingMirror> mirrorRows = bookingMirrorRepository
+                    .findByBusinessIdAndSquareCustomerIdAndStartAtAfter(businessId, squareCustomerId, since);
+            if (mirrorRows.isEmpty()) return List.of();
+            List<Booking> bookings = mirrorRows.stream().map(MarketingContactsService::toSquareBooking).toList();
 
+            SquareClient square = squareClientProvider.forBusiness(businessId);
             Map<String, String> memberNames = new HashMap<>();
             for (TeamMember tm : square.allTeamMembers()) memberNames.put(tm.id(), tm.fullName());
 
@@ -762,65 +766,56 @@ public class MarketingContactsService {
             Map<String, MarketingContactsRepository.RawAppointmentSubmission> submissionsByBookingId =
                     repository.findSubmissionsByBookingIds(bookings.stream().map(Booking::id).toList());
 
-            Map<String, BookingPayment> payments = paymentsForBookings(bookings);
+            Map<String, BookingPayment> payments =
+                    paymentsForBookings(businessId, squareCustomerId, mirrorRows, servicePrices);
 
             return bookings.stream()
                     .map(b -> toAppointment(b, memberNames, serviceNames, servicePrices,
                             submissionsByBookingId.get(b.id()), payments.get(b.id())))
                     .toList();
         } catch (RuntimeException ex) {
-            log.warn("Failed to fetch Square appointment history for customer {}", squareCustomerId, ex);
+            log.warn("Failed to fetch appointment history for customer {}", squareCustomerId, ex);
             return List.of();
         }
     }
 
-    /** What was actually collected for this customer's already-past bookings, keyed by booking id
-     * — reuses the same month-based payroll matching SquareMonthAggregator does (order/cash-note
-     * matched to a booking by customer + service + date), so the Contacts tab shows the real
-     * collected amount, not the catalog-price estimate {@code toAppointment}'s price field is.
-     * Best-effort per month: a failure fetching one month's data (e.g. a transient Square error)
-     * just leaves that month's bookings without payment info, same "never break the page"
-     * philosophy as the rest of this service.
-     */
-    private Map<String, BookingPayment> paymentsForBookings(List<Booking> bookings) {
-        Instant now = Instant.now();
-        ZoneId zone = resolveZone();
-        Set<YearMonth> months = bookings.stream()
-                .map(Booking::startAt)
-                .filter(Objects::nonNull)
-                .map(Instant::parse)
-                .filter(i -> i.isBefore(now)) // only a past appointment can have been paid already
-                .map(i -> YearMonth.from(i.atZone(zone)))
-                .collect(Collectors.toSet());
-        if (months.isEmpty()) return Map.of();
+    /** Local {@link SquareBookingMirror} row -> the same {@code SquareClient.Booking} shape the
+     * rest of this method already builds its response from, so everything downstream (catalog
+     * lookups, submission matching, {@code toAppointment}) stays unchanged. Package-private, not
+     * private — {@code MarketingAnalyticsService}'s own {@code bookingHistoryByCustomer} reuses it
+     * rather than duplicating the same mapping. */
+    static Booking toSquareBooking(SquareBookingMirror m) {
+        List<AppointmentSegment> segments = m.getAppointmentSegments() == null ? null
+                : m.getAppointmentSegments().stream()
+                        .map(s -> new AppointmentSegment(s.teamMemberId(), s.serviceVariationId(), s.durationMinutes()))
+                        .toList();
+        return new Booking(m.getSquareBookingId(), m.getStatus(),
+                m.getStartAt() == null ? null : m.getStartAt().toString(),
+                m.getCreatedAt() == null ? null : m.getCreatedAt().toString(),
+                m.getUpdatedAt() == null ? null : m.getUpdatedAt().toString(),
+                m.getLocationId(), m.getSquareCustomerId(), m.getSellerNote(), m.getCustomerNote(), segments);
+    }
 
-        BigDecimal cutoff = priceCutoff();
-        Map<String, BookingPayment> merged = new HashMap<>();
-        for (YearMonth ym : months) {
+    /** What was actually collected for this customer's already-past bookings, keyed by booking id
+     * — see {@link MarketingBookingPaymentMatcher}'s own doc for how (a local order match, or the
+     * booking's own cash-note). Best-effort per booking: a single match failure never breaks the
+     * rest, same "never break the page" philosophy as the rest of this service.
+     */
+    private Map<String, BookingPayment> paymentsForBookings(Long businessId, String squareCustomerId,
+                                                             List<SquareBookingMirror> mirrorRows,
+                                                             Map<String, BigDecimal> catalogPrices) {
+        Instant now = Instant.now();
+        Map<String, BookingPayment> out = new HashMap<>();
+        for (SquareBookingMirror row : mirrorRows) {
+            if (row.getStartAt() == null || !row.getStartAt().isBefore(now)) continue; // only a past appointment can have been paid already
             try {
-                var agg = aggregator.aggregate(ym.getYear(), ym.getMonthValue(), cutoff);
-                merged.putAll(SquareMonthAggregator.paymentsByBookingId(agg.services()));
+                paymentMatcher.match(businessId, squareCustomerId, row, catalogPrices)
+                        .ifPresent(bp -> out.put(row.getSquareBookingId(), bp));
             } catch (RuntimeException ex) {
-                log.warn("Failed to fetch payment info for {}-{}", ym.getYear(), ym.getMonthValue(), ex);
+                log.warn("Failed to match payment for booking {}", row.getSquareBookingId(), ex);
             }
         }
-        return merged;
-    }
-
-    private ZoneId resolveZone() {
-        try {
-            String tz = squareClientProvider.forBusiness(currentBusinessContext.id()).locationTimeZone();
-            return tz != null && !tz.isBlank() ? ZoneId.of(tz) : ZoneOffset.UTC;
-        } catch (RuntimeException e) {
-            return ZoneOffset.UTC;
-        }
-    }
-
-    private BigDecimal priceCutoff() {
-        Long businessId = currentBusinessContext.id();
-        SalonConfig cfg = salonConfig.findByBusinessId(businessId)
-                .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));
-        return cfg.getServicePriceCutoff();
+        return out;
     }
 
     private static Appointment toAppointment(

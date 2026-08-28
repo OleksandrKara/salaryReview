@@ -3,20 +3,20 @@ package com.salonreview.marketing;
 import com.salonreview.config.RebookingProperties;
 import com.salonreview.domain.MarketingContactSquareLink;
 import com.salonreview.domain.MarketingSyncStatus;
-import com.salonreview.domain.SalonConfig;
+import com.salonreview.domain.ProviderVisit;
+import com.salonreview.domain.SquareBookingMirror;
 import com.salonreview.marketing.MarketingContactsRepository.RawAppointmentSubmission;
 import com.salonreview.marketing.MarketingContactsRepository.RawContact;
 import com.salonreview.marketing.MarketingContactsRepository.RawSubmission;
-import com.salonreview.domain.ProviderVisit;
 import com.salonreview.repo.MarketingContactSquareLinkRepository;
 import com.salonreview.repo.MarketingSyncStatusRepository;
 import com.salonreview.repo.ProviderVisitRepository;
-import com.salonreview.repo.SalonConfigRepository;
+import com.salonreview.repo.SquareBookingMirrorRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClient.AppointmentSegment;
 import com.salonreview.square.SquareClient.Booking;
 import com.salonreview.square.SquareClient.TeamMember;
-import com.salonreview.square.SquareMonthAggregator;
+import com.salonreview.square.SquareMonthAggregator.BookingPayment;
 import com.salonreview.web.dto.MarketingContactDto;
 import com.salonreview.web.dto.MarketingContactDto.Appointment;
 import com.salonreview.web.dto.MarketingContactDto.Contact;
@@ -47,8 +47,8 @@ class MarketingContactsServiceTest {
     private MarketingContactsRepository repository;
     private MarketingContactSquareLinkRepository squareLinks;
     private SquareClient square;
-    private SquareMonthAggregator aggregator;
-    private SalonConfigRepository salonConfig;
+    private SquareBookingMirrorRepository bookingMirrorRepository;
+    private MarketingBookingPaymentMatcher paymentMatcher;
     private MarketingSyncStatusRepository syncStatus;
     private com.salonreview.sms.SmsMessageLogService smsMessageLogService;
     private ProviderVisitRepository providerVisits;
@@ -59,8 +59,8 @@ class MarketingContactsServiceTest {
         repository = mock(MarketingContactsRepository.class);
         squareLinks = mock(MarketingContactSquareLinkRepository.class);
         square = mock(SquareClient.class);
-        aggregator = mock(SquareMonthAggregator.class);
-        salonConfig = mock(SalonConfigRepository.class);
+        bookingMirrorRepository = mock(SquareBookingMirrorRepository.class);
+        paymentMatcher = mock(MarketingBookingPaymentMatcher.class);
         syncStatus = mock(MarketingSyncStatusRepository.class);
         smsMessageLogService = mock(com.salonreview.sms.SmsMessageLogService.class);
         providerVisits = mock(ProviderVisitRepository.class);
@@ -77,20 +77,23 @@ class MarketingContactsServiceTest {
         com.salonreview.square.SquareClientProvider squareClientProvider =
                 mock(com.salonreview.square.SquareClientProvider.class);
         when(squareClientProvider.forBusiness(org.mockito.ArgumentMatchers.anyLong())).thenReturn(square);
-        service = new MarketingContactsService(repository, squareLinks, squareClientProvider, aggregator, salonConfig,
+        service = new MarketingContactsService(repository, squareLinks, squareClientProvider,
+                bookingMirrorRepository, paymentMatcher,
                 currentBusinessContext, syncStatus,
                 new RebookingProperties(), smsMessageLogService, providerVisits, 4);
         when(repository.findSubmissionHistory(any())).thenReturn(List.of());
         when(repository.findSubmissionsByBookingIds(any())).thenReturn(Map.of());
         when(squareLinks.findByPhoneNumber(any())).thenReturn(Optional.empty());
-        when(salonConfig.findByBusinessId(1L)).thenReturn(Optional.of(SalonConfig.builder()
-                .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
         when(syncStatus.getSingleton()).thenReturn(MarketingSyncStatus.builder().build());
         when(providerVisits.findAllByBusinessIdOrderByServiceDateAsc(1L)).thenReturn(List.of());
         // No link engagement by default — individual tests override with a specific stub if they
         // care about the repeat-reviewer/click-status fields.
         when(smsMessageLogService.linkEngagement(any(), any(), any()))
                 .thenReturn(new com.salonreview.sms.SmsMessageLogService.LinkEngagement(null, null));
+        // Default: no mirrored bookings for anyone unless a test opts in via stubBookings() — the
+        // local-mirror replacement for the old "square.bookingsForCustomer(...) -> List.of()" default.
+        when(bookingMirrorRepository.findByBusinessIdAndSquareCustomerIdAndStartAtAfter(any(), any(), any()))
+                .thenReturn(List.of());
     }
 
     private static RawContact rawContact(UUID id, String squareCustomerId) {
@@ -109,12 +112,41 @@ class MarketingContactsServiceTest {
         );
     }
 
+    /** Stubs {@link #bookingMirrorRepository} to return the given fixture bookings (converted to
+     * {@link SquareBookingMirror} rows) for this one customer — the local-mirror replacement for
+     * the old {@code when(square.bookingsForCustomer(eq(customerId), any())).thenReturn(...)}. */
+    private void stubBookings(String customerId, Booking... bookings) {
+        List<SquareBookingMirror> rows = java.util.Arrays.stream(bookings)
+                .map(MarketingContactsServiceTest::toMirror).toList();
+        when(bookingMirrorRepository.findByBusinessIdAndSquareCustomerIdAndStartAtAfter(eq(1L), eq(customerId), any()))
+                .thenReturn(rows);
+    }
+
+    private static SquareBookingMirror toMirror(Booking b) {
+        List<SquareBookingMirror.Segment> segments = b.appointmentSegments() == null ? null
+                : b.appointmentSegments().stream()
+                        .map(s -> new SquareBookingMirror.Segment(s.teamMemberId(), s.serviceVariationId(), s.durationMinutes()))
+                        .toList();
+        return SquareBookingMirror.builder()
+                .businessId(1L)
+                .squareBookingId(b.id())
+                .squareCustomerId(b.customerId())
+                .status(b.status())
+                .startAt(b.startAt() == null ? null : Instant.parse(b.startAt()))
+                .createdAt(b.createdAt() == null ? null : Instant.parse(b.createdAt()))
+                .updatedAt(b.updatedAt() == null ? null : Instant.parse(b.updatedAt()))
+                .locationId(b.locationId())
+                .sellerNote(b.sellerNote())
+                .customerNote(b.customerNote())
+                .appointmentSegments(segments)
+                .build();
+    }
+
     @Test
     @DisplayName("a contact's review-link engagement (sent/clicked for both Google review and feedback form) is surfaced on the Contact DTO")
     void contactSurfacesReviewLinkEngagement() {
         UUID id = UUID.randomUUID();
         when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
-        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of());
         Instant googleSent = Instant.parse("2026-07-20T10:00:00Z");
         Instant googleClicked = Instant.parse("2026-07-20T10:05:00Z");
         when(smsMessageLogService.linkEngagement(1L, "(858) 555-0100", com.salonreview.sms.CheckoutReviewLinks.GOOGLE_REVIEW_TARGET))
@@ -135,7 +167,6 @@ class MarketingContactsServiceTest {
     void contactWithSquareCustomerHasProfileLink() {
         UUID id = UUID.randomUUID();
         when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
-        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of());
 
         MarketingContactDto dto = service.contacts();
 
@@ -161,7 +192,6 @@ class MarketingContactsServiceTest {
         UUID vipId = UUID.randomUUID();
         UUID regularId = UUID.randomUUID();
         when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(vipId, "SQCUST_VIP"), rawContact(regularId, "SQCUST_REGULAR")));
-        when(square.bookingsForCustomer(any(), any())).thenReturn(List.of());
         when(providerVisits.findAllByBusinessIdOrderByServiceDateAsc(1L)).thenReturn(List.of(
                 visit("SQCUST_VIP", java.time.LocalDate.parse("2026-01-05")),
                 visit("SQCUST_VIP", java.time.LocalDate.parse("2026-02-05")),
@@ -189,7 +219,6 @@ class MarketingContactsServiceTest {
     void sameDayTwoProvidersCountsAsOneVisit() {
         UUID id = UUID.randomUUID();
         when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST_SAMEDAY")));
-        when(square.bookingsForCustomer(any(), any())).thenReturn(List.of());
         when(providerVisits.findAllByBusinessIdOrderByServiceDateAsc(1L)).thenReturn(List.of(
                 visit("SQCUST_SAMEDAY", java.time.LocalDate.parse("2026-05-01")),
                 visitWithProvider("SQCUST_SAMEDAY", java.time.LocalDate.parse("2026-05-01"), "PROVIDER_2")
@@ -337,7 +366,7 @@ class MarketingContactsServiceTest {
         Contact c = dto.contacts().get(0);
         assertThat(c.appointments()).isEmpty();
         assertThat(c.familyName()).isNull();
-        verify(square, never()).bookingsForCustomer(any(), any());
+        verify(bookingMirrorRepository, never()).findByBusinessIdAndSquareCustomerIdAndStartAtAfter(any(), any(), any());
         verify(square, never()).customerFamilyNames(any());
     }
 
@@ -350,7 +379,7 @@ class MarketingContactsServiceTest {
         Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2026-07-31T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null,
                 List.of(new AppointmentSegment("TM1", "VAR1", 60)));
-        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(booking));
+        stubBookings("SQCUST123", booking);
         when(square.allTeamMembers()).thenReturn(List.of(new TeamMember("TM1", "Susan", "A.", "ACTIVE", false, null, null)));
         when(square.catalogNames(List.of("VAR1"))).thenReturn(Map.of("VAR1", "Manicure"));
         when(square.catalogPrices(List.of("VAR1"))).thenReturn(Map.of("VAR1", new BigDecimal("85.00")));
@@ -378,7 +407,7 @@ class MarketingContactsServiceTest {
         Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2026-07-31T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null,
                 List.of(new AppointmentSegment("TM1", "VAR1", 60)));
-        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(booking));
+        stubBookings("SQCUST123", booking);
         when(square.allTeamMembers()).thenReturn(List.of());
         when(square.catalogNames(List.of("VAR1"))).thenReturn(Map.of());
         when(square.catalogPrices(List.of("VAR1"))).thenReturn(Map.of());
@@ -409,7 +438,7 @@ class MarketingContactsServiceTest {
         Booking booking = new Booking("SQBOOK9", "ACCEPTED", "2026-08-10T17:00:00Z", null, null,
                 "LOC1", "SQCUST999", null, null,
                 List.of(new AppointmentSegment("TM1", "VAR1", 60)));
-        when(square.bookingsForCustomer(eq("SQCUST999"), any())).thenReturn(List.of(booking));
+        stubBookings("SQCUST999", booking);
         when(square.allTeamMembers()).thenReturn(List.of(new TeamMember("TM1", "Susan", "A.", "ACTIVE", false, null, null)));
         when(square.catalogNames(List.of("VAR1"))).thenReturn(Map.of("VAR1", "Manicure"));
         when(square.catalogPrices(List.of("VAR1"))).thenReturn(Map.of("VAR1", new BigDecimal("85.00")));
@@ -438,23 +467,16 @@ class MarketingContactsServiceTest {
         assertThat(result).isEmpty();
     }
 
-    private static SquareMonthAggregator.MonthAggregation aggOf(int year, int month, List<SquareMonthAggregator.AttributedService> services) {
-        return new SquareMonthAggregator.MonthAggregation(year, month, "UTC", List.of(),
-                new SquareMonthAggregator.Diag(), services, List.of(), List.of());
-    }
-
     @Test
-    @DisplayName("a past appointment shows the real collected amount and channel when a matching payroll line is found")
+    @DisplayName("a past appointment shows the real collected amount and channel when the payment matcher finds one")
     void appointmentShowsRealCollectedPayment() {
         UUID id = UUID.randomUUID();
         when(repository.findByIds(List.of(id), 1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2020-06-15T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
-        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(booking));
-        var line = new SquareMonthAggregator.AttributedService("p1", "P", "2020-06-15", "FIRST", "Manicure",
-                new BigDecimal("50.00"), BigDecimal.ZERO, new BigDecimal("50.00"), BigDecimal.ZERO,
-                true, 1, 1, false, "CASH", null, "SQBOOK1", "SQCUST123", null);
-        when(aggregator.aggregate(2020, 6, new BigDecimal("60.00"))).thenReturn(aggOf(2020, 6, List.of(line)));
+        stubBookings("SQCUST123", booking);
+        when(paymentMatcher.match(eq(1L), eq("SQCUST123"), any(), any()))
+                .thenReturn(Optional.of(new BookingPayment("CASH", new BigDecimal("50.00"), new BigDecimal("50.00"))));
 
         Map<String, MarketingContactsService.ContactEnrichment> result =
                 service.enrichContacts(List.of(id.toString()));
@@ -465,14 +487,14 @@ class MarketingContactsServiceTest {
     }
 
     @Test
-    @DisplayName("a past appointment with no matching payroll line shows no payment info, without throwing")
+    @DisplayName("a past appointment with no matching payment shows no payment info, without throwing")
     void appointmentWithNoMatchingPaymentShowsNull() {
         UUID id = UUID.randomUUID();
         when(repository.findByIds(List.of(id), 1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2020-06-15T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
-        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(booking));
-        when(aggregator.aggregate(2020, 6, new BigDecimal("60.00"))).thenReturn(aggOf(2020, 6, List.of()));
+        stubBookings("SQCUST123", booking);
+        when(paymentMatcher.match(eq(1L), eq("SQCUST123"), any(), any())).thenReturn(Optional.empty());
 
         Map<String, MarketingContactsService.ContactEnrichment> result =
                 service.enrichContacts(List.of(id.toString()));
@@ -483,28 +505,29 @@ class MarketingContactsServiceTest {
     }
 
     @Test
-    @DisplayName("an upcoming appointment never triggers a payroll lookup")
+    @DisplayName("an upcoming appointment never triggers a payment-matcher lookup")
     void upcomingAppointmentSkipsPaymentLookup() {
         UUID id = UUID.randomUUID();
         when(repository.findByIds(List.of(id), 1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking future = new Booking("SQBOOK1", "ACCEPTED", "2099-01-01T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
-        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(future));
+        stubBookings("SQCUST123", future);
 
         Map<String, MarketingContactsService.ContactEnrichment> result =
                 service.enrichContacts(List.of(id.toString()));
 
         var appt = result.get(id.toString()).appointments().get(0);
         assertThat(appt.paymentChannel()).isNull();
-        verify(aggregator, never()).aggregate(anyInt(), anyInt(), any());
+        verify(paymentMatcher, never()).match(any(), any(), any(), any());
     }
 
     @Test
-    @DisplayName("yields an empty appointments list, not a thrown exception, when Square is unreachable")
+    @DisplayName("yields an empty appointments list, not a thrown exception, when the booking mirror lookup fails")
     void toleratesSquareFailure() {
         UUID id = UUID.randomUUID();
         when(repository.findByIds(List.of(id), 1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
-        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenThrow(new RuntimeException("Square unreachable"));
+        when(bookingMirrorRepository.findByBusinessIdAndSquareCustomerIdAndStartAtAfter(eq(1L), eq("SQCUST123"), any()))
+                .thenThrow(new RuntimeException("DB unreachable"));
 
         Map<String, MarketingContactsService.ContactEnrichment> result =
                 service.enrichContacts(List.of(id.toString()));
@@ -520,7 +543,6 @@ class MarketingContactsServiceTest {
         when(squareLinks.findByPhoneNumber("(858) 555-0100")).thenReturn(Optional.of(
                 MarketingContactSquareLink.builder().phoneNumber("(858) 555-0100").squareCustomerId("SQCUST999")
                         .lastSyncedAt(Instant.now()).build()));
-        when(square.bookingsForCustomer(eq("SQCUST999"), any())).thenReturn(List.of());
 
         MarketingContactDto dto = service.contacts();
 
@@ -534,7 +556,6 @@ class MarketingContactsServiceTest {
         UUID id = UUID.randomUUID();
         when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, null)));
         when(square.customerIdsForPhone("(858) 555-0100")).thenReturn(List.of("SQCUST777"));
-        when(square.bookingsForCustomer(eq("SQCUST777"), any())).thenReturn(List.of());
 
         service.syncSquareLinks();
 
@@ -559,7 +580,6 @@ class MarketingContactsServiceTest {
                         true, true, null, null, null, null, null, null, null,
                         Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-02T00:00:00Z"))
         ));
-        when(square.bookingsForCustomer(any(), any())).thenReturn(List.of());
         when(squareLinks.findByPhoneNumber("(858) 555-0200")).thenReturn(Optional.of(
                 MarketingContactSquareLink.builder().phoneNumber("(858) 555-0200").squareCustomerId("SQCUST_CACHED")
                         .lastSyncedAt(Instant.now()).build()));
@@ -577,7 +597,6 @@ class MarketingContactsServiceTest {
     void syncRecordsTimestampEvenWhenNothingNewIsLinked() {
         UUID linkedId = UUID.randomUUID();
         when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(linkedId, "SQCUST_STORED")));
-        when(square.bookingsForCustomer(any(), any())).thenReturn(List.of());
         MarketingSyncStatus status = MarketingSyncStatus.builder()
                 .lastSyncedAt(Instant.parse("2020-01-01T00:00:00Z")).build();
         when(syncStatus.getSingleton()).thenReturn(status);
@@ -606,7 +625,7 @@ class MarketingContactsServiceTest {
         when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking accepted = new Booking("NEWBOOK", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
-        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
+        stubBookings("SQCUST123", accepted);
 
         Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of("OTHERBOOK"), java.util.Set.of(), TrafficSourceSql.ALL);
 
@@ -621,7 +640,7 @@ class MarketingContactsServiceTest {
         when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id1, "SQCUST123"), rawContact(id2, "SQCUST123")));
         Booking accepted = new Booking("NEWBOOK", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
-        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
+        stubBookings("SQCUST123", accepted);
 
         Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of("OTHERBOOK"), java.util.Set.of(), TrafficSourceSql.ALL);
 
@@ -638,13 +657,13 @@ class MarketingContactsServiceTest {
         // in convertedCustomerIds, this must not add a second, spurious follow-up for them.
         Booking futureRebooking = new Booking("FUTUREBOOK", "ACCEPTED", "2026-08-01T21:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
-        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(futureRebooking));
+        stubBookings("SQCUST123", futureRebooking);
 
         Map<String, Long> byVariant = service.countFollowUpBookingsByVariant(
                 "mani", null, null, java.util.Set.of("OTHERBOOK"), java.util.Set.of("SQCUST123"), TrafficSourceSql.ALL);
 
         assertThat(byVariant).isEmpty();
-        verify(square, never()).bookingsForCustomer(eq("SQCUST123"), any());
+        verify(bookingMirrorRepository, never()).findByBusinessIdAndSquareCustomerIdAndStartAtAfter(any(), eq("SQCUST123"), any());
     }
 
     @Test
@@ -654,7 +673,7 @@ class MarketingContactsServiceTest {
         when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking accepted = new Booking("TRACKEDBOOK", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
-        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
+        stubBookings("SQCUST123", accepted);
 
         Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of("TRACKEDBOOK"), java.util.Set.of(), TrafficSourceSql.ALL);
 
@@ -668,7 +687,7 @@ class MarketingContactsServiceTest {
         when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking cancelled = new Booking("CANCELLEDBOOK", "CANCELLED_BY_SELLER", "2026-07-07T21:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
-        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(cancelled));
+        stubBookings("SQCUST123", cancelled);
 
         Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of(), java.util.Set.of(), TrafficSourceSql.ALL);
 
@@ -706,7 +725,7 @@ class MarketingContactsServiceTest {
         // but not selectable as its own bucket" (see TrafficSourceSql's VISIT_CASE doc comment).
         assertThat(byVariant).isEmpty();
         assertThat(appointments).isEmpty();
-        verify(square, never()).bookingsForCustomer(eq("SQCUST_UNCLASSIFIED"), any());
+        verify(bookingMirrorRepository, never()).findByBusinessIdAndSquareCustomerIdAndStartAtAfter(any(), eq("SQCUST_UNCLASSIFIED"), any());
     }
 
     @Test
@@ -719,7 +738,7 @@ class MarketingContactsServiceTest {
                         .lastSyncedAt(Instant.now()).build()));
         Booking accepted = new Booking("PHONEBOOKED", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
                 "LOC1", "SQCUST999", null, null, List.of());
-        when(square.bookingsForCustomer(eq("SQCUST999"), any())).thenReturn(List.of(accepted));
+        stubBookings("SQCUST999", accepted);
 
         Map<String, Long> byVariant = service.countFollowUpBookingsByVariant("mani", null, null, java.util.Set.of(), java.util.Set.of(), TrafficSourceSql.ALL);
 
@@ -748,8 +767,8 @@ class MarketingContactsServiceTest {
                 "mani", Instant.parse("2026-07-01T00:00:00Z"), null, java.util.Set.of(), java.util.Set.of(), TrafficSourceSql.ALL);
 
         assertThat(byVariant).isEmpty();
-        verify(square, never()).bookingsForCustomer(eq("SQCUST_OTHERPAGE"), any());
-        verify(square, never()).bookingsForCustomer(eq("SQCUST_OLD"), any());
+        verify(bookingMirrorRepository, never()).findByBusinessIdAndSquareCustomerIdAndStartAtAfter(any(), eq("SQCUST_OTHERPAGE"), any());
+        verify(bookingMirrorRepository, never()).findByBusinessIdAndSquareCustomerIdAndStartAtAfter(any(), eq("SQCUST_OLD"), any());
     }
 
     @Test
@@ -759,7 +778,7 @@ class MarketingContactsServiceTest {
         when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking futureRebooking = new Booking("FUTUREBOOK", "ACCEPTED", "2026-08-01T21:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
-        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(futureRebooking));
+        stubBookings("SQCUST123", futureRebooking);
 
         List<MarketingContactsService.FollowUpAppointment> appointments = service.followUpAppointments(
                 "mani", null, java.util.Set.of("OTHERBOOK"), java.util.Set.of("SQCUST123"), TrafficSourceSql.ALL);
@@ -774,7 +793,7 @@ class MarketingContactsServiceTest {
         when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking accepted = new Booking("NEWBOOK", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
-        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(accepted));
+        stubBookings("SQCUST123", accepted);
 
         List<MarketingContactsService.FollowUpAppointment> appointments =
                 service.followUpAppointments("mani", null, java.util.Set.of("OTHERBOOK"), java.util.Set.of(), TrafficSourceSql.ALL);
@@ -791,7 +810,7 @@ class MarketingContactsServiceTest {
         when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking tracked = new Booking("TRACKEDBOOK", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
-        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(tracked));
+        stubBookings("SQCUST123", tracked);
 
         List<MarketingContactsService.FollowUpAppointment> appointments =
                 service.followUpAppointments("mani", null, java.util.Set.of("TRACKEDBOOK"), java.util.Set.of(), TrafficSourceSql.ALL);
@@ -806,7 +825,7 @@ class MarketingContactsServiceTest {
         when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Booking cancelled = new Booking("CANCELLEDBOOK", "CANCELLED_BY_SELLER", "2026-07-07T21:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
-        when(square.bookingsForCustomer(eq("SQCUST123"), any())).thenReturn(List.of(cancelled));
+        stubBookings("SQCUST123", cancelled);
 
         List<MarketingContactsService.FollowUpAppointment> appointments =
                 service.followUpAppointments("mani", null, java.util.Set.of(), java.util.Set.of(), TrafficSourceSql.ALL);
@@ -824,10 +843,8 @@ class MarketingContactsServiceTest {
                 mock(com.salonreview.square.SquareClientProvider.class);
         when(clientProvider.forBusiness(any())).thenReturn(square);
         MarketingContactsService twoTenantService = new MarketingContactsService(repository, squareLinks,
-                clientProvider, aggregator, salonConfig, ctx, syncStatus,
+                clientProvider, bookingMirrorRepository, paymentMatcher, ctx, syncStatus,
                 new RebookingProperties(), smsMessageLogService, providerVisits, 4);
-        when(salonConfig.findByBusinessId(any())).thenReturn(Optional.of(SalonConfig.builder()
-                .id(1).ownerShortName("o").servicePriceCutoff(new BigDecimal("60.00")).build()));
         when(providerVisits.findAllByBusinessIdOrderByServiceDateAsc(any())).thenReturn(List.of());
         when(repository.listAllForBusiness(1L)).thenReturn(List.of());
 

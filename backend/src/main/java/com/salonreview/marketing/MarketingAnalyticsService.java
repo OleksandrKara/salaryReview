@@ -40,6 +40,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -104,6 +105,7 @@ public class MarketingAnalyticsService {
     private final SquareMonthAggregator aggregator;
     private final SquareClientProvider squareClientProvider;
     private final SalonConfigRepository salonConfig;
+    private final com.salonreview.repo.SquareBookingMirrorRepository bookingMirrorRepository;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final AdSpendEntryRepository adSpendEntryRepository;
     private final java.time.Clock clock;
@@ -117,11 +119,12 @@ public class MarketingAnalyticsService {
             SquareMonthAggregator aggregator,
             SquareClientProvider squareClientProvider,
             SalonConfigRepository salonConfig,
+            com.salonreview.repo.SquareBookingMirrorRepository bookingMirrorRepository,
             com.salonreview.config.CurrentBusinessContext currentBusinessContext,
             AdSpendEntryRepository adSpendEntryRepository
     ) {
         this(contactsRepository, contactsService, dashboardRepository, aggregator, squareClientProvider, salonConfig,
-                currentBusinessContext, adSpendEntryRepository, java.time.Clock.systemUTC());
+                bookingMirrorRepository, currentBusinessContext, adSpendEntryRepository, java.time.Clock.systemUTC());
     }
 
     /** Test-only constructor — lets tests fix "today" instead of racing the real clock for the
@@ -133,6 +136,7 @@ public class MarketingAnalyticsService {
             SquareMonthAggregator aggregator,
             SquareClientProvider squareClientProvider,
             SalonConfigRepository salonConfig,
+            com.salonreview.repo.SquareBookingMirrorRepository bookingMirrorRepository,
             com.salonreview.config.CurrentBusinessContext currentBusinessContext,
             AdSpendEntryRepository adSpendEntryRepository,
             java.time.Clock clock
@@ -143,6 +147,7 @@ public class MarketingAnalyticsService {
         this.aggregator = aggregator;
         this.squareClientProvider = squareClientProvider;
         this.salonConfig = salonConfig;
+        this.bookingMirrorRepository = bookingMirrorRepository;
         this.currentBusinessContext = currentBusinessContext;
         this.clock = clock;
         this.adSpendEntryRepository = adSpendEntryRepository;
@@ -1023,25 +1028,28 @@ public class MarketingAnalyticsService {
      * "returning" — we'd rather undercount a fresh win than overclaim one we can't verify. A failed
      * Square lookup (e.g. a rate-limit error) is handled identically to "no data available."
      */
-    /** Every ads-attributed customer's full booking history (any status, past or future), fetched
-     * once per customer and shared by both {@link #freshCustomerIds} and {@link #upcomingAppointments}
-     * — they used to each fetch it separately with a different {@code since} (400-day lookback vs.
-     * "yesterday"), which are different {@code SquareClient} cache keys, so every report load paid
-     * two full live-Square sweeps across every ads customer instead of one. The 400-day lookback
-     * window is a superset of what "upcoming" needs (it only cares about today-or-later, filtered
-     * downstream), so one fetch now serves both.
+    /** Every ads-attributed customer's full booking history (any status, past or future), shared by
+     * both {@link #freshCustomerIds} and {@link #upcomingAppointments}. Reads the local Square
+     * booking mirror (see the Phase 1 sync plan) in one batched query instead of one live Square
+     * call per customer — the exact "used to each fetch it separately... every report load paid two
+     * full live-Square sweeps across every ads customer" cost this doc comment used to describe is
+     * gone entirely now, not just halved; a business with hundreds of ads-attributed customers no
+     * longer pays for any of them individually.
      */
     private Map<String, List<SquareClient.Booking>> bookingHistoryByCustomer(Set<String> customerIds) {
-        // Truncated to the day: SquareClient caches bookingsForCustomer by (customerId, since), so
-        // a "since" that carries millisecond precision (clock.instant() called fresh every time)
-        // is a different cache key on literally every call — the 2-minute cache never actually
-        // hits, and repeat navigation between tabs pays the full multi-second Square round trip
-        // every single time. Day-level granularity is more than precise enough for a 400-day
-        // lookback anyway.
+        if (customerIds.isEmpty()) return Map.of();
         Instant since = clock.instant().truncatedTo(java.time.temporal.ChronoUnit.DAYS).minus(BOOKING_HISTORY_LOOKBACK);
-        SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
-        return customerIds.parallelStream()
-                .collect(java.util.stream.Collectors.toMap(id -> id, id -> bookingsOrEmpty(square, id, since)));
+        Long businessId = currentBusinessContext.id();
+        List<com.salonreview.domain.SquareBookingMirror> rows = bookingMirrorRepository
+                .findByBusinessIdAndSquareCustomerIdInAndStartAtAfter(businessId, new ArrayList<>(customerIds), since);
+
+        Map<String, List<SquareClient.Booking>> byCustomer = new HashMap<>();
+        for (String id : customerIds) byCustomer.put(id, new ArrayList<>()); // every requested id present, even with zero bookings
+        for (com.salonreview.domain.SquareBookingMirror row : rows) {
+            byCustomer.computeIfAbsent(row.getSquareCustomerId(), k -> new ArrayList<>())
+                    .add(MarketingContactsService.toSquareBooking(row));
+        }
+        return byCustomer;
     }
 
     private Set<String> freshCustomerIds(Map<String, AdsCustomer> adsCustomers,
@@ -1287,18 +1295,6 @@ public class MarketingAnalyticsService {
         }
         result.sort(Comparator.comparing(CancelledAppointment::date).reversed());
         return result;
-    }
-
-    /** Best-effort: a customer whose Square booking lookup fails is simply excluded from the
-     * upcoming-appointments list rather than failing the whole analytics response. */
-    private List<SquareClient.Booking> bookingsOrEmpty(SquareClient square, String customerId, Instant since) {
-        try {
-            return square.bookingsForCustomer(customerId, since);
-        } catch (RuntimeException ex) {
-            log.warn("Failed to fetch upcoming bookings for customer {}; excluding from the upcoming list",
-                    customerId, ex);
-            return List.of();
-        }
     }
 
     /** Delegates to {@link com.salonreview.square.SquareBookingFilters}, extracted there so
