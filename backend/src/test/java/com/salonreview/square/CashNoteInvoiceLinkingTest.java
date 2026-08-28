@@ -159,4 +159,53 @@ class CashNoteInvoiceLinkingTest {
         assertThat(agg.services()).hasSize(1);
         assertThat(line(agg, "CASH-NOTE").gross()).isEqualByComparingTo("500.00");
     }
+
+    // --- Real failures found live 2026-08-28, after the first version of this fix shipped ---
+
+    @Test
+    @DisplayName("nu13pdulf5449r: the invoice number written BEFORE the keyword ('001821 invoice sent "
+            + "$100') is still found, not just the after-keyword phrasing")
+    void invoiceNumberBeforeKeywordIsStillFound() {
+        var booking = new Booking("nu13pdulf5449r", "ACCEPTED", "2026-08-03T20:30:00Z", null, null, "LOC", CUST,
+                "001821 invoice sent $100 \nprecare aftercare sent \nPaid $450 cash ", null,
+                List.of(new AppointmentSegment(TM, "REGULAR", 60)));
+        when(square.bookings(any(), any())).thenReturn(List.of(booking));
+        when(square.catalogPrices(any())).thenReturn(Map.of("REGULAR", new BigDecimal("600.00")));
+        when(square.invoicesForCustomer(CUST)).thenReturn(List.of(paidInvoice("001821", "100.00")));
+        when(salonConfigRepo.findByBusinessId(2L)).thenReturn(Optional.empty());
+
+        MonthAggregation agg = aggregator.aggregate(2026, 8, new BigDecimal("30.00"));
+
+        assertThat(line(agg, "CARD").gross()).isEqualByComparingTo("100.00");
+        AttributedService cashLine = line(agg, "CASH-NOTE");
+        assertThat(cashLine.net()).isEqualByComparingTo("450.00");
+        assertThat(cashLine.gross()).isEqualByComparingTo("500.00"); // 600 - 100 card
+    }
+
+    @Test
+    @DisplayName("7ptd9x14kxboht/u476xpsswlwfra: a deleted/missing catalog item (Square 404s the "
+            + "variation) no longer erases the linked invoice's headroom — gross falls back to cash "
+            + "collected PLUS the invoice, not just the cash figure alone")
+    void missingCatalogPriceStillLeavesRoomForLinkedInvoice() {
+        var booking = new Booking("7ptd9x14kxboht", "ACCEPTED", "2026-08-14T20:30:00Z", null, null, "LOC", CUST,
+                "invoice 001803 100$ paid\npre and after-care sent on the email 14/08\nPaid $450 cash ", null,
+                List.of(new AppointmentSegment(TM, "DELETED-VARIATION", 60)));
+        when(square.bookings(any(), any())).thenReturn(List.of(booking));
+        when(square.catalogPrices(any())).thenReturn(Map.of()); // the variation 404s — nothing resolves
+        when(square.invoicesForCustomer(CUST)).thenReturn(List.of(paidInvoice("001803", "100.00")));
+        when(salonConfigRepo.findByBusinessId(2L)).thenReturn(Optional.empty());
+
+        MonthAggregation agg = aggregator.aggregate(2026, 8, new BigDecimal("30.00"));
+
+        // Before this fix: gross fell back to just the $450 cash figure, leaving zero headroom, so
+        // the correctly-found $100 invoice got capped to $0 and silently vanished.
+        AttributedService cardLine = line(agg, "CARD");
+        assertThat(cardLine.gross()).isEqualByComparingTo("100.00");
+        AttributedService cashLine = line(agg, "CASH-NOTE");
+        assertThat(cashLine.net()).isEqualByComparingTo("450.00");
+        assertThat(cashLine.gross()).isEqualByComparingTo("450.00"); // (450+100) - 100 card
+
+        var half = agg.providers().get(0).firstHalf();
+        assertThat(half.cardRevenue().add(half.cashGross())).isEqualByComparingTo("550.00");
+    }
 }
