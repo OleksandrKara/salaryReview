@@ -20,6 +20,7 @@ export default function CollapsibleHalf({
   baseRate,
   defaultOpen = false,
   showSalary = true,
+  showPayoutSplit = false,
   language = null,
 }: {
   title: string;
@@ -30,6 +31,8 @@ export default function CollapsibleHalf({
   baseRate: number;
   defaultOpen?: boolean;
   showSalary?: boolean;
+  /** See ServiceLinesTable's own doc — owner-only. */
+  showPayoutSplit?: boolean;
   language?: Language | null;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -57,7 +60,7 @@ export default function CollapsibleHalf({
       {open && lines.length > 0 && (
         <div className="flex flex-col gap-3 border-t border-zinc-200 p-4">
           {showSalary && message && <SalaryCopyButton message={message} />}
-          <ServiceLinesTable lines={lines} settlement={settlement} tierApplied={tierApplied} baseRate={baseRate} />
+          <ServiceLinesTable lines={lines} settlement={settlement} tierApplied={tierApplied} baseRate={baseRate} showPayoutSplit={showPayoutSplit} />
         </div>
       )}
     </div>
