@@ -528,12 +528,21 @@ public class MarketingContactsService {
         // actually came from (a Direct-traffic lead's booking still counted while viewing
         // "Meta ads" only, since only the *attributed* path was ever source-scoped). Found live
         // 2026-08-22.
+        //
+        // The `r.channel() != null &&` guard is load-bearing, not defensive dead code: `sources` is
+        // TrafficSourceSql.ADS_ONLY by default (a 2-element Set.of(...)) whenever the caller hasn't
+        // picked "All traffic" — and Set.of(...)'s contains(null) throws NPE instead of returning
+        // false, unlike a HashSet. A channel of null is a real, expected case (see VISIT_CASE's own
+        // doc comment: unclassified, "visible under All traffic but not selectable as its own
+        // bucket") — every business gets some, so this crashed the whole Overview tab on the very
+        // first default-view page load, not just on some specific filter selection. Found live
+        // 2026-08-28 (business 1).
         Long businessId = currentBusinessContext.id();
         return repository.listAllForBusiness(businessId).parallelStream()
                 .filter(r -> landingPageSlug.equals(r.landingPageSlug()))
                 .filter(r -> statsSince == null || !r.createdAt().isBefore(statsSince))
                 .filter(r -> periodTo == null || r.createdAt().isBefore(periodTo))
-                .filter(r -> sources.equals(TrafficSourceSql.ALL) || sources.contains(r.channel()))
+                .filter(r -> sources.equals(TrafficSourceSql.ALL) || (r.channel() != null && sources.contains(r.channel())))
                 .filter(r -> !convertedCustomerIds.contains(resolveSquareCustomerId(r)))
                 .filter(r -> currentBusinessContext.runAsAndGet(businessId,
                         () -> !uncountedAppointments(r, attributedBookingIds).isEmpty()))
@@ -591,7 +600,7 @@ public class MarketingContactsService {
         return repository.listAllForBusiness(businessId).parallelStream()
                 .filter(r -> landingPageSlug.equals(r.landingPageSlug()))
                 .filter(r -> statsSince == null || !r.createdAt().isBefore(statsSince))
-                .filter(r -> sources.equals(TrafficSourceSql.ALL) || sources.contains(r.channel()))
+                .filter(r -> sources.equals(TrafficSourceSql.ALL) || (r.channel() != null && sources.contains(r.channel())))
                 .filter(r -> !convertedCustomerIds.contains(resolveSquareCustomerId(r)))
                 .flatMap(r -> currentBusinessContext.runAsAndGet(businessId, () -> {
                     String customerId = resolveSquareCustomerId(r);
