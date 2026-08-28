@@ -676,6 +676,40 @@ class MarketingContactsServiceTest {
     }
 
     @Test
+    @DisplayName("a null-channel (unclassified) contact doesn't crash a non-'All traffic' filter — "
+            + "found live 2026-08-28: TrafficSourceSql.ADS_ONLY is a 2-element Set.of(...), whose "
+            + "contains(null) throws instead of returning false, and ADS_ONLY is the default whenever "
+            + "the caller hasn't picked 'All traffic' — this crashed the Overview tab's very first "
+            + "default-view page load for any business with an unclassified contact")
+    void nullChannelContactDoesNotCrashNonAllTrafficFilter() {
+        UUID id = UUID.randomUUID();
+        RawContact unclassified = new RawContact(
+                id, "(858) 555-0500", "Unclassified", null,
+                null, null, null,
+                null, null, null,
+                "mani", "Version_1",
+                "mobile", "iOS", "17.5", "Mobile Safari", "17.5",
+                true, true,
+                "SQCUST_UNCLASSIFIED", null, null, null,
+                null, null, null,
+                Instant.parse("2026-07-01T00:00:00Z"),
+                Instant.parse("2026-07-02T00:00:00Z")
+        );
+        when(repository.listAllForBusiness(1L)).thenReturn(List.of(unclassified));
+
+        Map<String, Long> byVariant = service.countFollowUpBookingsByVariant(
+                "mani", null, null, java.util.Set.of(), java.util.Set.of(), TrafficSourceSql.ADS_ONLY);
+        List<MarketingContactsService.FollowUpAppointment> appointments = service.followUpAppointments(
+                "mani", null, java.util.Set.of(), java.util.Set.of(), TrafficSourceSql.ADS_ONLY);
+
+        // Correctly excluded, not crashed: an unclassified contact is "visible under All traffic
+        // but not selectable as its own bucket" (see TrafficSourceSql's VISIT_CASE doc comment).
+        assertThat(byVariant).isEmpty();
+        assertThat(appointments).isEmpty();
+        verify(square, never()).bookingsForCustomer(eq("SQCUST_UNCLASSIFIED"), any());
+    }
+
+    @Test
     @DisplayName("a lead resolved only through the cached Sync link (never had a stored square_customer_id) also counts")
     void followUpCountsLeadResolvedThroughSyncLink() {
         UUID id = UUID.randomUUID();
