@@ -34,6 +34,43 @@ class CashNoteParserTest {
     }
 
     @Test
+    @DisplayName("bare 'cash' style carries the amount immediately before it")
+    void bareCashWithAmount() {
+        assertThat(amount("Paid $250 cash")).isEqualByComparingTo("250");
+        assertThat(amount("Paid $350 cash ")).isEqualByComparingTo("350");
+    }
+
+    @Test
+    @DisplayName("an unrelated number elsewhere in the note (an invoice number) is ignored — only the "
+            + "figure actually next to the cash keyword counts")
+    void ignoresUnrelatedNumberFarFromKeyword() {
+        // Found live 2026-08-28: the old "first number anywhere in the note" search read the invoice
+        // number as the cash amount instead of the real $350 later in the text.
+        assertThat(amount("Invoice: 001365 ($100) paid \nPaid $350 cash ")).isEqualByComparingTo("350");
+        assertThat(amount("invoice 001748 $100 paid\nPaid $250 cash ")).isEqualByComparingTo("250");
+        assertThat(amount("invoice 001766 100$ paid\nPaid $400 cash")).isEqualByComparingTo("400");
+    }
+
+    @Test
+    @DisplayName("multiple cash declarations in one note are summed")
+    void sumsMultipleCashMentions() {
+        assertThat(amount("Paid deposit $50 cash \npre and after for lips and eyeliner sent 14/08\n"
+                + "Paid $200 cash ")).isEqualByComparingTo("250");
+    }
+
+    @Test
+    @DisplayName("a tentative/contingent mention with no dollar figure nearby falls back to the "
+            + "service total, same as no amount written at all")
+    void tentativeMentionWithNoNearbyAmountFallsBackToServiceTotal() {
+        // "Might bring cash" has no number anywhere near the keyword — the "july 4" and "invoice
+        // 001672" numbers elsewhere in the note must not be picked up as if they were the amount.
+        Optional<CashDeclaration> d = parser.parse(
+                "Might bring cash \njuly 4 discount \ninvoice 001672 100$ paid\nPaid $530 card \nTip $25");
+        assertThat(d).isPresent();
+        assertThat(d.get().amount()).isEmpty();
+    }
+
+    @Test
     @DisplayName("Malformed or absent note is not a cash declaration")
     void unparseable() {
         assertThat(parser.parse(null)).isEmpty();

@@ -3,6 +3,7 @@ package com.salonreview.square;
 import com.salonreview.commission.HalfInput;
 import com.salonreview.domain.Half;
 import com.salonreview.square.SquareClient.Booking;
+import com.salonreview.square.SquareClient.Invoice;
 import com.salonreview.square.SquareClient.Order;
 import com.salonreview.square.SquareClient.OrderLineItem;
 import com.salonreview.square.SquareClient.Payment;
@@ -23,6 +24,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Turns a month of raw Square data into the per-provider, per-half inputs the commission engine
@@ -160,10 +163,12 @@ public class SquareMonthAggregator {
             }
             // Cash note ("cashew $nn" or Russian "наличные") → a cash service for the booking's provider.
             // The amount is what's written, or the appointment's catalog service total when omitted.
-            var cash = cashNotes.parse(b.sellerNote()).or(() -> cashNotes.parse(b.customerNote()));
+            var cashFromSeller = cashNotes.parse(b.sellerNote());
+            var cash = cashFromSeller.or(() -> cashNotes.parse(b.customerNote()));
+            String cashNoteText = cashFromSeller.isPresent() ? b.sellerNote() : b.customerNote();
             if (cash.isPresent() && firstProvider != null) {
                 cashEntries.add(new CashBooking(firstProvider, day, cash.get().amount(), bookingServiceIds,
-                        b.id(), b.startAt(), b.customerId()));
+                        b.id(), b.startAt(), b.customerId(), cashNoteText));
             }
         }
 
@@ -285,6 +290,10 @@ public class SquareMonthAggregator {
         }
 
         // --- Fold in cash-note services ---
+        // Cache of a customer's Square invoices, filled lazily as cash-note bookings reference one —
+        // a customer with several cash-note visits referencing invoices this month would otherwise
+        // re-fetch the same list once per booking.
+        Map<String, List<Invoice>> invoicesByCustomer = new HashMap<>();
         for (CashBooking cb : cashEntries) {
             // Skip the note if this appointment was already checked out as Cash in Square — the
             // completed cash order above already counted it, so the note would duplicate it.
@@ -319,21 +328,31 @@ public class SquareMonthAggregator {
             // If catalog prices didn't resolve but a cash amount is known, count it as one service.
             if (countedSegs == 0 && gross.compareTo(priceCutoff) >= 0) countedSegs = 1;
 
-            // If the note leaves a gap (cash collected is less than the full price), look for the
-            // rest of the payment among this month's already-computed unattributed sales — same
-            // customer, within a couple of days, amount matching the gap to the cent. This is the
-            // common real pattern: a client splits card+cash, the provider notes only the cash
-            // portion, and staff rings up the card portion by hand (which the order-matcher can't
-            // tie to a specific service, so it lands in `unmatched`). A match is reclassified as
-            // real revenue for this exact visit instead of a phantom "salon discount" — the total
-            // gross (and so the provider's total commission) is unchanged either way; this only
-            // fixes which channel the money is booked under.
-            BigDecimal gap = gross.subtract(collected);
+            // A deposit already collected via a real, PAID Square Invoice referenced by number in
+            // this note (e.g. "Invoice: 001365 ($100) paid") — the salon's own "deposit is covered"
+            // policy means this portion was already paid by card, separately from whatever cash the
+            // note declares for the remainder, and should be booked as CARD rather than folded into
+            // the cash side just because the same visit's note also mentions cash. Resolved against
+            // Square's own invoice record (not guessed from any other digit in the note) and capped
+            // at the room actually left after the cash figure, so it can never push the total booked
+            // for this visit above its own catalog price.
+            BigDecimal invoicePortion = linkedInvoiceAmount(cb, square, invoicesByCustomer);
+            BigDecimal invoiceCardPortion = invoicePortion.min(gross.subtract(collected).max(BigDecimal.ZERO));
+
+            // If the note still leaves a gap after that (cash collected + any linked deposit is less
+            // than the full price), look for the rest among this month's already-computed
+            // unattributed sales — same customer, within a couple of days, amount matching the gap to
+            // the cent. This is the same-day-split-payment pattern: a client splits card+cash, the
+            // provider notes only the cash portion, and staff rings up the card portion by hand
+            // (which the order-matcher can't tie to a specific service, so it lands in `unmatched`).
+            // A match is reclassified as real revenue for this exact visit instead of a phantom
+            // "salon discount" — the total gross is unchanged either way; this only fixes which
+            // channel the money is booked under.
+            BigDecimal gap = gross.subtract(collected).subtract(invoiceCardPortion);
             UnmatchedLine gapMatch = gap.signum() > 0 && cb.customerId() != null
                     ? findGapMatch(unmatched, cb.customerId(), cb.day, gap) : null;
             BigDecimal discount = gap;
-            BigDecimal cardPortion = BigDecimal.ZERO;
-            BigDecimal cashPortionGross = gross;
+            BigDecimal cardPortion = invoiceCardPortion;
             BigDecimal cashPortionCollected = collected;
             if (gapMatch != null) {
                 unmatched.remove(gapMatch);
@@ -342,13 +361,20 @@ public class SquareMonthAggregator {
                 diag.cashNoteGapMatches++;
                 discount = BigDecimal.ZERO;
                 if ("CASH".equals(gapMatch.channel())) {
-                    cashPortionGross = gross; // still fully cash — just now fully accounted for
-                    cashPortionCollected = collected.add(gapMatch.gross());
+                    cashPortionCollected = cashPortionCollected.add(gapMatch.gross());
                 } else {
-                    cardPortion = gapMatch.gross();
-                    cashPortionGross = gross.subtract(cardPortion);
-                    cashPortionCollected = collected;
+                    cardPortion = cardPortion.add(gapMatch.gross());
                 }
+            }
+            BigDecimal cashPortionGross = gross.subtract(cardPortion);
+            // Whatever's still unexplained (no linked invoice, no same-day gap match): the legacy
+            // default absorbs it — the provider is paid commission on the full remaining menu price
+            // regardless, same as always. A restrictDiscountCoverage business instead treats it as a
+            // real, uncovered discount that reduces the provider's commission basis down to what was
+            // actually collected (see SalonConfig#restrictDiscountCoverage's own doc — same rule this
+            // already applies to checked-out orders, now reaching cash-note bookings too).
+            if (restrictDiscountCoverage && discount.signum() > 0) {
+                cashPortionGross = cashPortionGross.subtract(discount).max(BigDecimal.ZERO);
             }
 
             a.cashGross = a.cashGross.add(cashPortionGross);
@@ -362,12 +388,24 @@ public class SquareMonthAggregator {
                     str(cb.day), half.name(), label, cashPortionGross,
                     discount, cashPortionCollected, BigDecimal.ZERO, countedSegs > 0, countedSegs, totalSegs,
                     false, "CASH-NOTE", localTime(cb.startAt, zone), cb.bookingId, cb.customerId(), null));
-            if (gapMatch != null && cardPortion.signum() > 0) {
+            if (invoiceCardPortion.signum() > 0) {
+                // The linked-deposit portion, as its own line — never counted as an extra service
+                // unit, the cash-note line above already counts this one visit toward the tier.
+                services.add(new AttributedService(cb.providerId, nameById.getOrDefault(cb.providerId, "?"),
+                        str(cb.day), half.name(), "Deposit invoice (auto-matched)",
+                        invoiceCardPortion, BigDecimal.ZERO, invoiceCardPortion, BigDecimal.ZERO,
+                        false, 0, 0, false, "CARD",
+                        localTime(cb.startAt, zone), cb.bookingId, cb.customerId(), null));
+            }
+            if (gapMatch != null && !"CASH".equals(gapMatch.channel())) {
                 // The card portion, as its own line — never counted as an extra service unit, the
-                // cash-note line above already counts this one visit toward the tier.
+                // cash-note line above already counts this one visit toward the tier. A CASH-channel
+                // gap match instead folds straight into cashPortionCollected above with no separate
+                // line, since it's still the same cash-note visit, just now fully accounted for.
+                BigDecimal gapMatchAmount = gapMatch.gross();
                 services.add(new AttributedService(cb.providerId, nameById.getOrDefault(cb.providerId, "?"),
                         str(cb.day), half.name(), gapMatch.service() + " (auto-matched to cash-note gap)",
-                        cardPortion, BigDecimal.ZERO, cardPortion, BigDecimal.ZERO,
+                        gapMatchAmount, BigDecimal.ZERO, gapMatchAmount, BigDecimal.ZERO,
                         false, 0, 0, false, gapMatch.channel(),
                         localTime(cb.startAt, zone), cb.bookingId, cb.customerId(), null));
             }
@@ -623,6 +661,38 @@ public class SquareMonthAggregator {
             if (dist < bestDist) { best = u; bestDist = dist; }
         }
         return best;
+    }
+
+    private static final Pattern INVOICE_NUMBER = Pattern.compile("(?i)invoice\\D{0,5}(\\d{3,})");
+
+    /**
+     * A deposit already collected via a real, PAID Square Invoice referenced by number in this cash
+     * note's own text (e.g. {@code "Invoice: 001365 ($100) paid"}) — resolved against Square's own
+     * invoice record, never guessed from any other digit in the note (see {@link CashNoteParser}'s
+     * own doc for the bug this avoided: an invoice number misread as the cash amount itself).
+     *
+     * <p>Deliberately not gated behind {@code restrictDiscountCoverage} — unlike the discount-basis
+     * reduction below, crediting a real, findable deposit as CARD instead of leaving it stuck in the
+     * cash side (or, before this, in a permanently unmatched line from whichever earlier month it was
+     * actually paid in) doesn't change the provider's total commission, only which channel it's
+     * booked under — a correctness fix every business benefits from, not a commission policy choice.
+     *
+     * @return zero when the note has no invoice reference, the referenced invoice isn't found for
+     *         this customer, or it isn't marked PAID.
+     */
+    private static BigDecimal linkedInvoiceAmount(CashBooking cb, SquareClient square,
+                                                  Map<String, List<Invoice>> invoicesByCustomer) {
+        if (cb.note() == null || cb.customerId() == null) return BigDecimal.ZERO;
+        Matcher m = INVOICE_NUMBER.matcher(cb.note());
+        if (!m.find()) return BigDecimal.ZERO;
+        String number = m.group(1);
+        List<Invoice> invoices = invoicesByCustomer.computeIfAbsent(cb.customerId(), square::invoicesForCustomer);
+        for (Invoice inv : invoices) {
+            if (number.equals(inv.invoiceNumber()) && "PAID".equalsIgnoreCase(inv.status())) {
+                return inv.total();
+            }
+        }
+        return BigDecimal.ZERO;
     }
 
     /** Resolve customer names for the unattributed lines (one bulk Square call); best-effort. */
@@ -940,7 +1010,7 @@ public class SquareMonthAggregator {
 
     private record CashBooking(String providerId, LocalDate day, Optional<BigDecimal> explicitAmount,
                                List<String> serviceVariationIds, String bookingId, String startAt,
-                               String customerId) {}
+                               String customerId, String note) {}
 
     /** A booking segment for an owner/family customer — a candidate owner comp (credited if unpaid). */
     private record CompCandidate(String providerId, LocalDate day, String serviceVariationId,
