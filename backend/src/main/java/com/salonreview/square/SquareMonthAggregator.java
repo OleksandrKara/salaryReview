@@ -163,9 +163,12 @@ public class SquareMonthAggregator {
             }
             // Cash note ("cashew $nn" or Russian "наличные") → a cash service for the booking's provider.
             // The amount is what's written, or the appointment's catalog service total when omitted.
-            var cashFromSeller = cashNotes.parse(b.sellerNote());
-            var cash = cashFromSeller.or(() -> cashNotes.parse(b.customerNote()));
-            String cashNoteText = cashFromSeller.isPresent() ? b.sellerNote() : b.customerNote();
+            var cash = cashNotes.parse(b.sellerNote()).or(() -> cashNotes.parse(b.customerNote()));
+            // Both fields, not just whichever one carried the cash keyword — an invoice reference
+            // (see linkedInvoiceAmount below) can land in the other note field from the cash mention
+            // itself (a provider's own note vs. whatever the customer wrote at booking time).
+            String cashNoteText = java.util.stream.Stream.of(b.sellerNote(), b.customerNote())
+                    .filter(java.util.Objects::nonNull).reduce("", (a, c) -> a + "\n" + c);
             if (cash.isPresent() && firstProvider != null) {
                 cashEntries.add(new CashBooking(firstProvider, day, cash.get().amount(), bookingServiceIds,
                         b.id(), b.startAt(), b.customerId(), cashNoteText));
@@ -323,20 +326,30 @@ public class SquareMonthAggregator {
             BigDecimal rawCollected = cb.explicitAmount.orElse(serviceTotal);
             boolean amountCapped = serviceTotal.signum() > 0 && rawCollected.compareTo(serviceTotal) > 0;
             BigDecimal collected = amountCapped ? serviceTotal : rawCollected;
-            BigDecimal gross = serviceTotal.signum() > 0 ? serviceTotal : collected;
             if (amountCapped) diag.cashNoteAmountCapped++;
-            // If catalog prices didn't resolve but a cash amount is known, count it as one service.
-            if (countedSegs == 0 && gross.compareTo(priceCutoff) >= 0) countedSegs = 1;
 
             // A deposit already collected via a real, PAID Square Invoice referenced by number in
             // this note (e.g. "Invoice: 001365 ($100) paid") — the salon's own "deposit is covered"
             // policy means this portion was already paid by card, separately from whatever cash the
             // note declares for the remainder, and should be booked as CARD rather than folded into
             // the cash side just because the same visit's note also mentions cash. Resolved against
-            // Square's own invoice record (not guessed from any other digit in the note) and capped
-            // at the room actually left after the cash figure, so it can never push the total booked
-            // for this visit above its own catalog price.
+            // Square's own invoice record (not guessed from any other digit in the note).
             BigDecimal invoicePortion = linkedInvoiceAmount(cb, square, invoicesByCustomer);
+
+            // Menu price (gross): the catalog price when it resolves, same as always. When it
+            // doesn't — found live 2026-08-28, a deleted/no-longer-in-catalog service variation —
+            // there's no independent "menu price" anchor left at all, so the note's own numbers are
+            // the only signal: the cash figure plus any linked deposit, not just the cash figure
+            // alone. Without adding the deposit back in here, a real, correctly-found invoice had no
+            // "room" left above the cash amount to be credited into (gross - collected = 0), and got
+            // silently capped to zero — the invoice link would resolve correctly but the money never
+            // actually made it into anyone's commission.
+            BigDecimal gross = serviceTotal.signum() > 0 ? serviceTotal : collected.add(invoicePortion);
+            // If catalog prices didn't resolve but a cash amount is known, count it as one service.
+            if (countedSegs == 0 && gross.compareTo(priceCutoff) >= 0) countedSegs = 1;
+
+            // Capped at the room actually left after the cash figure, so a linked deposit can never
+            // push the total booked for this visit above its own gross.
             BigDecimal invoiceCardPortion = invoicePortion.min(gross.subtract(collected).max(BigDecimal.ZERO));
 
             // If the note still leaves a gap after that (cash collected + any linked deposit is less
@@ -663,13 +676,28 @@ public class SquareMonthAggregator {
         return best;
     }
 
-    private static final Pattern INVOICE_NUMBER = Pattern.compile("(?i)invoice\\D{0,5}(\\d{3,})");
+    private static final Pattern INVOICE_KEYWORD = Pattern.compile("(?i)invoice");
+    private static final Pattern DIGITS = Pattern.compile("(\\d{3,})");
+    // How far from the word "invoice" to look for its number, in either direction — providers write
+    // this both ways ("Invoice: 001365 ($100) paid" and "001821 invoice sent $100"), so unlike the
+    // cash-amount windows above this isn't direction-anchored to one side.
+    private static final int INVOICE_WINDOW = 20;
 
     /**
      * A deposit already collected via a real, PAID Square Invoice referenced by number in this cash
-     * note's own text (e.g. {@code "Invoice: 001365 ($100) paid"}) — resolved against Square's own
-     * invoice record, never guessed from any other digit in the note (see {@link CashNoteParser}'s
-     * own doc for the bug this avoided: an invoice number misread as the cash amount itself).
+     * note's own text (e.g. {@code "Invoice: 001365 ($100) paid"} or {@code "001821 invoice sent
+     * $100"}) — resolved against Square's own invoice record, never guessed from any other digit in
+     * the note (see {@link CashNoteParser}'s own doc for the bug this avoided: an invoice number
+     * misread as the cash amount itself).
+     *
+     * <p>Every number found near any "invoice" mention, on either side, is tried as a candidate
+     * invoice number against Square's own record for this customer — not just the one number a
+     * stricter pattern would have guessed. A false candidate (e.g. the deposit's own dollar amount,
+     * sitting right next to "invoice" same as the real invoice number does) is harmless: it's an
+     * exact-match lookup against this customer's real invoices, so nothing but the genuine invoice
+     * number ever resolves to anything. Found live 2026-08-28 against real business-2 notes: a
+     * forward-only, tightly-anchored pattern missed a real, correctly-PAID invoice just because the
+     * provider happened to write the number before the keyword instead of after it.
      *
      * <p>Deliberately not gated behind {@code restrictDiscountCoverage} — unlike the discount-basis
      * reduction below, crediting a real, findable deposit as CARD instead of leaving it stuck in the
@@ -677,19 +705,29 @@ public class SquareMonthAggregator {
      * actually paid in) doesn't change the provider's total commission, only which channel it's
      * booked under — a correctness fix every business benefits from, not a commission policy choice.
      *
-     * @return zero when the note has no invoice reference, the referenced invoice isn't found for
-     *         this customer, or it isn't marked PAID.
+     * @return zero when the note has no invoice reference, none of the nearby numbers match a real
+     *         invoice for this customer, or the match found isn't marked PAID.
      */
     private static BigDecimal linkedInvoiceAmount(CashBooking cb, SquareClient square,
                                                   Map<String, List<Invoice>> invoicesByCustomer) {
         if (cb.note() == null || cb.customerId() == null) return BigDecimal.ZERO;
-        Matcher m = INVOICE_NUMBER.matcher(cb.note());
-        if (!m.find()) return BigDecimal.ZERO;
-        String number = m.group(1);
+        Matcher keyword = INVOICE_KEYWORD.matcher(cb.note());
+        if (!keyword.find()) return BigDecimal.ZERO;
         List<Invoice> invoices = invoicesByCustomer.computeIfAbsent(cb.customerId(), square::invoicesForCustomer);
-        for (Invoice inv : invoices) {
-            if (number.equals(inv.invoiceNumber()) && "PAID".equalsIgnoreCase(inv.status())) {
-                return inv.total();
+        if (invoices.isEmpty()) return BigDecimal.ZERO;
+
+        keyword.reset();
+        while (keyword.find()) {
+            int from = Math.max(0, keyword.start() - INVOICE_WINDOW);
+            int to = Math.min(cb.note().length(), keyword.end() + INVOICE_WINDOW);
+            Matcher candidates = DIGITS.matcher(cb.note().substring(from, to));
+            while (candidates.find()) {
+                String number = candidates.group(1);
+                for (Invoice inv : invoices) {
+                    if (number.equals(inv.invoiceNumber()) && "PAID".equalsIgnoreCase(inv.status())) {
+                        return inv.total();
+                    }
+                }
             }
         }
         return BigDecimal.ZERO;
