@@ -30,16 +30,17 @@ public class SquareBookingMirrorIngestService {
     private final SquareClientProvider squareClientProvider;
     private final SquareBookingMirrorRepository repository;
     private final CurrentBusinessContext currentBusinessContext;
-    private final ObjectMapper mapper;
+    // Not Spring-injected — same convention as RagSuggestionService/TelegramNotificationService's
+    // own ObjectMapper fields. This is purely internal serialization (our own JSON in, our own JSON
+    // out, via SquareBookingMirror#appointmentSegments), not a bean shared with request handling.
+    private final ObjectMapper mapper = new ObjectMapper();
 
     public SquareBookingMirrorIngestService(SquareClientProvider squareClientProvider,
                                             SquareBookingMirrorRepository repository,
-                                            CurrentBusinessContext currentBusinessContext,
-                                            ObjectMapper mapper) {
+                                            CurrentBusinessContext currentBusinessContext) {
         this.squareClientProvider = squareClientProvider;
         this.repository = repository;
         this.currentBusinessContext = currentBusinessContext;
-        this.mapper = mapper;
     }
 
     /** Ingests every booking in [from, to) for the current business — one location-wide Square

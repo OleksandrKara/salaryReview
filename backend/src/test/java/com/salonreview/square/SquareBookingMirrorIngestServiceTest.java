@@ -1,6 +1,5 @@
 package com.salonreview.square;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.repo.SquareBookingMirrorRepository;
 import com.salonreview.square.SquareClient.AppointmentSegment;
@@ -35,7 +34,7 @@ class SquareBookingMirrorIngestServiceTest {
         CurrentBusinessContext ctx = mock(CurrentBusinessContext.class);
         when(ctx.id()).thenReturn(1L);
         repository = mock(SquareBookingMirrorRepository.class);
-        ingest = new SquareBookingMirrorIngestService(provider, repository, ctx, new ObjectMapper());
+        ingest = new SquareBookingMirrorIngestService(provider, repository, ctx);
     }
 
     private static Booking booking(String id, String customerId) {
