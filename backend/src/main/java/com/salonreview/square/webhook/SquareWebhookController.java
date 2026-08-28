@@ -46,6 +46,8 @@ public class SquareWebhookController {
 
     private final SquareWebhookProperties properties;
     private final CheckoutReviewTriggerService triggerService;
+    private final SquareBookingWebhookHandler bookingWebhookHandler;
+    private final SquareOrderWebhookHandler orderWebhookHandler;
     private final BusinessRepository businesses;
     private final SquareConnectionService connectionService;
     private final String publicBaseUrl;
@@ -54,10 +56,14 @@ public class SquareWebhookController {
             .build();
 
     public SquareWebhookController(SquareWebhookProperties properties, CheckoutReviewTriggerService triggerService,
+                                    SquareBookingWebhookHandler bookingWebhookHandler,
+                                    SquareOrderWebhookHandler orderWebhookHandler,
                                     BusinessRepository businesses, SquareConnectionService connectionService,
                                     @Value("${app.public-base-url}") String publicBaseUrl) {
         this.properties = properties;
         this.triggerService = triggerService;
+        this.bookingWebhookHandler = bookingWebhookHandler;
+        this.orderWebhookHandler = orderWebhookHandler;
         this.businesses = businesses;
         this.connectionService = connectionService;
         this.publicBaseUrl = publicBaseUrl;
@@ -102,8 +108,17 @@ public class SquareWebhookController {
             return ResponseEntity.ok().build();
         }
 
-        if (event.data() != null && event.data().object() != null && event.data().object().payment() != null) {
-            triggerService.handlePaymentUpdated(businessId, event.data().object().payment());
+        SquareWebhookEvent.Data.DataObject object = event.data() == null ? null : event.data().object();
+        if (object != null && object.payment() != null) {
+            triggerService.handlePaymentUpdated(businessId, object.payment());
+        }
+        // Square-data mirror (see the Phase 1 sync plan) — independent listeners on the same
+        // event stream above, not entangled with the checkout-review trigger's own payment handling.
+        if (object != null && object.booking() != null) {
+            bookingWebhookHandler.handleBookingEvent(businessId, object.booking());
+        }
+        if (object != null && object.orderUpdated() != null) {
+            orderWebhookHandler.handleOrderUpdated(businessId, object.orderUpdated());
         }
         return ResponseEntity.ok().build();
     }

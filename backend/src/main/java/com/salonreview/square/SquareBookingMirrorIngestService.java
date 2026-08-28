@@ -55,33 +55,54 @@ public class SquareBookingMirrorIngestService {
 
     /** Ingests every booking, completed order, and payment in [from, to) for the current business
      * — three location-wide Square calls (each already cached 10 minutes by {@link SquareClient}
-     * itself), then one upsert per row. */
+     * itself), then one upsert per row via {@link #upsertBooking}/{@link #upsertOrder}/{@link
+     * #upsertPayment} — the same single-row upserts the webhook path (see {@code
+     * SquareBookingWebhookHandler}) calls directly, so a bulk window and one live event upsert an
+     * identical row shape. */
     public int ingestWindow(Instant from, Instant to) {
         Long businessId = currentBusinessContext.id();
         SquareClient square = squareClientProvider.forBusiness(businessId);
 
         List<SquareClient.Booking> bookings = square.bookings(from, to);
-        for (SquareClient.Booking b : bookings) {
-            repository.upsert(businessId, b.id(), b.customerId(), b.status(),
-                    parseInstant(b.startAt()), parseInstant(b.createdAt()), parseInstant(b.updatedAt()),
-                    b.locationId(), b.sellerNote(), b.customerNote(), segmentsJson(b));
-        }
+        for (SquareClient.Booking b : bookings) upsertBooking(businessId, b);
 
         List<SquareClient.Order> orders = square.completedOrders(from, to);
-        for (SquareClient.Order o : orders) {
-            orderRepository.upsert(businessId, o.id(), o.customerId(), o.state(),
-                    parseInstant(o.closedAt()), parseInstant(o.createdAt()),
-                    SquareClient.toDollars(o.totalTipMoney()), SquareClient.toDollars(o.totalDiscountMoney()),
-                    tendersJson(o), lineItemsJson(o));
-        }
+        for (SquareClient.Order o : orders) upsertOrder(businessId, o);
 
         List<SquareClient.Payment> payments = square.payments(from, to);
-        for (SquareClient.Payment p : payments) {
-            paymentRepository.upsert(businessId, p.id(), p.orderId(), p.customerId(), p.status(),
-                    parseInstant(p.createdAt()), SquareClient.toDollars(p.totalMoney()), SquareClient.toDollars(p.tipMoney()));
-        }
+        for (SquareClient.Payment p : payments) upsertPayment(businessId, p);
 
         return bookings.size() + orders.size() + payments.size();
+    }
+
+    /** Upserts a single booking — shared by the bulk window ingest above and the webhook path,
+     * which already has the full booking object inline in Square's own payload (no extra Square
+     * call needed; see {@code SquareBookingWebhookHandler}). */
+    public void upsertBooking(Long businessId, SquareClient.Booking b) {
+        repository.upsert(businessId, b.id(), b.customerId(), b.status(),
+                parseInstant(b.startAt()), parseInstant(b.createdAt()), parseInstant(b.updatedAt()),
+                b.locationId(), b.sellerNote(), b.customerNote(), segmentsJson(b));
+    }
+
+    /** Upserts a single order — shared by the bulk window ingest above and the webhook path, which
+     * (unlike bookings) only gets a summary in Square's {@code order.updated} payload and must
+     * fetch the full order via {@link SquareClient#orderById}, same pattern already used by {@code
+     * CheckoutReviewTriggerService#handlePaymentUpdated}. */
+    public void upsertOrder(Long businessId, SquareClient.Order o) {
+        orderRepository.upsert(businessId, o.id(), o.customerId(), o.state(),
+                parseInstant(o.closedAt()), parseInstant(o.createdAt()),
+                SquareClient.toDollars(o.totalTipMoney()), SquareClient.toDollars(o.totalDiscountMoney()),
+                tendersJson(o), lineItemsJson(o));
+    }
+
+    /** Upserts a single payment. Not currently wired to a webhook event — {@code
+     * MarketingBookingPaymentMatcher} reads {@code square_order}, not {@code square_payment}, so a
+     * payment-specific webhook wasn't worth the added complexity for Phase 1; the reconciliation
+     * sweep (see the Phase 1 plan's 1d) keeps this table fresh enough for its current, non-critical
+     * use. Kept public/shared for whenever that changes. */
+    public void upsertPayment(Long businessId, SquareClient.Payment p) {
+        paymentRepository.upsert(businessId, p.id(), p.orderId(), p.customerId(), p.status(),
+                parseInstant(p.createdAt()), SquareClient.toDollars(p.totalMoney()), SquareClient.toDollars(p.tipMoney()));
     }
 
     /** Backfills the last {@code months} months, one {@link #ingestWindow} call per month — bounded,
