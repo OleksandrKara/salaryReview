@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { api } from '../../lib/api';
 import type { MarketingContact, SmsConversationDto, SmsConversationSearchHitDto, SmsMessageDto } from '../../lib/types';
 import { Spinner } from '../../components/Spinner';
@@ -177,6 +178,9 @@ export default function MessagesView({
   const [searchHits, setSearchHits] = useState<SmsConversationSearchHitDto[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
+  // Scrollable conversation-list container — handed to the row virtualizer below (see
+  // visibleConversations/rowVirtualizer) so it knows what to measure scroll position against.
+  const conversationListScrollRef = useRef<HTMLDivElement>(null);
   // Gates the auto-scroll-to-latest effect below — without this, every background thread refetch
   // (an SSE ping for a delivery-status change, a reaction, a click event, none of which the reader
   // asked to jump away from what they're currently reading) yanked a manager scrolled up into
@@ -485,7 +489,14 @@ export default function MessagesView({
     if (searchHits.length === 0) return;
     let cancelled = false;
     const loaded = new Set(conversationsRef.current.map((c) => c.phoneNumber));
-    const missing = searchHits.map((h) => h.phoneNumber).filter((p) => !loaded.has(p));
+    // Capped, not just deduped: a common single/double-letter query can legitimately match a large
+    // slice of the salon's real history (e.g. "s" or "an" hitting dozens of names/messages at once)
+    // — firing one fetch per match unconditionally reintroduces the exact fan-out this effect was
+    // written to replace (see this effect's own doc comment above). The visible/loaded rows already
+    // narrow to what's actually relevant; a match past the cap simply doesn't have its row fetched
+    // until the search is narrowed further, same UX as any "showing top N results" search box.
+    const MAX_HITS_TO_FETCH = 25;
+    const missing = searchHits.map((h) => h.phoneNumber).filter((p) => !loaded.has(p)).slice(0, MAX_HITS_TO_FETCH);
     missing.forEach((phoneNumber) => {
       api.getSmsConversationSummary(phoneNumber).then((summary) => {
         if (!cancelled && summary) upsertConversation(summary);
@@ -684,6 +695,24 @@ export default function MessagesView({
           return nameMatches || phoneMatches || searchHitByPhone.has(c.phoneNumber);
         });
 
+  // Only ~10-20 rows ever actually mount in the DOM, regardless of how many conversations are
+  // loaded (this business alone has 400+) — without this, every keystroke in the search box
+  // re-filtered *and fully re-rendered* the entire matching set (each row carrying several icon
+  // components, a highlighted-match calculation, badges...), which was cheap while the list was
+  // short but became a multi-hundred-row synchronous re-render once enough conversations had been
+  // paged/searched into `conversations`. Fast desktops absorbed it as jank (surfacing as a stray
+  // React error after the long blocked frame); phones just froze — found live 2026-08-28, the third
+  // and root form of this same "list this size needs to be handled boundedly" issue (see the
+  // search-hit-fetching effect's own doc comment above for the first two). estimateSize is a rough
+  // single-line-row guess; measureElement (wired via the row's ref below) corrects it once a row
+  // with a phone-number subtitle actually mounts, so scroll position stays accurate either way.
+  const rowVirtualizer = useVirtualizer({
+    count: visibleConversations.length,
+    getScrollElement: () => conversationListScrollRef.current,
+    estimateSize: () => 72,
+    overscan: 8,
+  });
+
   return (
     // Desktop height now comes from page.tsx (sm:h-[calc(100vh-8rem)] on `main`) — this just fills
     // whatever that gives it, rather than inventing its own independent sm:h-[70vh] guess (see
@@ -731,7 +760,7 @@ export default function MessagesView({
             </div>
           </div>
         )}
-        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <div ref={conversationListScrollRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         {conversations.length === 0 ? (
           <div className="p-6 text-center text-sm text-zinc-500">No conversations yet.</div>
         ) : visibleConversations.length === 0 ? (
@@ -739,7 +768,9 @@ export default function MessagesView({
             No conversations match &ldquo;{trimmedQuery}&rdquo;.
           </div>
         ) : (
-          visibleConversations.map((c) => {
+          <div style={{ position: 'relative', height: rowVirtualizer.getTotalSize() }}>
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            const c = visibleConversations[virtualRow.index];
             const name = displayName(c.givenName, c.familyName);
             const searchHit = searchHitByPhone.get(c.phoneNumber);
             // Prefer showing *why* this row matched when it's not obvious from the last message
@@ -752,6 +783,8 @@ export default function MessagesView({
               // contain another one (invalid HTML, breaks hydration).
               <div
                 key={c.phoneNumber}
+                ref={rowVirtualizer.measureElement}
+                data-index={virtualRow.index}
                 data-testid="conversation-row"
                 data-phone={c.phoneNumber}
                 role="button"
@@ -763,6 +796,7 @@ export default function MessagesView({
                     openThread(c.phoneNumber);
                   }
                 }}
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualRow.start}px)` }}
                 className={`flex w-full cursor-pointer flex-col gap-0.5 border-b border-zinc-100 px-4 py-3 text-left hover:bg-zinc-50 ${
                   c.phoneNumber === selectedPhone ? 'bg-sky-50' : ''
                 }`}
@@ -858,7 +892,8 @@ export default function MessagesView({
                 </div>
               </div>
             );
-          })
+          })}
+          </div>
         )}
         {/* Infinite-scroll sentinel — invisible, just an IntersectionObserver target (see the
             effect above). Only rendered once there's confirmed more to fetch, so it never lingers
