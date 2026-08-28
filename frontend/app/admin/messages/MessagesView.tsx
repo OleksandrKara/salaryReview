@@ -176,6 +176,16 @@ export default function MessagesView({
   // that thread is opened.
   const [query, setQuery] = useState('');
   const [searchHits, setSearchHits] = useState<SmsConversationSearchHitDto[]>([]);
+  // Fetched summaries for search hits not already in `conversations` — deliberately kept separate
+  // from (never merged into) the permanent `conversations` state. See the search-hit-fetching
+  // effect below for why: `conversations` only ever grows for the life of the page, and merging
+  // every search match into it permanently accumulates memory across a whole session of searching,
+  // which is exactly what caused the mobile-Chrome-on-iOS-only OOM crash found live 2026-08-28
+  // (Safari on the same iPhone was fine — WKWebView-hosted browsers like iOS Chrome run under a
+  // materially lower per-tab memory ceiling than Safari itself, so this never reproduced on desktop
+  // regardless of emulated screen size). Reset to {} on every new search (see the effect), so it
+  // never holds more than the current query's matches.
+  const [searchHitSummaries, setSearchHitSummaries] = useState<Record<string, SmsConversationDto>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
   // Scrollable conversation-list container — handed to the row virtualizer below (see
@@ -475,19 +485,33 @@ export default function MessagesView({
   // SmsMessageRepository#findPhoneNumbersMatchingNameOrDigits), so a hit here can legitimately
   // point at a phone number nowhere in the currently-loaded page(s).
   //
+  // Populates searchHitSummaries, NOT conversations — deliberately kept out of the permanent list
+  // (see that state's own doc comment above for why: merging every match in permanently accumulates
+  // memory for the life of the page, which is what actually caused the mobile-Chrome-iOS crash, not
+  // rendering cost — see visibleConversations below for how these get shown alongside the real list,
+  // and openThread for the one place a hit gets promoted into `conversations`, on actually being
+  // opened). Reset at the top of every run so a cleared/changed search doesn't keep stale entries
+  // from a previous query around.
+  //
   // This used to instead bulk-load *every* remaining page the moment a query was non-empty, so the
   // purely-client-side name/phone filter would cover every conversation, not just the loaded ones.
-  // Found live 2026-08-27/28, in two stages: first, overlapping loop instances from rapid keystrokes
-  // caused a tight busy-loop pinning the main thread (fixed once); then, once that overlap was
-  // fixed, a *single* well-behaved loop still froze the tab for this business's 400+ conversations
-  // — dozens of sequential fetches each triggering a full re-render of an ever-growing,
-  // unvirtualized list. Fetching only the handful of phone numbers that actually matched (via the
-  // single-conversation summary endpoint, same one the SSE handler already uses) is bounded by the
-  // match count, not the conversation count, and scales the same regardless of how large the salon's
-  // full history gets.
+  // Found live 2026-08-27/28, in three stages: first, overlapping loop instances from rapid
+  // keystrokes caused a tight busy-loop pinning the main thread (fixed once); then, once that
+  // overlap was fixed, a *single* well-behaved loop still froze the tab for this business's 400+
+  // conversations — dozens of sequential fetches each triggering a full re-render of an ever-
+  // growing, unvirtualized list (fixed by fetching only actual matches, then by virtualizing the
+  // list itself); then, once render cost was no longer the bottleneck, permanently merging every
+  // match into `conversations` turned out to still slowly grow the page's live memory footprint
+  // across a session, tall enough by day's end to tip iOS Chrome's tighter per-tab memory ceiling
+  // over the edge on specifically the more common letters (more matches merged in) — Safari on the
+  // same phone, with a higher ceiling, never hit it.
   useEffect(() => {
-    if (searchHits.length === 0) return;
+    if (searchHits.length === 0) {
+      setSearchHitSummaries({});
+      return;
+    }
     let cancelled = false;
+    setSearchHitSummaries({});
     const loaded = new Set(conversationsRef.current.map((c) => c.phoneNumber));
     // Capped, not just deduped: a common single/double-letter query can legitimately match a large
     // slice of the salon's real history (e.g. "s" or "an" hitting dozens of names/messages at once)
@@ -499,7 +523,9 @@ export default function MessagesView({
     const missing = searchHits.map((h) => h.phoneNumber).filter((p) => !loaded.has(p)).slice(0, MAX_HITS_TO_FETCH);
     missing.forEach((phoneNumber) => {
       api.getSmsConversationSummary(phoneNumber).then((summary) => {
-        if (!cancelled && summary) upsertConversation(summary);
+        if (!cancelled && summary) {
+          setSearchHitSummaries((prev) => ({ ...prev, [phoneNumber]: summary }));
+        }
       }).catch(() => {});
     });
     return () => {
@@ -563,7 +589,21 @@ export default function MessagesView({
     setSelectedPhone(phoneNumber);
     // Optimistic — the unread badge for this contact clears the moment they open it, same
     // instant-feedback convention as SmsActivityLog's mark-read-on-click.
-    setConversations((prev) => prev.map((c) => (c.phoneNumber === phoneNumber ? { ...c, unreadCount: 0 } : c)));
+    setConversations((prev) => {
+      const idx = prev.findIndex((c) => c.phoneNumber === phoneNumber);
+      if (idx !== -1) {
+        return prev.map((c) => (c.phoneNumber === phoneNumber ? { ...c, unreadCount: 0 } : c));
+      }
+      // Only reachable for a row that exists purely as a search hit (see searchHitSummaries'
+      // own doc comment) — promote it into the permanent list now that it's actually being
+      // opened, so the thread header has its name/VIP/consent badges immediately instead of
+      // falling back to a bare phone number until the next unrelated upsert.
+      const fromSearch = searchHitSummaries[phoneNumber];
+      if (!fromSearch) return prev;
+      const next = [...prev, { ...fromSearch, unreadCount: 0 }];
+      next.sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
+      return next;
+    });
     // Tells the header's MessagesNotifierIcon (a separate component tree — see
     // smsUnreadEvent's own doc comment) about the new total immediately, instead of leaving it
     // stuck showing the old count until its own next poll cycle or a full page refresh.
@@ -688,12 +728,20 @@ export default function MessagesView({
   const visibleConversations =
     trimmedQuery === ''
       ? conversations
-      : conversations.filter((c) => {
-          const name = displayName(c.givenName, c.familyName);
-          const nameMatches = name != null && name.toLowerCase().includes(lowerQuery);
-          const phoneMatches = queryDigits.length > 0 && c.phoneNumber.replace(/\D/g, '').includes(queryDigits);
-          return nameMatches || phoneMatches || searchHitByPhone.has(c.phoneNumber);
-        });
+      : (() => {
+          const matched = conversations.filter((c) => {
+            const name = displayName(c.givenName, c.familyName);
+            const nameMatches = name != null && name.toLowerCase().includes(lowerQuery);
+            const phoneMatches = queryDigits.length > 0 && c.phoneNumber.replace(/\D/g, '').includes(queryDigits);
+            return nameMatches || phoneMatches || searchHitByPhone.has(c.phoneNumber);
+          });
+          // Rows for matches not (yet, or ever permanently) in `conversations` — see
+          // searchHitSummaries' own doc comment on why these are kept separate rather than merged
+          // into the permanent list.
+          const matchedPhones = new Set(matched.map((c) => c.phoneNumber));
+          const extra = Object.values(searchHitSummaries).filter((c) => !matchedPhones.has(c.phoneNumber));
+          return [...matched, ...extra];
+        })();
 
   // Only ~10-20 rows ever actually mount in the DOM, regardless of how many conversations are
   // loaded (this business alone has 400+) — without this, every keystroke in the search box
