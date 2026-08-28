@@ -355,18 +355,23 @@ class MarketingContactsServiceTest {
     }
 
     @Test
-    @DisplayName("2026-08-19: bulk contacts() no longer eagerly resolves appointments/family name — "
-            + "see enrichContacts for where that logic moved")
-    void bulkContactsNoLongerEagerlyResolvesAppointments() {
+    @DisplayName("2026-08-28 (Phase 1f): bulk contacts() eagerly resolves appointments again now that "
+            + "fetchAppointments reads the local Square booking mirror instead of calling Square live — "
+            + "family name is the one field still deferred to enrichContacts, since customerFamilyNames "
+            + "is still a real live Square call per contact")
+    void bulkContactsResolvesAppointmentsButDefersFamilyName() {
         UUID id = UUID.randomUUID();
         when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
+        Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2026-07-31T17:00:00Z", null, null,
+                "LOC1", "SQCUST123", null, null, List.of());
+        stubBookings("SQCUST123", booking);
 
         MarketingContactDto dto = service.contacts();
 
         Contact c = dto.contacts().get(0);
-        assertThat(c.appointments()).isEmpty();
+        assertThat(c.appointments()).hasSize(1);
+        assertThat(c.appointments().get(0).bookingId()).isEqualTo("SQBOOK1");
         assertThat(c.familyName()).isNull();
-        verify(bookingMirrorRepository, never()).findByBusinessIdAndSquareCustomerIdAndStartAtAfter(any(), any(), any());
         verify(square, never()).customerFamilyNames(any());
     }
 

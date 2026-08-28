@@ -332,11 +332,15 @@ public class MarketingContactsService {
     /** Never throws: same "this app's health must never depend on the other service's
      * schema" guarantee as MarketingDashboardService.dashboard. Submissions are fetched eagerly for
      * every contact here (cheap — our own DB), so the UI can show "no submissions" without an extra
-     * round trip. Appointment history/family name are deliberately NOT fetched eagerly here
-     * (2026-08-19, see {@link #toContact(MarketingContactsRepository.RawContact, Map, boolean)}) —
-     * that's a real Square round trip per Square-linked contact, and doing it for the full list on
-     * every cache miss was hammering Square's rate limit live; the frontend calls
-     * {@link #enrichContacts} for just the rows actually scrolled into view instead.
+     * round trip. Appointment history is also fetched eagerly here (see the Phase 1 sync plan) —
+     * since {@link #fetchAppointments} moved to the local Square booking mirror, it's a local DB
+     * read, not a live Square call, so there's no more per-contact rate-limit cost to eagerly
+     * paying for the full list on every cache miss. Family name is the one field still deliberately
+     * NOT fetched eagerly here (2026-08-19, see {@link #toContact(MarketingContactsRepository.RawContact, Map, boolean)})
+     * — {@code customerFamilyNames} is still a real Square round trip per Square-linked contact (not
+     * part of the Phase 1 mirror), so doing it for the full list on every cache miss would still
+     * hammer Square's rate limit live; the frontend calls {@link #enrichContacts} for just the rows
+     * actually scrolled into view instead.
      */
     public MarketingContactDto contacts() {
         return cache.get(CONTACTS_CACHE_KEY_PREFIX + currentBusinessContext.id(), CACHE_TTL, this::computeContacts);
@@ -348,12 +352,11 @@ public class MarketingContactsService {
             // rather than per-contact inside the parallelStream below — every contact shares the
             // same visit ledger, so there's no reason to recount it once per row.
             Map<String, Long> visitCounts = visitCountsByCustomerId();
-            // toContact(..., includeSquareHistory=false) below skips fetchAppointments() entirely
-            // for the bulk list (2026-08-19 fix — see toContact's own doc), so the once-per-contact
-            // Square round trip that motivated this comment no longer happens here; enrichContacts()
-            // (the lazy, scroll-triggered per-row call) is the one that pays for fetchAppointments()
-            // now, and since Phase 1 (see SquareBookingMirrorRepository), that itself is a local DB
-            // read, not a live Square call, for the bookings side of it at least.
+            // toContact(..., includeFamilyName=false) below skips customerFamilyNames() for the bulk
+            // list — still a real live Square call per contact, not part of the Phase 1 mirror.
+            // fetchAppointments() runs unconditionally now (see toContact's own doc): since it moved
+            // to the local Square booking mirror, it's a local DB read, not a live Square call, so
+            // eagerly paying for it across the full list no longer risks Square's rate limit.
             //
             // toContact() itself still reaches CurrentBusinessContext.id() (e.g. resolving the
             // Square customer id, visit counts), but parallelStream() runs each element on a common
@@ -647,20 +650,21 @@ public class MarketingContactsService {
     }
 
     /**
-     * {@code includeSquareHistory=false} skips {@code familyName}/{@code appointments} — the two
-     * fields that cost a real Square round trip per contact ({@code customerFamilyNames} and,
-     * heaviest of all, {@code fetchAppointments}'s booking/catalog/payment fan-out) — leaving them
-     * at their "unknown yet" defaults (null / empty list, same as a contact with no Square customer
-     * resolved at all). {@link #computeContacts} uses this for the full list (2026-08-19: this was
-     * paying for up to one appointment-history fetch per contact on every cache miss, contributing
-     * to Square rate-limiting seen live); {@link #enrichContacts} backs the frontend's lazy,
-     * scroll-triggered follow-up call that fills these back in only for the rows actually on
-     * screen. Single-contact lookups ({@link #contactByPhone}, {@link #contactByCustomerId}) keep
-     * the eager {@code true} default above — there's no "just the visible rows" concept for one
-     * contact.
+     * {@code includeFamilyName=false} skips {@code customerFamilyNames} — still a real live Square
+     * call per contact, not part of the Phase 1 mirror — leaving {@code familyName} at its "unknown
+     * yet" default (null, same as a contact with no Square customer resolved at all). {@link
+     * #computeContacts} uses this for the full list, to avoid paying for one live Square call per
+     * contact on every cache miss; {@link #enrichContacts} backs the frontend's lazy,
+     * scroll-triggered follow-up call that fills it back in only for the rows actually on screen.
+     * Single-contact lookups ({@link #contactByPhone}, {@link #contactByCustomerId}) keep the eager
+     * {@code true} default above — there's no "just the visible rows" concept for one contact.
+     *
+     * <p>{@code appointments} has no such gate — {@link #fetchAppointments} reads the local Square
+     * booking mirror (see the Phase 1 sync plan), not a live Square call, so it's always included
+     * regardless of this flag.
      */
     private Contact toContact(MarketingContactsRepository.RawContact raw, Map<String, Long> visitCounts,
-                               boolean includeSquareHistory) {
+                               boolean includeFamilyName) {
         SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
         String effectiveSquareCustomerId = resolveSquareCustomerId(raw);
 
@@ -672,7 +676,7 @@ public class MarketingContactsService {
         // it's just never persisted there) — Square is the only source, so this is best-effort
         // and only attempted when a customer is already linked, never a fresh phone lookup just
         // for display.
-        String familyName = effectiveSquareCustomerId == null || !includeSquareHistory
+        String familyName = effectiveSquareCustomerId == null || !includeFamilyName
                 ? null
                 : square.customerFamilyNames(List.of(effectiveSquareCustomerId)).get(effectiveSquareCustomerId);
 
@@ -681,7 +685,7 @@ public class MarketingContactsService {
                 .map(MarketingContactsService::toSubmission)
                 .collect(Collectors.toList());
 
-        List<Appointment> appointments = effectiveSquareCustomerId == null || !includeSquareHistory
+        List<Appointment> appointments = effectiveSquareCustomerId == null
                 ? List.of()
                 : fetchAppointments(effectiveSquareCustomerId, raw.createdAt());
 
