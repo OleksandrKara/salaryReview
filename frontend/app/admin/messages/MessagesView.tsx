@@ -130,6 +130,11 @@ export default function MessagesView({
   initialSelectedPhone?: string | null;
 }) {
   const [conversations, setConversations] = useState(initialConversations);
+  // Lets the search-hit-fetching effect below check what's already loaded without needing
+  // `conversations` itself in its dependency array (which would re-run it, and its fetches, on
+  // every single upsert — including the ones it just did).
+  const conversationsRef = useRef(conversations);
+  useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
   // Cursor pagination for the conversation list — see loadMoreConversations/the IntersectionObserver
   // effect below. Mirrored into refs so the observer (set up once on mount) always reads the
   // latest values without needing to be torn down/recreated on every page load, same convention as
@@ -143,9 +148,6 @@ export default function MessagesView({
   useEffect(() => { nextCursorRef.current = nextCursor; }, [nextCursor]);
   useEffect(() => { hasMoreRef.current = hasMore; }, [hasMore]);
   useEffect(() => { loadingMoreRef.current = loadingMore; }, [loadingMore]);
-  // Guards the bulk-load-everything effect below against spawning a second overlapping loop on
-  // every keystroke — see that effect's own doc for the freeze this caused (found live 2026-08-27).
-  const bulkLoadingRef = useRef(false);
   const [selectedPhone, setSelectedPhone] = useState<string | null>(initialSelectedPhone ?? null);
   const [thread, setThread] = useState<SmsMessageDto[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
@@ -341,9 +343,12 @@ export default function MessagesView({
     isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_THRESHOLD_PX;
   }
 
-  // Debounced message-content search — skipped for very short queries (1 character) so we're not
-  // firing a broad, mostly-useless lookup on every keystroke. Name/phone filtering (below, in
-  // render) doesn't wait on this — it's instant either way.
+  // Debounced backend search — covers message-content, name, and phone-digit matches (see
+  // SmsMessageLogService#searchConversations), including phone numbers the conversation list
+  // hasn't loaded yet (fetched individually by the effect just below). Skipped for very short
+  // queries (1 character) so we're not firing a broad, mostly-useless lookup on every keystroke.
+  // The client-side name/phone filter below (in render) still runs instantly against whatever's
+  // already loaded, with or without this.
   useEffect(() => {
     const trimmed = query.trim();
     let cancelled = false;
@@ -460,41 +465,36 @@ export default function MessagesView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Search covers message-content matches across every conversation regardless of what's loaded
-  // (see the debounced effect above, which hits the backend), but the *name/phone* filter just
-  // below is purely client-side against `conversations` — so a query would otherwise only ever
-  // match already-loaded rows. Loading the rest of the pages the moment a query starts typed keeps
-  // that filter's old (pre-pagination) behavior of covering every conversation, not just the first
-  // page; clearing the query leaves whatever got loaded in place rather than discarding it.
+  // Surfaces search hits for phone numbers the conversation list hasn't loaded yet — the
+  // name/phone filter below (in render) only ever matches already-loaded `conversations` rows,
+  // and the backend search covers name/phone matches too now, not just message-body content (see
+  // SmsMessageRepository#findPhoneNumbersMatchingNameOrDigits), so a hit here can legitimately
+  // point at a phone number nowhere in the currently-loaded page(s).
   //
-  // bulkLoadingRef guards against a real bug found live 2026-08-27: this effect depends on
-  // `[query]`, so it re-fires on every keystroke. The old version started a brand new `while`
-  // loop each time, relying on that closure's own `cancelled` flag to stop the *previous* one —
-  // but a call to loadMoreConversations() made while another one is already in flight returns
-  // immediately (see its own `loadingMoreRef.current` guard), with no real await/delay. The instant
-  // a second keystroke's loop overlapped the first's in-flight request, its `while` condition kept
-  // re-passing and re-calling on every microtask tick — a tight busy-loop pinning the main thread,
-  // not a real infinite network loop, which is why it froze the tab (mobile and desktop alike)
-  // with no console error and no failed request to point at. Guarding so only one loop ever runs
-  // at a time removes the overlap entirely; queryActiveRef (not a captured `cancelled` closure)
-  // lets that one loop still stop the instant the search is cleared.
-  const queryActiveRef = useRef(false);
+  // This used to instead bulk-load *every* remaining page the moment a query was non-empty, so the
+  // purely-client-side name/phone filter would cover every conversation, not just the loaded ones.
+  // Found live 2026-08-27/28, in two stages: first, overlapping loop instances from rapid keystrokes
+  // caused a tight busy-loop pinning the main thread (fixed once); then, once that overlap was
+  // fixed, a *single* well-behaved loop still froze the tab for this business's 400+ conversations
+  // — dozens of sequential fetches each triggering a full re-render of an ever-growing,
+  // unvirtualized list. Fetching only the handful of phone numbers that actually matched (via the
+  // single-conversation summary endpoint, same one the SSE handler already uses) is bounded by the
+  // match count, not the conversation count, and scales the same regardless of how large the salon's
+  // full history gets.
   useEffect(() => {
-    queryActiveRef.current = query.trim() !== '';
-  }, [query]);
-  useEffect(() => {
-    if (query.trim() === '' || bulkLoadingRef.current) return;
-    bulkLoadingRef.current = true;
-    (async () => {
-      try {
-        while (queryActiveRef.current && hasMoreRef.current) {
-          await loadMoreConversations();
-        }
-      } finally {
-        bulkLoadingRef.current = false;
-      }
-    })();
-  }, [query]);
+    if (searchHits.length === 0) return;
+    let cancelled = false;
+    const loaded = new Set(conversationsRef.current.map((c) => c.phoneNumber));
+    const missing = searchHits.map((h) => h.phoneNumber).filter((p) => !loaded.has(p));
+    missing.forEach((phoneNumber) => {
+      api.getSmsConversationSummary(phoneNumber).then((summary) => {
+        if (!cancelled && summary) upsertConversation(summary);
+      }).catch(() => {});
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [searchHits]);
 
   // Live updates — an inbound text, a delivery-status change, a read/block toggle from another
   // tab, etc. all land here as a bare "this phone number changed" ping (see backend

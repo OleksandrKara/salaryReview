@@ -186,6 +186,46 @@ class SmsMessageLogServiceTest {
     void searchConversationsWithBlankQueryReturnsEmpty() {
         assertThat(service.searchConversations(BUSINESS_ID, "   ")).isEmpty();
         verify(repository, never()).searchByBodyContaining(any(), any(), any());
+        verify(repository, never()).findPhoneNumbersMatchingNameOrDigits(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("searchConversations includes a name/phone match with no body-content hit — see design.md D8/D9 "
+            + "and the freeze this replaced (found live 2026-08-27/28)")
+    void searchConversationsIncludesNameOrPhoneOnlyMatch() {
+        when(repository.searchByBodyContaining(eq(BUSINESS_ID), eq("maly"), any(Pageable.class))).thenReturn(List.of());
+        when(repository.findPhoneNumbersMatchingNameOrDigits(BUSINESS_ID, "maly", "")).thenReturn(List.of("+17149843774"));
+
+        List<SmsMessageLogService.ConversationSearchHit> hits = service.searchConversations(BUSINESS_ID, "maly");
+
+        assertThat(hits).hasSize(1);
+        assertThat(hits.get(0).phoneNumber()).isEqualTo("+17149843774");
+    }
+
+    @Test
+    @DisplayName("searchConversations doesn't duplicate a phone number that matches both by body content and by name/phone")
+    void searchConversationsDedupesAcrossBodyAndNameMatches() {
+        SmsMessage bodyMatch = SmsMessage.builder().businessId(BUSINESS_ID).phoneNumber("+17149843774").direction("INBOUND")
+                .body("thanks Maly, see you soon").createdAt(Instant.now()).build();
+        when(repository.searchByBodyContaining(eq(BUSINESS_ID), eq("maly"), any(Pageable.class))).thenReturn(List.of(bodyMatch));
+        when(repository.findPhoneNumbersMatchingNameOrDigits(BUSINESS_ID, "maly", "")).thenReturn(List.of("+17149843774"));
+
+        List<SmsMessageLogService.ConversationSearchHit> hits = service.searchConversations(BUSINESS_ID, "maly");
+
+        assertThat(hits).hasSize(1);
+        assertThat(hits.get(0).snippet()).isEqualTo("thanks Maly, see you soon"); // body match wins, keeps its real snippet
+    }
+
+    @Test
+    @DisplayName("digits-only search passes the extracted digits through for the phone-number branch")
+    void searchConversationsExtractsDigitsForPhoneMatch() {
+        when(repository.searchByBodyContaining(eq(BUSINESS_ID), eq("(714) 984-3774"), any(Pageable.class))).thenReturn(List.of());
+        when(repository.findPhoneNumbersMatchingNameOrDigits(BUSINESS_ID, "(714) 984-3774", "7149843774"))
+                .thenReturn(List.of("+17149843774"));
+
+        List<SmsMessageLogService.ConversationSearchHit> hits = service.searchConversations(BUSINESS_ID, "(714) 984-3774");
+
+        assertThat(hits).extracting(SmsMessageLogService.ConversationSearchHit::phoneNumber).containsExactly("+17149843774");
     }
 
     @Test
