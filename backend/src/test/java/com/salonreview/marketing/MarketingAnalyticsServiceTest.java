@@ -2,9 +2,11 @@ package com.salonreview.marketing;
 
 import com.salonreview.domain.AdSpendEntry;
 import com.salonreview.domain.SalonConfig;
+import com.salonreview.domain.SquareBookingMirror;
 import com.salonreview.marketing.MarketingContactsRepository.AdsAttributedContact;
 import com.salonreview.repo.AdSpendEntryRepository;
 import com.salonreview.repo.SalonConfigRepository;
+import com.salonreview.repo.SquareBookingMirrorRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareMonthAggregator;
 import com.salonreview.square.SquareMonthAggregator.AttributedService;
@@ -22,6 +24,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,8 +33,8 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -40,10 +44,12 @@ class MarketingAnalyticsServiceTest {
     private SquareMonthAggregator aggregator;
     private SquareClient square;
     private SalonConfigRepository salonConfig;
+    private SquareBookingMirrorRepository bookingMirrorRepository;
     private AdSpendEntryRepository adSpendEntryRepository;
     private MarketingContactsService contactsService;
     private MarketingDashboardRepository dashboardRepository;
     private MarketingAnalyticsService service;
+    private final Map<String, List<SquareBookingMirror>> stubbedBookingsByCustomer = new HashMap<>();
 
     /** Fixes "today" to 2026-07-07 (mid-range of every test's fixture data), so the
      * current-month-to-date segment and ad spend lookup don't race the real clock. */
@@ -55,6 +61,7 @@ class MarketingAnalyticsServiceTest {
         aggregator = mock(SquareMonthAggregator.class);
         square = mock(SquareClient.class);
         salonConfig = mock(SalonConfigRepository.class);
+        bookingMirrorRepository = mock(SquareBookingMirrorRepository.class);
         adSpendEntryRepository = mock(AdSpendEntryRepository.class);
         contactsService = mock(MarketingContactsService.class);
         dashboardRepository = mock(MarketingDashboardRepository.class);
@@ -69,10 +76,49 @@ class MarketingAnalyticsServiceTest {
         when(square.customerIdsForPhone(anyString())).thenReturn(List.of());
         com.salonreview.square.SquareClientProvider squareClientProvider =
                 mock(com.salonreview.square.SquareClientProvider.class);
-        when(squareClientProvider.forBusiness(org.mockito.ArgumentMatchers.anyLong())).thenReturn(square);
+        when(squareClientProvider.forBusiness(anyLong())).thenReturn(square);
+        // Local-mirror replacement for the old per-customer "square.bookingsForCustomer(...)" stub —
+        // one batched stub answering however many customer ids a call actually requests, built from
+        // whatever each test accumulates via stubBookings() below.
+        when(bookingMirrorRepository.findByBusinessIdAndSquareCustomerIdInAndStartAtAfter(anyLong(), any(), any()))
+                .thenAnswer(inv -> {
+                    List<String> ids = inv.getArgument(1);
+                    List<SquareBookingMirror> out = new ArrayList<>();
+                    for (String id : ids) out.addAll(stubbedBookingsByCustomer.getOrDefault(id, List.of()));
+                    return out;
+                });
         service = new MarketingAnalyticsService(
                 contactsRepository, contactsService, dashboardRepository, aggregator, squareClientProvider, salonConfig,
-                currentBusinessContext, adSpendEntryRepository, FIXED_CLOCK);
+                bookingMirrorRepository, currentBusinessContext, adSpendEntryRepository, FIXED_CLOCK);
+    }
+
+    /** Stubs the local booking mirror to return the given fixture bookings for this one customer —
+     * the local-mirror replacement for the old {@code when(square.bookingsForCustomer(eq(customerId),
+     * any())).thenReturn(...)}. Multiple calls (for different customers) accumulate correctly, since
+     * the batched repository stub above answers however many ids one call actually asks for. */
+    private void stubBookings(String customerId, SquareClient.Booking... bookings) {
+        stubbedBookingsByCustomer.put(customerId, java.util.Arrays.stream(bookings)
+                .map(MarketingAnalyticsServiceTest::toMirror).toList());
+    }
+
+    private static SquareBookingMirror toMirror(SquareClient.Booking b) {
+        List<SquareBookingMirror.Segment> segments = b.appointmentSegments() == null ? null
+                : b.appointmentSegments().stream()
+                        .map(s -> new SquareBookingMirror.Segment(s.teamMemberId(), s.serviceVariationId(), s.durationMinutes()))
+                        .toList();
+        return SquareBookingMirror.builder()
+                .businessId(1L)
+                .squareBookingId(b.id())
+                .squareCustomerId(b.customerId())
+                .status(b.status())
+                .startAt(b.startAt() == null ? null : Instant.parse(b.startAt()))
+                .createdAt(b.createdAt() == null ? null : Instant.parse(b.createdAt()))
+                .updatedAt(b.updatedAt() == null ? null : Instant.parse(b.updatedAt()))
+                .locationId(b.locationId())
+                .sellerNote(b.sellerNote())
+                .customerNote(b.customerNote())
+                .appointmentSegments(segments)
+                .build();
     }
 
     private static AttributedService svc(String date, String customerId, String gross) {
@@ -222,7 +268,7 @@ class MarketingAnalyticsServiceTest {
                 .thenReturn(Map.of("cust-merged", Instant.parse("2026-07-03T00:00:00Z"))); // predates the ad touch
         var onlyBooking = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
                 "loc-1", "cust-merged", null, null, List.of());
-        when(square.bookingsForCustomer(eq("cust-merged"), any())).thenReturn(List.of(onlyBooking));
+        stubBookings("cust-merged", onlyBooking);
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
                 svc("2026-07-07", "cust-merged", "110.00")
         )));
@@ -244,7 +290,7 @@ class MarketingAnalyticsServiceTest {
                 .thenReturn(Map.of("cust-old", Instant.parse("2026-07-05T12:05:00Z"))); // looks fresh...
         var oldBooking = new SquareClient.Booking("bk-0", "ACCEPTED", "2025-01-01T18:00:00Z", null, null,
                 "loc-1", "cust-old", null, null, List.of()); // ...but real history predates the ad touch
-        when(square.bookingsForCustomer(eq("cust-old"), any())).thenReturn(List.of(oldBooking));
+        stubBookings("cust-old", oldBooking);
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
                 svc("2026-07-10", "cust-old", "60.00")
         )));
@@ -309,7 +355,7 @@ class MarketingAnalyticsServiceTest {
                 "loc-1", "cust-1", null, null, List.of(seg1));
         var cancelled = new SquareClient.Booking("bk-2", "CANCELLED_BY_CUSTOMER", "2026-07-25T18:00:00Z", null, null,
                 "loc-1", "cust-1", null, null, List.of(seg1));
-        when(square.bookingsForCustomer(eq("cust-1"), any())).thenReturn(List.of(future, past, cancelled));
+        stubBookings("cust-1", future, past, cancelled);
         when(square.catalogPrices(List.of("var-mani", "var-pedi")))
                 .thenReturn(Map.of("var-mani", new BigDecimal("50.00"), "var-pedi", new BigDecimal("70.00")));
         when(square.catalogNames(List.of("var-mani", "var-pedi")))
@@ -352,7 +398,7 @@ class MarketingAnalyticsServiceTest {
         var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
         var earlierToday = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-07T02:00:00Z", null, null,
                 "loc-1", "cust-1", null, null, List.of(seg));
-        when(square.bookingsForCustomer(eq("cust-1"), any())).thenReturn(List.of(earlierToday));
+        stubBookings("cust-1", earlierToday);
         when(square.catalogPrices(List.of("var-mani"))).thenReturn(Map.of("var-mani", new BigDecimal("50.00")));
         when(square.catalogNames(List.of("var-mani"))).thenReturn(Map.of("var-mani", "Manicure"));
         when(square.customerNames(Set.of("cust-1"))).thenReturn(Map.of("cust-1", "Fowsiyo"));
@@ -379,7 +425,7 @@ class MarketingAnalyticsServiceTest {
         var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
         var paidToday = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-07T02:00:00Z", null, null,
                 "loc-1", "cust-1", null, null, List.of(seg));
-        when(square.bookingsForCustomer(eq("cust-1"), any())).thenReturn(List.of(paidToday));
+        stubBookings("cust-1", paidToday);
 
         MarketingAnalyticsDto dto = service.analytics(
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY);
@@ -696,7 +742,7 @@ class MarketingAnalyticsServiceTest {
         when(square.customerCreatedAts(Set.of("cust-1"))).thenThrow(new RuntimeException("429 Too Many Requests"));
         var onlyBooking = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-07T21:00:00Z", null, null,
                 "loc-1", "cust-1", null, null, List.of());
-        when(square.bookingsForCustomer(eq("cust-1"), any())).thenReturn(List.of(onlyBooking));
+        stubBookings("cust-1", onlyBooking);
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
                 svc("2026-07-07", "cust-1", "110.00"))));
 
@@ -708,30 +754,13 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
-    @DisplayName("a bookingsForCustomer failure during the freshness check falls back to created_at")
-    void bookingsForCustomerFailureFallsBackToCreatedAt() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
-                contact("+16195550001", "cust-1", Instant.parse("2026-07-05T12:00:00Z"), "meta_ads")));
-        when(square.customerCreatedAts(Set.of("cust-1")))
-                .thenReturn(Map.of("cust-1", Instant.parse("2025-01-01T00:00:00Z"))); // predates ad touch -> returning
-        when(square.bookingsForCustomer(eq("cust-1"), any())).thenThrow(new RuntimeException("429 Too Many Requests"));
-        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
-                svc("2026-07-10", "cust-1", "60.00"))));
-
-        MarketingAnalyticsDto dto = service.analytics(
-                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY);
-
-        assertThat(dto.returning().customerCount()).isEqualTo(1);
-        assertThat(dto.fresh().customerCount()).isZero();
-    }
-
-    @Test
-    @DisplayName("both freshness signals unavailable falls back to conservative 'returning', without throwing")
+    @DisplayName("both freshness signals unavailable (a failed created_at lookup and no local booking "
+            + "history) falls back to conservative 'returning', without throwing")
     void bothFreshnessSignalsUnavailableIsReturning() {
         when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
                 contact("+16195550001", "cust-1", Instant.parse("2026-07-05T12:00:00Z"), "meta_ads")));
         when(square.customerCreatedAts(Set.of("cust-1"))).thenThrow(new RuntimeException("429 Too Many Requests"));
-        when(square.bookingsForCustomer(eq("cust-1"), any())).thenThrow(new RuntimeException("429 Too Many Requests"));
+        // No stubBookings() call for cust-1 — the local mirror has nothing for them either.
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
                 svc("2026-07-10", "cust-1", "60.00"))));
 
@@ -740,30 +769,6 @@ class MarketingAnalyticsServiceTest {
 
         assertThat(dto.returning().customerCount()).isEqualTo(1);
         assertThat(dto.fresh().customerCount()).isZero();
-    }
-
-    @Test
-    @DisplayName("an upcoming-appointments lookup failure for one customer excludes just that customer, not the whole list")
-    void upcomingAppointmentsFailureIsPerCustomer() {
-        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
-                contact("+16195550001", "cust-broken", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads"),
-                contact("+16195550002", "cust-ok", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
-        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
-
-        var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
-        var okFuture = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-20T18:00:00Z", null, null,
-                "loc-1", "cust-ok", null, null, List.of(seg));
-        when(square.bookingsForCustomer(eq("cust-broken"), any())).thenThrow(new RuntimeException("429 Too Many Requests"));
-        when(square.bookingsForCustomer(eq("cust-ok"), any())).thenReturn(List.of(okFuture));
-        when(square.catalogPrices(List.of("var-mani"))).thenReturn(Map.of("var-mani", new BigDecimal("50.00")));
-        when(square.catalogNames(List.of("var-mani"))).thenReturn(Map.of("var-mani", "Manicure"));
-        when(square.customerNames(any())).thenReturn(Map.of("cust-ok", "Jane Doe"));
-
-        MarketingAnalyticsDto dto = service.analytics(
-                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY);
-
-        assertThat(dto.upcoming()).hasSize(1);
-        assertThat(dto.upcoming().get(0).customerName()).isEqualTo("Jane Doe");
     }
 
     @Test
@@ -782,12 +787,10 @@ class MarketingAnalyticsServiceTest {
         when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of()));
 
         var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
-        when(square.bookingsForCustomer(eq("cust-old"), any())).thenReturn(List.of(
-                new SquareClient.Booking("bk-old", "ACCEPTED", "2026-07-20T18:00:00Z", null, null,
-                        "loc-1", "cust-old", null, null, List.of(seg))));
-        when(square.bookingsForCustomer(eq("cust-new"), any())).thenReturn(List.of(
-                new SquareClient.Booking("bk-new", "ACCEPTED", "2026-07-25T18:00:00Z", null, null,
-                        "loc-1", "cust-new", null, null, List.of(seg))));
+        stubBookings("cust-old", new SquareClient.Booking("bk-old", "ACCEPTED", "2026-07-20T18:00:00Z", null, null,
+                "loc-1", "cust-old", null, null, List.of(seg)));
+        stubBookings("cust-new", new SquareClient.Booking("bk-new", "ACCEPTED", "2026-07-25T18:00:00Z", null, null,
+                "loc-1", "cust-new", null, null, List.of(seg)));
         when(square.catalogPrices(List.of("var-mani"))).thenReturn(Map.of("var-mani", new BigDecimal("85.00")));
         when(square.catalogNames(List.of("var-mani"))).thenReturn(Map.of("var-mani", "Manicure"));
         when(square.customerNames(any())).thenReturn(Map.of("cust-old", "Old Customer", "cust-new", "New Customer"));
@@ -1115,7 +1118,7 @@ class MarketingAnalyticsServiceTest {
         var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
         var future = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-20T18:00:00Z", null, null,
                 "loc-1", "cust-1", null, null, List.of(seg));
-        when(square.bookingsForCustomer(eq("cust-1"), any())).thenReturn(List.of(future));
+        stubBookings("cust-1", future);
         when(square.catalogPrices(List.of("var-mani"))).thenReturn(Map.of("var-mani", new BigDecimal("85.00")));
         when(square.catalogNames(List.of("var-mani"))).thenReturn(Map.of("var-mani", "Manicure"));
         when(square.customerNames(any())).thenReturn(Map.of("cust-1", "Jane Doe"));
@@ -1151,7 +1154,7 @@ class MarketingAnalyticsServiceTest {
         // Booked July 28 (createdAt) — but the visit itself is scheduled for August 15 (startAt).
         var bookedInJulyForAugust = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-08-15T18:00:00Z",
                 "2026-07-28T10:00:00Z", null, "loc-1", "cust-1", null, null, List.of(seg));
-        when(square.bookingsForCustomer(eq("cust-1"), any())).thenReturn(List.of(bookedInJulyForAugust));
+        stubBookings("cust-1", bookedInJulyForAugust);
         when(square.catalogPrices(List.of("var-mani"))).thenReturn(Map.of("var-mani", new BigDecimal("85.00")));
         when(square.catalogNames(List.of("var-mani"))).thenReturn(Map.of("var-mani", "Manicure"));
         when(square.customerNames(any())).thenReturn(Map.of("cust-1", "Jane Doe"));
@@ -1182,7 +1185,7 @@ class MarketingAnalyticsServiceTest {
         // id matches svc()'s fixed "booking-1" bookingId below.
         var bookedInJulyForAugust = new SquareClient.Booking("booking-1", "ACCEPTED", "2026-08-05T18:00:00Z",
                 "2026-07-28T10:00:00Z", null, "loc-1", "cust-1", null, null, List.of());
-        when(square.bookingsForCustomer(eq("cust-1"), any())).thenReturn(List.of(bookedInJulyForAugust));
+        stubBookings("cust-1", bookedInJulyForAugust);
         when(square.customerNames(any())).thenReturn(Map.of("cust-1", "Jane Doe"));
 
         // collectServices widens its fetch window forward (FUTURE_BOOKING_LEAD_PADDING_DAYS) once it's
@@ -1219,8 +1222,7 @@ class MarketingAnalyticsServiceTest {
         // Dated in August — outside the July period requested below, so it must not be counted.
         var cancelledOutsidePeriod = new SquareClient.Booking("bk-3", "DECLINED", "2026-08-01T18:00:00Z",
                 null, null, "loc-1", "cust-1", null, null, List.of(seg));
-        when(square.bookingsForCustomer(eq("cust-1"), any()))
-                .thenReturn(List.of(cancelledByCustomer, noShow, cancelledOutsidePeriod));
+        stubBookings("cust-1", cancelledByCustomer, noShow, cancelledOutsidePeriod);
 
         MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
                 TrafficSourceSql.ADS_ONLY, null, MarketingAnalyticsService.PeriodKind.MONTH);
@@ -1249,12 +1251,10 @@ class MarketingAnalyticsServiceTest {
 
         var segMani = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
         var segPedi = new SquareClient.AppointmentSegment("team-1", "var-pedi", 60);
-        when(square.bookingsForCustomer(eq("cust-june"), any())).thenReturn(List.of(
-                new SquareClient.Booking("bk-july", "ACCEPTED", "2026-07-20T18:00:00Z", null, null,
-                        "loc-1", "cust-june", null, null, List.of(segMani))));
-        when(square.bookingsForCustomer(eq("cust-july"), any())).thenReturn(List.of(
-                new SquareClient.Booking("bk-sept", "ACCEPTED", "2026-09-10T18:00:00Z", null, null,
-                        "loc-1", "cust-july", null, null, List.of(segPedi))));
+        stubBookings("cust-june", new SquareClient.Booking("bk-july", "ACCEPTED", "2026-07-20T18:00:00Z", null, null,
+                "loc-1", "cust-june", null, null, List.of(segMani)));
+        stubBookings("cust-july", new SquareClient.Booking("bk-sept", "ACCEPTED", "2026-09-10T18:00:00Z", null, null,
+                "loc-1", "cust-july", null, null, List.of(segPedi)));
         when(square.catalogPrices(any())).thenReturn(Map.of("var-mani", new BigDecimal("150.00"), "var-pedi", new BigDecimal("200.00")));
         when(square.catalogNames(any())).thenReturn(Map.of("var-mani", "Manicure", "var-pedi", "Pedicure"));
         when(square.customerNames(any())).thenReturn(Map.of("cust-june", "June Customer", "cust-july", "July Customer"));
@@ -1295,7 +1295,7 @@ class MarketingAnalyticsServiceTest {
         var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
         var future = new SquareClient.Booking("bk-1", "ACCEPTED", "2026-07-20T18:00:00Z", null, null,
                 "loc-1", "cust-1", null, null, List.of(seg));
-        when(square.bookingsForCustomer(eq("cust-1"), any())).thenReturn(List.of(future));
+        stubBookings("cust-1", future);
         when(square.catalogPrices(List.of("var-mani"))).thenReturn(Map.of("var-mani", new BigDecimal("85.00")));
         when(square.catalogNames(List.of("var-mani"))).thenReturn(Map.of("var-mani", "Manicure"));
         when(square.customerNames(any())).thenReturn(Map.of("cust-1", "Jane Doe"));
