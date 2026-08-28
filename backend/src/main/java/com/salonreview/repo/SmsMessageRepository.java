@@ -354,6 +354,36 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
             + "ORDER BY m.createdAt DESC")
     List<SmsMessage> searchByBodyContaining(@Param("businessId") Long businessId, @Param("q") String q, Pageable pageable);
 
+    /** Phone numbers matching the search box's query by digits or by resolved given-name, for
+     * phone numbers the conversation list hasn't necessarily loaded yet — see
+     * {@code SmsMessageLogService#searchConversations}'s own doc on why this exists (a business
+     * with hundreds of conversations made the old "load every page while searching, then filter
+     * client-side" approach freeze the tab, found live 2026-08-27/28). {@code marketing.contacts}
+     * is a different service's table (salonLandings), not JPA-mapped here, but lives in the same
+     * Postgres database — a native join is safe and simple, no cross-service call needed. A phone
+     * number with no {@code marketing.contacts} row at all (resolved only via a live Square lookup
+     * — see {@code MarketingContactsService#contactFromLivePhoneLookup}) isn't searchable by name
+     * here, only by digits; that's an accepted gap rather than a per-search Square API scan across
+     * hundreds of customers. {@code digits} empty skips the phone-number branch entirely (an empty
+     * {@code LIKE '%%'} would otherwise match everything). */
+    @Query(value = """
+            SELECT DISTINCT sm.phone_number
+            FROM sms_message sm
+            WHERE sm.business_id = :businessId
+              AND (
+                (:digits <> '' AND sm.phone_number LIKE CONCAT('%', CAST(:digits AS text), '%'))
+                OR EXISTS (
+                    SELECT 1 FROM marketing.contacts mc
+                    WHERE mc.business_id = sm.business_id AND mc.phone_number = sm.phone_number
+                      AND mc.given_name IS NOT NULL
+                      AND LOWER(mc.given_name) LIKE LOWER(CONCAT('%', CAST(:q AS text), '%'))
+                )
+              )
+            LIMIT 50
+            """, nativeQuery = true)
+    List<String> findPhoneNumbersMatchingNameOrDigits(@Param("businessId") Long businessId,
+                                                        @Param("q") String q, @Param("digits") String digits);
+
     /** Every reply to the checkout-review-request rating request, for one business — the
      * {@code /owner/reviews} dashboard's full review list (see V120). Not filtered to rows with a
      * {@link SmsMessage#getReplyFlowId()}/{@link SmsMessage#getRating()} set — a reply with

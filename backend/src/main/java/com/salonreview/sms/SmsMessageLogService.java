@@ -148,21 +148,29 @@ public class SmsMessageLogService {
                 direction, automationKey, pageable);
     }
 
-    /** One hit per phone number with a matching message, most-recent-match-first — backs the
-     * manager conversation view's search box. Name/phone matching is done client-side against the
-     * already-loaded conversation list (cheap, instant); this covers matches buried in a thread's
-     * older history that the client doesn't have loaded. */
+    /** One hit per phone number that matches, most-recent-match-first for a body-content match
+     * (name/phone matches carry no meaningful snippet — the row's own name/phone already shows why
+     * it matched, see {@link SmsMessageRepository#findPhoneNumbersMatchingNameOrDigits}'s own doc).
+     * Backs the manager conversation view's search box — the client merges any hit for a phone
+     * number it doesn't already have loaded (see the frontend's own doc on why: a business with
+     * hundreds of conversations can't just bulk-load every page to filter client-side, found live
+     * 2026-08-27/28). */
     public record ConversationSearchHit(String phoneNumber, String snippet, String direction, Instant matchedAt) {}
 
     public List<ConversationSearchHit> searchConversations(Long businessId, String q) {
         if (q == null || q.isBlank()) {
             return List.of();
         }
-        List<SmsMessage> matches = repository.searchByBodyContaining(businessId, q.trim(), PageRequest.of(0, 300));
+        String trimmed = q.trim();
+        List<SmsMessage> matches = repository.searchByBodyContaining(businessId, trimmed, PageRequest.of(0, 300));
         LinkedHashMap<String, ConversationSearchHit> byPhone = new LinkedHashMap<>();
         for (SmsMessage m : matches) {
             byPhone.putIfAbsent(m.getPhoneNumber(),
                     new ConversationSearchHit(m.getPhoneNumber(), m.getBody(), m.getDirection(), m.getCreatedAt()));
+        }
+        String digits = trimmed.replaceAll("\\D", "");
+        for (String phoneNumber : repository.findPhoneNumbersMatchingNameOrDigits(businessId, trimmed, digits)) {
+            byPhone.putIfAbsent(phoneNumber, new ConversationSearchHit(phoneNumber, "", "OUTBOUND", Instant.EPOCH));
         }
         return new ArrayList<>(byPhone.values());
     }
