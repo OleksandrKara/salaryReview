@@ -60,6 +60,12 @@ square:
   webhook:
     signature-key: ${SQUARE_WEBHOOK_SIGNATURE_KEY:}
     notification-url: ${SQUARE_WEBHOOK_NOTIFICATION_URL:https://salon.akluxnails.com/api/public/webhooks/square}
+  mirror:
+    # Phase 2i cutover: SquareMonthAggregator#aggregate() reads the local mirror by default now that
+    # Milestone 2g's shadow-diff came back clean across both businesses' full backfilled history.
+    # Emergency fallback during burn-in: set to false to instantly revert every caller to the live
+    # Square path with no code change, just a redeploy/restart.
+    aggregate-enabled: ${SQUARE_MIRROR_AGGREGATE_ENABLED:true}
 
 # Base URL of each public landing page (all served by the separate salonLandings/akluxnails-home
 # services), keyed by marketing.landing_pages.slug — used to build ?v=<key> deep links to a
