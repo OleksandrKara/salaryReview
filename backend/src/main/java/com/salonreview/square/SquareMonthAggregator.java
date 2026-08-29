@@ -8,6 +8,8 @@ import com.salonreview.square.SquareClient.Order;
 import com.salonreview.square.SquareClient.OrderLineItem;
 import com.salonreview.square.SquareClient.Payment;
 import com.salonreview.square.SquareClient.TeamMember;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -47,6 +49,8 @@ import java.util.regex.Pattern;
 @Service
 public class SquareMonthAggregator {
 
+    private static final Logger log = LoggerFactory.getLogger(SquareMonthAggregator.class);
+
     private final SquareClientProvider squareClientProvider;
     private final CashNoteParser cashNotes;
     private final com.salonreview.repo.OwnerCustomerRepository ownerCustomers;
@@ -65,6 +69,12 @@ public class SquareMonthAggregator {
     }
 
     public MonthAggregation aggregate(int year, int month, BigDecimal priceCutoff) {
+        // Temporary diagnostic timing (2026-08-29) — investigating Ads Report cold-load latency;
+        // remove once that's root-caused. See docs/CACHING.md for the caches already layered on
+        // top of this method (SquareClient's own 10-min raw-read cache, plus each caller's own
+        // whole-response TtlCache) — this measures the one thing none of those cover: this
+        // method's own matching/computation cost once the underlying Square reads are warm.
+        long startedAtNanos = System.nanoTime();
         Long businessId = currentBusinessContext.id();
         SquareClient square = squareClientProvider.forBusiness(businessId);
         ZoneId zone = resolveZone(square);
@@ -583,6 +593,9 @@ public class SquareMonthAggregator {
             }
         }
 
+        long elapsedMs = (System.nanoTime() - startedAtNanos) / 1_000_000;
+        log.info("aggregate({}, {}) took {}ms — {} bookings, {} orders, {} payments, {} matched services",
+                year, month, elapsedMs, bookings.size(), orders.size(), payments.size(), services.size());
         return new MonthAggregation(year, month, zone.getId(), providers, diag, services,
                 namedUnmatched, suspicious, cancellations, namedOrphanPayments);
     }

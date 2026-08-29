@@ -330,6 +330,10 @@ public class MarketingAnalyticsService {
     }
 
     private MarketingAdsReportDto computeAdsReport(LocalDate from, LocalDate to, Set<String> sources, String slug, PeriodKind periodKind) {
+        // Temporary diagnostic timing (2026-08-29) — investigating Ads Report cold-load latency;
+        // remove once that's root-caused (see SquareMonthAggregator#aggregate's own timing log,
+        // added alongside this one, for the other half of the picture).
+        long startedAtNanos = System.nanoTime();
         String periodType = periodKind.name();
         LocalDate today = LocalDate.now(clock.withZone(resolveZone()));
         List<LocalDate[]> periods = switch (periodKind) {
@@ -402,6 +406,12 @@ public class MarketingAnalyticsService {
 
         List<PeriodRow> mostRecentFirst = new ArrayList<>(rows);
         Collections.reverse(mostRecentFirst);
+        long elapsedMs = (System.nanoTime() - startedAtNanos) / 1_000_000;
+        log.info("adsReport({}, [{}, {}], slug={}) took {}ms — {} ads customers, {} periods, "
+                        + "{} months aggregated ({} to {})",
+                periodType, from, to, slug, elapsedMs, adsCustomers.size(), periods.size(),
+                java.time.temporal.ChronoUnit.MONTHS.between(YearMonth.from(alignedFrom), YearMonth.from(alignedTo)) + 1,
+                alignedFrom, alignedTo);
         return new MarketingAdsReportDto(periodType, mostRecentFirst, totals);
     }
 
@@ -973,6 +983,9 @@ public class MarketingAnalyticsService {
      * classify into one of the requested buckets.
      */
     private Map<String, AdsCustomer> resolveAdsCustomersUncached(Set<String> sources, String slug) {
+        // Temporary diagnostic timing (2026-08-29) — see computeAdsReport's own timing log; this
+        // isolates the per-contact live customerIdsForPhone fan-out below as its own number.
+        long startedAtNanos = System.nanoTime();
         Long businessId = currentBusinessContext.id();
         List<MarketingContactsRepository.AdsAttributedContact> contacts = sources.equals(ALL_SOURCES)
                 ? contactsRepository.findAllAttributedContacts(slug, businessId)
@@ -1008,6 +1021,9 @@ public class MarketingAnalyticsService {
             byCustomerId.merge(r.customerId(), r.meta(),
                     (existing, incoming) -> existing.firstTouch().isBefore(incoming.firstTouch()) ? existing : incoming);
         }
+        long elapsedMs = (System.nanoTime() - startedAtNanos) / 1_000_000;
+        log.info("resolveAdsCustomers(slug={}) took {}ms — {} attributed contacts -> {} resolved customer ids",
+                slug, elapsedMs, contacts.size(), byCustomerId.size());
         return byCustomerId;
     }
 
