@@ -24,10 +24,10 @@ public interface SquareOrderMirrorRepository extends JpaRepository<SquareOrderMi
     @Query(value = """
             INSERT INTO square_order (business_id, square_order_id, square_customer_id, state,
                 closed_at, created_at, total_tip_money, total_discount_money, tenders_json,
-                line_items_json, synced_at)
+                line_items_json, discounts_json, synced_at)
             VALUES (:businessId, :squareOrderId, :squareCustomerId, :state,
                 :closedAt, :createdAt, :totalTipMoney, :totalDiscountMoney,
-                CAST(:tendersJson AS jsonb), CAST(:lineItemsJson AS jsonb), now())
+                CAST(:tendersJson AS jsonb), CAST(:lineItemsJson AS jsonb), CAST(:discountsJson AS jsonb), now())
             ON CONFLICT (business_id, square_order_id) DO UPDATE SET
                 square_customer_id = EXCLUDED.square_customer_id,
                 state = EXCLUDED.state,
@@ -37,11 +37,13 @@ public interface SquareOrderMirrorRepository extends JpaRepository<SquareOrderMi
                 total_discount_money = EXCLUDED.total_discount_money,
                 tenders_json = EXCLUDED.tenders_json,
                 line_items_json = EXCLUDED.line_items_json,
+                discounts_json = EXCLUDED.discounts_json,
                 synced_at = now()
             """, nativeQuery = true)
     void upsert(@Param("businessId") Long businessId, @Param("squareOrderId") String squareOrderId,
                 @Param("squareCustomerId") String squareCustomerId, @Param("state") String state,
                 @Param("closedAt") Instant closedAt, @Param("createdAt") Instant createdAt,
                 @Param("totalTipMoney") BigDecimal totalTipMoney, @Param("totalDiscountMoney") BigDecimal totalDiscountMoney,
-                @Param("tendersJson") String tendersJson, @Param("lineItemsJson") String lineItemsJson);
+                @Param("tendersJson") String tendersJson, @Param("lineItemsJson") String lineItemsJson,
+                @Param("discountsJson") String discountsJson);
 }

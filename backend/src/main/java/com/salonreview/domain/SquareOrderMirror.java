@@ -11,8 +11,10 @@ import java.util.List;
 
 /**
  * A local, raw copy of one Square Order — see {@link SquareBookingMirror}'s own doc for the
- * mirror's rationale/lifecycle. Read only by {@code MarketingBookingPaymentMatcher}; never by
- * {@code SquareMonthAggregator} or any payroll path.
+ * mirror's rationale/lifecycle. Read by {@code MarketingBookingPaymentMatcher} and, since Phase 2,
+ * by {@code SquareMonthAggregator}'s mirror-backed path — {@code discounts}/{@code
+ * LineItem#appliedDiscounts} exist specifically for the aggregator's discount-coverage policy, and
+ * {@code LineItem#name} for its cancellation-fee detection; neither is used by the marketing path.
  */
 @Entity
 @Table(name = "square_order")
@@ -57,12 +59,29 @@ public class SquareOrderMirror {
     @Column(name = "line_items_json", columnDefinition = "jsonb")
     private List<LineItem> lineItems;
 
+    /** Order-level discounts (e.g. a "Deposit" or promo discount) — see {@link OrderDiscount}'s own
+     * doc. Null/empty for orders synced before this field existed (see V135); the aggregator's
+     * discount-coverage policy treats a missing discount the same as a genuinely-absent one. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "discounts_json", columnDefinition = "jsonb")
+    private List<OrderDiscount> discounts;
+
     @Column(name = "synced_at", nullable = false)
     @Builder.Default
     private Instant syncedAt = Instant.now();
 
     public record Tender(String type, BigDecimal amount) {}
 
-    public record LineItem(String catalogObjectId, BigDecimal grossSalesMoney, BigDecimal totalMoney,
-                           BigDecimal totalDiscountMoney) {}
+    public record LineItem(String catalogObjectId, String name, BigDecimal grossSalesMoney,
+                           BigDecimal totalMoney, BigDecimal totalDiscountMoney,
+                           List<AppliedDiscount> appliedDiscounts) {}
+
+    /** One order-level discount definition — {@code name} is what both {@code PrepaidService} (its
+     * own "Deposit" match) and, since Phase 2, {@code SquareMonthAggregator}'s discount-coverage
+     * policy match against {@code SalonConfig#coveredDiscountNameSubstrings}. */
+    public record OrderDiscount(String uid, String name, BigDecimal appliedMoney) {}
+
+    /** Links a line item back to the specific {@link OrderDiscount} (by {@code discountUid}) that
+     * reduced it, and by how much — needed to prorate an order-level discount back to one line. */
+    public record AppliedDiscount(String uid, String discountUid, BigDecimal appliedMoney) {}
 }

@@ -97,9 +97,43 @@ class SquareBookingMirrorIngestServiceTest {
 
         assertThat(count).isEqualTo(2); // 1 order + 1 payment, 0 bookings
         verify(orderRepository).upsert(eq(1L), eq("ord1"), eq("CUST1"), eq("COMPLETED"),
-                any(), any(), eq(new java.math.BigDecimal("15.00")), eq(java.math.BigDecimal.ZERO), anyString(), anyString());
+                any(), any(), eq(new java.math.BigDecimal("15.00")), eq(java.math.BigDecimal.ZERO), anyString(), anyString(), any());
         verify(paymentRepository).upsert(eq(1L), eq("pay1"), eq("ord1"), eq("CUST1"), eq("COMPLETED"),
                 any(), eq(new java.math.BigDecimal("100.00")), eq(new java.math.BigDecimal("15.00")));
+    }
+
+    @Test
+    @DisplayName("order-level discounts and per-line appliedDiscounts/name are captured in the mirrored line_items_json/discounts_json")
+    void ordersDiscountsAndLineItemNameAreMirrored() {
+        Instant from = Instant.parse("2026-06-01T00:00:00Z");
+        Instant to = Instant.parse("2026-07-01T00:00:00Z");
+        SquareClient.Money price = new SquareClient.Money(10000L, "USD");
+        SquareClient.Money discountAmount = new SquareClient.Money(1000L, "USD");
+        var appliedDiscount = new SquareClient.AppliedDiscount("ad1", "disc1", discountAmount);
+        var lineItem = new OrderLineItem("li1", "Manicure", "1", "VAR1", price, price, price, discountAmount,
+                List.of(appliedDiscount));
+        var orderDiscount = new SquareClient.OrderDiscount("disc1", "Deposit", discountAmount);
+        var withDiscounts = new Order("ord2", "LOC1", "CUST1", "COMPLETED", "2026-06-01T16:00:00Z",
+                "2026-06-01T15:55:00Z", List.of(lineItem), new SquareClient.Money(0L, "USD"), discountAmount,
+                List.of(new Tender("t1", "CARD", price)), null, List.of(orderDiscount));
+        when(square.bookings(from, to)).thenReturn(List.of());
+        when(square.completedOrders(from, to)).thenReturn(List.of(withDiscounts));
+        when(square.payments(from, to)).thenReturn(List.of());
+
+        ingest.ingestWindow(from, to);
+
+        var lineItemsJsonCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        var discountsJsonCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(orderRepository).upsert(eq(1L), eq("ord2"), eq("CUST1"), eq("COMPLETED"), any(), any(),
+                any(), any(), anyString(), lineItemsJsonCaptor.capture(), discountsJsonCaptor.capture());
+
+        assertThat(lineItemsJsonCaptor.getValue()).contains("\"name\":\"Manicure\"")
+                .contains("\"catalogObjectId\":\"VAR1\"")
+                .contains("\"discountUid\":\"disc1\"")
+                .contains("\"appliedMoney\":10.00");
+        assertThat(discountsJsonCaptor.getValue()).contains("\"uid\":\"disc1\"")
+                .contains("\"name\":\"Deposit\"")
+                .contains("\"appliedMoney\":10.00");
     }
 
     @Test

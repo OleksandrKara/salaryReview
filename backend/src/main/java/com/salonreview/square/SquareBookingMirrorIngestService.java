@@ -92,7 +92,7 @@ public class SquareBookingMirrorIngestService {
         orderRepository.upsert(businessId, o.id(), o.customerId(), o.state(),
                 parseInstant(o.closedAt()), parseInstant(o.createdAt()),
                 SquareClient.toDollars(o.totalTipMoney()), SquareClient.toDollars(o.totalDiscountMoney()),
-                tendersJson(o), lineItemsJson(o));
+                tendersJson(o), lineItemsJson(o), discountsJson(o));
     }
 
     /** Upserts a single payment. Not currently wired to a webhook event — {@code
@@ -154,13 +154,34 @@ public class SquareBookingMirrorIngestService {
         if (o.lineItems() == null) return null;
         try {
             List<SquareOrderMirror.LineItem> items = o.lineItems().stream()
-                    .map(li -> new SquareOrderMirror.LineItem(li.catalogObjectId(),
+                    .map(li -> new SquareOrderMirror.LineItem(li.catalogObjectId(), li.name(),
                             SquareClient.toDollars(li.grossSalesMoney()), SquareClient.toDollars(li.totalMoney()),
-                            SquareClient.toDollars(li.totalDiscountMoney())))
+                            SquareClient.toDollars(li.totalDiscountMoney()), appliedDiscounts(li)))
                     .toList();
             return mapper.writeValueAsString(items);
         } catch (Exception ex) {
             log.warn("Failed to serialize line items for order {}: {}", o.id(), ex.toString());
+            return null;
+        }
+    }
+
+    private List<SquareOrderMirror.AppliedDiscount> appliedDiscounts(SquareClient.OrderLineItem li) {
+        if (li.appliedDiscounts() == null) return null;
+        return li.appliedDiscounts().stream()
+                .map(ad -> new SquareOrderMirror.AppliedDiscount(ad.uid(), ad.discountUid(),
+                        SquareClient.toDollars(ad.appliedMoney())))
+                .toList();
+    }
+
+    private String discountsJson(SquareClient.Order o) {
+        if (o.discounts() == null) return null;
+        try {
+            List<SquareOrderMirror.OrderDiscount> discounts = o.discounts().stream()
+                    .map(d -> new SquareOrderMirror.OrderDiscount(d.uid(), d.name(), SquareClient.toDollars(d.appliedMoney())))
+                    .toList();
+            return mapper.writeValueAsString(discounts);
+        } catch (Exception ex) {
+            log.warn("Failed to serialize discounts for order {}: {}", o.id(), ex.toString());
             return null;
         }
     }
