@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -48,6 +49,7 @@ class SquareWebhookControllerTest {
     private CheckoutReviewTriggerService triggerService;
     private SquareBookingWebhookHandler bookingWebhookHandler;
     private SquareOrderWebhookHandler orderWebhookHandler;
+    private SquarePaymentWebhookHandler paymentWebhookHandler;
     private BusinessRepository businesses;
     private SquareConnectionService connectionService;
     private MockMvc mvc;
@@ -60,12 +62,13 @@ class SquareWebhookControllerTest {
         triggerService = mock(CheckoutReviewTriggerService.class);
         bookingWebhookHandler = mock(SquareBookingWebhookHandler.class);
         orderWebhookHandler = mock(SquareOrderWebhookHandler.class);
+        paymentWebhookHandler = mock(SquarePaymentWebhookHandler.class);
         businesses = mock(BusinessRepository.class);
         when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(BUSINESS_A_ID).name("Test")
                 .shortCode("test").timezone("UTC").active(true).build());
         connectionService = mock(SquareConnectionService.class);
         SquareWebhookController controller = new SquareWebhookController(properties, triggerService,
-                bookingWebhookHandler, orderWebhookHandler, businesses, connectionService, PUBLIC_BASE_URL);
+                bookingWebhookHandler, orderWebhookHandler, paymentWebhookHandler, businesses, connectionService, PUBLIC_BASE_URL);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -88,6 +91,9 @@ class SquareWebhookControllerTest {
                 .andExpect(status().isOk());
 
         verify(triggerService).handlePaymentUpdated(eq(BUSINESS_A_ID), any());
+        // Phase 2: the payment mirror is an independent listener on the same event, alongside the
+        // checkout-review trigger above — not a replacement for it.
+        verify(paymentWebhookHandler).handlePaymentEvent(eq(BUSINESS_A_ID), any());
     }
 
     @Test
@@ -200,6 +206,14 @@ class SquareWebhookControllerTest {
     private static final String ORDER_FULFILLMENT_UPDATED_BODY = "{\"type\":\"order.fulfillment.updated\",\"event_id\":\"evt_5\","
             + "\"data\":{\"type\":\"order_fulfillment_updated\",\"id\":\"order_3\","
             + "\"object\":{\"order_fulfillment_updated\":{\"order_id\":\"order_3\",\"state\":\"COMPLETED\"}}}}";
+    // Real shape confirmed against Square's own published payment.updated example payload, not
+    // guessed — the field is amount_money, not total_money (unlike SquareClient.Payment's own
+    // List-Payments-API-sourced field name, a separate and deliberately unrelated shape).
+    private static final String PAYMENT_BODY_WITH_AMOUNT = "{\"type\":\"payment.updated\",\"event_id\":\"evt_6\","
+            + "\"data\":{\"type\":\"payment\",\"id\":\"pay_2\",\"object\":{\"payment\":{\"id\":\"pay_2\","
+            + "\"status\":\"COMPLETED\",\"order_id\":\"order_4\",\"customer_id\":\"cust_2\","
+            + "\"created_at\":\"2026-06-01T16:00:00Z\",\"amount_money\":{\"amount\":10000,\"currency\":\"USD\"},"
+            + "\"tip_money\":{\"amount\":1500,\"currency\":\"USD\"}}}}}";
 
     @Test
     @DisplayName("booking.created is dispatched to the booking mirror handler, independent of payment handling")
@@ -229,6 +243,26 @@ class SquareWebhookControllerTest {
         verify(orderWebhookHandler).handleOrderUpdated(eq(BUSINESS_A_ID), any());
         verifyNoInteractions(triggerService);
         verifyNoInteractions(bookingWebhookHandler);
+    }
+
+    @Test
+    @DisplayName("payment.updated's amount_money/created_at/tip_money deserialize correctly and reach the payment mirror handler")
+    void paymentUpdatedAmountFieldsDeserializeAndDispatch() throws Exception {
+        String signature = sign(SIGNATURE_KEY, NOTIFICATION_URL + PAYMENT_BODY_WITH_AMOUNT);
+
+        mvc.perform(post("/api/public/webhooks/square")
+                        .header("x-square-hmacsha256-signature", signature)
+                        .contentType("application/json").content(PAYMENT_BODY_WITH_AMOUNT))
+                .andExpect(status().isOk());
+
+        var captor = org.mockito.ArgumentCaptor.forClass(SquareWebhookEvent.Payment.class);
+        verify(paymentWebhookHandler).handlePaymentEvent(eq(BUSINESS_A_ID), captor.capture());
+        SquareWebhookEvent.Payment payment = captor.getValue();
+        assertThat(payment.id()).isEqualTo("pay_2");
+        assertThat(payment.createdAt()).isEqualTo("2026-06-01T16:00:00Z");
+        assertThat(payment.amountMoney().amount()).isEqualTo(10000L);
+        assertThat(payment.tipMoney().amount()).isEqualTo(1500L);
+        verify(triggerService).handlePaymentUpdated(eq(BUSINESS_A_ID), any());
     }
 
     @Test

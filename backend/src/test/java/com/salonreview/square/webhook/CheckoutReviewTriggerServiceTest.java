@@ -62,7 +62,7 @@ class CheckoutReviewTriggerServiceTest {
     }
 
     private static SquareWebhookEvent.Payment payment(String status, String orderId, String customerId) {
-        return new SquareWebhookEvent.Payment("pay_1", status, orderId, customerId);
+        return new SquareWebhookEvent.Payment("pay_1", status, orderId, customerId, null, null, null);
     }
 
     private static SquareClient.Order order(String customerId, List<SquareClient.Fulfillment> fulfillments) {
