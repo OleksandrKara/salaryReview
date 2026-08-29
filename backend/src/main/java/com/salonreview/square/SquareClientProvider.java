@@ -24,6 +24,15 @@ import java.util.concurrent.ConcurrentHashMap;
  * doesn't decrypt the access token on every call, but does pick up a credential rotation (Square
  * reconnect) within that window without a restart. {@link #forget(Long)} forces an immediate
  * rebuild — call it right after a business reconnects its Square account.
+ *
+ * <p>{@code customerCachesByBusiness} is deliberately kept outside {@code CachedClient} — a
+ * rebuilt client still uses the same customer directory (customer names/ids don't depend on which
+ * access token fetched them), so there's no correctness reason for a 30-minute credential-rotation
+ * rebuild to also throw away that resolution cache. Found live 2026-08-29: after the Phase 2
+ * mirror cutover made bookings/orders/payments effectively free, this rebuild became the dominant
+ * remaining cause of a slow /reports load — {@code SquareMonthAggregator}'s still-live
+ * {@code canonicalCustomerIds}/{@code customerNames} calls were quietly re-fetching every distinct
+ * customer of the month, live, once per rebuild.
  */
 @Component
 public class SquareClientProvider {
@@ -33,6 +42,7 @@ public class SquareClientProvider {
     private final SquareConnectionRepository connections;
     private final SquareCredentialCipher cipher;
     private final Map<Long, CachedClient> clients = new ConcurrentHashMap<>();
+    private final Map<Long, Map<String, SquareClient.Customer>> customerCachesByBusiness = new ConcurrentHashMap<>();
 
     public SquareClientProvider(SquareConnectionRepository connections, SquareCredentialCipher cipher) {
         this.connections = connections;
@@ -66,7 +76,9 @@ public class SquareClientProvider {
         props.setEnvironment(connection.getEnvironment());
         props.setAccessToken(cipher.decrypt(connection.getAccessTokenEncrypted()));
         props.setLocationId(connection.getLocationId());
-        return new SquareClient(props);
+        Map<String, SquareClient.Customer> customerCache =
+                customerCachesByBusiness.computeIfAbsent(businessId, id -> new ConcurrentHashMap<>());
+        return new SquareClient(props, customerCache);
     }
 
     private record CachedClient(SquareClient client, Instant expiresAt) {}
