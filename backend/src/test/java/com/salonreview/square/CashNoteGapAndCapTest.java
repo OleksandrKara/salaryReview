@@ -50,7 +50,9 @@ class CashNoteGapAndCapTest {
         SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         OwnerCustomerRepository ownerRepo = mock(OwnerCustomerRepository.class);
-        aggregator = new SquareMonthAggregator(squareClientProvider, new CashNoteParser(), ownerRepo, currentBusinessContext, mock(SalonConfigRepository.class));
+        aggregator = new SquareMonthAggregator(squareClientProvider, new CashNoteParser(), ownerRepo, currentBusinessContext, mock(SalonConfigRepository.class),
+                mock(com.salonreview.repo.SquareBookingMirrorRepository.class), mock(com.salonreview.repo.SquareOrderMirrorRepository.class),
+                mock(com.salonreview.repo.SquarePaymentMirrorRepository.class));
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.allTeamMembers()).thenReturn(List.of(new TeamMember(TM, "Susan", "A", "ACTIVE", false, null, null)));
         when(ownerRepo.findAllByBusinessId(1L)).thenReturn(List.of());
