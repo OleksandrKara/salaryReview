@@ -195,6 +195,11 @@ class SquareWebhookControllerTest {
             + "\"customer_id\":\"cust_1\",\"start_at\":\"2026-06-01T15:00:00Z\"}}}}";
     private static final String ORDER_BODY = "{\"type\":\"order.updated\",\"event_id\":\"evt_3\",\"data\":{\"type\":\"order_updated\","
             + "\"id\":\"order_1\",\"object\":{\"order_updated\":{\"order_id\":\"order_1\",\"state\":\"COMPLETED\"}}}}";
+    private static final String ORDER_CREATED_BODY = "{\"type\":\"order.created\",\"event_id\":\"evt_4\",\"data\":{\"type\":\"order_created\","
+            + "\"id\":\"order_2\",\"object\":{\"order_created\":{\"order_id\":\"order_2\",\"state\":\"OPEN\"}}}}";
+    private static final String ORDER_FULFILLMENT_UPDATED_BODY = "{\"type\":\"order.fulfillment.updated\",\"event_id\":\"evt_5\","
+            + "\"data\":{\"type\":\"order_fulfillment_updated\",\"id\":\"order_3\","
+            + "\"object\":{\"order_fulfillment_updated\":{\"order_id\":\"order_3\",\"state\":\"COMPLETED\"}}}}";
 
     @Test
     @DisplayName("booking.created is dispatched to the booking mirror handler, independent of payment handling")
@@ -219,6 +224,36 @@ class SquareWebhookControllerTest {
         mvc.perform(post("/api/public/webhooks/square")
                         .header("x-square-hmacsha256-signature", signature)
                         .contentType("application/json").content(ORDER_BODY))
+                .andExpect(status().isOk());
+
+        verify(orderWebhookHandler).handleOrderUpdated(eq(BUSINESS_A_ID), any());
+        verifyNoInteractions(triggerService);
+        verifyNoInteractions(bookingWebhookHandler);
+    }
+
+    @Test
+    @DisplayName("order.created is dispatched to the same order mirror handler as order.updated")
+    void orderCreatedDispatchedToMirrorHandler() throws Exception {
+        String signature = sign(SIGNATURE_KEY, NOTIFICATION_URL + ORDER_CREATED_BODY);
+
+        mvc.perform(post("/api/public/webhooks/square")
+                        .header("x-square-hmacsha256-signature", signature)
+                        .contentType("application/json").content(ORDER_CREATED_BODY))
+                .andExpect(status().isOk());
+
+        verify(orderWebhookHandler).handleOrderUpdated(eq(BUSINESS_A_ID), any());
+        verifyNoInteractions(triggerService);
+        verifyNoInteractions(bookingWebhookHandler);
+    }
+
+    @Test
+    @DisplayName("order.fulfillment.updated is dispatched to the same order mirror handler as order.updated")
+    void orderFulfillmentUpdatedDispatchedToMirrorHandler() throws Exception {
+        String signature = sign(SIGNATURE_KEY, NOTIFICATION_URL + ORDER_FULFILLMENT_UPDATED_BODY);
+
+        mvc.perform(post("/api/public/webhooks/square")
+                        .header("x-square-hmacsha256-signature", signature)
+                        .contentType("application/json").content(ORDER_FULFILLMENT_UPDATED_BODY))
                 .andExpect(status().isOk());
 
         verify(orderWebhookHandler).handleOrderUpdated(eq(BUSINESS_A_ID), any());

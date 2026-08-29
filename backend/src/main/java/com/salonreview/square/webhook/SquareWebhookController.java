@@ -117,8 +117,16 @@ public class SquareWebhookController {
         if (object != null && object.booking() != null) {
             bookingWebhookHandler.handleBookingEvent(businessId, object.booking());
         }
-        if (object != null && object.orderUpdated() != null) {
-            orderWebhookHandler.handleOrderUpdated(businessId, object.orderUpdated());
+        // order.updated/order.created/order.fulfillment.updated all carry the same minimal summary
+        // (order_id) under a different JSON field name — exactly one is ever populated for a given
+        // event, and all three want identical handling (refetch the full order, upsert into the
+        // mirror), so they share one dispatch to the same handler.
+        SquareWebhookEvent.OrderUpdated orderEvent = object == null ? null
+                : object.orderUpdated() != null ? object.orderUpdated()
+                : object.orderCreated() != null ? object.orderCreated()
+                : object.orderFulfillmentUpdated();
+        if (orderEvent != null) {
+            orderWebhookHandler.handleOrderUpdated(businessId, orderEvent);
         }
         return ResponseEntity.ok().build();
     }

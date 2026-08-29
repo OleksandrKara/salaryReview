@@ -24,12 +24,17 @@ public record SquareWebhookEvent(String type, String eventId, Data data) {
         /** Named {@code DataObject}, not {@code Object} — the JSON field is still {@code "object"}
          * (Jackson maps by the record component name), this just avoids shadowing
          * {@code java.lang.Object} inside this file. {@code booking.created}/{@code
-         * booking.updated} nest the full booking under {@code "booking"}; {@code order.updated}
-         * nests only a summary under {@code "order_updated"} (Square's own inconsistency between
-         * the two APIs — confirmed against Square's published webhook reference, not guessed). */
+         * booking.updated} nest the full booking under {@code "booking"}; {@code order.updated},
+         * {@code order.created}, and {@code order.fulfillment.updated} each nest only a summary,
+         * under {@code "order_updated"}/{@code "order_created"}/{@code "order_fulfillment_updated"}
+         * respectively (Square's own inconsistency between the two APIs, and between its own order
+         * event types — confirmed against Square's published webhook reference, not guessed). All
+         * three summaries share the one field the mirror actually needs ({@code order_id}), so they
+         * reuse {@link OrderUpdated}'s shape rather than three near-identical records. */
         @JsonIgnoreProperties(ignoreUnknown = true)
         @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-        public record DataObject(Payment payment, Booking booking, OrderUpdated orderUpdated) {}
+        public record DataObject(Payment payment, Booking booking, OrderUpdated orderUpdated,
+                                  OrderUpdated orderCreated, OrderUpdated orderFulfillmentUpdated) {}
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
