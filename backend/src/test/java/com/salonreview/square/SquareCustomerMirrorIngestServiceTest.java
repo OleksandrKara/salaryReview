@@ -85,4 +85,20 @@ class SquareCustomerMirrorIngestServiceTest {
         verify(repository).upsert(eq(1L), eq("CUST1"), eq("+19165551234"), eq("Jane"), eq("Doe"),
                 eq((String) null), eq((Instant) null));
     }
+
+    @Test
+    @DisplayName("deleteCustomer removes the mirror row by its natural key, on customer.deleted")
+    void deleteCustomerRemovesTheMirrorRow() {
+        ingest.deleteCustomer(1L, "CUST1");
+
+        verify(repository).deleteByBusinessIdAndSquareCustomerId(1L, "CUST1");
+    }
+
+    @Test
+    @DisplayName("deleteCustomer with no id is a no-op, not a delete with a null natural key")
+    void deleteCustomerWithNoIdIsSkipped() {
+        ingest.deleteCustomer(1L, null);
+
+        verify(repository, times(0)).deleteByBusinessIdAndSquareCustomerId(any(), any());
+    }
 }

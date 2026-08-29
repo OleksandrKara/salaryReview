@@ -57,6 +57,16 @@ public class SquareCustomerMirrorIngestService {
                 c.givenName(), c.familyName(), c.emailAddress(), parseInstant(c.createdAt()));
     }
 
+    /** Removes a customer mirror row on {@code customer.deleted} — see {@code
+     * SquareCustomerWebhookHandler}. {@link #syncAll} alone would never catch this: a deleted
+     * customer just stops appearing in {@link SquareClient#listAllCustomers}'s future listings, it
+     * doesn't get diffed out of what's already stored, so without this the row would linger
+     * forever and could still resolve a phone number to a customer id Square no longer has. */
+    public void deleteCustomer(Long businessId, String customerId) {
+        if (customerId == null || customerId.isBlank()) return;
+        repository.deleteByBusinessIdAndSquareCustomerId(businessId, customerId);
+    }
+
     private static Instant parseInstant(String iso) {
         if (iso == null) return null;
         try {

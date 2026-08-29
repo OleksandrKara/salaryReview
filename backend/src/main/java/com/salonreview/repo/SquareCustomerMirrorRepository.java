@@ -40,4 +40,11 @@ public interface SquareCustomerMirrorRepository extends JpaRepository<SquareCust
                 @Param("phoneNumber") String phoneNumber, @Param("givenName") String givenName,
                 @Param("familyName") String familyName, @Param("emailAddress") String emailAddress,
                 @Param("squareCreatedAt") Instant squareCreatedAt);
+
+    /** Removes a customer mirror row on {@code customer.deleted} — see {@code
+     * SquareCustomerWebhookHandler}. Square's own delete keeps the row out of every future full
+     * re-sync too, so this isn't just a webhook nicety; without it, a deleted-then-phone-reused
+     * customer's now-stale row would keep resolving as if it still existed. */
+    @Transactional
+    void deleteByBusinessIdAndSquareCustomerId(Long businessId, String squareCustomerId);
 }

@@ -213,6 +213,13 @@ class SquareWebhookControllerTest {
             + "\"data\":{\"type\":\"customer\",\"id\":\"cust_3\",\"object\":{\"customer\":{\"id\":\"cust_3\","
             + "\"given_name\":\"Jane\",\"family_name\":\"Doe\",\"phone_number\":\"+19165551234\","
             + "\"email_address\":\"jane@example.com\",\"created_at\":\"2026-06-01T16:00:00Z\"}}}}";
+    // Real shape confirmed against Square's own published customer.deleted webhook reference, not
+    // guessed — identical data.object.customer shape to created/updated (minus group_ids/
+    // segment_ids, neither of which this mirror stores), so only the top-level "type" tells this
+    // apart from an upsert.
+    private static final String CUSTOMER_DELETED_BODY = "{\"type\":\"customer.deleted\",\"event_id\":\"evt_8\","
+            + "\"data\":{\"type\":\"customer\",\"id\":\"cust_3\",\"object\":{\"customer\":{\"id\":\"cust_3\","
+            + "\"given_name\":\"Jane\",\"family_name\":\"Doe\",\"phone_number\":\"+19165551234\"}}}}";
     private static final String ORDER_FULFILLMENT_UPDATED_BODY = "{\"type\":\"order.fulfillment.updated\",\"event_id\":\"evt_5\","
             + "\"data\":{\"type\":\"order_fulfillment_updated\",\"id\":\"order_3\","
             + "\"object\":{\"order_fulfillment_updated\":{\"order_id\":\"order_3\",\"state\":\"COMPLETED\"}}}}";
@@ -259,6 +266,24 @@ class SquareWebhookControllerTest {
         verifyNoInteractions(bookingWebhookHandler);
         verifyNoInteractions(orderWebhookHandler);
         verifyNoInteractions(paymentWebhookHandler);
+    }
+
+    @Test
+    @DisplayName("customer.deleted is dispatched to the deletion handler, never the upsert handler, "
+            + "despite carrying the identical data.object.customer payload shape as customer.created")
+    void customerDeletedDispatchedToDeletionHandlerNotUpsert() throws Exception {
+        String signature = sign(SIGNATURE_KEY, NOTIFICATION_URL + CUSTOMER_DELETED_BODY);
+
+        mvc.perform(post("/api/public/webhooks/square")
+                        .header("x-square-hmacsha256-signature", signature)
+                        .contentType("application/json").content(CUSTOMER_DELETED_BODY))
+                .andExpect(status().isOk());
+
+        var captor = org.mockito.ArgumentCaptor.forClass(SquareWebhookEvent.Customer.class);
+        verify(customerWebhookHandler).handleCustomerDeleted(eq(BUSINESS_A_ID), captor.capture());
+        assertThat(captor.getValue().id()).isEqualTo("cust_3");
+        verify(customerWebhookHandler, org.mockito.Mockito.never())
+                .handleCustomerEvent(any(), any());
     }
 
     @Test
