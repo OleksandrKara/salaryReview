@@ -43,8 +43,8 @@ class MarketingBookingPaymentMatcherTest {
         Instant start = Instant.parse("2026-06-01T15:00:00Z");
         SquareBookingMirror b = booking(start, "VAR1");
 
-        SquareOrderMirror.LineItem li = new SquareOrderMirror.LineItem("VAR1",
-                new BigDecimal("100.00"), new BigDecimal("90.00"), new BigDecimal("10.00"));
+        SquareOrderMirror.LineItem li = new SquareOrderMirror.LineItem("VAR1", null,
+                new BigDecimal("100.00"), new BigDecimal("90.00"), new BigDecimal("10.00"), null);
         SquareOrderMirror order = SquareOrderMirror.builder()
                 .closedAt(start.plusSeconds(600))
                 .lineItems(List.of(li))
@@ -66,8 +66,8 @@ class MarketingBookingPaymentMatcherTest {
     void detectsCashTender() {
         Instant start = Instant.parse("2026-06-01T15:00:00Z");
         SquareBookingMirror b = booking(start, "VAR1");
-        SquareOrderMirror.LineItem li = new SquareOrderMirror.LineItem("VAR1",
-                new BigDecimal("50.00"), new BigDecimal("50.00"), BigDecimal.ZERO);
+        SquareOrderMirror.LineItem li = new SquareOrderMirror.LineItem("VAR1", null,
+                new BigDecimal("50.00"), new BigDecimal("50.00"), BigDecimal.ZERO, null);
         SquareOrderMirror order = SquareOrderMirror.builder()
                 .closedAt(start).lineItems(List.of(li))
                 .tenders(List.of(new SquareOrderMirror.Tender("CASH", new BigDecimal("50.00"))))
@@ -135,8 +135,8 @@ class MarketingBookingPaymentMatcherTest {
     void ignoresOrderForDifferentService() {
         Instant start = Instant.parse("2026-06-01T15:00:00Z");
         SquareBookingMirror b = booking(start, "VAR1");
-        SquareOrderMirror.LineItem unrelated = new SquareOrderMirror.LineItem("VAR-OTHER",
-                new BigDecimal("30.00"), new BigDecimal("30.00"), BigDecimal.ZERO);
+        SquareOrderMirror.LineItem unrelated = new SquareOrderMirror.LineItem("VAR-OTHER", null,
+                new BigDecimal("30.00"), new BigDecimal("30.00"), BigDecimal.ZERO, null);
         SquareOrderMirror order = SquareOrderMirror.builder()
                 .closedAt(start).lineItems(List.of(unrelated))
                 .tenders(List.of(new SquareOrderMirror.Tender("CARD", new BigDecimal("30.00"))))
