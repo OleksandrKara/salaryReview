@@ -94,6 +94,42 @@ class SquareClientProviderTest {
     }
 
     @Test
+    @DisplayName("the customer-resolution cache survives a client rebuild — a credential-rotation "
+            + "rebuild must not also throw away canonicalCustomerIds/customerNames' resolved "
+            + "customers, or every one of them gets re-fetched live all over again")
+    void customerCacheSurvivesRebuild() {
+        when(connections.findByBusinessId(1L)).thenReturn(Optional.of(SquareConnection.builder()
+                .businessId(1L).environment(SquareProperties.Environment.SANDBOX)
+                .accessTokenEncrypted("cipher-text").locationId("L1").build()));
+        when(cipher.decrypt("cipher-text")).thenReturn("plain-token");
+
+        SquareClient first = provider.forBusiness(1L);
+        provider.forget(1L);
+        SquareClient second = provider.forBusiness(1L);
+
+        assertThat(first).isNotSameAs(second);
+        assertThat(first.customerCacheForTesting()).isSameAs(second.customerCacheForTesting());
+    }
+
+    @Test
+    @DisplayName("two businesses' customer-resolution caches are independent, never shared")
+    void customerCacheIsPerBusiness() {
+        when(connections.findByBusinessId(1L)).thenReturn(Optional.of(SquareConnection.builder()
+                .businessId(1L).environment(SquareProperties.Environment.SANDBOX)
+                .accessTokenEncrypted("cipher-a").locationId("LA").build()));
+        when(connections.findByBusinessId(2L)).thenReturn(Optional.of(SquareConnection.builder()
+                .businessId(2L).environment(SquareProperties.Environment.SANDBOX)
+                .accessTokenEncrypted("cipher-b").locationId("LB").build()));
+        when(cipher.decrypt(eq("cipher-a"))).thenReturn("token-a");
+        when(cipher.decrypt(eq("cipher-b"))).thenReturn("token-b");
+
+        SquareClient clientA = provider.forBusiness(1L);
+        SquareClient clientB = provider.forBusiness(2L);
+
+        assertThat(clientA.customerCacheForTesting()).isNotSameAs(clientB.customerCacheForTesting());
+    }
+
+    @Test
     @DisplayName("no connection configured for a business fails loudly, not with a null/default client")
     void missingConnectionFailsLoudly() {
         when(connections.findByBusinessId(99L)).thenReturn(Optional.empty());

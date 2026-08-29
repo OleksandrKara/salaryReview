@@ -45,6 +45,19 @@ public class SquareClient {
 
     @Autowired
     public SquareClient(SquareProperties props) {
+        this(props, new java.util.concurrent.ConcurrentHashMap<>());
+    }
+
+    /** Real constructor — {@link SquareClientProvider} calls this one directly, passing a
+     * customer-resolution cache that outlives this instance (see {@code customerCache}'s own doc:
+     * names/ids never change, so there's no correctness reason to lose it every time the provider
+     * rebuilds a client for a credential rotation — see {@link SquareClientProvider#CLIENT_TTL}).
+     * The single-arg constructor above exists only for callers (tests, and Spring's own
+     * {@code @Autowired} bean wiring, unused in practice — every real caller goes through {@link
+     * SquareClientProvider}) that don't have a shared cache to hand it; each such caller simply
+     * gets a private one, same as before this cache was extracted out of the field initializer. */
+    public SquareClient(SquareProperties props, Map<String, Customer> customerCache) {
+        this.customerCache = customerCache;
         // Square's JSON is snake_case. Use a mapper dedicated to this client so we don't change the
         // app's own camelCase REST contract (the frontend depends on it).
         ObjectMapper squareMapper = JsonMapper.builder()
@@ -73,6 +86,7 @@ public class SquareClient {
     SquareClient(RestClient http, String locationId) {
         this.http = http;
         this.locationId = locationId;
+        this.customerCache = new java.util.concurrent.ConcurrentHashMap<>();
     }
 
     // Bounded concurrency for outbound Square calls — see docs/CACHING.md. bookingsForCustomer's
@@ -558,11 +572,26 @@ public class SquareClient {
     }
 
     // Square's bulk-retrieve-customers endpoint 404s on this account, so customers are fetched one GET
-    // each — but cached process-wide (names/creation dates never change) and the misses fetched in
-    // parallel, so a month's worth of customers only ever costs one round of lookups. A sentinel
-    // "not found" Customer (all-null fields) is cached too, so a bad id isn't refetched forever.
+    // each — but cached (names/creation dates never change) and the misses fetched in parallel, so a
+    // month's worth of customers only ever costs one round of lookups. A sentinel "not found" Customer
+    // (all-null fields) is cached too, so a bad id isn't refetched forever.
+    //
+    // Passed in via the constructor (not a field initializer) so SquareClientProvider can hand every
+    // rebuilt SquareClient for a business the SAME map — otherwise this cache (and the "one round of
+    // lookups" guarantee above) got silently thrown away and rebuilt from scratch every time the
+    // provider's own 30-minute credential-rotation TTL rebuilt the client, which is exactly what a
+    // real 2026-08-29 production report page still being slow after the Phase 2 mirror cutover
+    // turned out to be: bookings/orders/payments came from the mirror in milliseconds, but
+    // canonicalCustomerIds/customerNames still fetched every distinct customer of the month live,
+    // once per rebuild, since this cache kept resetting underneath them.
     private static final Customer NOT_FOUND = new Customer(null, null, null, null, null, null, null);
-    private final Map<String, Customer> customerCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<String, Customer> customerCache;
+
+    // package-private: used by SquareClientProviderTest to confirm two rebuilt clients for the
+    // same business share the same underlying cache instance, not just equal-by-value copies.
+    Map<String, Customer> customerCacheForTesting() {
+        return customerCache;
+    }
 
     /** Display names for the given customer ids. Best-effort, cached; blanks for any we can't resolve. */
     public Map<String, String> customerNames(Collection<String> customerIds) {
