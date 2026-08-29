@@ -8,7 +8,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -152,5 +155,51 @@ class FunnelAnalyticsServiceTest {
         assertThat(result).hasSize(2);
         assertThat(result).extracting(FunnelDashboardDto::flowKey)
                 .containsExactly("homepage_booking_v1", "homepage_booking_v2");
+    }
+
+    @Test
+    @DisplayName("a flow with a recent event (within 7 days) is active; one gone quiet for longer is not — "
+            + "so a retired variant's old flow reads as history, not as if it were still the live test")
+    void distinguishesActiveFromRetiredFlowsByRecentActivity() {
+        when(landingPageRepository.findLandingPageId("home", 1L)).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(landingPageRepository.findStatsSince(LANDING_PAGE_ID)).thenReturn(Optional.empty());
+        when(repository.findFunnelSteps(eq(LANDING_PAGE_ID), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
+                new RawFunnelStep("mani_booking_v1", "contact", 0, 4, 219),
+                new RawFunnelStep("mani_booking_v2", "services", 0, 4, 82)
+        ));
+        when(repository.countPageViews(any(), any(), any(), any())).thenReturn(500L);
+        when(repository.countBookingsCompleted(any(), any(), any(), any())).thenReturn(10L);
+        Instant retiredLastSeen = Instant.now().minus(30, ChronoUnit.DAYS);
+        Instant liveLastSeen = Instant.now().minus(1, ChronoUnit.HOURS);
+        when(repository.findLastActivityByFlow(LANDING_PAGE_ID)).thenReturn(Map.of(
+                "mani_booking_v1", retiredLastSeen,
+                "mani_booking_v2", liveLastSeen));
+
+        List<FunnelDashboardDto> result = service.funnel("home", TrafficSourceSql.ADS_ONLY, null, null);
+
+        var v1 = result.stream().filter(d -> d.flowKey().equals("mani_booking_v1")).findFirst().orElseThrow();
+        var v2 = result.stream().filter(d -> d.flowKey().equals("mani_booking_v2")).findFirst().orElseThrow();
+        assertThat(v1.active()).isFalse();
+        assertThat(v1.lastActivityAt()).isEqualTo(retiredLastSeen);
+        assertThat(v2.active()).isTrue();
+        assertThat(v2.lastActivityAt()).isEqualTo(liveLastSeen);
+    }
+
+    @Test
+    @DisplayName("a flow with no recorded activity at all (shouldn't happen, but no crash) is inactive with a null lastActivityAt")
+    void flowWithNoActivityRecordIsInactive() {
+        when(landingPageRepository.findLandingPageId("home", 1L)).thenReturn(Optional.of(LANDING_PAGE_ID));
+        when(landingPageRepository.findStatsSince(LANDING_PAGE_ID)).thenReturn(Optional.empty());
+        when(repository.findFunnelSteps(eq(LANDING_PAGE_ID), isNull(), isNull(), eq(TrafficSourceSql.ADS_ONLY))).thenReturn(List.of(
+                new RawFunnelStep("homepage_booking_v1", "services", 0, 4, 100)
+        ));
+        when(repository.countPageViews(any(), any(), any(), any())).thenReturn(500L);
+        when(repository.countBookingsCompleted(any(), any(), any(), any())).thenReturn(10L);
+        when(repository.findLastActivityByFlow(LANDING_PAGE_ID)).thenReturn(Map.of());
+
+        List<FunnelDashboardDto> result = service.funnel("home", TrafficSourceSql.ADS_ONLY, null, null);
+
+        assertThat(result.get(0).active()).isFalse();
+        assertThat(result.get(0).lastActivityAt()).isNull();
     }
 }

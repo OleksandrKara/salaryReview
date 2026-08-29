@@ -38,6 +38,13 @@ public class FunnelAnalyticsService {
     // "Sync now" escape hatch (see invalidateCache()).
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
 
+    // How recently a flow needs to have logged an event to count as "still live" rather than
+    // "retired" — wide enough to absorb a returning visitor's sticky localStorage variant
+    // assignment (see experiments.ts resolveExperiment's persisted-assignment reuse) trickling in
+    // for a while after a variant's weight is zeroed, without so wide that a genuinely retired
+    // flow still reads as active for weeks.
+    private static final Duration ACTIVE_WINDOW = Duration.ofDays(7);
+
     private final FunnelAnalyticsRepository repository;
     private final MarketingDashboardRepository landingPageRepository;
     private final com.salonreview.square.SquareClientProvider squareClientProvider;
@@ -111,9 +118,17 @@ public class FunnelAnalyticsService {
                 byFlow.computeIfAbsent(step.flowKey(), k -> new ArrayList<>()).add(step);
             }
 
+            // Unfiltered by the owner's period selection — "is this flow still live" must reflect
+            // real current activity regardless of which date range they happen to be viewing.
+            Map<String, Instant> lastActivityByFlow = repository.findLastActivityByFlow(landingPageId.get());
+            Instant activeSince = Instant.now().minus(ACTIVE_WINDOW);
+
             List<FunnelDashboardDto> result = new ArrayList<>();
             for (Map.Entry<String, List<RawFunnelStep>> entry : byFlow.entrySet()) {
-                result.add(toDto(slug, entry.getKey(), entry.getValue(), totalVisitors, totalCompleted));
+                Instant lastActivity = lastActivityByFlow.get(entry.getKey());
+                boolean active = lastActivity != null && lastActivity.isAfter(activeSince);
+                result.add(toDto(slug, entry.getKey(), entry.getValue(), totalVisitors, totalCompleted,
+                        active, lastActivity));
             }
             return result;
         } catch (DataAccessException ex) {
@@ -140,7 +155,8 @@ public class FunnelAnalyticsService {
     }
 
     private FunnelDashboardDto toDto(String slug, String flowKey, List<RawFunnelStep> steps,
-                                      long totalVisitors, long totalCompleted) {
+                                      long totalVisitors, long totalCompleted,
+                                      boolean active, Instant lastActivityAt) {
         long totalStarted = steps.stream()
                 .filter(s -> s.stepIndex() == 0)
                 .mapToLong(RawFunnelStep::reachedCount)
@@ -160,6 +176,7 @@ public class FunnelAnalyticsService {
         }
 
         double finalConversionRate = totalVisitors == 0 ? 0.0 : (double) totalCompleted / totalVisitors;
-        return new FunnelDashboardDto(slug, flowKey, totalVisitors, totalStarted, stats, totalCompleted, finalConversionRate);
+        return new FunnelDashboardDto(slug, flowKey, totalVisitors, totalStarted, stats, totalCompleted,
+                finalConversionRate, active, lastActivityAt);
     }
 }

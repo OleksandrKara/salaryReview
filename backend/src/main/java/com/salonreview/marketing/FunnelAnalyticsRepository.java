@@ -5,7 +5,9 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -66,6 +68,27 @@ public class FunnelAnalyticsRepository {
                 rs.getInt("step_count_total"),
                 rs.getLong("reached_count")
         ), landingPageId, cutoff, cutoff, to, to);
+    }
+
+    /** Most recent event per {@code flow_key} this landing page has ever recorded, regardless of
+     * the owner's currently-selected period filter — used to tell a still-live flow (a variant
+     * still in the random-traffic pool) from a retired one (every variant using it has since had
+     * its weight zeroed/deactivated) purely from recorded activity, with no need to know anything
+     * about {@code marketing.landing_variants}' own weight/active columns or their mapping to a
+     * flow (see {@code funnelFlow.ts}'s own {@code contactStepPosition}-keyed {@code BOOKING_FLOWS}
+     * — replicating that mapping here would just be a second, driftable copy of the same logic).
+     * Self-maintaining: works the same way for any future flow redesign, not just this one.
+     */
+    public Map<String, Instant> findLastActivityByFlow(UUID landingPageId) {
+        Map<String, Instant> result = new HashMap<>();
+        jdbcTemplate.query(
+                "SELECT flow_key, MAX(created_at) AS last_activity FROM marketing.funnel_events "
+                        + "WHERE landing_page_id = ? GROUP BY flow_key",
+                rs -> {
+                    result.put(rs.getString("flow_key"), rs.getTimestamp("last_activity").toInstant());
+                },
+                landingPageId);
+        return result;
     }
 
     /** Top-of-funnel denominator — same page_view count the main marketing dashboard shows, so

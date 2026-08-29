@@ -1,5 +1,6 @@
 package com.salonreview.web.dto;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -24,7 +25,17 @@ public record FunnelDashboardDto(
          * "Bookings" column — not a best-effort client "done" beacon. */
         long totalCompleted,
         /** totalCompleted / totalVisitors, 0 when totalVisitors is 0. */
-        double finalConversionRate
+        double finalConversionRate,
+        /** True when this flow has recorded activity within the last {@code ACTIVE_WINDOW} (see
+         * FunnelAnalyticsService) — i.e. some currently-live variant is still sending traffic
+         * through it. False means every variant that ever used this flow has since had its
+         * weight zeroed or been deactivated — the data stays (nothing is deleted), it's just no
+         * longer the live experiment, so the UI can show it as history rather than as if it were
+         * still an active, ongoing test. */
+        boolean active,
+        /** When this flow last recorded any event at all — null only if somehow zero events exist
+         * for a flowKey this DTO was built from (shouldn't happen in practice). */
+        Instant lastActivityAt
 ) {
     public record FunnelStepStat(
             String stepKey,

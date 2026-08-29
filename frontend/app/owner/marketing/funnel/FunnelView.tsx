@@ -143,6 +143,9 @@ function FunnelPanel({
    * since splitting it accurately isn't possible without a schema change to a live table. */
   completedSharedAcrossFlows: boolean;
 }) {
+  const retiredTitle = data.lastActivityAt
+    ? `No new visitors since ${relativeTime(data.lastActivityAt)} — likely retired in favor of another variant. Data kept for history, not deleted.`
+    : 'No activity recorded for this flow. Data kept for history, not deleted.';
   // history[0] (if present) is "the" current analysis shown; history[1:] is the collapsed past-
   // analyses list. null means "not fetched yet", [] means "fetched, nothing analyzed before".
   const [history, setHistory] = useState<FunnelAnalysisResult[] | null>(null);
@@ -208,14 +211,22 @@ function FunnelPanel({
   const older = history?.slice(1) ?? [];
 
   return (
-    <div className="rounded-lg border border-zinc-200 p-4">
+    <div className={`rounded-lg border p-4 ${data.active ? 'border-zinc-200' : 'border-zinc-200 bg-zinc-50/60'}`}>
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h3 className="font-medium text-zinc-900">{label}</h3>
+          <h3 className={`font-medium ${data.active ? 'text-zinc-900' : 'text-zinc-500'}`}>{label}</h3>
           <p className="text-xs text-zinc-400" title={data.flowKey}>
             {FLOW_KEY_LABELS[data.flowKey] ?? data.flowKey}
           </p>
         </div>
+        {!data.active && (
+          <span
+            title={retiredTitle}
+            className="shrink-0 whitespace-nowrap rounded-full bg-zinc-200 px-2 py-0.5 text-xs font-medium text-zinc-600"
+          >
+            Retired
+          </span>
+        )}
       </div>
 
       <dl className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
@@ -436,6 +447,11 @@ export default function FunnelView({
   }
 
   const sourcesKey = Array.from(sources).sort().join(',');
+  // A retired flow (every variant that fed it has since had its weight zeroed/deactivated) is
+  // tucked into a collapsed section below rather than shown side-by-side with the live one —
+  // otherwise a frozen, no-longer-growing funnel reads as just another ongoing experiment.
+  const activeFlows = data.filter((f) => f.active);
+  const retiredFlows = data.filter((f) => !f.active);
 
   if (data.length === 0) {
     return (
@@ -486,7 +502,7 @@ export default function FunnelView({
       </div>
 
       <div className={compareMode ? 'grid gap-4 lg:grid-cols-2' : 'space-y-4'}>
-        {data.map((funnel) => (
+        {activeFlows.map((funnel) => (
           <FunnelPanel
             key={`${slug}-${funnel.flowKey}-${sourcesKey}`}
             label={currentName}
@@ -513,6 +529,27 @@ export default function FunnelView({
             ));
           })}
       </div>
+
+      {retiredFlows.length > 0 && (
+        <details className="mt-4" open={activeFlows.length === 0}>
+          <summary className="cursor-pointer text-sm font-medium text-zinc-500 hover:text-zinc-700">
+            Retired flows ({retiredFlows.length}) — no longer getting new traffic, kept for history
+          </summary>
+          <div className="mt-3 space-y-4">
+            {retiredFlows.map((funnel) => (
+              <FunnelPanel
+                key={`${slug}-${funnel.flowKey}-${sourcesKey}`}
+                label={currentName}
+                slug={slug}
+                data={funnel}
+                canAnalyze={canAnalyze}
+                sources={sources}
+                completedSharedAcrossFlows={data.length > 1}
+              />
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   );
 }

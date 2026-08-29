@@ -75,7 +75,7 @@ class FunnelAnalysisServiceTest {
         return new FunnelDashboardDto("home", "homepage_booking_v1", 100, 60,
                 List.of(new FunnelStepStat("services", 0, 4, 60, 0.6, 40, 0.4),
                         new FunnelStepStat("addons", 1, 4, 30, 0.3, 30, 0.5)),
-                20, 0.2);
+                20, 0.2, true, java.time.Instant.now());
     }
 
     private static FunnelAnalysisResult canned(String bottleneck) {
