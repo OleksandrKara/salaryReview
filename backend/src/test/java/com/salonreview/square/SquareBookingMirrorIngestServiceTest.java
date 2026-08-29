@@ -14,8 +14,11 @@ import com.salonreview.square.SquareClient.Tender;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -165,5 +168,27 @@ class SquareBookingMirrorIngestServiceTest {
         verify(square, times(2)).bookings(any(), any());
         verify(repository).upsert(eq(1L), eq("bkOk"), eq("CUSTOK"), any(), any(), any(), any(),
                 any(), any(), any(), anyString());
+    }
+
+    @Test
+    @DisplayName("backfillHistory pads each month's window by 1 day before and 2 days after, matching "
+            + "aggregate()'s own window — otherwise the oldest backfilled month is missing the "
+            + "timezone-boundary padding the aggregator's live path always includes, a real gap the "
+            + "Milestone 2g shadow-diff caught on business 2's oldest month")
+    void backfillHistoryPadsWindowLikeAggregate() {
+        when(square.locationTimeZone()).thenReturn("UTC");
+        when(square.bookings(any(), any())).thenReturn(List.of());
+
+        ingest.backfillHistory(1);
+
+        ArgumentCaptor<Instant> fromCaptor = ArgumentCaptor.forClass(Instant.class);
+        ArgumentCaptor<Instant> toCaptor = ArgumentCaptor.forClass(Instant.class);
+        verify(square).bookings(fromCaptor.capture(), toCaptor.capture());
+
+        YearMonth thisMonth = YearMonth.now(ZoneOffset.UTC);
+        Instant expectedFrom = thisMonth.atDay(1).minusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        Instant expectedTo = thisMonth.atEndOfMonth().plusDays(2).atStartOfDay(ZoneOffset.UTC).toInstant();
+        assertThat(fromCaptor.getValue()).isEqualTo(expectedFrom);
+        assertThat(toCaptor.getValue()).isEqualTo(expectedTo);
     }
 }
