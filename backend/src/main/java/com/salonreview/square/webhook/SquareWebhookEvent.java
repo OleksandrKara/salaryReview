@@ -34,7 +34,8 @@ public record SquareWebhookEvent(String type, String eventId, Data data) {
         @JsonIgnoreProperties(ignoreUnknown = true)
         @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
         public record DataObject(Payment payment, Booking booking, OrderUpdated orderUpdated,
-                                  OrderUpdated orderCreated, OrderUpdated orderFulfillmentUpdated) {}
+                                  OrderUpdated orderCreated, OrderUpdated orderFulfillmentUpdated,
+                                  Customer customer) {}
     }
 
     /** {@code payment.created}/{@code payment.updated} carry the full payment object inline in the
@@ -67,4 +68,20 @@ public record SquareWebhookEvent(String type, String eventId, Data data) {
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record OrderUpdated(String orderId, String state) {}
+
+    /** {@code customer.created}/{@code customer.updated} carry the FULL customer object inline in
+     * the webhook payload (confirmed against Square's own published webhook reference — a sample
+     * payload showing {@code data.object.customer} with address/birthday/created_at/email_address/
+     * family_name/given_name/phone_number/preferences all present, not guessed) — no follow-up
+     * Square call is needed to mirror a customer event, same as {@link Booking}/{@link Payment}.
+     * Only the fields {@code SquareCustomerMirrorIngestService} actually stores are mapped here.
+     * Square's merge behavior for the *losing* side of a merge isn't clearly documented for this
+     * webhook (their own docs point at {@code customer.created} for merge-affected profiles, not
+     * {@code customer.updated}) — the ingest path runs every incoming id through the existing
+     * {@code SquareClient#canonicalCustomerIds} before upserting as a safety net, so a stale/losing
+     * id never gets stored as if it were still current. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record Customer(String id, String givenName, String familyName, String emailAddress,
+                           String phoneNumber, String createdAt) {}
 }

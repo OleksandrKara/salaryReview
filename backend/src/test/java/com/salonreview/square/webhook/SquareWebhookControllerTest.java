@@ -50,6 +50,7 @@ class SquareWebhookControllerTest {
     private SquareBookingWebhookHandler bookingWebhookHandler;
     private SquareOrderWebhookHandler orderWebhookHandler;
     private SquarePaymentWebhookHandler paymentWebhookHandler;
+    private SquareCustomerWebhookHandler customerWebhookHandler;
     private BusinessRepository businesses;
     private SquareConnectionService connectionService;
     private MockMvc mvc;
@@ -63,12 +64,14 @@ class SquareWebhookControllerTest {
         bookingWebhookHandler = mock(SquareBookingWebhookHandler.class);
         orderWebhookHandler = mock(SquareOrderWebhookHandler.class);
         paymentWebhookHandler = mock(SquarePaymentWebhookHandler.class);
+        customerWebhookHandler = mock(SquareCustomerWebhookHandler.class);
         businesses = mock(BusinessRepository.class);
         when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(BUSINESS_A_ID).name("Test")
                 .shortCode("test").timezone("UTC").active(true).build());
         connectionService = mock(SquareConnectionService.class);
         SquareWebhookController controller = new SquareWebhookController(properties, triggerService,
-                bookingWebhookHandler, orderWebhookHandler, paymentWebhookHandler, businesses, connectionService, PUBLIC_BASE_URL);
+                bookingWebhookHandler, orderWebhookHandler, paymentWebhookHandler, customerWebhookHandler,
+                businesses, connectionService, PUBLIC_BASE_URL);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -203,6 +206,13 @@ class SquareWebhookControllerTest {
             + "\"id\":\"order_1\",\"object\":{\"order_updated\":{\"order_id\":\"order_1\",\"state\":\"COMPLETED\"}}}}";
     private static final String ORDER_CREATED_BODY = "{\"type\":\"order.created\",\"event_id\":\"evt_4\",\"data\":{\"type\":\"order_created\","
             + "\"id\":\"order_2\",\"object\":{\"order_created\":{\"order_id\":\"order_2\",\"state\":\"OPEN\"}}}}";
+    // Real shape confirmed against Square's own published customer.created webhook example
+    // payload, not guessed — the full customer object is inline (like booking/payment), no
+    // follow-up Square call needed.
+    private static final String CUSTOMER_BODY = "{\"type\":\"customer.created\",\"event_id\":\"evt_7\","
+            + "\"data\":{\"type\":\"customer\",\"id\":\"cust_3\",\"object\":{\"customer\":{\"id\":\"cust_3\","
+            + "\"given_name\":\"Jane\",\"family_name\":\"Doe\",\"phone_number\":\"+19165551234\","
+            + "\"email_address\":\"jane@example.com\",\"created_at\":\"2026-06-01T16:00:00Z\"}}}}";
     private static final String ORDER_FULFILLMENT_UPDATED_BODY = "{\"type\":\"order.fulfillment.updated\",\"event_id\":\"evt_5\","
             + "\"data\":{\"type\":\"order_fulfillment_updated\",\"id\":\"order_3\","
             + "\"object\":{\"order_fulfillment_updated\":{\"order_id\":\"order_3\",\"state\":\"COMPLETED\"}}}}";
@@ -228,6 +238,27 @@ class SquareWebhookControllerTest {
         verify(bookingWebhookHandler).handleBookingEvent(eq(BUSINESS_A_ID), any());
         verifyNoInteractions(triggerService);
         verifyNoInteractions(orderWebhookHandler);
+    }
+
+    @Test
+    @DisplayName("customer.created is dispatched to the customer mirror handler, independent of everything else")
+    void customerCreatedDispatchedToMirrorHandler() throws Exception {
+        String signature = sign(SIGNATURE_KEY, NOTIFICATION_URL + CUSTOMER_BODY);
+
+        mvc.perform(post("/api/public/webhooks/square")
+                        .header("x-square-hmacsha256-signature", signature)
+                        .contentType("application/json").content(CUSTOMER_BODY))
+                .andExpect(status().isOk());
+
+        var captor = org.mockito.ArgumentCaptor.forClass(SquareWebhookEvent.Customer.class);
+        verify(customerWebhookHandler).handleCustomerEvent(eq(BUSINESS_A_ID), captor.capture());
+        SquareWebhookEvent.Customer customer = captor.getValue();
+        assertThat(customer.id()).isEqualTo("cust_3");
+        assertThat(customer.phoneNumber()).isEqualTo("+19165551234");
+        verifyNoInteractions(triggerService);
+        verifyNoInteractions(bookingWebhookHandler);
+        verifyNoInteractions(orderWebhookHandler);
+        verifyNoInteractions(paymentWebhookHandler);
     }
 
     @Test
