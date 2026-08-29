@@ -19,6 +19,12 @@ public interface SquareOrderMirrorRepository extends JpaRepository<SquareOrderMi
     List<SquareOrderMirror> findByBusinessIdAndSquareCustomerIdAndClosedAtBetween(
             Long businessId, String squareCustomerId, Instant from, Instant to);
 
+    /** Every mirrored order for a business in a window, independent of customer — the local
+     * replacement for {@code SquareClient#completedOrders(from, to)} (Phase 2), needed by {@code
+     * SquareMonthAggregator}, which matches a whole month's orders against bookings at once rather
+     * than one customer at a time. */
+    List<SquareOrderMirror> findByBusinessIdAndClosedAtBetween(Long businessId, Instant from, Instant to);
+
     @Modifying
     @Transactional
     @Query(value = """

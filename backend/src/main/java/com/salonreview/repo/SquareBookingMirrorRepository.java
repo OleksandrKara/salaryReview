@@ -25,6 +25,12 @@ public interface SquareBookingMirrorRepository extends JpaRepository<SquareBooki
     List<SquareBookingMirror> findByBusinessIdAndSquareCustomerIdInAndStartAtAfter(
             Long businessId, List<String> squareCustomerIds, Instant since);
 
+    /** Every mirrored booking for a business in a window, independent of customer — the local
+     * replacement for {@code SquareClient#bookings(from, to)} (Phase 2), needed by {@code
+     * SquareMonthAggregator}, which matches a whole month's bookings against orders/cash-notes at
+     * once rather than one customer at a time. */
+    List<SquareBookingMirror> findByBusinessIdAndStartAtBetween(Long businessId, Instant from, Instant to);
+
     /** Insert-or-update by the natural key (business + Square's own booking id) — used by both the
      * bulk window ingest (backfill/reconciliation) and the single-event webhook path. Native, not a
      * derived Spring Data method: JPA has no portable "upsert," and re-reading then re-saving one
