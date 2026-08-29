@@ -8,12 +8,14 @@ import com.salonreview.square.SquareClient.Order;
 import com.salonreview.square.SquareClient.OrderLineItem;
 import com.salonreview.square.SquareClient.Payment;
 import com.salonreview.square.SquareClient.TeamMember;
+import com.salonreview.util.TtlCache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -57,6 +59,18 @@ public class SquareMonthAggregator {
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final com.salonreview.repo.SalonConfigRepository salonConfig;
 
+    // 12 different callers (settlements, suspicious/cancelled-booking detection, owner overview,
+    // revenue pulse, provider-visit ingest, marketing ads-report/analytics) each independently call
+    // aggregate() for what's very often the exact same (business, year, month, cutoff) — e.g.
+    // OwnerOverviewService.fromSquare() calls aggregate() directly AND via
+    // SettlementPreviewService.preview(), which calls it again. Nothing dedupes that. This cache
+    // makes every one of those callers share a single computation instead of each redoing the full
+    // matching/cash-note/discount/comp pipeline from scratch. Shorter than the marketing tabs' TTL
+    // (money, not analytics) — same "Sync now" + mutation-invalidation wiring as
+    // SettlementPreviewService's own cache; see #invalidateCache.
+    private static final Duration CACHE_TTL = Duration.ofMinutes(3);
+    private final TtlCache cache = new TtlCache();
+
     public SquareMonthAggregator(SquareClientProvider squareClientProvider, CashNoteParser cashNotes,
                                  com.salonreview.repo.OwnerCustomerRepository ownerCustomers,
                                  com.salonreview.config.CurrentBusinessContext currentBusinessContext,
@@ -68,7 +82,25 @@ public class SquareMonthAggregator {
         this.salonConfig = salonConfig;
     }
 
+    /** Backs the global "Sync now" button (see SquareSyncController) and every mutation that can
+     * change a settlement figure — same reasoning as every other {@code invalidateCache()} in this
+     * codebase: only this business's own cached entries, so one business's action never forces
+     * another's already-fresh cache to also recompute. {@link com.salonreview.square.SettlementPreviewService#invalidateCache()}
+     * already calls this too, so every existing settlement-mutation call site gets this for free. */
+    public void invalidateCache() {
+        cache.invalidateWhere(k -> k.contains(":" + currentBusinessContext.id() + ":"));
+    }
+
     public MonthAggregation aggregate(int year, int month, BigDecimal priceCutoff) {
+        // "aggregate:" prefix is load-bearing, not decorative — invalidateCache() matches on
+        // ":businessId:", which requires a leading colon *before* the id; a bare
+        // "businessId:year:month:cutoff" key has no such leading colon and would silently never
+        // match, leaving invalidateCache() a no-op (caught by this class's own cache tests).
+        String key = "aggregate:" + currentBusinessContext.id() + ":" + year + ":" + month + ":" + priceCutoff;
+        return cache.get(key, CACHE_TTL, () -> computeAggregate(year, month, priceCutoff));
+    }
+
+    private MonthAggregation computeAggregate(int year, int month, BigDecimal priceCutoff) {
         // Temporary diagnostic timing (2026-08-29) — investigating Ads Report cold-load latency;
         // remove once that's root-caused. See docs/CACHING.md for the caches already layered on
         // top of this method (SquareClient's own 10-min raw-read cache, plus each caller's own

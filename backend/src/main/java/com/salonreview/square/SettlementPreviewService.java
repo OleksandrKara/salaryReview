@@ -295,6 +295,11 @@ public class SettlementPreviewService {
      * another business's already-fresh cache to also recompute). */
     public void invalidateCache() {
         cache.invalidateWhere(k -> k.contains(":" + currentBusinessContext.id() + ":"));
+        // aggregator's own cache sits underneath this one (Phase 2a) — every mutation that already
+        // busts this cache should also bust the shared aggregate() cache every other caller
+        // (owner overview, revenue pulse, suspicious/cancelled detection, marketing ads-report) reads
+        // from, so a single invalidation call site covers all of them.
+        aggregator.invalidateCache();
     }
 
     @Transactional
