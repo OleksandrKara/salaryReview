@@ -67,6 +67,9 @@ public class SquareMonthAggregator {
     private final com.salonreview.repo.SquareBookingMirrorRepository bookingMirrorRepository;
     private final com.salonreview.repo.SquareOrderMirrorRepository orderMirrorRepository;
     private final com.salonreview.repo.SquarePaymentMirrorRepository paymentMirrorRepository;
+    // Phase 2i cutover switch — see the class doc on SquareMirrorProperties itself for why this is a
+    // live flag and not just a one-time code change.
+    private final com.salonreview.config.SquareMirrorProperties mirrorProperties;
 
     // 12 different callers (settlements, suspicious/cancelled-booking detection, owner overview,
     // revenue pulse, provider-visit ingest, marketing ads-report/analytics) each independently call
@@ -86,7 +89,8 @@ public class SquareMonthAggregator {
                                  com.salonreview.repo.SalonConfigRepository salonConfig,
                                  com.salonreview.repo.SquareBookingMirrorRepository bookingMirrorRepository,
                                  com.salonreview.repo.SquareOrderMirrorRepository orderMirrorRepository,
-                                 com.salonreview.repo.SquarePaymentMirrorRepository paymentMirrorRepository) {
+                                 com.salonreview.repo.SquarePaymentMirrorRepository paymentMirrorRepository,
+                                 com.salonreview.config.SquareMirrorProperties mirrorProperties) {
         this.squareClientProvider = squareClientProvider;
         this.cashNotes = cashNotes;
         this.ownerCustomers = ownerCustomers;
@@ -95,6 +99,7 @@ public class SquareMonthAggregator {
         this.bookingMirrorRepository = bookingMirrorRepository;
         this.orderMirrorRepository = orderMirrorRepository;
         this.paymentMirrorRepository = paymentMirrorRepository;
+        this.mirrorProperties = mirrorProperties;
     }
 
     /** Backs the global "Sync now" button (see SquareSyncController) and every mutation that can
@@ -112,17 +117,23 @@ public class SquareMonthAggregator {
         // "businessId:year:month:cutoff" key has no such leading colon and would silently never
         // match, leaving invalidateCache() a no-op (caught by this class's own cache tests).
         String key = "aggregate:" + currentBusinessContext.id() + ":" + year + ":" + month + ":" + priceCutoff;
-        return cache.get(key, CACHE_TTL, () -> computeAggregate(year, month, priceCutoff));
+        // Phase 2i cutover: the mirror path is the default (see SquareMirrorProperties) now that
+        // Milestone 2g's shadow-diff came back clean across both businesses' full backfilled history.
+        // isAggregateEnabled()==false is the emergency fallback to live Square during burn-in.
+        return cache.get(key, CACHE_TTL, () -> mirrorProperties.isAggregateEnabled()
+                ? aggregateFromMirror(year, month, priceCutoff)
+                : computeAggregate(year, month, priceCutoff));
     }
 
-    /** Mirror-backed twin of {@link #aggregate} (Phase 2f) — reads the local Square booking/order/
-     * payment mirror (see the Phase 2 sync plan) instead of live Square for the three raw lists;
-     * every other Square read (team members, catalog, canonicalization, customer names, invoices)
-     * and every matching/cash-note/discount/comp/suspicious/cancellation rule is the exact same
-     * shared code as the live path via {@link #computeAggregateFrom} — only where bookings/orders/
-     * payments come from differs. Uncached (unlike {@link #aggregate}): today's only caller is the
-     * Milestone 2g shadow-diff comparator, which always wants a fresh computation to compare
-     * against a fresh live one, not a stale cached result from either side.
+    /** Mirror-backed twin of {@link #computeAggregate} (Phase 2f) — reads the local Square
+     * booking/order/payment mirror (see the Phase 2 sync plan) instead of live Square for the three
+     * raw lists; every other Square read (team members, catalog, canonicalization, customer names,
+     * invoices) and every matching/cash-note/discount/comp/suspicious/cancellation rule is the exact
+     * same shared code as the live path via {@link #computeAggregateFrom} — only where
+     * bookings/orders/payments come from differs. Since Phase 2i this is {@link #aggregate}'s own
+     * default path (see {@link com.salonreview.config.SquareMirrorProperties}); it's also called
+     * directly, uncached, by the Milestone 2g shadow-diff comparator, which always wants a fresh
+     * computation to compare against a fresh live one, not a cached result from either side.
      */
     public MonthAggregation aggregateFromMirror(int year, int month, BigDecimal priceCutoff) {
         long startedAtNanos = System.nanoTime();

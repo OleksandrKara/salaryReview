@@ -41,7 +41,7 @@ class TipAllocationTest {
         OwnerCustomerRepository ownerRepo = mock(OwnerCustomerRepository.class);
         aggregator = new SquareMonthAggregator(squareClientProvider, new CashNoteParser(), ownerRepo, currentBusinessContext, mock(SalonConfigRepository.class),
                 mock(com.salonreview.repo.SquareBookingMirrorRepository.class), mock(com.salonreview.repo.SquareOrderMirrorRepository.class),
-                mock(com.salonreview.repo.SquarePaymentMirrorRepository.class));
+                mock(com.salonreview.repo.SquarePaymentMirrorRepository.class), mock(com.salonreview.config.SquareMirrorProperties.class));
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.allTeamMembers()).thenReturn(List.of(new TeamMember(TM, "Anna", "C", "ACTIVE", false, null, null)));
         when(ownerRepo.findAllByBusinessId(1L)).thenReturn(List.of());

@@ -33,6 +33,8 @@ class SquareMonthAggregatorTest {
     private SquareClientProvider squareClientProvider;
     private SquareClient square;
     private CurrentBusinessContext currentBusinessContext;
+    private com.salonreview.repo.SquareBookingMirrorRepository bookingMirrorRepository;
+    private com.salonreview.config.SquareMirrorProperties mirrorProperties;
     private SquareMonthAggregator aggregator;
 
     @BeforeEach
@@ -60,10 +62,39 @@ class SquareMonthAggregatorTest {
         when(square.catalogPrices(any())).thenReturn(Map.of());
         when(square.customerNames(any())).thenReturn(Map.of());
 
+        bookingMirrorRepository = mock(com.salonreview.repo.SquareBookingMirrorRepository.class);
+        when(bookingMirrorRepository.findByBusinessIdAndStartAtBetween(any(), any(), any())).thenReturn(List.of());
+        var orderMirrorRepository = mock(com.salonreview.repo.SquareOrderMirrorRepository.class);
+        when(orderMirrorRepository.findByBusinessIdAndClosedAtBetween(any(), any(), any())).thenReturn(List.of());
+        var paymentMirrorRepository = mock(com.salonreview.repo.SquarePaymentMirrorRepository.class);
+        when(paymentMirrorRepository.findByBusinessIdAndCreatedAtBetween(any(), any(), any())).thenReturn(List.of());
+        mirrorProperties = mock(com.salonreview.config.SquareMirrorProperties.class);
+
         aggregator = new SquareMonthAggregator(squareClientProvider, cashNotes, ownerCustomers,
                 currentBusinessContext, salonConfig,
-                mock(com.salonreview.repo.SquareBookingMirrorRepository.class), mock(com.salonreview.repo.SquareOrderMirrorRepository.class),
-                mock(com.salonreview.repo.SquarePaymentMirrorRepository.class));
+                bookingMirrorRepository, orderMirrorRepository, paymentMirrorRepository, mirrorProperties);
+    }
+
+    @Test
+    @DisplayName("Phase 2i cutover: when SquareMirrorProperties.aggregateEnabled is true, aggregate() reads the mirror instead of live Square")
+    void aggregateUsesMirrorWhenCutoverFlagEnabled() {
+        when(mirrorProperties.isAggregateEnabled()).thenReturn(true);
+
+        aggregator.aggregate(2026, 7, BigDecimal.ZERO);
+
+        verify(bookingMirrorRepository).findByBusinessIdAndStartAtBetween(any(), any(), any());
+        verify(square, times(0)).bookings(any(), any());
+    }
+
+    @Test
+    @DisplayName("Phase 2i emergency fallback: when SquareMirrorProperties.aggregateEnabled is false, aggregate() still reads live Square")
+    void aggregateUsesLiveWhenCutoverFlagDisabled() {
+        when(mirrorProperties.isAggregateEnabled()).thenReturn(false);
+
+        aggregator.aggregate(2026, 7, BigDecimal.ZERO);
+
+        verify(square).bookings(any(), any());
+        verify(bookingMirrorRepository, times(0)).findByBusinessIdAndStartAtBetween(any(), any(), any());
     }
 
     @Test

@@ -88,7 +88,7 @@ class SquareMonthAggregatorCharacterizationTest {
         aggregator = new SquareMonthAggregator(squareClientProvider, cashNotes, ownerCustomers,
                 currentBusinessContext, salonConfigRepo,
                 mock(com.salonreview.repo.SquareBookingMirrorRepository.class), mock(com.salonreview.repo.SquareOrderMirrorRepository.class),
-                mock(com.salonreview.repo.SquarePaymentMirrorRepository.class));
+                mock(com.salonreview.repo.SquarePaymentMirrorRepository.class), mock(com.salonreview.config.SquareMirrorProperties.class));
     }
 
     private void setSalonConfig(boolean restrictDiscountCoverage, String coveredDiscountNames, BigDecimal noShowFeeAmount) {
