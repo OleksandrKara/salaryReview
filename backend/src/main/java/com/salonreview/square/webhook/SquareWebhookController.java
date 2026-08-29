@@ -49,6 +49,7 @@ public class SquareWebhookController {
     private final SquareBookingWebhookHandler bookingWebhookHandler;
     private final SquareOrderWebhookHandler orderWebhookHandler;
     private final SquarePaymentWebhookHandler paymentWebhookHandler;
+    private final SquareCustomerWebhookHandler customerWebhookHandler;
     private final BusinessRepository businesses;
     private final SquareConnectionService connectionService;
     private final String publicBaseUrl;
@@ -60,6 +61,7 @@ public class SquareWebhookController {
                                     SquareBookingWebhookHandler bookingWebhookHandler,
                                     SquareOrderWebhookHandler orderWebhookHandler,
                                     SquarePaymentWebhookHandler paymentWebhookHandler,
+                                    SquareCustomerWebhookHandler customerWebhookHandler,
                                     BusinessRepository businesses, SquareConnectionService connectionService,
                                     @Value("${app.public-base-url}") String publicBaseUrl) {
         this.properties = properties;
@@ -67,6 +69,7 @@ public class SquareWebhookController {
         this.bookingWebhookHandler = bookingWebhookHandler;
         this.orderWebhookHandler = orderWebhookHandler;
         this.paymentWebhookHandler = paymentWebhookHandler;
+        this.customerWebhookHandler = customerWebhookHandler;
         this.businesses = businesses;
         this.connectionService = connectionService;
         this.publicBaseUrl = publicBaseUrl;
@@ -133,6 +136,11 @@ public class SquareWebhookController {
                 : object.orderFulfillmentUpdated();
         if (orderEvent != null) {
             orderWebhookHandler.handleOrderUpdated(businessId, orderEvent);
+        }
+        // Phase 3: customer mirror — independent listener on the same event stream, not entangled
+        // with anything above.
+        if (object != null && object.customer() != null) {
+            customerWebhookHandler.handleCustomerEvent(businessId, object.customer());
         }
         return ResponseEntity.ok().build();
     }

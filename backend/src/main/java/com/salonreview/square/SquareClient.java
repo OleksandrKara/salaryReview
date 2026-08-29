@@ -716,6 +716,30 @@ public class SquareClient {
         return matches;
     }
 
+    /** Every customer in the account's directory, unfiltered — the full-directory backfill/re-sync
+     * {@code SquareCustomerMirrorIngestService} needs (Phase 3). Unlike {@link #searchCustomers},
+     * never filters by name and never stops early; same page-bound safety net (100 pages = 10,000
+     * customers) against a pathological directory. */
+    public List<Customer> listAllCustomers() {
+        List<Customer> all = new ArrayList<>();
+        String cursor = null;
+        int pages = 0;
+        do {
+            final String c = cursor;
+            CustomersListResponse resp = throttled(() -> http.get()
+                    .uri(b -> {
+                        b.path("/v2/customers").queryParam("limit", 100);
+                        if (c != null) b.queryParam("cursor", c);
+                        return b.build();
+                    })
+                    .retrieve()
+                    .body(CustomersListResponse.class));
+            if (resp != null && resp.customers() != null) all.addAll(resp.customers());
+            cursor = resp == null ? null : resp.cursor();
+        } while (cursor != null && !cursor.isBlank() && ++pages < 100);
+        return all;
+    }
+
     /**
      * Customer ids Square has on file for a phone number, via an exact-match search. A contact's
      * originally-linked square_customer_id can go stale — e.g. a follow-up appointment booked by
@@ -740,8 +764,11 @@ public class SquareClient {
         });
     }
 
-    /** Best-effort US phone normalization to Square's expected E.164 form; null if unrecognizable. */
-    private static String normalizePhone(String raw) {
+    /** Best-effort US phone normalization to Square's expected E.164 form; null if unrecognizable.
+     * Package-visible (not private) so {@code SquareCustomerMirrorIngestService} normalizes a
+     * customer's phone the exact same way before storing it — a mismatch here would mean a mirror
+     * lookup by phone silently never matches the row this ingested. */
+    static String normalizePhone(String raw) {
         if (raw == null) return null;
         String digits = raw.replaceAll("[^0-9]", "");
         if (digits.length() == 10) return "+1" + digits;
