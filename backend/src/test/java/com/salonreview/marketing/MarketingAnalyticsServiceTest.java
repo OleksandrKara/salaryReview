@@ -35,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -77,6 +78,15 @@ class MarketingAnalyticsServiceTest {
         com.salonreview.square.SquareClientProvider squareClientProvider =
                 mock(com.salonreview.square.SquareClientProvider.class);
         when(squareClientProvider.forBusiness(anyLong())).thenReturn(square);
+        // Phase 3: the mirror-backed lookup is mocked to transparently forward to whatever
+        // square.customerIdsForPhone(...) was stubbed to return above, so every existing test's
+        // stub keeps working unchanged — this file is about resolveAdsCustomersUncached's own
+        // logic, not the mirror-vs-live resolution strategy (see SquareCustomerMirrorLookupServiceTest
+        // for that).
+        com.salonreview.square.SquareCustomerMirrorLookupService customerLookup =
+                mock(com.salonreview.square.SquareCustomerMirrorLookupService.class);
+        when(customerLookup.customerIdsForPhone(anyLong(), anyString(), eq(square)))
+                .thenAnswer(inv -> square.customerIdsForPhone(inv.getArgument(1)));
         // Local-mirror replacement for the old per-customer "square.bookingsForCustomer(...)" stub —
         // one batched stub answering however many customer ids a call actually requests, built from
         // whatever each test accumulates via stubBookings() below.
@@ -89,7 +99,7 @@ class MarketingAnalyticsServiceTest {
                 });
         service = new MarketingAnalyticsService(
                 contactsRepository, contactsService, dashboardRepository, aggregator, squareClientProvider, salonConfig,
-                bookingMirrorRepository, currentBusinessContext, adSpendEntryRepository, FIXED_CLOCK);
+                bookingMirrorRepository, currentBusinessContext, adSpendEntryRepository, customerLookup, FIXED_CLOCK);
     }
 
     /** Stubs the local booking mirror to return the given fixture bookings for this one customer —
