@@ -770,6 +770,16 @@ public class SquareClient {
         return BigDecimal.valueOf(money.amount(), 2);
     }
 
+    /** The inverse of {@link #toDollars} — dollars back to Square minor units (cents), USD. Used
+     * to reconstruct a {@code Money} from a mirror row's already-converted {@code BigDecimal}
+     * column (see {@code SquareMirrorMapper}, Phase 2) — never round-trips a distinction between
+     * "was null" and "was zero" (both collapse to {@code toDollars}' own {@code ZERO}), which is
+     * fine since every caller treats them identically anyway. Null in, null out. */
+    public static Money toMoney(BigDecimal dollars) {
+        if (dollars == null) return null;
+        return new Money(dollars.movePointRight(2).longValueExact(), "USD");
+    }
+
     /**
      * Whether an order was paid mostly in cash — its cash tenders outweigh its non-cash tenders. The
      * single source of truth for the cash/card split, shared by the month aggregator and the revenue

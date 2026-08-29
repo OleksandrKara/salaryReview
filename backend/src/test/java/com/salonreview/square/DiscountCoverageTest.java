@@ -51,7 +51,9 @@ class DiscountCoverageTest {
         OwnerCustomerRepository ownerRepo = mock(OwnerCustomerRepository.class);
         salonConfigRepo = mock(SalonConfigRepository.class);
         aggregator = new SquareMonthAggregator(squareClientProvider, new CashNoteParser(), ownerRepo,
-                currentBusinessContext, salonConfigRepo);
+                currentBusinessContext, salonConfigRepo,
+                mock(com.salonreview.repo.SquareBookingMirrorRepository.class), mock(com.salonreview.repo.SquareOrderMirrorRepository.class),
+                mock(com.salonreview.repo.SquarePaymentMirrorRepository.class));
 
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.allTeamMembers()).thenReturn(List.of(new TeamMember(TM, "Anastasiia", "M.", "ACTIVE", false, null, null)));

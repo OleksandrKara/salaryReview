@@ -8,8 +8,9 @@ import java.time.Instant;
 
 /**
  * A local, raw copy of one Square Payment — see {@link SquareBookingMirror}'s own doc for the
- * mirror's rationale/lifecycle. Read only by {@code MarketingBookingPaymentMatcher}; never by
- * {@code SquareMonthAggregator} or any payroll path.
+ * mirror's rationale/lifecycle. Payroll was an explicit Phase 1 non-goal; since Phase 2f, {@code
+ * SquareMonthAggregator#aggregateFromMirror} reads it (the shadow-diff twin of the still-live
+ * {@code aggregate()}, ahead of the eventual cutover).
  */
 @Entity
 @Table(name = "square_payment")

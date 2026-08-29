@@ -61,7 +61,9 @@ class SquareMonthAggregatorTest {
         when(square.customerNames(any())).thenReturn(Map.of());
 
         aggregator = new SquareMonthAggregator(squareClientProvider, cashNotes, ownerCustomers,
-                currentBusinessContext, salonConfig);
+                currentBusinessContext, salonConfig,
+                mock(com.salonreview.repo.SquareBookingMirrorRepository.class), mock(com.salonreview.repo.SquareOrderMirrorRepository.class),
+                mock(com.salonreview.repo.SquarePaymentMirrorRepository.class));
     }
 
     @Test

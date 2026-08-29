@@ -2,11 +2,15 @@ package com.salonreview.square;
 
 import com.salonreview.commission.HalfInput;
 import com.salonreview.domain.Half;
+import com.salonreview.square.SquareClient.AppliedDiscount;
+import com.salonreview.square.SquareClient.AppointmentSegment;
 import com.salonreview.square.SquareClient.Booking;
 import com.salonreview.square.SquareClient.Invoice;
 import com.salonreview.square.SquareClient.Order;
+import com.salonreview.square.SquareClient.OrderDiscount;
 import com.salonreview.square.SquareClient.OrderLineItem;
 import com.salonreview.square.SquareClient.Payment;
+import com.salonreview.square.SquareClient.Tender;
 import com.salonreview.square.SquareClient.TeamMember;
 import com.salonreview.util.TtlCache;
 import org.slf4j.Logger;
@@ -58,6 +62,11 @@ public class SquareMonthAggregator {
     private final com.salonreview.repo.OwnerCustomerRepository ownerCustomers;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final com.salonreview.repo.SalonConfigRepository salonConfig;
+    // Phase 2f: the local Square mirror — read only by #aggregateFromMirror, the shadow-diff
+    // twin of #aggregate (which still reads live Square). Never mixed within one computation.
+    private final com.salonreview.repo.SquareBookingMirrorRepository bookingMirrorRepository;
+    private final com.salonreview.repo.SquareOrderMirrorRepository orderMirrorRepository;
+    private final com.salonreview.repo.SquarePaymentMirrorRepository paymentMirrorRepository;
 
     // 12 different callers (settlements, suspicious/cancelled-booking detection, owner overview,
     // revenue pulse, provider-visit ingest, marketing ads-report/analytics) each independently call
@@ -74,12 +83,18 @@ public class SquareMonthAggregator {
     public SquareMonthAggregator(SquareClientProvider squareClientProvider, CashNoteParser cashNotes,
                                  com.salonreview.repo.OwnerCustomerRepository ownerCustomers,
                                  com.salonreview.config.CurrentBusinessContext currentBusinessContext,
-                                 com.salonreview.repo.SalonConfigRepository salonConfig) {
+                                 com.salonreview.repo.SalonConfigRepository salonConfig,
+                                 com.salonreview.repo.SquareBookingMirrorRepository bookingMirrorRepository,
+                                 com.salonreview.repo.SquareOrderMirrorRepository orderMirrorRepository,
+                                 com.salonreview.repo.SquarePaymentMirrorRepository paymentMirrorRepository) {
         this.squareClientProvider = squareClientProvider;
         this.cashNotes = cashNotes;
         this.ownerCustomers = ownerCustomers;
         this.currentBusinessContext = currentBusinessContext;
         this.salonConfig = salonConfig;
+        this.bookingMirrorRepository = bookingMirrorRepository;
+        this.orderMirrorRepository = orderMirrorRepository;
+        this.paymentMirrorRepository = paymentMirrorRepository;
     }
 
     /** Backs the global "Sync now" button (see SquareSyncController) and every mutation that can
@@ -100,12 +115,36 @@ public class SquareMonthAggregator {
         return cache.get(key, CACHE_TTL, () -> computeAggregate(year, month, priceCutoff));
     }
 
+    /** Mirror-backed twin of {@link #aggregate} (Phase 2f) — reads the local Square booking/order/
+     * payment mirror (see the Phase 2 sync plan) instead of live Square for the three raw lists;
+     * every other Square read (team members, catalog, canonicalization, customer names, invoices)
+     * and every matching/cash-note/discount/comp/suspicious/cancellation rule is the exact same
+     * shared code as the live path via {@link #computeAggregateFrom} — only where bookings/orders/
+     * payments come from differs. Uncached (unlike {@link #aggregate}): today's only caller is the
+     * Milestone 2g shadow-diff comparator, which always wants a fresh computation to compare
+     * against a fresh live one, not a stale cached result from either side.
+     */
+    public MonthAggregation aggregateFromMirror(int year, int month, BigDecimal priceCutoff) {
+        long startedAtNanos = System.nanoTime();
+        Long businessId = currentBusinessContext.id();
+        SquareClient square = squareClientProvider.forBusiness(businessId);
+        ZoneId zone = resolveZone(square);
+        YearMonth ym = YearMonth.of(year, month);
+        Instant from = ym.atDay(1).minusDays(1).atStartOfDay(zone).toInstant();
+        Instant to = ym.atEndOfMonth().plusDays(2).atStartOfDay(zone).toInstant();
+
+        List<Booking> bookings = bookingMirrorRepository.findByBusinessIdAndStartAtBetween(businessId, from, to)
+                .stream().map(SquareMonthAggregator::mirrorToBooking).toList();
+        List<Order> orders = orderMirrorRepository.findByBusinessIdAndClosedAtBetween(businessId, from, to)
+                .stream().map(SquareMonthAggregator::mirrorToOrder).toList();
+        List<Payment> payments = paymentMirrorRepository.findByBusinessIdAndCreatedAtBetween(businessId, from, to)
+                .stream().map(SquareMonthAggregator::mirrorToPayment).toList();
+
+        return computeAggregateFrom(year, month, priceCutoff, businessId, square, zone,
+                bookings, orders, payments, startedAtNanos, "mirror");
+    }
+
     private MonthAggregation computeAggregate(int year, int month, BigDecimal priceCutoff) {
-        // Temporary diagnostic timing (2026-08-29) — investigating Ads Report cold-load latency;
-        // remove once that's root-caused. See docs/CACHING.md for the caches already layered on
-        // top of this method (SquareClient's own 10-min raw-read cache, plus each caller's own
-        // whole-response TtlCache) — this measures the one thing none of those cover: this
-        // method's own matching/computation cost once the underlying Square reads are warm.
         long startedAtNanos = System.nanoTime();
         Long businessId = currentBusinessContext.id();
         SquareClient square = squareClientProvider.forBusiness(businessId);
@@ -114,9 +153,6 @@ public class SquareMonthAggregator {
         // Pad the query window by a day each side so timezone-boundary events aren't missed.
         Instant from = ym.atDay(1).minusDays(1).atStartOfDay(zone).toInstant();
         Instant to = ym.atEndOfMonth().plusDays(2).atStartOfDay(zone).toInstant();
-
-        Map<String, String> nameById = new HashMap<>();
-        for (TeamMember tm : square.allTeamMembers()) nameById.put(tm.id(), tm.fullName());
 
         // Bookings, orders, and payments are independent Square reads; fetch them concurrently to
         // halve cold latency. Payments (not just Orders) are needed to catch a charge taken directly
@@ -128,6 +164,19 @@ public class SquareMonthAggregator {
         List<Booking> bookings = bookingsF.join();
         List<Order> orders = ordersF.join();
         List<Payment> payments = paymentsF.join();
+        return computeAggregateFrom(year, month, priceCutoff, businessId, square, zone,
+                bookings, orders, payments, startedAtNanos, "live");
+    }
+
+    /** Everything downstream of "here are this month's raw bookings/orders/payments" — shared,
+     * byte-for-byte identical logic for both {@link #computeAggregate} (live) and {@link
+     * #aggregateFromMirror} (local mirror, Phase 2f). Only the raw-fetch step above differs
+     * between the two callers; nothing in this method knows or cares which one supplied its data. */
+    private MonthAggregation computeAggregateFrom(int year, int month, BigDecimal priceCutoff, Long businessId,
+            SquareClient square, ZoneId zone, List<Booking> bookings, List<Order> orders, List<Payment> payments,
+            long startedAtNanos, String source) {
+        Map<String, String> nameById = new HashMap<>();
+        for (TeamMember tm : square.allTeamMembers()) nameById.put(tm.id(), tm.fullName());
 
         // Square customers who are owner(s)/family: services to them aren't charged (no order), but the
         // provider is still owed their commission — see the owner-comp pass below. Fetched before the
@@ -626,8 +675,8 @@ public class SquareMonthAggregator {
         }
 
         long elapsedMs = (System.nanoTime() - startedAtNanos) / 1_000_000;
-        log.info("aggregate({}, {}) took {}ms — {} bookings, {} orders, {} payments, {} matched services",
-                year, month, elapsedMs, bookings.size(), orders.size(), payments.size(), services.size());
+        log.info("aggregate({}, {}, source={}) took {}ms — {} bookings, {} orders, {} payments, {} matched services",
+                year, month, source, elapsedMs, bookings.size(), orders.size(), payments.size(), services.size());
         return new MonthAggregation(year, month, zone.getId(), providers, diag, services,
                 namedUnmatched, suspicious, cancellations, namedOrphanPayments);
     }
@@ -793,6 +842,57 @@ public class SquareMonthAggregator {
                     names.get(u.customerId())));
         }
         return out;
+    }
+
+    // --- Phase 2f: local-mirror -> SquareClient shape mappers ---
+    //
+    // Each mapper reconstructs the exact record shape #computeAggregateFrom already knows how to
+    // read, so it can stay 100% oblivious to which source (live Square or the local mirror)
+    // produced its input. Fields the mirror never stores because #computeAggregateFrom never reads
+    // them (Order#locationId/#fulfillments, OrderLineItem#uid/#quantity/#basePriceMoney,
+    // Tender#id) are filled with null/placeholder values — safe precisely because nothing
+    // downstream looks at them; see the Phase 2 sync plan's own field-by-field audit for how that
+    // was confirmed, not assumed.
+
+    private static Booking mirrorToBooking(com.salonreview.domain.SquareBookingMirror m) {
+        List<AppointmentSegment> segments = m.getAppointmentSegments() == null ? null
+                : m.getAppointmentSegments().stream()
+                        .map(s -> new AppointmentSegment(s.teamMemberId(), s.serviceVariationId(), s.durationMinutes()))
+                        .toList();
+        return new Booking(m.getSquareBookingId(), m.getStatus(),
+                instantToIso(m.getStartAt()), instantToIso(m.getCreatedAt()), instantToIso(m.getUpdatedAt()),
+                m.getLocationId(), m.getSquareCustomerId(), m.getSellerNote(), m.getCustomerNote(), segments);
+    }
+
+    private static Order mirrorToOrder(com.salonreview.domain.SquareOrderMirror m) {
+        List<OrderLineItem> lineItems = m.getLineItems() == null ? null
+                : m.getLineItems().stream().map(li -> new OrderLineItem(
+                        null, li.name(), null, li.catalogObjectId(),
+                        null, SquareClient.toMoney(li.grossSalesMoney()), SquareClient.toMoney(li.totalMoney()),
+                        SquareClient.toMoney(li.totalDiscountMoney()),
+                        li.appliedDiscounts() == null ? null : li.appliedDiscounts().stream()
+                                .map(ad -> new AppliedDiscount(ad.uid(), ad.discountUid(), SquareClient.toMoney(ad.appliedMoney())))
+                                .toList()))
+                        .toList();
+        List<Tender> tenders = m.getTenders() == null ? null
+                : m.getTenders().stream().map(t -> new Tender(null, t.type(), SquareClient.toMoney(t.amount()))).toList();
+        List<OrderDiscount> discounts = m.getDiscounts() == null ? null
+                : m.getDiscounts().stream()
+                        .map(d -> new OrderDiscount(d.uid(), d.name(), SquareClient.toMoney(d.appliedMoney())))
+                        .toList();
+        return new Order(m.getSquareOrderId(), null, m.getSquareCustomerId(), m.getState(),
+                instantToIso(m.getClosedAt()), instantToIso(m.getCreatedAt()), lineItems,
+                SquareClient.toMoney(m.getTotalTipMoney()), SquareClient.toMoney(m.getTotalDiscountMoney()),
+                tenders, null, discounts);
+    }
+
+    private static Payment mirrorToPayment(com.salonreview.domain.SquarePaymentMirror m) {
+        return new Payment(m.getSquarePaymentId(), m.getSquareOrderId(), m.getSquareCustomerId(), m.getStatus(),
+                instantToIso(m.getCreatedAt()), SquareClient.toMoney(m.getTotalMoney()), SquareClient.toMoney(m.getTipMoney()));
+    }
+
+    private static String instantToIso(Instant instant) {
+        return instant == null ? null : instant.toString();
     }
 
     // --- helpers ---

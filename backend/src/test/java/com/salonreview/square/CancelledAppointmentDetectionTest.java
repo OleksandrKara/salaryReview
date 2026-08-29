@@ -54,7 +54,9 @@ class CancelledAppointmentDetectionTest {
         when(salonConfigRepo.findByBusinessId(1L)).thenReturn(java.util.Optional.of(
                 com.salonreview.domain.SalonConfig.builder().businessId(1L)
                         .noShowFeeAmount(new BigDecimal("25.00")).build()));
-        aggregator = new SquareMonthAggregator(squareClientProvider, new CashNoteParser(), ownerRepo, currentBusinessContext, salonConfigRepo);
+        aggregator = new SquareMonthAggregator(squareClientProvider, new CashNoteParser(), ownerRepo, currentBusinessContext, salonConfigRepo,
+                mock(com.salonreview.repo.SquareBookingMirrorRepository.class), mock(com.salonreview.repo.SquareOrderMirrorRepository.class),
+                mock(com.salonreview.repo.SquarePaymentMirrorRepository.class));
 
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.allTeamMembers()).thenReturn(List.of(
