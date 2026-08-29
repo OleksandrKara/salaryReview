@@ -27,12 +27,15 @@ public class RedoService {
     private final RedoRepository redos;
     private final ProviderRepository providers;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
+    private final SettlementPreviewService settlementPreview;
 
     public RedoService(RedoRepository redos, ProviderRepository providers,
-                       com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
+                       com.salonreview.config.CurrentBusinessContext currentBusinessContext,
+                       SettlementPreviewService settlementPreview) {
         this.redos = redos;
         this.providers = providers;
         this.currentBusinessContext = currentBusinessContext;
+        this.settlementPreview = settlementPreview;
     }
 
     public record CreateRequest(Long originalProviderId, Long redoProviderId, LocalDate originalDate,
@@ -78,6 +81,7 @@ public class RedoService {
                 .serviceName(req.serviceName() == null || req.serviceName().isBlank() ? null : req.serviceName().trim())
                 .createdBy(by)
                 .build());
+        settlementPreview.invalidateCache();
         Function<Long, String> name = id -> providers.findById(id).map(Provider::getDisplayName).orElse("#" + id);
         return new RedoView(saved.getId(), saved.getOriginalProviderId(), name.apply(saved.getOriginalProviderId()),
                 saved.getRedoProviderId(), name.apply(saved.getRedoProviderId()), saved.getOriginalDate().toString(),
@@ -94,5 +98,6 @@ public class RedoService {
         Redo redo = redos.findByIdAndBusinessId(id, currentBusinessContext.id())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "no such redo"));
         redos.delete(redo);
+        settlementPreview.invalidateCache();
     }
 }

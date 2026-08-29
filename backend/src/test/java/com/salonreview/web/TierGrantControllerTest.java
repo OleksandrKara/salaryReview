@@ -3,6 +3,7 @@ package com.salonreview.web;
 import com.salonreview.domain.TierGrant;
 import com.salonreview.repo.ProviderRepository;
 import com.salonreview.repo.TierGrantRepository;
+import com.salonreview.square.SettlementPreviewService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,7 +40,8 @@ class TierGrantControllerTest {
         com.salonreview.config.CurrentBusinessContext currentBusinessContext =
                 mock(com.salonreview.config.CurrentBusinessContext.class);
         when(currentBusinessContext.id()).thenReturn(BUSINESS_ID);
-        controller = new TierGrantController(grants, providers, currentBusinessContext);
+        controller = new TierGrantController(grants, providers, currentBusinessContext,
+                mock(SettlementPreviewService.class));
     }
 
     @Test

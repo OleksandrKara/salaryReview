@@ -40,7 +40,7 @@ class RedoServiceTest {
         com.salonreview.config.CurrentBusinessContext currentBusinessContext =
                 mock(com.salonreview.config.CurrentBusinessContext.class);
         when(currentBusinessContext.id()).thenReturn(BUSINESS_ID);
-        service = new RedoService(redos, providers, currentBusinessContext);
+        service = new RedoService(redos, providers, currentBusinessContext, mock(SettlementPreviewService.class));
     }
 
     @Test
