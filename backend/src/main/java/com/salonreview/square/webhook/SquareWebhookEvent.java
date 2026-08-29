@@ -37,9 +37,17 @@ public record SquareWebhookEvent(String type, String eventId, Data data) {
                                   OrderUpdated orderCreated, OrderUpdated orderFulfillmentUpdated) {}
     }
 
+    /** {@code payment.created}/{@code payment.updated} carry the full payment object inline in the
+     * webhook payload (confirmed against Square's published webhook reference, not guessed) — no
+     * follow-up Square call is needed to mirror it, same as {@link Booking}. {@code createdAt}/
+     * {@code amountMoney}/{@code tipMoney} exist only for the Phase 2 payment-mirror handler;
+     * {@code CheckoutReviewTriggerService#handlePaymentUpdated} only ever reads {@code
+     * id}/{@code status}/{@code orderId}. {@code SquareClient.Money} is reused as-is (no field-order
+     * mismatch), same reasoning as {@link Booking}'s reuse of {@code AppointmentSegment}. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record Payment(String id, String status, String orderId, String customerId) {}
+    public record Payment(String id, String status, String orderId, String customerId, String createdAt,
+                          SquareClient.Money amountMoney, SquareClient.Money tipMoney) {}
 
     /** The FULL booking object, inline in the webhook payload itself — unlike {@link
      * OrderUpdated}, no follow-up Square call is needed to mirror a booking event. Same field

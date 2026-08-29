@@ -95,11 +95,13 @@ public class SquareBookingMirrorIngestService {
                 tendersJson(o), lineItemsJson(o), discountsJson(o));
     }
 
-    /** Upserts a single payment. Not currently wired to a webhook event — {@code
-     * MarketingBookingPaymentMatcher} reads {@code square_order}, not {@code square_payment}, so a
-     * payment-specific webhook wasn't worth the added complexity for Phase 1; the reconciliation
-     * sweep (see the Phase 1 plan's 1d) keeps this table fresh enough for its current, non-critical
-     * use. Kept public/shared for whenever that changes. */
+    /** Upserts a single payment — shared by the bulk window ingest above and, since Phase 2, the
+     * webhook path ({@code SquarePaymentWebhookHandler}), which already has the full payment object
+     * inline in Square's own {@code payment.created}/{@code payment.updated} payload (no extra
+     * Square call needed). Payment freshness used to lag bookings/orders (backfill + reconciliation
+     * sweep only) since {@code MarketingBookingPaymentMatcher} reads {@code square_order}, not this
+     * table, and marketing didn't need better than that; {@code SquareMonthAggregator}'s payroll
+     * path does. */
     public void upsertPayment(Long businessId, SquareClient.Payment p) {
         paymentRepository.upsert(businessId, p.id(), p.orderId(), p.customerId(), p.status(),
                 parseInstant(p.createdAt()), SquareClient.toDollars(p.totalMoney()), SquareClient.toDollars(p.tipMoney()));

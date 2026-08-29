@@ -48,6 +48,7 @@ public class SquareWebhookController {
     private final CheckoutReviewTriggerService triggerService;
     private final SquareBookingWebhookHandler bookingWebhookHandler;
     private final SquareOrderWebhookHandler orderWebhookHandler;
+    private final SquarePaymentWebhookHandler paymentWebhookHandler;
     private final BusinessRepository businesses;
     private final SquareConnectionService connectionService;
     private final String publicBaseUrl;
@@ -58,12 +59,14 @@ public class SquareWebhookController {
     public SquareWebhookController(SquareWebhookProperties properties, CheckoutReviewTriggerService triggerService,
                                     SquareBookingWebhookHandler bookingWebhookHandler,
                                     SquareOrderWebhookHandler orderWebhookHandler,
+                                    SquarePaymentWebhookHandler paymentWebhookHandler,
                                     BusinessRepository businesses, SquareConnectionService connectionService,
                                     @Value("${app.public-base-url}") String publicBaseUrl) {
         this.properties = properties;
         this.triggerService = triggerService;
         this.bookingWebhookHandler = bookingWebhookHandler;
         this.orderWebhookHandler = orderWebhookHandler;
+        this.paymentWebhookHandler = paymentWebhookHandler;
         this.businesses = businesses;
         this.connectionService = connectionService;
         this.publicBaseUrl = publicBaseUrl;
@@ -111,6 +114,9 @@ public class SquareWebhookController {
         SquareWebhookEvent.Data.DataObject object = event.data() == null ? null : event.data().object();
         if (object != null && object.payment() != null) {
             triggerService.handlePaymentUpdated(businessId, object.payment());
+            // Square-data mirror (Phase 2) — independent listener on the same event, not entangled
+            // with the checkout-review trigger above (same pattern as booking/order below).
+            paymentWebhookHandler.handlePaymentEvent(businessId, object.payment());
         }
         // Square-data mirror (see the Phase 1 sync plan) — independent listeners on the same
         // event stream above, not entangled with the checkout-review trigger's own payment handling.
