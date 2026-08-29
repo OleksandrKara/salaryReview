@@ -1418,6 +1418,13 @@ export interface FunnelDashboardData {
   totalCompleted: number;
   /** totalCompleted / totalVisitors, 0 when totalVisitors is 0. */
   finalConversionRate: number;
+  /** True when this flow has recorded activity in the last 7 days — i.e. some currently-live
+   * variant is still sending traffic through it. False means every variant that used to feed
+   * this flow has since had its weight zeroed or been deactivated; the data itself is never
+   * deleted, it's just no longer the live experiment. */
+  active: boolean;
+  /** ISO timestamp of this flow's most recent recorded event, or null if somehow none exists. */
+  lastActivityAt: string | null;
 }
 
 // --- AI funnel analysis (com.salonreview.web.FunnelAnalysisController) — owner-only ---
