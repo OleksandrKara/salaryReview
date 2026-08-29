@@ -52,6 +52,7 @@ class MarketingContactsServiceTest {
     private MarketingSyncStatusRepository syncStatus;
     private com.salonreview.sms.SmsMessageLogService smsMessageLogService;
     private ProviderVisitRepository providerVisits;
+    private com.salonreview.square.SquareCustomerMirrorLookupService customerLookup;
     private MarketingContactsService service;
 
     @BeforeEach
@@ -77,10 +78,16 @@ class MarketingContactsServiceTest {
         com.salonreview.square.SquareClientProvider squareClientProvider =
                 mock(com.salonreview.square.SquareClientProvider.class);
         when(squareClientProvider.forBusiness(org.mockito.ArgumentMatchers.anyLong())).thenReturn(square);
+        // Phase 3: mocked to transparently forward to whatever square.customerIdsForPhone(...) was
+        // stubbed to return, so every existing test's stub keeps working unchanged — this file is
+        // about MarketingContactsService's own logic, not the mirror-vs-live resolution strategy.
+        customerLookup = mock(com.salonreview.square.SquareCustomerMirrorLookupService.class);
+        when(customerLookup.customerIdsForPhone(any(), any(), eq(square)))
+                .thenAnswer(inv -> square.customerIdsForPhone(inv.getArgument(1)));
         service = new MarketingContactsService(repository, squareLinks, squareClientProvider,
                 bookingMirrorRepository, paymentMatcher,
                 currentBusinessContext, syncStatus,
-                new RebookingProperties(), smsMessageLogService, providerVisits, 4);
+                new RebookingProperties(), smsMessageLogService, providerVisits, customerLookup, 4);
         when(repository.findSubmissionHistory(any())).thenReturn(List.of());
         when(repository.findSubmissionsByBookingIds(any())).thenReturn(Map.of());
         when(squareLinks.findByPhoneNumber(any())).thenReturn(Optional.empty());
@@ -849,7 +856,7 @@ class MarketingContactsServiceTest {
         when(clientProvider.forBusiness(any())).thenReturn(square);
         MarketingContactsService twoTenantService = new MarketingContactsService(repository, squareLinks,
                 clientProvider, bookingMirrorRepository, paymentMatcher, ctx, syncStatus,
-                new RebookingProperties(), smsMessageLogService, providerVisits, 4);
+                new RebookingProperties(), smsMessageLogService, providerVisits, customerLookup, 4);
         when(providerVisits.findAllByBusinessIdOrderByServiceDateAsc(any())).thenReturn(List.of());
         when(repository.listAllForBusiness(1L)).thenReturn(List.of());
 

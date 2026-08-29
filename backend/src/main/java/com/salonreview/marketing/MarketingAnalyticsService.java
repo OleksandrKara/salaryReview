@@ -7,6 +7,7 @@ import com.salonreview.repo.AdSpendEntryRepository;
 import com.salonreview.repo.SalonConfigRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
+import com.salonreview.square.SquareCustomerMirrorLookupService;
 import com.salonreview.square.SquareMonthAggregator;
 import com.salonreview.square.SquareMonthAggregator.AttributedService;
 import com.salonreview.util.TtlCache;
@@ -108,6 +109,7 @@ public class MarketingAnalyticsService {
     private final com.salonreview.repo.SquareBookingMirrorRepository bookingMirrorRepository;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final AdSpendEntryRepository adSpendEntryRepository;
+    private final SquareCustomerMirrorLookupService customerLookup;
     private final java.time.Clock clock;
     private final TtlCache cache = new TtlCache();
 
@@ -121,10 +123,11 @@ public class MarketingAnalyticsService {
             SalonConfigRepository salonConfig,
             com.salonreview.repo.SquareBookingMirrorRepository bookingMirrorRepository,
             com.salonreview.config.CurrentBusinessContext currentBusinessContext,
-            AdSpendEntryRepository adSpendEntryRepository
+            AdSpendEntryRepository adSpendEntryRepository,
+            SquareCustomerMirrorLookupService customerLookup
     ) {
         this(contactsRepository, contactsService, dashboardRepository, aggregator, squareClientProvider, salonConfig,
-                bookingMirrorRepository, currentBusinessContext, adSpendEntryRepository, java.time.Clock.systemUTC());
+                bookingMirrorRepository, currentBusinessContext, adSpendEntryRepository, customerLookup, java.time.Clock.systemUTC());
     }
 
     /** Test-only constructor — lets tests fix "today" instead of racing the real clock for the
@@ -139,6 +142,7 @@ public class MarketingAnalyticsService {
             com.salonreview.repo.SquareBookingMirrorRepository bookingMirrorRepository,
             com.salonreview.config.CurrentBusinessContext currentBusinessContext,
             AdSpendEntryRepository adSpendEntryRepository,
+            SquareCustomerMirrorLookupService customerLookup,
             java.time.Clock clock
     ) {
         this.contactsRepository = contactsRepository;
@@ -151,6 +155,7 @@ public class MarketingAnalyticsService {
         this.currentBusinessContext = currentBusinessContext;
         this.clock = clock;
         this.adSpendEntryRepository = adSpendEntryRepository;
+        this.customerLookup = customerLookup;
     }
 
     /** The salon's real business timezone (e.g. "America/Los_Angeles"), resolved from Square's own
@@ -984,7 +989,7 @@ public class MarketingAnalyticsService {
      */
     private Map<String, AdsCustomer> resolveAdsCustomersUncached(Set<String> sources, String slug) {
         // Temporary diagnostic timing (2026-08-29) — see computeAdsReport's own timing log; this
-        // isolates the per-contact live customerIdsForPhone fan-out below as its own number.
+        // isolates the per-contact customer-id resolution fan-out below as its own number.
         long startedAtNanos = System.nanoTime();
         Long businessId = currentBusinessContext.id();
         List<MarketingContactsRepository.AdsAttributedContact> contacts = sources.equals(ALL_SOURCES)
@@ -1006,7 +1011,7 @@ public class MarketingAnalyticsService {
                         candidateIds.add(c.squareCustomerId());
                     }
                     try {
-                        candidateIds.addAll(square.customerIdsForPhone(c.phoneNumber()));
+                        candidateIds.addAll(customerLookup.customerIdsForPhone(businessId, c.phoneNumber(), square));
                     } catch (RuntimeException ex) {
                         log.warn("Failed to resolve Square customer ids by phone (channel={}); continuing with "
                                 + "only this contact's stored square_customer_id, if any", c.channel(), ex);

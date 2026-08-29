@@ -17,6 +17,7 @@ import com.salonreview.square.SquareClient.AppointmentSegment;
 import com.salonreview.square.SquareClient.Booking;
 import com.salonreview.square.SquareClient.TeamMember;
 import com.salonreview.square.SquareClientProvider;
+import com.salonreview.square.SquareCustomerMirrorLookupService;
 import com.salonreview.square.SquareMonthAggregator.BookingPayment;
 import com.salonreview.util.PhoneNumbers;
 import com.salonreview.web.dto.MarketingContactDto;
@@ -83,6 +84,7 @@ public class MarketingContactsService {
     private final RebookingProperties rebookingProperties;
     private final SmsMessageLogService smsMessageLogService;
     private final ProviderVisitRepository providerVisits;
+    private final SquareCustomerMirrorLookupService customerLookup;
     private final int vipVisitThreshold;
     private final TtlCache cache = new TtlCache();
 
@@ -96,6 +98,7 @@ public class MarketingContactsService {
                                      RebookingProperties rebookingProperties,
                                      SmsMessageLogService smsMessageLogService,
                                      ProviderVisitRepository providerVisits,
+                                     SquareCustomerMirrorLookupService customerLookup,
                                      @Value("${vip.visit-threshold:4}") int vipVisitThreshold) {
         this.repository = repository;
         this.squareLinks = squareLinks;
@@ -107,6 +110,7 @@ public class MarketingContactsService {
         this.rebookingProperties = rebookingProperties;
         this.smsMessageLogService = smsMessageLogService;
         this.providerVisits = providerVisits;
+        this.customerLookup = customerLookup;
         this.vipVisitThreshold = vipVisitThreshold;
     }
 
@@ -277,9 +281,11 @@ public class MarketingContactsService {
                 }
             } else {
                 // No marketing.contacts row at all (e.g. a checkout-review/rebooking text
-                // sent from Square data with no tracked capture) — last-resort live lookup,
-                // same fallback LeadFollowUpScheduler uses.
-                List<String> candidates = square.customerIdsForPhone(phone);
+                // sent from Square data with no tracked capture) — resolve via the customer
+                // mirror, falling back live only for a phone the mirror hasn't caught up on yet
+                // (same fallback LeadFollowUpScheduler uses, just mirror-backed first now).
+                List<String> candidates = customerLookup.customerIdsForPhone(
+                        currentBusinessContext.id(), phone, square);
                 if (!candidates.isEmpty()) {
                     customerIdByPhone.put(phone, candidates.get(0));
                 }
