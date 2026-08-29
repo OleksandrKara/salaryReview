@@ -4,6 +4,7 @@ import com.salonreview.domain.Business;
 import com.salonreview.domain.SalonConfig;
 import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SalonConfigRepository;
+import com.salonreview.square.SettlementPreviewService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,7 +28,7 @@ class BusinessSettingsServiceTest {
     void setUp() {
         businesses = mock(BusinessRepository.class);
         salonConfig = mock(SalonConfigRepository.class);
-        service = new BusinessSettingsService(businesses, salonConfig);
+        service = new BusinessSettingsService(businesses, salonConfig, mock(SettlementPreviewService.class));
         when(businesses.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(salonConfig.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }

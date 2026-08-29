@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.domain.Half;
+import com.salonreview.square.SettlementPreviewService;
 import com.salonreview.square.SuspiciousBookingService;
 import com.salonreview.web.dto.SuspiciousBookingDto;
 import org.springframework.http.ResponseEntity;
@@ -20,15 +21,22 @@ import java.util.List;
 /**
  * Owner/manager-only review surface for suspicious bookings. Detection lives in
  * {@link SuspiciousBookingService}; this controller is the thin HTTP edge.
+ *
+ * <p>Invalidates {@link SettlementPreviewService}'s cache here, at the HTTP edge, rather than
+ * inside {@code SuspiciousBookingService} itself — that service is already a constructor
+ * dependency of {@code SettlementPreviewService}, so injecting the reverse direction there would
+ * create a Spring bean cycle.
  */
 @RestController
 @RequestMapping("/api/suspicious")
 public class SuspiciousBookingController {
 
     private final SuspiciousBookingService service;
+    private final SettlementPreviewService settlementPreview;
 
-    public SuspiciousBookingController(SuspiciousBookingService service) {
+    public SuspiciousBookingController(SuspiciousBookingService service, SettlementPreviewService settlementPreview) {
         this.service = service;
+        this.settlementPreview = settlementPreview;
     }
 
     @GetMapping
@@ -46,12 +54,14 @@ public class SuspiciousBookingController {
                                       @AuthenticationPrincipal AppUserPrincipal me) {
         String note = body == null ? null : body.note();
         service.clear(bookingId, me.getUsername(), note);
+        settlementPreview.invalidateCache();
         return ResponseEntity.ok().build();
     }
 
     @DeleteMapping("/{bookingId}/clear")
     public ResponseEntity<Void> unclear(@PathVariable String bookingId) {
         service.unclear(bookingId);
+        settlementPreview.invalidateCache();
         return ResponseEntity.noContent().build();
     }
 

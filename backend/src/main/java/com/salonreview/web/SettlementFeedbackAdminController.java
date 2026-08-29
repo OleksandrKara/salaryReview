@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.salonreview.domain.Half;
 import com.salonreview.repo.SettlementFeedbackRepository;
+import com.salonreview.square.SettlementPreviewService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -17,9 +18,11 @@ import org.springframework.web.bind.annotation.*;
 public class SettlementFeedbackAdminController {
 
     private final SettlementFeedbackRepository feedback;
+    private final SettlementPreviewService settlementPreview;
 
-    public SettlementFeedbackAdminController(SettlementFeedbackRepository feedback) {
+    public SettlementFeedbackAdminController(SettlementFeedbackRepository feedback, SettlementPreviewService settlementPreview) {
         this.feedback = feedback;
+        this.settlementPreview = settlementPreview;
     }
 
     @DeleteMapping
@@ -27,6 +30,7 @@ public class SettlementFeedbackAdminController {
     public ResponseEntity<Void> clear(@RequestParam Long providerId, @RequestParam int year,
                                       @RequestParam int month, @RequestParam Half half) {
         feedback.deleteByProviderIdAndYearAndMonthAndHalf(providerId, year, month, half);
+        settlementPreview.invalidateCache();
         return ResponseEntity.noContent().build();
     }
 }

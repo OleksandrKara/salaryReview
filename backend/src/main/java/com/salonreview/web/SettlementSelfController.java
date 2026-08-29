@@ -107,7 +107,9 @@ public class SettlementSelfController {
         fb.setStatus(req.status());
         fb.setComment(req.comment());
         fb.setUpdatedAt(Instant.now());
-        return feedback.save(fb);
+        SettlementFeedback saved = feedback.save(fb);
+        previews.invalidateCache();
+        return saved;
     }
 
     private Long requireProvider(AppUserPrincipal me) {
