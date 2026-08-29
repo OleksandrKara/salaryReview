@@ -30,12 +30,15 @@ public class ManualAdjustmentService {
     private final ManualAdjustmentRepository adjustments;
     private final ProviderRepository providers;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
+    private final SettlementPreviewService settlementPreview;
 
     public ManualAdjustmentService(ManualAdjustmentRepository adjustments, ProviderRepository providers,
-                                   com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
+                                   com.salonreview.config.CurrentBusinessContext currentBusinessContext,
+                                   SettlementPreviewService settlementPreview) {
         this.adjustments = adjustments;
         this.providers = providers;
         this.currentBusinessContext = currentBusinessContext;
+        this.settlementPreview = settlementPreview;
     }
 
     public record CreateRequest(Long providerId, LocalDate serviceDate, BigDecimal gross, BigDecimal discount,
@@ -94,6 +97,7 @@ public class ManualAdjustmentService {
                 .serviceName(req.serviceName() == null || req.serviceName().isBlank() ? null : req.serviceName().trim())
                 .createdBy(by)
                 .build());
+        settlementPreview.invalidateCache();
         String name = providers.findById(saved.getProviderId()).map(Provider::getDisplayName).orElse("#" + saved.getProviderId());
         return new ManualAdjustmentView(saved.getId(), saved.getProviderId(), name, saved.getServiceDate().toString(),
                 saved.getGross(), saved.getDiscount(), saved.getTip(), saved.getServiceName());
@@ -109,6 +113,7 @@ public class ManualAdjustmentService {
         ManualAdjustment adjustment = adjustments.findByIdAndBusinessId(id, currentBusinessContext.id())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "no such adjustment"));
         adjustments.delete(adjustment);
+        settlementPreview.invalidateCache();
     }
 
     /** Signed total of every adjustment dated within the given month — for Overview's live-month revenue. */

@@ -4,6 +4,7 @@ import com.salonreview.domain.Business;
 import com.salonreview.domain.SalonConfig;
 import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SalonConfigRepository;
+import com.salonreview.square.SettlementPreviewService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,10 +26,13 @@ public class BusinessSettingsService {
 
     private final BusinessRepository businesses;
     private final SalonConfigRepository salonConfig;
+    private final SettlementPreviewService settlementPreview;
 
-    public BusinessSettingsService(BusinessRepository businesses, SalonConfigRepository salonConfig) {
+    public BusinessSettingsService(BusinessRepository businesses, SalonConfigRepository salonConfig,
+                                   SettlementPreviewService settlementPreview) {
         this.businesses = businesses;
         this.salonConfig = salonConfig;
+        this.settlementPreview = settlementPreview;
     }
 
     public record View(Business business, SalonConfig config) {
@@ -100,6 +104,9 @@ public class BusinessSettingsService {
         if (coveredDiscountNames != null) config.setCoveredDiscountNames(blankToNull(coveredDiscountNames));
 
         salonConfig.save(config);
+        // Commission config (rate, tier settings, price cutoff, discount coverage) affects every
+        // month's settlement equally — busts every cached month for this business, not just one.
+        settlementPreview.invalidateCache();
         return new View(business, config);
     }
 

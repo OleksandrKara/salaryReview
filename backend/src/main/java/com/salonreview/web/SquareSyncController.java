@@ -5,6 +5,7 @@ import com.salonreview.marketing.MarketingAnalyticsService;
 import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.marketing.MarketingDashboardService;
 import com.salonreview.square.OwnerOverviewService;
+import com.salonreview.square.SettlementPreviewService;
 import com.salonreview.square.SquareClientProvider;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,6 +33,7 @@ public class SquareSyncController {
     private final MarketingContactsService marketingContacts;
     private final MarketingAnalyticsService marketingAnalytics;
     private final OwnerOverviewService ownerOverview;
+    private final SettlementPreviewService settlementPreview;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
 
     public SquareSyncController(SquareClientProvider squareClientProvider,
@@ -40,6 +42,7 @@ public class SquareSyncController {
                                  MarketingContactsService marketingContacts,
                                  MarketingAnalyticsService marketingAnalytics,
                                  OwnerOverviewService ownerOverview,
+                                 SettlementPreviewService settlementPreview,
                                  com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
         this.squareClientProvider = squareClientProvider;
         this.marketingDashboard = marketingDashboard;
@@ -47,6 +50,7 @@ public class SquareSyncController {
         this.marketingContacts = marketingContacts;
         this.marketingAnalytics = marketingAnalytics;
         this.ownerOverview = ownerOverview;
+        this.settlementPreview = settlementPreview;
         this.currentBusinessContext = currentBusinessContext;
     }
 
@@ -59,6 +63,7 @@ public class SquareSyncController {
         marketingContacts.invalidateCache();
         marketingAnalytics.invalidateCache();
         ownerOverview.invalidateCache();
+        settlementPreview.invalidateCache();
         return ResponseEntity.noContent().build();
     }
 }

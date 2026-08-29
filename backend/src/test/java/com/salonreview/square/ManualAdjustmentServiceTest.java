@@ -42,7 +42,8 @@ class ManualAdjustmentServiceTest {
         com.salonreview.config.CurrentBusinessContext currentBusinessContext =
                 mock(com.salonreview.config.CurrentBusinessContext.class);
         when(currentBusinessContext.id()).thenReturn(BUSINESS_ID);
-        service = new ManualAdjustmentService(adjustments, providers, currentBusinessContext);
+        service = new ManualAdjustmentService(adjustments, providers, currentBusinessContext,
+                mock(SettlementPreviewService.class));
     }
 
     @Test

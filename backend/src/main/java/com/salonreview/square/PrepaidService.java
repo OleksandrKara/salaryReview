@@ -48,11 +48,13 @@ public class PrepaidService {
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final PrepaidPackageRepository packages;
     private final PrepaidRedemptionRepository redemptions;
+    private final SettlementPreviewService settlementPreview;
 
     public PrepaidService(SquareClientProvider squareClientProvider, ProviderRepository providers,
                           com.salonreview.service.ProviderDirectory directory, SalonConfigRepository salonConfig,
                           com.salonreview.config.CurrentBusinessContext currentBusinessContext,
-                          PrepaidPackageRepository packages, PrepaidRedemptionRepository redemptions) {
+                          PrepaidPackageRepository packages, PrepaidRedemptionRepository redemptions,
+                          SettlementPreviewService settlementPreview) {
         this.squareClientProvider = squareClientProvider;
         this.providers = providers;
         this.directory = directory;
@@ -60,6 +62,7 @@ public class PrepaidService {
         this.currentBusinessContext = currentBusinessContext;
         this.packages = packages;
         this.redemptions = redemptions;
+        this.settlementPreview = settlementPreview;
     }
 
     // --- packages ---
@@ -121,7 +124,7 @@ public class PrepaidService {
         // Resolve the team member who performed the service to a provider (person) — credited the payout.
         Provider provider = directory.resolveOrCreate(req.teamMemberId(), req.providerName());
         BigDecimal cutoff = salonConfig().getServicePriceCutoff();
-        return redemptions.save(PrepaidRedemption.builder()
+        PrepaidRedemption saved = redemptions.save(PrepaidRedemption.builder()
                 .packageId(packageId)
                 .providerId(provider.getId())
                 .squareBookingId(req.squareBookingId())
@@ -132,6 +135,8 @@ public class PrepaidService {
                 .counts(req.menuPrice().compareTo(cutoff) >= 0)
                 .confirmedBy(by)
                 .build());
+        settlementPreview.invalidateCache();
+        return saved;
     }
 
     /** @throws ResponseStatusException 404 if {@code redemptionId} isn't a redemption of a package
@@ -141,6 +146,7 @@ public class PrepaidService {
         PrepaidRedemption redemption = redemptions.findByIdAndBusinessId(redemptionId, currentBusinessContext.id())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such redemption"));
         redemptions.delete(redemption);
+        settlementPreview.invalidateCache();
     }
 
     /**

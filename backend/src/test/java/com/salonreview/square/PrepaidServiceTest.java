@@ -52,7 +52,7 @@ class PrepaidServiceTest {
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
 
         PrepaidService svc = new PrepaidService(squareClientProvider, providers, directory, salonConfig,
-                currentBusinessContext, packages, redemptions);
+                currentBusinessContext, packages, redemptions, mock(SettlementPreviewService.class));
 
         PrepaidPackage pkg = PrepaidPackage.builder().id(1L).businessId(1L).customerId("C1").customerName("Alina")
                 .paidDate(LocalDate.of(2026, 3, 1)).amount(new BigDecimal("300")).totalServices(3).build();
@@ -94,7 +94,7 @@ class PrepaidServiceTest {
         when(squareClientProvider.forBusiness(any())).thenReturn(square);
         PrepaidService svc = new PrepaidService(squareClientProvider, mock(ProviderRepository.class), mock(ProviderDirectory.class),
                 mock(SalonConfigRepository.class), mock(com.salonreview.config.CurrentBusinessContext.class),
-                mock(PrepaidPackageRepository.class), mock(PrepaidRedemptionRepository.class));
+                mock(PrepaidPackageRepository.class), mock(PrepaidRedemptionRepository.class), mock(SettlementPreviewService.class));
 
         Invoice paid = new Invoice("inv1", "000089", "Prepaid", "PAID", "2026-05-29T10:00:00Z",
                 List.of(new PaymentRequest(new Money(2500L, "USD")), new PaymentRequest(new Money(1500L, "USD"))), null);
@@ -117,7 +117,7 @@ class PrepaidServiceTest {
         when(currentBusinessContext.id()).thenReturn(businessId);
         return new PrepaidService(mock(SquareClientProvider.class), mock(ProviderRepository.class),
                 mock(ProviderDirectory.class), mock(SalonConfigRepository.class), currentBusinessContext,
-                packages, redemptions);
+                packages, redemptions, mock(SettlementPreviewService.class));
     }
 
     // Package 5 genuinely EXISTS — just owned by business 2, not the caller's business 1. Stubbing
@@ -166,7 +166,7 @@ class PrepaidServiceTest {
                 mock(com.salonreview.config.CurrentBusinessContext.class);
         when(currentBusinessContext.id()).thenReturn(1L);
         PrepaidService svc = new PrepaidService(mock(SquareClientProvider.class), mock(ProviderRepository.class),
-                directory, salonConfig, currentBusinessContext, packages, redemptions);
+                directory, salonConfig, currentBusinessContext, packages, redemptions, mock(SettlementPreviewService.class));
         when(packages.findById(5L)).thenReturn(Optional.of(anotherBusinessesPackage())); // old lookup
         when(packages.findByIdAndBusinessId(5L, 1L)).thenReturn(Optional.empty());
         var req = new PrepaidService.RedeemRequest("bk1", "var1", "Mani",
@@ -245,7 +245,7 @@ class PrepaidServiceTest {
         when(currentBusinessContext.id()).thenReturn(1L);
         PrepaidService svc = new PrepaidService(squareClientProvider, mock(ProviderRepository.class),
                 mock(ProviderDirectory.class), mock(SalonConfigRepository.class), currentBusinessContext,
-                packages, mock(PrepaidRedemptionRepository.class));
+                packages, mock(PrepaidRedemptionRepository.class), mock(SettlementPreviewService.class));
 
         // One package already exists, referencing invoice "000089" — that invoice must be excluded.
         when(packages.findAllByBusinessIdOrderByPaidDateDesc(1L)).thenReturn(List.of(
@@ -300,7 +300,7 @@ class PrepaidServiceTest {
         when(squareClientProvider.forBusiness(2L)).thenReturn(square);
 
         PrepaidService svc = new PrepaidService(squareClientProvider, providers, directory, salonConfig,
-                currentBusinessContext, packages, redemptions);
+                currentBusinessContext, packages, redemptions, mock(SettlementPreviewService.class));
 
         PrepaidPackage pkg = PrepaidPackage.builder().id(9L).businessId(2L).customerId("C1").customerName("Hala Wrda")
                 .paidDate(LocalDate.of(2026, 7, 2)).amount(new BigDecimal("100.00")).totalServices(1).build();
@@ -364,7 +364,7 @@ class PrepaidServiceTest {
         when(squareClientProvider.forBusiness(2L)).thenReturn(square);
 
         PrepaidService svc = new PrepaidService(squareClientProvider, providers, directory, salonConfig,
-                currentBusinessContext, packages, redemptions);
+                currentBusinessContext, packages, redemptions, mock(SettlementPreviewService.class));
 
         // The package (and her booking) carry the pre-merge id; the checkout order carries the
         // canonical post-merge id — exactly the real split found live.
@@ -425,7 +425,7 @@ class PrepaidServiceTest {
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
 
         PrepaidService svc = new PrepaidService(squareClientProvider, providers, directory, salonConfig,
-                currentBusinessContext, packages, redemptions);
+                currentBusinessContext, packages, redemptions, mock(SettlementPreviewService.class));
 
         PrepaidPackage pkg = PrepaidPackage.builder().id(1L).businessId(1L).customerId("C1").customerName("Alina")
                 .paidDate(LocalDate.of(2026, 3, 1)).amount(new BigDecimal("300")).totalServices(3).build();

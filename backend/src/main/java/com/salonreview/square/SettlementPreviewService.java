@@ -19,10 +19,12 @@ import com.salonreview.repo.TierGrantRepository;
 import com.salonreview.service.ProviderDirectory;
 import com.salonreview.square.SquareMonthAggregator.AttributedService;
 import com.salonreview.square.SquareMonthAggregator.MonthAggregation;
+import com.salonreview.util.TtlCache;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
@@ -58,6 +60,18 @@ public class SettlementPreviewService {
     private final SuspiciousBookingService suspiciousBookings;
     private final CancelledAppointmentService cancelledAppointments;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
+
+    // aggregate()'s own raw Square reads are already cached (SquareClient, ~10 min — see its own
+    // doc), but the matching/commission computation layered on top of them (gap-matching, cash-note
+    // parsing, discount-coverage, tier/redo/no-show folding) was recomputed from scratch on every
+    // single /reports or /me load regardless — this caches that finished result instead. Shorter
+    // than the marketing tabs' 10-min TTL since this is money an owner may be actively
+    // double-checking; every mutation that can change a settlement figure (manual adjustments,
+    // redos, no-show overrides, tier grants, feedback, prepaid redemptions) busts this explicitly
+    // via {@link #invalidateCache()} anyway, so the TTL is really just a safety bound for anything
+    // missed, not the primary freshness mechanism.
+    private static final Duration CACHE_TTL = Duration.ofMinutes(3);
+    private final TtlCache cache = new TtlCache();
 
     public SettlementPreviewService(SquareMonthAggregator aggregator, TierCommissionEngine engine,
                                     SalonConfigRepository salonConfig, ProviderDirectory directory,
@@ -274,8 +288,22 @@ public class SettlementPreviewService {
                 h.cashGross(), h.cashCollected(), h.adjustments().add(amount));
     }
 
+    /** Backs the global "Sync now" button (see SquareSyncController) and every mutation that can
+     * change a settlement figure (manual adjustments, redos, no-show overrides, tier grants,
+     * feedback, prepaid redemptions) — only this business's own cached entries, same reasoning as
+     * every other {@code invalidateCache()} in this codebase (a per-tenant action must never force
+     * another business's already-fresh cache to also recompute). */
+    public void invalidateCache() {
+        cache.invalidateWhere(k -> k.contains(":" + currentBusinessContext.id() + ":"));
+    }
+
     @Transactional
     public SettlementPreview preview(int year, int month) {
+        String key = "preview:" + currentBusinessContext.id() + ":" + year + ":" + month;
+        return cache.get(key, CACHE_TTL, () -> computePreview(year, month));
+    }
+
+    private SettlementPreview computePreview(int year, int month) {
         Long businessId = currentBusinessContext.id();
         SalonConfig sc = salonConfig.findByBusinessId(businessId)
                 .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));
@@ -390,6 +418,11 @@ public class SettlementPreviewService {
      */
     @Transactional
     public ProviderDetail providerDetail(int year, int month, Long providerId) {
+        String key = "providerDetail:" + currentBusinessContext.id() + ":" + year + ":" + month + ":" + providerId;
+        return cache.get(key, CACHE_TTL, () -> computeProviderDetail(year, month, providerId));
+    }
+
+    private ProviderDetail computeProviderDetail(int year, int month, Long providerId) {
         Long businessId = currentBusinessContext.id();
         SalonConfig sc = salonConfig.findByBusinessId(businessId)
                 .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));

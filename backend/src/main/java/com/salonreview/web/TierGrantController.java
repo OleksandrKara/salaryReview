@@ -3,6 +3,7 @@ package com.salonreview.web;
 import com.salonreview.domain.TierGrant;
 import com.salonreview.repo.ProviderRepository;
 import com.salonreview.repo.TierGrantRepository;
+import com.salonreview.square.SettlementPreviewService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,12 +24,15 @@ public class TierGrantController {
     private final TierGrantRepository grants;
     private final ProviderRepository providers;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
+    private final SettlementPreviewService settlementPreview;
 
     public TierGrantController(TierGrantRepository grants, ProviderRepository providers,
-                               com.salonreview.config.CurrentBusinessContext currentBusinessContext) {
+                               com.salonreview.config.CurrentBusinessContext currentBusinessContext,
+                               SettlementPreviewService settlementPreview) {
         this.grants = grants;
         this.providers = providers;
         this.currentBusinessContext = currentBusinessContext;
+        this.settlementPreview = settlementPreview;
     }
 
     @GetMapping
@@ -52,6 +56,7 @@ public class TierGrantController {
         if (existing != null) return ResponseEntity.ok(existing);
         TierGrant saved = grants.save(TierGrant.builder()
                 .providerId(providerId).year(year).month(month).build());
+        settlementPreview.invalidateCache();
         return ResponseEntity.status(HttpStatus.CREATED).body(saved);
     }
 
@@ -61,6 +66,7 @@ public class TierGrantController {
                                        @RequestParam int year, @RequestParam int month) {
         requireOwnProvider(providerId);
         grants.deleteByProviderIdAndYearAndMonth(providerId, year, month);
+        settlementPreview.invalidateCache();
         return ResponseEntity.noContent().build();
     }
 
