@@ -15,6 +15,12 @@ public interface SquarePaymentMirrorRepository extends JpaRepository<SquarePayme
 
     List<SquarePaymentMirror> findByBusinessIdAndSquareOrderId(Long businessId, String squareOrderId);
 
+    /** Every mirrored payment for a business in a window, independent of customer — the local
+     * replacement for {@code SquareClient#payments(from, to)} (Phase 2), needed by {@code
+     * SquareMonthAggregator}'s orphan-payment detection, which scans a whole month at once rather
+     * than one customer at a time. */
+    List<SquarePaymentMirror> findByBusinessIdAndCreatedAtBetween(Long businessId, Instant from, Instant to);
+
     @Modifying
     @Transactional
     @Query(value = """

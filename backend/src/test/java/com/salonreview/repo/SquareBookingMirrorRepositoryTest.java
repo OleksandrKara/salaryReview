@@ -1,5 +1,6 @@
 package com.salonreview.repo;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -84,5 +85,23 @@ class SquareBookingMirrorRepositoryTest {
 
         assertThat(result).extracting(com.salonreview.domain.SquareBookingMirror::getSquareBookingId)
                 .containsExactly("bkRecent");
+    }
+
+    @Test
+    @DisplayName("findByBusinessIdAndStartAtBetween (Phase 2) returns every booking in the window, independent of customer")
+    void findByBusinessWideWindowReturnsEveryCustomersBookings() {
+        Long businessId = businesses.findByShortCode("akluxnails").orElseThrow().getId();
+        Instant inWindow1 = Instant.parse("2026-07-10T15:00:00Z");
+        Instant inWindow2 = Instant.parse("2026-07-20T15:00:00Z");
+        Instant outsideWindow = Instant.parse("2026-08-05T15:00:00Z");
+        repository.upsert(businessId, "bkWin1", "CUSTX", "ACCEPTED", inWindow1, inWindow1, inWindow1, "LOC1", null, null, null);
+        repository.upsert(businessId, "bkWin2", "CUSTY", "ACCEPTED", inWindow2, inWindow2, inWindow2, "LOC1", null, null, null);
+        repository.upsert(businessId, "bkOutside", "CUSTX", "ACCEPTED", outsideWindow, outsideWindow, outsideWindow, "LOC1", null, null, null);
+
+        List<com.salonreview.domain.SquareBookingMirror> result = repository.findByBusinessIdAndStartAtBetween(
+                businessId, Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-31T23:59:59Z"));
+
+        assertThat(result).extracting(com.salonreview.domain.SquareBookingMirror::getSquareBookingId)
+                .containsExactlyInAnyOrder("bkWin1", "bkWin2");
     }
 }
