@@ -138,9 +138,16 @@ public class SquareWebhookController {
             orderWebhookHandler.handleOrderUpdated(businessId, orderEvent);
         }
         // Phase 3: customer mirror — independent listener on the same event stream, not entangled
-        // with anything above.
+        // with anything above. customer.created/customer.updated/customer.deleted all carry the
+        // identical data.object.customer shape (unlike booking/order/payment above, which dispatch
+        // purely on which payload field is populated), so this is the one dispatch in this method
+        // that has to read the top-level event type to tell an upsert from a deletion.
         if (object != null && object.customer() != null) {
-            customerWebhookHandler.handleCustomerEvent(businessId, object.customer());
+            if ("customer.deleted".equals(event.type())) {
+                customerWebhookHandler.handleCustomerDeleted(businessId, object.customer());
+            } else {
+                customerWebhookHandler.handleCustomerEvent(businessId, object.customer());
+            }
         }
         return ResponseEntity.ok().build();
     }

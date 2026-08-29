@@ -75,4 +75,17 @@ class SquareCustomerMirrorRepositoryTest {
 
         assertThat(result).isEmpty();
     }
+
+    @Test
+    @DisplayName("deleteByBusinessIdAndSquareCustomerId removes the row on customer.deleted")
+    void deleteRemovesTheMirrorRow() {
+        Long businessId = businesses.findByShortCode("akluxnails").orElseThrow().getId();
+        Instant createdAt = Instant.parse("2026-01-01T00:00:00Z");
+        repository.upsert(businessId, "CUSTDelete1", "+19165558888", "Jane", "Doe", null, createdAt);
+        assertThat(repository.findByBusinessIdAndPhoneNumber(businessId, "+19165558888")).hasSize(1);
+
+        repository.deleteByBusinessIdAndSquareCustomerId(businessId, "CUSTDelete1");
+
+        assertThat(repository.findByBusinessIdAndPhoneNumber(businessId, "+19165558888")).isEmpty();
+    }
 }

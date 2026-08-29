@@ -52,4 +52,38 @@ class SquareCustomerWebhookHandlerTest {
 
         handler.handleCustomerEvent(1L, webhookCustomer); // must not throw
     }
+
+    @Test
+    void deletedCustomerIsRemovedFromTheMirrorNotUpserted() {
+        SquareCustomerMirrorIngestService ingest = mock(SquareCustomerMirrorIngestService.class);
+        SquareCustomerWebhookHandler handler = new SquareCustomerWebhookHandler(ingest);
+        var webhookCustomer = new SquareWebhookEvent.Customer("CUST1", "Jane", "Doe",
+                "jane@example.com", "+19165551234", "2026-06-01T16:00:00Z");
+
+        handler.handleCustomerDeleted(1L, webhookCustomer);
+
+        verify(ingest).deleteCustomer(1L, "CUST1");
+        verify(ingest, org.mockito.Mockito.never()).upsertCustomer(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void nullDeletedCustomerIsIgnored() {
+        SquareCustomerMirrorIngestService ingest = mock(SquareCustomerMirrorIngestService.class);
+        SquareCustomerWebhookHandler handler = new SquareCustomerWebhookHandler(ingest);
+
+        handler.handleCustomerDeleted(1L, null);
+
+        verifyNoInteractions(ingest);
+    }
+
+    @Test
+    void deleteFailureIsSwallowedNotPropagated() {
+        SquareCustomerMirrorIngestService ingest = mock(SquareCustomerMirrorIngestService.class);
+        SquareCustomerWebhookHandler handler = new SquareCustomerWebhookHandler(ingest);
+        var webhookCustomer = new SquareWebhookEvent.Customer("CUST1", null, null, null, null, null);
+        org.mockito.Mockito.doThrow(new RuntimeException("DB down"))
+                .when(ingest).deleteCustomer(eq(1L), eq("CUST1"));
+
+        handler.handleCustomerDeleted(1L, webhookCustomer); // must not throw
+    }
 }
