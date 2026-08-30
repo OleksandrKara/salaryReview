@@ -8,15 +8,17 @@ import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 /**
- * Cached LLM funnel analysis for one (landing page, flow, prompt version, data snapshot)
+ * Cached LLM funnel analysis for one (landing page, variant, prompt version, data snapshot)
  * combination — mirrors {@link SuspiciousTriage}'s caching shape. {@code snapshotFingerprint} is
  * a deterministic string built from the exact funnel numbers analyzed (see
  * {@code FunnelAnalysisService#fingerprint}); a repeat "Analyze" click with unchanged underlying
  * data returns the cached row instead of calling Claude again, while any real change to the
  * funnel (new events recorded) naturally produces a different fingerprint and triggers a fresh
- * analysis.
+ * analysis. Keyed by variantId rather than flowKey (kept alongside, for display only) since more
+ * than one variant can share the same flow shape — see FunnelDashboardDto's own doc.
  */
 @Entity
 @Table(name = "funnel_analysis")
@@ -30,6 +32,11 @@ public class FunnelAnalysis {
 
     @Column(name = "landing_page_slug", nullable = false, length = 64)
     private String landingPageSlug;
+
+    /** Nullable only for rows written before this column existed (see V138) — every row created
+     * from now on always has one. */
+    @Column(name = "variant_id")
+    private UUID variantId;
 
     @Column(name = "flow_key", nullable = false, length = 64)
     private String flowKey;

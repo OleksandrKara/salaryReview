@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -39,6 +40,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class FunnelAnalysisControllerTest {
 
     private static final Long BUSINESS_ID = 1L;
+    private static final UUID VARIANT_ID = UUID.randomUUID();
 
     private FunnelAnalysisService service;
     private AiFunnelAnalysisProperties props;
@@ -74,7 +76,7 @@ class FunnelAnalysisControllerTest {
 
         mvc.perform(post("/api/owner/marketing/funnel/analyze")
                         .param("slug", "home")
-                        .param("flowKey", "homepage_booking_v1"))
+                        .param("variantId", VARIANT_ID.toString()))
                 .andExpect(status().isNotFound());
 
         verifyNoInteractions(service);
@@ -88,7 +90,7 @@ class FunnelAnalysisControllerTest {
 
         mvc.perform(post("/api/owner/marketing/funnel/analyze")
                         .param("slug", "home")
-                        .param("flowKey", "homepage_booking_v1"))
+                        .param("variantId", VARIANT_ID.toString()))
                 .andExpect(status().isNotFound());
 
         verifyNoInteractions(service);
@@ -111,11 +113,11 @@ class FunnelAnalysisControllerTest {
                 "v1",
                 "claude-sonnet-5",
                 Instant.parse("2026-07-11T00:00:00Z"));
-        when(service.analyze("home", "homepage_booking_v1", true, false, Language.EN)).thenReturn(Optional.of(r));
+        when(service.analyze("home", VARIANT_ID, true, false, Language.EN)).thenReturn(Optional.of(r));
 
         mvc.perform(post("/api/owner/marketing/funnel/analyze")
                         .param("slug", "home")
-                        .param("flowKey", "homepage_booking_v1"))
+                        .param("variantId", VARIANT_ID.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.biggestBottleneckStep").value("addons"))
                 .andExpect(jsonPath("$.recommendations[0].title").value("Default the add-ons step to \"no add-on\""))
@@ -132,25 +134,26 @@ class FunnelAnalysisControllerTest {
         FunnelAnalysisResult r = new FunnelAnalysisResult(
                 "addons", "Explanation.", List.of(), List.of(), List.of(), "Do this first.",
                 "v1", "claude-sonnet-5", Instant.now());
-        when(service.analyze("home", "homepage_booking_v1", true, true, Language.EN)).thenReturn(Optional.of(r));
+        when(service.analyze("home", VARIANT_ID, true, true, Language.EN)).thenReturn(Optional.of(r));
 
         mvc.perform(post("/api/owner/marketing/funnel/analyze")
                         .param("slug", "home")
-                        .param("flowKey", "homepage_booking_v1")
+                        .param("variantId", VARIANT_ID.toString())
                         .param("force", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.biggestBottleneckStep").value("addons"));
     }
 
     @Test
-    @DisplayName("no funnel data for slug/flowKey → 404")
+    @DisplayName("no funnel data for slug/variantId → 404")
     void noFunnelDataReturns404() throws Exception {
         when(props.isEnabled()).thenReturn(true);
-        when(service.analyze("home", "unknown_flow", true, false, Language.EN)).thenReturn(Optional.empty());
+        UUID unknownVariant = UUID.randomUUID();
+        when(service.analyze("home", unknownVariant, true, false, Language.EN)).thenReturn(Optional.empty());
 
         mvc.perform(post("/api/owner/marketing/funnel/analyze")
                         .param("slug", "home")
-                        .param("flowKey", "unknown_flow"))
+                        .param("variantId", unknownVariant.toString()))
                 .andExpect(status().isNotFound());
     }
 
@@ -161,7 +164,7 @@ class FunnelAnalysisControllerTest {
 
         mvc.perform(get("/api/owner/marketing/funnel/analyze/history")
                         .param("slug", "home")
-                        .param("flowKey", "homepage_booking_v1"))
+                        .param("variantId", VARIANT_ID.toString()))
                 .andExpect(status().isNotFound());
 
         verifyNoInteractions(service);
@@ -177,11 +180,11 @@ class FunnelAnalysisControllerTest {
         FunnelAnalysisResult older = new FunnelAnalysisResult(
                 "contact", "Explanation B.", List.of(), List.of(), List.of(), "Do B.",
                 "v1", "claude-sonnet-5", Instant.parse("2026-07-10T00:00:00Z"));
-        when(service.history("home", "homepage_booking_v1")).thenReturn(List.of(newer, older));
+        when(service.history("home", VARIANT_ID)).thenReturn(List.of(newer, older));
 
         mvc.perform(get("/api/owner/marketing/funnel/analyze/history")
                         .param("slug", "home")
-                        .param("flowKey", "homepage_booking_v1"))
+                        .param("variantId", VARIANT_ID.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].biggestBottleneckStep").value("addons"))
                 .andExpect(jsonPath("$[1].biggestBottleneckStep").value("contact"));

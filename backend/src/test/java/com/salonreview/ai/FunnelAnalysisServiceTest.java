@@ -17,6 +17,7 @@ import org.springframework.beans.factory.ObjectProvider;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -37,6 +38,8 @@ import static org.mockito.Mockito.when;
  * {@link SuspiciousBookingTriageServiceTest}.
  */
 class FunnelAnalysisServiceTest {
+
+    private static final UUID VARIANT_ID = UUID.randomUUID();
 
     @SuppressWarnings("unchecked")
     private ObjectProvider<AnthropicClient> anthropicProvider = mock(ObjectProvider.class);
@@ -72,7 +75,8 @@ class FunnelAnalysisServiceTest {
     }
 
     private static FunnelDashboardDto sampleFunnel() {
-        return new FunnelDashboardDto("home", "homepage_booking_v1", 100, 60,
+        return new FunnelDashboardDto("home", VARIANT_ID, "Control", "control", 100, true,
+                "homepage_booking_v1", 100, 60,
                 List.of(new FunnelStepStat("services", 0, 4, 60, 0.6, 40, 0.4),
                         new FunnelStepStat("addons", 1, 4, 30, 0.3, 30, 0.5)),
                 20, 0.2, true, java.time.Instant.now());
@@ -89,34 +93,34 @@ class FunnelAnalysisServiceTest {
     @DisplayName("an EN-cached row is not served for an RU request — cache miss, LLM called fresh")
     void cacheLookupDistinguishesLanguage() throws Exception {
         // No cached row for RU (only the EN lookup would have hit, if it were checked).
-        when(analyses.findFirstByLandingPageSlugAndFlowKeyAndPromptVersionAndSnapshotFingerprintAndLanguageOrderByCreatedAtDesc(
-                anyString(), anyString(), anyString(), anyString(), eq(Language.RU)))
+        when(analyses.findFirstByLandingPageSlugAndVariantIdAndPromptVersionAndSnapshotFingerprintAndLanguageOrderByCreatedAtDesc(
+                anyString(), any(), anyString(), anyString(), eq(Language.RU)))
                 .thenReturn(Optional.empty());
         doReturn(canned("addons")).when(spied).callClaude(any(), anyString(), eq(Language.RU));
 
-        Optional<FunnelAnalysisResult> result = spied.analyze("home", "homepage_booking_v1", true, false, Language.RU);
+        Optional<FunnelAnalysisResult> result = spied.analyze("home", VARIANT_ID, true, false, Language.RU);
 
         assertThat(result).isPresent();
         verify(spied).callClaude(any(), anyString(), eq(Language.RU));
-        verify(analyses).findFirstByLandingPageSlugAndFlowKeyAndPromptVersionAndSnapshotFingerprintAndLanguageOrderByCreatedAtDesc(
-                eq("home"), eq("homepage_booking_v1"), eq(FunnelAnalysisPrompts.PROMPT_VERSION), anyString(), eq(Language.RU));
+        verify(analyses).findFirstByLandingPageSlugAndVariantIdAndPromptVersionAndSnapshotFingerprintAndLanguageOrderByCreatedAtDesc(
+                eq("home"), eq(VARIANT_ID), eq(FunnelAnalysisPrompts.PROMPT_VERSION), anyString(), eq(Language.RU));
     }
 
     @Test
     @DisplayName("a cached RU row is returned as-is without calling the LLM")
     void cacheHitSkipsLlmForRu() throws Exception {
         FunnelAnalysis cached = FunnelAnalysis.builder()
-                .id(5L).landingPageSlug("home").flowKey("homepage_booking_v1")
+                .id(5L).landingPageSlug("home").variantId(VARIANT_ID).flowKey("homepage_booking_v1")
                 .promptVersion(FunnelAnalysisPrompts.PROMPT_VERSION).snapshotFingerprint("fp").language(Language.RU)
                 .biggestBottleneckStep("addons").bottleneckExplanation("Кэшированное объяснение.")
                 .recommendations(List.of()).suspiciousPatterns(List.of()).suggestedAbTests(List.of())
                 .topPriorityAction("Сделайте это.").model("claude-sonnet-5")
                 .build();
-        when(analyses.findFirstByLandingPageSlugAndFlowKeyAndPromptVersionAndSnapshotFingerprintAndLanguageOrderByCreatedAtDesc(
-                anyString(), anyString(), anyString(), anyString(), eq(Language.RU)))
+        when(analyses.findFirstByLandingPageSlugAndVariantIdAndPromptVersionAndSnapshotFingerprintAndLanguageOrderByCreatedAtDesc(
+                anyString(), any(), anyString(), anyString(), eq(Language.RU)))
                 .thenReturn(Optional.of(cached));
 
-        Optional<FunnelAnalysisResult> result = spied.analyze("home", "homepage_booking_v1", true, false, Language.RU);
+        Optional<FunnelAnalysisResult> result = spied.analyze("home", VARIANT_ID, true, false, Language.RU);
 
         assertThat(result).isPresent();
         assertThat(result.get().bottleneckExplanation()).isEqualTo("Кэшированное объяснение.");
@@ -126,28 +130,29 @@ class FunnelAnalysisServiceTest {
     @Test
     @DisplayName("persisted row stores the requested language")
     void persistsRequestedLanguage() throws Exception {
-        when(analyses.findFirstByLandingPageSlugAndFlowKeyAndPromptVersionAndSnapshotFingerprintAndLanguageOrderByCreatedAtDesc(
-                anyString(), anyString(), anyString(), anyString(), eq(Language.RU)))
+        when(analyses.findFirstByLandingPageSlugAndVariantIdAndPromptVersionAndSnapshotFingerprintAndLanguageOrderByCreatedAtDesc(
+                anyString(), any(), anyString(), anyString(), eq(Language.RU)))
                 .thenReturn(Optional.empty());
         doReturn(canned("addons")).when(spied).callClaude(any(), anyString(), eq(Language.RU));
 
-        spied.analyze("home", "homepage_booking_v1", true, false, Language.RU);
+        spied.analyze("home", VARIANT_ID, true, false, Language.RU);
 
         ArgumentCaptor<FunnelAnalysis> cap = ArgumentCaptor.forClass(FunnelAnalysis.class);
         verify(analyses).save(cap.capture());
         assertThat(cap.getValue().getLanguage()).isEqualTo(Language.RU);
+        assertThat(cap.getValue().getVariantId()).isEqualTo(VARIANT_ID);
     }
 
     @Test
     @DisplayName("a refusal falls back to Russian explanation/action text when Russian was requested")
     void refusalFallsBackToRussianText() throws Exception {
-        when(analyses.findFirstByLandingPageSlugAndFlowKeyAndPromptVersionAndSnapshotFingerprintAndLanguageOrderByCreatedAtDesc(
-                anyString(), anyString(), anyString(), anyString(), eq(Language.RU)))
+        when(analyses.findFirstByLandingPageSlugAndVariantIdAndPromptVersionAndSnapshotFingerprintAndLanguageOrderByCreatedAtDesc(
+                anyString(), any(), anyString(), anyString(), eq(Language.RU)))
                 .thenReturn(Optional.empty());
         doThrow(new FunnelAnalysisService.RefusalException("policy_refusal"))
                 .when(spied).callClaude(any(), anyString(), eq(Language.RU));
 
-        Optional<FunnelAnalysisResult> result = spied.analyze("home", "homepage_booking_v1", true, false, Language.RU);
+        Optional<FunnelAnalysisResult> result = spied.analyze("home", VARIANT_ID, true, false, Language.RU);
 
         assertThat(result).isPresent();
         assertThat(result.get().bottleneckExplanation()).contains("Не удалось автоматически проанализировать");
@@ -157,13 +162,13 @@ class FunnelAnalysisServiceTest {
     @Test
     @DisplayName("a refusal falls back to English text when English was requested")
     void refusalFallsBackToEnglishText() throws Exception {
-        when(analyses.findFirstByLandingPageSlugAndFlowKeyAndPromptVersionAndSnapshotFingerprintAndLanguageOrderByCreatedAtDesc(
-                anyString(), anyString(), anyString(), anyString(), eq(Language.EN)))
+        when(analyses.findFirstByLandingPageSlugAndVariantIdAndPromptVersionAndSnapshotFingerprintAndLanguageOrderByCreatedAtDesc(
+                anyString(), any(), anyString(), anyString(), eq(Language.EN)))
                 .thenReturn(Optional.empty());
         doThrow(new FunnelAnalysisService.RefusalException("policy_refusal"))
                 .when(spied).callClaude(any(), anyString(), eq(Language.EN));
 
-        Optional<FunnelAnalysisResult> result = spied.analyze("home", "homepage_booking_v1", true, false, Language.EN);
+        Optional<FunnelAnalysisResult> result = spied.analyze("home", VARIANT_ID, true, false, Language.EN);
 
         assertThat(result).isPresent();
         assertThat(result.get().bottleneckExplanation()).contains("couldn't be analyzed automatically");

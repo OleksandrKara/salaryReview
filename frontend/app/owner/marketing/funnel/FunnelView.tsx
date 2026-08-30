@@ -130,22 +130,16 @@ function FunnelPanel({
   data,
   canAnalyze,
   sources,
-  completedSharedAcrossFlows,
 }: {
   label: string;
   slug: string;
   data: FunnelDashboardData;
   canAnalyze: boolean;
   sources: Set<TrafficSourceKey>;
-  /** True when this page has more than one flow_key — "Completed" is counted per landing page,
-   * not per flow (see marketing.attribution, which has no flow_key column), so every flow panel
-   * of a multi-flow page shows the same number. Surfaced as a tooltip rather than split per-flow,
-   * since splitting it accurately isn't possible without a schema change to a live table. */
-  completedSharedAcrossFlows: boolean;
 }) {
   const retiredTitle = data.lastActivityAt
     ? `No new visitors since ${relativeTime(data.lastActivityAt)} — likely retired in favor of another variant. Data kept for history, not deleted.`
-    : 'No activity recorded for this flow. Data kept for history, not deleted.';
+    : 'No activity recorded for this variant. Data kept for history, not deleted.';
   // history[0] (if present) is "the" current analysis shown; history[1:] is the collapsed past-
   // analyses list. null means "not fetched yet", [] means "fetched, nothing analyzed before".
   const [history, setHistory] = useState<FunnelAnalysisResult[] | null>(null);
@@ -157,14 +151,14 @@ function FunnelPanel({
   const [expandedHistory, setExpandedHistory] = useState<Set<number>>(new Set());
 
   useEffect(() => {
-    // canAnalyze/slug/data.flowKey are effectively constant for this component's lifetime — the
+    // canAnalyze/slug/data.variantId are effectively constant for this component's lifetime — the
     // parent remounts the whole panel (via its `key`) whenever the source selection changes, so
     // this only ever needs to run once per mount. loadingHistory already starts as `canAnalyze` (see
     // useState above), so there's no separate setState-to-true call needed here.
     if (!canAnalyze) return;
     let cancelled = false;
     api
-      .getFunnelAnalysisHistory(slug, data.flowKey)
+      .getFunnelAnalysisHistory(slug, data.variantId)
       .then((h) => {
         if (!cancelled) setHistory(h);
       })
@@ -186,10 +180,10 @@ function FunnelPanel({
     setRunningAction(force ? 'force' : 'normal');
     setError(null);
     try {
-      await api.analyzeFunnel(slug, data.flowKey, sourcesToAnalyzeMode(sources), force);
+      await api.analyzeFunnel(slug, data.variantId, sourcesToAnalyzeMode(sources), force);
       // Re-fetch rather than splice the new result in locally — a non-forced call may have just
       // returned the existing cached entry, and re-fetching sidesteps having to guess which.
-      const fresh = await api.getFunnelAnalysisHistory(slug, data.flowKey);
+      const fresh = await api.getFunnelAnalysisHistory(slug, data.variantId);
       setHistory(fresh);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Analysis failed.');
@@ -212,12 +206,37 @@ function FunnelPanel({
 
   return (
     <div className={`rounded-lg border p-4 ${data.active ? 'border-zinc-200' : 'border-zinc-200 bg-zinc-50/60'}`}>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-start justify-between gap-2">
         <div>
-          <h3 className={`font-medium ${data.active ? 'text-zinc-900' : 'text-zinc-500'}`}>{label}</h3>
+          <p className="text-xs font-medium text-zinc-400">{label}</p>
+          <h3 className={`text-base font-semibold ${data.active ? 'text-zinc-900' : 'text-zinc-500'}`}>{data.variantName}</h3>
           <p className="text-xs text-zinc-400" title={data.flowKey}>
             {FLOW_KEY_LABELS[data.flowKey] ?? data.flowKey}
           </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <span
+              title="marketing.landing_variants.weight — this variant's share of the random A/B pool. 0 means it only gets traffic via its own deep link, if it has one."
+              className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium tabular-nums text-zinc-600"
+            >
+              Weight {data.variantWeight}
+            </span>
+            {data.variantKey && (
+              <span
+                title="This variant's ?v= deep-link key — always reachable at this link regardless of weight."
+                className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-mono text-zinc-600"
+              >
+                ?v={data.variantKey}
+              </span>
+            )}
+            {!data.variantEnabled && (
+              <span
+                title="This variant has been deactivated outright (marketing.landing_variants.active = false) — not just weighted to zero."
+                className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-200"
+              >
+                Deactivated
+              </span>
+            )}
+          </div>
         </div>
         {!data.active && (
           <span
@@ -239,9 +258,7 @@ function FunnelPanel({
           <dd className="font-semibold tabular-nums">{data.totalStarted.toLocaleString('en-US')}</dd>
         </div>
         <div>
-          <dt className="text-xs text-zinc-500" title={completedSharedAcrossFlows ? 'Counted per landing page, shared across every flow shown below' : undefined}>
-            Completed{completedSharedAcrossFlows ? ' (page total)' : ''}
-          </dt>
+          <dt className="text-xs text-zinc-500">Completed</dt>
           <dd className="font-semibold tabular-nums">{data.totalCompleted.toLocaleString('en-US')}</dd>
         </div>
         <div>
@@ -447,11 +464,11 @@ export default function FunnelView({
   }
 
   const sourcesKey = Array.from(sources).sort().join(',');
-  // A retired flow (every variant that fed it has since had its weight zeroed/deactivated) is
-  // tucked into a collapsed section below rather than shown side-by-side with the live one —
-  // otherwise a frozen, no-longer-growing funnel reads as just another ongoing experiment.
-  const activeFlows = data.filter((f) => f.active);
-  const retiredFlows = data.filter((f) => !f.active);
+  // A retired variant (weight zeroed / deactivated a while ago) is tucked into a collapsed
+  // section below rather than shown side-by-side with the live ones — otherwise a frozen,
+  // no-longer-growing funnel reads as just another ongoing experiment.
+  const activeVariants = data.filter((f) => f.active);
+  const retiredVariants = data.filter((f) => !f.active);
 
   if (data.length === 0) {
     return (
@@ -502,15 +519,14 @@ export default function FunnelView({
       </div>
 
       <div className={compareMode ? 'grid gap-4 lg:grid-cols-2' : 'space-y-4'}>
-        {activeFlows.map((funnel) => (
+        {activeVariants.map((funnel) => (
           <FunnelPanel
-            key={`${slug}-${funnel.flowKey}-${sourcesKey}`}
+            key={`${slug}-${funnel.variantId}-${sourcesKey}`}
             label={currentName}
             slug={slug}
             data={funnel}
             canAnalyze={canAnalyze}
             sources={sources}
-            completedSharedAcrossFlows={data.length > 1}
           />
         ))}
         {compareMode &&
@@ -518,33 +534,31 @@ export default function FunnelView({
             const pageFunnels = compareData[p.slug] ?? [];
             return pageFunnels.map((funnel) => (
               <FunnelPanel
-                key={`${p.slug}-${funnel.flowKey}-${sourcesKey}`}
+                key={`${p.slug}-${funnel.variantId}-${sourcesKey}`}
                 label={p.name}
                 slug={p.slug}
                 data={funnel}
                 canAnalyze={canAnalyze}
                 sources={sources}
-                completedSharedAcrossFlows={pageFunnels.length > 1}
               />
             ));
           })}
       </div>
 
-      {retiredFlows.length > 0 && (
-        <details className="mt-4" open={activeFlows.length === 0}>
+      {retiredVariants.length > 0 && (
+        <details className="mt-4" open={activeVariants.length === 0}>
           <summary className="cursor-pointer text-sm font-medium text-zinc-500 hover:text-zinc-700">
-            Retired flows ({retiredFlows.length}) — no longer getting new traffic, kept for history
+            Retired variants ({retiredVariants.length}) — no longer getting new traffic, kept for history
           </summary>
           <div className="mt-3 space-y-4">
-            {retiredFlows.map((funnel) => (
+            {retiredVariants.map((funnel) => (
               <FunnelPanel
-                key={`${slug}-${funnel.flowKey}-${sourcesKey}`}
+                key={`${slug}-${funnel.variantId}-${sourcesKey}`}
                 label={currentName}
                 slug={slug}
                 data={funnel}
                 canAnalyze={canAnalyze}
                 sources={sources}
-                completedSharedAcrossFlows={data.length > 1}
               />
             ))}
           </div>

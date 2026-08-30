@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Owner/ads-manager-only AI funnel-analysis endpoint. Sits under {@code /api/owner/marketing/**}
@@ -53,12 +54,12 @@ public class FunnelAnalysisController {
      * Generates the analysis in the caller's preferred language (Russian owners/ads-managers get
      * a Russian analysis) — resolved server-side, same as {@code RagController}. */
     @PostMapping("/api/owner/marketing/funnel/analyze")
-    public ResponseEntity<FunnelAnalysisResult> analyze(@RequestParam String slug, @RequestParam String flowKey,
+    public ResponseEntity<FunnelAnalysisResult> analyze(@RequestParam String slug, @RequestParam UUID variantId,
                                                          @RequestParam(defaultValue = "ads") String mode,
                                                          @RequestParam(defaultValue = "false") boolean force,
                                                          @AuthenticationPrincipal AppUserPrincipal me) {
         if (!enabledForCaller()) return ResponseEntity.notFound().build();
-        return service.analyze(slug, flowKey, !"all".equalsIgnoreCase(mode), force, language(me))
+        return service.analyze(slug, variantId, !"all".equalsIgnoreCase(mode), force, language(me))
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -75,8 +76,8 @@ public class FunnelAnalysisController {
     /** Past analyses for this landing page/flow, newest first — powers the owner-facing history
      * list so a past result stays visible (with its timestamp) without re-running the LLM. */
     @GetMapping("/api/owner/marketing/funnel/analyze/history")
-    public ResponseEntity<List<FunnelAnalysisResult>> history(@RequestParam String slug, @RequestParam String flowKey) {
+    public ResponseEntity<List<FunnelAnalysisResult>> history(@RequestParam String slug, @RequestParam UUID variantId) {
         if (!enabledForCaller()) return ResponseEntity.notFound().build();
-        return ResponseEntity.ok(service.history(slug, flowKey));
+        return ResponseEntity.ok(service.history(slug, variantId));
     }
 }

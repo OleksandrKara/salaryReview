@@ -616,18 +616,18 @@ export const api = {
   // stays a plain 'ads'|'all' binary (the AI feature's own, separate contract, not the 5-way
   // TrafficSourceFilter) — callers map their current selection down to whichever of the two is
   // the closer match.
-  analyzeFunnel: (slug: string, flowKey: string, mode: 'ads' | 'all' = 'ads', force = false) =>
+  analyzeFunnel: (slug: string, variantId: string, mode: 'ads' | 'all' = 'ads', force = false) =>
     proxyJson<FunnelAnalysisResult>(
-      `/api/owner/marketing/funnel/analyze?slug=${encodeURIComponent(slug)}&flowKey=${encodeURIComponent(flowKey)}&mode=${mode}${force ? '&force=true' : ''}`,
+      `/api/owner/marketing/funnel/analyze?slug=${encodeURIComponent(slug)}&variantId=${encodeURIComponent(variantId)}&mode=${mode}${force ? '&force=true' : ''}`,
       'POST',
       {},
     ),
 
-  // Past analyses for this landing page/flow, newest first — powers the history list under the
-  // Analyze Funnel button so a prior result stays visible (with its timestamp) without a re-run.
-  getFunnelAnalysisHistory: (slug: string, flowKey: string) =>
+  // Past analyses for this landing page variant, newest first — powers the history list under
+  // the Analyze Funnel button so a prior result stays visible (with its timestamp) without a re-run.
+  getFunnelAnalysisHistory: (slug: string, variantId: string) =>
     proxyGet<FunnelAnalysisResult[]>(
-      `/api/owner/marketing/funnel/analyze/history?slug=${encodeURIComponent(slug)}&flowKey=${encodeURIComponent(flowKey)}`,
+      `/api/owner/marketing/funnel/analyze/history?slug=${encodeURIComponent(slug)}&variantId=${encodeURIComponent(variantId)}`,
     ),
 
   renameMarketingVariant: (variantId: string, name: string) =>
