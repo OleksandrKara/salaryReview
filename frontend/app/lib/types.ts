@@ -1408,22 +1408,38 @@ export interface FunnelStepStat {
 
 export interface FunnelDashboardData {
   landingPageSlug: string;
+  variantId: string;
+  /** marketing.landing_variants.name — same label shown in the variant list elsewhere in the
+   * marketing dashboard. */
+  variantName: string;
+  /** marketing.landing_variants.key — the ?v= deep-link key, or null if this variant has none
+   * (random-pool-only, no direct campaign link). */
+  variantKey: string | null;
+  /** marketing.landing_variants.weight — 0 means excluded from the random A/B pool (still
+   * reachable via variantKey's deep link, if it has one). */
+  variantWeight: number;
+  /** marketing.landing_variants.active — false means the variant itself has been deactivated
+   * outright, distinct from weight=0 (which just excludes it from the random pool). */
+  variantEnabled: boolean;
+  /** Which booking-flow shape this variant uses — descriptive only; more than one variant can
+   * share the same flowKey and still get its own separate row here. */
   flowKey: string;
-  /** Same page_view count the Overview tab shows — the two never disagree on "how many people saw this page". */
+  /** This variant's own page_view count for the selected period/sources. */
   totalVisitors: number;
-  /** Distinct sessions reaching this flow's first step. */
+  /** Distinct sessions reaching this variant's flow's first step. */
   totalStarted: number;
   steps: FunnelStepStat[];
-  /** Sourced from marketing.attribution (Square-reconciled) — same as Overview's "Bookings" column. */
+  /** Sourced from marketing.attribution (Square-reconciled), filtered to this variant — same
+   * source as Overview's "Bookings" column, no longer pooled across variants sharing a flow. */
   totalCompleted: number;
   /** totalCompleted / totalVisitors, 0 when totalVisitors is 0. */
   finalConversionRate: number;
-  /** True when this flow has recorded activity in the last 7 days — i.e. some currently-live
-   * variant is still sending traffic through it. False means every variant that used to feed
-   * this flow has since had its weight zeroed or been deactivated; the data itself is never
-   * deleted, it's just no longer the live experiment. */
+  /** True when this variant has recorded activity in the last 7 days — i.e. it's still actually
+   * receiving traffic. False means this variant's weight has been zeroed or it's been
+   * deactivated a while ago; the data itself is never deleted, it's just no longer part of the
+   * live experiment. */
   active: boolean;
-  /** ISO timestamp of this flow's most recent recorded event, or null if somehow none exists. */
+  /** ISO timestamp of this variant's most recent recorded funnel event, or null if somehow none exists. */
   lastActivityAt: string | null;
 }
 

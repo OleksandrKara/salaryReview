@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Owner-facing AI analysis of a booking funnel ("Analyze Funnel" button) — acts as a CRO
@@ -61,13 +62,13 @@ public class FunnelAnalysisService {
     }
 
     /**
-     * Analyze one landing page's funnel for a specific flow_key (a page normally has exactly
-     * one). Recomputes the funnel itself (rather than trusting client-supplied numbers) so the
-     * analysis is always grounded in the same data the dashboard just showed — including whichever
-     * Ads only/All traffic mode the owner currently has selected. Returns {@link Optional#empty()}
-     * when the feature is off, or when the slug/flowKey combination has no funnel data (→ 404 in
-     * the controller). No separate cache key for adsOnly is needed: the two modes' underlying
-     * numbers differ, so the snapshot fingerprint below already disambiguates them.
+     * Analyze one landing page variant's funnel. Recomputes the funnel itself (rather than
+     * trusting client-supplied numbers) so the analysis is always grounded in the same data the
+     * dashboard just showed — including whichever Ads only/All traffic mode the owner currently
+     * has selected. Returns {@link Optional#empty()} when the feature is off, or when the
+     * slug/variantId combination has no funnel data (→ 404 in the controller). No separate cache
+     * key for adsOnly is needed: the two modes' underlying numbers differ, so the snapshot
+     * fingerprint below already disambiguates them.
      *
      * @param force when true, skips the cache lookup and always calls Claude fresh, persisting a
      *              new history row even if the underlying funnel numbers haven't changed since
@@ -78,7 +79,7 @@ public class FunnelAnalysisService {
      *              generated in the other language.
      */
     @Transactional
-    public Optional<FunnelAnalysisResult> analyze(String slug, String flowKey, boolean adsOnly, boolean force, Language lang) {
+    public Optional<FunnelAnalysisResult> analyze(String slug, UUID variantId, boolean adsOnly, boolean force, Language lang) {
         if (!props.isEnabled()) return Optional.empty();
         AnthropicClient client = anthropicClientProvider.getIfAvailable();
         if (client == null) return Optional.empty();
@@ -88,7 +89,7 @@ public class FunnelAnalysisService {
         // temporary view.
         List<FunnelDashboardDto> funnels = funnelAnalyticsService.funnel(slug, TrafficSourceParam.parse(adsOnly ? null : "all"), null, null);
         FunnelDashboardDto funnel = funnels.stream()
-                .filter(f -> f.flowKey().equals(flowKey))
+                .filter(f -> f.variantId().equals(variantId))
                 .findFirst()
                 .orElse(null);
         if (funnel == null) return Optional.empty();
@@ -97,8 +98,8 @@ public class FunnelAnalysisService {
 
         if (!force) {
             Optional<FunnelAnalysis> cached = analyses
-                    .findFirstByLandingPageSlugAndFlowKeyAndPromptVersionAndSnapshotFingerprintAndLanguageOrderByCreatedAtDesc(
-                            slug, flowKey, FunnelAnalysisPrompts.PROMPT_VERSION, fingerprint, lang);
+                    .findFirstByLandingPageSlugAndVariantIdAndPromptVersionAndSnapshotFingerprintAndLanguageOrderByCreatedAtDesc(
+                            slug, variantId, FunnelAnalysisPrompts.PROMPT_VERSION, fingerprint, lang);
             if (cached.isPresent()) {
                 return Optional.of(FunnelAnalysisResult.fromEntity(cached.get()));
             }
@@ -109,23 +110,24 @@ public class FunnelAnalysisService {
         try {
             result = callClaude(client, userMessage, lang);
         } catch (RefusalException re) {
-            log.warn("Funnel analysis refused for slug={} flowKey={}: {}", slug, flowKey, re.category());
+            log.warn("Funnel analysis refused for slug={} variantId={}: {}", slug, variantId, re.category());
             result = refusalFallback(re.category(), lang);
         } catch (Exception e) {
-            log.error("Claude funnel analysis failed for slug={} flowKey={}: {}", slug, flowKey, e.toString());
+            log.error("Claude funnel analysis failed for slug={} variantId={}: {}", slug, variantId, e.toString());
             throw new AnalysisFailedException("LLM call failed", e);
         }
 
-        FunnelAnalysis saved = persist(slug, flowKey, fingerprint, result, lang);
+        FunnelAnalysis saved = persist(slug, variantId, funnel.flowKey(), fingerprint, result, lang);
         return Optional.of(FunnelAnalysisResult.fromEntity(saved));
     }
 
-    /** Past analyses for this landing page/flow, newest first, for the owner-facing history list.
-     * Empty (not 404) when the feature is disabled or nothing's been analyzed yet — the caller
-     * distinguishes "feature off" via {@link AiFunnelAnalysisProperties#isEnabled()} directly. */
-    public List<FunnelAnalysisResult> history(String slug, String flowKey) {
+    /** Past analyses for this landing page variant, newest first, for the owner-facing history
+     * list. Empty (not 404) when the feature is disabled or nothing's been analyzed yet — the
+     * caller distinguishes "feature off" via {@link AiFunnelAnalysisProperties#isEnabled()}
+     * directly. */
+    public List<FunnelAnalysisResult> history(String slug, UUID variantId) {
         if (!props.isEnabled()) return List.of();
-        return analyses.findTop20ByLandingPageSlugAndFlowKeyOrderByCreatedAtDesc(slug, flowKey).stream()
+        return analyses.findTop20ByLandingPageSlugAndVariantIdOrderByCreatedAtDesc(slug, variantId).stream()
                 .map(FunnelAnalysisResult::fromEntity)
                 .toList();
     }
@@ -147,6 +149,9 @@ public class FunnelAnalysisService {
     private String buildUserMessage(String slug, FunnelDashboardDto funnel) {
         StringBuilder sb = new StringBuilder();
         sb.append("Landing page: ").append(slug).append('\n');
+        sb.append("Variant: ").append(funnel.variantName());
+        if (funnel.variantKey() != null) sb.append(" (").append(funnel.variantKey()).append(')');
+        sb.append('\n');
         sb.append("Flow: ").append(funnel.flowKey()).append('\n');
         sb.append("Total visitors (page views): ").append(funnel.totalVisitors()).append('\n');
         sb.append("Started booking: ").append(funnel.totalStarted()).append('\n');
@@ -234,9 +239,10 @@ public class FunnelAnalysisService {
                 null);
     }
 
-    private FunnelAnalysis persist(String slug, String flowKey, String fingerprint, FunnelAnalysisResult result, Language lang) {
+    private FunnelAnalysis persist(String slug, UUID variantId, String flowKey, String fingerprint, FunnelAnalysisResult result, Language lang) {
         FunnelAnalysis row = FunnelAnalysis.builder()
                 .landingPageSlug(slug)
+                .variantId(variantId)
                 .flowKey(flowKey)
                 .promptVersion(FunnelAnalysisPrompts.PROMPT_VERSION)
                 .snapshotFingerprint(fingerprint)

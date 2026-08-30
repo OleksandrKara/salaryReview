@@ -1,6 +1,7 @@
 package com.salonreview.marketing;
 
 import com.salonreview.marketing.FunnelAnalyticsRepository.RawFunnelStep;
+import com.salonreview.marketing.FunnelAnalyticsRepository.VariantMeta;
 import com.salonreview.util.TtlCache;
 import com.salonreview.web.dto.FunnelDashboardDto;
 import com.salonreview.web.dto.FunnelDashboardDto.FunnelStepStat;
@@ -15,6 +16,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,7 +25,8 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Computes booking-funnel drop-off stats from {@code marketing.funnel_events}. Reuses
+ * Computes booking-funnel drop-off stats from {@code marketing.funnel_events}, one entry per
+ * variant (not per flow_key — see {@link FunnelDashboardDto}'s own doc for why). Reuses
  * {@link MarketingDashboardRepository} for landing-page lookup and the existing
  * {@code stats_since} cutoff — the same "exclude my own test traffic" cutoff the owner already
  * sets on the main marketing dashboard applies here too, rather than being a second, separate
@@ -38,11 +41,11 @@ public class FunnelAnalyticsService {
     // "Sync now" escape hatch (see invalidateCache()).
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
 
-    // How recently a flow needs to have logged an event to count as "still live" rather than
+    // How recently a variant needs to have logged an event to count as "still live" rather than
     // "retired" — wide enough to absorb a returning visitor's sticky localStorage variant
     // assignment (see experiments.ts resolveExperiment's persisted-assignment reuse) trickling in
     // for a while after a variant's weight is zeroed, without so wide that a genuinely retired
-    // flow still reads as active for weeks.
+    // variant still reads as active for weeks.
     private static final Duration ACTIVE_WINDOW = Duration.ofDays(7);
 
     private final FunnelAnalyticsRepository repository;
@@ -73,9 +76,10 @@ public class FunnelAnalyticsService {
     }
 
     /**
-     * One entry per {@code flow_key} this landing page has ever recorded (almost always exactly
-     * one). Never throws: any {@link DataAccessException} (schema not reachable, same guarantee
-     * as {@link MarketingDashboardService#dashboard}) yields an empty list instead of a 500.
+     * One entry per variant this landing page has recorded funnel activity for, sorted live
+     * variants first (by descending weight), retired ones last. Never throws: any
+     * {@link DataAccessException} (schema not reachable, same guarantee as
+     * {@link MarketingDashboardService#dashboard}) yields an empty list instead of a 500.
      *
      * <p>{@code periodFrom}/{@code periodTo} are the owner's currently-selected period-filter
      * window (All/Month to date/Custom — see the shared frontend PeriodFilter), both nullable
@@ -108,28 +112,43 @@ public class FunnelAnalyticsService {
             List<RawFunnelStep> rawSteps = repository.findFunnelSteps(landingPageId.get(), effectiveFrom, periodToInstant, sources);
             if (rawSteps.isEmpty()) return List.of();
 
-            long totalVisitors = repository.countPageViews(landingPageId.get(), effectiveFrom, periodToInstant, sources);
-            // Shared across every flow_key this page has — in practice a page has exactly one
-            // active flow at a time, so this is never actually split across multiple funnels.
-            long totalCompleted = repository.countBookingsCompleted(landingPageId.get(), effectiveFrom, periodToInstant, sources);
+            Map<UUID, Long> visitorsByVariant = repository.countPageViewsByVariant(landingPageId.get(), effectiveFrom, periodToInstant, sources);
+            Map<UUID, Long> completedByVariant = repository.countBookingsCompletedByVariant(landingPageId.get(), effectiveFrom, periodToInstant, sources);
+            Map<UUID, VariantMeta> variantMeta = repository.findVariantMeta(landingPageId.get());
 
-            Map<String, List<RawFunnelStep>> byFlow = new LinkedHashMap<>();
+            Map<UUID, List<RawFunnelStep>> byVariant = new LinkedHashMap<>();
             for (RawFunnelStep step : rawSteps) {
-                byFlow.computeIfAbsent(step.flowKey(), k -> new ArrayList<>()).add(step);
+                byVariant.computeIfAbsent(step.variantId(), k -> new ArrayList<>()).add(step);
             }
 
-            // Unfiltered by the owner's period selection — "is this flow still live" must reflect
-            // real current activity regardless of which date range they happen to be viewing.
-            Map<String, Instant> lastActivityByFlow = repository.findLastActivityByFlow(landingPageId.get());
+            // Unfiltered by the owner's period selection — "is this variant still live" must
+            // reflect real current activity regardless of which date range they happen to be
+            // viewing.
+            Map<UUID, Instant> lastActivityByVariant = repository.findLastActivityByVariant(landingPageId.get());
             Instant activeSince = Instant.now().minus(ACTIVE_WINDOW);
 
             List<FunnelDashboardDto> result = new ArrayList<>();
-            for (Map.Entry<String, List<RawFunnelStep>> entry : byFlow.entrySet()) {
-                Instant lastActivity = lastActivityByFlow.get(entry.getKey());
+            for (Map.Entry<UUID, List<RawFunnelStep>> entry : byVariant.entrySet()) {
+                UUID variantId = entry.getKey();
+                Instant lastActivity = lastActivityByVariant.get(variantId);
                 boolean active = lastActivity != null && lastActivity.isAfter(activeSince);
-                result.add(toDto(slug, entry.getKey(), entry.getValue(), totalVisitors, totalCompleted,
-                        active, lastActivity));
+                VariantMeta meta = variantMeta.get(variantId);
+                if (meta == null) {
+                    // Shouldn't happen (funnel_events.variant_id has an FK into landing_variants),
+                    // but a variant row could in principle be gone by the time this runs — skip
+                    // rather than show a nameless, weightless card.
+                    log.warn("Funnel data for variant_id={} on slug={} has no matching landing_variants row", variantId, slug);
+                    continue;
+                }
+                long visitors = visitorsByVariant.getOrDefault(variantId, 0L);
+                long completed = completedByVariant.getOrDefault(variantId, 0L);
+                result.add(toDto(slug, variantId, meta, entry.getValue(), visitors, completed, active, lastActivity));
             }
+            // Live variants first (highest weight first among those), retired ones last — a
+            // stable, meaningful default order instead of whatever order the map iteration
+            // happened to produce.
+            result.sort(Comparator.comparing((FunnelDashboardDto d) -> !d.active())
+                    .thenComparing(d -> -d.variantWeight()));
             return result;
         } catch (DataAccessException ex) {
             log.warn("Marketing schema unavailable while building funnel for slug={}", slugParam, ex);
@@ -154,7 +173,7 @@ public class FunnelAnalyticsService {
         cache.invalidateWhere(k -> k.contains(":" + currentBusinessContext.id() + ":"));
     }
 
-    private FunnelDashboardDto toDto(String slug, String flowKey, List<RawFunnelStep> steps,
+    private FunnelDashboardDto toDto(String slug, UUID variantId, VariantMeta meta, List<RawFunnelStep> steps,
                                       long totalVisitors, long totalCompleted,
                                       boolean active, Instant lastActivityAt) {
         long totalStarted = steps.stream()
@@ -176,7 +195,9 @@ public class FunnelAnalyticsService {
         }
 
         double finalConversionRate = totalVisitors == 0 ? 0.0 : (double) totalCompleted / totalVisitors;
-        return new FunnelDashboardDto(slug, flowKey, totalVisitors, totalStarted, stats, totalCompleted,
+        String flowKey = steps.get(0).flowKey();
+        return new FunnelDashboardDto(slug, variantId, meta.name(), meta.key(), meta.weight(), meta.active(),
+                flowKey, totalVisitors, totalStarted, stats, totalCompleted,
                 finalConversionRate, active, lastActivityAt);
     }
 }
