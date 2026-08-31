@@ -20,6 +20,8 @@ import com.salonreview.service.ProviderDirectory;
 import com.salonreview.square.SquareMonthAggregator.AttributedService;
 import com.salonreview.square.SquareMonthAggregator.MonthAggregation;
 import com.salonreview.util.TtlCache;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,6 +45,8 @@ import java.util.stream.Collectors;
  */
 @Service
 public class SettlementPreviewService {
+
+    private static final Logger log = LoggerFactory.getLogger(SettlementPreviewService.class);
 
     private final SquareMonthAggregator aggregator;
     private final TierCommissionEngine engine;
@@ -309,6 +313,14 @@ public class SettlementPreviewService {
     }
 
     private SettlementPreview computePreview(int year, int month) {
+        // Sub-step timing breakdown (2026-08-31) — added after RequestTimingFilter caught a real
+        // /api/settlements/preview load at 5.9s with the aggregator itself only accounting for
+        // 480ms of it. Rather than guess which of the ~10 steps below ate the remaining ~5.4s
+        // (several are separate DB round trips inside one @Transactional method — plausibly
+        // connection-pool contention under concurrent load, but not provable from the aggregator's
+        // own timing log alone), this logs a per-step breakdown every time so the next slow load
+        // pinpoints the actual bottleneck instead of needing another investigation from scratch.
+        long t0 = System.nanoTime();
         Long businessId = currentBusinessContext.id();
         SalonConfig sc = salonConfig.findByBusinessId(businessId)
                 .orElseThrow(() -> new IllegalStateException("Salon config for business " + businessId + " is missing"));
@@ -321,11 +333,14 @@ public class SettlementPreviewService {
         Map<Long, Map<Half, SettlementFeedback>> feedbackByProvider = feedback.findByBusinessIdAndYearAndMonth(businessId, year, month).stream()
                 .collect(Collectors.groupingBy(SettlementFeedback::getProviderId,
                         Collectors.toMap(SettlementFeedback::getHalf, f -> f, (a, b) -> a)));
+        long tSetup = System.nanoTime();
 
         MonthAggregation agg = aggregator.aggregate(year, month, cutoff);
+        long tAgg = System.nanoTime();
         Map<Long, Merged> byPerson = collapseToPersons(agg);
         Map<Long, int[]> procedures = procedureCounts(agg, byPerson);
         Map<Long, BigDecimal[]> discounts = discountTotals(agg, byPerson);
+        long tCollapse = System.nanoTime();
 
         // Fold confirmed prepaid draw-downs into the same provider/half buckets (revenue + counts +
         // procedures), so they pay out and show in #salary exactly like a card service.
@@ -341,6 +356,7 @@ public class SettlementPreviewService {
         Map<Long, List<AttributedService>> noShowRaw = noShowFees.noShowFeeLinesByProvider(year, month);
         Map<Long, List<AttributedService>> noShow = noShowRaw == null ? Map.of() : noShowRaw;
         applyNoShowAdjustments(byPerson, noShow);
+        long tExtraLines = System.nanoTime();
 
         // Per-provider per-half UNcleared suspicious-booking counts — surfaced as the badge on /reports
         // for owner+manager (all suspicious) and on /me for the provider (no-notes subset only).
@@ -349,6 +365,7 @@ public class SettlementPreviewService {
         Map<Long, int[]> suspiciousNoNotesCounts = suspiciousBookings.summaryForSelf(agg);
         // Per-provider per-half UNcleared cancelled-appointment counts — the owner-only warning badge.
         Map<Long, int[]> cancellationCounts      = cancelledAppointments.summaryFor(agg);
+        long tSummaries = System.nanoTime();
 
         List<ProviderPayout> payouts = byPerson.values().stream()
                 .map(m -> toPayout(m, config, tierGrantedProviderIds, feedbackByProvider, sc, year, month,
@@ -360,6 +377,17 @@ public class SettlementPreviewService {
                         suspiciousNoNotesCounts.getOrDefault(m.providerId, new int[]{0, 0}),
                         cancellationCounts.getOrDefault(m.providerId, new int[]{0, 0})))
                 .sorted(Comparator.comparing(p -> p.name().toLowerCase())).toList();
+        long tPayouts = System.nanoTime();
+
+        long totalMs = (tPayouts - t0) / 1_000_000;
+        if (totalMs >= 1500) {
+            log.warn("settlementPreview({}, {}) took {}ms — setup={}ms, aggregate={}ms, collapse={}ms, "
+                            + "extraLines={}ms, summaries={}ms, payouts={}ms",
+                    year, month, totalMs,
+                    (tSetup - t0) / 1_000_000, (tAgg - tSetup) / 1_000_000, (tCollapse - tAgg) / 1_000_000,
+                    (tExtraLines - tCollapse) / 1_000_000, (tSummaries - tExtraLines) / 1_000_000,
+                    (tPayouts - tSummaries) / 1_000_000);
+        }
 
         return new SettlementPreview(year, month, agg.timezone(), config, cutoff, payouts, agg.diagnostics(),
                 syncedAt());
