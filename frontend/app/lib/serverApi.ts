@@ -73,12 +73,31 @@ export class ApiError extends Error {
   }
 }
 
-async function serverFetch<T>(path: string): Promise<T> {
+// Every SSR page's backend call goes through here (or serverFetchOrNull below) — a single choke
+// point, so timing it once covers every page load's data-fetching automatically, no per-page
+// instrumentation needed. Logged from the frontend container (not the backend's own request-timing
+// filter — see RequestTimingFilter.java), so this measures the full round trip a page actually
+// waits on: network + backend-lb hop + backend processing, not just Java-side processing time.
+// Anything past SLOW_MS gets a grep-able "SLOW REQUEST" line; console.warn goes to the frontend
+// container's own stdout (docker logs salonreview-frontend-*).
+const SLOW_MS = 1500;
+
+async function timedFetch(path: string): Promise<Response> {
   const sid = (await cookies()).get('sid')?.value;
+  const startedAt = Date.now();
   const res = await fetch(`${BACKEND}${path}`, {
     cache: 'no-store',
     headers: sid ? { Cookie: `JSESSIONID=${sid}` } : {},
   });
+  const elapsedMs = Date.now() - startedAt;
+  if (elapsedMs >= SLOW_MS) {
+    console.warn(`SLOW REQUEST: GET ${path} took ${elapsedMs}ms (status=${res.status})`);
+  }
+  return res;
+}
+
+async function serverFetch<T>(path: string): Promise<T> {
+  const res = await timedFetch(path);
   // No/expired session: the cookie may still be present but the backend session is gone (e.g. after
   // a restart). Bounce to the homepage rather than rendering a data page with an error. redirect()
   // throws NEXT_REDIRECT, so it must not be wrapped in a try/catch at the call site.
@@ -101,11 +120,7 @@ async function serverFetch<T>(path: string): Promise<T> {
 // (a shareable-link detail page) where "doesn't exist" or "not visible to you" is an expected,
 // renderable state rather than an error.
 async function serverFetchOrNull<T>(path: string): Promise<T | null> {
-  const sid = (await cookies()).get('sid')?.value;
-  const res = await fetch(`${BACKEND}${path}`, {
-    cache: 'no-store',
-    headers: sid ? { Cookie: `JSESSIONID=${sid}` } : {},
-  });
+  const res = await timedFetch(path);
   if (res.status === 401) redirect('/');
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}: ${await res.text()}`);
