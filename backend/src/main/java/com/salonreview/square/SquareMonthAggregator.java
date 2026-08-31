@@ -146,8 +146,20 @@ public class SquareMonthAggregator {
 
         List<Booking> bookings = bookingMirrorRepository.findByBusinessIdAndStartAtBetween(businessId, from, to)
                 .stream().map(SquareMonthAggregator::mirrorToBooking).toList();
+        // COMPLETED only — matches the live path's own square.completedOrders(), which filters via
+        // Square's state_filter=["COMPLETED"] server-side. The mirror table itself stores every
+        // order regardless of state (CANCELED included, for its own completeness), so this filter
+        // has to happen here instead. Missing this let a CANCELED order's line items (e.g. a
+        // register mis-ring immediately voided and re-rung as a second, COMPLETED order for the
+        // same visit) fall through match()'s lookup — the booking segment was already claimed by
+        // the real COMPLETED order — landing them in "unmatched"/Unattributed even though the
+        // same customer's real visit was already correctly attributed to their provider. Confirmed
+        // against a real case: Brittany Dustin showing under both Susan Alieva and Unattributed
+        // for the same visit, traced to exactly this CANCELED+COMPLETED order pair.
         List<Order> orders = orderMirrorRepository.findByBusinessIdAndClosedAtBetween(businessId, from, to)
-                .stream().map(SquareMonthAggregator::mirrorToOrder).toList();
+                .stream().map(SquareMonthAggregator::mirrorToOrder)
+                .filter(o -> "COMPLETED".equals(o.state()))
+                .toList();
         List<Payment> payments = paymentMirrorRepository.findByBusinessIdAndCreatedAtBetween(businessId, from, to)
                 .stream().map(SquareMonthAggregator::mirrorToPayment).toList();
 

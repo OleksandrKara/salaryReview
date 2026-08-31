@@ -34,6 +34,7 @@ class SquareMonthAggregatorTest {
     private SquareClient square;
     private CurrentBusinessContext currentBusinessContext;
     private com.salonreview.repo.SquareBookingMirrorRepository bookingMirrorRepository;
+    private com.salonreview.repo.SquareOrderMirrorRepository orderMirrorRepository;
     private com.salonreview.config.SquareMirrorProperties mirrorProperties;
     private SquareMonthAggregator aggregator;
 
@@ -64,7 +65,7 @@ class SquareMonthAggregatorTest {
 
         bookingMirrorRepository = mock(com.salonreview.repo.SquareBookingMirrorRepository.class);
         when(bookingMirrorRepository.findByBusinessIdAndStartAtBetween(any(), any(), any())).thenReturn(List.of());
-        var orderMirrorRepository = mock(com.salonreview.repo.SquareOrderMirrorRepository.class);
+        orderMirrorRepository = mock(com.salonreview.repo.SquareOrderMirrorRepository.class);
         when(orderMirrorRepository.findByBusinessIdAndClosedAtBetween(any(), any(), any())).thenReturn(List.of());
         var paymentMirrorRepository = mock(com.salonreview.repo.SquarePaymentMirrorRepository.class);
         when(paymentMirrorRepository.findByBusinessIdAndCreatedAtBetween(any(), any(), any())).thenReturn(List.of());
@@ -95,6 +96,50 @@ class SquareMonthAggregatorTest {
 
         verify(square).bookings(any(), any());
         verify(bookingMirrorRepository, times(0)).findByBusinessIdAndStartAtBetween(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("aggregateFromMirror ignores a CANCELED order — regression guard for a real case (Brittany Dustin, "
+            + "business 1) where a register mis-ring got voided and immediately re-rung as a second, COMPLETED "
+            + "order for the same visit. The mirror table stores both rows (unlike the live path's own "
+            + "square.completedOrders(), which Square itself already filters server-side to COMPLETED); without "
+            + "a matching filter here, the CANCELED order's line item couldn't match the booking (its segment was "
+            + "already claimed by the COMPLETED order) and fell into 'unmatched' — showing the same customer as "
+            + "both correctly paid to their real provider AND Unattributed for the same visit.")
+    void aggregateFromMirrorIgnoresCanceledOrder() {
+        when(square.allTeamMembers()).thenReturn(List.of(
+                new SquareClient.TeamMember("TM1", "Susan", "Alieva", "ACTIVE", false, null, null)));
+        when(square.canonicalCustomerIds(any())).thenReturn(Map.of());
+        when(square.catalogPrices(any())).thenReturn(Map.of("VAR1", new BigDecimal("85.00")));
+
+        var booking = com.salonreview.domain.SquareBookingMirror.builder()
+                .businessId(1L).squareBookingId("bk1").squareCustomerId("CUST1").status("ACCEPTED")
+                .startAt(java.time.Instant.parse("2026-07-10T19:00:00Z"))
+                .appointmentSegments(List.of(new com.salonreview.domain.SquareBookingMirror.Segment("TM1", "VAR1", 60)))
+                .build();
+        when(bookingMirrorRepository.findByBusinessIdAndStartAtBetween(any(), any(), any())).thenReturn(List.of(booking));
+
+        var lineItem = new com.salonreview.domain.SquareOrderMirror.LineItem(
+                "VAR1", "Manicure", new BigDecimal("85.00"), new BigDecimal("85.00"), BigDecimal.ZERO, null);
+        var canceledOrder = com.salonreview.domain.SquareOrderMirror.builder()
+                .businessId(1L).squareOrderId("order-voided").squareCustomerId("CUST1").state("CANCELED")
+                .closedAt(java.time.Instant.parse("2026-07-10T19:33:30Z"))
+                .createdAt(java.time.Instant.parse("2026-07-10T19:33:30Z"))
+                .lineItems(List.of(lineItem)).build();
+        var completedOrder = com.salonreview.domain.SquareOrderMirror.builder()
+                .businessId(1L).squareOrderId("order-real").squareCustomerId("CUST1").state("COMPLETED")
+                .closedAt(java.time.Instant.parse("2026-07-10T19:35:06Z"))
+                .createdAt(java.time.Instant.parse("2026-07-10T19:34:58Z"))
+                .lineItems(List.of(lineItem)).build();
+        when(orderMirrorRepository.findByBusinessIdAndClosedAtBetween(any(), any(), any()))
+                .thenReturn(List.of(canceledOrder, completedOrder));
+
+        SquareMonthAggregator.MonthAggregation agg = aggregator.aggregateFromMirror(2026, 7, BigDecimal.ZERO);
+
+        assertThat(agg.services()).hasSize(1);
+        assertThat(agg.services().get(0).providerId()).isEqualTo("TM1");
+        assertThat(agg.services().get(0).gross()).isEqualByComparingTo("85.00");
+        assertThat(agg.unmatched()).isEmpty();
     }
 
     @Test
