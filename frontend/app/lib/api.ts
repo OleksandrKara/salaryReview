@@ -38,6 +38,7 @@ import type {
   TwilioSmsSettingsUpdateRequest,
   MailchimpSettingsDto,
   MailchimpSettingsUpdateRequest,
+  EmailDomainHealthDto,
   SmsTemplateView,
   SmsTemplateVariantView,
   PromoTermsDto,
@@ -261,6 +262,12 @@ export const api = {
 
   updateMailchimpSettings: (body: MailchimpSettingsUpdateRequest) =>
     proxyJson<MailchimpSettingsDto>(`/api/owner/settings/mailchimp`, 'PUT', body),
+
+  // SPF/DKIM/DMARC/MX health for this business's own sending domain — see
+  // EmailDomainHealthService. Not cached client-side beyond the request itself: DNS state can
+  // change any time an owner edits their zone (see the pmu-annakara.com toll-free-verification
+  // fix), so this re-checks live on every call rather than trusting a stale result.
+  getEmailDomainHealth: () => proxyGet<EmailDomainHealthDto>(`/api/owner/settings/email-domain-health`),
 
   // SMS message template wording (owner), per rotating-variant slot — see SmsMessageTemplateCatalog.
   listSmsTemplates: () => proxyGet<SmsTemplateView[]>(`/api/owner/settings/sms/templates`),
