@@ -173,6 +173,19 @@ public class MarketingAnalyticsService {
         }
     }
 
+    /** An explicit slug is returned as-is; an omitted one resolves to this business's own default
+     * landing page (its oldest one — see MarketingDashboardRepository#findDefaultSlugForBusiness)
+     * instead of silently pooling every page's customers/revenue together. ltv()/adsReport()/
+     * analytics() are all inherently page-scoped reports (their own DTOs read "this page's
+     * customers", not "this business's"), so "no page selected" should mean "show me my main
+     * page", the same way a bare visit to the site itself resolves to one specific page, not a
+     * blend of every one the business runs. Null only when the business has no landing pages at
+     * all. */
+    private String resolveSlugOrDefault(String slugParam) {
+        return slugParam != null ? slugParam
+                : dashboardRepository.findDefaultSlugForBusiness(currentBusinessContext.id()).orElse(null);
+    }
+
     /** A resolved ads-attributed Square customer id: the earliest moment our own ad funnel captured
      * this person, and which channel. Several Square customer ids can map back to the same contact
      * (see resolveAdsCustomers) — each still carries this contact's firstTouch/channel.
@@ -196,14 +209,13 @@ public class MarketingAnalyticsService {
         return cache.get(key, CACHE_TTL, () -> computeAnalytics(from, to, sources, slug));
     }
 
-    private MarketingAnalyticsDto computeAnalytics(LocalDate from, LocalDate to, Set<String> sources, String slug) {
+    private MarketingAnalyticsDto computeAnalytics(LocalDate from, LocalDate to, Set<String> sources, String slugParam) {
+        String slug = resolveSlugOrDefault(slugParam);
         Map<String, AdsCustomer> adsCustomers = resolveAdsCustomers(sources, slug);
         LocalDate today = LocalDate.now(clock.withZone(resolveZone()));
-        // Ad spend is now tracked per landing page (see AdSpendEntry) — with no single page
-        // selected there's nothing unambiguous to show, so this pooled-pages case reports zero
-        // rather than guessing which page's spend to surface. Analytics itself is being retired
-        // in favor of Ads Report's page-scoped drill-down (see openspec/changes/
-        // ads-report-consolidation), where a slug is always present.
+        // Only truly slug-less now (a business with no landing pages at all) — every real caller
+        // resolves to a real page above, so this null-guard is a defensive fallback, not the
+        // common "no page selected" case it used to be.
         BigDecimal adSpend = slug == null ? ZERO_MONEY : resolveSpend(slug, today.withDayOfMonth(1), today).amount();
         if (adsCustomers.isEmpty()) {
             return new MarketingAnalyticsDto(from, to, EMPTY_SEGMENT, EMPTY_SEGMENT, EMPTY_SEGMENT, List.of(), List.of(),
@@ -342,11 +354,17 @@ public class MarketingAnalyticsService {
         return cache.get(key, CACHE_TTL, () -> computeAdsReport(from, to, sources, slug, periodKind));
     }
 
-    private MarketingAdsReportDto computeAdsReport(LocalDate from, LocalDate to, Set<String> sources, String slug, PeriodKind periodKind) {
+    private MarketingAdsReportDto computeAdsReport(LocalDate from, LocalDate to, Set<String> sources, String slugParam, PeriodKind periodKind) {
         // Temporary diagnostic timing (2026-08-29) — investigating Ads Report cold-load latency;
         // remove once that's root-caused (see SquareMonthAggregator#aggregate's own timing log,
         // added alongside this one, for the other half of the picture).
         long startedAtNanos = System.nanoTime();
+        // A previously-omitted slug used to silently pool every one of this business's landing
+        // pages together (fine for a page that only runs one, but AK.LUX.NAILS runs both mani and
+        // home — "no page selected" read as "mani and home's numbers blended into one", which
+        // isn't what "Ads Report for mani" means to anyone looking at it). Resolves to the
+        // business's own default page instead, same fix already applied to ltv().
+        String slug = resolveSlugOrDefault(slugParam);
         String periodType = periodKind.name();
         LocalDate today = LocalDate.now(clock.withZone(resolveZone()));
         List<LocalDate[]> periods = switch (periodKind) {
@@ -451,16 +469,7 @@ public class MarketingAnalyticsService {
     }
 
     private MarketingLtvDto computeLtv(String slugParam) {
-        // Unlike analytics()/adsReport() (where an omitted slug pools every page together — a
-        // sensible default there), LTV is inherently page-scoped: blending mani's and home's
-        // distinct customer bases into one "channel LTV" wouldn't mean anything. So an omitted
-        // slug here resolves to the business's own default landing page instead — the same
-        // convention FunnelAnalyticsController's slug param already documents ("omitted resolves
-        // to the caller's own business's first landing page"). Before this, omitting the slug
-        // (e.g. loading /owner/marketing/ltv with no explicit page selected) silently returned an
-        // empty report even for a page — mani — with real, resolvable revenue.
-        String slug = slugParam != null ? slugParam
-                : dashboardRepository.findDefaultSlugForBusiness(currentBusinessContext.id()).orElse(null);
+        String slug = resolveSlugOrDefault(slugParam);
         if (slug == null) {
             return new MarketingLtvDto(List.of(), channelLtv("all", Set.of(), List.of()));
         }

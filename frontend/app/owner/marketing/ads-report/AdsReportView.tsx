@@ -411,6 +411,51 @@ function useAnalyticsBreakdown(from: string, to: string, sources: Set<TrafficSou
   return { data, loading, error, ensureLoaded: () => setTriggered(true) };
 }
 
+/** Filters the appointment ledger (both "View breakdown" and the per-figure pop-ups) down to
+ * customers who are new to Square — same visual language as TrafficSourceFilter (a bordered card
+ * of pill chips), but binary rather than multi-select, since "new or not new" is the whole
+ * question. Never touches the headline Collected/Anticipated/etc. cards, which always show every
+ * customer — the description line under the chips says so explicitly, since the two most easily
+ * get confused for one toggle otherwise. */
+function CustomerTypeFilter({
+  value, onChange, disabled,
+}: {
+  value: SegmentKey;
+  onChange: (v: SegmentKey) => void;
+  disabled?: boolean;
+}) {
+  const options: { key: SegmentKey; label: string }[] = [
+    { key: 'fresh', label: 'New to Square' },
+    { key: 'all', label: 'All customers' },
+  ];
+  return (
+    <div className={`rounded-lg p-3 ring-1 ring-zinc-200 ${disabled ? 'opacity-60' : ''}`}>
+      <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">Customer type</span>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {options.map((o) => (
+          <button
+            key={o.key}
+            type="button"
+            onClick={() => onChange(o.key)}
+            disabled={disabled}
+            aria-pressed={value === o.key}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition-colors disabled:pointer-events-none ${
+              value === o.key
+                ? 'bg-zinc-900 text-white ring-zinc-900'
+                : 'bg-white text-zinc-600 ring-zinc-300 hover:bg-zinc-50'
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-zinc-400">
+        Only affects the appointment list below (View breakdown and figure pop-ups) — the totals above always include every customer.
+      </p>
+    </div>
+  );
+}
+
 export default function AdsReportView({
   initialData,
   slug,
@@ -553,6 +598,14 @@ export default function AdsReportView({
   // Shared by the per-figure popup and "View breakdown" below, so both ever only fetch once and
   // always agree on what they show — see useAnalyticsBreakdown's own comment.
   const analyticsBreakdown = useAnalyticsBreakdown(totals.periodStart, totals.periodEnd, sources, slug);
+  // Purely a client-side re-filter of whatever useAnalyticsBreakdown already fetched — never
+  // triggers its own request. Defaults to "fresh": the owner's own priority is seeing customers
+  // this page/ad genuinely brought in for the first time, not repeat business folded in alongside
+  // them (see the "Not booked through this landing page" follow-up appointments, which are
+  // legitimate but shouldn't be the first thing read as "how is this ad performing"). Deliberately
+  // doesn't touch the headline Collected/Anticipated/etc. cards above — those stay every-customer
+  // totals always, so ad spend/ROI math never silently changes underneath the owner.
+  const [customerSegment, setCustomerSegment] = useState<SegmentKey>('fresh');
   const [popupFilter, setPopupFilter] = useState<LedgerFilter | null>(null);
   function openLedgerPopup(filter: LedgerFilter) {
     analyticsBreakdown.ensureLoaded();
@@ -567,6 +620,10 @@ export default function AdsReportView({
         description="Ad spend, revenue, and volume for the selected source(s) — defaults to Meta & Google ad clicks."
         disabled={loading}
       />
+
+      <div className="mt-4">
+        <CustomerTypeFilter value={customerSegment} onChange={setCustomerSegment} disabled={loading} />
+      </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <PeriodFilter
@@ -669,6 +726,7 @@ export default function AdsReportView({
             data={analyticsBreakdown.data}
             loading={analyticsBreakdown.loading}
             error={analyticsBreakdown.error}
+            customerSegment={customerSegment}
           />
         )}
       </div>
@@ -682,6 +740,7 @@ export default function AdsReportView({
           data={analyticsBreakdown.data}
           loading={analyticsBreakdown.loading}
           error={analyticsBreakdown.error}
+          customerSegment={customerSegment}
         />
       )}
     </div>
@@ -1667,7 +1726,7 @@ function EntryRow({
 
 // --- Breakdown drill-down (ported from the now-removed AnalyticsView.tsx, per design.md D6) ---
 
-type SegmentKey = 'all' | 'fresh' | 'returning';
+type SegmentKey = 'all' | 'fresh';
 
 /** Per-customer "expand to see appointments/submissions" state shared by every LedgerList row —
  * the same Square customer can appear under more than one ledger category, and expanding it under
@@ -1799,15 +1858,18 @@ function CustomerHistoryExpand({
  * on the exact same snapshot and never double the underlying live Square sweep.
  */
 function BreakdownDrilldown({
-  from, to, data, loading, error,
+  from, to, data, loading, error, customerSegment,
 }: {
   from: string;
   to: string;
   data: MarketingAnalyticsData | null;
   loading: boolean;
   error: string;
+  /** Driven by the page-level Customer type filter above, not owned locally — the same "New to
+   * Square" lens the owner picked up there is what "View breakdown" shows, no second toggle to
+   * keep in sync. */
+  customerSegment: SegmentKey;
 }) {
-  const [segment, setSegment] = useState<SegmentKey>('all');
   const historyExpand = useCustomerHistoryExpand();
 
   if (loading && !data) {
@@ -1820,16 +1882,12 @@ function BreakdownDrilldown({
   if (error) return <p className="mt-4 text-sm text-red-600">{error}</p>;
   if (!data) return null;
 
-  const activeSegment: MarketingAnalyticsSegment = data[segment];
-  const rows = buildLedgerRows(data).filter(
-    (r) => segment === 'all' || (segment === 'fresh' ? r.freshFromAds : !r.freshFromAds),
-  );
+  const activeSegment: MarketingAnalyticsSegment = data[customerSegment];
+  const rows = buildLedgerRows(data).filter((r) => customerSegment === 'all' || r.freshFromAds);
 
   return (
     <div className="mt-4">
-      <SegmentTabs segment={segment} onChange={setSegment} />
-
-      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard label="Customers" value={activeSegment.customerCount.toLocaleString()} />
         <StatCard label="Services" value={activeSegment.serviceCount.toLocaleString()} />
         <StatCard label="Gross revenue" value={usd(activeSegment.grossRevenue)} />
@@ -1837,7 +1895,7 @@ function BreakdownDrilldown({
 
       <div className="mt-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-sm font-medium text-zinc-500">Every appointment for {segmentLabel(segment).toLowerCase()}</h3>
+          <h3 className="text-sm font-medium text-zinc-500">Every appointment for {segmentLabel(customerSegment).toLowerCase()}</h3>
           <span className="text-xs text-zinc-400">{fmtDateRange(from, to)} — collected, anticipated, and cancelled, all in one place</span>
         </div>
         <AppointmentLedger rows={rows} initialFilter="all" historyExpand={historyExpand} />
@@ -2031,18 +2089,22 @@ function LedgerList({ rows, historyExpand }: { rows: LedgerRow[]; historyExpand:
 }
 
 /** The "quick look" popup — opened by clicking a figure in the top summary's Revenue/Bookings
- * blocks (see MoneyTerm's onClick). Deliberately no segment tabs here (that's what makes this the
- * fast path vs. "View breakdown" below it) — just the one category the reader clicked into,
- * with the rest of the ledger's own filter chips still available if they want to look around
- * without leaving the popup. Escape or clicking the backdrop closes it. */
+ * blocks (see MoneyTerm's onClick). No segment tabs of its own (that's what keeps this the fast
+ * path vs. "View breakdown" below it) — just the one category the reader clicked into, already
+ * narrowed by the page-level Customer type filter, with the rest of the ledger's own filter chips
+ * still available if they want to look around without leaving the popup. Escape or clicking the
+ * backdrop closes it. */
 function LedgerModal({
-  filter, onClose, data, loading, error,
+  filter, onClose, data, loading, error, customerSegment,
 }: {
   filter: LedgerFilter;
   onClose: () => void;
   data: MarketingAnalyticsData | null;
   loading: boolean;
   error: string;
+  /** Same page-level Customer type filter BreakdownDrilldown uses — a "New to Square" reader
+   * shouldn't see a different set of appointments in the quick pop-up than in "View breakdown". */
+  customerSegment: SegmentKey;
 }) {
   const historyExpand = useCustomerHistoryExpand();
 
@@ -2082,7 +2144,13 @@ function LedgerModal({
           </div>
         )}
         {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
-        {data && <AppointmentLedger rows={buildLedgerRows(data)} initialFilter={filter} historyExpand={historyExpand} />}
+        {data && (
+          <AppointmentLedger
+            rows={buildLedgerRows(data).filter((r) => customerSegment === 'all' || r.freshFromAds)}
+            initialFilter={filter}
+            historyExpand={historyExpand}
+          />
+        )}
       </div>
     </div>
   );
@@ -2097,32 +2165,7 @@ function CloseIcon({ className }: { className?: string }) {
 }
 
 function segmentLabel(key: SegmentKey): string {
-  return key === 'fresh' ? 'new customers' : key === 'returning' ? 'returning customers' : 'ads customers';
-}
-
-function SegmentTabs({ segment, onChange }: { segment: SegmentKey; onChange: (s: SegmentKey) => void }) {
-  const tabs: { key: SegmentKey; label: string; hint: string }[] = [
-    { key: 'all', label: 'All', hint: 'Every ads-attributed customer' },
-    { key: 'fresh', label: 'New to Square', hint: 'The ad brought in a customer with no prior history' },
-    { key: 'returning', label: 'Returning', hint: 'Already existed in Square, came back via an ad' },
-  ];
-  return (
-    <div className="inline-flex w-full flex-wrap gap-1 rounded-lg bg-zinc-100 p-1 sm:w-auto">
-      {tabs.map((t) => (
-        <button
-          key={t.key}
-          type="button"
-          title={t.hint}
-          onClick={() => onChange(t.key)}
-          className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:flex-none ${
-            segment === t.key ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200' : 'text-zinc-500 hover:text-zinc-700'
-          }`}
-        >
-          {t.label}
-        </button>
-      ))}
-    </div>
-  );
+  return key === 'fresh' ? 'new customers' : 'ads customers';
 }
 
 function FreshBadge({ fresh }: { fresh: boolean }) {

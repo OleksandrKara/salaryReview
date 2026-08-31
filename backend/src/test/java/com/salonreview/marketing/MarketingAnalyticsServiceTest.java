@@ -1109,6 +1109,49 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
+    @DisplayName("adsReport: an omitted slug resolves to the business's default landing page instead of pooling "
+            + "every page's customers/revenue together — regression guard for a real report showing blended "
+            + "numbers across mani and home when the owner thought they were only looking at mani")
+    void adsReportWithOmittedSlugResolvesDefaultPage() {
+        when(dashboardRepository.findDefaultSlugForBusiness(1L)).thenReturn(java.util.Optional.of("mani"));
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani", 1L)).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
+        when(square.customerCreatedAts(Set.of("cust-1")))
+                .thenReturn(Map.of("cust-1", Instant.parse("2026-07-01T00:05:00Z")));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
+                svc("2026-07-05", "cust-1", "85.00"))));
+
+        MarketingAdsReportDto dto = service.adsReport(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31),
+                TrafficSourceSql.ADS_ONLY, null, MarketingAnalyticsService.PeriodKind.MONTH);
+
+        assertThat(dto.periods()).hasSize(1);
+        assertThat(dto.periods().get(0).revenueCollected()).isEqualByComparingTo("85.00");
+        // Never fell through to the old pooled (findAdsAttributedContacts with no slug) overload.
+        org.mockito.Mockito.verify(contactsRepository, org.mockito.Mockito.never())
+                .findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L);
+    }
+
+    @Test
+    @DisplayName("analytics: an omitted slug resolves to the business's default landing page too, same as adsReport")
+    void analyticsWithOmittedSlugResolvesDefaultPage() {
+        when(dashboardRepository.findDefaultSlugForBusiness(1L)).thenReturn(java.util.Optional.of("mani"));
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, "mani", 1L)).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
+        when(square.customerCreatedAts(Set.of("cust-1")))
+                .thenReturn(Map.of("cust-1", Instant.parse("2026-07-01T00:05:00Z")));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
+                svc("2026-07-05", "cust-1", "85.00"))));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), TrafficSourceSql.ADS_ONLY, null);
+
+        assertThat(dto.completed()).hasSize(1);
+        assertThat(dto.completed().get(0).collected()).isEqualByComparingTo("85.00");
+        org.mockito.Mockito.verify(contactsRepository, org.mockito.Mockito.never())
+                .findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L);
+    }
+
+    @Test
     @DisplayName("adsReport (month-to-date): exactly one row for [1st-of-month, today] — a service dated after today doesn't leak in")
     void adsReportMonthToDateDoesNotLeakPastToday() {
         // FIXED_CLOCK's "today" is 2026-07-07.
