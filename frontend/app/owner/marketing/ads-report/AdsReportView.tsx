@@ -313,11 +313,16 @@ function buildLedgerRows(data: MarketingAnalyticsData): LedgerRow[] {
   }
   for (const u of data.upcoming) {
     const date = u.startAt.slice(0, 10);
-    // Period membership keys on bookedAt (when the reservation was made), not startAt (when the
-    // visit happens) — matching the Ads Report's own period-row bucketing, so this ledger's split
-    // reconciles with the "Anticipated (period)"/"Anticipated (outside)" headline figures exactly.
-    const bookedDate = u.bookedAt.slice(0, 10);
-    const inPeriod = bookedDate >= data.from && bookedDate <= data.to;
+    // Period membership keys on startAt (when the visit happens), not bookedAt (when the
+    // reservation was made) — matching the Ads Report's own period-row bucketing (see
+    // MarketingAnalyticsDto.UpcomingAppointment.bookedAt's own doc: fixed backend-side 2026-08-27
+    // to bucket by startAt so a customer who booked late in one period for a visit landing in the
+    // next period is counted as anticipated in the period their visit actually falls in, not the
+    // one they booked in). This file's own inPeriod check was never updated to match at the time,
+    // which silently mis-sorted every such row into "Anticipated (period)" here while the
+    // headline figures (already on startAt) correctly excluded it — the two disagreed on both
+    // count and $ total for the exact same underlying appointments.
+    const inPeriod = date >= data.from && date <= data.to;
     if (!inPeriod && !u.capturedInRange) continue;
     rows.push({
       key: `upcoming-${u.bookingId ?? `${u.customerId}-${u.startAt}`}`,
