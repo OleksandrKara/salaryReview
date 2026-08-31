@@ -182,6 +182,26 @@ export interface MailchimpSettingsDto {
   updatedBy: string | null;
 }
 
+// SPF/DKIM/DMARC/MX health for this business's own sending domain (the domain half of
+// MailchimpSettingsDto.fromEmail) — see EmailDomainHealthService. `configured: false` means no
+// from_email is set yet; every other field is null and no DNS lookups ran.
+export interface EmailDomainHealthCheckDto {
+  pass: boolean;
+  detail: string;
+}
+
+export interface EmailDomainHealthDto {
+  configured: boolean;
+  domain: string | null;
+  score: number | null;
+  rating: string | null;
+  spf: EmailDomainHealthCheckDto | null;
+  dkim: EmailDomainHealthCheckDto | null;
+  dmarc: EmailDomainHealthCheckDto | null;
+  mx: EmailDomainHealthCheckDto | null;
+  checkedAt: string | null;
+}
+
 // null field = leave unchanged; '' = clear. Never send the masked apiKey back — only include a
 // field when the owner actually typed a new value.
 export interface MailchimpSettingsUpdateRequest {

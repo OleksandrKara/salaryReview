@@ -7,6 +7,7 @@ import SmsActivityLog from './SmsActivityLog';
 import TemplatesPanel from './TemplatesPanel';
 import TwilioSmsSettingsForm from './TwilioSmsSettingsForm';
 import MailchimpSettingsForm from './MailchimpSettingsForm';
+import EmailDomainHealth from './EmailDomainHealth';
 import MailchimpActivityLog from './MailchimpActivityLog';
 import TelegramSettingsForm from './TelegramSettingsForm';
 import type {
@@ -153,6 +154,16 @@ export default function AutomationsTabs({
               breaks if credentials are unset.
             </p>
             <MailchimpSettingsForm initialSettings={mailchimpSettings} />
+          </section>
+
+          <section className="mt-8">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Domain health</h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              SPF/DKIM/DMARC/MX for your sending domain — a broken or missing one of these is the
+              most common reason marketing email lands in spam (or a toll-free number&apos;s
+              verification keeps getting rejected).
+            </p>
+            <EmailDomainHealth />
           </section>
 
           <section className="mt-8">
