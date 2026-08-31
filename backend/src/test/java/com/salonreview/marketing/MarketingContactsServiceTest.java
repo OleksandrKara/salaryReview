@@ -343,6 +343,36 @@ class MarketingContactsServiceTest {
     }
 
     @Test
+    @DisplayName("several phone numbers with no marketing.contacts row all resolve correctly via the "
+            + "customer-mirror/live fallback at once — regression guard for the fan-out fix: this branch used to "
+            + "run as a plain sequential for loop, so a real conversation-log page (every phone the salon has "
+            + "ever texted, not just ads-attributed ones) chained one blocking Square lookup after another into "
+            + "confirmed 30-55s real production loads; now runs via parallelStream like resolveAdsCustomersUncached")
+    void resolveDisplayNamesResolvesMultiplePhonesWithNoContactsRowConcurrently() {
+        // No marketing.contacts row for any of these — every one falls through to customerLookup.
+        when(repository.findNamesByPhoneNumbers(any())).thenReturn(List.of());
+        when(customerLookup.customerIdsForPhone(eq(1L), eq("(858) 555-0100"), eq(square)))
+                .thenReturn(List.of("SQCUST-A"));
+        when(customerLookup.customerIdsForPhone(eq(1L), eq("(858) 555-0200"), eq(square)))
+                .thenReturn(List.of("SQCUST-B"));
+        when(customerLookup.customerIdsForPhone(eq(1L), eq("(858) 555-0300"), eq(square)))
+                .thenReturn(List.of()); // genuinely unresolvable — no candidates anywhere
+        when(square.customerGivenNames(any())).thenReturn(Map.of("SQCUST-A", "Amy", "SQCUST-B", "Ben"));
+        when(square.customerFamilyNames(any())).thenReturn(Map.of("SQCUST-A", "Adams", "SQCUST-B", "Brooks"));
+        when(square.customerSegmentIdsBatch(any())).thenReturn(Map.of());
+
+        Map<String, MarketingContactsService.ContactNameInfo> result = service.resolveDisplayNames(
+                List.of("(858) 555-0100", "(858) 555-0200", "(858) 555-0300"));
+
+        assertThat(result.get("(858) 555-0100").givenName()).isEqualTo("Amy");
+        assertThat(result.get("(858) 555-0100").familyName()).isEqualTo("Adams");
+        assertThat(result.get("(858) 555-0200").givenName()).isEqualTo("Ben");
+        assertThat(result.get("(858) 555-0200").familyName()).isEqualTo("Brooks");
+        assertThat(result.get("(858) 555-0300").givenName()).isNull();
+        assertThat(result.get("(858) 555-0300").squareProfileUrl()).isNull();
+    }
+
+    @Test
     @DisplayName("submissions come from our own DB regardless of whether a Square customer is known")
     void submissionsAlwaysPopulated() {
         UUID id = UUID.randomUUID();
