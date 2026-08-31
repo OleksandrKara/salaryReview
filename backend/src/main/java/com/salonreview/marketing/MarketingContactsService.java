@@ -269,28 +269,41 @@ public class MarketingContactsService {
                 .findNamesByPhoneNumbers(phoneNumbers).stream()
                 .collect(Collectors.toMap(MarketingContactsRepository.PhoneName::last10, r -> r, (a, b) -> a));
 
-        Map<String, String> customerIdByPhone = new HashMap<>();
-        for (String phone : phoneNumbers) {
-            MarketingContactsRepository.PhoneName row = byPhone.get(PhoneNumbers.last10Digits(phone));
-            if (row != null) {
-                String customerId = row.squareCustomerId() != null
-                        ? row.squareCustomerId()
-                        : squareLinks.findByPhoneNumber(phone).map(MarketingContactSquareLink::getSquareCustomerId).orElse(null);
-                if (customerId != null) {
-                    customerIdByPhone.put(phone, customerId);
-                }
-            } else {
-                // No marketing.contacts row at all (e.g. a checkout-review/rebooking text
-                // sent from Square data with no tracked capture) — resolve via the customer
-                // mirror, falling back live only for a phone the mirror hasn't caught up on yet
-                // (same fallback LeadFollowUpScheduler uses, just mirror-backed first now).
-                List<String> candidates = customerLookup.customerIdsForPhone(
-                        currentBusinessContext.id(), phone, square);
-                if (!candidates.isEmpty()) {
-                    customerIdByPhone.put(phone, candidates.get(0));
-                }
-            }
-        }
+        // Resolved once on the calling thread and captured by value below — CurrentBusinessContext
+        // is a ThreadLocal, so a fresh currentBusinessContext.id() call from inside the
+        // parallelStream's own worker threads would read an unset value; SquareClientProvider
+        // (used for `square` above) already sidesteps this the same way — see
+        // MarketingAnalyticsService#resolveAdsCustomersUncached's identical comment.
+        Long businessId = currentBusinessContext.id();
+        // Was a plain sequential for loop — for an unbounded conversation list (the manager inbox's
+        // "every conversation ever" view, not just ads-attributed contacts) with no marketing.contacts
+        // row, each phone number falls through to customerLookup's live-Square fallback below; run
+        // sequentially, one slow/rate-limited lookup blocks the next, chaining into 30-55s real
+        // production loads (confirmed live via RequestTimingFilter). Parallelized the same way
+        // resolveAdsCustomersUncached already does — a phone number with a marketing.contacts row
+        // resolves from local data only (no Square call), so it's cheap to run alongside the ones
+        // that do need a live fallback.
+        record ResolvedPhone(String phone, String customerId) {}
+        List<ResolvedPhone> resolved = phoneNumbers.parallelStream()
+                .map(phone -> {
+                    MarketingContactsRepository.PhoneName row = byPhone.get(PhoneNumbers.last10Digits(phone));
+                    if (row != null) {
+                        String customerId = row.squareCustomerId() != null
+                                ? row.squareCustomerId()
+                                : squareLinks.findByPhoneNumber(phone).map(MarketingContactSquareLink::getSquareCustomerId).orElse(null);
+                        return customerId == null ? null : new ResolvedPhone(phone, customerId);
+                    }
+                    // No marketing.contacts row at all (e.g. a checkout-review/rebooking text
+                    // sent from Square data with no tracked capture) — resolve via the customer
+                    // mirror, falling back live only for a phone the mirror hasn't caught up on yet
+                    // (same fallback LeadFollowUpScheduler uses, just mirror-backed first now).
+                    List<String> candidates = customerLookup.customerIdsForPhone(businessId, phone, square);
+                    return candidates.isEmpty() ? null : new ResolvedPhone(phone, candidates.get(0));
+                })
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        Map<String, String> customerIdByPhone = resolved.stream()
+                .collect(Collectors.toMap(ResolvedPhone::phone, ResolvedPhone::customerId, (a, b) -> a));
 
         Map<String, String> givenFromSquare = square.customerGivenNames(customerIdByPhone.values());
         Map<String, String> familyFromSquare = square.customerFamilyNames(customerIdByPhone.values());
