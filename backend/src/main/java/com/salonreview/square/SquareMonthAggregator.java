@@ -877,7 +877,9 @@ public class SquareMonthAggregator {
     // downstream looks at them; see the Phase 2 sync plan's own field-by-field audit for how that
     // was confirmed, not assumed.
 
-    private static Booking mirrorToBooking(com.salonreview.domain.SquareBookingMirror m) {
+    // Package-visible (not private): NoShowFeeService's own mirror migration reuses these mappers
+    // directly rather than duplicating the mirror-entity -> SquareClient-record conversion.
+    static Booking mirrorToBooking(com.salonreview.domain.SquareBookingMirror m) {
         List<AppointmentSegment> segments = m.getAppointmentSegments() == null ? null
                 : m.getAppointmentSegments().stream()
                         .map(s -> new AppointmentSegment(s.teamMemberId(), s.serviceVariationId(), s.durationMinutes()))
@@ -887,7 +889,7 @@ public class SquareMonthAggregator {
                 m.getLocationId(), m.getSquareCustomerId(), m.getSellerNote(), m.getCustomerNote(), segments);
     }
 
-    private static Order mirrorToOrder(com.salonreview.domain.SquareOrderMirror m) {
+    static Order mirrorToOrder(com.salonreview.domain.SquareOrderMirror m) {
         List<OrderLineItem> lineItems = m.getLineItems() == null ? null
                 : m.getLineItems().stream().map(li -> new OrderLineItem(
                         null, li.name(), null, li.catalogObjectId(),
