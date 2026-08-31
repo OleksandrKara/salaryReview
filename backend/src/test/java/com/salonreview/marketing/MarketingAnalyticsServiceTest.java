@@ -647,6 +647,42 @@ class MarketingAnalyticsServiceTest {
     }
 
     @Test
+    @DisplayName("a booking already paid within the caller's own [from, to] window is excluded from 'upcoming', "
+            + "not double-counted — regression guard for a bug where the exclusion set was always derived from "
+            + "the current calendar month-to-date regardless of the actual requested window, so a booking paid "
+            + "on a date past FIXED_CLOCK's 'today' but still inside a wider requested range (e.g. a week/period "
+            + "selection extending a few days beyond today) stayed wrongly listed as both completed and upcoming")
+    void paidBookingWithinRequestedWindowExcludedFromUpcomingEvenPastToday() {
+        // FIXED_CLOCK's "today" is 2026-07-07 — this window deliberately extends 3 days past it, to
+        // 2026-07-10, so "this booking's date (07-09) is after today" while still being well inside
+        // [from, to]. The old buggy code derived the exclusion set from monthToDate ([07-01, 07-07],
+        // i.e. today), which would never have contained a 07-09 booking regardless of the requested
+        // window.
+        when(contactsRepository.findAdsAttributedContacts(TrafficSourceSql.ADS_ONLY, 1L)).thenReturn(List.of(
+                contact("+16195550001", "cust-1", Instant.parse("2026-07-01T00:00:00Z"), "meta_ads")));
+        when(square.customerCreatedAts(Set.of("cust-1")))
+                .thenReturn(Map.of("cust-1", Instant.parse("2026-07-01T00:05:00Z")));
+        var seg = new SquareClient.AppointmentSegment("team-1", "var-mani", 60);
+        stubBookings("cust-1", new SquareClient.Booking("bk-prepaid", "ACCEPTED", "2026-07-09T18:00:00Z", null, null,
+                "loc-1", "cust-1", null, null, List.of(seg)));
+        when(square.catalogPrices(List.of("var-mani"))).thenReturn(Map.of("var-mani", new BigDecimal("85.00")));
+        when(square.catalogNames(List.of("var-mani"))).thenReturn(Map.of("var-mani", "Manicure"));
+        when(square.customerNames(any())).thenReturn(Map.of("cust-1", "Jane Doe"));
+        AttributedService paidAheadOfVisit = new AttributedService("p1", "P", "2026-07-09", "FIRST", "Manicure",
+                new BigDecimal("85.00"), BigDecimal.ZERO, new BigDecimal("85.00"), BigDecimal.ZERO, true, 1, 1,
+                false, "CARD", null, "bk-prepaid", "cust-1", "Customer");
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00")))
+                .thenReturn(aggOf(2026, 7, List.of(paidAheadOfVisit)));
+
+        MarketingAnalyticsDto dto = service.analytics(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 10), TrafficSourceSql.ADS_ONLY);
+
+        assertThat(dto.completed()).hasSize(1);
+        assertThat(dto.completed().get(0).bookingId()).isEqualTo("bk-prepaid");
+        assertThat(dto.upcoming()).isEmpty();
+    }
+
+    @Test
     @DisplayName("two genuinely different same-day cash-note appointments for one customer both survive as "
             + "distinct completed rows, each carrying its own real bookingId — regression guard for the Ashanti "
             + "Williamson Ads Report bug where both shared the generic serviceName \"cash note (1 counted)\", "
