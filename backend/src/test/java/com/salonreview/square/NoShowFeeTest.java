@@ -2,6 +2,7 @@ package com.salonreview.square;
 
 import com.salonreview.commission.CommissionConfig;
 import com.salonreview.commission.TierCommissionEngine;
+import com.salonreview.config.SquareMirrorProperties;
 import com.salonreview.domain.Provider;
 import com.salonreview.domain.SalonConfig;
 import com.salonreview.repo.*;
@@ -54,17 +55,32 @@ class NoShowFeeTest {
         when(square.customerNames(any())).thenReturn(Map.of("CUST1", "Test Customer 1"));
         when(overrides.findAllByBusinessId(1L)).thenReturn(List.of());
 
+        SquareBookingMirrorRepository bookingMirrorRepository = mock(SquareBookingMirrorRepository.class);
+        SquareOrderMirrorRepository orderMirrorRepository = mock(SquareOrderMirrorRepository.class);
+        SquareMirrorProperties mirrorProperties = mock(SquareMirrorProperties.class);
+        when(mirrorProperties.isAggregateEnabled()).thenReturn(true);
+
         // One NO_SHOW booking on May 10 with two providers (two segments), customer CUST1.
-        Booking noShow = new Booking("BK1", "NO_SHOW", "2026-05-10T17:00:00Z", null, "2026-05-10T17:00:00Z", "LOC",
-                "CUST1", null, null,
-                List.of(new AppointmentSegment("M1", "V1", 60), new AppointmentSegment("M2", "V2", 60)));
-        when(square.bookings(any(), any())).thenReturn(List.of(noShow));
+        var noShowBooking = com.salonreview.domain.SquareBookingMirror.builder()
+                .businessId(1L).squareBookingId("BK1").squareCustomerId("CUST1").status("NO_SHOW")
+                .startAt(java.time.Instant.parse("2026-05-10T17:00:00Z"))
+                .appointmentSegments(List.of(
+                        new com.salonreview.domain.SquareBookingMirror.Segment("M1", "V1", 60),
+                        new com.salonreview.domain.SquareBookingMirror.Segment("M2", "V2", 60)))
+                .build();
+        when(bookingMirrorRepository.findByBusinessIdAndStartAtBetween(any(), any(), any()))
+                .thenReturn(List.of(noShowBooking));
 
         // A completed $25 "Cancelation Policy" order for CUST1, paid May 12.
-        Order fee = new Order("O1", "LOC", "CUST1", "COMPLETED", "2026-05-12T20:00:00Z", "2026-05-12T20:00:00Z",
-                List.of(new OrderLineItem("u1", "Cancelation Policy", "1", null, usd(2500), usd(2500), usd(2500), null, null)),
-                null, null, List.of(), null, null);
-        when(square.completedOrders(any(), any())).thenReturn(List.of(fee));
+        var feeLineItem = new com.salonreview.domain.SquareOrderMirror.LineItem(
+                null, "Cancelation Policy", new BigDecimal("25.00"), new BigDecimal("25.00"), BigDecimal.ZERO, null);
+        var feeOrder = com.salonreview.domain.SquareOrderMirror.builder()
+                .businessId(1L).squareOrderId("O1").squareCustomerId("CUST1").state("COMPLETED")
+                .closedAt(java.time.Instant.parse("2026-05-12T20:00:00Z"))
+                .createdAt(java.time.Instant.parse("2026-05-12T20:00:00Z"))
+                .lineItems(List.of(feeLineItem)).build();
+        when(orderMirrorRepository.findByBusinessIdAndClosedAtBetween(any(), any(), any()))
+                .thenReturn(List.of(feeOrder));
 
         when(directory.resolveOrCreate(eq("M1"), any())).thenReturn(Provider.builder().id(1L).displayName("Susan").build());
         when(directory.resolveOrCreate(eq("M2"), any())).thenReturn(Provider.builder().id(2L).displayName("Bayan").build());
@@ -72,7 +88,7 @@ class NoShowFeeTest {
         when(providers.findById(2L)).thenReturn(Optional.of(Provider.builder().id(2L).displayName("Bayan").build()));
 
         NoShowFeeService svc = new NoShowFeeService(squareClientProvider, directory, providers, overrides,
-                currentBusinessContext, salonConfigRepo);
+                currentBusinessContext, salonConfigRepo, bookingMirrorRepository, orderMirrorRepository, mirrorProperties);
 
         // In the payment month (May): $25 split evenly → $12.50 each, both CREDITED.
         NoShowMonth may = svc.compute(2026, 5);
@@ -102,7 +118,9 @@ class NoShowFeeTest {
 
         NoShowFeeService svc = new NoShowFeeService(squareClientProvider, mock(ProviderDirectory.class),
                 mock(ProviderRepository.class), mock(NoShowFeeOverrideRepository.class),
-                currentBusinessContext, salonConfigRepo);
+                currentBusinessContext, salonConfigRepo,
+                mock(SquareBookingMirrorRepository.class), mock(SquareOrderMirrorRepository.class),
+                mock(SquareMirrorProperties.class));
 
         NoShowMonth result = svc.compute(2026, 5);
 
@@ -124,7 +142,9 @@ class NoShowFeeTest {
         when(providers.existsById(1L)).thenReturn(true);
 
         NoShowFeeService svc = new NoShowFeeService(mock(SquareClientProvider.class), mock(ProviderDirectory.class),
-                providers, mock(NoShowFeeOverrideRepository.class), currentBusinessContext, salonConfigRepo);
+                providers, mock(NoShowFeeOverrideRepository.class), currentBusinessContext, salonConfigRepo,
+                mock(SquareBookingMirrorRepository.class), mock(SquareOrderMirrorRepository.class),
+                mock(SquareMirrorProperties.class));
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> svc.confirm(
                 new NoShowFeeService.ConfirmRequest("BK1", 1L, null, null, "Julia B.", null, null), "manager"))
@@ -152,7 +172,9 @@ class NoShowFeeTest {
         when(overrides.findByBusinessIdAndSquareBookingId(1L, "BK1")).thenReturn(Optional.empty());
 
         NoShowFeeService svc = new NoShowFeeService(mock(SquareClientProvider.class), mock(ProviderDirectory.class),
-                providers, overrides, currentBusinessContext, salonConfigRepo);
+                providers, overrides, currentBusinessContext, salonConfigRepo,
+                mock(SquareBookingMirrorRepository.class), mock(SquareOrderMirrorRepository.class),
+                mock(SquareMirrorProperties.class));
 
         svc.confirm(new NoShowFeeService.ConfirmRequest("BK1", 1L, null, null, "Julia B.", null, null), "manager");
 
@@ -173,7 +195,9 @@ class NoShowFeeTest {
         NoShowFeeOverrideRepository overrides = mock(NoShowFeeOverrideRepository.class);
 
         NoShowFeeService svc = new NoShowFeeService(mock(SquareClientProvider.class), mock(ProviderDirectory.class),
-                mock(ProviderRepository.class), overrides, currentBusinessContext, mock(SalonConfigRepository.class));
+                mock(ProviderRepository.class), overrides, currentBusinessContext, mock(SalonConfigRepository.class),
+                mock(SquareBookingMirrorRepository.class), mock(SquareOrderMirrorRepository.class),
+                mock(SquareMirrorProperties.class));
 
         svc.clearOverride("BK1");
 

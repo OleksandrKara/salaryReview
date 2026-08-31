@@ -1,11 +1,14 @@
 package com.salonreview.square;
 
+import com.salonreview.config.SquareMirrorProperties;
 import com.salonreview.domain.NoShowFeeOverride;
 import com.salonreview.domain.Provider;
 import com.salonreview.domain.SalonConfig;
 import com.salonreview.repo.NoShowFeeOverrideRepository;
 import com.salonreview.repo.ProviderRepository;
 import com.salonreview.repo.SalonConfigRepository;
+import com.salonreview.repo.SquareBookingMirrorRepository;
+import com.salonreview.repo.SquareOrderMirrorRepository;
 import com.salonreview.service.ProviderDirectory;
 import com.salonreview.square.SquareClient.AppointmentSegment;
 import com.salonreview.square.SquareClient.Booking;
@@ -64,17 +67,26 @@ public class NoShowFeeService {
     private final NoShowFeeOverrideRepository overrides;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final SalonConfigRepository salonConfig;
+    private final SquareBookingMirrorRepository bookingMirrorRepository;
+    private final SquareOrderMirrorRepository orderMirrorRepository;
+    private final SquareMirrorProperties mirrorProperties;
 
     public NoShowFeeService(SquareClientProvider squareClientProvider, ProviderDirectory directory,
                             ProviderRepository providers, NoShowFeeOverrideRepository overrides,
                             com.salonreview.config.CurrentBusinessContext currentBusinessContext,
-                            SalonConfigRepository salonConfig) {
+                            SalonConfigRepository salonConfig,
+                            SquareBookingMirrorRepository bookingMirrorRepository,
+                            SquareOrderMirrorRepository orderMirrorRepository,
+                            SquareMirrorProperties mirrorProperties) {
         this.squareClientProvider = squareClientProvider;
         this.directory = directory;
         this.providers = providers;
         this.overrides = overrides;
         this.currentBusinessContext = currentBusinessContext;
         this.salonConfig = salonConfig;
+        this.bookingMirrorRepository = bookingMirrorRepository;
+        this.orderMirrorRepository = orderMirrorRepository;
+        this.mirrorProperties = mirrorProperties;
     }
 
     private BigDecimal feeAmount(Long businessId) {
@@ -146,11 +158,28 @@ public class NoShowFeeService {
         Instant bookTo = monthEnd.plusDays(1).atStartOfDay(zone).toInstant();
         Instant orderFrom = monthStart.atStartOfDay(zone).toInstant();
         Instant orderTo = monthEnd.plusMonths(LOOKBACK_MONTHS).plusDays(1).atStartOfDay(zone).toInstant();
-        // Independent Square reads — fetch concurrently to cut cold latency.
-        var bookingsF = java.util.concurrent.CompletableFuture.supplyAsync(() -> square.bookings(bookFrom, bookTo));
-        var ordersF = java.util.concurrent.CompletableFuture.supplyAsync(() -> square.completedOrders(orderFrom, orderTo));
-        List<Booking> bookings = bookingsF.join();
-        List<Order> orders = ordersF.join();
+        // Mirror-backed by default (Phase 2 cutover) — was still doing a live, uncached, 2-month-wide
+        // CompletableFuture round trip to Square on every settlement-preview computation, confirmed via
+        // SettlementPreviewService's own timing breakdown as a multi-second bottleneck (never migrated
+        // during the earlier Phase 2i cutover, unlike SquareMonthAggregator). isAggregateEnabled()==false
+        // is the same emergency fallback to live Square used during burn-in elsewhere in this class family.
+        List<Booking> bookings;
+        List<Order> orders;
+        if (mirrorProperties.isAggregateEnabled()) {
+            bookings = bookingMirrorRepository.findByBusinessIdAndStartAtBetween(businessId, bookFrom, bookTo)
+                    .stream().map(SquareMonthAggregator::mirrorToBooking).toList();
+            // COMPLETED only — the mirror stores every order state; live Square's completedOrders()
+            // already filters server-side. Same gap/fix as SquareMonthAggregator#aggregateFromMirror.
+            orders = orderMirrorRepository.findByBusinessIdAndClosedAtBetween(businessId, orderFrom, orderTo)
+                    .stream().map(SquareMonthAggregator::mirrorToOrder)
+                    .filter(o -> "COMPLETED".equals(o.state()))
+                    .toList();
+        } else {
+            var bookingsF = java.util.concurrent.CompletableFuture.supplyAsync(() -> square.bookings(bookFrom, bookTo));
+            var ordersF = java.util.concurrent.CompletableFuture.supplyAsync(() -> square.completedOrders(orderFrom, orderTo));
+            bookings = bookingsF.join();
+            orders = ordersF.join();
+        }
 
         Map<String, String> memberName = new HashMap<>();
         for (TeamMember tm : square.allTeamMembers()) memberName.put(tm.id(), tm.fullName());
