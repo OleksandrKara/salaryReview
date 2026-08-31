@@ -226,9 +226,17 @@ public class MarketingAnalyticsService {
                 adsCustomers.keySet(), today.withDayOfMonth(1), today, cutoff, createdAtByBookingId);
         Segment currentMonthToDate = segment(monthToDate, id -> true);
 
-        // Already-paid bookings are excluded from "upcoming" below — this month's aggregation already
-        // tags each paid service with the booking that produced it, so this is free (no extra Square call).
-        Set<String> paidBookingIds = monthToDate.stream()
+        // Already-paid bookings are excluded from "upcoming" below — inRange ([from, to], the
+        // caller's own requested window, not necessarily "this calendar month") already tags each
+        // paid service with the booking that produced it, so this is free (no extra Square call).
+        // Bug fix: this used to derive from monthToDate (always the current calendar month,
+        // regardless of the caller's actual [from, to]) — correct only by coincidence when the
+        // requested period happened to be the current month, and wrong otherwise (a booking paid
+        // for earlier within [from, to] but outside the current calendar month would wrongly stay
+        // in the "upcoming/anticipated" list here, double-counting it against adsReport()'s own
+        // collected-revenue figure for that same period, which does use inRange correctly — see
+        // computeAdsReport's own paidBookingIds).
+        Set<String> paidBookingIds = inRange.stream()
                 .map(AttributedService::bookingId).filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
         // customersCapturedInRange tags (not restricts) upcoming/cancelled below — whether a
         // customer's own firstTouch falls within [from, to], the same cohort the Ads Report's
