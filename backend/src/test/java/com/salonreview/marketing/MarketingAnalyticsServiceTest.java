@@ -1430,4 +1430,34 @@ class MarketingAnalyticsServiceTest {
         assertThat(dto.totals().averageLtv()).isNull();
         org.mockito.Mockito.verifyNoInteractions(aggregator);
     }
+
+    @Test
+    @DisplayName("ltv: an omitted slug resolves to the business's default landing page, not an empty report — "
+            + "regression test for a real production bug where mani (which has real revenue) silently showed "
+            + "'no data' because /owner/marketing/ltv was loaded with no ?slug= query param at all")
+    void ltvWithOmittedSlugResolvesDefaultPage() {
+        stubEmptyAggregationForEveryMonth();
+        when(dashboardRepository.findDefaultSlugForBusiness(1L)).thenReturn(java.util.Optional.of("mani"));
+        when(contactsRepository.findAllAttributedContacts("mani", 1L)).thenReturn(List.of(
+                contact("+16195550001", "cust-meta-1", Instant.parse("2026-01-01T00:00:00Z"), "meta_ads")));
+        when(aggregator.aggregate(2026, 7, new BigDecimal("60.00"))).thenReturn(aggOf(2026, 7, List.of(
+                svc("2026-07-01", "cust-meta-1", "100.00"))));
+
+        MarketingLtvDto dto = service.ltv(null);
+
+        assertThat(dto.totals().customerCount()).isEqualTo(1);
+        assertThat(dto.totals().totalRevenue()).isEqualByComparingTo("100.00");
+    }
+
+    @Test
+    @DisplayName("ltv: an omitted slug with no landing pages at all for this business still yields an empty report, not an error")
+    void ltvWithOmittedSlugAndNoLandingPagesIsEmpty() {
+        when(dashboardRepository.findDefaultSlugForBusiness(1L)).thenReturn(java.util.Optional.empty());
+
+        MarketingLtvDto dto = service.ltv(null);
+
+        assertThat(dto.channels()).isEmpty();
+        assertThat(dto.totals().customerCount()).isEqualTo(0);
+        org.mockito.Mockito.verifyNoInteractions(aggregator);
+    }
 }

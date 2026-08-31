@@ -442,7 +442,17 @@ public class MarketingAnalyticsService {
         return cache.get(key, CACHE_TTL, () -> computeLtv(slug));
     }
 
-    private MarketingLtvDto computeLtv(String slug) {
+    private MarketingLtvDto computeLtv(String slugParam) {
+        // Unlike analytics()/adsReport() (where an omitted slug pools every page together — a
+        // sensible default there), LTV is inherently page-scoped: blending mani's and home's
+        // distinct customer bases into one "channel LTV" wouldn't mean anything. So an omitted
+        // slug here resolves to the business's own default landing page instead — the same
+        // convention FunnelAnalyticsController's slug param already documents ("omitted resolves
+        // to the caller's own business's first landing page"). Before this, omitting the slug
+        // (e.g. loading /owner/marketing/ltv with no explicit page selected) silently returned an
+        // empty report even for a page — mani — with real, resolvable revenue.
+        String slug = slugParam != null ? slugParam
+                : dashboardRepository.findDefaultSlugForBusiness(currentBusinessContext.id()).orElse(null);
         if (slug == null) {
             return new MarketingLtvDto(List.of(), channelLtv("all", Set.of(), List.of()));
         }
