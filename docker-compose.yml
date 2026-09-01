@@ -25,6 +25,12 @@ x-backend-env: &backend-env
   # below (and #331/#309 before them): this line was missing entirely until the live incident it
   # caused (every SquareClient-migrated endpoint 500ing) got traced back to it.
   SQUARE_CREDENTIALS_MASTER_KEY: ${SQUARE_CREDENTIALS_MASTER_KEY:-}
+  # seo-monitoring-dashboard Phase 2 — AES master key for seo_connection's encrypted columns.
+  # Deliberately listed here explicitly (not just in application.yml) after the exact class of
+  # incident described above for SQUARE_CREDENTIALS_MASTER_KEY — an env var referenced in
+  # application.yml but never actually passed through here is a real, previously-hit failure mode
+  # in this app, not a hypothetical one.
+  SEO_CREDENTIALS_MASTER_KEY: ${SEO_CREDENTIALS_MASTER_KEY:-}
   # Square's payment.updated/payment.created webhook (checkout-review-request automation).
   # Blank signature-key means every webhook request is rejected — was missing here entirely
   # until the automation's first real payment revealed no subscription/signature-key existed
