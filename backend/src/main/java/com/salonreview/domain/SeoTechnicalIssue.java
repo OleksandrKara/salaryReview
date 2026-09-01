@@ -41,6 +41,16 @@ public class SeoTechnicalIssue {
     @Column(name = "metric_value")
     private BigDecimal metricValue;
 
+    /** The page this issue is about (LCP/CLS/INP) — null only for issue types that aren't
+     * page-scoped. Needed to auto-resolve the correct row once more than the homepage is tracked
+     * (design.md Open Question 2). */
+    @Column(name = "url")
+    private String url;
+
+    /** The search query this issue is about (CTR_OPPORTUNITY only). */
+    @Column(name = "query")
+    private String query;
+
     @Column(name = "first_seen_at", nullable = false)
     private Instant firstSeenAt;
 
