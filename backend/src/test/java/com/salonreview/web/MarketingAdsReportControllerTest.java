@@ -169,6 +169,8 @@ class MarketingAdsReportControllerTest {
                 null,            // updatedAt
                 null,            // googleReviewSentAt
                 null,            // googleReviewClickedAt
+                null,            // yelpReviewSentAt
+                null,            // yelpReviewClickedAt
                 null,            // feedbackFormSentAt
                 null,            // feedbackFormClickedAt
                 false,           // vip

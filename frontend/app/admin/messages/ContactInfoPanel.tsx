@@ -6,6 +6,7 @@ import NegativeFeedbackIcon from './NegativeFeedbackIcon';
 import VipIcon from './VipIcon';
 import BlockedIcon from './BlockedIcon';
 import GoogleReviewClickedIcon from './GoogleReviewClickedIcon';
+import YelpReviewClickedIcon from './YelpReviewClickedIcon';
 import FeedbackFormClickedIcon from './FeedbackFormClickedIcon';
 import SpamFlagIcon from './SpamFlagIcon';
 
@@ -76,6 +77,7 @@ export default function ContactInfoPanel({
   blocked,
   optedOut,
   clickedGoogleReview,
+  clickedYelpReview,
   clickedFeedbackForm,
   flaggedAsSpam,
   onClose,
@@ -117,6 +119,9 @@ export default function ContactInfoPanel({
    * `contact` resolves to a real marketing.contacts row; this flag resolves independently of
    * that, so it can still show here even when that section is hidden. */
   clickedGoogleReview?: boolean;
+  /** Same as clickedGoogleReview, for the checkout-review automation's Yelp-review escalation
+   * rung — see YelpReviewClickedIcon. */
+  clickedYelpReview?: boolean;
   /** Same as clickedGoogleReview, for the feedback-form link — see FeedbackFormClickedIcon. */
   clickedFeedbackForm?: boolean;
   /** True if any outbound message to this number has ever come back flagged as spam by the
@@ -216,6 +221,16 @@ export default function ContactInfoPanel({
                     Clicked Google review
                   </span>
                 ) : null}
+                {clickedYelpReview ? (
+                  <span
+                    data-testid="contact-info-yelp-review-badge"
+                    className="flex shrink-0 items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-700"
+                    title="Has clicked the Yelp review link before"
+                  >
+                    <YelpReviewClickedIcon size={11} />
+                    Clicked Yelp review
+                  </span>
+                ) : null}
                 {clickedFeedbackForm ? (
                   <span
                     data-testid="contact-info-feedback-form-badge"
@@ -251,11 +266,11 @@ export default function ContactInfoPanel({
             </div>
 
             {/* Whether this contact has ever been sent — and actually clicked — the checkout-
-                review automation's Google-review / feedback-form links. A row only appears once
-                that link type has actually been sent at least once (sentAt non-null); "never sent"
-                isn't shown as a row at all, since that's the common case for most contacts and
-                would otherwise just be noise. */}
-            {contact && (contact.googleReviewSentAt || contact.feedbackFormSentAt) ? (
+                review automation's Google-review / Yelp-review / feedback-form links. A row only
+                appears once that link type has actually been sent at least once (sentAt non-null);
+                "never sent" isn't shown as a row at all, since that's the common case for most
+                contacts and would otherwise just be noise. */}
+            {contact && (contact.googleReviewSentAt || contact.yelpReviewSentAt || contact.feedbackFormSentAt) ? (
               <div className="mb-5">
                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Review links</h3>
                 <ul className="flex flex-col gap-2">
@@ -274,6 +289,29 @@ export default function ContactInfoPanel({
                       </span>
                       {(() => {
                         const badge = linkEngagementBadge(contact.googleReviewClickedAt);
+                        return (
+                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${badge.className}`}>
+                            {badge.label}
+                          </span>
+                        );
+                      })()}
+                    </li>
+                  ) : null}
+                  {contact.yelpReviewSentAt ? (
+                    <li
+                      data-testid="contact-info-review-link"
+                      data-link-target="YELP_REVIEW"
+                      className="flex items-center justify-between gap-2 rounded-lg ring-1 ring-zinc-100 px-3 py-2 text-sm"
+                    >
+                      <span className="flex items-center gap-1.5 text-zinc-700">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0 text-zinc-400">
+                          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                        </svg>
+                        Yelp review
+                      </span>
+                      {(() => {
+                        const badge = linkEngagementBadge(contact.yelpReviewClickedAt);
                         return (
                           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${badge.className}`}>
                             {badge.label}

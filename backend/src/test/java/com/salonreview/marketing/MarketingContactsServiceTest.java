@@ -150,14 +150,17 @@ class MarketingContactsServiceTest {
     }
 
     @Test
-    @DisplayName("a contact's review-link engagement (sent/clicked for both Google review and feedback form) is surfaced on the Contact DTO")
+    @DisplayName("a contact's review-link engagement (sent/clicked for Google review, Yelp review, and feedback form) is surfaced on the Contact DTO")
     void contactSurfacesReviewLinkEngagement() {
         UUID id = UUID.randomUUID();
         when(repository.listAllForBusiness(1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
         Instant googleSent = Instant.parse("2026-07-20T10:00:00Z");
         Instant googleClicked = Instant.parse("2026-07-20T10:05:00Z");
+        Instant yelpSent = Instant.parse("2026-07-20T10:10:00Z");
         when(smsMessageLogService.linkEngagement(1L, "(858) 555-0100", com.salonreview.sms.CheckoutReviewLinks.GOOGLE_REVIEW_TARGET))
                 .thenReturn(new com.salonreview.sms.SmsMessageLogService.LinkEngagement(googleSent, googleClicked));
+        when(smsMessageLogService.linkEngagement(1L, "(858) 555-0100", com.salonreview.sms.CheckoutReviewLinks.YELP_REVIEW_TARGET))
+                .thenReturn(new com.salonreview.sms.SmsMessageLogService.LinkEngagement(yelpSent, null));
         when(smsMessageLogService.linkEngagement(1L, "(858) 555-0100", com.salonreview.sms.CheckoutReviewLinks.FEEDBACK_FORM_TARGET))
                 .thenReturn(new com.salonreview.sms.SmsMessageLogService.LinkEngagement(null, null));
 
@@ -165,6 +168,8 @@ class MarketingContactsServiceTest {
 
         assertThat(c.googleReviewSentAt()).isEqualTo(googleSent);
         assertThat(c.googleReviewClickedAt()).isEqualTo(googleClicked);
+        assertThat(c.yelpReviewSentAt()).isEqualTo(yelpSent);
+        assertThat(c.yelpReviewClickedAt()).isNull();
         assertThat(c.feedbackFormSentAt()).isNull();
         assertThat(c.feedbackFormClickedAt()).isNull();
     }

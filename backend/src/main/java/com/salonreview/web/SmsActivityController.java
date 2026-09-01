@@ -112,8 +112,8 @@ public class SmsActivityController {
                                    String squareProfileUrl, String lastMessageDeliveryStatus,
                                    String lastMessageDeliveryErrorMessage, boolean hasNegativeFeedback,
                                    boolean vip, Integer visitCount, boolean blocked, boolean optedOut,
-                                   boolean clickedGoogleReview, boolean clickedFeedbackForm,
-                                   boolean flaggedAsSpam) {}
+                                   boolean clickedGoogleReview, boolean clickedYelpReview,
+                                   boolean clickedFeedbackForm, boolean flaggedAsSpam) {}
 
     public record ReplyRequest(String phoneNumber, String body) {}
 
@@ -225,11 +225,13 @@ public class SmsActivityController {
         }
         // Same batching reasoning as blockedPhones above — see
         // SmsMessageLogService#phoneNumbersWithClickedLinkTarget's own doc comment. Quick-glance
-        // "has this contact ever clicked the Google review / feedback form link" icons for the
-        // conversation list — the fuller sent-vs-clicked-vs-never-sent detail with dates already
-        // lives in the contact info panel (see MarketingContactDto.Contact); these two flags are
-        // just the at-a-glance version so a manager doesn't have to open that panel to see it.
+        // "has this contact ever clicked the Google review / Yelp review / feedback form link"
+        // icons for the conversation list — the fuller sent-vs-clicked-vs-never-sent detail with
+        // dates already lives in the contact info panel (see MarketingContactDto.Contact); these
+        // three flags are just the at-a-glance version so a manager doesn't have to open that
+        // panel to see it.
         Set<String> clickedGoogleReview = service.phoneNumbersWithClickedLinkTarget(currentBusinessContext.id(), phoneNumbers, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET);
+        Set<String> clickedYelpReview = service.phoneNumbersWithClickedLinkTarget(currentBusinessContext.id(), phoneNumbers, CheckoutReviewLinks.YELP_REVIEW_TARGET);
         Set<String> clickedFeedbackForm = service.phoneNumbersWithClickedLinkTarget(currentBusinessContext.id(), phoneNumbers, CheckoutReviewLinks.FEEDBACK_FORM_TARGET);
         // Same batching reasoning as above — "has any outbound message to this number ever come
         // back flagged as spam or opted-out" (Twilio error 30007/21610), see
@@ -239,7 +241,8 @@ public class SmsActivityController {
         return summaries.stream()
                 .map(p -> toConversationDto(p, names.get(p.getPhoneNumber()), blockedSources.containsKey(p.getPhoneNumber()),
                         BlockedNumber.SOURCE_STOP_REQUEST.equals(blockedSources.get(p.getPhoneNumber())),
-                        clickedGoogleReview.contains(p.getPhoneNumber()), clickedFeedbackForm.contains(p.getPhoneNumber()),
+                        clickedGoogleReview.contains(p.getPhoneNumber()), clickedYelpReview.contains(p.getPhoneNumber()),
+                        clickedFeedbackForm.contains(p.getPhoneNumber()),
                         flaggedAsSpam.contains(p.getPhoneNumber())))
                 .toList();
     }
@@ -378,7 +381,8 @@ public class SmsActivityController {
     private static ConversationDto toConversationDto(ConversationSummaryProjection p,
                                                        MarketingContactsService.ContactNameInfo nameInfo,
                                                        boolean blocked, boolean optedOut, boolean clickedGoogleReview,
-                                                       boolean clickedFeedbackForm, boolean flaggedAsSpam) {
+                                                       boolean clickedYelpReview, boolean clickedFeedbackForm,
+                                                       boolean flaggedAsSpam) {
         return new ConversationDto(p.getPhoneNumber(), p.getLastMessageAt(), p.getLastMessageBody(),
                 p.getLastMessageDirection(), p.getUnreadCount(),
                 nameInfo == null ? null : nameInfo.givenName(),
@@ -388,6 +392,6 @@ public class SmsActivityController {
                 p.getLastMessageDeliveryStatus(), p.getLastMessageDeliveryErrorMessage(), p.getHasNegativeFeedback(),
                 nameInfo != null && nameInfo.vip(),
                 nameInfo == null ? null : nameInfo.visitCount(),
-                blocked, optedOut, clickedGoogleReview, clickedFeedbackForm, flaggedAsSpam);
+                blocked, optedOut, clickedGoogleReview, clickedYelpReview, clickedFeedbackForm, flaggedAsSpam);
     }
 }

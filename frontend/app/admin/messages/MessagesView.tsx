@@ -11,6 +11,7 @@ import NegativeFeedbackIcon from './NegativeFeedbackIcon';
 import VipIcon from './VipIcon';
 import BlockedIcon from './BlockedIcon';
 import GoogleReviewClickedIcon from './GoogleReviewClickedIcon';
+import YelpReviewClickedIcon from './YelpReviewClickedIcon';
 import FeedbackFormClickedIcon from './FeedbackFormClickedIcon';
 import SpamFlagIcon from './SpamFlagIcon';
 import ConversationMenu from './ConversationMenu';
@@ -866,6 +867,7 @@ export default function MessagesView({
                     {c.blocked && <span data-testid="conversation-row-blocked-icon"><BlockedIcon optedOut={c.optedOut} /></span>}
                     {c.flaggedAsSpam && <span data-testid="conversation-row-spam-flag-icon"><SpamFlagIcon /></span>}
                     {c.clickedGoogleReview && <span data-testid="conversation-row-google-review-icon"><GoogleReviewClickedIcon /></span>}
+                    {c.clickedYelpReview && <span data-testid="conversation-row-yelp-review-icon"><YelpReviewClickedIcon /></span>}
                     {c.clickedFeedbackForm && <span data-testid="conversation-row-feedback-form-icon"><FeedbackFormClickedIcon /></span>}
                   </span>
                   <span className="flex shrink-0 items-center gap-1.5">
@@ -1004,6 +1006,7 @@ export default function MessagesView({
                 {selectedConversation?.blocked && <span data-testid="thread-header-blocked-icon"><BlockedIcon optedOut={selectedConversation?.optedOut} /></span>}
                 {selectedConversation?.flaggedAsSpam && <span data-testid="thread-header-spam-flag-icon"><SpamFlagIcon /></span>}
                 {selectedConversation?.clickedGoogleReview && <span data-testid="thread-header-google-review-icon"><GoogleReviewClickedIcon /></span>}
+                {selectedConversation?.clickedYelpReview && <span data-testid="thread-header-yelp-review-icon"><YelpReviewClickedIcon /></span>}
                 {selectedConversation?.clickedFeedbackForm && <span data-testid="thread-header-feedback-form-icon"><FeedbackFormClickedIcon /></span>}
               </span>
               {/* Visible on both mobile and desktop — unlike the info-panel toggle below (which
@@ -1326,6 +1329,7 @@ export default function MessagesView({
             blocked={selectedConversation?.blocked ?? false}
             optedOut={selectedConversation?.optedOut ?? false}
             clickedGoogleReview={selectedConversation?.clickedGoogleReview ?? false}
+            clickedYelpReview={selectedConversation?.clickedYelpReview ?? false}
             clickedFeedbackForm={selectedConversation?.clickedFeedbackForm ?? false}
             flaggedAsSpam={selectedConversation?.flaggedAsSpam ?? false}
             onClose={() => setShowContactPanel(false)}
