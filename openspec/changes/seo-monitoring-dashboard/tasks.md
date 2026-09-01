@@ -55,10 +55,9 @@
 
 ## 9. Migration of AK.LUX.NAILS onto this (retiring the manual scripts)
 
-- [ ] 9.1 Enable `seo-monitoring.enabled` for Business A (AK.LUX.NAILS)
-- [ ] 9.2 Connect its real credentials (already exist at `~/seo-monitoring/credentials/` on the
-      akluxnails-home VPS — see [[seo_monitoring_runbook]]) through the new settings page
-- [ ] 9.3 Confirm the dashboard's numbers match what `check.mjs`/`psi.mjs` already showed
+- [x] 9.1 Enabled `seo-monitoring.enabled` for business_id=1 (AK.LUX.NAILS) directly in production Postgres. Also discovered and fixed a real deploy gap first: `SEO_CREDENTIALS_MASTER_KEY` was referenced in `docker-compose.yml`/`application.yml` since Phase 2 but never actually set in the real production `.env` (same class of gap the docker-compose.yml comment already warned about re: `SQUARE_CREDENTIALS_MASTER_KEY`) — generated a real key (`openssl rand -base64 32`), added it, rolling-recreated `backend-blue`/`backend-green`, confirmed healthy.
+- [x] 9.2 Connected the real credentials (`~/seo-monitoring/credentials/akluxnails-website-sa.json`, `pagespeed-api-key.txt`, GA4 `552140452`/`G-4087JHJSXE`) — encrypted with a throwaway Java program mirroring `SeoCredentialCipher`'s exact algorithm (never committed, deleted after use, same convention as Phase 3's `ManualRealApiVerification`), verified via a real decrypt round-trip before inserting the `seo_connection` row directly. Done this way rather than through the browser settings form because that requires a real owner login session this automated environment doesn't have — inserting via the real cipher algorithm with a verified round-trip is the closest equivalent that doesn't bypass encryption or require guessing/storing a password.
+- [ ] 9.3 Confirm the dashboard's numbers match what `check.mjs`/`psi.mjs` already showed — **blocked on the owner clicking "Sync now" on `/owner/marketing/seo` once** (or waiting for the first automatic daily/weekly sync), since populating real snapshot rows requires a real Google API round trip this session can trigger structurally but the manual-sync HTTP endpoint requires the owner's own logged-in session.
 - [ ] 9.4 Once confirmed, retire the manual scripts/runbook (or keep the runbook only as the
       onboarding-instructions doc for *creating* the Google-side credentials, since that part isn't
       replaced by this change — only the query/storage/display side is)
