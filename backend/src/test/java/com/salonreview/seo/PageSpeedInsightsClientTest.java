@@ -3,13 +3,16 @@ package com.salonreview.seo;
 import com.salonreview.domain.SeoPageSnapshot;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.*;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 
 class PageSpeedInsightsClientTest {
 
@@ -43,5 +46,25 @@ class PageSpeedInsightsClientTest {
         assertThat(result.tbtMs()).isEqualTo(35);
         assertThat(result.cls()).isEqualByComparingTo(java.math.BigDecimal.valueOf(0.00005689));
         server.verify();
+    }
+
+    @Test
+    @DisplayName("check() surfaces just Google's error.message on a real 400 NO_FCP response, not the raw JSON body")
+    void extractsCleanMessageFromLighthouseError() {
+        String errorBody = "{\"error\":{\"code\":400,"
+                + "\"message\":\"Lighthouse returned error: NO_FCP. The page did not paint any content.\","
+                + "\"errors\":[{\"reason\":\"lighthouseUserError\"}]}}";
+        RestClient.Builder builder = GoogleRestClients.builder("https://www.googleapis.com/pagespeedonline/v5");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(org.hamcrest.Matchers.containsString("/runPagespeed")))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_JSON).body(errorBody));
+
+        PageSpeedInsightsClient client = new PageSpeedInsightsClient(builder.build(), "fake-key");
+
+        assertThatThrownBy(() -> client.check("https://akluxnails.com/", SeoPageSnapshot.Strategy.MOBILE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("NO_FCP")
+                .hasMessageContaining("400")
+                .hasMessageNotContaining("lighthouseUserError");
     }
 }
