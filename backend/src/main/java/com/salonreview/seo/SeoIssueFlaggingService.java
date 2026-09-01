@@ -36,16 +36,17 @@ public class SeoIssueFlaggingService {
         if (lcpMs == null) return;
 
         if (lcpMs <= CoreWebVitalsThresholds.LCP_GOOD_MS) {
-            resolveIfOpen(snapshot.getBusinessId(), SeoTechnicalIssue.IssueType.LCP, snapshot.getUrl(), null);
+            resolveIfOpen(snapshot.getBusinessId(), SeoTechnicalIssue.IssueType.LCP, snapshot.getUrl(), null, snapshot.getStrategy());
             return;
         }
         SeoTechnicalIssue.Severity severity = lcpMs <= CoreWebVitalsThresholds.LCP_POOR_MS
                 ? SeoTechnicalIssue.Severity.NEEDS_IMPROVEMENT
                 : SeoTechnicalIssue.Severity.POOR;
-        String detail = "Largest Contentful Paint is %.1fs on %s, above Google's %.1fs 'good' threshold."
-                .formatted(lcpMs / 1000.0, snapshot.getUrl(), CoreWebVitalsThresholds.LCP_GOOD_MS / 1000.0);
+        String detail = "Largest Contentful Paint is %.1fs on %s (%s), above Google's %.1fs 'good' threshold."
+                .formatted(lcpMs / 1000.0, snapshot.getUrl(), strategyLabel(snapshot.getStrategy()),
+                        CoreWebVitalsThresholds.LCP_GOOD_MS / 1000.0);
         openOrUpdate(snapshot.getBusinessId(), SeoTechnicalIssue.IssueType.LCP, snapshot.getUrl(), null,
-                severity, detail, BigDecimal.valueOf(lcpMs));
+                snapshot.getStrategy(), severity, detail, BigDecimal.valueOf(lcpMs));
     }
 
     private void evaluateCls(SeoPageSnapshot snapshot) {
@@ -53,17 +54,21 @@ public class SeoIssueFlaggingService {
         if (cls == null) return;
 
         if (cls.compareTo(CoreWebVitalsThresholds.CLS_GOOD) <= 0) {
-            resolveIfOpen(snapshot.getBusinessId(), SeoTechnicalIssue.IssueType.CLS, snapshot.getUrl(), null);
+            resolveIfOpen(snapshot.getBusinessId(), SeoTechnicalIssue.IssueType.CLS, snapshot.getUrl(), null, snapshot.getStrategy());
             return;
         }
         SeoTechnicalIssue.Severity severity = cls.compareTo(CoreWebVitalsThresholds.CLS_POOR) <= 0
                 ? SeoTechnicalIssue.Severity.NEEDS_IMPROVEMENT
                 : SeoTechnicalIssue.Severity.POOR;
-        String detail = "Cumulative Layout Shift is %s on %s, above Google's %s 'good' threshold."
+        String detail = "Cumulative Layout Shift is %s on %s (%s), above Google's %s 'good' threshold."
                 .formatted(cls.stripTrailingZeros().toPlainString(), snapshot.getUrl(),
-                        CoreWebVitalsThresholds.CLS_GOOD.toPlainString());
+                        strategyLabel(snapshot.getStrategy()), CoreWebVitalsThresholds.CLS_GOOD.toPlainString());
         openOrUpdate(snapshot.getBusinessId(), SeoTechnicalIssue.IssueType.CLS, snapshot.getUrl(), null,
-                severity, detail, cls);
+                snapshot.getStrategy(), severity, detail, cls);
+    }
+
+    private static String strategyLabel(SeoPageSnapshot.Strategy strategy) {
+        return strategy == SeoPageSnapshot.Strategy.MOBILE ? "mobile" : "desktop";
     }
 
     /**
@@ -85,7 +90,7 @@ public class SeoIssueFlaggingService {
 
         for (SeoSearchMetricsSnapshot row : eligible) {
             if (row.getCtr().compareTo(threshold) >= 0) {
-                resolveIfOpen(businessId, SeoTechnicalIssue.IssueType.CTR_OPPORTUNITY, row.getPage(), row.getQuery());
+                resolveIfOpen(businessId, SeoTechnicalIssue.IssueType.CTR_OPPORTUNITY, row.getPage(), row.getQuery(), null);
                 continue;
             }
             String detail = ("Query \"%s\" has %d impressions but only %s%% CTR, well below the site's %s%% "
@@ -94,20 +99,21 @@ public class SeoIssueFlaggingService {
                     row.getCtr().multiply(BigDecimal.valueOf(100)).setScale(1, RoundingMode.HALF_UP),
                     avgCtr.multiply(BigDecimal.valueOf(100)).setScale(1, RoundingMode.HALF_UP));
             openOrUpdate(businessId, SeoTechnicalIssue.IssueType.CTR_OPPORTUNITY, row.getPage(), row.getQuery(),
-                    SeoTechnicalIssue.Severity.ADVISORY, detail, row.getCtr());
+                    null, SeoTechnicalIssue.Severity.ADVISORY, detail, row.getCtr());
         }
     }
 
-    private void resolveIfOpen(Long businessId, SeoTechnicalIssue.IssueType type, String url, String query) {
-        issueRepository.findOpenBySubject(businessId, type, url, query).ifPresent(issue -> {
+    private void resolveIfOpen(Long businessId, SeoTechnicalIssue.IssueType type, String url, String query,
+            SeoPageSnapshot.Strategy strategy) {
+        issueRepository.findOpenBySubject(businessId, type, url, query, strategy).ifPresent(issue -> {
             issue.setResolvedAt(Instant.now());
             issueRepository.save(issue);
         });
     }
 
     private void openOrUpdate(Long businessId, SeoTechnicalIssue.IssueType type, String url, String query,
-            SeoTechnicalIssue.Severity severity, String detail, BigDecimal metricValue) {
-        Optional<SeoTechnicalIssue> existing = issueRepository.findOpenBySubject(businessId, type, url, query);
+            SeoPageSnapshot.Strategy strategy, SeoTechnicalIssue.Severity severity, String detail, BigDecimal metricValue) {
+        Optional<SeoTechnicalIssue> existing = issueRepository.findOpenBySubject(businessId, type, url, query, strategy);
         if (existing.isPresent()) {
             SeoTechnicalIssue issue = existing.get();
             issue.setSeverity(severity);
@@ -120,6 +126,7 @@ public class SeoIssueFlaggingService {
                     .issueType(type)
                     .url(url)
                     .query(query)
+                    .strategy(strategy)
                     .severity(severity)
                     .detail(detail)
                     .metricValue(metricValue)
