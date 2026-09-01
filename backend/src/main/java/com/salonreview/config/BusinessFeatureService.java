@@ -23,6 +23,10 @@ public class BusinessFeatureService {
     public static final String AI_TRIAGE_ENABLED = "ai.triage.enabled";
     public static final String AI_FUNNEL_ANALYSIS_ENABLED = "ai.funnel-analysis.enabled";
     public static final String AI_SMS_DRAFT_ENABLED = "ai.sms-draft.enabled";
+    /** Matches the literal key already seeded by V142__business_feature_seo_monitoring.sql —
+     * seo-monitoring-dashboard design.md D5. Hyphenated rather than dot-namespaced like the keys
+     * above since that migration (and tasks.md) already fixed this exact string first. */
+    public static final String SEO_MONITORING_ENABLED = "seo-monitoring.enabled";
 
     private final BusinessFeatureRepository repository;
 

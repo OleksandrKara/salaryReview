@@ -42,6 +42,16 @@ class SchedulerLockAnnotationsTest {
         assertLocked(com.salonreview.sms.SameDayRebookingGroupExpiryScheduler.class, "removeExpiredMemberships");
     }
 
+    @Test
+    void seoSearchConsoleSyncScheduler_isLocked() throws NoSuchMethodException {
+        assertLocked(com.salonreview.seo.SeoSearchConsoleSyncScheduler.class, "sync");
+    }
+
+    @Test
+    void seoPageSpeedSyncScheduler_isLocked() throws NoSuchMethodException {
+        assertLocked(com.salonreview.seo.SeoPageSpeedSyncScheduler.class, "sync");
+    }
+
     private static void assertLocked(Class<?> schedulerClass, String methodName) throws NoSuchMethodException {
         Method method = schedulerClass.getDeclaredMethod(methodName);
         assertThat(method.isAnnotationPresent(Scheduled.class))

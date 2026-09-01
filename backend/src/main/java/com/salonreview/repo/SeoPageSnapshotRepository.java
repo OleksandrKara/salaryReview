@@ -11,4 +11,13 @@ public interface SeoPageSnapshotRepository extends JpaRepository<SeoPageSnapshot
 
     Optional<SeoPageSnapshot> findFirstByBusinessIdAndUrlAndStrategyOrderByDateDesc(
             Long businessId, String url, SeoPageSnapshot.Strategy strategy);
+
+    Optional<SeoPageSnapshot> findByBusinessIdAndDateAndUrlAndStrategy(
+            Long businessId, java.time.LocalDate date, String url, SeoPageSnapshot.Strategy strategy);
+
+    /** Dashboard's "latest Core Web Vitals" card — v1 only ever tracks one URL per business
+     * (homepage-only, Open Question 2), so scoping by business+strategy alone is sufficient
+     * without also needing to know that URL here. */
+    Optional<SeoPageSnapshot> findFirstByBusinessIdAndStrategyOrderByDateDesc(
+            Long businessId, SeoPageSnapshot.Strategy strategy);
 }

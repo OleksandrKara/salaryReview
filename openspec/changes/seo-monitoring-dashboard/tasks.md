@@ -24,21 +24,22 @@
 
 ## 4. Backend — Threshold/flagging engine
 
-- [ ] 4.1 `CoreWebVitalsThresholds` — named constants per design.md D3, each with a comment citing Google's published source and the date last verified
-- [ ] 4.2 `SeoIssueFlaggingService` — given a new `seo_page_snapshot`/`seo_search_metrics_snapshot` row, creates/resolves `seo_technical_issue` rows per D3's rules
-- [ ] 4.3 Unit tests: exact boundary values for every threshold (2500ms passes, 2501ms flags; etc.), auto-resolve transition, CTR heuristic with the default 50-impression floor
+- [x] 4.1 `CoreWebVitalsThresholds` — named constants per design.md D3, each with a comment citing Google's published source and the date last verified. INP constants defined but not yet wired to any data path — `seo_page_snapshot` has no INP column since PageSpeed's lab audits don't produce it (it's a CrUX field metric); this site has too little traffic for CrUX field data to exist yet (same gap already flagged in the akluxnails-home project memory). Not a regression — scoped out deliberately, not silently dropped.
+- [x] 4.2 `SeoIssueFlaggingService` — evaluates LCP/CLS from a `SeoPageSnapshot`, CTR heuristic from a business's `SeoSearchMetricsSnapshot` window. Auto-resolve-only for v1 (Open Question 1 resolved: no manual snooze/dismiss for any issue type yet — simplest correct behavior, revisit if the CTR heuristic proves noisy in practice). Required a small additive schema fix first: `V143` added `url`/`query` columns to `seo_technical_issue` (V141 had no way to identify *which* page/query an issue was about beyond free-text `detail`, which would have made auto-resolve matching fragile string-parsing) — safe since the feature is still fully disabled and no real rows exist.
+- [x] 4.3 Unit tests: 10 tests covering exact boundary values (LCP 2500ms passes/2501ms flags NEEDS_IMPROVEMENT/4000ms still NEEDS_IMPROVEMENT/4001ms flags POOR; CLS 0.1/0.11/0.26 same pattern), auto-resolve transition (open issue's `resolvedAt` gets set, not duplicated), open-issue update-in-place (severity/detail/metricValue refreshed without a new row), CTR heuristic (below-floor never flags regardless of CTR, below-half-trailing-average flags ADVISORY, recovery auto-resolves). All passing (`./mvnw test -Dtest=SeoIssueFlaggingServiceTest`).
 
 ## 5. Backend — Scheduled jobs
 
-- [ ] 5.1 `SeoSearchConsoleSyncScheduler` — daily, iterates `business JOIN seo_connection JOIN business_feature(seo-monitoring.enabled=true)`, per-business ShedLock key (design.md D4)
-- [ ] 5.2 `SeoPageSpeedSyncScheduler` — weekly, same iteration pattern, mobile + desktop per business's homepage URL
-- [ ] 5.3 Both jobs write `last_sync_at`/`last_sync_error` to `seo_connection` on success/failure — never silent-fail (design.md Risks)
-- [ ] 5.4 Integration test: two businesses' `seo_connection` rows, assert jobs never cross-contaminate data or share a lock
+- [x] 5.1 `SeoSearchConsoleSyncScheduler` — daily at 03:00 America/Los_Angeles, iterates `seo_connection.findAll()` filtered by `BusinessFeatureService.isEnabled(id, SEO_MONITORING_ENABLED)`, `@SchedulerLock` (mirrors `SquareMirrorReconciliationScheduler`'s shape exactly — a plain periodic sweep needs no per-business timezone precision, unlike `RevenueSnapshotScheduler`'s calendar-boundary-sensitive `SchedulingConfigurer` pattern).
+- [x] 5.2 `SeoPageSpeedSyncScheduler` — weekly, Monday 05:00 America/Los_Angeles, same iteration pattern, mobile + desktop against `business.publicDomain` (reused the existing field rather than adding a redundant URL column to `seo_connection` — homepage-only is the deliberate v1 scope per Open Question 2).
+- [x] 5.3 New shared `SeoSyncService` (used by both schedulers *and* the Phase 6 manual-sync endpoint, so they can never drift): `markSuccess` sets `last_sync_at`+clears `last_sync_error`; `markFailure` sets only `last_sync_error`, leaving `last_sync_at` as the last real success (mirrors the one existing precedent found on this entity type itself, no separate convention to reconcile — `SquareConnection` has no equivalent field at all yet). Every sync path is wrapped so a failure is recorded, never silently swallowed.
+- [x] 5.4 `SeoSyncSchedulersTest` (4 unit tests, real `CurrentBusinessContext` not mocked): feature-disabled business is skipped for each scheduler; one business's sync throwing never blocks the other business's sync in the same run. `SchedulerLockAnnotationsTest` extended with both new scheduler methods (this repo's existing reflection guard against a `@Scheduled` method shipping without `@SchedulerLock`).
 
 ## 6. Backend — Dashboard API
 
-- [ ] 6.1 `SeoDashboardController` — `GET /api/owner/marketing/seo/overview` (trend series + latest CWV + active issues), owner+manager gated matching the existing `/api/owner/marketing/**` pattern
-- [ ] 6.2 `POST /api/owner/marketing/seo/sync` — manual on-demand refresh (owner-only), same shape as the existing Square `/api/sync` button
+- [x] 6.1 `SeoDashboardController` + `SeoDashboardService` — `GET /api/owner/marketing/seo/overview` (28-day trend series aggregated by date, top-20 keyword table aggregated by query with impressions-weighted average position, latest mobile+desktop CWV snapshot, active issues list). Falls under the existing `/api/owner/marketing/**` GET matcher (OWNER+ADS_MANAGER). Returns 404 when `seo-monitoring.enabled` is off (spec.md's own stated scenario), independent of the frontend also hiding the tab (design.md D6) — a business with the feature on but no credentials connected yet gets 200 with `connected:false` instead, a different, deliberate empty state.
+- [x] 6.2 `POST /api/owner/marketing/seo/sync` — not matched by any explicit security rule, so it falls to the OWNER-only catch-all (stricter than the GET above, since this spends live Google API quota rather than reading stored data). Calls the same `SeoSyncService` methods the scheduled jobs use, synchronously, then returns the refreshed overview.
+- [x] 6.3 Tests: `SeoDashboardServiceTest` (4 — empty-when-disconnected, same-day aggregation with impressions-weighted position, top-20 cap/sort, latest-per-strategy + active issues), `SeoDashboardControllerTest` (4 — 404 on both endpoints when disabled, correct data/delegation when enabled). All passing.
 
 ## 7. Frontend — Settings page
 
