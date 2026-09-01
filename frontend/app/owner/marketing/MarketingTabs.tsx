@@ -7,13 +7,14 @@ import { api } from '../../lib/api';
 import type { MarketingLandingPage } from '../../lib/types';
 import { Spinner } from '../../components/Spinner';
 
-const TABS = [
+const BASE_TABS = [
   { href: '/owner/marketing', label: 'Overview' },
   { href: '/owner/marketing/contacts', label: 'Contacts' },
   { href: '/owner/marketing/funnel', label: 'Funnel' },
   { href: '/owner/marketing/ads-report', label: 'Ads Report' },
   { href: '/owner/marketing/ltv', label: 'LTV' },
 ];
+const SEO_TAB = { href: '/owner/marketing/seo', label: 'SEO' };
 
 // Also the default landing page every marketing page.tsx server component should scope its own
 // data fetch to when ?slug= is absent — mani is the only page with real ad spend/history (see
@@ -58,12 +59,24 @@ export default function MarketingTabs() {
   // has a real timestamp — three distinct states, so "haven't checked yet" never flashes as
   // "Never synced yet." for a page whose real answer is a moment away.
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null | undefined>(undefined);
+  // design.md D6: the SEO tab is hidden entirely (not just disabled) for a business that hasn't
+  // turned the feature on — defaults to hidden while this hasn't resolved yet, same "don't flash
+  // something that might not apply" reasoning as lastSyncedAt's three-state handling below.
+  const [seoMonitoringEnabled, setSeoMonitoringEnabled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     api.getMarketingPages().then((p) => { if (!cancelled) setPages(p); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getMe().then((me) => { if (!cancelled) setSeoMonitoringEnabled(me.features.seoMonitoringEnabled); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const TABS = seoMonitoringEnabled ? [...BASE_TABS, SEO_TAB] : BASE_TABS;
 
   // Independent of the pages fetch above — a failure here shouldn't block the page selector, and
   // vice versa. Cheap (a single DB row on the backend), safe to fetch on every mount.

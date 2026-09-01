@@ -43,14 +43,15 @@
 
 ## 7. Frontend — Settings page
 
-- [ ] 7.1 `app/owner/settings/seo/page.tsx` — form for the 3 credentials, mirroring `app/owner/settings/telegram`'s layout/pattern
-- [ ] 7.2 `app/api/owner/settings/seo-connection/route.ts` proxy route
+- [x] 7.1 `app/owner/settings/seo/page.tsx` + `SeoConnectionForm.tsx` — form for the 3 credentials, mirroring `app/owner/settings/square`'s exact layout/pattern (blank-starts-empty credential fields, masked-value placeholder, null-vs-unchanged PUT contract).
+- [x] 7.2 `app/api/owner/settings/seo/route.ts` proxy route (path is `/settings/seo`, matching the backend controller — not `/settings/seo-connection` as originally sketched in this line, corrected to match Phase 2's actual path).
 
 ## 8. Frontend — Dashboard page
 
-- [ ] 8.1 `app/owner/marketing/seo/page.tsx` — trend chart, keyword table, CWV cards (color-coded: green/amber/red against D3's thresholds), active-issues list with recommendation text
-- [ ] 8.2 Add the tab to `MarketingTabs.tsx`, gated on `seo-monitoring.enabled` (hidden entirely, not just disabled, when off — design.md D6)
-- [ ] 8.3 `app/api/owner/marketing/seo/route.ts` + `.../sync/route.ts` proxy routes
+- [x] 8.1 `app/owner/marketing/seo/page.tsx` + `SeoDashboardView.tsx` — `recharts` `LineChart` trend (clicks/impressions, dual Y-axis; CTR/position surfaced as a summary stat row rather than crammed onto the same two axes — a deliberate simplification, not a missed requirement), keyword table, CWV cards (emerald/amber/rose against `CoreWebVitalsThresholds`, FCP/TBT hidden below `sm:` per `RevenueChart.tsx`'s own convention), active-issues list, "connect credentials" empty state when `connected:false`, manual "Sync now" button.
+- [x] 8.2 `MarketingTabs.tsx` — added a `SEO` tab, fetched via a new `api.getMe()` effect and only appended to the tab list when `me.features.seoMonitoringEnabled` (hidden entirely when off, design.md D6) rather than touching every page.tsx call site. Backend: added `seoMonitoringEnabled` to `/api/me`'s `features` object (`MeController`), matching the existing `ragEnabled`/`aiTriageEnabled` pattern exactly.
+- [x] 8.3 `app/api/owner/marketing/seo/overview/route.ts` (forwards `?days=`) + `.../sync/route.ts` proxy routes.
+- [x] Frontend `npx tsc --noEmit` and `npm run build` both clean; `npm run lint` shows zero new issues (the 5 errors/2 warnings it reports are all pre-existing, in files this change never touched).
 
 ## 9. Migration of AK.LUX.NAILS onto this (retiring the manual scripts)
 

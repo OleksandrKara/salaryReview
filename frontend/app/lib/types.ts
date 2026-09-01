@@ -75,6 +75,75 @@ export interface SquareConnectionUpdateRequest {
   webhookSignatureKey?: string;
 }
 
+// --- SEO monitoring (com.salonreview.seo / web.SeoConnectionController, SeoDashboardController) ---
+
+export interface SeoConnectionDto {
+  serviceAccountEmail: string | null;
+  serviceAccountSet: boolean;
+  ga4PropertyId: string | null;
+  ga4MeasurementId: string | null;
+  pagespeedApiKeyMasked: string | null;
+  pagespeedApiKeySet: boolean;
+  connectedAt: string | null;
+  lastSyncAt: string | null;
+  lastSyncError: string | null;
+}
+
+// gscServiceAccountJson/pagespeedApiKey omitted/undefined = keep the existing value — required the
+// first time this business connects. Never send serviceAccountEmail/pagespeedApiKeyMasked back here.
+export interface SeoConnectionUpdateRequest {
+  gscServiceAccountJson?: string;
+  ga4PropertyId: string;
+  ga4MeasurementId: string;
+  pagespeedApiKey?: string;
+}
+
+export interface SeoTrendPoint {
+  date: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
+export interface SeoKeywordRow {
+  query: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
+// null when no PageSpeed snapshot exists yet for that strategy (feature just turned on, first
+// weekly check hasn't run).
+export interface SeoCoreWebVitals {
+  date: string;
+  performanceScore: number | null;
+  lcpMs: number | null;
+  cls: number | null;
+  fcpMs: number | null;
+  tbtMs: number | null;
+}
+
+export interface SeoIssueRow {
+  issueType: 'LCP' | 'CLS' | 'INP' | 'CTR_OPPORTUNITY';
+  severity: 'NEEDS_IMPROVEMENT' | 'POOR' | 'ADVISORY';
+  detail: string;
+  url: string | null;
+  query: string | null;
+}
+
+export interface SeoOverviewDto {
+  connected: boolean;
+  lastSyncAt: string | null;
+  lastSyncError: string | null;
+  trend: SeoTrendPoint[];
+  topQueries: SeoKeywordRow[];
+  mobile: SeoCoreWebVitals | null;
+  desktop: SeoCoreWebVitals | null;
+  activeIssues: SeoIssueRow[];
+}
+
 export interface BusinessSettingsDto {
   businessId: number;
   name: string;
@@ -774,6 +843,9 @@ export interface Features {
   ragEnabled: boolean;
   ragSuggestionsEnabled: boolean;
   ragFollowupsEnabled: boolean;
+  // seo-monitoring-dashboard design.md D6: whether /owner/marketing/seo + /owner/settings/seo
+  // should render at all for this business — purely business-gated, no deployment-level flag.
+  seoMonitoringEnabled: boolean;
 }
 
 // Knowledge-gap requests (com.salonreview.web.KbRequestController).

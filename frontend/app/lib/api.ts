@@ -30,6 +30,9 @@ import type {
   TelegramSettingsUpdateRequest,
   SquareConnectionDto,
   SquareConnectionUpdateRequest,
+  SeoConnectionDto,
+  SeoConnectionUpdateRequest,
+  SeoOverviewDto,
   BusinessSettingsDto,
   BusinessSettingsUpdateRequest,
   PlatformBusinessDto,
@@ -238,6 +241,18 @@ export const api = {
 
   updateSquareConnection: (body: SquareConnectionUpdateRequest) =>
     proxyJson<SquareConnectionDto>(`/api/owner/settings/square`, 'PUT', body),
+
+  // SEO monitoring connection settings (owner) — seo-monitoring-dashboard Phase 7.
+  getSeoConnection: () => proxyGet<SeoConnectionDto>(`/api/owner/settings/seo`),
+
+  updateSeoConnection: (body: SeoConnectionUpdateRequest) =>
+    proxyJson<SeoConnectionDto>(`/api/owner/settings/seo`, 'PUT', body),
+
+  // SEO monitoring dashboard (owner + ads_manager, read-only) — Phase 8.
+  getSeoOverview: (days?: number) =>
+    proxyGet<SeoOverviewDto>(`/api/owner/marketing/seo/overview${days ? `?days=${days}` : ''}`),
+
+  syncSeoNow: () => proxyJson<SeoOverviewDto>(`/api/owner/marketing/seo/sync`, 'POST', {}),
 
   // Business name/timezone + financial config (owner).
   getBusinessSettings: () => proxyGet<BusinessSettingsDto>(`/api/owner/settings/business`),

@@ -11,6 +11,8 @@ import type {
   Sop,
   TelegramSettingsDto,
   SquareConnectionDto,
+  SeoConnectionDto,
+  SeoOverviewDto,
   BusinessSettingsDto,
   PlatformBusinessDto,
   TwilioSmsSettingsDto,
@@ -130,6 +132,11 @@ async function serverFetchOrNull<T>(path: string): Promise<T | null> {
 export const serverApi = {
   getMe: () => serverFetch<Me>(`/api/me`),
 
+  // null when seo-monitoring.enabled is off for this business (backend 404s) — the page redirects
+  // in that case rather than throwing, same contract as any feature-gated page here.
+  getSeoOverview: (days?: number) =>
+    serverFetchOrNull<SeoOverviewDto>(`/api/owner/marketing/seo/overview${days ? `?days=${days}` : ''}`),
+
   // Open (untriaged) knowledge-gap request count, for the owner's nav badge. Never throws — a
   // missing/disabled RAG feature or a hiccup here must not take down every page's header. A
   // session-expired redirect must still propagate, not be swallowed as "no count".
@@ -183,6 +190,8 @@ export const serverApi = {
   getTelegramSettings: () => serverFetch<TelegramSettingsDto>(`/api/owner/settings/telegram`),
 
   getSquareConnection: () => serverFetch<SquareConnectionDto>(`/api/owner/settings/square`),
+
+  getSeoConnection: () => serverFetch<SeoConnectionDto>(`/api/owner/settings/seo`),
 
   getBusinessSettings: () => serverFetch<BusinessSettingsDto>(`/api/owner/settings/business`),
 

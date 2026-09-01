@@ -83,7 +83,11 @@ public class MeController {
                 "ragEnabled", ragEnabled,
                 "ragSuggestionsEnabled", ragEnabled && rag.getSuggestions().isEnabled()
                         && businessFeatures.isEnabled(businessId, BusinessFeatureService.RAG_SUGGESTIONS_ENABLED),
-                "ragFollowupsEnabled", rag.isEnabled() && rag.getFollowups().isEnabled()));
+                "ragFollowupsEnabled", rag.isEnabled() && rag.getFollowups().isEnabled(),
+                // seo-monitoring-dashboard design.md D6: purely business-gated, no deployment-level
+                // flag to layer on top of (unlike RAG/AI triage above) — the tab either exists for
+                // this business or it doesn't.
+                "seoMonitoringEnabled", businessFeatures.isEnabled(businessId, BusinessFeatureService.SEO_MONITORING_ENABLED)));
         // Phase 6.1/6.2 (design.md D12): activeBusinessId reflects any session-level switch
         // (CurrentBusinessContext is already populated for this request by
         // CurrentBusinessContextFilter, session-override-aware); businesses is the switcher's own
