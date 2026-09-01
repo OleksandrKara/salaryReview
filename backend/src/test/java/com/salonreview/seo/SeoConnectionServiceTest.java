@@ -1,6 +1,5 @@
 package com.salonreview.seo;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.config.SeoCredentialCipher;
 import com.salonreview.domain.SeoConnection;
 import com.salonreview.repo.SeoConnectionRepository;
@@ -29,7 +28,7 @@ class SeoConnectionServiceTest {
     void setUp() {
         repo = mock(SeoConnectionRepository.class);
         cipher = mock(SeoCredentialCipher.class);
-        service = new SeoConnectionService(repo, cipher, new ObjectMapper());
+        service = new SeoConnectionService(repo, cipher);
         when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(cipher.encrypt(any())).thenAnswer(inv -> "enc:" + inv.getArgument(0));
     }

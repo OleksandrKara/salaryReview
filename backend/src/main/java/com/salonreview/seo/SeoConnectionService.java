@@ -28,12 +28,15 @@ public class SeoConnectionService {
 
     private final SeoConnectionRepository repo;
     private final SeoCredentialCipher cipher;
-    private final ObjectMapper objectMapper;
+    // Constructed directly rather than @Autowired: this app's Spring context doesn't register a
+    // default ObjectMapper bean the way a vanilla Spring Boot web app does (confirmed via a real
+    // CI failure — NoSuchBeanDefinitionException for ObjectMapper — while wiring this up), and
+    // structural JSON-tree parsing here needs no custom Jackson configuration anyway.
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public SeoConnectionService(SeoConnectionRepository repo, SeoCredentialCipher cipher, ObjectMapper objectMapper) {
+    public SeoConnectionService(SeoConnectionRepository repo, SeoCredentialCipher cipher) {
         this.repo = repo;
         this.cipher = cipher;
-        this.objectMapper = objectMapper;
     }
 
     public Optional<SeoConnection> get(Long businessId) {
