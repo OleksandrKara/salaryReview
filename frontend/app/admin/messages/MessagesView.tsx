@@ -69,16 +69,19 @@ function displayName(givenName: string | null | undefined, familyName: string | 
 
 /** Human label for a message's tracked link — null for a message with no link at all (most
  * messages), which the caller uses to skip rendering the click-status row. Covers the
- * checkout-review-request automation's two fixed targets, the same-day-rebooking-discount
- * automation's signed promo link (`REBOOK:<epochSeconds>`), lapsed-customer-winback's own signed
- * promo link (`WINBACK:<epochSeconds>`), and repeat-customer-winback's plain (no promo, no
+ * checkout-review-request automation's three fixed targets (Google review, Yelp review — asked
+ * only of a customer who already left a Google review, feedback form), the same-day-rebooking-
+ * discount automation's signed promo link (`REBOOK:<epochSeconds>`), lapsed-customer-winback's own
+ * signed promo link (`WINBACK:<epochSeconds>`), and repeat-customer-winback's plain (no promo, no
  * per-send suffix) `BOOK_NOW` link target — all share the same ShortLinkController click-tracked-
  * redirect mechanism. Each missing branch here has silently hidden the click-status row for that
- * automation's messages before: WINBACK: (fixed 2026-08-07), BOOK_NOW (fixed 2026-08-09) — a new
- * automation adding its own link target needs a branch added here too, or its clicks go
- * invisible in the thread even though ShortLinkController is tracking them correctly. */
+ * automation's messages before: WINBACK: (fixed 2026-08-07), BOOK_NOW (fixed 2026-08-09),
+ * YELP_REVIEW (fixed 2026-09-01) — a new automation adding its own link target needs a branch
+ * added here too, or its clicks go invisible in the thread even though ShortLinkController is
+ * tracking them correctly. */
 function linkTargetLabel(linkTarget: string | null): string | null {
   if (linkTarget === 'GOOGLE_REVIEW') return 'Google review link';
+  if (linkTarget === 'YELP_REVIEW') return 'Yelp review link';
   if (linkTarget === 'FEEDBACK_FORM') return 'Feedback form link';
   if (linkTarget === 'BOOK_NOW') return 'Booking link';
   if (linkTarget?.startsWith('REBOOK:') || linkTarget?.startsWith('WINBACK:')) return 'Booking link';
