@@ -136,7 +136,9 @@ export default function MarketingTabs() {
         <div className="flex min-w-0 gap-1 overflow-x-auto border-b border-transparent">
           {TABS.map((tab) => {
             const active = pathname === tab.href;
-            const href = hrefWithSlug(tab.href, currentSlug);
+            // design.md D6: SEO is scoped to the business's one primary domain, not a per-landing-
+            // page dimension — its own link never carries ?slug=, unlike every other tab here.
+            const href = tab.href === SEO_TAB.href ? tab.href : hrefWithSlug(tab.href, currentSlug);
             return (
               <Link
                 key={tab.href}
@@ -153,7 +155,10 @@ export default function MarketingTabs() {
             );
           })}
         </div>
-        {pages.length > 1 && (
+        {/* design.md D6: the landing-page selector is a different dimension from SEO (which
+            tracks one domain via a single seo_connection per business, not per landing page) —
+            hidden on the SEO tab so it never implies picking a page changes what's shown there. */}
+        {pages.length > 1 && pathname !== SEO_TAB.href && (
           <label className="flex items-center gap-2 text-xs text-zinc-500">
             Page
             <select
