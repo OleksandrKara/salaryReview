@@ -210,6 +210,57 @@ public class TelegramNotificationService {
         }
     }
 
+    /** Alerts the business's staff Telegram channel when a customer's booking lands very close to
+     * its own start time — see {@code SameDayBookingAlertService}, which decides what counts as
+     * "very close" and resolves {@code providerNames}/{@code customerName} before calling this.
+     * Business-scoped via {@code businessId} (not {@link #sendFourHandRequestAlert} and friends'
+     * always-{@code legacySmsBusiness()} shortcut) — this fires from a real per-business webhook,
+     * so it must never alert business A's channel about business B's booking. Never throws, same
+     * contract as every other send method here. */
+    public boolean sendSameDayBookingAlert(Long businessId, String providerNames, String customerName,
+                                            String appointmentStartAt, Duration leadTime) {
+        TelegramNotificationConfig cfg = configService.get(businessId);
+        String token = cfg.getBotToken();
+        String chatId = cfg.getChatId();
+        if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
+            log.info("Same-day-booking Telegram alert skipped — bot token or chat id not configured for business {}", businessId);
+            return false;
+        }
+
+        String text = "⏰ Last-minute booking — " + formatLeadTime(leadTime) + " notice\n"
+                + "Provider: " + providerNames + '\n'
+                + "Client: " + (customerName == null ? "—" : customerName) + '\n'
+                + "Appointment: " + formatPreferredTime(appointmentStartAt);
+        try {
+            Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", text);
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
+                    .timeout(Duration.ofSeconds(5))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(reqBody)))
+                    .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                log.warn("Same-day-booking Telegram alert send failed: HTTP {} {}", res.statusCode(), res.body());
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.warn("Same-day-booking Telegram alert send failed (caller unaffected): {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /** "45 min" under an hour, "3h" or "3h 20m" at/past one — matches how a person would actually
+     * say it, not a raw minute count. Package-private for direct unit testing. */
+    static String formatLeadTime(Duration d) {
+        long totalMinutes = Math.max(0, d.toMinutes());
+        if (totalMinutes < 60) return totalMinutes + " min";
+        long hours = totalMinutes / 60;
+        long mins = totalMinutes % 60;
+        return mins == 0 ? hours + "h" : hours + "h " + mins + "m";
+    }
+
     /** Package-private for direct unit testing, same convention as {@link #formatPreferredTime}. */
     String formatMessage(FourHandRequestNotification n) {
         StringBuilder sb = new StringBuilder();

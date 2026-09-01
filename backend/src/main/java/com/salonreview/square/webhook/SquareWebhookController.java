@@ -47,6 +47,7 @@ public class SquareWebhookController {
     private final SquareWebhookProperties properties;
     private final CheckoutReviewTriggerService triggerService;
     private final SquareBookingWebhookHandler bookingWebhookHandler;
+    private final SameDayBookingAlertService sameDayBookingAlertService;
     private final SquareOrderWebhookHandler orderWebhookHandler;
     private final SquarePaymentWebhookHandler paymentWebhookHandler;
     private final SquareCustomerWebhookHandler customerWebhookHandler;
@@ -59,6 +60,7 @@ public class SquareWebhookController {
 
     public SquareWebhookController(SquareWebhookProperties properties, CheckoutReviewTriggerService triggerService,
                                     SquareBookingWebhookHandler bookingWebhookHandler,
+                                    SameDayBookingAlertService sameDayBookingAlertService,
                                     SquareOrderWebhookHandler orderWebhookHandler,
                                     SquarePaymentWebhookHandler paymentWebhookHandler,
                                     SquareCustomerWebhookHandler customerWebhookHandler,
@@ -67,6 +69,7 @@ public class SquareWebhookController {
         this.properties = properties;
         this.triggerService = triggerService;
         this.bookingWebhookHandler = bookingWebhookHandler;
+        this.sameDayBookingAlertService = sameDayBookingAlertService;
         this.orderWebhookHandler = orderWebhookHandler;
         this.paymentWebhookHandler = paymentWebhookHandler;
         this.customerWebhookHandler = customerWebhookHandler;
@@ -125,6 +128,12 @@ public class SquareWebhookController {
         // event stream above, not entangled with the checkout-review trigger's own payment handling.
         if (object != null && object.booking() != null) {
             bookingWebhookHandler.handleBookingEvent(businessId, object.booking());
+            // Same-day-booking staff alert (2026-09-01, the Tara Lumley incident) — booking.created
+            // only, never booking.updated (an edit to an existing booking says nothing about how
+            // much notice staff originally got — see SameDayBookingAlertService's own doc).
+            if ("booking.created".equals(event.type())) {
+                sameDayBookingAlertService.handleBookingCreated(businessId, object.booking());
+            }
         }
         // order.updated/order.created/order.fulfillment.updated all carry the same minimal summary
         // (order_id) under a different JSON field name — exactly one is ever populated for a given

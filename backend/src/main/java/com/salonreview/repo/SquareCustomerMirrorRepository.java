@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 public interface SquareCustomerMirrorRepository extends JpaRepository<SquareCustomerMirror, Long> {
 
@@ -16,6 +17,12 @@ public interface SquareCustomerMirrorRepository extends JpaRepository<SquareCust
      * {@code SquareClient#customerIdsForPhone(phoneNumber)}. Callers must normalize the phone the
      * same way {@code SquareClient#normalizePhone} does before calling this, or it won't match. */
     List<SquareCustomerMirror> findByBusinessIdAndPhoneNumber(Long businessId, String phoneNumber);
+
+    /** The reverse direction of the lookup above — a customer's own display name given Square's
+     * customer id, e.g. from a booking's {@code customer_id} field (see {@code
+     * SameDayBookingAlertService}). Zero live Square calls either way; this table is already kept
+     * current by {@code SquareCustomerMirrorIngestService}/{@code SquareCustomerWebhookHandler}. */
+    Optional<SquareCustomerMirror> findByBusinessIdAndSquareCustomerId(Long businessId, String squareCustomerId);
 
     /** Insert-or-update by the natural key (business + Square's own customer id) — used by both the
      * full-directory backfill/re-sync and the single-event webhook path. Native, not a derived
