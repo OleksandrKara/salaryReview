@@ -1,10 +1,8 @@
 package com.salonreview.seo;
 
-import com.salonreview.domain.Business;
 import com.salonreview.domain.SeoConnection;
 import com.salonreview.domain.SeoPageSnapshot;
 import com.salonreview.domain.SeoSearchMetricsSnapshot;
-import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SeoConnectionRepository;
 import com.salonreview.repo.SeoPageSnapshotRepository;
 import com.salonreview.repo.SeoSearchMetricsSnapshotRepository;
@@ -48,17 +46,15 @@ public class SeoSyncService {
 
     private final SeoConnectionRepository connectionRepository;
     private final SeoConnectionService connectionService;
-    private final BusinessRepository businessRepository;
     private final SeoSearchMetricsSnapshotRepository searchMetricsRepository;
     private final SeoPageSnapshotRepository pageSnapshotRepository;
     private final SeoIssueFlaggingService flaggingService;
 
     public SeoSyncService(SeoConnectionRepository connectionRepository, SeoConnectionService connectionService,
-            BusinessRepository businessRepository, SeoSearchMetricsSnapshotRepository searchMetricsRepository,
+            SeoSearchMetricsSnapshotRepository searchMetricsRepository,
             SeoPageSnapshotRepository pageSnapshotRepository, SeoIssueFlaggingService flaggingService) {
         this.connectionRepository = connectionRepository;
         this.connectionService = connectionService;
-        this.businessRepository = businessRepository;
         this.searchMetricsRepository = searchMetricsRepository;
         this.pageSnapshotRepository = pageSnapshotRepository;
         this.flaggingService = flaggingService;
@@ -110,29 +106,44 @@ public class SeoSyncService {
         }
     }
 
-    /** Homepage URL is derived from {@link Business#getPublicDomain()} (already the field used to
-     * resolve which business a public request belongs to — see {@code BusinessRepository}) rather
-     * than adding a redundant URL column to {@code seo_connection}; homepage-only is the deliberate
-     * v1 scope (design.md Open Question 2). No-op if the business has no connection or no
-     * public_domain configured — the latter records a visible sync error rather than silently
-     * skipping, since an owner enabling this feature would otherwise never learn why data never
-     * appears. */
+    /** Homepage URL is derived from the business's own Search Console site (the same one {@link
+     * #syncSearchConsole} queries), not {@code Business#getPublicDomain()} — found live 2026-09-01
+     * that {@code public_domain} is the booking-app subdomain used to resolve which business a
+     * landing-page request belongs to (e.g. {@code mani.akluxnails.com}), a completely different
+     * site from the one this business's {@code seo_connection} actually has Search Console
+     * configured for ({@code akluxnails.com}) — checking the wrong domain's Core Web Vitals is
+     * worse than not checking at all. Homepage-only is still the deliberate v1 scope (design.md
+     * Open Question 2); no-op if the business has no connection. */
     @Transactional
     public void syncPageSpeed(Long businessId) {
         SeoConnection connection = connectionRepository.findByBusinessId(businessId).orElse(null);
         if (connection == null) return;
 
-        Business business = businessRepository.findById(businessId).orElse(null);
-        if (business == null || business.getPublicDomain() == null || business.getPublicDomain().isBlank()) {
-            markFailure(connection, "PageSpeed sync skipped: business has no public_domain configured");
+        String homepageUrl;
+        PageSpeedInsightsClient client;
+        try {
+            SearchConsoleClient searchConsoleClient = new SearchConsoleClient(connectionService.decryptedServiceAccountJson(connection));
+            List<SearchConsoleClient.Site> sites = searchConsoleClient.sites();
+            if (sites.isEmpty()) {
+                throw new IllegalStateException("Service account has no visible Search Console sites");
+            }
+            homepageUrl = homepageUrlFromSiteUrl(sites.get(0).siteUrl());
+            client = new PageSpeedInsightsClient(connectionService.decryptedPagespeedApiKey(connection));
+        } catch (Exception e) {
+            markFailure(connection, "PageSpeed sync failed: " + e.getMessage());
+            log.warn("PageSpeed sync failed for business {}: {}", businessId, e.toString());
             return;
         }
-        String homepageUrl = "https://" + business.getPublicDomain() + "/";
 
-        try {
-            PageSpeedInsightsClient client = new PageSpeedInsightsClient(connectionService.decryptedPagespeedApiKey(connection));
-            LocalDate today = LocalDate.now(ZoneOffset.UTC);
-            for (SeoPageSnapshot.Strategy strategy : SeoPageSnapshot.Strategy.values()) {
+        // Each strategy is attempted and persisted independently — mobile and desktop are
+        // genuinely separate Lighthouse runs against Google's infrastructure, and one of them
+        // hitting a transient error (NO_FCP, "Something went wrong", etc. — see design.md Risks
+        // and PageSpeedInsightsClient's own doc comment) must never prevent the other, already-
+        // working strategy's real result from being saved in the same sync.
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        List<String> errors = new ArrayList<>();
+        for (SeoPageSnapshot.Strategy strategy : SeoPageSnapshot.Strategy.values()) {
+            try {
                 PageSpeedInsightsClient.Result result = client.check(homepageUrl, strategy);
                 SeoPageSnapshot snapshot = pageSnapshotRepository
                         .findByBusinessIdAndDateAndUrlAndStrategy(businessId, today, homepageUrl, strategy)
@@ -147,12 +158,27 @@ public class SeoSyncService {
                 snapshot.setFcpMs(result.fcpMs());
                 snapshot.setTbtMs(result.tbtMs());
                 flaggingService.evaluatePageSnapshot(pageSnapshotRepository.save(snapshot));
+            } catch (Exception e) {
+                errors.add(strategy + ": " + e.getMessage());
+                log.warn("PageSpeed sync failed for business {}, strategy {}: {}", businessId, strategy, e.toString());
             }
-            markSuccess(connection);
-        } catch (Exception e) {
-            markFailure(connection, "PageSpeed sync failed: " + e.getMessage());
-            log.warn("PageSpeed sync failed for business {}: {}", businessId, e.toString());
         }
+
+        if (errors.isEmpty()) {
+            markSuccess(connection);
+        } else {
+            markFailure(connection, "PageSpeed sync failed for " + errors.size() + "/2 strategies: "
+                    + String.join("; ", errors));
+        }
+    }
+
+    /** A Search Console site URL is either a Domain property ({@code sc-domain:example.com}, no
+     * scheme — AK.LUX.NAILS' actual shape, confirmed live) or a URL-prefix property (already a real
+     * URL like {@code https://example.com/}) — never assume which one a given business has. */
+    private static String homepageUrlFromSiteUrl(String siteUrl) {
+        return siteUrl.startsWith("sc-domain:")
+                ? "https://" + siteUrl.substring("sc-domain:".length()) + "/"
+                : siteUrl;
     }
 
     private void markSuccess(SeoConnection connection) {
