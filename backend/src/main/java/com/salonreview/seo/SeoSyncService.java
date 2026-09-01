@@ -31,16 +31,19 @@ public class SeoSyncService {
 
     private static final Logger log = LoggerFactory.getLogger(SeoSyncService.class);
 
-    // Search Console's own data typically isn't final until 2-3 days after the fact — pulling
-    // "today" would just get zero/partial rows every run.
-    private static final int SEARCH_CONSOLE_LAG_DAYS = 3;
-    // A single day's query-level breakdown is frequently all-zero for a lower-traffic site (found
-    // live 2026-09-01 for AK.LUX.NAILS: a real sync succeeded with 0 rows, since GSC often has no
-    // per-query granularity for a single low-volume day) — pulling a trailing week and re-upserting
-    // it on every sync, not just the newest day, both fixes that and self-heals/backfills any
-    // day GSC hadn't finalized on a prior run, same rolling-window reconciliation idea
-    // SquareMirrorReconciliationScheduler already uses for the same reason.
-    private static final int SEARCH_CONSOLE_WINDOW_DAYS = 7;
+    // Real diagnostic against AK.LUX.NAILS' live account (2026-09-01) found data can already be
+    // final as recently as 2 days ago while slightly-older days in between stay empty — Search
+    // Console's own "2-3 day lag" guidance is not a hard floor to skip under, and for a low-traffic
+    // property whole days can legitimately have zero query-level rows regardless of lag. So this
+    // queries every day through today, not a lagged end date — a day too fresh to have data yet
+    // just costs one API call that returns an empty list, not an error.
+    //
+    // Windowed to 28 days (matching SeoDashboardService.DEFAULT_TREND_DAYS) and re-upserted on
+    // every sync, not just the newest day, so the trend chart is fully populated from the very
+    // first sync and any day GSC hadn't finalized on a prior run self-heals/backfills — same
+    // rolling-window reconciliation idea SquareMirrorReconciliationScheduler already uses for the
+    // same reason.
+    private static final int SEARCH_CONSOLE_WINDOW_DAYS = 28;
     private static final int SEARCH_CONSOLE_ROW_LIMIT = 200;
 
     private final SeoConnectionRepository connectionRepository;
@@ -76,7 +79,7 @@ public class SeoSyncService {
                 throw new IllegalStateException("Service account has no visible Search Console sites");
             }
             String siteUrl = sites.get(0).siteUrl();
-            LocalDate endDate = LocalDate.now(ZoneOffset.UTC).minusDays(SEARCH_CONSOLE_LAG_DAYS);
+            LocalDate endDate = LocalDate.now(ZoneOffset.UTC);
             LocalDate startDate = endDate.minusDays(SEARCH_CONSOLE_WINDOW_DAYS - 1);
 
             List<SeoSearchMetricsSnapshot> saved = new ArrayList<>();
