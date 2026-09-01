@@ -51,6 +51,15 @@ public class SeoTechnicalIssue {
     @Column(name = "query")
     private String query;
 
+    /** Mobile and desktop are independent Lighthouse runs against the same URL and can have
+     * completely different pass/fail states for the same metric — without this, a "good" result on
+     * one strategy auto-resolved the other, still-real, still-failing strategy's open issue for the
+     * same (business, issue_type, url) (found live 2026-09-01). Null for {@code CTR_OPPORTUNITY},
+     * which isn't strategy-scoped. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "strategy")
+    private SeoPageSnapshot.Strategy strategy;
+
     @Column(name = "first_seen_at", nullable = false)
     private Instant firstSeenAt;
 

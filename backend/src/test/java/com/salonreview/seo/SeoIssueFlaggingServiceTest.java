@@ -44,7 +44,7 @@ class SeoIssueFlaggingServiceTest {
     @Test
     @DisplayName("LCP exactly at 2500ms does not flag")
     void lcpAtGoodBoundaryDoesNotFlag() {
-        when(repository.findOpenBySubject(1L, SeoTechnicalIssue.IssueType.LCP, "https://akluxnails.com/", null))
+        when(repository.findOpenBySubject(1L, SeoTechnicalIssue.IssueType.LCP, "https://akluxnails.com/", null, SeoPageSnapshot.Strategy.MOBILE))
                 .thenReturn(Optional.empty());
 
         service.evaluatePageSnapshot(pageSnapshot(2500, BigDecimal.ZERO));
@@ -55,7 +55,7 @@ class SeoIssueFlaggingServiceTest {
     @Test
     @DisplayName("LCP at 2501ms flags as NEEDS_IMPROVEMENT")
     void lcpJustOverGoodFlagsNeedsImprovement() {
-        when(repository.findOpenBySubject(1L, SeoTechnicalIssue.IssueType.LCP, "https://akluxnails.com/", null))
+        when(repository.findOpenBySubject(1L, SeoTechnicalIssue.IssueType.LCP, "https://akluxnails.com/", null, SeoPageSnapshot.Strategy.MOBILE))
                 .thenReturn(Optional.empty());
 
         service.evaluatePageSnapshot(pageSnapshot(2501, BigDecimal.ZERO));
@@ -68,7 +68,7 @@ class SeoIssueFlaggingServiceTest {
     @Test
     @DisplayName("LCP exactly at 4000ms is still NEEDS_IMPROVEMENT, not POOR")
     void lcpAtPoorBoundaryIsNeedsImprovement() {
-        when(repository.findOpenBySubject(any(), any(), any(), any())).thenReturn(Optional.empty());
+        when(repository.findOpenBySubject(any(), any(), any(), any(), any())).thenReturn(Optional.empty());
 
         service.evaluatePageSnapshot(pageSnapshot(4000, BigDecimal.ZERO));
 
@@ -78,7 +78,7 @@ class SeoIssueFlaggingServiceTest {
     @Test
     @DisplayName("LCP at 4001ms flags as POOR")
     void lcpJustOverPoorFlagsPoor() {
-        when(repository.findOpenBySubject(any(), any(), any(), any())).thenReturn(Optional.empty());
+        when(repository.findOpenBySubject(any(), any(), any(), any(), any())).thenReturn(Optional.empty());
 
         service.evaluatePageSnapshot(pageSnapshot(4001, BigDecimal.ZERO));
 
@@ -89,7 +89,7 @@ class SeoIssueFlaggingServiceTest {
     @Test
     @DisplayName("CLS exactly at 0.1 does not flag, 0.11 flags NEEDS_IMPROVEMENT, 0.26 flags POOR")
     void clsBoundaries() {
-        when(repository.findOpenBySubject(any(), any(), any(), any())).thenReturn(Optional.empty());
+        when(repository.findOpenBySubject(any(), any(), any(), any(), any())).thenReturn(Optional.empty());
 
         service.evaluatePageSnapshot(pageSnapshot(1000, BigDecimal.valueOf(0.1)));
         verify(repository, never()).save(argThat(i -> i.getIssueType() == SeoTechnicalIssue.IssueType.CLS));
@@ -111,7 +111,7 @@ class SeoIssueFlaggingServiceTest {
                 .url("https://akluxnails.com/").severity(SeoTechnicalIssue.Severity.POOR)
                 .detail("old").metricValue(BigDecimal.valueOf(5000)).firstSeenAt(Instant.now())
                 .build();
-        when(repository.findOpenBySubject(1L, SeoTechnicalIssue.IssueType.LCP, "https://akluxnails.com/", null))
+        when(repository.findOpenBySubject(1L, SeoTechnicalIssue.IssueType.LCP, "https://akluxnails.com/", null, SeoPageSnapshot.Strategy.MOBILE))
                 .thenReturn(Optional.of(open));
 
         service.evaluatePageSnapshot(pageSnapshot(2000, BigDecimal.ZERO));
@@ -128,7 +128,7 @@ class SeoIssueFlaggingServiceTest {
                 .url("https://akluxnails.com/").severity(SeoTechnicalIssue.Severity.NEEDS_IMPROVEMENT)
                 .detail("old").metricValue(BigDecimal.valueOf(2600)).firstSeenAt(Instant.now())
                 .build();
-        when(repository.findOpenBySubject(1L, SeoTechnicalIssue.IssueType.LCP, "https://akluxnails.com/", null))
+        when(repository.findOpenBySubject(1L, SeoTechnicalIssue.IssueType.LCP, "https://akluxnails.com/", null, SeoPageSnapshot.Strategy.MOBILE))
                 .thenReturn(Optional.of(open));
 
         service.evaluatePageSnapshot(pageSnapshot(4500, BigDecimal.ZERO));
@@ -137,6 +137,35 @@ class SeoIssueFlaggingServiceTest {
         assertThat(open.getMetricValue().intValue()).isEqualTo(4500);
         assertThat(open.getResolvedAt()).isNull();
         verify(repository, times(1)).save(any());
+    }
+
+    @Test
+    @DisplayName("a good desktop LCP never auto-resolves an open mobile LCP issue for the same URL "
+            + "(real bug found live 2026-09-01 — mobile/desktop share a URL but not a pass/fail state)")
+    void differentStrategiesForSameUrlDoNotCrossResolve() {
+        SeoTechnicalIssue openMobileIssue = SeoTechnicalIssue.builder()
+                .id(99L).businessId(1L).issueType(SeoTechnicalIssue.IssueType.LCP)
+                .url("https://akluxnails.com/").strategy(SeoPageSnapshot.Strategy.MOBILE)
+                .severity(SeoTechnicalIssue.Severity.POOR).detail("old")
+                .metricValue(BigDecimal.valueOf(6000)).firstSeenAt(Instant.now())
+                .build();
+        // The mobile-scoped lookup finds the real open issue; the desktop-scoped lookup must be a
+        // *different* key entirely and find nothing, per the fixed findOpenBySubject signature.
+        when(repository.findOpenBySubject(1L, SeoTechnicalIssue.IssueType.LCP, "https://akluxnails.com/",
+                null, SeoPageSnapshot.Strategy.MOBILE)).thenReturn(Optional.of(openMobileIssue));
+        when(repository.findOpenBySubject(1L, SeoTechnicalIssue.IssueType.LCP, "https://akluxnails.com/",
+                null, SeoPageSnapshot.Strategy.DESKTOP)).thenReturn(Optional.empty());
+
+        SeoPageSnapshot desktopGood = SeoPageSnapshot.builder()
+                .businessId(1L).url("https://akluxnails.com/").strategy(SeoPageSnapshot.Strategy.DESKTOP)
+                .performanceScore(97).lcpMs(1200).cls(BigDecimal.ZERO).build();
+
+        service.evaluatePageSnapshot(desktopGood);
+
+        assertThat(openMobileIssue.getResolvedAt())
+                .as("desktop's good LCP must never resolve mobile's still-open, still-real issue")
+                .isNull();
+        verify(repository, never()).save(openMobileIssue);
     }
 
     @Test
@@ -157,7 +186,7 @@ class SeoIssueFlaggingServiceTest {
         SeoSearchMetricsSnapshot high1 = searchRow("q1", "/", 100, BigDecimal.valueOf(0.10));
         SeoSearchMetricsSnapshot high2 = searchRow("q2", "/blog", 100, BigDecimal.valueOf(0.10));
         SeoSearchMetricsSnapshot low = searchRow("q3", "/blog/gel-overlay", 100, BigDecimal.valueOf(0.02));
-        when(repository.findOpenBySubject(any(), any(), any(), any())).thenReturn(Optional.empty());
+        when(repository.findOpenBySubject(any(), any(), any(), any(), any())).thenReturn(Optional.empty());
 
         service.evaluateSearchMetrics(1L, List.of(high1, high2, low));
 
@@ -175,7 +204,7 @@ class SeoIssueFlaggingServiceTest {
                 .url("/blog/gel-overlay").query("q3").severity(SeoTechnicalIssue.Severity.ADVISORY)
                 .detail("old").metricValue(BigDecimal.valueOf(0.02)).firstSeenAt(Instant.now())
                 .build();
-        when(repository.findOpenBySubject(1L, SeoTechnicalIssue.IssueType.CTR_OPPORTUNITY, "/blog/gel-overlay", "q3"))
+        when(repository.findOpenBySubject(1L, SeoTechnicalIssue.IssueType.CTR_OPPORTUNITY, "/blog/gel-overlay", "q3", null))
                 .thenReturn(Optional.of(open));
 
         SeoSearchMetricsSnapshot recovered = searchRow("q3", "/blog/gel-overlay", 100, BigDecimal.valueOf(0.10));
