@@ -40,6 +40,11 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+                // Logs a 401 that arrived with a JSESSIONID cookie already attached — see
+                // SessionDiagnosticsFilter's own doc for why (2026-09-01 live report of a
+                // silent post-deploy logout). Positioned early enough to wrap everything after
+                // it, including CurrentBusinessContextFilter and the eventual 401 itself.
+                .addFilterBefore(new SessionDiagnosticsFilter(), UsernamePasswordAuthenticationFilter.class)
                 // Populates CurrentBusinessContext right after Spring Security resolves the
                 // Authentication (session-restored or freshly logged-in) — see design.md D7 and
                 // CurrentBusinessContextFilter's own doc comment.
