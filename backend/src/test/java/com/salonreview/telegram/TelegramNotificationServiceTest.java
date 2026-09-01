@@ -208,4 +208,48 @@ class TelegramNotificationServiceTest {
         assertThat(TelegramNotificationService.formatLeadTime(Duration.ofHours(3))).isEqualTo("3h");
         assertThat(TelegramNotificationService.formatLeadTime(Duration.ofMinutes(200))).isEqualTo("3h 20m");
     }
+
+    @Test
+    @DisplayName("formatSameDayBookingMessage: single provider — English on top, Russian translation "
+            + "below a divider, singular \"has\"/\"видел(а)\", both name/client interpolated in both languages")
+    void formatSameDayBookingMessageSingleProvider() {
+        String text = TelegramNotificationService.formatSameDayBookingMessage(
+                "Susan Alieva", "Tara Lumley", "2026-09-01T18:00:00Z", Duration.ofHours(2).plusMinutes(15));
+
+        assertThat(text)
+                .contains("👤 Client: Tara Lumley")
+                .contains("💇 Provider: Susan Alieva")
+                .contains("Please make sure Susan Alieva has seen this")
+                .contains("reach out to Tara Lumley and handle it yourself")
+                .contains("\n\n—\n\n") // the EN/RU divider
+                .contains("👤 Клиент: Tara Lumley")
+                .contains("💇 Мастер: Susan Alieva")
+                .contains("Пожалуйста, убедитесь, что Susan Alieva видел(а) это сообщение")
+                .contains("свяжитесь с Tara Lumley и обработайте лично")
+                .doesNotContain("have seen this"); // singular, not plural
+    }
+
+    @Test
+    @DisplayName("formatSameDayBookingMessage: two providers (a 4-hand booking) — plural \"have\" in "
+            + "English, same Russian construction covers both without needing to pluralize")
+    void formatSameDayBookingMessageMultipleProviders() {
+        String text = TelegramNotificationService.formatSameDayBookingMessage(
+                "Susan Alieva, Bayan", "Tara Lumley", "2026-09-01T18:00:00Z", Duration.ofHours(2));
+
+        assertThat(text)
+                .contains("Please make sure Susan Alieva, Bayan have seen this")
+                .contains("Пожалуйста, убедитесь, что Susan Alieva, Bayan видел(а) это сообщение");
+    }
+
+    @Test
+    @DisplayName("formatSameDayBookingMessage: no customer name on file — renders \"—\" in both languages, "
+            + "not a null/blank gap the manager would have to guess at")
+    void formatSameDayBookingMessageNullCustomerName() {
+        String text = TelegramNotificationService.formatSameDayBookingMessage(
+                "Susan Alieva", null, "2026-09-01T18:00:00Z", Duration.ofHours(2));
+
+        assertThat(text)
+                .contains("👤 Client: —")
+                .contains("👤 Клиент: —");
+    }
 }

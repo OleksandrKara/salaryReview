@@ -227,10 +227,7 @@ public class TelegramNotificationService {
             return false;
         }
 
-        String text = "⏰ Last-minute booking — " + formatLeadTime(leadTime) + " notice\n"
-                + "Provider: " + providerNames + '\n'
-                + "Client: " + (customerName == null ? "—" : customerName) + '\n'
-                + "Appointment: " + formatPreferredTime(appointmentStartAt);
+        String text = formatSameDayBookingMessage(providerNames, customerName, appointmentStartAt, leadTime);
         try {
             Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", text);
             HttpRequest req = HttpRequest.newBuilder()
@@ -249,6 +246,38 @@ public class TelegramNotificationService {
             log.warn("Same-day-booking Telegram alert send failed (caller unaffected): {}", e.getMessage());
             return false;
         }
+    }
+
+    /** English on top, a Russian translation below a divider — the salon's manager (the one who
+     * actually watches this shared staff channel, see {@code SameDayBookingAlertService}) reads
+     * Russian day to day, and the message is an instruction to *them*, not just a fact dump: check
+     * the provider actually saw it, and take the client over personally if the provider can't make
+     * it. Deliberately avoids gendered pronouns in English (a provider's gender isn't stored
+     * anywhere in this codebase) — Russian handles the same ambiguity with the informal "видел(а)"/
+     * "недоступен(на)" construction rather than guessing one gender. Package-private for direct
+     * unit testing, same convention as {@link #formatLeadTime}/{@link #formatMessage}. */
+    static String formatSameDayBookingMessage(String providerNames, String customerName,
+                                                String appointmentStartAt, Duration leadTime) {
+        String lead = formatLeadTime(leadTime);
+        String client = customerName == null ? "—" : customerName;
+        String when = formatPreferredTime(appointmentStartAt);
+        boolean multipleProviders = providerNames.contains(",");
+
+        String en = "⚠️ Last-minute booking — only " + lead + " notice\n"
+                + "👤 Client: " + client + "\n"
+                + "💇 Provider: " + providerNames + "\n"
+                + "🕐 Appointment: " + when + "\n\n"
+                + "Please make sure " + providerNames + " " + (multipleProviders ? "have" : "has")
+                + " seen this. If unavailable, please reach out to " + client + " and handle it yourself.";
+
+        String ru = "⚠️ Срочная запись — предупреждение всего " + lead + "\n"
+                + "👤 Клиент: " + client + "\n"
+                + "💇 Мастер: " + providerNames + "\n"
+                + "🕐 Запись: " + when + "\n\n"
+                + "Пожалуйста, убедитесь, что " + providerNames + " видел(а) это сообщение. "
+                + "Если недоступен(на) — свяжитесь с " + client + " и обработайте лично.";
+
+        return en + "\n\n—\n\n" + ru;
     }
 
     /** "45 min" under an hour, "3h" or "3h 20m" at/past one — matches how a person would actually
