@@ -34,6 +34,13 @@ public class SeoSyncService {
     // Search Console's own data typically isn't final until 2-3 days after the fact — pulling
     // "today" would just get zero/partial rows every run.
     private static final int SEARCH_CONSOLE_LAG_DAYS = 3;
+    // A single day's query-level breakdown is frequently all-zero for a lower-traffic site (found
+    // live 2026-09-01 for AK.LUX.NAILS: a real sync succeeded with 0 rows, since GSC often has no
+    // per-query granularity for a single low-volume day) — pulling a trailing week and re-upserting
+    // it on every sync, not just the newest day, both fixes that and self-heals/backfills any
+    // day GSC hadn't finalized on a prior run, same rolling-window reconciliation idea
+    // SquareMirrorReconciliationScheduler already uses for the same reason.
+    private static final int SEARCH_CONSOLE_WINDOW_DAYS = 7;
     private static final int SEARCH_CONSOLE_ROW_LIMIT = 200;
 
     private final SeoConnectionRepository connectionRepository;
@@ -69,23 +76,29 @@ public class SeoSyncService {
                 throw new IllegalStateException("Service account has no visible Search Console sites");
             }
             String siteUrl = sites.get(0).siteUrl();
-            LocalDate date = LocalDate.now(ZoneOffset.UTC).minusDays(SEARCH_CONSOLE_LAG_DAYS);
+            LocalDate endDate = LocalDate.now(ZoneOffset.UTC).minusDays(SEARCH_CONSOLE_LAG_DAYS);
+            LocalDate startDate = endDate.minusDays(SEARCH_CONSOLE_WINDOW_DAYS - 1);
 
             List<SeoSearchMetricsSnapshot> saved = new ArrayList<>();
-            for (SearchConsoleClient.QueryRow row : client.queryPerformance(siteUrl, date, SEARCH_CONSOLE_ROW_LIMIT)) {
-                SeoSearchMetricsSnapshot snapshot = searchMetricsRepository
-                        .findByBusinessIdAndDateAndQueryAndPage(businessId, date, row.query(), row.page())
-                        .orElseGet(SeoSearchMetricsSnapshot::new);
-                snapshot.setBusinessId(businessId);
-                snapshot.setDate(date);
-                snapshot.setQuery(row.query());
-                snapshot.setPage(row.page());
-                snapshot.setClicks((int) row.clicks());
-                snapshot.setImpressions((int) row.impressions());
-                snapshot.setCtr(row.ctr());
-                snapshot.setPosition(row.position());
-                saved.add(searchMetricsRepository.save(snapshot));
+            for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+                for (SearchConsoleClient.QueryRow row : client.queryPerformance(siteUrl, date, SEARCH_CONSOLE_ROW_LIMIT)) {
+                    SeoSearchMetricsSnapshot snapshot = searchMetricsRepository
+                            .findByBusinessIdAndDateAndQueryAndPage(businessId, date, row.query(), row.page())
+                            .orElseGet(SeoSearchMetricsSnapshot::new);
+                    snapshot.setBusinessId(businessId);
+                    snapshot.setDate(date);
+                    snapshot.setQuery(row.query());
+                    snapshot.setPage(row.page());
+                    snapshot.setClicks((int) row.clicks());
+                    snapshot.setImpressions((int) row.impressions());
+                    snapshot.setCtr(row.ctr());
+                    snapshot.setPosition(row.position());
+                    saved.add(searchMetricsRepository.save(snapshot));
+                }
             }
+            // Evaluated once across the whole window, not per-day — the CTR heuristic's trailing
+            // average needs the full window to be a meaningful signal (see
+            // SeoIssueFlaggingService#evaluateSearchMetrics's own doc comment).
             flaggingService.evaluateSearchMetrics(businessId, saved);
             markSuccess(connection);
         } catch (Exception e) {

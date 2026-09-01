@@ -80,6 +80,7 @@ function linksFor(role: Role): NavSections {
           labelKey: 'navGroupIntegrations',
           links: [
             { href: '/owner/settings/square', key: 'navSquareSettings' },
+            { href: '/owner/settings/seo', key: 'navSeoSettings' },
             {
               href: '/owner/settings/automations',
               key: 'navAutomationsSettings',
@@ -152,9 +153,28 @@ export default function AdminMenu({
   // click. Same signal the switcher dropdown already uses: a non-platform-admin's `businesses`
   // always has exactly one entry (their own real membership) today, so >1 is platform_admin.
   const isPlatformAdmin = (businesses?.length ?? 0) > 1;
+  // seo-monitoring-dashboard design.md D6: hidden entirely for a business that hasn't turned the
+  // feature on. AdminMenu (unlike PageHeader) is already 'use client' and renders on every
+  // authenticated page regardless of whether that page's own PageHeader call already fetched `me`
+  // (many pass role/language straight through without the full features object) — a small
+  // self-contained fetch here, defaulting to hidden until it resolves, avoids threading a new prop
+  // through every PageHeader call site in the app. Same tradeoff MarketingTabs.tsx already made for
+  // its own SEO tab.
+  const [seoMonitoringEnabled, setSeoMonitoringEnabled] = useState(false);
+  useEffect(() => {
+    if (role !== 'OWNER') return;
+    let cancelled = false;
+    api.getMe().then((me) => { if (!cancelled) setSeoMonitoringEnabled(me.features.seoMonitoringEnabled); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [role]);
   const sections = linksFor(role);
   const groups = sections.groups
-    .map((g) => ({ ...g, links: g.links.filter((l) => l.href !== '/owner/settings/businesses' || isPlatformAdmin) }))
+    .map((g) => ({
+      ...g,
+      links: g.links
+        .filter((l) => l.href !== '/owner/settings/businesses' || isPlatformAdmin)
+        .filter((l) => l.href !== '/owner/settings/seo' || seoMonitoringEnabled),
+    }))
     .filter((g) => g.links.length > 0);
   const allLinks = [...sections.flat, ...groups.flatMap((g) => g.links), ...groups.flatMap((g) => g.links.flatMap((l) => l.subLinks ?? []))];
 
