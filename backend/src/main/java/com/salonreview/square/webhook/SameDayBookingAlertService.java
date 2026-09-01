@@ -16,10 +16,18 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
- * Alerts the business's Telegram staff channel when a NEW booking lands less than {@value
- * #SAME_DAY_THRESHOLD_HOURS} hours before its own start time — the Tara Lumley incident
- * (2026-09-01): she booked same-day and Susan, her provider, didn't notice until very late.
- * Independent listener on the same {@code booking.created} webhook event as {@link
+ * Alerts the business's Telegram staff channel when a NEW booking's lead time falls in the window
+ * {@code [}{@value #MIN_LEAD_HOURS}{@code h, }{@value #MAX_LEAD_HOURS}{@code h)} — the Tara
+ * Lumley incident (2026-09-01): she booked same-day and Susan, her provider, didn't notice until
+ * very late.
+ *
+ * <p>The lower bound isn't arbitrary: Square's own Booking Site (Square Dashboard → Appointments
+ * → Settings) enforces a 2-hour minimum lead time for this business already, so a booking with
+ * <em>less</em> than 2 hours' notice is already impossible — there's nothing to alert on below
+ * that floor. The genuinely alert-worthy window is exactly the edge Square still allows: 2 to 3
+ * hours' notice, where a booking landed at (or just past) the earliest Square would permit it.
+ *
+ * <p>Independent listener on the same {@code booking.created} webhook event as {@link
  * SquareBookingWebhookHandler}'s mirror ingest — not entangled with it, same "separate concerns"
  * reasoning as every other listener sharing this event stream (see {@code
  * SquareWebhookController}).
@@ -39,8 +47,10 @@ import java.util.Set;
 public class SameDayBookingAlertService {
 
     private static final Logger log = LoggerFactory.getLogger(SameDayBookingAlertService.class);
-    private static final int SAME_DAY_THRESHOLD_HOURS = 3;
-    private static final Duration SAME_DAY_THRESHOLD = Duration.ofHours(SAME_DAY_THRESHOLD_HOURS);
+    private static final int MIN_LEAD_HOURS = 2;
+    private static final int MAX_LEAD_HOURS = 3;
+    private static final Duration MIN_LEAD = Duration.ofHours(MIN_LEAD_HOURS);
+    private static final Duration MAX_LEAD = Duration.ofHours(MAX_LEAD_HOURS);
 
     private final ProviderRepository providers;
     private final SquareCustomerMirrorRepository customers;
@@ -59,9 +69,10 @@ public class SameDayBookingAlertService {
             Instant start = Instant.parse(booking.startAt());
             Instant created = Instant.parse(booking.createdAt());
             Duration leadTime = Duration.between(created, start);
-            // Negative = a backdated/rescheduled-to-the-past edge case, not a real "just booked" —
-            // and >= threshold is simply not last-minute. Either way, nothing to alert.
-            if (leadTime.isNegative() || leadTime.compareTo(SAME_DAY_THRESHOLD) >= 0) return;
+            // Below MIN_LEAD shouldn't be reachable at all (Square's own 2h minimum lead time
+            // blocks it) — treated as a backdated/rescheduled-to-the-past edge case if it somehow
+            // is, not a real "just booked." At/above MAX_LEAD is simply not last-minute anymore.
+            if (leadTime.compareTo(MIN_LEAD) < 0 || leadTime.compareTo(MAX_LEAD) >= 0) return;
 
             String providerNames = resolveProviderNames(booking);
             if (providerNames == null) return; // no known provider on this booking — nothing useful to say

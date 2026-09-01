@@ -47,7 +47,8 @@ class SameDayBookingAlertServiceTest {
     }
 
     @Test
-    @DisplayName("booked 45 minutes before start, known provider — alert fires with lead time and provider name")
+    @DisplayName("booked 2h30m before start (inside the [2h,3h) window), known provider — alert fires with "
+            + "lead time and provider name")
     void firesForGenuineLastMinuteBooking() {
         setUp();
         when(providers.findBySquareTeamMemberId("TM1")).thenReturn(
@@ -55,17 +56,47 @@ class SameDayBookingAlertServiceTest {
         when(customers.findByBusinessIdAndSquareCustomerId(BUSINESS_ID, "CUST1")).thenReturn(
                 Optional.of(SquareCustomerMirror.builder().givenName("Tara").familyName("Lumley").build()));
 
-        SquareWebhookEvent.Booking b = booking("2026-09-01T18:00:00Z", "2026-09-01T17:15:00Z", "CUST1",
+        SquareWebhookEvent.Booking b = booking("2026-09-01T18:00:00Z", "2026-09-01T15:30:00Z", "CUST1",
                 List.of(new SquareClient.AppointmentSegment("TM1", "VAR1", 60)));
 
         service.handleBookingCreated(BUSINESS_ID, b);
 
         verify(telegram).sendSameDayBookingAlert(BUSINESS_ID, "Susan Alieva", "Tara Lumley",
-                "2026-09-01T18:00:00Z", Duration.ofMinutes(45));
+                "2026-09-01T18:00:00Z", Duration.ofHours(2).plusMinutes(30));
     }
 
     @Test
-    @DisplayName("booked exactly at the 3-hour threshold — not last-minute, no alert")
+    @DisplayName("booked with less than Square's own 2-hour minimum lead time — shouldn't be reachable in "
+            + "practice (Square blocks it), but defensively still doesn't fire if it somehow happens")
+    void belowTwoHourMinimumDoesNotFire() {
+        setUp();
+        SquareWebhookEvent.Booking b = booking("2026-09-01T18:00:00Z", "2026-09-01T17:15:00Z", "CUST1",
+                List.of(new SquareClient.AppointmentSegment("TM1", "VAR1", 60)));
+
+        service.handleBookingCreated(BUSINESS_ID, b);
+
+        verifyNoInteractions(telegram);
+        verifyNoInteractions(providers);
+    }
+
+    @Test
+    @DisplayName("booked exactly at the 2-hour lower bound — this is the edge Square still allows, alert fires")
+    void exactlyAtTwoHourLowerBoundFires() {
+        setUp();
+        when(providers.findBySquareTeamMemberId("TM1")).thenReturn(
+                Optional.of(Provider.builder().id(8L).displayName("Susan Alieva").build()));
+
+        SquareWebhookEvent.Booking b = booking("2026-09-01T18:00:00Z", "2026-09-01T16:00:00Z", "CUST1",
+                List.of(new SquareClient.AppointmentSegment("TM1", "VAR1", 60)));
+
+        service.handleBookingCreated(BUSINESS_ID, b);
+
+        verify(telegram).sendSameDayBookingAlert(eq(BUSINESS_ID), eq("Susan Alieva"), any(), any(),
+                eq(Duration.ofHours(2)));
+    }
+
+    @Test
+    @DisplayName("booked exactly at the 3-hour upper bound — no longer last-minute, no alert")
     void exactlyAtThresholdDoesNotFire() {
         setUp();
         when(providers.findBySquareTeamMemberId("TM1")).thenReturn(
@@ -99,7 +130,7 @@ class SameDayBookingAlertServiceTest {
         setUp();
         when(providers.findBySquareTeamMemberId("TM_UNKNOWN")).thenReturn(Optional.empty());
 
-        SquareWebhookEvent.Booking b = booking("2026-09-01T18:00:00Z", "2026-09-01T17:15:00Z", "CUST1",
+        SquareWebhookEvent.Booking b = booking("2026-09-01T18:00:00Z", "2026-09-01T15:30:00Z", "CUST1",
                 List.of(new SquareClient.AppointmentSegment("TM_UNKNOWN", "VAR1", 60)));
 
         service.handleBookingCreated(BUSINESS_ID, b);
@@ -111,7 +142,7 @@ class SameDayBookingAlertServiceTest {
     @DisplayName("last-minute, no appointment segments at all (e.g. blocked time) — no alert")
     void noSegmentsDoesNotFire() {
         setUp();
-        SquareWebhookEvent.Booking b = booking("2026-09-01T18:00:00Z", "2026-09-01T17:15:00Z", "CUST1", null);
+        SquareWebhookEvent.Booking b = booking("2026-09-01T18:00:00Z", "2026-09-01T15:30:00Z", "CUST1", null);
 
         service.handleBookingCreated(BUSINESS_ID, b);
 
@@ -127,7 +158,7 @@ class SameDayBookingAlertServiceTest {
                 Optional.of(Provider.builder().id(8L).displayName("Susan Alieva").build()));
         when(customers.findByBusinessIdAndSquareCustomerId(BUSINESS_ID, "CUST_NEW")).thenReturn(Optional.empty());
 
-        SquareWebhookEvent.Booking b = booking("2026-09-01T18:00:00Z", "2026-09-01T17:15:00Z", "CUST_NEW",
+        SquareWebhookEvent.Booking b = booking("2026-09-01T18:00:00Z", "2026-09-01T15:30:00Z", "CUST_NEW",
                 List.of(new SquareClient.AppointmentSegment("TM1", "VAR1", 60)));
 
         service.handleBookingCreated(BUSINESS_ID, b);
@@ -145,7 +176,7 @@ class SameDayBookingAlertServiceTest {
         when(providers.findBySquareTeamMemberId("TM2")).thenReturn(
                 Optional.of(Provider.builder().id(9L).displayName("Bayan").build()));
 
-        SquareWebhookEvent.Booking b = booking("2026-09-01T18:00:00Z", "2026-09-01T17:15:00Z", "CUST1",
+        SquareWebhookEvent.Booking b = booking("2026-09-01T18:00:00Z", "2026-09-01T15:30:00Z", "CUST1",
                 List.of(new SquareClient.AppointmentSegment("TM1", "VAR1", 60),
                         new SquareClient.AppointmentSegment("TM2", "VAR2", 60)));
 
