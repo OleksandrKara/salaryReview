@@ -4,6 +4,8 @@ import com.salonreview.domain.TelegramNotificationConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -168,5 +170,42 @@ class TelegramNotificationServiceTest {
         TelegramNotificationService service = service(mock(TelegramConfigService.class));
 
         assertThat(service.chatLink("+18585550100")).isEqualTo("https://salon.akluxnails.com/admin/messages?phone=%2B18585550100");
+    }
+
+    // ---------------------------------------------------------------- same-day booking alert
+
+    @Test
+    @DisplayName("same-day alert is business-scoped — resolves via configService.get(businessId), "
+            + "NOT the always-legacy-business getForAutomation() every other alert here uses, since "
+            + "it fires from a real per-business webhook")
+    void sameDayAlertResolvesConfigByBusinessId() {
+        TelegramConfigService configService = mock(TelegramConfigService.class);
+        when(configService.get(2L)).thenReturn(
+                TelegramNotificationConfig.builder().businessId(2L).botToken(null).chatId("999888777").build());
+
+        boolean sent = service(configService).sendSameDayBookingAlert(2L, "Susan Alieva", "Tara Lumley",
+                "2026-09-01T18:00:00Z", Duration.ofMinutes(45));
+
+        assertThat(sent).isFalse(); // blank token → skipped, but proves it read business 2's own config
+    }
+
+    @Test
+    @DisplayName("same-day alert: blank chat id → false, no exception")
+    void sameDayAlertBlankChatIdSkips() {
+        TelegramConfigService configService = mock(TelegramConfigService.class);
+        when(configService.get(1L)).thenReturn(
+                TelegramNotificationConfig.builder().businessId(1L).botToken("some-token").chatId("").build());
+
+        assertThat(service(configService).sendSameDayBookingAlert(1L, "Susan Alieva", "Tara Lumley",
+                "2026-09-01T18:00:00Z", Duration.ofMinutes(45))).isFalse();
+    }
+
+    @Test
+    @DisplayName("formatLeadTime: under an hour shows minutes, at/past an hour shows h/hm")
+    void formatLeadTimeShapesTheDuration() {
+        assertThat(TelegramNotificationService.formatLeadTime(Duration.ofMinutes(45))).isEqualTo("45 min");
+        assertThat(TelegramNotificationService.formatLeadTime(Duration.ofMinutes(0))).isEqualTo("0 min");
+        assertThat(TelegramNotificationService.formatLeadTime(Duration.ofHours(3))).isEqualTo("3h");
+        assertThat(TelegramNotificationService.formatLeadTime(Duration.ofMinutes(200))).isEqualTo("3h 20m");
     }
 }

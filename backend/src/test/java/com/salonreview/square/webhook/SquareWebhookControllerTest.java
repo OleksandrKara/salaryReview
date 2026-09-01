@@ -48,6 +48,7 @@ class SquareWebhookControllerTest {
     private SquareWebhookProperties properties;
     private CheckoutReviewTriggerService triggerService;
     private SquareBookingWebhookHandler bookingWebhookHandler;
+    private SameDayBookingAlertService sameDayBookingAlertService;
     private SquareOrderWebhookHandler orderWebhookHandler;
     private SquarePaymentWebhookHandler paymentWebhookHandler;
     private SquareCustomerWebhookHandler customerWebhookHandler;
@@ -62,6 +63,7 @@ class SquareWebhookControllerTest {
         properties.setNotificationUrl(NOTIFICATION_URL);
         triggerService = mock(CheckoutReviewTriggerService.class);
         bookingWebhookHandler = mock(SquareBookingWebhookHandler.class);
+        sameDayBookingAlertService = mock(SameDayBookingAlertService.class);
         orderWebhookHandler = mock(SquareOrderWebhookHandler.class);
         paymentWebhookHandler = mock(SquarePaymentWebhookHandler.class);
         customerWebhookHandler = mock(SquareCustomerWebhookHandler.class);
@@ -70,8 +72,8 @@ class SquareWebhookControllerTest {
                 .shortCode("test").timezone("UTC").active(true).build());
         connectionService = mock(SquareConnectionService.class);
         SquareWebhookController controller = new SquareWebhookController(properties, triggerService,
-                bookingWebhookHandler, orderWebhookHandler, paymentWebhookHandler, customerWebhookHandler,
-                businesses, connectionService, PUBLIC_BASE_URL);
+                bookingWebhookHandler, sameDayBookingAlertService, orderWebhookHandler, paymentWebhookHandler,
+                customerWebhookHandler, businesses, connectionService, PUBLIC_BASE_URL);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -202,6 +204,9 @@ class SquareWebhookControllerTest {
     private static final String BOOKING_BODY = "{\"type\":\"booking.created\",\"event_id\":\"evt_2\",\"data\":{\"type\":\"booking\","
             + "\"id\":\"bk_1\",\"object\":{\"booking\":{\"id\":\"bk_1\",\"status\":\"ACCEPTED\","
             + "\"customer_id\":\"cust_1\",\"start_at\":\"2026-06-01T15:00:00Z\"}}}}";
+    private static final String BOOKING_UPDATED_BODY = "{\"type\":\"booking.updated\",\"event_id\":\"evt_2b\",\"data\":{\"type\":\"booking\","
+            + "\"id\":\"bk_1\",\"object\":{\"booking\":{\"id\":\"bk_1\",\"status\":\"ACCEPTED\","
+            + "\"customer_id\":\"cust_1\",\"start_at\":\"2026-06-01T15:00:00Z\"}}}}";
     private static final String ORDER_BODY = "{\"type\":\"order.updated\",\"event_id\":\"evt_3\",\"data\":{\"type\":\"order_updated\","
             + "\"id\":\"order_1\",\"object\":{\"order_updated\":{\"order_id\":\"order_1\",\"state\":\"COMPLETED\"}}}}";
     private static final String ORDER_CREATED_BODY = "{\"type\":\"order.created\",\"event_id\":\"evt_4\",\"data\":{\"type\":\"order_created\","
@@ -243,8 +248,24 @@ class SquareWebhookControllerTest {
                 .andExpect(status().isOk());
 
         verify(bookingWebhookHandler).handleBookingEvent(eq(BUSINESS_A_ID), any());
+        verify(sameDayBookingAlertService).handleBookingCreated(eq(BUSINESS_A_ID), any());
         verifyNoInteractions(triggerService);
         verifyNoInteractions(orderWebhookHandler);
+    }
+
+    @Test
+    @DisplayName("booking.updated still mirrors, but never fires the same-day alert — an edit to an "
+            + "existing booking says nothing about how much notice staff originally got")
+    void bookingUpdatedNeverTriggersSameDayAlert() throws Exception {
+        String signature = sign(SIGNATURE_KEY, NOTIFICATION_URL + BOOKING_UPDATED_BODY);
+
+        mvc.perform(post("/api/public/webhooks/square")
+                        .header("x-square-hmacsha256-signature", signature)
+                        .contentType("application/json").content(BOOKING_UPDATED_BODY))
+                .andExpect(status().isOk());
+
+        verify(bookingWebhookHandler).handleBookingEvent(eq(BUSINESS_A_ID), any());
+        verifyNoInteractions(sameDayBookingAlertService);
     }
 
     @Test
@@ -264,6 +285,7 @@ class SquareWebhookControllerTest {
         assertThat(customer.phoneNumber()).isEqualTo("+19165551234");
         verifyNoInteractions(triggerService);
         verifyNoInteractions(bookingWebhookHandler);
+        verifyNoInteractions(sameDayBookingAlertService);
         verifyNoInteractions(orderWebhookHandler);
         verifyNoInteractions(paymentWebhookHandler);
     }
@@ -299,6 +321,7 @@ class SquareWebhookControllerTest {
         verify(orderWebhookHandler).handleOrderUpdated(eq(BUSINESS_A_ID), any());
         verifyNoInteractions(triggerService);
         verifyNoInteractions(bookingWebhookHandler);
+        verifyNoInteractions(sameDayBookingAlertService);
     }
 
     @Test
@@ -334,6 +357,7 @@ class SquareWebhookControllerTest {
         verify(orderWebhookHandler).handleOrderUpdated(eq(BUSINESS_A_ID), any());
         verifyNoInteractions(triggerService);
         verifyNoInteractions(bookingWebhookHandler);
+        verifyNoInteractions(sameDayBookingAlertService);
     }
 
     @Test
@@ -349,6 +373,7 @@ class SquareWebhookControllerTest {
         verify(orderWebhookHandler).handleOrderUpdated(eq(BUSINESS_A_ID), any());
         verifyNoInteractions(triggerService);
         verifyNoInteractions(bookingWebhookHandler);
+        verifyNoInteractions(sameDayBookingAlertService);
     }
 
     @Test
@@ -364,6 +389,7 @@ class SquareWebhookControllerTest {
 
         verifyNoInteractions(triggerService);
         verifyNoInteractions(bookingWebhookHandler);
+        verifyNoInteractions(sameDayBookingAlertService);
         verifyNoInteractions(orderWebhookHandler);
     }
 }
