@@ -67,6 +67,13 @@ square:
     # Square path with no code change, just a redeploy/restart.
     aggregate-enabled: ${SQUARE_MIRROR_AGGREGATE_ENABLED:true}
 
+# seo-monitoring-dashboard Phase 2 — same reasoning as square.credentials.master-key above, but a
+# deliberately separate key so rotating one credential type never forces re-encrypting the other's
+# (see SeoCredentialCipher's own doc comment).
+seo:
+  credentials:
+    master-key: ${SEO_CREDENTIALS_MASTER_KEY:}
+
 # Base URL of each public landing page (all served by the separate salonLandings/akluxnails-home
 # services), keyed by marketing.landing_pages.slug — used to build ?v=<key> deep links to a
 # specific marketing variant on the owner marketing dashboard. Add an entry here whenever a new
