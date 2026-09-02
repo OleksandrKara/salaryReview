@@ -35,6 +35,61 @@ public class GoogleAnalyticsClient {
     public record PageRow(String pagePath, long sessions, long screenPageViews) {
     }
 
+    /** Site-wide unique users for one day, plus the organic-search-channel slice of that day's
+     * sessions. Two separate report requests, not one dimension-broken-down report: GA4's {@code
+     * totalUsers}/{@code newUsers} are distinct-count metrics that can't be summed across a
+     * dimension breakdown without double-counting a user who arrived via two channels the same
+     * day, so the users report deliberately has no dimension at all (one row, site-wide); the
+     * sessions report is separately scoped to just the "Organic Search" channel via a {@code
+     * dimensionFilter}, since a plain count metric like sessions has no such double-counting risk. */
+    public record DailyTotals(long totalUsers, long newUsers, long organicSessions) {
+    }
+
+    public DailyTotals dailyTotals(String propertyId, LocalDate date) {
+        long[] userTotals = runTotalsReport(propertyId, date);
+        long organicSessions = runOrganicSessionsReport(propertyId, date);
+        return new DailyTotals(userTotals[0], userTotals[1], organicSessions);
+    }
+
+    private long[] runTotalsReport(String propertyId, LocalDate date) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("dateRanges", List.of(Map.of("startDate", date.toString(), "endDate", date.toString())));
+        body.put("metrics", List.of(Map.of("name", "totalUsers"), Map.of("name", "newUsers")));
+
+        JsonNode response = runReport(propertyId, body);
+        JsonNode entries = response == null ? null : response.get("rows");
+        if (entries == null || entries.isEmpty()) return new long[] {0, 0};
+        JsonNode row = entries.get(0);
+        return new long[] {
+                row.at("/metricValues/0/value").asLong(0),
+                row.at("/metricValues/1/value").asLong(0),
+        };
+    }
+
+    private long runOrganicSessionsReport(String propertyId, LocalDate date) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("dateRanges", List.of(Map.of("startDate", date.toString(), "endDate", date.toString())));
+        body.put("metrics", List.of(Map.of("name", "sessions")));
+        body.put("dimensionFilter", Map.of("filter", Map.of(
+                "fieldName", "sessionDefaultChannelGroup",
+                "stringFilter", Map.of("value", "Organic Search"))));
+
+        JsonNode response = runReport(propertyId, body);
+        JsonNode entries = response == null ? null : response.get("rows");
+        if (entries == null || entries.isEmpty()) return 0;
+        return entries.get(0).at("/metricValues/0/value").asLong(0);
+    }
+
+    private JsonNode runReport(String propertyId, Map<String, Object> body) {
+        return http.post()
+                .uri("/properties/{propertyId}:runReport", propertyId)
+                .header("Authorization", "Bearer " + auth.accessToken())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .body(JsonNode.class);
+    }
+
     /** Per-page sessions/views for one day — a scheduled job calls this once per day, per
      * business, mirroring {@link SearchConsoleClient#queryPerformance}'s cadence. */
     public List<PageRow> pageViewsByPath(String propertyId, LocalDate date, int limit) {

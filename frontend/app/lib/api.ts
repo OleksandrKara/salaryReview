@@ -259,6 +259,12 @@ export const api = {
 
   syncSeoNow: () => proxyJson<SeoOverviewDto>(`/api/owner/marketing/seo/sync`, 'POST', {}),
 
+  addSeoTrackedQuery: (query: string) =>
+    proxyJson<SeoOverviewDto>(`/api/owner/marketing/seo/tracked-queries`, 'POST', { query }),
+
+  removeSeoTrackedQuery: (query: string) =>
+    proxyDeleteJson<SeoOverviewDto>(`/api/owner/marketing/seo/tracked-queries?query=${encodeURIComponent(query)}`),
+
   // Business name/timezone + financial config (owner).
   getBusinessSettings: () => proxyGet<BusinessSettingsDto>(`/api/owner/settings/business`),
 
@@ -921,6 +927,15 @@ async function proxyJson<T>(path: string, method: string, body: unknown): Promis
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+  if (!res.ok) throw new Error(await extractErrorMessage(res));
+  return (await res.json()) as T;
+}
+
+// DELETE with no request body but a real JSON response — unlike proxyVoid (204, nothing to parse),
+// removing a tracked query returns the refreshed SeoOverviewDto so the caller can update in place
+// without a second round trip.
+async function proxyDeleteJson<T>(path: string): Promise<T> {
+  const res = await fetch(path, { method: 'DELETE' });
   if (!res.ok) throw new Error(await extractErrorMessage(res));
   return (await res.json()) as T;
 }

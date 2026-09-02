@@ -11,8 +11,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Daily Search Console pull for every business with a {@code seo_connection} and {@code
- * seo-monitoring.enabled} on — seo-monitoring-dashboard design.md D4. Same {@code @Scheduled}+
+ * Daily Search Console + GA4 analytics pull for every business with a {@code seo_connection} and
+ * {@code seo-monitoring.enabled} on — seo-monitoring-dashboard design.md D4 (GA4 added in the
+ * follow-up that introduced {@code seo_analytics_snapshot}; same daily cadence, so it rides the
+ * same scheduled sweep rather than a second scheduler class). Same {@code @Scheduled}+
  * {@code @SchedulerLock}+per-business-try/catch shape as {@code SquareMirrorReconciliationScheduler}
  * (a plain periodic sweep, no calendar-boundary sensitivity, so no need for {@code
  * RevenueSnapshotScheduler}'s per-business-timezone {@code SchedulingConfigurer} pattern).
@@ -45,6 +47,12 @@ public class SeoSearchConsoleSyncScheduler {
                 currentBusinessContext.runAs(businessId, () -> syncService.syncSearchConsole(businessId));
             } catch (RuntimeException e) {
                 log.warn("SEO Search Console sync failed for business {} (retried next run): {}",
+                        businessId, e.toString());
+            }
+            try {
+                currentBusinessContext.runAs(businessId, () -> syncService.syncAnalytics(businessId));
+            } catch (RuntimeException e) {
+                log.warn("SEO GA4 analytics sync failed for business {} (retried next run): {}",
                         businessId, e.toString());
             }
         }

@@ -1,8 +1,10 @@
 package com.salonreview.seo;
 
+import com.salonreview.domain.SeoAnalyticsSnapshot;
 import com.salonreview.domain.SeoConnection;
 import com.salonreview.domain.SeoPageSnapshot;
 import com.salonreview.domain.SeoSearchMetricsSnapshot;
+import com.salonreview.repo.SeoAnalyticsSnapshotRepository;
 import com.salonreview.repo.SeoConnectionRepository;
 import com.salonreview.repo.SeoPageSnapshotRepository;
 import com.salonreview.repo.SeoSearchMetricsSnapshotRepository;
@@ -44,19 +46,27 @@ public class SeoSyncService {
     private static final int SEARCH_CONSOLE_WINDOW_DAYS = 28;
     private static final int SEARCH_CONSOLE_ROW_LIMIT = 200;
 
+    // Same 28-day rolling window as Search Console (SEARCH_CONSOLE_WINDOW_DAYS) — one GA4 property
+    // is cheap to query daily (design.md Risks singles out PageSpeed's quota as the tight one, not
+    // GA4's), and re-upserting the whole window every sync self-heals the same way.
+    private static final int ANALYTICS_WINDOW_DAYS = 28;
+
     private final SeoConnectionRepository connectionRepository;
     private final SeoConnectionService connectionService;
     private final SeoSearchMetricsSnapshotRepository searchMetricsRepository;
     private final SeoPageSnapshotRepository pageSnapshotRepository;
+    private final SeoAnalyticsSnapshotRepository analyticsSnapshotRepository;
     private final SeoIssueFlaggingService flaggingService;
 
     public SeoSyncService(SeoConnectionRepository connectionRepository, SeoConnectionService connectionService,
             SeoSearchMetricsSnapshotRepository searchMetricsRepository,
-            SeoPageSnapshotRepository pageSnapshotRepository, SeoIssueFlaggingService flaggingService) {
+            SeoPageSnapshotRepository pageSnapshotRepository,
+            SeoAnalyticsSnapshotRepository analyticsSnapshotRepository, SeoIssueFlaggingService flaggingService) {
         this.connectionRepository = connectionRepository;
         this.connectionService = connectionService;
         this.searchMetricsRepository = searchMetricsRepository;
         this.pageSnapshotRepository = pageSnapshotRepository;
+        this.analyticsSnapshotRepository = analyticsSnapshotRepository;
         this.flaggingService = flaggingService;
     }
 
@@ -103,6 +113,40 @@ public class SeoSyncService {
         } catch (Exception e) {
             markFailure(connection, "Search Console sync failed: " + e.getMessage());
             log.warn("Search Console sync failed for business {}: {}", businessId, e.toString());
+        }
+    }
+
+    /** No-op when the business hasn't connected credentials yet, same as {@link
+     * #syncSearchConsole}. Separate try/catch from Search Console's own sync so one Google API
+     * (GA4) failing never blocks the other (Search Console) from recording its own success for the
+     * same business in the same scheduler run. */
+    @Transactional
+    public void syncAnalytics(Long businessId) {
+        SeoConnection connection = connectionRepository.findByBusinessId(businessId).orElse(null);
+        if (connection == null) return;
+
+        try {
+            GoogleAnalyticsClient client = new GoogleAnalyticsClient(connectionService.decryptedServiceAccountJson(connection));
+            String propertyId = connection.getGa4PropertyId();
+            LocalDate endDate = LocalDate.now(ZoneOffset.UTC);
+            LocalDate startDate = endDate.minusDays(ANALYTICS_WINDOW_DAYS - 1);
+
+            for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+                GoogleAnalyticsClient.DailyTotals totals = client.dailyTotals(propertyId, date);
+                SeoAnalyticsSnapshot snapshot = analyticsSnapshotRepository
+                        .findByBusinessIdAndDate(businessId, date)
+                        .orElseGet(SeoAnalyticsSnapshot::new);
+                snapshot.setBusinessId(businessId);
+                snapshot.setDate(date);
+                snapshot.setTotalUsers((int) totals.totalUsers());
+                snapshot.setNewUsers((int) totals.newUsers());
+                snapshot.setOrganicSessions((int) totals.organicSessions());
+                analyticsSnapshotRepository.save(snapshot);
+            }
+            markSuccess(connection);
+        } catch (Exception e) {
+            markFailure(connection, "GA4 analytics sync failed: " + e.getMessage());
+            log.warn("GA4 analytics sync failed for business {}: {}", businessId, e.toString());
         }
     }
 
