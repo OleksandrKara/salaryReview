@@ -28,6 +28,18 @@ public final class CoreWebVitalsThresholds {
     public static final int INP_GOOD_MS = 200;
     public static final int INP_POOR_MS = 500;
 
+    /** FCP/TBT are Lighthouse lab-audit thresholds (from PageSpeed Insights' own scoring), not one
+     * of the three official Core Web Vitals (LCP/CLS/INP) — kept in this same class since {@code
+     * seo_page_snapshot} already stores both from the same PageSpeed sync, and the same
+     * good/needs-improvement/poor shape applies. Source: web.dev/articles/fcp,
+     * developer.chrome.com/docs/lighthouse/performance/lighthouse-total-blocking-time — verified
+     * 2026-09-02. */
+    public static final int FCP_GOOD_MS = 1800;
+    public static final int FCP_POOR_MS = 3000;
+
+    public static final int TBT_GOOD_MS = 200;
+    public static final int TBT_POOR_MS = 600;
+
     /** Not a Google-published number — an internal heuristic (design.md D3): a query needs at
      * least this many impressions in the evaluated window before its CTR is a meaningful signal. */
     public static final int CTR_OPPORTUNITY_MIN_IMPRESSIONS = 50;

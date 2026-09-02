@@ -1,11 +1,10 @@
 package com.salonreview.web;
 
+import com.salonreview.ai.LanguageResolver;
 import com.salonreview.ai.SmsDraftService;
 import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.config.CurrentBusinessContext;
-import com.salonreview.domain.AppUser;
 import com.salonreview.domain.BlockedNumber;
-import com.salonreview.domain.Language;
 import com.salonreview.domain.SmsMessage;
 import com.salonreview.marketing.MarketingContactsService;
 import com.salonreview.repo.AppUserRepository;
@@ -313,18 +312,9 @@ public class SmsActivityController {
     @PostMapping("/conversations/{phoneNumber}/draft-reply")
     public ResponseEntity<DraftReplyResult> draftReply(@PathVariable String phoneNumber,
                                                          @AuthenticationPrincipal AppUserPrincipal me) {
-        return draftService.draft(phoneNumber, language(me), currentBusinessContext.id())
+        return draftService.draft(phoneNumber, LanguageResolver.resolve(users, me), currentBusinessContext.id())
                 .map(d -> ResponseEntity.ok(new DraftReplyResult(d.body(), d.model())))
                 .orElseGet(() -> ResponseEntity.notFound().build());
-    }
-
-    /** The caller's preferred language, read fresh from the DB; English when unset — same pattern
-     * as {@code RagController#language}. */
-    private Language language(AppUserPrincipal me) {
-        if (me == null) return Language.EN;
-        return users.findById(me.getUserId())
-                .map(AppUser::getPreferredLanguage)
-                .orElse(Language.EN) == Language.RU ? Language.RU : Language.EN;
     }
 
     /** Message-content search across every conversation — backs the manager conversation view's

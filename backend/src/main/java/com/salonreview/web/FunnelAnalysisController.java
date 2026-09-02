@@ -2,12 +2,11 @@ package com.salonreview.web;
 
 import com.salonreview.ai.FunnelAnalysisResult;
 import com.salonreview.ai.FunnelAnalysisService;
+import com.salonreview.ai.LanguageResolver;
 import com.salonreview.config.AiFunnelAnalysisProperties;
 import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.config.BusinessFeatureService;
 import com.salonreview.config.CurrentBusinessContext;
-import com.salonreview.domain.AppUser;
-import com.salonreview.domain.Language;
 import com.salonreview.repo.AppUserRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -59,18 +58,9 @@ public class FunnelAnalysisController {
                                                          @RequestParam(defaultValue = "false") boolean force,
                                                          @AuthenticationPrincipal AppUserPrincipal me) {
         if (!enabledForCaller()) return ResponseEntity.notFound().build();
-        return service.analyze(slug, variantId, !"all".equalsIgnoreCase(mode), force, language(me))
+        return service.analyze(slug, variantId, !"all".equalsIgnoreCase(mode), force, LanguageResolver.resolve(users, me))
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
-    }
-
-    /** The caller's preferred language, read fresh from the DB; English when unset — same helper
-     * as {@code RagController.language(me)}. */
-    private Language language(AppUserPrincipal me) {
-        if (me == null) return Language.EN;
-        return users.findById(me.getUserId())
-                .map(AppUser::getPreferredLanguage)
-                .orElse(Language.EN) == Language.RU ? Language.RU : Language.EN;
     }
 
     /** Past analyses for this landing page/flow, newest first — powers the owner-facing history

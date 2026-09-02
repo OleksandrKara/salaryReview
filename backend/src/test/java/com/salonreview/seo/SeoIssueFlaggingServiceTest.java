@@ -41,6 +41,26 @@ class SeoIssueFlaggingServiceTest {
                 .build();
     }
 
+    private SeoPageSnapshot pageSnapshotFcp(Integer fcpMs) {
+        return SeoPageSnapshot.builder()
+                .businessId(1L)
+                .url("https://akluxnails.com/")
+                .strategy(SeoPageSnapshot.Strategy.MOBILE)
+                .performanceScore(90)
+                .fcpMs(fcpMs)
+                .build();
+    }
+
+    private SeoPageSnapshot pageSnapshotTbt(Integer tbtMs) {
+        return SeoPageSnapshot.builder()
+                .businessId(1L)
+                .url("https://akluxnails.com/")
+                .strategy(SeoPageSnapshot.Strategy.MOBILE)
+                .performanceScore(90)
+                .tbtMs(tbtMs)
+                .build();
+    }
+
     @Test
     @DisplayName("LCP exactly at 2500ms does not flag")
     void lcpAtGoodBoundaryDoesNotFlag() {
@@ -101,6 +121,48 @@ class SeoIssueFlaggingServiceTest {
         service.evaluatePageSnapshot(pageSnapshot(1000, BigDecimal.valueOf(0.26)));
         verify(repository).save(argThat(i -> i.getIssueType() == SeoTechnicalIssue.IssueType.CLS
                 && i.getSeverity() == SeoTechnicalIssue.Severity.POOR));
+    }
+
+    @Test
+    @DisplayName("FCP exactly at 1800ms does not flag, 1801ms flags NEEDS_IMPROVEMENT, 3001ms flags POOR")
+    void fcpBoundaries() {
+        when(repository.findOpenBySubject(any(), any(), any(), any(), any())).thenReturn(Optional.empty());
+
+        service.evaluatePageSnapshot(pageSnapshotFcp(1800));
+        verify(repository, never()).save(argThat(i -> i.getIssueType() == SeoTechnicalIssue.IssueType.FCP));
+
+        service.evaluatePageSnapshot(pageSnapshotFcp(1801));
+        verify(repository).save(argThat(i -> i.getIssueType() == SeoTechnicalIssue.IssueType.FCP
+                && i.getSeverity() == SeoTechnicalIssue.Severity.NEEDS_IMPROVEMENT));
+
+        service.evaluatePageSnapshot(pageSnapshotFcp(3001));
+        verify(repository).save(argThat(i -> i.getIssueType() == SeoTechnicalIssue.IssueType.FCP
+                && i.getSeverity() == SeoTechnicalIssue.Severity.POOR));
+    }
+
+    @Test
+    @DisplayName("TBT exactly at 200ms does not flag, 201ms flags NEEDS_IMPROVEMENT, 601ms flags POOR")
+    void tbtBoundaries() {
+        when(repository.findOpenBySubject(any(), any(), any(), any(), any())).thenReturn(Optional.empty());
+
+        service.evaluatePageSnapshot(pageSnapshotTbt(200));
+        verify(repository, never()).save(argThat(i -> i.getIssueType() == SeoTechnicalIssue.IssueType.TBT));
+
+        service.evaluatePageSnapshot(pageSnapshotTbt(201));
+        verify(repository).save(argThat(i -> i.getIssueType() == SeoTechnicalIssue.IssueType.TBT
+                && i.getSeverity() == SeoTechnicalIssue.Severity.NEEDS_IMPROVEMENT));
+
+        service.evaluatePageSnapshot(pageSnapshotTbt(601));
+        verify(repository).save(argThat(i -> i.getIssueType() == SeoTechnicalIssue.IssueType.TBT
+                && i.getSeverity() == SeoTechnicalIssue.Severity.POOR));
+    }
+
+    @Test
+    @DisplayName("Null FCP/TBT (partial Lighthouse run) is skipped, not flagged")
+    void nullFcpAndTbtAreSkipped() {
+        service.evaluatePageSnapshot(pageSnapshot(1000, BigDecimal.ZERO));
+        verify(repository, never()).save(argThat(i -> i.getIssueType() == SeoTechnicalIssue.IssueType.FCP
+                || i.getIssueType() == SeoTechnicalIssue.IssueType.TBT));
     }
 
     @Test
