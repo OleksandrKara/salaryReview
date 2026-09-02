@@ -16,6 +16,7 @@ import { Spinner } from '../../../components/Spinner';
 import type {
   SeoAnalysisResult,
   SeoCannibalizedQuery,
+  SeoCompetitorRow,
   SeoCoreWebVitals,
   SeoOpportunity,
   SeoOverviewDto,
@@ -924,6 +925,234 @@ function AlertsCard({ data }: { data: SeoOverviewDto }) {
   );
 }
 
+/** One competitor row: name/website/location, our-CWV-style badges reusing {@link
+ * CoreWebVitalsCard} for the exact same visual language as our own business's cards above, an
+ * inline editable GBP rating/review count (owner-entered only — never auto-synced, see design.md
+ * D9), and a remove button. */
+function CompetitorRowItem({
+  competitor,
+  onSaveGbp,
+  onRemove,
+  pending,
+}: {
+  competitor: SeoCompetitorRow;
+  onSaveGbp: (id: number, rating: number | null, reviewCount: number | null) => void;
+  onRemove: (id: number) => void;
+  pending: boolean;
+}) {
+  const [rating, setRating] = useState(competitor.gbpRating?.toString() ?? '');
+  const [reviewCount, setReviewCount] = useState(competitor.gbpReviewCount?.toString() ?? '');
+
+  function saveGbp() {
+    const parsedRating = rating.trim() === '' ? null : Number(rating);
+    const parsedReviewCount = reviewCount.trim() === '' ? null : Number(reviewCount);
+    onSaveGbp(competitor.id, Number.isNaN(parsedRating) ? null : parsedRating,
+        Number.isNaN(parsedReviewCount) ? null : parsedReviewCount);
+  }
+
+  return (
+    <li className="px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-zinc-700">{competitor.name}</p>
+          <a href={competitor.website} target="_blank" rel="noreferrer" className="block truncate text-xs text-zinc-400 hover:underline">
+            {competitor.website}
+          </a>
+          {competitor.location && (
+            <span className="mt-1 inline-block rounded-full bg-zinc-100 px-1.5 py-0.5 text-xs font-medium text-zinc-500">
+              {competitor.location}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => onRemove(competitor.id)}
+          disabled={pending}
+          aria-label={`Remove "${competitor.name}"`}
+          className="shrink-0 rounded-full px-2 py-1 text-xs font-medium text-zinc-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+        >
+          ×
+        </button>
+      </div>
+
+      <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+        <CoreWebVitalsCard label="Mobile" vitals={competitor.latestMobile} />
+        <CoreWebVitalsCard label="Desktop" vitals={competitor.latestDesktop} />
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-zinc-400">Google rating (owner-entered):</span>
+        <input
+          type="number"
+          step="0.1"
+          min="0"
+          max="5"
+          value={rating}
+          onChange={(e) => setRating(e.target.value)}
+          placeholder="4.8"
+          className="w-16 rounded border border-zinc-200 px-1.5 py-0.5"
+        />
+        <input
+          type="number"
+          min="0"
+          value={reviewCount}
+          onChange={(e) => setReviewCount(e.target.value)}
+          placeholder="reviews"
+          className="w-24 rounded border border-zinc-200 px-1.5 py-0.5"
+        />
+        <button
+          type="button"
+          onClick={saveGbp}
+          disabled={pending}
+          className="rounded-full px-2 py-1 font-medium text-zinc-500 ring-1 ring-zinc-200 hover:bg-zinc-50 disabled:opacity-50"
+        >
+          Save
+        </button>
+      </div>
+    </li>
+  );
+}
+
+/** Competitors sub-view (seo-intelligence-advisor Phase 7, zero-cost scope) — self-contained,
+ * fetches its own data on mount, same shape as {@link SeoAdvisorCard}. PageSpeed comparison is
+ * automated (weekly sync, same PageSpeed Insights integration used for our own business);
+ * keyword-overlap/backlink comparison is intentionally absent, not silently omitted — that would
+ * need a paid SEO tool the owner declined (design.md D2/D9). */
+function CompetitorsCard() {
+  const [competitors, setCompetitors] = useState<SeoCompetitorRow[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [website, setWebsite] = useState('');
+  const [location, setLocation] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getSeoCompetitors()
+      .then((c) => {
+        if (!cancelled) setCompetitors(c);
+      })
+      .catch(() => {
+        if (!cancelled) setCompetitors([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function addCompetitor(e: FormEvent) {
+    e.preventDefault();
+    const trimmedName = name.trim();
+    const trimmedWebsite = website.trim();
+    if (!trimmedName || !trimmedWebsite) return;
+    setPending(0);
+    setError(null);
+    try {
+      setCompetitors(await api.addSeoCompetitor(trimmedName, trimmedWebsite, location.trim() || null, null));
+      setName('');
+      setWebsite('');
+      setLocation('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not add that competitor. Please try again.');
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function saveGbp(id: number, rating: number | null, reviewCount: number | null) {
+    setPending(id);
+    setError(null);
+    try {
+      setCompetitors(await api.updateSeoCompetitor(id, rating, reviewCount, null));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save that rating. Please try again.');
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function removeCompetitor(id: number) {
+    setPending(id);
+    setError(null);
+    try {
+      setCompetitors(await api.removeSeoCompetitor(id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not remove that competitor. Please try again.');
+    } finally {
+      setPending(null);
+    }
+  }
+
+  return (
+    <div className="rounded-lg ring-1 ring-zinc-200">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-4 py-2">
+        <p className="text-sm font-medium text-zinc-700">Competitors</p>
+        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-500">
+          Keyword/backlink comparison not available without a paid SEO tool
+        </span>
+      </div>
+
+      {error && <p className="px-4 pt-2 text-sm text-red-600">{error}</p>}
+
+      {loading ? (
+        <p className="px-4 py-8 text-center text-sm text-zinc-400">Loading…</p>
+      ) : competitors && competitors.length === 0 ? (
+        <p className="px-4 py-8 text-center text-sm text-zinc-400">
+          No competitors added yet. PageSpeed comparison syncs weekly once you add one.
+        </p>
+      ) : (
+        <ul className="divide-y divide-zinc-100">
+          {competitors?.map((c) => (
+            <CompetitorRowItem
+              key={c.id}
+              competitor={c}
+              onSaveGbp={saveGbp}
+              onRemove={removeCompetitor}
+              pending={pending === c.id}
+            />
+          ))}
+        </ul>
+      )}
+
+      <form onSubmit={addCompetitor} className="flex flex-col gap-2 border-t border-zinc-100 p-3 sm:flex-row">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Competitor name"
+          className="min-w-0 flex-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"
+        />
+        <input
+          type="text"
+          value={website}
+          onChange={(e) => setWebsite(e.target.value)}
+          placeholder="https://competitor-website.com"
+          className="min-w-0 flex-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"
+        />
+        <input
+          type="text"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          placeholder="Location (optional)"
+          className="min-w-0 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none sm:w-40"
+        />
+        <button
+          type="submit"
+          disabled={!name.trim() || !website.trim() || pending !== null}
+          className="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+        >
+          Add
+        </button>
+      </form>
+    </div>
+  );
+}
+
 export default function SeoDashboardView({
   initialData,
   canUseAiAdvisor,
@@ -1021,6 +1250,7 @@ export default function SeoDashboardView({
           onRemove={removeTrackedKeyword}
           pending={trackedKeywordPending}
         />
+        <CompetitorsCard />
       </div>
     );
   }
@@ -1081,6 +1311,8 @@ export default function SeoDashboardView({
       )}
 
       {canUseAiAdvisor && <SeoAdvisorCard />}
+
+      <CompetitorsCard />
 
       {data.activeIssues.length > 0 && (
         <div className="rounded-lg ring-1 ring-zinc-200">

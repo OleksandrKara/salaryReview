@@ -74,9 +74,25 @@ completely untouched.
 
 ### D2 — External rank-tracking/competitor provider: DataForSEO, not Semrush/Ahrefs/SerpApi-only
 
-**Decision:** Recommend **DataForSEO** (SERP API + Rank Tracker endpoints) as the new external
-dependency for real SERP position checks and competitor SERP comparison. Do not recommend
-Semrush/Ahrefs; note SerpApi as a viable close second.
+**Superseded 2026-09-02:** the owner declined to pay for any external SEO data provider. Phase 5
+(real rank tracking) is cancelled outright; Phase 7 (competitors) was redesigned to a zero-cost
+scope (D9). The reasoning below is kept for the record — it's still the right recommendation *if*
+a paid provider is ever reconsidered — plus the free alternatives that were evaluated and rejected
+in its place:
+- **Self-hosted Google-search scraping** — rejected: violates Google's ToS, gets IP-blocked/
+  CAPTCHA'd quickly at any real volume, and reliable proxy infrastructure to work around that
+  tends to cost money anyway, defeating the point.
+- **Google Custom Search JSON API's free tier** (100 queries/day, enough to check ~30-50 keywords
+  daily) — technically free and genuinely usable as an experimental rank-check, but Google doesn't
+  officially support or guarantee its result order matches real organic search results; rejected
+  rather than ship a "rank" number the owner might mistake for a real one.
+- **What stands in its place**: Search Console's own average position (already fully shipped) plus
+  the existing gainers/losers/opportunity detection built on it (Phase 2-3) — free, already
+  integrated, clearly labeled as an average rather than a single tracked SERP rank.
+
+**Original decision (kept for reference):** Recommend **DataForSEO** (SERP API + Rank Tracker
+endpoints) as the new external dependency for real SERP position checks and competitor SERP
+comparison. Do not recommend Semrush/Ahrefs; note SerpApi as a viable close second.
 
 **Why:** AK.LUX.NAILS needs geo-targeted rank checks for 10-50 keywords (location = Downtown San
 Diego/92101, not "San Diego metro"), checked at most daily — a low, bursty query volume for a
@@ -222,17 +238,32 @@ normalized schema nothing else in this app uses for LLM-adjacent data.
 
 ### D9 — Competitor data is explicitly source-labeled and confidence-scored, never blended with Google's own data
 
-**Decision:** New `seo_competitor` table (business_id, name, website, gbp_place_id nullable,
-location, notes, active, created_at) plus `seo_competitor_metric` (competitor_id, metric_type,
-value, source enum, confidence enum, checked_at) — a generic key-value-with-provenance shape
-rather than one wide table with a fixed column per metric, since which metrics are even available
-depends entirely on what D2's provider and public GBP data can supply, and that surface is
-expected to grow.
+**Revised 2026-09-02** (D2 superseded — no paid provider, so no keyword-overlap/backlink metric
+ever arrives): **New decision** — `seo_competitor` (business_id, name, website, location, notes,
+active, `gbp_rating`, `gbp_review_count`, `gbp_updated_at` — the GBP fields are owner-entered
+directly, never auto-synced, since there's no free API for a competitor's own Google Business
+Profile data) plus `seo_competitor_page_snapshot` (competitor_id, date, strategy,
+performance_score, lcp_ms, cls, fcp_ms, tbt_ms) — a dedicated table mirroring `seo_page_snapshot`'s
+own shape exactly, rather than a generic metric store, since PageSpeed Insights (already
+integrated, free, works on any public URL) is the *only* automated competitor dimension now in
+scope. A generic EAV-style `seo_competitor_metric` table would have been the right call if D2's
+paid provider had shipped (many heterogeneous future metric types), but for exactly one well-typed
+automated metric plus two manually-entered fields, a purpose-built table matches this codebase's
+own established convention (one typed table per concept — `seo_page_snapshot`,
+`seo_analytics_snapshot`, `seo_search_metrics_snapshot` — never a generic key-value store) better
+than the originally-planned generic shape would have.
 
-**Why:** The proposal's hard requirement — never present estimated/third-party data as exact
-Google data — is easiest to enforce structurally when every stored value carries its own
-`source`/`confidence` fields rather than living in an untyped column that a future screen might
-render without checking provenance.
+**Why (still applies)**: the proposal's hard requirement — never present estimated/third-party
+data as exact Google data — still holds: the UI must label GBP fields "owner-entered" and
+PageSpeed fields "PageSpeed Insights, same first-party source as our own CWV data," and must show
+keyword-overlap/backlink comparison as "not available without a paid SEO tool," never silently
+omitted.
+
+**Original decision (kept for reference, not built):** New `seo_competitor` table (business_id,
+name, website, gbp_place_id nullable, location, notes, active, created_at) plus
+`seo_competitor_metric` (competitor_id, metric_type, value, source enum, confidence enum,
+checked_at) — a generic key-value-with-provenance shape, since which metrics are even available
+was expected to depend on D2's provider and that surface was expected to grow.
 
 ### D10 — IA: 6 sub-views, not 8, behind an in-page tab strip
 

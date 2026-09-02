@@ -46,6 +46,15 @@ public class SeoPageSpeedSyncScheduler {
                 log.warn("SEO PageSpeed sync failed for business {} (retried next run): {}",
                         businessId, e.toString());
             }
+            // Separate try/catch from the business's own sync above — a competitor's site being
+            // unreachable must never block our own PageSpeed result from being recorded for the
+            // same business in the same scheduler run (seo-intelligence-advisor Phase 7).
+            try {
+                currentBusinessContext.runAs(businessId, () -> syncService.syncCompetitorPageSpeed(businessId));
+            } catch (RuntimeException e) {
+                log.warn("SEO competitor PageSpeed sync failed for business {} (retried next run): {}",
+                        businessId, e.toString());
+            }
         }
     }
 }

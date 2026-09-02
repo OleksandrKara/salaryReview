@@ -129,6 +129,42 @@ class SeoSyncSchedulersTest {
         verify(syncService).syncPageSpeed(2L);
     }
 
+    @Test
+    void pageSpeedScheduler_alsoRunsCompetitorPageSpeedSyncPerBusiness() {
+        SeoConnectionRepository connections = mock(SeoConnectionRepository.class);
+        BusinessFeatureService features = mock(BusinessFeatureService.class);
+        CurrentBusinessContext context = realRunAsContext();
+        SeoSyncService syncService = mock(SeoSyncService.class);
+
+        when(connections.findAll()).thenReturn(List.of(connectionFor(1L), connectionFor(2L)));
+        when(features.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
+        when(features.isEnabled(2L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(false);
+
+        new SeoPageSpeedSyncScheduler(connections, features, context, syncService).sync();
+
+        verify(syncService).syncCompetitorPageSpeed(1L);
+        verify(syncService, never()).syncCompetitorPageSpeed(2L);
+    }
+
+    @Test
+    void pageSpeedScheduler_competitorSyncFailureDoesNotBlockPageSpeedOrAnotherBusiness() {
+        SeoConnectionRepository connections = mock(SeoConnectionRepository.class);
+        BusinessFeatureService features = mock(BusinessFeatureService.class);
+        CurrentBusinessContext context = realRunAsContext();
+        SeoSyncService syncService = mock(SeoSyncService.class);
+
+        when(connections.findAll()).thenReturn(List.of(connectionFor(1L), connectionFor(2L)));
+        when(features.isEnabled(any(), eq(BusinessFeatureService.SEO_MONITORING_ENABLED))).thenReturn(true);
+        doThrow(new RuntimeException("competitor site unreachable")).when(syncService).syncCompetitorPageSpeed(1L);
+
+        new SeoPageSpeedSyncScheduler(connections, features, context, syncService).sync();
+
+        verify(syncService).syncPageSpeed(1L);
+        verify(syncService).syncPageSpeed(2L);
+        verify(syncService).syncCompetitorPageSpeed(1L);
+        verify(syncService).syncCompetitorPageSpeed(2L);
+    }
+
     private static CurrentBusinessContext realRunAsContext() {
         // The real class, not a mock — its runAs() is trivial ThreadLocal plumbing, and using the
         // real implementation confirms the scheduler actually threads businessId through it

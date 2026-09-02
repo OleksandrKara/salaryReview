@@ -224,9 +224,9 @@ export interface SeoCannibalizedQuery {
   pages: SeoPageShare[];
 }
 
-// device is SeoTrackedKeyword.Device's name ("MOBILE"/"DESKTOP"). No rank data yet — real SERP
-// position tracking arrives once an external provider is connected (Phase 5); until then this is
-// just the owner's curated list, distinct from both SeoTrackedQueryRow (Search-Console-impressions-
+// device is SeoTrackedKeyword.Device's name ("MOBILE"/"DESKTOP"). No rank data — real SERP
+// position tracking would need a paid provider, which the owner declined (2026-09-02); this stays
+// a curated watchlist only, distinct from both SeoTrackedQueryRow (Search-Console-impressions-
 // derived) and the trend chart's own average position.
 export interface SeoTrackedKeywordRow {
   id: number;
@@ -235,6 +235,25 @@ export interface SeoTrackedKeywordRow {
   location: string;
   device: 'MOBILE' | 'DESKTOP';
   active: boolean;
+}
+
+// --- Competitors (com.salonreview.web.SeoCompetitorController) — zero-cost scope (2026-09-02) ---
+// gbpRating/gbpReviewCount/gbpUpdatedAt are owner-entered (no free API for a competitor's own GBP
+// data); latestMobile/latestDesktop come from the existing PageSpeed Insights integration, which
+// scores any public URL for free. Keyword-overlap/backlink comparison is intentionally absent —
+// that would need a paid SEO tool the owner declined.
+export interface SeoCompetitorRow {
+  id: number;
+  name: string;
+  website: string;
+  location: string | null;
+  notes: string | null;
+  active: boolean;
+  gbpRating: number | null;
+  gbpReviewCount: number | null;
+  gbpUpdatedAt: string | null;
+  latestMobile: SeoCoreWebVitals | null;
+  latestDesktop: SeoCoreWebVitals | null;
 }
 
 export interface SeoOverviewDto {
