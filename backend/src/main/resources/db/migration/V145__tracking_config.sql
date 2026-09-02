@@ -17,7 +17,14 @@ CREATE TABLE tracking_config (
 -- Seeded with every known public site today, clarity_project_id left NULL (owner fills it in via
 -- /owner/settings/tracking) — see TrackingConfigService's SITE_LABELS for the matching human
 -- labels. A future new site is just another row, added alongside deploying that site's own code.
-INSERT INTO tracking_config (business_id, hostname) VALUES
+-- Guarded by an EXISTS check against `business`, same convention V142 uses for its own seed —
+-- business rows aren't Flyway-seeded (they're created by the app/tests), so a fresh test database
+-- has none yet and this becomes a no-op there instead of a foreign-key violation.
+INSERT INTO tracking_config (business_id, hostname)
+SELECT v.business_id, v.hostname
+FROM (VALUES
     (1, 'akluxnails.com'),
     (1, 'mani.akluxnails.com'),
-    (2, 'book.pmu-annakara.com');
+    (2, 'book.pmu-annakara.com')
+) AS v(business_id, hostname)
+WHERE EXISTS (SELECT 1 FROM business WHERE business.id = v.business_id);
