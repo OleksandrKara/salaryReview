@@ -816,6 +816,114 @@ function SeoAdvisorCard() {
   );
 }
 
+interface SeoAlert {
+  key: string;
+  text: string;
+  tone: 'good' | 'bad' | 'neutral';
+}
+
+// Same underlying data as the detailed Gainers/Losers/Opportunities/Technical-issues sections
+// further down the page — this is deliberately just the headline, one-liner version of the most
+// significant items, so the top of the page answers "what should I know in 10 seconds" (design.md
+// D11) without duplicating the full lists. No new backend endpoint/table — computed on demand from
+// the already-fetched overview, same "no new alert table" decision as design.md D11 itself.
+function buildAlerts(data: SeoOverviewDto): SeoAlert[] {
+  const alerts: SeoAlert[] = [];
+
+  if (data.losers.length > 0) {
+    const worst = data.losers[0];
+    alerts.push({
+      key: `loser:${worst.query}`,
+      text: `"${worst.query}" dropped from #${worst.previousPosition.toFixed(1)} to #${worst.currentPosition.toFixed(1)}.`,
+      tone: 'bad',
+    });
+  }
+  if (data.gainers.length > 0) {
+    const best = data.gainers[0];
+    alerts.push({
+      key: `gainer:${best.query}`,
+      text: `"${best.query}" moved up from #${best.previousPosition.toFixed(1)} to #${best.currentPosition.toFixed(1)}.`,
+      tone: 'good',
+    });
+  }
+  if (data.last7Days?.previous) {
+    const { current, previous } = data.last7Days;
+    if (previous.clicks > 0) {
+      const pct = Math.round(((current.clicks - previous.clicks) / previous.clicks) * 100);
+      if (Math.abs(pct) >= 20) {
+        alerts.push({
+          key: 'clicks-7d',
+          text: `Organic clicks ${pct > 0 ? 'increased' : 'decreased'} ${Math.abs(pct)}% over the last 7 days.`,
+          tone: pct > 0 ? 'good' : 'bad',
+        });
+      }
+    }
+  }
+  const bestWinningPage = data.winningPages[0];
+  if (bestWinningPage) {
+    const pct = Math.round(bestWinningPage.changeRatio * 100);
+    alerts.push({
+      key: `winning-page:${bestWinningPage.page}`,
+      text: `${bestWinningPage.page} impressions increased ${pct}%.`,
+      tone: 'good',
+    });
+  }
+  const poorIssue = data.activeIssues.find((i) => i.severity === 'POOR');
+  if (poorIssue) {
+    alerts.push({
+      key: `issue:${poorIssue.issueType}:${poorIssue.url ?? ''}`,
+      text: `Core Web Vitals issue detected (${poorIssue.issueType}${poorIssue.url ? ` on ${poorIssue.url}` : ''}).`,
+      tone: 'bad',
+    });
+  }
+  const strikingDistance = data.opportunities.find((o) => o.reason === 'STRIKING_DISTANCE');
+  if (strikingDistance) {
+    alerts.push({
+      key: `opportunity:${strikingDistance.query}`,
+      text: `"${strikingDistance.query}" is in striking distance (position ${strikingDistance.currentPosition.toFixed(1)}).`,
+      tone: 'neutral',
+    });
+  }
+
+  return alerts;
+}
+
+const ALERT_TONE_STYLES: Record<SeoAlert['tone'], string> = {
+  good: 'border-emerald-100 bg-emerald-50/60 text-emerald-800',
+  bad: 'border-rose-100 bg-rose-50/60 text-rose-800',
+  neutral: 'border-zinc-200 bg-zinc-50 text-zinc-700',
+};
+
+/** Dismissed alerts are session-only (component state, not persisted) — reloading the page brings
+ * them back if the underlying condition is still true, per design.md D11's explicit "no new alert
+ * table" decision. */
+function AlertsCard({ data }: { data: SeoOverviewDto }) {
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const alerts = buildAlerts(data).filter((a) => !dismissed.has(a.key));
+  if (alerts.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-2">
+      {alerts.map((a) => (
+        <div
+          key={a.key}
+          className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm ${ALERT_TONE_STYLES[a.tone]}`}
+        >
+          <span>{a.text}</span>
+          <button
+            type="button"
+            onClick={() => setDismissed((prev) => new Set(prev).add(a.key))}
+            aria-label="Dismiss"
+            className="shrink-0 rounded-full px-1.5 text-xs opacity-60 hover:opacity-100"
+          >
+            ×
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function SeoDashboardView({
   initialData,
   canUseAiAdvisor,
@@ -961,6 +1069,8 @@ export default function SeoDashboardView({
         </button>
       </div>
       {syncError && <p className="text-sm text-red-600">{syncError}</p>}
+
+      <AlertsCard data={data} />
 
       {(data.last7Days?.previous || data.last28Days?.previous || data.yearOverYear?.previous) && (
         <div className="flex flex-col gap-3 sm:flex-row">
