@@ -13,6 +13,7 @@ import type {
   SquareConnectionDto,
   SeoConnectionDto,
   SeoOverviewDto,
+  TrackingSiteDto,
   BusinessSettingsDto,
   PlatformBusinessDto,
   TwilioSmsSettingsDto,
@@ -192,6 +193,8 @@ export const serverApi = {
   getSquareConnection: () => serverFetch<SquareConnectionDto>(`/api/owner/settings/square`),
 
   getSeoConnection: () => serverFetch<SeoConnectionDto>(`/api/owner/settings/seo`),
+
+  getTrackingConfig: () => serverFetch<TrackingSiteDto[]>(`/api/owner/settings/tracking`),
 
   getBusinessSettings: () => serverFetch<BusinessSettingsDto>(`/api/owner/settings/business`),
 
