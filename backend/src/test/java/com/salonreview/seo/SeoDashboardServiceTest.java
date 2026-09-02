@@ -24,6 +24,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -212,6 +213,73 @@ class SeoDashboardServiceTest {
         assertThat(overview.trackedQueries()).hasSize(1);
         assertThat(overview.trackedQueries().get(0).query()).isEqualTo("rare query");
         assertThat(overview.trackedQueries().get(0).autoSuggested()).isFalse();
+    }
+
+    @Test
+    @DisplayName("period comparisons (7d/28d/YoY) are all omitted when there's no prior-period data at all")
+    void periodComparisonsOmittedWithNoPriorData() {
+        LocalDate end = LocalDate.now();
+        LocalDate start = end.minusDays(28);
+        when(connectionRepository.findByBusinessId(1L)).thenReturn(Optional.of(SeoConnection.builder().businessId(1L).build()));
+        when(pageSnapshotRepository.findFirstByBusinessIdAndStrategyOrderByDateDesc(any(), any())).thenReturn(Optional.empty());
+        when(issueRepository.findByBusinessIdAndResolvedAtIsNull(any())).thenReturn(List.of());
+        // Broad catch-all first (every "prior period" call falls through to this, since none of
+        // them are the exact main-window date range) - the specific stub below wins only for the
+        // exact main-window call, per Mockito's last-registered-matching-stub-wins rule.
+        when(searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(any(), any(), any())).thenReturn(List.of());
+        when(searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(eq(1L), eq(start), eq(end)))
+                .thenReturn(List.of(row(end, "q", "/", 5, 100, BigDecimal.valueOf(0.05), BigDecimal.valueOf(5))));
+
+        SeoDashboardService.Overview overview = service.overview(1L, 28);
+
+        assertThat(overview.last7Days()).isNull();
+        assertThat(overview.last28Days()).isNull();
+        assertThat(overview.yearOverYear()).isNull();
+    }
+
+    @Test
+    @DisplayName("last28Days comparison is populated from the immediately-prior 28-day window when it has data")
+    void last28DaysComparisonPopulatedWhenPriorDataExists() {
+        LocalDate end = LocalDate.now();
+        LocalDate start = end.minusDays(28);
+        LocalDate priorEnd = start.minusDays(1);
+        LocalDate priorStart = priorEnd.minusDays(27);
+        when(connectionRepository.findByBusinessId(1L)).thenReturn(Optional.of(SeoConnection.builder().businessId(1L).build()));
+        when(pageSnapshotRepository.findFirstByBusinessIdAndStrategyOrderByDateDesc(any(), any())).thenReturn(Optional.empty());
+        when(issueRepository.findByBusinessIdAndResolvedAtIsNull(any())).thenReturn(List.of());
+        when(searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(any(), any(), any())).thenReturn(List.of());
+        when(searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(eq(1L), eq(start), eq(end)))
+                .thenReturn(List.of(row(end, "q", "/", 10, 200, BigDecimal.valueOf(0.05), BigDecimal.valueOf(4))));
+        when(searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(eq(1L), eq(priorStart), eq(priorEnd)))
+                .thenReturn(List.of(row(priorEnd, "q", "/", 5, 100, BigDecimal.valueOf(0.05), BigDecimal.valueOf(6))));
+
+        SeoDashboardService.Overview overview = service.overview(1L, 28);
+
+        assertThat(overview.last28Days()).isNotNull();
+        assertThat(overview.last28Days().current().clicks()).isEqualTo(10);
+        assertThat(overview.last28Days().previous().clicks()).isEqualTo(5);
+        assertThat(overview.last7Days()).isNull();
+        assertThat(overview.yearOverYear()).isNull();
+    }
+
+    @Test
+    @DisplayName("gainers/losers/opportunities are computed from the fetched window via SeoChangeDetectionService")
+    void gainersLosersOpportunitiesWiredFromWindow() {
+        LocalDate end = LocalDate.now();
+        LocalDate start = end.minusDays(28);
+        when(connectionRepository.findByBusinessId(1L)).thenReturn(Optional.of(SeoConnection.builder().businessId(1L).build()));
+        when(pageSnapshotRepository.findFirstByBusinessIdAndStrategyOrderByDateDesc(any(), any())).thenReturn(Optional.empty());
+        when(issueRepository.findByBusinessIdAndResolvedAtIsNull(any())).thenReturn(List.of());
+        when(searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(any(), any(), any())).thenReturn(List.of());
+        when(searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(eq(1L), eq(start), eq(end))).thenReturn(List.of(
+                row(start, "gainer query", "/", 5, 100, BigDecimal.valueOf(0.05), BigDecimal.valueOf(10)),
+                row(end, "gainer query", "/", 5, 100, BigDecimal.valueOf(0.05), BigDecimal.valueOf(2))));
+
+        SeoDashboardService.Overview overview = service.overview(1L, 28);
+
+        assertThat(overview.gainers()).hasSize(1);
+        assertThat(overview.gainers().get(0).query()).isEqualTo("gainer query");
+        assertThat(overview.losers()).isEmpty();
     }
 
     private static SeoSearchMetricsSnapshot row(LocalDate date, String query, String page, int clicks,

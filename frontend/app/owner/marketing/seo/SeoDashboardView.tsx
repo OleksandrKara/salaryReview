@@ -13,7 +13,14 @@ import {
 } from 'recharts';
 import { api } from '../../../lib/api';
 import { Spinner } from '../../../components/Spinner';
-import type { SeoCoreWebVitals, SeoOverviewDto, SeoTrackedQueryRow } from '../../../lib/types';
+import type {
+  SeoCoreWebVitals,
+  SeoOpportunity,
+  SeoOverviewDto,
+  SeoPeriodComparison,
+  SeoQueryChange,
+  SeoTrackedQueryRow,
+} from '../../../lib/types';
 
 const CHART_COLORS = { clicks: '#2563eb', impressions: '#a1a1aa' };
 const ANALYTICS_CHART_COLORS = { totalUsers: '#7c3aed', organicSessions: '#0d9488' };
@@ -92,11 +99,135 @@ function countDeltaLabel(delta: number | null): { text: string; className: strin
 
 function positionDeltaLabel(delta: number | null): { text: string; className: string } {
   if (delta == null) return { text: '—', className: 'text-zinc-400' };
-  if (delta === 0) return { text: '0.0', className: 'text-zinc-500' };
+  // Round to the same 1-decimal precision as the displayed text *before* the zero check — a
+  // delta like -0.03 is functionally flat but fails `=== 0`, and would otherwise render as a
+  // confusing rose "-0.0" (looks like a decline for what's actually a no-op rounding artifact).
+  const rounded = Math.round(delta * 10) / 10;
+  if (rounded === 0) return { text: '0.0', className: 'text-zinc-500' };
   // Same "positive is good" sign convention/coloring as RevenueChart's own MoM row — positive here
   // means the query moved to a numerically lower (better) search position.
-  const sign = delta > 0 ? '+' : '';
-  return { text: `${sign}${delta.toFixed(1)}`, className: delta > 0 ? 'text-emerald-600' : 'text-rose-500' };
+  const sign = rounded > 0 ? '+' : '';
+  return { text: `${sign}${rounded.toFixed(1)}`, className: rounded > 0 ? 'text-emerald-600' : 'text-rose-500' };
+}
+
+// Percentage-point CTR delta — positive is always good (higher CTR), no position-style sign
+// inversion needed, but formatted as "pp" (not a raw count) since CTR itself is a fraction.
+function ctrDeltaLabel(deltaFraction: number | null): { text: string; className: string } {
+  if (deltaFraction == null) return { text: '—', className: 'text-zinc-400' };
+  const pp = deltaFraction * 100;
+  if (Math.abs(pp) < 0.05) return { text: '±0.0pp', className: 'text-zinc-500' };
+  const sign = pp > 0 ? '+' : '';
+  return { text: `${sign}${pp.toFixed(1)}pp`, className: pp > 0 ? 'text-emerald-600' : 'text-rose-500' };
+}
+
+/** One period's clicks/impressions/CTR/avg-position change vs. the equivalent immediately-prior
+ * period — renders nothing at all when there's no prior-period data yet (business too new for
+ * this specific comparison), rather than a misleading zero-filled row. */
+function PeriodStat({ label, comparison }: { label: string; comparison: SeoPeriodComparison | null }) {
+  if (!comparison?.previous) return null;
+  const clicks = countDeltaLabel(comparison.current.clicks - comparison.previous.clicks);
+  const impressions = countDeltaLabel(comparison.current.impressions - comparison.previous.impressions);
+  const ctr = ctrDeltaLabel(comparison.current.ctr - comparison.previous.ctr);
+  // Position: previous - current (not current - previous) — a numerically lower position is
+  // better, same inversion positionDeltaLabel's own callers already apply everywhere else.
+  const position = positionDeltaLabel(comparison.previous.position - comparison.current.position);
+  return (
+    <div className="flex-1 rounded-lg p-3 ring-1 ring-zinc-200">
+      <p className="text-xs font-medium text-zinc-500">{label}</p>
+      <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm sm:grid-cols-4">
+        <div>
+          <dt className="text-xs text-zinc-400">Clicks</dt>
+          <dd className={`font-medium ${clicks.className}`}>{clicks.text}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-zinc-400">Impressions</dt>
+          <dd className={`font-medium ${impressions.className}`}>{impressions.text}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-zinc-400">CTR</dt>
+          <dd className={`font-medium ${ctr.className}`}>{ctr.text}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-zinc-400">Avg. position</dt>
+          <dd className={`font-medium ${position.className}`}>{position.text}</dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
+const OPPORTUNITY_LABEL: Record<string, string> = {
+  STRIKING_DISTANCE: 'Striking distance',
+  HIGH_IMPRESSIONS_LOW_CTR: 'High impressions, low CTR',
+  GROWING_IMPRESSIONS: 'Growing impressions',
+};
+
+/** Shared by both the "Biggest wins" and "Biggest losses" lists — same shape, different sign of
+ * data and different empty-state copy. Only significant moves ever reach this list at all (the
+ * backend's SeoChangeDetectionService already filters out day-to-day noise), so every row here is
+ * meant to be worth the owner's attention. */
+function QueryChangeList({
+  title,
+  changes,
+  emptyText,
+}: {
+  title: string;
+  changes: SeoQueryChange[];
+  emptyText: string;
+}) {
+  return (
+    <div className="flex-1 rounded-lg ring-1 ring-zinc-200">
+      <p className="border-b border-zinc-100 px-4 py-2 text-sm font-medium text-zinc-700">{title}</p>
+      {changes.length === 0 ? (
+        <p className="px-4 py-6 text-center text-sm text-zinc-400">{emptyText}</p>
+      ) : (
+        <ul className="divide-y divide-zinc-100">
+          {changes.map((c) => {
+            const delta = positionDeltaLabel(c.positionDelta);
+            return (
+              <li key={c.query} className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
+                <span className="max-w-[9rem] truncate text-zinc-700 sm:max-w-xs">{c.query}</span>
+                <span className="shrink-0 text-zinc-500">
+                  {c.previousPosition.toFixed(1)} → {c.currentPosition.toFixed(1)}{' '}
+                  <span className={`font-medium ${delta.className}`}>{delta.text}</span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Striking-distance/high-impression-low-CTR/growing-impression queries — flagged as a "potential
+ * opportunity" only, never asserted as a confirmed problem (see backend
+ * SeoChangeDetectionService's own doc comment). */
+function OpportunitiesCard({ opportunities }: { opportunities: SeoOpportunity[] }) {
+  return (
+    <div className="rounded-lg ring-1 ring-zinc-200">
+      <p className="border-b border-zinc-100 px-4 py-2 text-sm font-medium text-zinc-700">Opportunities</p>
+      {opportunities.length === 0 ? (
+        <p className="px-4 py-6 text-center text-sm text-zinc-400">No opportunities detected in this window.</p>
+      ) : (
+        <ul className="divide-y divide-zinc-100">
+          {opportunities.map((o) => (
+            <li key={o.query} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
+              <span className="max-w-[9rem] truncate text-zinc-700 sm:max-w-xs">{o.query}</span>
+              <span className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-600">
+                  {OPPORTUNITY_LABEL[o.reason] ?? o.reason}
+                </span>
+                <span>
+                  pos {o.currentPosition.toFixed(1)} · {o.currentImpressions.toLocaleString()} impr
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 /** "Main queries" section — the hybrid approach: shows the owner's own pinned list once any exist,
@@ -314,6 +445,14 @@ export default function SeoDashboardView({ initialData }: { initialData: SeoOver
       </div>
       {syncError && <p className="text-sm text-red-600">{syncError}</p>}
 
+      {(data.last7Days?.previous || data.last28Days?.previous || data.yearOverYear?.previous) && (
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <PeriodStat label="vs. last 7 days" comparison={data.last7Days} />
+          <PeriodStat label="vs. last 28 days" comparison={data.last28Days} />
+          <PeriodStat label="vs. last year" comparison={data.yearOverYear} />
+        </div>
+      )}
+
       {data.activeIssues.length > 0 && (
         <div className="rounded-lg ring-1 ring-zinc-200">
           <p className="border-b border-zinc-100 px-4 py-2 text-sm font-medium text-zinc-700">
@@ -361,6 +500,21 @@ export default function SeoDashboardView({ initialData }: { initialData: SeoOver
           </div>
         )}
       </div>
+
+      <div className="flex flex-col gap-4 sm:flex-row">
+        <QueryChangeList
+          title={`Biggest wins (${data.gainers.length})`}
+          changes={data.gainers}
+          emptyText="No significant gains detected in this window."
+        />
+        <QueryChangeList
+          title={`Biggest losses (${data.losers.length})`}
+          changes={data.losers}
+          emptyText="No significant losses detected in this window."
+        />
+      </div>
+
+      <OpportunitiesCard opportunities={data.opportunities} />
 
       <div className="rounded-lg p-3 ring-1 ring-zinc-200 sm:p-4">
         <div className="mb-3 flex flex-wrap items-center gap-4 text-sm">

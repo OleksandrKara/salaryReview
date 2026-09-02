@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.salonreview.config.BusinessFeatureService;
 import com.salonreview.config.CurrentBusinessContext;
+import com.salonreview.seo.SeoChangeDetectionService;
 import com.salonreview.seo.SeoDashboardService;
 import com.salonreview.seo.SeoDashboardService.AnalyticsPoint;
 import com.salonreview.seo.SeoDashboardService.CoreWebVitals;
@@ -101,7 +102,26 @@ public class SeoDashboardController {
                 o.topQueries().stream().map(SeoDashboardController::toDto).toList(),
                 o.trackedQueries().stream().map(SeoDashboardController::toDto).toList(),
                 toDto(o.mobile()), toDto(o.desktop()),
-                o.activeIssues().stream().map(SeoDashboardController::toDto).toList());
+                o.activeIssues().stream().map(SeoDashboardController::toDto).toList(),
+                toDto(o.last7Days()), toDto(o.last28Days()), toDto(o.yearOverYear()),
+                o.gainers().stream().map(SeoDashboardController::toDto).toList(),
+                o.losers().stream().map(SeoDashboardController::toDto).toList(),
+                o.opportunities().stream().map(SeoDashboardController::toDto).toList());
+    }
+
+    private static PeriodComparisonDto toDto(SeoDashboardService.PeriodComparison c) {
+        if (c == null) return null;
+        return new PeriodComparisonDto(toDto(c.current()), toDto(c.previous()));
+    }
+
+    private static QueryChangeDto toDto(SeoChangeDetectionService.QueryChange c) {
+        return new QueryChangeDto(c.query(), c.previousPosition(), c.currentPosition(), c.positionDelta(),
+                c.previousImpressions(), c.currentImpressions(), c.previousClicks(), c.currentClicks());
+    }
+
+    private static OpportunityDto toDto(SeoChangeDetectionService.Opportunity o) {
+        return new OpportunityDto(o.query(), o.currentPosition(), o.currentImpressions(), o.currentCtr(),
+                o.reason().name());
     }
 
     private static TrendPointDto toDto(TrendPoint p) {
@@ -134,7 +154,30 @@ public class SeoDashboardController {
                                   List<TrendPointDto> trend, List<AnalyticsPointDto> analyticsTrend,
                                   List<KeywordRowDto> topQueries, List<TrackedQueryRowDto> trackedQueries,
                                   CoreWebVitalsDto mobile, CoreWebVitalsDto desktop,
-                                  List<IssueRowDto> activeIssues) {
+                                  List<IssueRowDto> activeIssues,
+                                  PeriodComparisonDto last7Days, PeriodComparisonDto last28Days,
+                                  PeriodComparisonDto yearOverYear,
+                                  List<QueryChangeDto> gainers, List<QueryChangeDto> losers,
+                                  List<OpportunityDto> opportunities) {
+    }
+
+    /** {@code previous} is {@code null} when there's no data for the equivalent prior period —
+     * the frontend omits the comparison entirely rather than showing a fabricated baseline. */
+    public record PeriodComparisonDto(TrendPointDto current, TrendPointDto previous) {
+    }
+
+    /** {@code positionDelta = previousPosition - currentPosition}: positive means improved (same
+     * sign convention as {@code TrackedQueryRowDto}). */
+    public record QueryChangeDto(String query, java.math.BigDecimal previousPosition,
+                                  java.math.BigDecimal currentPosition, java.math.BigDecimal positionDelta,
+                                  long previousImpressions, long currentImpressions,
+                                  long previousClicks, long currentClicks) {
+    }
+
+    /** {@code reason} is one of {@code SeoChangeDetectionService.OpportunityReason}'s names
+     * ("STRIKING_DISTANCE", "HIGH_IMPRESSIONS_LOW_CTR", "GROWING_IMPRESSIONS"). */
+    public record OpportunityDto(String query, java.math.BigDecimal currentPosition, long currentImpressions,
+                                  java.math.BigDecimal currentCtr, String reason) {
     }
 
     public record TrendPointDto(java.time.LocalDate date, long clicks, long impressions,

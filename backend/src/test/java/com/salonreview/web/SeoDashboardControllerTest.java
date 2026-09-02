@@ -55,7 +55,8 @@ class SeoDashboardControllerTest {
         currentBusinessContext.runAs(1L, () -> {
             when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
             when(dashboardService.overview(1L, 28)).thenReturn(new SeoDashboardService.Overview(
-                    true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of()));
+                    true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of(),
+                    null, null, null, List.of(), List.of(), List.of()));
 
             SeoDashboardController.SeoOverviewDto dto = controller.overview(28);
 
@@ -80,7 +81,8 @@ class SeoDashboardControllerTest {
         currentBusinessContext.runAs(1L, () -> {
             when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
             when(dashboardService.overview(eq(1L), anyInt())).thenReturn(new SeoDashboardService.Overview(
-                    true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of()));
+                    true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of(),
+                    null, null, null, List.of(), List.of(), List.of()));
 
             controller.sync();
 
@@ -109,7 +111,8 @@ class SeoDashboardControllerTest {
         currentBusinessContext.runAs(1L, () -> {
             when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
             when(dashboardService.overview(eq(1L), anyInt())).thenReturn(new SeoDashboardService.Overview(
-                    true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of()));
+                    true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of(),
+                    null, null, null, List.of(), List.of(), List.of()));
 
             controller.addTrackedQuery(new SeoDashboardController.TrackedQueryRequest("  russian manicure san diego  "));
 
@@ -123,7 +126,8 @@ class SeoDashboardControllerTest {
         currentBusinessContext.runAs(1L, () -> {
             when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
             when(dashboardService.overview(eq(1L), anyInt())).thenReturn(new SeoDashboardService.Overview(
-                    true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of()));
+                    true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of(),
+                    null, null, null, List.of(), List.of(), List.of()));
 
             controller.removeTrackedQuery("russian manicure san diego");
 
