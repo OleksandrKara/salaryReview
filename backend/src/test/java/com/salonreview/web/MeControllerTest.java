@@ -1,6 +1,7 @@
 package com.salonreview.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.salonreview.config.AiSeoAdvisorProperties;
 import com.salonreview.config.AiTriageProperties;
 import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.config.BusinessFeatureService;
@@ -58,8 +59,9 @@ class MeControllerTest {
         when(memberships.findByUserId(1L)).thenReturn(List.of());
         businesses = mock(BusinessRepository.class);
         BusinessFeatureService businessFeatures = mock(BusinessFeatureService.class);
-        mvc = MockMvcBuilders.standaloneSetup(new MeController(new AiTriageProperties(), new RagProperties(), users,
-                        currentBusinessContext, platformAdmins, memberships, businesses, businessFeatures))
+        mvc = MockMvcBuilders.standaloneSetup(new MeController(new AiTriageProperties(), new AiSeoAdvisorProperties(),
+                        new RagProperties(), users, currentBusinessContext, platformAdmins, memberships, businesses,
+                        businessFeatures))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
 
@@ -163,8 +165,8 @@ class MeControllerTest {
         when(businessFeatures.isEnabled(2L, BusinessFeatureService.RAG_ENABLED)).thenReturn(false);
         when(businessFeatures.isEnabled(2L, BusinessFeatureService.AI_TRIAGE_ENABLED)).thenReturn(false);
         when(users.findById(1L)).thenReturn(Optional.of(user(null)));
-        MockMvc scopedMvc = MockMvcBuilders.standaloneSetup(new MeController(aiTriage, rag, users,
-                        ctx, platformAdmins, memberships, businesses, businessFeatures))
+        MockMvc scopedMvc = MockMvcBuilders.standaloneSetup(new MeController(aiTriage, new AiSeoAdvisorProperties(), rag,
+                        users, ctx, platformAdmins, memberships, businesses, businessFeatures))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
 

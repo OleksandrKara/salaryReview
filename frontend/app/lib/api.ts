@@ -34,6 +34,7 @@ import type {
   SeoConnectionUpdateRequest,
   TrackingSiteDto,
   SeoOverviewDto,
+  SeoAnalysisResult,
   BusinessSettingsDto,
   BusinessSettingsUpdateRequest,
   PlatformBusinessDto,
@@ -270,6 +271,13 @@ export const api = {
 
   removeSeoTrackedKeyword: (id: number) =>
     proxyDeleteJson<SeoOverviewDto>(`/api/owner/marketing/seo/tracked-keywords/${id}`),
+
+  // "Analyze SEO" button — force=true is the explicit "Analyze again" action, bypassing the cache.
+  analyzeSeo: (force = false) =>
+    proxyJson<SeoAnalysisResult>(`/api/owner/marketing/seo/advisor/analyze${force ? '?force=true' : ''}`, 'POST', {}),
+
+  // Past analyses, newest first — powers the Advisor's history list.
+  getSeoAnalysisHistory: () => proxyGet<SeoAnalysisResult[]>(`/api/owner/marketing/seo/advisor/history`),
 
   // Business name/timezone + financial config (owner).
   getBusinessSettings: () => proxyGet<BusinessSettingsDto>(`/api/owner/settings/business`),

@@ -1,5 +1,6 @@
 package com.salonreview.web;
 
+import com.salonreview.config.AiSeoAdvisorProperties;
 import com.salonreview.config.AiTriageProperties;
 import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.config.BusinessFeatureService;
@@ -39,6 +40,7 @@ import java.util.Map;
 public class MeController {
 
     private final AiTriageProperties aiTriage;
+    private final AiSeoAdvisorProperties aiSeoAdvisor;
     private final RagProperties rag;
     private final AppUserRepository users;
     private final CurrentBusinessContext currentBusinessContext;
@@ -47,11 +49,12 @@ public class MeController {
     private final BusinessRepository businesses;
     private final BusinessFeatureService businessFeatures;
 
-    public MeController(AiTriageProperties aiTriage, RagProperties rag, AppUserRepository users,
-                        CurrentBusinessContext currentBusinessContext, PlatformAdminRepository platformAdmins,
-                        BusinessMembershipRepository memberships, BusinessRepository businesses,
-                        BusinessFeatureService businessFeatures) {
+    public MeController(AiTriageProperties aiTriage, AiSeoAdvisorProperties aiSeoAdvisor, RagProperties rag,
+                        AppUserRepository users, CurrentBusinessContext currentBusinessContext,
+                        PlatformAdminRepository platformAdmins, BusinessMembershipRepository memberships,
+                        BusinessRepository businesses, BusinessFeatureService businessFeatures) {
         this.aiTriage = aiTriage;
+        this.aiSeoAdvisor = aiSeoAdvisor;
         this.rag = rag;
         this.users = users;
         this.currentBusinessContext = currentBusinessContext;
@@ -87,7 +90,9 @@ public class MeController {
                 // seo-monitoring-dashboard design.md D6: purely business-gated, no deployment-level
                 // flag to layer on top of (unlike RAG/AI triage above) — the tab either exists for
                 // this business or it doesn't.
-                "seoMonitoringEnabled", businessFeatures.isEnabled(businessId, BusinessFeatureService.SEO_MONITORING_ENABLED)));
+                "seoMonitoringEnabled", businessFeatures.isEnabled(businessId, BusinessFeatureService.SEO_MONITORING_ENABLED),
+                "aiSeoAdvisorEnabled", aiSeoAdvisor.isEnabled()
+                        && businessFeatures.isEnabled(businessId, BusinessFeatureService.AI_SEO_ADVISOR_ENABLED)));
         // Phase 6.1/6.2 (design.md D12): activeBusinessId reflects any session-level switch
         // (CurrentBusinessContext is already populated for this request by
         // CurrentBusinessContextFilter, session-override-aware); businesses is the switcher's own
