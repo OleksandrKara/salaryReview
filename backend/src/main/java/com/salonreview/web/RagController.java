@@ -1,11 +1,11 @@
 package com.salonreview.web;
 
 import com.salonreview.ai.LangSmithTracer;
+import com.salonreview.ai.LanguageResolver;
 import com.salonreview.config.AppUserPrincipal;
 import com.salonreview.config.BusinessFeatureService;
 import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.config.RagProperties;
-import com.salonreview.domain.AppUser;
 import com.salonreview.domain.Language;
 import com.salonreview.kb.KbAiDraftService;
 import com.salonreview.rag.Citation;
@@ -88,14 +88,14 @@ public class RagController {
     @GetMapping("/suggestions")
     public ResponseEntity<StarterSuggestions> suggestions(@AuthenticationPrincipal AppUserPrincipal me) {
         if (!ragEnabledForCaller()) return ResponseEntity.notFound().build();
-        return ResponseEntity.ok(suggestionService.get(language(me), currentBusinessContext.id()));
+        return ResponseEntity.ok(suggestionService.get(LanguageResolver.resolve(users, me), currentBusinessContext.id()));
     }
 
     /** Regenerate and overwrite the stored starter prompts — the chat's on-demand refresh. */
     @PostMapping("/suggestions/refresh")
     public ResponseEntity<StarterSuggestions> refreshSuggestions(@AuthenticationPrincipal AppUserPrincipal me) {
         if (!ragEnabledForCaller()) return ResponseEntity.notFound().build();
-        return ResponseEntity.ok(suggestionService.refresh(language(me), currentBusinessContext.id()));
+        return ResponseEntity.ok(suggestionService.refresh(LanguageResolver.resolve(users, me), currentBusinessContext.id()));
     }
 
     /**
@@ -117,7 +117,7 @@ public class RagController {
             emitter.complete();
             return emitter;
         }
-        Language lang = language(me);
+        Language lang = LanguageResolver.resolve(users, me);
         Long businessId = currentBusinessContext.id();
         RagAnswerService.StreamSink sink = new RagAnswerService.StreamSink() {
             @Override public void token(String text) { send(emitter, "token", Map.of("text", text)); }
@@ -163,7 +163,7 @@ public class RagController {
             return ResponseEntity.badRequest().build();
         }
         try {
-            return ResponseEntity.ok(answerService.answer(body.question(), language(me), currentBusinessContext.id()));
+            return ResponseEntity.ok(answerService.answer(body.question(), LanguageResolver.resolve(users, me), currentBusinessContext.id()));
         } catch (RagAnswerService.RagAnswerException e) {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
         }
@@ -199,14 +199,6 @@ public class RagController {
         } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         }
-    }
-
-    /** The caller's preferred language, read fresh from the DB; English when unset. */
-    private Language language(AppUserPrincipal me) {
-        if (me == null) return Language.EN;
-        return users.findById(me.getUserId())
-                .map(AppUser::getPreferredLanguage)
-                .orElse(Language.EN) == Language.RU ? Language.RU : Language.EN;
     }
 
     public record AskRequest(String question) {}

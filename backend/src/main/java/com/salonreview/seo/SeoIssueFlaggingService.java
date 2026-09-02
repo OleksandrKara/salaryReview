@@ -29,6 +29,8 @@ public class SeoIssueFlaggingService {
     public void evaluatePageSnapshot(SeoPageSnapshot snapshot) {
         evaluateLcp(snapshot);
         evaluateCls(snapshot);
+        evaluateFcp(snapshot);
+        evaluateTbt(snapshot);
     }
 
     private void evaluateLcp(SeoPageSnapshot snapshot) {
@@ -65,6 +67,42 @@ public class SeoIssueFlaggingService {
                         strategyLabel(snapshot.getStrategy()), CoreWebVitalsThresholds.CLS_GOOD.toPlainString());
         openOrUpdate(snapshot.getBusinessId(), SeoTechnicalIssue.IssueType.CLS, snapshot.getUrl(), null,
                 snapshot.getStrategy(), severity, detail, cls);
+    }
+
+    private void evaluateFcp(SeoPageSnapshot snapshot) {
+        Integer fcpMs = snapshot.getFcpMs();
+        if (fcpMs == null) return;
+
+        if (fcpMs <= CoreWebVitalsThresholds.FCP_GOOD_MS) {
+            resolveIfOpen(snapshot.getBusinessId(), SeoTechnicalIssue.IssueType.FCP, snapshot.getUrl(), null, snapshot.getStrategy());
+            return;
+        }
+        SeoTechnicalIssue.Severity severity = fcpMs <= CoreWebVitalsThresholds.FCP_POOR_MS
+                ? SeoTechnicalIssue.Severity.NEEDS_IMPROVEMENT
+                : SeoTechnicalIssue.Severity.POOR;
+        String detail = "First Contentful Paint is %.1fs on %s (%s), above Google's %.1fs 'good' threshold."
+                .formatted(fcpMs / 1000.0, snapshot.getUrl(), strategyLabel(snapshot.getStrategy()),
+                        CoreWebVitalsThresholds.FCP_GOOD_MS / 1000.0);
+        openOrUpdate(snapshot.getBusinessId(), SeoTechnicalIssue.IssueType.FCP, snapshot.getUrl(), null,
+                snapshot.getStrategy(), severity, detail, BigDecimal.valueOf(fcpMs));
+    }
+
+    private void evaluateTbt(SeoPageSnapshot snapshot) {
+        Integer tbtMs = snapshot.getTbtMs();
+        if (tbtMs == null) return;
+
+        if (tbtMs <= CoreWebVitalsThresholds.TBT_GOOD_MS) {
+            resolveIfOpen(snapshot.getBusinessId(), SeoTechnicalIssue.IssueType.TBT, snapshot.getUrl(), null, snapshot.getStrategy());
+            return;
+        }
+        SeoTechnicalIssue.Severity severity = tbtMs <= CoreWebVitalsThresholds.TBT_POOR_MS
+                ? SeoTechnicalIssue.Severity.NEEDS_IMPROVEMENT
+                : SeoTechnicalIssue.Severity.POOR;
+        String detail = "Total Blocking Time is %dms on %s (%s), above Google's %dms 'good' threshold."
+                .formatted(tbtMs, snapshot.getUrl(), strategyLabel(snapshot.getStrategy()),
+                        CoreWebVitalsThresholds.TBT_GOOD_MS);
+        openOrUpdate(snapshot.getBusinessId(), SeoTechnicalIssue.IssueType.TBT, snapshot.getUrl(), null,
+                snapshot.getStrategy(), severity, detail, BigDecimal.valueOf(tbtMs));
     }
 
     private static String strategyLabel(SeoPageSnapshot.Strategy strategy) {

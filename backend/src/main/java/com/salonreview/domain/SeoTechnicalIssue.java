@@ -72,7 +72,7 @@ public class SeoTechnicalIssue {
     }
 
     public enum IssueType {
-        LCP, CLS, INP, CTR_OPPORTUNITY
+        LCP, CLS, INP, FCP, TBT, CTR_OPPORTUNITY
     }
 
     /** {@code ADVISORY} is only used by {@code CTR_OPPORTUNITY} — a real signal, but not sourced

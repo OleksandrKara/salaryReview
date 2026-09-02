@@ -89,22 +89,24 @@ public class SeoSyncService {
             LocalDate endDate = LocalDate.now(ZoneOffset.UTC);
             LocalDate startDate = endDate.minusDays(SEARCH_CONSOLE_WINDOW_DAYS - 1);
 
+            // One call for the whole window (rowLimit sized for every day to independently hit the
+            // per-day cap), not a call per day — see SearchConsoleClient.queryPerformance's own
+            // doc comment for why.
             List<SeoSearchMetricsSnapshot> saved = new ArrayList<>();
-            for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
-                for (SearchConsoleClient.QueryRow row : client.queryPerformance(siteUrl, date, SEARCH_CONSOLE_ROW_LIMIT)) {
-                    SeoSearchMetricsSnapshot snapshot = searchMetricsRepository
-                            .findByBusinessIdAndDateAndQueryAndPage(businessId, date, row.query(), row.page())
-                            .orElseGet(SeoSearchMetricsSnapshot::new);
-                    snapshot.setBusinessId(businessId);
-                    snapshot.setDate(date);
-                    snapshot.setQuery(row.query());
-                    snapshot.setPage(row.page());
-                    snapshot.setClicks((int) row.clicks());
-                    snapshot.setImpressions((int) row.impressions());
-                    snapshot.setCtr(row.ctr());
-                    snapshot.setPosition(row.position());
-                    saved.add(searchMetricsRepository.save(snapshot));
-                }
+            for (SearchConsoleClient.QueryRow row : client.queryPerformance(siteUrl, startDate, endDate,
+                    SEARCH_CONSOLE_ROW_LIMIT * SEARCH_CONSOLE_WINDOW_DAYS)) {
+                SeoSearchMetricsSnapshot snapshot = searchMetricsRepository
+                        .findByBusinessIdAndDateAndQueryAndPage(businessId, row.date(), row.query(), row.page())
+                        .orElseGet(SeoSearchMetricsSnapshot::new);
+                snapshot.setBusinessId(businessId);
+                snapshot.setDate(row.date());
+                snapshot.setQuery(row.query());
+                snapshot.setPage(row.page());
+                snapshot.setClicks((int) row.clicks());
+                snapshot.setImpressions((int) row.impressions());
+                snapshot.setCtr(row.ctr());
+                snapshot.setPosition(row.position());
+                saved.add(searchMetricsRepository.save(snapshot));
             }
             // Evaluated once across the whole window, not per-day — the CTR heuristic's trailing
             // average needs the full window to be a meaningful signal (see

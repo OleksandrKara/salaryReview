@@ -62,22 +62,28 @@ public class SearchConsoleClient {
         return sites;
     }
 
-    public record QueryRow(String query, String page, long clicks, long impressions, BigDecimal ctr, BigDecimal position) {
+    public record QueryRow(LocalDate date, String query, String page, long clicks, long impressions,
+            BigDecimal ctr, BigDecimal position) {
     }
 
-    /** Per-query performance for one day (a scheduled job calls this once per day, per business —
-     * design.md D4). {@code dimensions} is always {@code ["query", "page"]} so every row carries
-     * both, matching {@code seo_search_metrics_snapshot}'s shape. */
-    public List<QueryRow> queryPerformance(String siteUrl, LocalDate date, int rowLimit) {
+    /** Per-query performance for a whole date range in one call, {@code dimensions} always {@code
+     * ["date", "query", "page"]} so every row carries all three, matching {@code
+     * seo_search_metrics_snapshot}'s shape. Previously called once per day in a loop — GA4's own
+     * {@code dailyTotals} had the same one-call-per-day shape until it was found to fire 56
+     * sequential requests in one "Sync now" request and trip the reverse proxy's 60s read timeout;
+     * Search Console's {@code searchAnalytics.query} supports a date range plus a "date" dimension
+     * exactly like GA4's report API does, so the whole sync window is now one call instead of one
+     * per day, closing the same latent-504 risk here before it has a chance to actually fire. */
+    public List<QueryRow> queryPerformance(String siteUrl, LocalDate startDate, LocalDate endDate, int rowLimit) {
         // A real Map, not a hand-formatted JSON string — a raw String body handed to a
         // Jackson-message-converter-equipped RestClient gets serialized AS a JSON string
         // (quoted/escaped), not written through as-is, producing exactly the "root element must
         // be a message" 400 this hit during manual verification against the real API. Letting the
         // registered Jackson converter serialize a real Map avoids that double-encoding entirely.
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("startDate", date.toString());
-        body.put("endDate", date.toString());
-        body.put("dimensions", List.of("query", "page"));
+        body.put("startDate", startDate.toString());
+        body.put("endDate", endDate.toString());
+        body.put("dimensions", List.of("date", "query", "page"));
         body.put("rowLimit", rowLimit);
 
         // Pass the raw siteUrl (e.g. "sc-domain:akluxnails.com") as the URI template variable and
@@ -97,9 +103,10 @@ public class SearchConsoleClient {
         if (entries != null) {
             for (JsonNode row : entries) {
                 JsonNode keys = row.get("keys");
-                String query = keys != null && keys.size() > 0 ? keys.get(0).asText() : null;
-                String page = keys != null && keys.size() > 1 ? keys.get(1).asText() : null;
-                rows.add(new QueryRow(query, page,
+                LocalDate date = keys != null && keys.size() > 0 ? LocalDate.parse(keys.get(0).asText()) : null;
+                String query = keys != null && keys.size() > 1 ? keys.get(1).asText() : null;
+                String page = keys != null && keys.size() > 2 ? keys.get(2).asText() : null;
+                rows.add(new QueryRow(date, query, page,
                         row.path("clicks").asLong(0),
                         row.path("impressions").asLong(0),
                         BigDecimal.valueOf(row.path("ctr").asDouble(0)),

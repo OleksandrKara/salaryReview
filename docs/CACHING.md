@@ -145,6 +145,15 @@ still perfectly usable for month-over-month trend-watching.
 - **Also cleared by:** a backend restart/redeploy (in-memory, per-instance, same as every cache in
   this app).
 
+## SEO rank-tracking provider (planned, seo-intelligence-advisor Phase 5)
+
+Not built yet — this section is a placeholder pointing at where the pattern goes when Phase 5
+starts, so it isn't scattered across code comments once it exists. The new rank-tracking client
+(design.md D2/D12 in `openspec/changes/seo-intelligence-advisor/`) will gate its outbound calls
+with the same `Semaphore`-throttled + short-TTL-cached pattern `SquareClient` uses above (concurrency
+cap sized to the chosen provider's own documented rate limit at implementation time), rather than a
+new abstraction.
+
 ## Operational notes
 
 - The cache is **in‑memory per backend instance** — it's empty after a restart/redeploy (first load is
