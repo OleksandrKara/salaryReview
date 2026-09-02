@@ -44,6 +44,10 @@ public class SeoDashboardService {
     private final SeoAnalyticsSnapshotRepository analyticsSnapshotRepository;
     private final SeoTechnicalIssueRepository issueRepository;
     private final SeoTrackedQueryRepository trackedQueryRepository;
+    // Stateless, dependency-free (design.md D4) — constructed directly rather than injected, same
+    // as any other plain value-object helper; no reason to make Spring manage a bean with nothing
+    // to wire in.
+    private final SeoChangeDetectionService changeDetectionService = new SeoChangeDetectionService();
 
     public SeoDashboardService(SeoConnectionRepository connectionRepository,
             SeoSearchMetricsSnapshotRepository searchMetricsRepository,
@@ -79,17 +83,28 @@ public class SeoDashboardService {
 
     public record IssueRow(String issueType, String severity, String detail, String url, String query) {}
 
+    /** {@code previous} is {@code null} when there's no data at all for the equivalent
+     * immediately-prior period — the comparison is omitted entirely rather than shown against a
+     * partial/misleading baseline (seo-intelligence-advisor design.md, "never fake a YoY/period
+     * comparison without real history"). */
+    public record PeriodComparison(TrendPoint current, TrendPoint previous) {}
+
     public record Overview(boolean connected, java.time.Instant lastSyncAt, String lastSyncError,
                             List<TrendPoint> trend, List<AnalyticsPoint> analyticsTrend,
                             List<KeywordRow> topQueries, List<TrackedQueryRow> trackedQueries,
-                            CoreWebVitals mobile, CoreWebVitals desktop, List<IssueRow> activeIssues) {}
+                            CoreWebVitals mobile, CoreWebVitals desktop, List<IssueRow> activeIssues,
+                            PeriodComparison last7Days, PeriodComparison last28Days, PeriodComparison yearOverYear,
+                            List<SeoChangeDetectionService.QueryChange> gainers,
+                            List<SeoChangeDetectionService.QueryChange> losers,
+                            List<SeoChangeDetectionService.Opportunity> opportunities) {}
 
     /** {@code null} means "no seo_connection row yet" — the caller (controller) decides how to
      * render that (empty-state card, per design.md D7), not this service. */
     public Overview overview(Long businessId, int days) {
         SeoConnection connection = connectionRepository.findByBusinessId(businessId).orElse(null);
         if (connection == null) {
-            return new Overview(false, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of());
+            return new Overview(false, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of(),
+                    null, null, null, List.of(), List.of(), List.of());
         }
 
         LocalDate end = LocalDate.now();
@@ -104,7 +119,57 @@ public class SeoDashboardService {
                 trackedQueries(businessId, rows, start, end),
                 latestVitals(businessId, SeoPageSnapshot.Strategy.MOBILE),
                 latestVitals(businessId, SeoPageSnapshot.Strategy.DESKTOP),
-                activeIssues(businessId));
+                activeIssues(businessId),
+                last7DaysComparison(rows, businessId, end),
+                last28DaysComparison(rows, businessId, start, days),
+                yearOverYearComparison(rows, businessId, start, end),
+                changeDetectionService.gainers(rows, start, end),
+                changeDetectionService.losers(rows, start, end),
+                changeDetectionService.opportunities(rows, start, end));
+    }
+
+    /** Last 7 days vs. the 7 days immediately before that — both fully contained in the already-
+     * fetched main window, so only the prior week needs its own repository call. */
+    private PeriodComparison last7DaysComparison(List<SeoSearchMetricsSnapshot> mainWindowRows, Long businessId,
+            LocalDate mainEnd) {
+        LocalDate currentStart = mainEnd.minusDays(6);
+        List<SeoSearchMetricsSnapshot> currentRows = filterByDate(mainWindowRows, currentStart, mainEnd);
+        LocalDate priorEnd = currentStart.minusDays(1);
+        LocalDate priorStart = priorEnd.minusDays(6);
+        List<SeoSearchMetricsSnapshot> priorRows =
+                searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(businessId, priorStart, priorEnd);
+        if (priorRows.isEmpty()) return null;
+        return new PeriodComparison(aggregate(null, currentRows), aggregate(null, priorRows));
+    }
+
+    /** The full main window vs. the same-length window immediately before it — the prior window
+     * falls entirely outside what {@link #overview} already fetched, so it needs its own call. */
+    private PeriodComparison last28DaysComparison(List<SeoSearchMetricsSnapshot> mainWindowRows, Long businessId,
+            LocalDate mainStart, int windowDays) {
+        LocalDate priorEnd = mainStart.minusDays(1);
+        LocalDate priorStart = priorEnd.minusDays(windowDays - 1);
+        List<SeoSearchMetricsSnapshot> priorRows =
+                searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(businessId, priorStart, priorEnd);
+        if (priorRows.isEmpty()) return null;
+        return new PeriodComparison(aggregate(null, mainWindowRows), aggregate(null, priorRows));
+    }
+
+    /** The full main window vs. the same window one year prior — omitted entirely (returns {@code
+     * null}) when that year-ago window has no data at all, rather than comparing against a
+     * business that may not have existed/synced yet (design.md: no fabricated YoY baseline). */
+    private PeriodComparison yearOverYearComparison(List<SeoSearchMetricsSnapshot> mainWindowRows, Long businessId,
+            LocalDate mainStart, LocalDate mainEnd) {
+        LocalDate priorStart = mainStart.minusYears(1);
+        LocalDate priorEnd = mainEnd.minusYears(1);
+        List<SeoSearchMetricsSnapshot> priorRows =
+                searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(businessId, priorStart, priorEnd);
+        if (priorRows.isEmpty()) return null;
+        return new PeriodComparison(aggregate(null, mainWindowRows), aggregate(null, priorRows));
+    }
+
+    private static List<SeoSearchMetricsSnapshot> filterByDate(List<SeoSearchMetricsSnapshot> rows, LocalDate start,
+            LocalDate end) {
+        return rows.stream().filter(r -> !r.getDate().isBefore(start) && !r.getDate().isAfter(end)).toList();
     }
 
     /** No-op (not an error) if this exact query is already pinned — {@code

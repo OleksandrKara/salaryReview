@@ -159,11 +159,39 @@ export interface SeoCoreWebVitals {
 }
 
 export interface SeoIssueRow {
-  issueType: 'LCP' | 'CLS' | 'INP' | 'CTR_OPPORTUNITY';
+  issueType: 'LCP' | 'CLS' | 'INP' | 'FCP' | 'TBT' | 'CTR_OPPORTUNITY';
   severity: 'NEEDS_IMPROVEMENT' | 'POOR' | 'ADVISORY';
   detail: string;
   url: string | null;
   query: string | null;
+}
+
+// previous is null when there's no data for the equivalent prior period yet — the UI omits the
+// comparison entirely rather than showing a fabricated baseline.
+export interface SeoPeriodComparison {
+  current: SeoTrendPoint;
+  previous: SeoTrendPoint | null;
+}
+
+// positionDelta = previousPosition - currentPosition: positive means improved (same sign
+// convention as SeoTrackedQueryRow).
+export interface SeoQueryChange {
+  query: string;
+  previousPosition: number;
+  currentPosition: number;
+  positionDelta: number;
+  previousImpressions: number;
+  currentImpressions: number;
+  previousClicks: number;
+  currentClicks: number;
+}
+
+export interface SeoOpportunity {
+  query: string;
+  currentPosition: number;
+  currentImpressions: number;
+  currentCtr: number;
+  reason: 'STRIKING_DISTANCE' | 'HIGH_IMPRESSIONS_LOW_CTR' | 'GROWING_IMPRESSIONS';
 }
 
 export interface SeoOverviewDto {
@@ -177,6 +205,12 @@ export interface SeoOverviewDto {
   mobile: SeoCoreWebVitals | null;
   desktop: SeoCoreWebVitals | null;
   activeIssues: SeoIssueRow[];
+  last7Days: SeoPeriodComparison | null;
+  last28Days: SeoPeriodComparison | null;
+  yearOverYear: SeoPeriodComparison | null;
+  gainers: SeoQueryChange[];
+  losers: SeoQueryChange[];
+  opportunities: SeoOpportunity[];
 }
 
 export interface BusinessSettingsDto {
