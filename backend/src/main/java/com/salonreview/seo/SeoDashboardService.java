@@ -15,7 +15,6 @@ import com.salonreview.repo.SeoTrackedQueryRepository;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -48,6 +47,7 @@ public class SeoDashboardService {
     // as any other plain value-object helper; no reason to make Spring manage a bean with nothing
     // to wire in.
     private final SeoChangeDetectionService changeDetectionService = new SeoChangeDetectionService();
+    private final SeoPageAnalysisService pageAnalysisService = new SeoPageAnalysisService();
 
     public SeoDashboardService(SeoConnectionRepository connectionRepository,
             SeoSearchMetricsSnapshotRepository searchMetricsRepository,
@@ -96,7 +96,12 @@ public class SeoDashboardService {
                             PeriodComparison last7Days, PeriodComparison last28Days, PeriodComparison yearOverYear,
                             List<SeoChangeDetectionService.QueryChange> gainers,
                             List<SeoChangeDetectionService.QueryChange> losers,
-                            List<SeoChangeDetectionService.Opportunity> opportunities) {}
+                            List<SeoChangeDetectionService.Opportunity> opportunities,
+                            List<SeoPageAnalysisService.PageChange> winningPages,
+                            List<SeoPageAnalysisService.PageChange> losingPages,
+                            List<SeoPageAnalysisService.PageOpportunity> underperformingPages,
+                            List<SeoPageAnalysisService.PageOpportunity> contentOpportunities,
+                            List<SeoPageAnalysisService.CannibalizedQuery> cannibalizedQueries) {}
 
     /** {@code null} means "no seo_connection row yet" — the caller (controller) decides how to
      * render that (empty-state card, per design.md D7), not this service. */
@@ -104,7 +109,7 @@ public class SeoDashboardService {
         SeoConnection connection = connectionRepository.findByBusinessId(businessId).orElse(null);
         if (connection == null) {
             return new Overview(false, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of(),
-                    null, null, null, List.of(), List.of(), List.of());
+                    null, null, null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         }
 
         LocalDate end = LocalDate.now();
@@ -125,7 +130,12 @@ public class SeoDashboardService {
                 yearOverYearComparison(rows, businessId, start, end),
                 changeDetectionService.gainers(rows, start, end),
                 changeDetectionService.losers(rows, start, end),
-                changeDetectionService.opportunities(rows, start, end));
+                changeDetectionService.opportunities(rows, start, end),
+                pageAnalysisService.winningPages(rows, start, end),
+                pageAnalysisService.losingPages(rows, start, end),
+                pageAnalysisService.underperformingPages(rows, start, end),
+                pageAnalysisService.contentOpportunities(rows, start, end),
+                pageAnalysisService.cannibalizedQueries(rows));
     }
 
     /** Last 7 days vs. the 7 days immediately before that — both fully contained in the already-
@@ -274,18 +284,8 @@ public class SeoDashboardService {
     }
 
     private TrendPoint aggregate(LocalDate date, List<SeoSearchMetricsSnapshot> rows) {
-        long clicks = rows.stream().mapToLong(SeoSearchMetricsSnapshot::getClicks).sum();
-        long impressions = rows.stream().mapToLong(SeoSearchMetricsSnapshot::getImpressions).sum();
-        BigDecimal ctr = impressions == 0 ? BigDecimal.ZERO
-                : BigDecimal.valueOf(clicks).divide(BigDecimal.valueOf(impressions), 6, RoundingMode.HALF_UP);
-        // Position is weighted by impressions (Search Console's own convention — a query with 10x
-        // the impressions should dominate the average, not count equally against a rare one).
-        BigDecimal weightedPositionSum = rows.stream()
-                .map(r -> r.getPosition().multiply(BigDecimal.valueOf(r.getImpressions())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal position = impressions == 0 ? BigDecimal.ZERO
-                : weightedPositionSum.divide(BigDecimal.valueOf(impressions), 2, RoundingMode.HALF_UP);
-        return new TrendPoint(date, clicks, impressions, ctr, position);
+        SeoMetricsAggregate agg = SeoMetricsAggregate.of(rows);
+        return new TrendPoint(date, agg.clicks(), agg.impressions(), agg.ctr(), agg.position());
     }
 
     private CoreWebVitals latestVitals(Long businessId, SeoPageSnapshot.Strategy strategy) {

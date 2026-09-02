@@ -194,6 +194,36 @@ export interface SeoOpportunity {
   reason: 'STRIKING_DISTANCE' | 'HIGH_IMPRESSIONS_LOW_CTR' | 'GROWING_IMPRESSIONS';
 }
 
+// changeRatio = (current - previous) / previous: positive means growth.
+export interface SeoPageChange {
+  page: string;
+  previousImpressions: number;
+  currentImpressions: number;
+  previousClicks: number;
+  currentClicks: number;
+  changeRatio: number;
+}
+
+export interface SeoPageOpportunity {
+  page: string;
+  currentPosition: number;
+  currentImpressions: number;
+}
+
+export interface SeoPageShare {
+  page: string;
+  impressions: number;
+  share: number;
+  position: number;
+}
+
+// pages is sorted by impressions descending — the first entry can be shown as the presumed
+// "intended" page without asserting it as fact.
+export interface SeoCannibalizedQuery {
+  query: string;
+  pages: SeoPageShare[];
+}
+
 export interface SeoOverviewDto {
   connected: boolean;
   lastSyncAt: string | null;
@@ -211,6 +241,11 @@ export interface SeoOverviewDto {
   gainers: SeoQueryChange[];
   losers: SeoQueryChange[];
   opportunities: SeoOpportunity[];
+  winningPages: SeoPageChange[];
+  losingPages: SeoPageChange[];
+  underperformingPages: SeoPageOpportunity[];
+  contentOpportunities: SeoPageOpportunity[];
+  cannibalizedQueries: SeoCannibalizedQuery[];
 }
 
 export interface BusinessSettingsDto {

@@ -3,6 +3,7 @@ package com.salonreview.web;
 import com.salonreview.config.BusinessFeatureService;
 import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.seo.SeoChangeDetectionService;
+import com.salonreview.seo.SeoPageAnalysisService;
 import com.salonreview.seo.SeoDashboardService;
 import com.salonreview.seo.SeoDashboardService.AnalyticsPoint;
 import com.salonreview.seo.SeoDashboardService.CoreWebVitals;
@@ -106,12 +107,34 @@ public class SeoDashboardController {
                 toDto(o.last7Days()), toDto(o.last28Days()), toDto(o.yearOverYear()),
                 o.gainers().stream().map(SeoDashboardController::toDto).toList(),
                 o.losers().stream().map(SeoDashboardController::toDto).toList(),
-                o.opportunities().stream().map(SeoDashboardController::toDto).toList());
+                o.opportunities().stream().map(SeoDashboardController::toDto).toList(),
+                o.winningPages().stream().map(SeoDashboardController::toDto).toList(),
+                o.losingPages().stream().map(SeoDashboardController::toDto).toList(),
+                o.underperformingPages().stream().map(SeoDashboardController::toDto).toList(),
+                o.contentOpportunities().stream().map(SeoDashboardController::toDto).toList(),
+                o.cannibalizedQueries().stream().map(SeoDashboardController::toDto).toList());
     }
 
     private static PeriodComparisonDto toDto(SeoDashboardService.PeriodComparison c) {
         if (c == null) return null;
         return new PeriodComparisonDto(toDto(c.current()), toDto(c.previous()));
+    }
+
+    private static PageChangeDto toDto(SeoPageAnalysisService.PageChange p) {
+        return new PageChangeDto(p.page(), p.previousImpressions(), p.currentImpressions(),
+                p.previousClicks(), p.currentClicks(), p.changeRatio());
+    }
+
+    private static PageOpportunityDto toDto(SeoPageAnalysisService.PageOpportunity p) {
+        return new PageOpportunityDto(p.page(), p.currentPosition(), p.currentImpressions());
+    }
+
+    private static CannibalizedQueryDto toDto(SeoPageAnalysisService.CannibalizedQuery c) {
+        return new CannibalizedQueryDto(c.query(), c.pages().stream().map(SeoDashboardController::toDto).toList());
+    }
+
+    private static PageShareDto toDto(SeoPageAnalysisService.PageShare s) {
+        return new PageShareDto(s.page(), s.impressions(), s.share(), s.position());
     }
 
     private static QueryChangeDto toDto(SeoChangeDetectionService.QueryChange c) {
@@ -158,7 +181,28 @@ public class SeoDashboardController {
                                   PeriodComparisonDto last7Days, PeriodComparisonDto last28Days,
                                   PeriodComparisonDto yearOverYear,
                                   List<QueryChangeDto> gainers, List<QueryChangeDto> losers,
-                                  List<OpportunityDto> opportunities) {
+                                  List<OpportunityDto> opportunities,
+                                  List<PageChangeDto> winningPages, List<PageChangeDto> losingPages,
+                                  List<PageOpportunityDto> underperformingPages,
+                                  List<PageOpportunityDto> contentOpportunities,
+                                  List<CannibalizedQueryDto> cannibalizedQueries) {
+    }
+
+    /** {@code changeRatio} is {@code (current - previous) / previous}: positive means growth. */
+    public record PageChangeDto(String page, long previousImpressions, long currentImpressions,
+                                 long previousClicks, long currentClicks, java.math.BigDecimal changeRatio) {
+    }
+
+    public record PageOpportunityDto(String page, java.math.BigDecimal currentPosition, long currentImpressions) {
+    }
+
+    /** {@code pages} is sorted by impressions descending — the frontend can render the first entry
+     * as the presumed "intended" page without asserting it. */
+    public record CannibalizedQueryDto(String query, List<PageShareDto> pages) {
+    }
+
+    public record PageShareDto(String page, long impressions, java.math.BigDecimal share,
+                                java.math.BigDecimal position) {
     }
 
     /** {@code previous} is {@code null} when there's no data for the equivalent prior period —
