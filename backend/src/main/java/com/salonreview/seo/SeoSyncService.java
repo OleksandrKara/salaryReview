@@ -18,6 +18,7 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The actual sync logic shared by both scheduled jobs ({@link SeoSearchConsoleSyncScheduler}/
@@ -131,8 +132,11 @@ public class SeoSyncService {
             LocalDate endDate = LocalDate.now(ZoneOffset.UTC);
             LocalDate startDate = endDate.minusDays(ANALYTICS_WINDOW_DAYS - 1);
 
-            for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
-                GoogleAnalyticsClient.DailyTotals totals = client.dailyTotals(propertyId, date);
+            Map<LocalDate, GoogleAnalyticsClient.DailyTotals> totalsByDate =
+                    client.dailyTotals(propertyId, startDate, endDate);
+            for (Map.Entry<LocalDate, GoogleAnalyticsClient.DailyTotals> entry : totalsByDate.entrySet()) {
+                LocalDate date = entry.getKey();
+                GoogleAnalyticsClient.DailyTotals totals = entry.getValue();
                 SeoAnalyticsSnapshot snapshot = analyticsSnapshotRepository
                         .findByBusinessIdAndDate(businessId, date)
                         .orElseGet(SeoAnalyticsSnapshot::new);
