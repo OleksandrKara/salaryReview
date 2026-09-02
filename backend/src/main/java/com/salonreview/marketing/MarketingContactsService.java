@@ -114,16 +114,18 @@ public class MarketingContactsService {
         this.vipVisitThreshold = vipVisitThreshold;
     }
 
-    /** Both link-engagement pairs (Google review + feedback form) for one phone number, in the
-     * order the {@link Contact} record expects them — see #toContact and
-     * #contactFromLivePhoneLookup, its two callers. */
+    /** All three link-engagement pairs (Google review, Yelp review, feedback form — the checkout-
+     * review automation's full escalation) for one phone number, in the order the {@link Contact}
+     * record expects them — see #toContact and #contactFromLivePhoneLookup, its two callers. */
     private record ContactLinkEngagement(
-            SmsMessageLogService.LinkEngagement googleReview, SmsMessageLogService.LinkEngagement feedbackForm) {}
+            SmsMessageLogService.LinkEngagement googleReview, SmsMessageLogService.LinkEngagement yelpReview,
+            SmsMessageLogService.LinkEngagement feedbackForm) {}
 
     private ContactLinkEngagement linkEngagementFor(String phoneNumber) {
         Long businessId = currentBusinessContext.id();
         return new ContactLinkEngagement(
                 smsMessageLogService.linkEngagement(businessId, phoneNumber, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET),
+                smsMessageLogService.linkEngagement(businessId, phoneNumber, CheckoutReviewLinks.YELP_REVIEW_TARGET),
                 smsMessageLogService.linkEngagement(businessId, phoneNumber, CheckoutReviewLinks.FEEDBACK_FORM_TARGET));
     }
 
@@ -196,6 +198,7 @@ public class MarketingContactsService {
                 squareProfileUrl, submissions, appointments,
                 null, null,
                 engagement.googleReview().sentAt(), engagement.googleReview().clickedAt(),
+                engagement.yelpReview().sentAt(), engagement.yelpReview().clickedAt(),
                 engagement.feedbackForm().sentAt(), engagement.feedbackForm().clickedAt(),
                 visitCount >= vipVisitThreshold, (int) visitCount
         ));
@@ -748,6 +751,7 @@ public class MarketingContactsService {
                 raw.createdAt(),
                 raw.updatedAt(),
                 engagement.googleReview().sentAt(), engagement.googleReview().clickedAt(),
+                engagement.yelpReview().sentAt(), engagement.yelpReview().clickedAt(),
                 engagement.feedbackForm().sentAt(), engagement.feedbackForm().clickedAt(),
                 vip, visitCount == null ? null : visitCount.intValue()
         );

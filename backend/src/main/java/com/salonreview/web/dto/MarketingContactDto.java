@@ -70,6 +70,11 @@ public record MarketingContactDto(
              * CheckoutReviewReplyService) and shown in the contact sidebar so a manager can see at
              * a glance whether this person is a proven repeat reviewer. */
             Instant googleReviewClickedAt,
+            /** Same pair, for the checkout-review automation's middle escalation rung — a Yelp-
+             * review ask, sent only to a contact who already left a Google review (see
+             * CheckoutReviewLinks' 3-rung Google -&gt; Yelp -&gt; feedback-form escalation). */
+            Instant yelpReviewSentAt,
+            Instant yelpReviewClickedAt,
             /** Same pair, for the private feedback-form link (negative branch, or a repeat
              * reviewer's positive branch — see CheckoutReviewLinks). */
             Instant feedbackFormSentAt,

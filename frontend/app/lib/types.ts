@@ -518,6 +518,9 @@ export interface SmsConversationDto {
    * googleReviewClickedAt). Once both this and clickedFeedbackForm are true, the backend stops
    * sending new review-request asks to this number (see CheckoutReviewTriggerService). */
   clickedGoogleReview: boolean;
+  /** Same as clickedGoogleReview, for the checkout-review automation's middle escalation rung —
+   * a Yelp-review ask, sent only to a contact who already left a Google review. */
+  clickedYelpReview: boolean;
   /** Same as clickedGoogleReview, for the feedback-form link. */
   clickedFeedbackForm: boolean;
   /** True if any outbound message to this number has ever come back with Twilio delivery-status
@@ -2027,6 +2030,11 @@ export interface MarketingContact {
    * hasn't clicked yet", distinct from "never asked" (see ContactInfoPanel's review-links section). */
   googleReviewSentAt: string | null;
   googleReviewClickedAt: string | null;
+  /** Same pair for the checkout-review automation's middle escalation rung — a Yelp-review ask,
+   * sent only to a contact who already left a Google review (see backend CheckoutReviewLinks'
+   * 3-rung Google -> Yelp -> feedback-form escalation). */
+  yelpReviewSentAt: string | null;
+  yelpReviewClickedAt: string | null;
   /** Same pair for the private feedback-form link (negative branch, or a repeat reviewer's
    * positive branch — see backend CheckoutReviewLinks). */
   feedbackFormSentAt: string | null;

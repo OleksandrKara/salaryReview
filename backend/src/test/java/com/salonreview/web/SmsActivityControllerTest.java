@@ -92,12 +92,13 @@ class SmsActivityControllerTest {
         // marketingTrafficSource, channel, utmSource, utmMedium, utmCampaign, landingPageSlug,
         // variantName, deviceType, osName, osVersion, browserName, browserVersion,
         // smsMarketingConsent, emailMarketingConsent, squareProfileUrl, submissions,
-        // appointments, createdAt, updatedAt
+        // appointments, createdAt, updatedAt, googleReviewSentAt, googleReviewClickedAt,
+        // yelpReviewSentAt, yelpReviewClickedAt, feedbackFormSentAt, feedbackFormClickedAt
         return new Contact("id-1", givenName, null, PHONE, emailAddress,
                 null, null, null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null,
                 List.of(), List.of(), Instant.now(), Instant.now(),
-                null, null, null, null,
+                null, null, null, null, null, null,
                 false, null);
     }
 
@@ -136,6 +137,7 @@ class SmsActivityControllerTest {
                 .andExpect(jsonPath("$[0].blocked").value(false))
                 .andExpect(jsonPath("$[0].optedOut").value(false))
                 .andExpect(jsonPath("$[0].clickedGoogleReview").value(false))
+                .andExpect(jsonPath("$[0].clickedYelpReview").value(false))
                 .andExpect(jsonPath("$[0].clickedFeedbackForm").value(false))
                 .andExpect(jsonPath("$[0].flaggedAsSpam").value(false));
     }
@@ -178,12 +180,15 @@ class SmsActivityControllerTest {
         when(contactsService.resolveDisplayNames(List.of(PHONE))).thenReturn(Map.of());
         when(service.phoneNumbersWithClickedLinkTarget(BUSINESS_ID, List.of(PHONE), "GOOGLE_REVIEW"))
                 .thenReturn(java.util.Set.of(PHONE));
+        when(service.phoneNumbersWithClickedLinkTarget(BUSINESS_ID, List.of(PHONE), "YELP_REVIEW"))
+                .thenReturn(java.util.Set.of(PHONE));
         when(service.phoneNumbersWithClickedLinkTarget(BUSINESS_ID, List.of(PHONE), "FEEDBACK_FORM"))
                 .thenReturn(java.util.Set.of());
 
         mvc.perform(get("/api/owner/automations/activity/conversations"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].clickedGoogleReview").value(true))
+                .andExpect(jsonPath("$[0].clickedYelpReview").value(true))
                 .andExpect(jsonPath("$[0].clickedFeedbackForm").value(false));
     }
 

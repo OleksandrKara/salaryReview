@@ -150,6 +150,7 @@ class SmsDraftServiceTest {
         MarketingContactDto.Contact contact = new MarketingContactDto.Contact(
                 "c1", "maria", null, PHONE, null, null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, List.of(), List.of(appt), null, null, null, null, null, null,
+                null, null,
                 true, 5);
         when(contactsService.contactByPhone(PHONE)).thenReturn(Optional.of(contact));
         when(smsMessageLogService.thread(BUSINESS_ID, PHONE)).thenReturn(List.of(
