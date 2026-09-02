@@ -5,12 +5,14 @@ import com.salonreview.domain.SeoConnection;
 import com.salonreview.domain.SeoPageSnapshot;
 import com.salonreview.domain.SeoSearchMetricsSnapshot;
 import com.salonreview.domain.SeoTechnicalIssue;
+import com.salonreview.domain.SeoTrackedKeyword;
 import com.salonreview.domain.SeoTrackedQuery;
 import com.salonreview.repo.SeoAnalyticsSnapshotRepository;
 import com.salonreview.repo.SeoConnectionRepository;
 import com.salonreview.repo.SeoPageSnapshotRepository;
 import com.salonreview.repo.SeoSearchMetricsSnapshotRepository;
 import com.salonreview.repo.SeoTechnicalIssueRepository;
+import com.salonreview.repo.SeoTrackedKeywordRepository;
 import com.salonreview.repo.SeoTrackedQueryRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -24,8 +26,11 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SeoDashboardServiceTest {
@@ -36,6 +41,7 @@ class SeoDashboardServiceTest {
     private SeoAnalyticsSnapshotRepository analyticsSnapshotRepository;
     private SeoTechnicalIssueRepository issueRepository;
     private SeoTrackedQueryRepository trackedQueryRepository;
+    private SeoTrackedKeywordRepository trackedKeywordRepository;
     private SeoDashboardService service;
 
     @BeforeEach
@@ -46,11 +52,13 @@ class SeoDashboardServiceTest {
         analyticsSnapshotRepository = mock(SeoAnalyticsSnapshotRepository.class);
         issueRepository = mock(SeoTechnicalIssueRepository.class);
         trackedQueryRepository = mock(SeoTrackedQueryRepository.class);
+        trackedKeywordRepository = mock(SeoTrackedKeywordRepository.class);
         service = new SeoDashboardService(connectionRepository, searchMetricsRepository, pageSnapshotRepository,
-                analyticsSnapshotRepository, issueRepository, trackedQueryRepository);
+                analyticsSnapshotRepository, issueRepository, trackedQueryRepository, trackedKeywordRepository);
         when(analyticsSnapshotRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(any(), any(), any()))
                 .thenReturn(List.of());
         when(trackedQueryRepository.findByBusinessIdOrderByCreatedAtAsc(any())).thenReturn(List.of());
+        when(trackedKeywordRepository.findByBusinessIdOrderByCreatedAtAsc(any())).thenReturn(List.of());
     }
 
     @Test
@@ -280,6 +288,69 @@ class SeoDashboardServiceTest {
         assertThat(overview.gainers()).hasSize(1);
         assertThat(overview.gainers().get(0).query()).isEqualTo("gainer query");
         assertThat(overview.losers()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("addTrackedKeyword() creates a new row when no matching (keyword, location, device) exists")
+    void addTrackedKeywordCreatesNewRow() {
+        service.addTrackedKeyword(1L, "russian manicure san diego", "Downtown San Diego",
+                SeoTrackedKeyword.Device.MOBILE, "https://akluxnails.com/russian-manicure");
+
+        verify(trackedKeywordRepository).save(argThat(k ->
+                k.getBusinessId().equals(1L) && k.getKeyword().equals("russian manicure san diego")
+                        && k.getLocation().equals("Downtown San Diego") && k.getDevice() == SeoTrackedKeyword.Device.MOBILE
+                        && k.isActive()));
+    }
+
+    @Test
+    @DisplayName("addTrackedKeyword() is a no-op when an active row for the same (keyword, location, device) exists")
+    void addTrackedKeywordNoOpWhenActiveDuplicateExists() {
+        SeoTrackedKeyword existing = SeoTrackedKeyword.builder().id(1L).businessId(1L)
+                .keyword("russian manicure san diego").location("Downtown San Diego")
+                .device(SeoTrackedKeyword.Device.MOBILE).active(true).build();
+        when(trackedKeywordRepository.findByBusinessIdOrderByCreatedAtAsc(1L)).thenReturn(List.of(existing));
+
+        service.addTrackedKeyword(1L, "russian manicure san diego", "Downtown San Diego",
+                SeoTrackedKeyword.Device.MOBILE, null);
+
+        verify(trackedKeywordRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("addTrackedKeyword() reactivates an inactive row for the same (keyword, location, device)")
+    void addTrackedKeywordReactivatesInactiveRow() {
+        SeoTrackedKeyword existing = SeoTrackedKeyword.builder().id(1L).businessId(1L)
+                .keyword("russian manicure san diego").location("Downtown San Diego")
+                .device(SeoTrackedKeyword.Device.MOBILE).active(false).build();
+        when(trackedKeywordRepository.findByBusinessIdOrderByCreatedAtAsc(1L)).thenReturn(List.of(existing));
+
+        service.addTrackedKeyword(1L, "russian manicure san diego", "Downtown San Diego",
+                SeoTrackedKeyword.Device.MOBILE, "https://akluxnails.com/russian-manicure");
+
+        assertThat(existing.isActive()).isTrue();
+        assertThat(existing.getTargetUrl()).isEqualTo("https://akluxnails.com/russian-manicure");
+        verify(trackedKeywordRepository).save(existing);
+    }
+
+    @Test
+    @DisplayName("removeTrackedKeyword() deletes only when the id belongs to the calling business")
+    void removeTrackedKeywordIsBusinessScoped() {
+        SeoTrackedKeyword existing = SeoTrackedKeyword.builder().id(5L).businessId(1L).build();
+        when(trackedKeywordRepository.findByIdAndBusinessId(5L, 1L)).thenReturn(Optional.of(existing));
+
+        service.removeTrackedKeyword(1L, 5L);
+
+        verify(trackedKeywordRepository).delete(existing);
+    }
+
+    @Test
+    @DisplayName("removeTrackedKeyword() is a no-op when the id doesn't belong to the calling business")
+    void removeTrackedKeywordNoOpForWrongBusiness() {
+        when(trackedKeywordRepository.findByIdAndBusinessId(5L, 1L)).thenReturn(Optional.empty());
+
+        service.removeTrackedKeyword(1L, 5L);
+
+        verify(trackedKeywordRepository, never()).delete(any());
     }
 
     private static SeoSearchMetricsSnapshot row(LocalDate date, String query, String page, int clicks,

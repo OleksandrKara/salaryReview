@@ -22,6 +22,7 @@ import type {
   SeoPageOpportunity,
   SeoPeriodComparison,
   SeoQueryChange,
+  SeoTrackedKeywordRow,
   SeoTrackedQueryRow,
 } from '../../../lib/types';
 
@@ -464,12 +465,122 @@ function TrackedQueriesCard({
   );
 }
 
+const DEFAULT_TRACKED_KEYWORD_LOCATION = 'Downtown San Diego';
+
+/** Local-SEO rank-tracking watchlist (seo-intelligence-advisor Phase 4) — location is a required,
+ * always-visible field per design.md D3, never a hidden default: a ranking in one location must
+ * never be conflated with the whole market. No real rank data exists yet (Phase 5 connects an
+ * external provider); every row shows a "not connected yet" note instead of a fabricated position. */
+function TrackedKeywordsCard({
+  rows,
+  onAdd,
+  onRemove,
+  pending,
+}: {
+  rows: SeoTrackedKeywordRow[];
+  onAdd: (keyword: string, location: string, device: string, targetUrl: string | null) => void;
+  onRemove: (id: number) => void;
+  pending: number | null;
+}) {
+  const [keyword, setKeyword] = useState('');
+  const [location, setLocation] = useState(DEFAULT_TRACKED_KEYWORD_LOCATION);
+  const [device, setDevice] = useState<'MOBILE' | 'DESKTOP'>('MOBILE');
+
+  function submitNewKeyword(e: FormEvent) {
+    e.preventDefault();
+    const trimmedKeyword = keyword.trim();
+    const trimmedLocation = location.trim();
+    if (!trimmedKeyword || !trimmedLocation) return;
+    onAdd(trimmedKeyword, trimmedLocation, device, null);
+    setKeyword('');
+  }
+
+  return (
+    <div className="rounded-lg ring-1 ring-zinc-200">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-4 py-2">
+        <p className="text-sm font-medium text-zinc-700">Local SEO keywords</p>
+        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-500">
+          Rank tracking not connected yet
+        </span>
+      </div>
+
+      {rows.length === 0 ? (
+        <p className="px-4 py-8 text-center text-sm text-zinc-400">
+          No keywords added yet. Build your list now — real position tracking starts once rank
+          tracking is connected.
+        </p>
+      ) : (
+        <ul className="divide-y divide-zinc-100">
+          {rows.map((row) => (
+            <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 text-sm">
+              <div className="flex min-w-0 flex-col">
+                <span className="truncate text-zinc-700">{row.keyword}</span>
+                <span className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-400">
+                  <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 font-medium text-zinc-500">
+                    {row.location}
+                  </span>
+                  <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 font-medium text-zinc-500">
+                    {row.device === 'MOBILE' ? 'Mobile' : 'Desktop'}
+                  </span>
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => onRemove(row.id)}
+                disabled={pending === row.id}
+                aria-label={`Remove "${row.keyword}"`}
+                className="shrink-0 rounded-full px-2 py-1 text-xs font-medium text-zinc-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+              >
+                {pending === row.id ? '…' : '×'}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <form onSubmit={submitNewKeyword} className="flex flex-col gap-2 border-t border-zinc-100 p-3 sm:flex-row">
+        <input
+          type="text"
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          placeholder="Keyword you want to rank for…"
+          className="min-w-0 flex-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"
+        />
+        <input
+          type="text"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          placeholder="Location"
+          className="min-w-0 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none sm:w-40"
+        />
+        <select
+          value={device}
+          onChange={(e) => setDevice(e.target.value as 'MOBILE' | 'DESKTOP')}
+          className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm focus:border-zinc-400 focus:outline-none"
+        >
+          <option value="MOBILE">Mobile</option>
+          <option value="DESKTOP">Desktop</option>
+        </select>
+        <button
+          type="submit"
+          disabled={!keyword.trim() || !location.trim() || pending !== null}
+          className="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+        >
+          Add
+        </button>
+      </form>
+    </div>
+  );
+}
+
 export default function SeoDashboardView({ initialData }: { initialData: SeoOverviewDto }) {
   const [data, setData] = useState(initialData);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [trackedQueryPending, setTrackedQueryPending] = useState<string | null>(null);
   const [trackedQueryError, setTrackedQueryError] = useState<string | null>(null);
+  const [trackedKeywordPending, setTrackedKeywordPending] = useState<number | null>(null);
+  const [trackedKeywordError, setTrackedKeywordError] = useState<string | null>(null);
 
   async function syncNow() {
     setSyncing(true);
@@ -507,16 +618,52 @@ export default function SeoDashboardView({ initialData }: { initialData: SeoOver
     }
   }
 
+  async function addTrackedKeyword(keyword: string, location: string, device: string, targetUrl: string | null) {
+    setTrackedKeywordPending(0); // no id yet for a not-yet-created row — any non-null value disables the form
+    setTrackedKeywordError(null);
+    try {
+      setData(await api.addSeoTrackedKeyword(keyword, location, device, targetUrl));
+    } catch (e) {
+      setTrackedKeywordError(e instanceof Error ? e.message : 'Could not add that keyword. Please try again.');
+    } finally {
+      setTrackedKeywordPending(null);
+    }
+  }
+
+  async function removeTrackedKeyword(id: number) {
+    setTrackedKeywordPending(id);
+    setTrackedKeywordError(null);
+    try {
+      setData(await api.removeSeoTrackedKeyword(id));
+    } catch (e) {
+      setTrackedKeywordError(e instanceof Error ? e.message : 'Could not remove that keyword. Please try again.');
+    } finally {
+      setTrackedKeywordPending(null);
+    }
+  }
+
   if (!data.connected) {
+    // The keyword watchlist (Phase 4) doesn't depend on Search Console/GA4/PageSpeed at all — an
+    // owner can build their local-SEO list before ever connecting credentials, so it renders here
+    // too rather than being hidden behind this same wall (design.md tasks.md 4.3's own intent).
     return (
-      <div className="rounded-lg p-8 text-center ring-1 ring-zinc-200">
-        <p className="text-sm text-zinc-600">SEO monitoring is on for this business, but no credentials are connected yet.</p>
-        <Link
-          href="/owner/settings/seo"
-          className="mt-4 inline-flex items-center gap-2 rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white"
-        >
-          Connect Search Console, GA4 &amp; PageSpeed
-        </Link>
+      <div className="flex flex-col gap-6">
+        <div className="rounded-lg p-8 text-center ring-1 ring-zinc-200">
+          <p className="text-sm text-zinc-600">SEO monitoring is on for this business, but no credentials are connected yet.</p>
+          <Link
+            href="/owner/settings/seo"
+            className="mt-4 inline-flex items-center gap-2 rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white"
+          >
+            Connect Search Console, GA4 &amp; PageSpeed
+          </Link>
+        </div>
+        {trackedKeywordError && <p className="text-sm text-red-600">{trackedKeywordError}</p>}
+        <TrackedKeywordsCard
+          rows={data.trackedKeywords}
+          onAdd={addTrackedKeyword}
+          onRemove={removeTrackedKeyword}
+          pending={trackedKeywordPending}
+        />
       </div>
     );
   }
@@ -705,6 +852,14 @@ export default function SeoDashboardView({ initialData }: { initialData: SeoOver
       </div>
 
       <CannibalizationCard queries={data.cannibalizedQueries} />
+
+      {trackedKeywordError && <p className="text-sm text-red-600">{trackedKeywordError}</p>}
+      <TrackedKeywordsCard
+        rows={data.trackedKeywords}
+        onAdd={addTrackedKeyword}
+        onRemove={removeTrackedKeyword}
+        pending={trackedKeywordPending}
+      />
 
       <div className="rounded-lg ring-1 ring-zinc-200">
         <p className="border-b border-zinc-100 px-4 py-2 text-sm font-medium text-zinc-700">Top queries</p>

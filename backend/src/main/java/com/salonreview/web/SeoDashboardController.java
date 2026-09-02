@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.salonreview.config.BusinessFeatureService;
 import com.salonreview.config.CurrentBusinessContext;
+import com.salonreview.domain.SeoTrackedKeyword;
 import com.salonreview.seo.SeoChangeDetectionService;
 import com.salonreview.seo.SeoPageAnalysisService;
 import com.salonreview.seo.SeoDashboardService;
@@ -88,6 +89,36 @@ public class SeoDashboardController {
         return toDto(dashboardService.overview(businessId, DEFAULT_TREND_DAYS));
     }
 
+    /** Owner-curated keyword rank-tracking list (seo-intelligence-advisor Phase 4) — no real rank
+     * check happens yet (Phase 5), this only lets the owner build the list. Same owner-only,
+     * blank-rejected-here convention as {@code /tracked-queries}. */
+    @PostMapping("/tracked-keywords")
+    public SeoOverviewDto addTrackedKeyword(@RequestBody TrackedKeywordRequest request) {
+        Long businessId = requireFeatureEnabled();
+        String keyword = request.keyword() == null ? "" : request.keyword().trim();
+        String location = request.location() == null ? "" : request.location().trim();
+        if (keyword.isEmpty() || location.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "keyword and location must not be blank");
+        }
+        SeoTrackedKeyword.Device device;
+        try {
+            device = SeoTrackedKeyword.Device.valueOf(
+                    (request.device() == null ? "MOBILE" : request.device()).toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "device must be MOBILE or DESKTOP");
+        }
+        String targetUrl = request.targetUrl() == null || request.targetUrl().isBlank() ? null : request.targetUrl().trim();
+        dashboardService.addTrackedKeyword(businessId, keyword, location, device, targetUrl);
+        return toDto(dashboardService.overview(businessId, DEFAULT_TREND_DAYS));
+    }
+
+    @DeleteMapping("/tracked-keywords/{id}")
+    public SeoOverviewDto removeTrackedKeyword(@PathVariable Long id) {
+        Long businessId = requireFeatureEnabled();
+        dashboardService.removeTrackedKeyword(businessId, id);
+        return toDto(dashboardService.overview(businessId, DEFAULT_TREND_DAYS));
+    }
+
     private Long requireFeatureEnabled() {
         Long businessId = currentBusinessContext.id();
         if (!businessFeatures.isEnabled(businessId, BusinessFeatureService.SEO_MONITORING_ENABLED)) {
@@ -112,7 +143,12 @@ public class SeoDashboardController {
                 o.losingPages().stream().map(SeoDashboardController::toDto).toList(),
                 o.underperformingPages().stream().map(SeoDashboardController::toDto).toList(),
                 o.contentOpportunities().stream().map(SeoDashboardController::toDto).toList(),
-                o.cannibalizedQueries().stream().map(SeoDashboardController::toDto).toList());
+                o.cannibalizedQueries().stream().map(SeoDashboardController::toDto).toList(),
+                o.trackedKeywords().stream().map(SeoDashboardController::toDto).toList());
+    }
+
+    private static TrackedKeywordRowDto toDto(SeoDashboardService.TrackedKeywordRow k) {
+        return new TrackedKeywordRowDto(k.id(), k.keyword(), k.targetUrl(), k.location(), k.device(), k.active());
     }
 
     private static PeriodComparisonDto toDto(SeoDashboardService.PeriodComparison c) {
@@ -185,7 +221,17 @@ public class SeoDashboardController {
                                   List<PageChangeDto> winningPages, List<PageChangeDto> losingPages,
                                   List<PageOpportunityDto> underperformingPages,
                                   List<PageOpportunityDto> contentOpportunities,
-                                  List<CannibalizedQueryDto> cannibalizedQueries) {
+                                  List<CannibalizedQueryDto> cannibalizedQueries,
+                                  List<TrackedKeywordRowDto> trackedKeywords) {
+    }
+
+    /** {@code device} is {@code SeoTrackedKeyword.Device}'s name. No rank data yet — {@code
+     * seo_rank_snapshot} (Phase 5) is keyed by {@code id} once a rank-tracking provider connects. */
+    public record TrackedKeywordRowDto(Long id, String keyword, String targetUrl, String location, String device,
+                                        boolean active) {
+    }
+
+    public record TrackedKeywordRequest(String keyword, String location, String device, String targetUrl) {
     }
 
     /** {@code changeRatio} is {@code (current - previous) / previous}: positive means growth. */

@@ -265,6 +265,12 @@ export const api = {
   removeSeoTrackedQuery: (query: string) =>
     proxyDeleteJson<SeoOverviewDto>(`/api/owner/marketing/seo/tracked-queries?query=${encodeURIComponent(query)}`),
 
+  addSeoTrackedKeyword: (keyword: string, location: string, device: string, targetUrl: string | null) =>
+    proxyJson<SeoOverviewDto>(`/api/owner/marketing/seo/tracked-keywords`, 'POST', { keyword, location, device, targetUrl }),
+
+  removeSeoTrackedKeyword: (id: number) =>
+    proxyDeleteJson<SeoOverviewDto>(`/api/owner/marketing/seo/tracked-keywords/${id}`),
+
   // Business name/timezone + financial config (owner).
   getBusinessSettings: () => proxyGet<BusinessSettingsDto>(`/api/owner/settings/business`),
 
