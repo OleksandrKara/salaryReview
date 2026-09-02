@@ -1,13 +1,17 @@
 package com.salonreview.seo;
 
+import com.salonreview.domain.SeoAnalyticsSnapshot;
 import com.salonreview.domain.SeoConnection;
 import com.salonreview.domain.SeoPageSnapshot;
 import com.salonreview.domain.SeoSearchMetricsSnapshot;
 import com.salonreview.domain.SeoTechnicalIssue;
+import com.salonreview.domain.SeoTrackedQuery;
+import com.salonreview.repo.SeoAnalyticsSnapshotRepository;
 import com.salonreview.repo.SeoConnectionRepository;
 import com.salonreview.repo.SeoPageSnapshotRepository;
 import com.salonreview.repo.SeoSearchMetricsSnapshotRepository;
 import com.salonreview.repo.SeoTechnicalIssueRepository;
+import com.salonreview.repo.SeoTrackedQueryRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,7 +32,9 @@ class SeoDashboardServiceTest {
     private SeoConnectionRepository connectionRepository;
     private SeoSearchMetricsSnapshotRepository searchMetricsRepository;
     private SeoPageSnapshotRepository pageSnapshotRepository;
+    private SeoAnalyticsSnapshotRepository analyticsSnapshotRepository;
     private SeoTechnicalIssueRepository issueRepository;
+    private SeoTrackedQueryRepository trackedQueryRepository;
     private SeoDashboardService service;
 
     @BeforeEach
@@ -36,8 +42,14 @@ class SeoDashboardServiceTest {
         connectionRepository = mock(SeoConnectionRepository.class);
         searchMetricsRepository = mock(SeoSearchMetricsSnapshotRepository.class);
         pageSnapshotRepository = mock(SeoPageSnapshotRepository.class);
+        analyticsSnapshotRepository = mock(SeoAnalyticsSnapshotRepository.class);
         issueRepository = mock(SeoTechnicalIssueRepository.class);
-        service = new SeoDashboardService(connectionRepository, searchMetricsRepository, pageSnapshotRepository, issueRepository);
+        trackedQueryRepository = mock(SeoTrackedQueryRepository.class);
+        service = new SeoDashboardService(connectionRepository, searchMetricsRepository, pageSnapshotRepository,
+                analyticsSnapshotRepository, issueRepository, trackedQueryRepository);
+        when(analyticsSnapshotRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(any(), any(), any()))
+                .thenReturn(List.of());
+        when(trackedQueryRepository.findByBusinessIdOrderByCreatedAtAsc(any())).thenReturn(List.of());
     }
 
     @Test
@@ -122,6 +134,84 @@ class SeoDashboardServiceTest {
         assertThat(overview.desktop()).isNull();
         assertThat(overview.activeIssues()).hasSize(1);
         assertThat(overview.activeIssues().get(0).issueType()).isEqualTo("LCP");
+    }
+
+    @Test
+    @DisplayName("analytics trend maps GA4 snapshot rows straight through, one point per day")
+    void analyticsTrendMapsSnapshotRows() {
+        when(connectionRepository.findByBusinessId(1L)).thenReturn(Optional.of(SeoConnection.builder().businessId(1L).build()));
+        when(searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(any(), any(), any())).thenReturn(List.of());
+        when(pageSnapshotRepository.findFirstByBusinessIdAndStrategyOrderByDateDesc(any(), any())).thenReturn(Optional.empty());
+        when(issueRepository.findByBusinessIdAndResolvedAtIsNull(any())).thenReturn(List.of());
+        LocalDate day = LocalDate.of(2026, 9, 1);
+        when(analyticsSnapshotRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(any(), any(), any()))
+                .thenReturn(List.of(SeoAnalyticsSnapshot.builder().businessId(1L).date(day)
+                        .totalUsers(42).newUsers(10).organicSessions(17).build()));
+
+        SeoDashboardService.Overview overview = service.overview(1L, 28);
+
+        assertThat(overview.analyticsTrend()).hasSize(1);
+        SeoDashboardService.AnalyticsPoint point = overview.analyticsTrend().get(0);
+        assertThat(point.date()).isEqualTo(day);
+        assertThat(point.totalUsers()).isEqualTo(42);
+        assertThat(point.newUsers()).isEqualTo(10);
+        assertThat(point.organicSessions()).isEqualTo(17);
+    }
+
+    @Test
+    @DisplayName("tracked queries auto-suggest by impressions when the owner hasn't pinned any, with a position delta")
+    void trackedQueriesAutoSuggestWhenNonePinned() {
+        LocalDate end = LocalDate.now();
+        LocalDate earlierHalf = end.minusDays(20);
+        LocalDate laterHalf = end.minusDays(2);
+        when(connectionRepository.findByBusinessId(1L)).thenReturn(Optional.of(SeoConnection.builder().businessId(1L).build()));
+        when(pageSnapshotRepository.findFirstByBusinessIdAndStrategyOrderByDateDesc(any(), any())).thenReturn(Optional.empty());
+        when(issueRepository.findByBusinessIdAndResolvedAtIsNull(any())).thenReturn(List.of());
+        when(searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(any(), any(), any())).thenReturn(List.of(
+                // Both queries fit under the auto-suggest cap (10), so both are surfaced, ranked by
+                // impressions — "popular query" first. Its position improves from 8 (earlier half)
+                // to 3 (later half): a positive delta. "rare query" only has data in the earlier
+                // half, so its current-half fields are null, not a misleading zero.
+                row(earlierHalf, "popular query", "/", 5, 100, BigDecimal.valueOf(0.05), BigDecimal.valueOf(8)),
+                row(laterHalf, "popular query", "/", 20, 100, BigDecimal.valueOf(0.20), BigDecimal.valueOf(3)),
+                row(earlierHalf, "rare query", "/", 1, 5, BigDecimal.valueOf(0.2), BigDecimal.valueOf(15))));
+
+        SeoDashboardService.Overview overview = service.overview(1L, 28);
+
+        assertThat(overview.trackedQueries()).hasSize(2);
+        SeoDashboardService.TrackedQueryRow popular = overview.trackedQueries().get(0);
+        assertThat(popular.query()).isEqualTo("popular query");
+        assertThat(popular.autoSuggested()).isTrue();
+        assertThat(popular.previousPosition()).isEqualByComparingTo(BigDecimal.valueOf(8));
+        assertThat(popular.currentPosition()).isEqualByComparingTo(BigDecimal.valueOf(3));
+        // previous - current = 8 - 3 = 5: positive means it improved (moved to a better position).
+        assertThat(popular.positionDelta()).isEqualByComparingTo(BigDecimal.valueOf(5));
+
+        SeoDashboardService.TrackedQueryRow rare = overview.trackedQueries().get(1);
+        assertThat(rare.query()).isEqualTo("rare query");
+        assertThat(rare.currentPosition()).isNull();
+        assertThat(rare.positionDelta()).isNull();
+    }
+
+    @Test
+    @DisplayName("tracked queries use the owner's pinned list instead of auto-suggesting, once any exist")
+    void trackedQueriesUsePinnedListWhenPresent() {
+        LocalDate end = LocalDate.now();
+        LocalDate laterHalf = end.minusDays(2);
+        when(connectionRepository.findByBusinessId(1L)).thenReturn(Optional.of(SeoConnection.builder().businessId(1L).build()));
+        when(pageSnapshotRepository.findFirstByBusinessIdAndStrategyOrderByDateDesc(any(), any())).thenReturn(Optional.empty());
+        when(issueRepository.findByBusinessIdAndResolvedAtIsNull(any())).thenReturn(List.of());
+        when(trackedQueryRepository.findByBusinessIdOrderByCreatedAtAsc(1L)).thenReturn(List.of(
+                SeoTrackedQuery.builder().businessId(1L).query("rare query").build()));
+        when(searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(any(), any(), any())).thenReturn(List.of(
+                row(laterHalf, "popular query", "/", 20, 100, BigDecimal.valueOf(0.20), BigDecimal.valueOf(3)),
+                row(laterHalf, "rare query", "/", 1, 5, BigDecimal.valueOf(0.2), BigDecimal.valueOf(15))));
+
+        SeoDashboardService.Overview overview = service.overview(1L, 28);
+
+        assertThat(overview.trackedQueries()).hasSize(1);
+        assertThat(overview.trackedQueries().get(0).query()).isEqualTo("rare query");
+        assertThat(overview.trackedQueries().get(0).autoSuggested()).isFalse();
     }
 
     private static SeoSearchMetricsSnapshot row(LocalDate date, String query, String page, int clicks,

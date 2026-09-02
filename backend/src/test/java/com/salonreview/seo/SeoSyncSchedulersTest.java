@@ -60,6 +60,42 @@ class SeoSyncSchedulersTest {
     }
 
     @Test
+    void searchConsoleScheduler_alsoRunsAnalyticsSyncPerBusiness() {
+        SeoConnectionRepository connections = mock(SeoConnectionRepository.class);
+        BusinessFeatureService features = mock(BusinessFeatureService.class);
+        CurrentBusinessContext context = realRunAsContext();
+        SeoSyncService syncService = mock(SeoSyncService.class);
+
+        when(connections.findAll()).thenReturn(List.of(connectionFor(1L), connectionFor(2L)));
+        when(features.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(false);
+        when(features.isEnabled(2L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
+
+        new SeoSearchConsoleSyncScheduler(connections, features, context, syncService).sync();
+
+        verify(syncService, never()).syncAnalytics(1L);
+        verify(syncService).syncAnalytics(2L);
+    }
+
+    @Test
+    void searchConsoleScheduler_analyticsFailureDoesNotBlockSearchConsoleOrAnotherBusiness() {
+        SeoConnectionRepository connections = mock(SeoConnectionRepository.class);
+        BusinessFeatureService features = mock(BusinessFeatureService.class);
+        CurrentBusinessContext context = realRunAsContext();
+        SeoSyncService syncService = mock(SeoSyncService.class);
+
+        when(connections.findAll()).thenReturn(List.of(connectionFor(1L), connectionFor(2L)));
+        when(features.isEnabled(any(), eq(BusinessFeatureService.SEO_MONITORING_ENABLED))).thenReturn(true);
+        doThrow(new RuntimeException("GA4 property not accessible")).when(syncService).syncAnalytics(1L);
+
+        new SeoSearchConsoleSyncScheduler(connections, features, context, syncService).sync();
+
+        verify(syncService).syncSearchConsole(1L);
+        verify(syncService).syncSearchConsole(2L);
+        verify(syncService).syncAnalytics(1L);
+        verify(syncService).syncAnalytics(2L);
+    }
+
+    @Test
     void pageSpeedScheduler_skipsBusinessesWithFeatureDisabled() {
         SeoConnectionRepository connections = mock(SeoConnectionRepository.class);
         BusinessFeatureService features = mock(BusinessFeatureService.class);

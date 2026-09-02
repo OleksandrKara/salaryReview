@@ -19,7 +19,7 @@ export default async function SeoMonitoringPage() {
   if (overview === null) redirect('/owner/marketing');
 
   return (
-    <main className="mx-auto max-w-6xl p-4 sm:p-8">
+    <main className="mx-auto w-full min-w-0 max-w-6xl p-4 sm:p-8">
       <PageHeader title="SEO" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <MarketingTabs />
 

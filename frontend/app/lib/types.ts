@@ -127,6 +127,26 @@ export interface SeoKeywordRow {
   position: number;
 }
 
+export interface SeoAnalyticsPoint {
+  date: string;
+  totalUsers: number;
+  newUsers: number;
+  organicSessions: number;
+}
+
+// previousPosition/currentPosition/positionDelta are null when there's no data for one half of the
+// window yet. positionDelta = previousPosition - currentPosition: positive means the query moved
+// to a numerically lower (better) position, i.e. improved. autoSuggested is true when this came
+// from the impressions-ranked fallback rather than a query the owner explicitly pinned.
+export interface SeoTrackedQueryRow {
+  query: string;
+  previousPosition: number | null;
+  currentPosition: number | null;
+  positionDelta: number | null;
+  currentImpressions: number;
+  autoSuggested: boolean;
+}
+
 // null when no PageSpeed snapshot exists yet for that strategy (feature just turned on, first
 // weekly check hasn't run).
 export interface SeoCoreWebVitals {
@@ -151,7 +171,9 @@ export interface SeoOverviewDto {
   lastSyncAt: string | null;
   lastSyncError: string | null;
   trend: SeoTrendPoint[];
+  analyticsTrend: SeoAnalyticsPoint[];
   topQueries: SeoKeywordRow[];
+  trackedQueries: SeoTrackedQueryRow[];
   mobile: SeoCoreWebVitals | null;
   desktop: SeoCoreWebVitals | null;
   activeIssues: SeoIssueRow[];

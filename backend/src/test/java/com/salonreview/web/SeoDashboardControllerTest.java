@@ -14,6 +14,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -54,7 +55,7 @@ class SeoDashboardControllerTest {
         currentBusinessContext.runAs(1L, () -> {
             when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
             when(dashboardService.overview(1L, 28)).thenReturn(new SeoDashboardService.Overview(
-                    true, null, null, List.of(), List.of(), null, null, List.of()));
+                    true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of()));
 
             SeoDashboardController.SeoOverviewDto dto = controller.overview(28);
 
@@ -74,17 +75,59 @@ class SeoDashboardControllerTest {
     }
 
     @Test
-    @DisplayName("sync() triggers both sync methods for the calling business when enabled")
-    void syncTriggersBothSyncMethodsWhenEnabled() {
+    @DisplayName("sync() triggers all three sync methods for the calling business when enabled")
+    void syncTriggersAllSyncMethodsWhenEnabled() {
         currentBusinessContext.runAs(1L, () -> {
             when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
             when(dashboardService.overview(eq(1L), anyInt())).thenReturn(new SeoDashboardService.Overview(
-                    true, null, null, List.of(), List.of(), null, null, List.of()));
+                    true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of()));
 
             controller.sync();
 
             verify(syncService).syncSearchConsole(1L);
+            verify(syncService).syncAnalytics(1L);
             verify(syncService).syncPageSpeed(1L);
+        });
+    }
+
+    @Test
+    @DisplayName("addTrackedQuery() rejects a blank query without calling the service")
+    void addTrackedQueryRejectsBlank() {
+        currentBusinessContext.runAs(1L, () -> {
+            when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
+
+            assertThatThrownBy(() -> controller.addTrackedQuery(new SeoDashboardController.TrackedQueryRequest("   ")))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("400");
+            verify(dashboardService, never()).addTrackedQuery(any(), any());
+        });
+    }
+
+    @Test
+    @DisplayName("addTrackedQuery() trims and forwards a real query, then returns the refreshed overview")
+    void addTrackedQueryForwardsTrimmedQuery() {
+        currentBusinessContext.runAs(1L, () -> {
+            when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
+            when(dashboardService.overview(eq(1L), anyInt())).thenReturn(new SeoDashboardService.Overview(
+                    true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of()));
+
+            controller.addTrackedQuery(new SeoDashboardController.TrackedQueryRequest("  russian manicure san diego  "));
+
+            verify(dashboardService).addTrackedQuery(1L, "russian manicure san diego");
+        });
+    }
+
+    @Test
+    @DisplayName("removeTrackedQuery() forwards to the service and returns the refreshed overview")
+    void removeTrackedQueryForwardsQuery() {
+        currentBusinessContext.runAs(1L, () -> {
+            when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
+            when(dashboardService.overview(eq(1L), anyInt())).thenReturn(new SeoDashboardService.Overview(
+                    true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of()));
+
+            controller.removeTrackedQuery("russian manicure san diego");
+
+            verify(dashboardService).removeTrackedQuery(1L, "russian manicure san diego");
         });
     }
 }

@@ -36,7 +36,7 @@ export default async function MarketingDashboardPage({
   const squareConnection = await serverApi.getSquareConnection().catch(() => null);
   if (squareConnection && !squareConnection.accessTokenSet) {
     return (
-      <main className="mx-auto max-w-6xl p-4 sm:p-8">
+      <main className="mx-auto w-full min-w-0 max-w-6xl p-4 sm:p-8">
         <PageHeader title="Marketing" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
         <SetupRequiredNotice
           title="Connect Square to see marketing data"
@@ -54,7 +54,7 @@ export default async function MarketingDashboardPage({
   ]);
 
   return (
-    <main className="mx-auto max-w-6xl p-4 sm:p-8">
+    <main className="mx-auto w-full min-w-0 max-w-6xl p-4 sm:p-8">
       <PageHeader title="Marketing" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <MarketingTabs />
 

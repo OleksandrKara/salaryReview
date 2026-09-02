@@ -23,7 +23,7 @@ export default async function MarketingLtvPage({
   if (me?.role !== 'OWNER' && me?.role !== 'ADS_MANAGER') redirect('/reports');
 
   return (
-    <main className="mx-auto max-w-6xl p-4 sm:p-8">
+    <main className="mx-auto w-full min-w-0 max-w-6xl p-4 sm:p-8">
       <PageHeader title="Customer Lifetime Value" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <MarketingTabs />
 

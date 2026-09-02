@@ -39,7 +39,7 @@ export default async function MarketingFunnelPage({
   const resolvedSlug = data[0]?.landingPageSlug ?? slug ?? pages[0]?.slug ?? 'mani';
 
   return (
-    <main className="mx-auto max-w-6xl p-4 sm:p-8">
+    <main className="mx-auto w-full min-w-0 max-w-6xl p-4 sm:p-8">
       <PageHeader title="Marketing" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <MarketingTabs />
 
