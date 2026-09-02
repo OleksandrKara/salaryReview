@@ -7,7 +7,6 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -15,10 +14,11 @@ import java.util.Map;
  * Pure, repository-free aggregation over an already-fetched window of {@link
  * SeoSearchMetricsSnapshot} rows — same "no external calls, no DB access, easy to unit test" shape
  * as {@link SeoIssueFlaggingService} (seo-intelligence-advisor design.md D4). Splits the given
- * window in half (same before/after idea {@link SeoDashboardService#overview} already uses for
- * {@code trackedQueries}) and classifies each query's movement as a significant gain, a
- * significant loss, or an opportunity — never a raw, un-ranked list of every query that moved at
- * all, per the proposal's own explicit "don't show #10 -> #9" instruction.
+ * window in half via {@link SeoWindowSplit} (same before/after idea {@link
+ * SeoDashboardService#overview} already uses for {@code trackedQueries}) and classifies each
+ * query's movement as a significant gain, a significant loss, or an opportunity — never a raw,
+ * un-ranked list of every query that moved at all, per the proposal's own explicit "don't show
+ * #10 -> #9" instruction.
  */
 public class SeoChangeDetectionService {
 
@@ -72,9 +72,6 @@ public class SeoChangeDetectionService {
             BigDecimal currentCtr, OpportunityReason reason) {
     }
 
-    private record HalfWindow(BigDecimal position, long impressions, long clicks, BigDecimal ctr) {
-    }
-
     public List<QueryChange> gainers(List<SeoSearchMetricsSnapshot> rows, LocalDate start, LocalDate end) {
         return significantMovers(rows, start, end, true);
     }
@@ -86,9 +83,10 @@ public class SeoChangeDetectionService {
     private List<QueryChange> significantMovers(List<SeoSearchMetricsSnapshot> rows, LocalDate start, LocalDate end,
             boolean gains) {
         List<QueryChange> result = new ArrayList<>();
-        for (Map.Entry<String, HalfWindow[]> entry : splitByQuery(rows, start, end).entrySet()) {
-            HalfWindow previous = entry.getValue()[0];
-            HalfWindow current = entry.getValue()[1];
+        for (Map.Entry<String, SeoWindowSplit.HalfWindowPair> entry :
+                SeoWindowSplit.byKey(rows, start, end, SeoSearchMetricsSnapshot::getQuery).entrySet()) {
+            SeoMetricsAggregate previous = entry.getValue().previous();
+            SeoMetricsAggregate current = entry.getValue().current();
             if (previous == null || current == null) continue;
             if (previous.impressions() < SIGNIFICANT_MOVE_MIN_IMPRESSIONS) continue;
 
@@ -109,9 +107,10 @@ public class SeoChangeDetectionService {
 
     public List<Opportunity> opportunities(List<SeoSearchMetricsSnapshot> rows, LocalDate start, LocalDate end) {
         List<Opportunity> result = new ArrayList<>();
-        for (Map.Entry<String, HalfWindow[]> entry : splitByQuery(rows, start, end).entrySet()) {
-            HalfWindow previous = entry.getValue()[0];
-            HalfWindow current = entry.getValue()[1];
+        for (Map.Entry<String, SeoWindowSplit.HalfWindowPair> entry :
+                SeoWindowSplit.byKey(rows, start, end, SeoSearchMetricsSnapshot::getQuery).entrySet()) {
+            SeoMetricsAggregate previous = entry.getValue().previous();
+            SeoMetricsAggregate current = entry.getValue().current();
             if (current == null) continue;
             String query = entry.getKey();
 
@@ -139,52 +138,5 @@ public class SeoChangeDetectionService {
         }
         result.sort(Comparator.comparingLong(Opportunity::currentImpressions).reversed());
         return result.size() > MAX_RESULTS ? result.subList(0, MAX_RESULTS) : result;
-    }
-
-    /** Groups rows by query, then splits each query's rows into the earlier vs. later half of
-     * [start, end] (same midpoint idea as {@code SeoDashboardService.trackedQueries}, duplicated
-     * here rather than shared — this class is deliberately dependency-free/pure, see the class
-     * doc comment). Each map value is a 2-element array: [previousHalf, currentHalf], either
-     * possibly {@code null} when that half had no rows for this query at all. */
-    private Map<String, HalfWindow[]> splitByQuery(List<SeoSearchMetricsSnapshot> rows, LocalDate start, LocalDate end) {
-        long midEpochDay = start.toEpochDay() + (end.toEpochDay() - start.toEpochDay()) / 2;
-        LocalDate mid = LocalDate.ofEpochDay(midEpochDay);
-
-        Map<String, List<SeoSearchMetricsSnapshot>> previousByQuery = new LinkedHashMap<>();
-        Map<String, List<SeoSearchMetricsSnapshot>> currentByQuery = new LinkedHashMap<>();
-        for (SeoSearchMetricsSnapshot row : rows) {
-            Map<String, List<SeoSearchMetricsSnapshot>> target = row.getDate().isBefore(mid) ? previousByQuery : currentByQuery;
-            target.computeIfAbsent(row.getQuery(), q -> new ArrayList<>()).add(row);
-        }
-
-        Map<String, HalfWindow[]> result = new LinkedHashMap<>();
-        for (String query : uniqueQueries(rows)) {
-            HalfWindow previous = aggregateHalf(previousByQuery.get(query));
-            HalfWindow current = aggregateHalf(currentByQuery.get(query));
-            result.put(query, new HalfWindow[] {previous, current});
-        }
-        return result;
-    }
-
-    private static List<String> uniqueQueries(List<SeoSearchMetricsSnapshot> rows) {
-        List<String> queries = new ArrayList<>();
-        for (SeoSearchMetricsSnapshot row : rows) {
-            if (!queries.contains(row.getQuery())) queries.add(row.getQuery());
-        }
-        return queries;
-    }
-
-    private HalfWindow aggregateHalf(List<SeoSearchMetricsSnapshot> rows) {
-        if (rows == null || rows.isEmpty()) return null;
-        long clicks = rows.stream().mapToLong(SeoSearchMetricsSnapshot::getClicks).sum();
-        long impressions = rows.stream().mapToLong(SeoSearchMetricsSnapshot::getImpressions).sum();
-        BigDecimal ctr = impressions == 0 ? BigDecimal.ZERO
-                : BigDecimal.valueOf(clicks).divide(BigDecimal.valueOf(impressions), 6, RoundingMode.HALF_UP);
-        BigDecimal weightedPositionSum = rows.stream()
-                .map(r -> r.getPosition().multiply(BigDecimal.valueOf(r.getImpressions())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal position = impressions == 0 ? BigDecimal.ZERO
-                : weightedPositionSum.divide(BigDecimal.valueOf(impressions), 2, RoundingMode.HALF_UP);
-        return new HalfWindow(position, impressions, clicks, ctr);
     }
 }

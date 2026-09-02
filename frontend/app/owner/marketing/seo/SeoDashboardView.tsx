@@ -14,9 +14,12 @@ import {
 import { api } from '../../../lib/api';
 import { Spinner } from '../../../components/Spinner';
 import type {
+  SeoCannibalizedQuery,
   SeoCoreWebVitals,
   SeoOpportunity,
   SeoOverviewDto,
+  SeoPageChange,
+  SeoPageOpportunity,
   SeoPeriodComparison,
   SeoQueryChange,
   SeoTrackedQueryRow,
@@ -222,6 +225,124 @@ function OpportunitiesCard({ opportunities }: { opportunities: SeoOpportunity[] 
                   pos {o.currentPosition.toFixed(1)} · {o.currentImpressions.toLocaleString()} impr
                 </span>
               </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// Percentage change for page-level impressions (not a position, so no sign-inversion concern) —
+// whole-percent precision since page-level swings are usually large enough that a decimal adds
+// noise rather than clarity.
+function pageChangePercentLabel(ratio: number): { text: string; className: string } {
+  const pct = ratio * 100;
+  const sign = pct > 0 ? '+' : '';
+  return { text: `${sign}${pct.toFixed(0)}%`, className: pct > 0 ? 'text-emerald-600' : 'text-rose-500' };
+}
+
+/** Shared by "Winning pages" and "Losing pages" — same shape as QueryChangeList, keyed by page
+ * and showing an impressions before/after instead of a position before/after (pages don't have a
+ * single coherent "position" the way one query does). */
+function PageChangeList({
+  title,
+  changes,
+  emptyText,
+}: {
+  title: string;
+  changes: SeoPageChange[];
+  emptyText: string;
+}) {
+  return (
+    <div className="flex-1 rounded-lg ring-1 ring-zinc-200">
+      <p className="border-b border-zinc-100 px-4 py-2 text-sm font-medium text-zinc-700">{title}</p>
+      {changes.length === 0 ? (
+        <p className="px-4 py-6 text-center text-sm text-zinc-400">{emptyText}</p>
+      ) : (
+        <ul className="divide-y divide-zinc-100">
+          {changes.map((c) => {
+            const delta = pageChangePercentLabel(c.changeRatio);
+            return (
+              <li key={c.page} className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
+                <span className="max-w-[9rem] truncate text-zinc-700 sm:max-w-xs">{c.page}</span>
+                <span className="shrink-0 text-zinc-500">
+                  {c.previousImpressions.toLocaleString()} → {c.currentImpressions.toLocaleString()}{' '}
+                  <span className={`font-medium ${delta.className}`}>{delta.text}</span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Shared by "Underperforming pages" (real demand, weak position) and "Content opportunities"
+ * (position 5-20 — a more achievable rewrite/expand target). */
+function PageOpportunityList({
+  title,
+  opportunities,
+  emptyText,
+}: {
+  title: string;
+  opportunities: SeoPageOpportunity[];
+  emptyText: string;
+}) {
+  return (
+    <div className="flex-1 rounded-lg ring-1 ring-zinc-200">
+      <p className="border-b border-zinc-100 px-4 py-2 text-sm font-medium text-zinc-700">{title}</p>
+      {opportunities.length === 0 ? (
+        <p className="px-4 py-6 text-center text-sm text-zinc-400">{emptyText}</p>
+      ) : (
+        <ul className="divide-y divide-zinc-100">
+          {opportunities.map((o) => (
+            <li key={o.page} className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
+              <span className="max-w-[9rem] truncate text-zinc-700 sm:max-w-xs">{o.page}</span>
+              <span className="shrink-0 text-xs text-zinc-500">
+                pos {o.currentPosition.toFixed(1)} · {o.currentImpressions.toLocaleString()} impr
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Flags a query where more than one page holds a meaningful share of its impressions — labeled a
+ * "potential optimization opportunity," never asserted as a confirmed problem (a business can
+ * legitimately have two pages both reasonably ranking for a broad query). Pages are pre-sorted by
+ * impressions descending (backend), so the first entry reads as the presumed "intended" page. */
+function CannibalizationCard({ queries }: { queries: SeoCannibalizedQuery[] }) {
+  return (
+    <div className="rounded-lg ring-1 ring-zinc-200">
+      <p className="border-b border-zinc-100 px-4 py-2 text-sm font-medium text-zinc-700">
+        Possible keyword overlap
+      </p>
+      {queries.length === 0 ? (
+        <p className="px-4 py-6 text-center text-sm text-zinc-400">
+          No query is being competed for by more than one page.
+        </p>
+      ) : (
+        <ul className="divide-y divide-zinc-100">
+          {queries.map((cq) => (
+            <li key={cq.query} className="px-4 py-3 text-sm">
+              <p className="font-medium text-zinc-700">{cq.query}</p>
+              <p className="mt-0.5 text-xs text-zinc-400">
+                Potential optimization opportunity — more than one page ranks for this query.
+              </p>
+              <ul className="mt-2 flex flex-col gap-1">
+                {cq.pages.map((p) => (
+                  <li key={p.page} className="flex items-center justify-between gap-2 text-xs text-zinc-600">
+                    <span className="max-w-[10rem] truncate sm:max-w-sm">{p.page}</span>
+                    <span className="shrink-0">
+                      {(p.share * 100).toFixed(0)}% · pos {p.position.toFixed(1)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </li>
           ))}
         </ul>
@@ -556,6 +677,34 @@ export default function SeoDashboardView({ initialData }: { initialData: SeoOver
         onUnpin={unpinQuery}
         pending={trackedQueryPending}
       />
+
+      <div className="flex flex-col gap-4 sm:flex-row">
+        <PageChangeList
+          title={`Winning pages (${data.winningPages.length})`}
+          changes={data.winningPages}
+          emptyText="No pages gained significant impressions in this window."
+        />
+        <PageChangeList
+          title={`Losing pages (${data.losingPages.length})`}
+          changes={data.losingPages}
+          emptyText="No pages lost significant impressions in this window."
+        />
+      </div>
+
+      <div className="flex flex-col gap-4 sm:flex-row">
+        <PageOpportunityList
+          title="Underperforming pages"
+          opportunities={data.underperformingPages}
+          emptyText="No pages with real demand and a weak ranking detected."
+        />
+        <PageOpportunityList
+          title="Content opportunities (rank 5–20)"
+          opportunities={data.contentOpportunities}
+          emptyText="No pages in the content-opportunity band right now."
+        />
+      </div>
+
+      <CannibalizationCard queries={data.cannibalizedQueries} />
 
       <div className="rounded-lg ring-1 ring-zinc-200">
         <p className="border-b border-zinc-100 px-4 py-2 text-sm font-medium text-zinc-700">Top queries</p>
