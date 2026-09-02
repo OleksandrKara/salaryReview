@@ -98,6 +98,19 @@ export interface SeoConnectionUpdateRequest {
   pagespeedApiKey?: string;
 }
 
+// --- Site tracking config (com.salonreview.tracking / web.TrackingSettingsController) ---
+// Microsoft Clarity project id per public site this business owns — see TrackingConfigService's
+// own doc for why sites are keyed by hostname, not a per-business singleton (a business can own
+// more than one public site, e.g. akluxnails.com and mani.akluxnails.com are both business 1).
+
+export interface TrackingSiteDto {
+  hostname: string;
+  siteLabel: string;
+  clarityProjectId: string | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
 export interface SeoTrendPoint {
   date: string;
   clicks: number;

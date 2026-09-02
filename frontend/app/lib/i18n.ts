@@ -128,6 +128,7 @@ const STRINGS = {
   navAutomationsTelegram: { EN: 'Telegram', RU: 'Telegram' },
   navSquareSettings: { EN: 'Square Connection', RU: 'Подключение Square' },
   navSeoSettings: { EN: 'SEO Monitoring', RU: 'SEO-мониторинг' },
+  navTrackingSettings: { EN: 'Tracking Codes', RU: 'Коды отслеживания' },
   navBusinessSettings: { EN: 'Business Settings', RU: 'Настройки бизнеса' },
   navBusinesses: { EN: 'Businesses', RU: 'Бизнесы' },
   navOnboarding: { EN: 'Getting Started', RU: 'Начало работы' },

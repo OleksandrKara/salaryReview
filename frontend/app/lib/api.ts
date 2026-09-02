@@ -32,6 +32,7 @@ import type {
   SquareConnectionUpdateRequest,
   SeoConnectionDto,
   SeoConnectionUpdateRequest,
+  TrackingSiteDto,
   SeoOverviewDto,
   BusinessSettingsDto,
   BusinessSettingsUpdateRequest,
@@ -247,6 +248,10 @@ export const api = {
 
   updateSeoConnection: (body: SeoConnectionUpdateRequest) =>
     proxyJson<SeoConnectionDto>(`/api/owner/settings/seo`, 'PUT', body),
+
+  // Site tracking config (owner): Microsoft Clarity project id per public site.
+  updateTrackingConfig: (hostname: string, clarityProjectId: string) =>
+    proxyJson<TrackingSiteDto>(`/api/owner/settings/tracking/${encodeURIComponent(hostname)}`, 'PUT', { clarityProjectId }),
 
   // SEO monitoring dashboard (owner + ads_manager, read-only) — Phase 8.
   getSeoOverview: (days?: number) =>

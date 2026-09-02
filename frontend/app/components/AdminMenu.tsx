@@ -81,6 +81,7 @@ function linksFor(role: Role): NavSections {
           links: [
             { href: '/owner/settings/square', key: 'navSquareSettings' },
             { href: '/owner/settings/seo', key: 'navSeoSettings' },
+            { href: '/owner/settings/tracking', key: 'navTrackingSettings' },
             {
               href: '/owner/settings/automations',
               key: 'navAutomationsSettings',
