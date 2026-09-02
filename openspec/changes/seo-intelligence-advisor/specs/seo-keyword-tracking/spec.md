@@ -1,5 +1,12 @@
 ## ADDED Requirements
 
+**Status (2026-09-02):** the keyword watchlist itself (this section's first requirement) is built
+and deployed. The real-SERP-rank-check requirement below (and everything depending on
+`seo_rank_snapshot`) was never implemented — the owner declined to pay for the external provider
+it requires (design.md D2). Kept here as the aspirational spec for if that decision is ever
+revisited; today the watchlist exists with no rank data behind it, and the app's Search Console
+average-position data (already shipped) is the free substitute.
+
 ### Requirement: Owners curate a list of tracked keywords, each with an explicit location
 The system SHALL let an owner add, edit, and remove tracked keywords (10-50 typical), each with a
 required location (defaulting to Downtown San Diego / 92101, editable) and device (mobile/desktop),

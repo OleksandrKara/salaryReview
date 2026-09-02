@@ -1,10 +1,14 @@
 package com.salonreview.seo;
 
 import com.salonreview.domain.SeoAnalyticsSnapshot;
+import com.salonreview.domain.SeoCompetitor;
+import com.salonreview.domain.SeoCompetitorPageSnapshot;
 import com.salonreview.domain.SeoConnection;
 import com.salonreview.domain.SeoPageSnapshot;
 import com.salonreview.domain.SeoSearchMetricsSnapshot;
 import com.salonreview.repo.SeoAnalyticsSnapshotRepository;
+import com.salonreview.repo.SeoCompetitorPageSnapshotRepository;
+import com.salonreview.repo.SeoCompetitorRepository;
 import com.salonreview.repo.SeoConnectionRepository;
 import com.salonreview.repo.SeoPageSnapshotRepository;
 import com.salonreview.repo.SeoSearchMetricsSnapshotRepository;
@@ -58,15 +62,21 @@ public class SeoSyncService {
     private final SeoPageSnapshotRepository pageSnapshotRepository;
     private final SeoAnalyticsSnapshotRepository analyticsSnapshotRepository;
     private final SeoIssueFlaggingService flaggingService;
+    private final SeoCompetitorRepository competitorRepository;
+    private final SeoCompetitorPageSnapshotRepository competitorPageSnapshotRepository;
 
     public SeoSyncService(SeoConnectionRepository connectionRepository, SeoConnectionService connectionService,
             SeoSearchMetricsSnapshotRepository searchMetricsRepository,
             SeoPageSnapshotRepository pageSnapshotRepository,
-            SeoAnalyticsSnapshotRepository analyticsSnapshotRepository, SeoIssueFlaggingService flaggingService) {
+            SeoAnalyticsSnapshotRepository analyticsSnapshotRepository, SeoIssueFlaggingService flaggingService,
+            SeoCompetitorRepository competitorRepository,
+            SeoCompetitorPageSnapshotRepository competitorPageSnapshotRepository) {
         this.connectionRepository = connectionRepository;
         this.connectionService = connectionService;
         this.searchMetricsRepository = searchMetricsRepository;
         this.pageSnapshotRepository = pageSnapshotRepository;
+        this.competitorRepository = competitorRepository;
+        this.competitorPageSnapshotRepository = competitorPageSnapshotRepository;
         this.analyticsSnapshotRepository = analyticsSnapshotRepository;
         this.flaggingService = flaggingService;
     }
@@ -219,6 +229,54 @@ public class SeoSyncService {
         } else {
             markFailure(connection, "PageSpeed sync failed for " + errors.size() + "/2 strategies: "
                     + String.join("; ", errors));
+        }
+    }
+
+    /** Runs PageSpeed Insights against every active competitor's homepage — same weekly cadence as
+     * {@link #syncPageSpeed} (called right after it from the same scheduler run), reusing the
+     * business's own PageSpeed API key since PSI scores any public URL regardless of whose site it
+     * is (seo-intelligence-advisor Phase 7, design.md D9 — the zero-cost redesign). No-op if the
+     * business has no connection or no active competitors. Deliberately does not touch {@code
+     * seo_connection}'s own {@code lastSyncAt}/{@code lastSyncError} — a competitor's site being
+     * unreachable is a different, less critical signal than our own site's sync health, so mixing
+     * the two into one status field would be confusing. */
+    @Transactional
+    public void syncCompetitorPageSpeed(Long businessId) {
+        SeoConnection connection = connectionRepository.findByBusinessId(businessId).orElse(null);
+        if (connection == null) return;
+        List<SeoCompetitor> activeCompetitors = competitorRepository.findByBusinessIdAndActiveTrueOrderByCreatedAtAsc(businessId);
+        if (activeCompetitors.isEmpty()) return;
+
+        PageSpeedInsightsClient client;
+        try {
+            client = new PageSpeedInsightsClient(connectionService.decryptedPagespeedApiKey(connection));
+        } catch (Exception e) {
+            log.warn("Competitor PageSpeed sync failed for business {}: {}", businessId, e.toString());
+            return;
+        }
+
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        for (SeoCompetitor competitor : activeCompetitors) {
+            for (SeoPageSnapshot.Strategy strategy : SeoPageSnapshot.Strategy.values()) {
+                try {
+                    PageSpeedInsightsClient.Result result = client.check(competitor.getWebsite(), strategy);
+                    SeoCompetitorPageSnapshot snapshot = competitorPageSnapshotRepository
+                            .findByCompetitorIdAndDateAndStrategy(competitor.getId(), today, strategy)
+                            .orElseGet(SeoCompetitorPageSnapshot::new);
+                    snapshot.setCompetitorId(competitor.getId());
+                    snapshot.setDate(today);
+                    snapshot.setStrategy(strategy);
+                    snapshot.setPerformanceScore(result.performanceScore());
+                    snapshot.setLcpMs(result.lcpMs());
+                    snapshot.setCls(result.cls());
+                    snapshot.setFcpMs(result.fcpMs());
+                    snapshot.setTbtMs(result.tbtMs());
+                    competitorPageSnapshotRepository.save(snapshot);
+                } catch (Exception e) {
+                    log.warn("Competitor PageSpeed sync failed for business {}, competitor {}, strategy {}: {}",
+                            businessId, competitor.getId(), strategy, e.toString());
+                }
+            }
         }
     }
 

@@ -35,6 +35,7 @@ import type {
   TrackingSiteDto,
   SeoOverviewDto,
   SeoAnalysisResult,
+  SeoCompetitorRow,
   BusinessSettingsDto,
   BusinessSettingsUpdateRequest,
   PlatformBusinessDto,
@@ -278,6 +279,19 @@ export const api = {
 
   // Past analyses, newest first — powers the Advisor's history list.
   getSeoAnalysisHistory: () => proxyGet<SeoAnalysisResult[]>(`/api/owner/marketing/seo/advisor/history`),
+
+  // Competitors — zero-cost scope (2026-09-02): PageSpeed comparison is automated, GBP
+  // rating/review count is owner-entered only.
+  getSeoCompetitors: () => proxyGet<SeoCompetitorRow[]>(`/api/owner/marketing/seo/competitors`),
+
+  addSeoCompetitor: (name: string, website: string, location: string | null, notes: string | null) =>
+    proxyJson<SeoCompetitorRow[]>(`/api/owner/marketing/seo/competitors`, 'POST', { name, website, location, notes }),
+
+  updateSeoCompetitor: (id: number, gbpRating: number | null, gbpReviewCount: number | null, active: boolean | null) =>
+    proxyJson<SeoCompetitorRow[]>(`/api/owner/marketing/seo/competitors/${id}`, 'PUT', { gbpRating, gbpReviewCount, active }),
+
+  removeSeoCompetitor: (id: number) =>
+    proxyDeleteJson<SeoCompetitorRow[]>(`/api/owner/marketing/seo/competitors/${id}`),
 
   // Business name/timezone + financial config (owner).
   getBusinessSettings: () => proxyGet<BusinessSettingsDto>(`/api/owner/settings/business`),
