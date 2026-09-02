@@ -69,6 +69,9 @@ x-backend-env: &backend-env
   # AI-drafted SMS reply ("Generate" button in /admin/messages). Feature flag is off by default —
   # set AI_SMS_DRAFT_ENABLED=true to expose it. Shares ANTHROPIC_API_KEY with triage above.
   AI_SMS_DRAFT_ENABLED: ${AI_SMS_DRAFT_ENABLED:-false}
+  # SEO AI Advisor ("Analyze SEO" button on the SEO tab). Feature flag is off by default — set
+  # AI_SEO_ADVISOR_ENABLED=true to expose it. Shares ANTHROPIC_API_KEY with triage above.
+  AI_SEO_ADVISOR_ENABLED: ${AI_SEO_ADVISOR_ENABLED:-false}
   # RAG knowledge assistant. Feature flag is off by default — set RAG_ENABLED=true (and a
   # VOYAGE_API_KEY for embeddings) to expose the /api/rag endpoints and the chat/admin UI.
   VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}

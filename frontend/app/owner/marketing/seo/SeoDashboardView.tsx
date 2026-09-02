@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import {
   CartesianGrid,
   Line,
@@ -14,6 +14,7 @@ import {
 import { api } from '../../../lib/api';
 import { Spinner } from '../../../components/Spinner';
 import type {
+  SeoAnalysisResult,
   SeoCannibalizedQuery,
   SeoCoreWebVitals,
   SeoOpportunity,
@@ -573,7 +574,255 @@ function TrackedKeywordsCard({
   );
 }
 
-export default function SeoDashboardView({ initialData }: { initialData: SeoOverviewDto }) {
+const OVERALL_STATUS_STYLES: Record<string, string> = {
+  HEALTHY: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  NEEDS_ATTENTION: 'bg-amber-50 text-amber-700 ring-amber-200',
+  CRITICAL: 'bg-rose-50 text-rose-700 ring-rose-200',
+};
+
+const OVERALL_STATUS_LABEL: Record<string, string> = {
+  HEALTHY: 'Healthy',
+  NEEDS_ATTENTION: 'Needs attention',
+  CRITICAL: 'Critical',
+};
+
+const SEO_IMPACT_BADGE_STYLES: Record<string, string> = {
+  HIGH: 'bg-red-50 text-red-700 ring-red-200',
+  MEDIUM: 'bg-amber-50 text-amber-700 ring-amber-200',
+  LOW: 'bg-zinc-100 text-zinc-600 ring-zinc-200',
+};
+
+/** "3 hours ago" style, same convention as FunnelView's own relativeTime — duplicated rather than
+ * shared since it's a small, self-contained pure function in a different feature's file. */
+function seoRelativeTime(iso: string): string {
+  const diffSec = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} minute${diffMin === 1 ? '' : 's'} ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} hour${diffHr === 1 ? '' : 's'} ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 7) return `${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function SeoAnalysisResultView({ result }: { result: SeoAnalysisResult }) {
+  const sortedRecommendations = [...result.recommendations].sort((a, b) => a.priority - b.priority);
+  return (
+    <div className="space-y-4 rounded-lg border border-indigo-100 bg-indigo-50/40 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span
+          className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${OVERALL_STATUS_STYLES[result.overallStatus] ?? SEO_IMPACT_BADGE_STYLES.LOW}`}
+        >
+          {OVERALL_STATUS_LABEL[result.overallStatus] ?? result.overallStatus}
+        </span>
+        <span className="text-xs text-zinc-400" title={new Date(result.createdAt).toLocaleString('en-US')}>
+          Analyzed {seoRelativeTime(result.createdAt)}
+        </span>
+      </div>
+      <p className="text-sm text-zinc-700">{result.executiveSummary}</p>
+
+      {result.wins.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Wins</p>
+          <ul className="mt-1 list-disc space-y-1 pl-4 text-sm text-zinc-700">
+            {result.wins.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {result.problems.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-rose-700">Problems</p>
+          <ul className="mt-1 list-disc space-y-1 pl-4 text-sm text-zinc-700">
+            {result.problems.map((p, i) => (
+              <li key={i}>{p}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {sortedRecommendations.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Recommended actions</p>
+          <ul className="mt-2 space-y-2">
+            {sortedRecommendations.map((r) => (
+              <li key={r.priority} className="rounded border border-zinc-200 bg-white p-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-zinc-900">
+                    #{r.priority} {r.action}
+                  </span>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${SEO_IMPACT_BADGE_STYLES[r.expectedImpact] ?? SEO_IMPACT_BADGE_STYLES.LOW}`}
+                  >
+                    Impact: {r.expectedImpact}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-zinc-600">{r.why}</p>
+                <p className="mt-1 text-xs text-zinc-500">Evidence: {r.evidence}</p>
+                <p className="mt-1 text-xs text-zinc-700">{r.suggestedImplementation}</p>
+                {r.relevantPageOrKeyword && (
+                  <p className="mt-1 truncate text-xs font-mono text-zinc-400">{r.relevantPageOrKeyword}</p>
+                )}
+                <div className="mt-1.5 flex flex-wrap gap-2 text-[10px] text-zinc-400">
+                  <span>Effort: {r.effort}</span>
+                  <span>Confidence: {r.confidence}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** "Analyze SEO" button + last result + collapsible history — same shape as FunnelView's own
+ * per-variant analysis panel, just business-level (one panel, not one per variant). Only rendered
+ * at all when the caller already confirmed both the deployment-level flag and the OWNER role
+ * (design.md D7 — the analyze action is owner-only, same as the funnel-analysis feature). */
+function SeoAdvisorCard() {
+  const [history, setHistory] = useState<SeoAnalysisResult[] | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [runningAction, setRunningAction] = useState<'normal' | 'force' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [expandedHistory, setExpandedHistory] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getSeoAnalysisHistory()
+      .then((h) => {
+        if (!cancelled) setHistory(h);
+      })
+      .catch(() => {
+        if (!cancelled) setHistory([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingHistory(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function runAnalysis(force: boolean) {
+    setRunningAction(force ? 'force' : 'normal');
+    setError(null);
+    try {
+      await api.analyzeSeo(force);
+      // Re-fetch rather than splice the new result in locally — a non-forced call may have just
+      // returned the existing cached entry, and re-fetching sidesteps having to guess which.
+      const fresh = await api.getSeoAnalysisHistory();
+      setHistory(fresh);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Analysis failed. Please try again.');
+    } finally {
+      setRunningAction(null);
+    }
+  }
+
+  function toggleHistoryRow(idx: number) {
+    setExpandedHistory((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  }
+
+  const latest = history?.[0] ?? null;
+  const older = history?.slice(1) ?? [];
+
+  return (
+    <div className="rounded-lg ring-1 ring-zinc-200">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-4 py-2">
+        <p className="text-sm font-medium text-zinc-700">SEO Advisor</p>
+        <div className="flex flex-wrap gap-2">
+          {latest && (
+            <button
+              type="button"
+              onClick={() => runAnalysis(true)}
+              disabled={runningAction !== null || loadingHistory}
+              className="rounded-full px-3 py-1.5 text-xs font-medium text-zinc-500 ring-1 ring-zinc-200 hover:bg-zinc-50 disabled:opacity-50"
+            >
+              {runningAction === 'force' ? 'Analyzing…' : 'Analyze again'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => runAnalysis(false)}
+            disabled={runningAction !== null || loadingHistory}
+            className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+          >
+            {runningAction === 'normal' ? 'Analyzing…' : latest ? 'Refresh analysis' : 'Analyze SEO'}
+          </button>
+        </div>
+      </div>
+
+      <div className="p-4">
+        {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+        {loadingHistory ? (
+          <p className="text-sm text-zinc-400">Loading…</p>
+        ) : latest ? (
+          <SeoAnalysisResultView result={latest} />
+        ) : (
+          <p className="text-sm text-zinc-400">
+            No analysis yet. Click "Analyze SEO" for an AI-generated readout of what&rsquo;s happening
+            and what to do next.
+          </p>
+        )}
+
+        {older.length > 0 && (
+          <div className="mt-4 border-t border-zinc-100 pt-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              Past analyses ({older.length})
+            </p>
+            <ul className="mt-2 divide-y divide-zinc-100">
+              {older.map((h, i) => (
+                <li key={i}>
+                  <button
+                    type="button"
+                    onClick={() => toggleHistoryRow(i)}
+                    className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm text-zinc-600 hover:text-zinc-900"
+                  >
+                    <span>
+                      {new Date(h.createdAt).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </span>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${OVERALL_STATUS_STYLES[h.overallStatus] ?? SEO_IMPACT_BADGE_STYLES.LOW}`}
+                    >
+                      {OVERALL_STATUS_LABEL[h.overallStatus] ?? h.overallStatus}
+                    </span>
+                  </button>
+                  {expandedHistory.has(i) && (
+                    <div className="pb-3">
+                      <SeoAnalysisResultView result={h} />
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function SeoDashboardView({
+  initialData,
+  canUseAiAdvisor,
+}: {
+  initialData: SeoOverviewDto;
+  canUseAiAdvisor: boolean;
+}) {
   const [data, setData] = useState(initialData);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -720,6 +969,8 @@ export default function SeoDashboardView({ initialData }: { initialData: SeoOver
           <PeriodStat label="vs. last year" comparison={data.yearOverYear} />
         </div>
       )}
+
+      {canUseAiAdvisor && <SeoAdvisorCard />}
 
       {data.activeIssues.length > 0 && (
         <div className="rounded-lg ring-1 ring-zinc-200">

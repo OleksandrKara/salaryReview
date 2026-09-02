@@ -967,6 +967,10 @@ export interface Features {
   // seo-monitoring-dashboard design.md D6: whether /owner/marketing/seo + /owner/settings/seo
   // should render at all for this business — purely business-gated, no deployment-level flag.
   seoMonitoringEnabled: boolean;
+  // seo-intelligence-advisor Phase 6: whether the "Analyze SEO" advisor section renders within
+  // the already-gated SEO tab — both deployment-level AND business-gated (unlike seoMonitoringEnabled
+  // above, since this one calls Claude).
+  aiSeoAdvisorEnabled: boolean;
 }
 
 // Knowledge-gap requests (com.salonreview.web.KbRequestController).
@@ -1676,6 +1680,37 @@ export interface FunnelAnalysisResult {
   suspiciousPatterns: string[];
   suggestedAbTests: string[];
   topPriorityAction: string;
+  promptVersion: string;
+  model: string;
+  /** ISO instant string — when this analysis was generated. */
+  createdAt: string;
+}
+
+// --- SEO AI Advisor (com.salonreview.web.SeoAiAdvisorController) — owner-only ---
+// "Analyze SEO" button on the SEO tab. Same shape as the funnel analysis feature above: feature-
+// flagged (404 when ai.seo-advisor.enabled=false), structured Claude output, cached by a snapshot
+// of the exact SEO numbers analyzed so a repeat click with unchanged data is free.
+
+export type SeoOverallStatus = 'HEALTHY' | 'NEEDS_ATTENTION' | 'CRITICAL';
+
+export interface SeoRecommendation {
+  priority: number;
+  action: string;
+  why: string;
+  evidence: string;
+  expectedImpact: ImpactLevel;
+  effort: ImpactLevel;
+  confidence: ImpactLevel;
+  suggestedImplementation: string;
+  relevantPageOrKeyword: string | null;
+}
+
+export interface SeoAnalysisResult {
+  overallStatus: SeoOverallStatus;
+  executiveSummary: string;
+  wins: string[];
+  problems: string[];
+  recommendations: SeoRecommendation[];
   promptVersion: string;
   model: string;
   /** ISO instant string — when this analysis was generated. */

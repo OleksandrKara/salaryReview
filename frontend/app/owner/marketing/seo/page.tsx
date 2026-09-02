@@ -29,7 +29,7 @@ export default async function SeoMonitoringPage() {
       </p>
 
       <div className="mt-6">
-        <SeoDashboardView initialData={overview} />
+        <SeoDashboardView initialData={overview} canUseAiAdvisor={me.features.aiSeoAdvisorEnabled && me.role === 'OWNER'} />
       </div>
     </main>
   );
