@@ -224,6 +224,19 @@ export interface SeoCannibalizedQuery {
   pages: SeoPageShare[];
 }
 
+// device is SeoTrackedKeyword.Device's name ("MOBILE"/"DESKTOP"). No rank data yet — real SERP
+// position tracking arrives once an external provider is connected (Phase 5); until then this is
+// just the owner's curated list, distinct from both SeoTrackedQueryRow (Search-Console-impressions-
+// derived) and the trend chart's own average position.
+export interface SeoTrackedKeywordRow {
+  id: number;
+  keyword: string;
+  targetUrl: string | null;
+  location: string;
+  device: 'MOBILE' | 'DESKTOP';
+  active: boolean;
+}
+
 export interface SeoOverviewDto {
   connected: boolean;
   lastSyncAt: string | null;
@@ -246,6 +259,7 @@ export interface SeoOverviewDto {
   underperformingPages: SeoPageOpportunity[];
   contentOpportunities: SeoPageOpportunity[];
   cannibalizedQueries: SeoCannibalizedQuery[];
+  trackedKeywords: SeoTrackedKeywordRow[];
 }
 
 export interface BusinessSettingsDto {

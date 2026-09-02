@@ -5,12 +5,14 @@ import com.salonreview.domain.SeoConnection;
 import com.salonreview.domain.SeoPageSnapshot;
 import com.salonreview.domain.SeoSearchMetricsSnapshot;
 import com.salonreview.domain.SeoTechnicalIssue;
+import com.salonreview.domain.SeoTrackedKeyword;
 import com.salonreview.domain.SeoTrackedQuery;
 import com.salonreview.repo.SeoAnalyticsSnapshotRepository;
 import com.salonreview.repo.SeoConnectionRepository;
 import com.salonreview.repo.SeoPageSnapshotRepository;
 import com.salonreview.repo.SeoSearchMetricsSnapshotRepository;
 import com.salonreview.repo.SeoTechnicalIssueRepository;
+import com.salonreview.repo.SeoTrackedKeywordRepository;
 import com.salonreview.repo.SeoTrackedQueryRepository;
 import org.springframework.stereotype.Service;
 
@@ -22,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -43,6 +46,7 @@ public class SeoDashboardService {
     private final SeoAnalyticsSnapshotRepository analyticsSnapshotRepository;
     private final SeoTechnicalIssueRepository issueRepository;
     private final SeoTrackedQueryRepository trackedQueryRepository;
+    private final SeoTrackedKeywordRepository trackedKeywordRepository;
     // Stateless, dependency-free (design.md D4) — constructed directly rather than injected, same
     // as any other plain value-object helper; no reason to make Spring manage a bean with nothing
     // to wire in.
@@ -53,13 +57,15 @@ public class SeoDashboardService {
             SeoSearchMetricsSnapshotRepository searchMetricsRepository,
             SeoPageSnapshotRepository pageSnapshotRepository,
             SeoAnalyticsSnapshotRepository analyticsSnapshotRepository,
-            SeoTechnicalIssueRepository issueRepository, SeoTrackedQueryRepository trackedQueryRepository) {
+            SeoTechnicalIssueRepository issueRepository, SeoTrackedQueryRepository trackedQueryRepository,
+            SeoTrackedKeywordRepository trackedKeywordRepository) {
         this.connectionRepository = connectionRepository;
         this.searchMetricsRepository = searchMetricsRepository;
         this.pageSnapshotRepository = pageSnapshotRepository;
         this.analyticsSnapshotRepository = analyticsSnapshotRepository;
         this.issueRepository = issueRepository;
         this.trackedQueryRepository = trackedQueryRepository;
+        this.trackedKeywordRepository = trackedKeywordRepository;
     }
 
     public record TrendPoint(LocalDate date, long clicks, long impressions, BigDecimal ctr, BigDecimal position) {}
@@ -101,7 +107,14 @@ public class SeoDashboardService {
                             List<SeoPageAnalysisService.PageChange> losingPages,
                             List<SeoPageAnalysisService.PageOpportunity> underperformingPages,
                             List<SeoPageAnalysisService.PageOpportunity> contentOpportunities,
-                            List<SeoPageAnalysisService.CannibalizedQuery> cannibalizedQueries) {}
+                            List<SeoPageAnalysisService.CannibalizedQuery> cannibalizedQueries,
+                            List<TrackedKeywordRow> trackedKeywords) {}
+
+    /** {@code device} is {@code SeoTrackedKeyword.Device}'s name ("MOBILE"/"DESKTOP"). No rank
+     * data on this row — {@code seo_rank_snapshot} (Phase 5) is keyed by the keyword's id once a
+     * rank-tracking provider is connected; until then this is just the owner's curated list. */
+    public record TrackedKeywordRow(Long id, String keyword, String targetUrl, String location, String device,
+                                     boolean active) {}
 
     /** {@code null} means "no seo_connection row yet" — the caller (controller) decides how to
      * render that (empty-state card, per design.md D7), not this service. */
@@ -109,7 +122,8 @@ public class SeoDashboardService {
         SeoConnection connection = connectionRepository.findByBusinessId(businessId).orElse(null);
         if (connection == null) {
             return new Overview(false, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of(),
-                    null, null, null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+                    null, null, null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                    trackedKeywords(businessId));
         }
 
         LocalDate end = LocalDate.now();
@@ -135,7 +149,8 @@ public class SeoDashboardService {
                 pageAnalysisService.losingPages(rows, start, end),
                 pageAnalysisService.underperformingPages(rows, start, end),
                 pageAnalysisService.contentOpportunities(rows, start, end),
-                pageAnalysisService.cannibalizedQueries(rows));
+                pageAnalysisService.cannibalizedQueries(rows),
+                trackedKeywords(businessId));
     }
 
     /** Last 7 days vs. the 7 days immediately before that — both fully contained in the already-
@@ -195,6 +210,46 @@ public class SeoDashboardService {
     public void removeTrackedQuery(Long businessId, String query) {
         trackedQueryRepository.findByBusinessIdAndQuery(businessId, query)
                 .ifPresent(trackedQueryRepository::delete);
+    }
+
+    private List<TrackedKeywordRow> trackedKeywords(Long businessId) {
+        return trackedKeywordRepository.findByBusinessIdOrderByCreatedAtAsc(businessId).stream()
+                .map(k -> new TrackedKeywordRow(k.getId(), k.getKeyword(), k.getTargetUrl(), k.getLocation(),
+                        k.getDevice().name(), k.isActive()))
+                .toList();
+    }
+
+    /** Owner-curated rank-tracking list (seo-intelligence-advisor Phase 4) — no rank checks happen
+     * yet (Phase 5), this just builds the list so it isn't empty on day one of that phase.
+     * Blank/whitespace-only keyword or location is rejected by the controller before this is ever
+     * called. Adding an already-existing (keyword, location, device) combination is a no-op, same
+     * "duplicate add is meaningless" convention as {@link #addTrackedQuery} — except an
+     * inactive row for that exact combination is reactivated instead, since removing then
+     * re-adding the same keyword is a real, expected owner action (not a fresh duplicate). */
+    public void addTrackedKeyword(Long businessId, String keyword, String location, SeoTrackedKeyword.Device device,
+            String targetUrl) {
+        Optional<SeoTrackedKeyword> existing = trackedKeywordRepository.findByBusinessIdOrderByCreatedAtAsc(businessId)
+                .stream()
+                .filter(k -> k.getKeyword().equals(keyword) && k.getLocation().equals(location) && k.getDevice() == device)
+                .findFirst();
+        if (existing.isPresent()) {
+            SeoTrackedKeyword keywordRow = existing.get();
+            if (!keywordRow.isActive()) {
+                keywordRow.setActive(true);
+                keywordRow.setTargetUrl(targetUrl);
+                trackedKeywordRepository.save(keywordRow);
+            }
+            return;
+        }
+        trackedKeywordRepository.save(SeoTrackedKeyword.builder()
+                .businessId(businessId).keyword(keyword).location(location).device(device)
+                .targetUrl(targetUrl).active(true).build());
+    }
+
+    /** No-op if the id doesn't exist or belongs to another business — same business-scoped-lookup
+     * convention as every other caller-controlled-id repository access in this app. */
+    public void removeTrackedKeyword(Long businessId, Long id) {
+        trackedKeywordRepository.findByIdAndBusinessId(id, businessId).ifPresent(trackedKeywordRepository::delete);
     }
 
     private List<AnalyticsPoint> analyticsTrend(List<SeoAnalyticsSnapshot> rows) {

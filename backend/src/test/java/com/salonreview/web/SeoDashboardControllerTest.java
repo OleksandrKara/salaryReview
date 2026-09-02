@@ -2,6 +2,7 @@ package com.salonreview.web;
 
 import com.salonreview.config.BusinessFeatureService;
 import com.salonreview.config.CurrentBusinessContext;
+import com.salonreview.domain.SeoTrackedKeyword;
 import com.salonreview.seo.SeoDashboardService;
 import com.salonreview.seo.SeoSyncService;
 import org.junit.jupiter.api.BeforeEach;
@@ -57,7 +58,7 @@ class SeoDashboardControllerTest {
             when(dashboardService.overview(1L, 28)).thenReturn(new SeoDashboardService.Overview(
                     true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of(),
                     null, null, null, List.of(), List.of(), List.of(),
-                    List.of(), List.of(), List.of(), List.of(), List.of()));
+                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of()));
 
             SeoDashboardController.SeoOverviewDto dto = controller.overview(28);
 
@@ -84,7 +85,7 @@ class SeoDashboardControllerTest {
             when(dashboardService.overview(eq(1L), anyInt())).thenReturn(new SeoDashboardService.Overview(
                     true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of(),
                     null, null, null, List.of(), List.of(), List.of(),
-                    List.of(), List.of(), List.of(), List.of(), List.of()));
+                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of()));
 
             controller.sync();
 
@@ -115,7 +116,7 @@ class SeoDashboardControllerTest {
             when(dashboardService.overview(eq(1L), anyInt())).thenReturn(new SeoDashboardService.Overview(
                     true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of(),
                     null, null, null, List.of(), List.of(), List.of(),
-                    List.of(), List.of(), List.of(), List.of(), List.of()));
+                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of()));
 
             controller.addTrackedQuery(new SeoDashboardController.TrackedQueryRequest("  russian manicure san diego  "));
 
@@ -131,11 +132,77 @@ class SeoDashboardControllerTest {
             when(dashboardService.overview(eq(1L), anyInt())).thenReturn(new SeoDashboardService.Overview(
                     true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of(),
                     null, null, null, List.of(), List.of(), List.of(),
-                    List.of(), List.of(), List.of(), List.of(), List.of()));
+                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of()));
 
             controller.removeTrackedQuery("russian manicure san diego");
 
             verify(dashboardService).removeTrackedQuery(1L, "russian manicure san diego");
+        });
+    }
+
+    @Test
+    @DisplayName("addTrackedKeyword() rejects a blank keyword or location without calling the service")
+    void addTrackedKeywordRejectsBlank() {
+        currentBusinessContext.runAs(1L, () -> {
+            when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
+
+            assertThatThrownBy(() -> controller.addTrackedKeyword(
+                    new SeoDashboardController.TrackedKeywordRequest("  ", "Downtown San Diego", "MOBILE", null)))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("400");
+            assertThatThrownBy(() -> controller.addTrackedKeyword(
+                    new SeoDashboardController.TrackedKeywordRequest("russian manicure san diego", "  ", "MOBILE", null)))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("400");
+            verify(dashboardService, never()).addTrackedKeyword(any(), any(), any(), any(), any());
+        });
+    }
+
+    @Test
+    @DisplayName("addTrackedKeyword() rejects an invalid device value")
+    void addTrackedKeywordRejectsInvalidDevice() {
+        currentBusinessContext.runAs(1L, () -> {
+            when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
+
+            assertThatThrownBy(() -> controller.addTrackedKeyword(new SeoDashboardController.TrackedKeywordRequest(
+                    "russian manicure san diego", "Downtown San Diego", "TABLET", null)))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasMessageContaining("400");
+            verify(dashboardService, never()).addTrackedKeyword(any(), any(), any(), any(), any());
+        });
+    }
+
+    @Test
+    @DisplayName("addTrackedKeyword() trims and forwards keyword/location, defaults device to MOBILE, then returns the refreshed overview")
+    void addTrackedKeywordForwardsTrimmedFields() {
+        currentBusinessContext.runAs(1L, () -> {
+            when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
+            when(dashboardService.overview(eq(1L), anyInt())).thenReturn(new SeoDashboardService.Overview(
+                    true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of(),
+                    null, null, null, List.of(), List.of(), List.of(),
+                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of()));
+
+            controller.addTrackedKeyword(new SeoDashboardController.TrackedKeywordRequest(
+                    "  russian manicure san diego  ", "  Downtown San Diego  ", null, "  "));
+
+            verify(dashboardService).addTrackedKeyword(1L, "russian manicure san diego", "Downtown San Diego",
+                    SeoTrackedKeyword.Device.MOBILE, null);
+        });
+    }
+
+    @Test
+    @DisplayName("removeTrackedKeyword() forwards the id to the service and returns the refreshed overview")
+    void removeTrackedKeywordForwardsId() {
+        currentBusinessContext.runAs(1L, () -> {
+            when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
+            when(dashboardService.overview(eq(1L), anyInt())).thenReturn(new SeoDashboardService.Overview(
+                    true, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of(),
+                    null, null, null, List.of(), List.of(), List.of(),
+                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of()));
+
+            controller.removeTrackedKeyword(5L);
+
+            verify(dashboardService).removeTrackedKeyword(1L, 5L);
         });
     }
 }
