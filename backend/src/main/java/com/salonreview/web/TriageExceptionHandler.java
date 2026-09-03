@@ -1,6 +1,7 @@
 package com.salonreview.web;
 
 import com.salonreview.ai.FunnelAnalysisService.AnalysisFailedException;
+import com.salonreview.ai.SeoAiAdvisorService;
 import com.salonreview.ai.SmsDraftService.DraftFailedException;
 import com.salonreview.ai.SuspiciousBookingTriageService.TriageFailedException;
 import org.slf4j.Logger;
@@ -15,15 +16,15 @@ import java.util.Map;
 
 /**
  * Maps AI feature failures (Anthropic API errors, schema-validation failures, anything thrown out
- * of {@link com.salonreview.ai.SuspiciousBookingTriageService} or
- * {@link com.salonreview.ai.FunnelAnalysisService}) to a clean 502 with a generic user-facing
- * message. We never leak raw model output, stack traces, or upstream error bodies to the browser
- * — that's been a real source of prod incidents elsewhere. Both features share this one handler
- * since the failure modes (and the "out of credits" detection) are identical — same Anthropic
- * account, same error shapes.
+ * of {@link com.salonreview.ai.SuspiciousBookingTriageService}, {@link
+ * com.salonreview.ai.FunnelAnalysisService}, or {@link SeoAiAdvisorService}) to a clean 502 with a
+ * generic user-facing message. We never leak raw model output, stack traces, or upstream error
+ * bodies to the browser — that's been a real source of prod incidents elsewhere. All three
+ * features share this one handler since the failure modes (and the "out of credits" detection)
+ * are identical — same Anthropic account, same error shapes.
  *
  * <p>Scoped via {@link Order} ahead of any generic global handlers. The exception types are
- * specific to these two AI features, so this advice doesn't accidentally swallow unrelated 500s.
+ * specific to these AI features, so this advice doesn't accidentally swallow unrelated 500s.
  */
 @RestControllerAdvice(basePackages = "com.salonreview.web")
 @Order(0)
@@ -54,6 +55,13 @@ public class TriageExceptionHandler {
     @ExceptionHandler(DraftFailedException.class)
     public ResponseEntity<Map<String, String>> handleDraftFailed(DraftFailedException e) {
         log.error("SMS draft failed (502 to client): {}", e.toString(), e);
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(Map.of("error", userMessageFor(e)));
+    }
+
+    @ExceptionHandler(SeoAiAdvisorService.AnalysisFailedException.class)
+    public ResponseEntity<Map<String, String>> handleSeoAnalysisFailed(SeoAiAdvisorService.AnalysisFailedException e) {
+        log.error("SEO analysis failed (502 to client): {}", e.toString(), e);
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(Map.of("error", userMessageFor(e)));
     }
