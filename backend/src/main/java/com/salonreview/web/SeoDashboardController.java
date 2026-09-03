@@ -58,12 +58,21 @@ public class SeoDashboardController {
         return toDto(dashboardService.overview(businessId, days));
     }
 
+    /** Deliberately does NOT call {@code syncPageSpeed} here. PageSpeed/Lighthouse is the one
+     * dependency slow and unreliable enough to need its own weekly cadence in the first place
+     * (design.md Risks) — {@code SeoPageSpeedSyncScheduler} already refreshes it in the
+     * background. Folding it into this synchronous button was making a manual sync take 50-60s
+     * end-to-end whenever Lighthouse's own API was slow/erroring, long enough that a mobile
+     * browser or an impatient click-away would sever the connection before the (otherwise
+     * successful) response arrived, surfacing as a client-side "load failed" even though the
+     * backend completed and persisted everything correctly. Search Console + GA4 alone return in
+     * a couple seconds, so the button now stays fast and reliable for the data it can safely
+     * refresh on demand. */
     @PostMapping("/sync")
     public SeoOverviewDto sync() {
         Long businessId = requireFeatureEnabled();
         syncService.syncSearchConsole(businessId);
         syncService.syncAnalytics(businessId);
-        syncService.syncPageSpeed(businessId);
         return toDto(dashboardService.overview(businessId, DEFAULT_TREND_DAYS));
     }
 

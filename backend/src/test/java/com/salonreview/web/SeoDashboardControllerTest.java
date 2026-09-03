@@ -78,7 +78,7 @@ class SeoDashboardControllerTest {
     }
 
     @Test
-    @DisplayName("sync() triggers all three sync methods for the calling business when enabled")
+    @DisplayName("sync() triggers Search Console + GA4 (fast, on-demand) but not PageSpeed (stays weekly-scheduled only)")
     void syncTriggersAllSyncMethodsWhenEnabled() {
         currentBusinessContext.runAs(1L, () -> {
             when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
@@ -91,7 +91,7 @@ class SeoDashboardControllerTest {
 
             verify(syncService).syncSearchConsole(1L);
             verify(syncService).syncAnalytics(1L);
-            verify(syncService).syncPageSpeed(1L);
+            verify(syncService, never()).syncPageSpeed(1L);
         });
     }
 
