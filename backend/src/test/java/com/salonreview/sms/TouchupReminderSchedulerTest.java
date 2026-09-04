@@ -4,6 +4,7 @@ import com.salonreview.config.TouchupReminderProperties;
 import com.salonreview.domain.ServiceLifecycleReminderSend;
 import com.salonreview.domain.ServiceLifecycleRole;
 import com.salonreview.domain.TwilioSmsConfig;
+import com.salonreview.repo.ProviderVisitRepository;
 import com.salonreview.repo.ServiceLifecycleReminderSendRepository;
 import com.salonreview.repo.ServiceLifecycleRoleRepository;
 import com.salonreview.repo.TwilioSmsConfigRepository;
@@ -36,6 +37,7 @@ class TouchupReminderSchedulerTest {
 
     private ServiceLifecycleRoleRepository roleRepository;
     private ServiceLifecycleReminderSendRepository sendRepository;
+    private ProviderVisitRepository visitRepository;
     private SquareClient square;
     private SmsAutomationService automationService;
     private SmsMessageLogService messageLogService;
@@ -46,6 +48,7 @@ class TouchupReminderSchedulerTest {
     void setUp() {
         roleRepository = mock(ServiceLifecycleRoleRepository.class);
         sendRepository = mock(ServiceLifecycleReminderSendRepository.class);
+        visitRepository = mock(ProviderVisitRepository.class);
         square = mock(SquareClient.class);
         SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
         TwilioSmsConfigRepository twilioConfigs = mock(TwilioSmsConfigRepository.class);
@@ -58,8 +61,8 @@ class TouchupReminderSchedulerTest {
         smsService = mock(TwilioSmsService.class);
         TouchupReminderProperties properties = new TouchupReminderProperties();
 
-        scheduler = new TouchupReminderScheduler(roleRepository, sendRepository, squareClientProvider, twilioConfigs,
-                automationService, messageLogService, smsService, properties);
+        scheduler = new TouchupReminderScheduler(roleRepository, sendRepository, visitRepository, squareClientProvider,
+                twilioConfigs, automationService, messageLogService, smsService, properties);
 
         givenRoles(List.of(role("INITIAL_PROCEDURE", INITIAL_ID)), List.of(role("TOUCH_UP", TOUCHUP_ID)));
         when(smsService.sendTemplated(any(), any(), any(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
@@ -67,6 +70,12 @@ class TouchupReminderSchedulerTest {
         when(square.customerGivenNames(List.of("cust1"))).thenReturn(Map.of("cust1", "Jane"));
         when(messageLogService.hasNegativeFeedback(eq(BUSINESS_ID), any())).thenReturn(false);
         when(square.bookingsForCustomer(eq("cust1"), any())).thenReturn(List.of());
+        // Default: a real settled visit exists for whatever date a test's booking claims — see
+        // the dedicated "no real visit" test below for the opposite case. 2026-09-04: this check
+        // was added after a real incident (business 2's online-deposit bookings with no actual
+        // in-person checkout), so every pre-existing test here needs this stubbed to keep testing
+        // what it always tested, now that a real visit is a required precondition.
+        when(visitRepository.existsByBusinessIdAndCustomerIdAndServiceDate(eq(BUSINESS_ID), any(), any())).thenReturn(true);
     }
 
     private void givenRoles(List<ServiceLifecycleRole> initial, List<ServiceLifecycleRole> touchUp) {
@@ -265,6 +274,20 @@ class TouchupReminderSchedulerTest {
 
         verifyNoInteractions(smsService);
         verify(sendRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("2026-09-04 regression: booking matches INITIAL_PROCEDURE but has no real settled "
+            + "visit on file (e.g. an online-deposit booking never actually attended) → ignored, no send")
+    void bookingWithoutARealVisitIsIgnored() {
+        when(square.bookings(any(), any())).thenReturn(List.of(initialProcedureBooking(28)));
+        when(visitRepository.existsByBusinessIdAndCustomerIdAndServiceDate(eq(BUSINESS_ID), eq("cust1"), any()))
+                .thenReturn(false);
+
+        scheduler.sendDueReminders();
+
+        verifyNoInteractions(smsService, sendRepository);
+        verify(square, never()).bookingsForCustomer(any(), any());
     }
 
     @Test

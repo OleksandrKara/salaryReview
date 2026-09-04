@@ -4,6 +4,7 @@ import com.salonreview.config.TouchupReminderProperties;
 import com.salonreview.domain.ServiceLifecycleReminderSend;
 import com.salonreview.domain.ServiceLifecycleRole;
 import com.salonreview.domain.TwilioSmsConfig;
+import com.salonreview.repo.ProviderVisitRepository;
 import com.salonreview.repo.ServiceLifecycleReminderSendRepository;
 import com.salonreview.repo.ServiceLifecycleRoleRepository;
 import com.salonreview.repo.TwilioSmsConfigRepository;
@@ -45,6 +46,15 @@ import java.util.stream.Collectors;
  * <p>Daily cron, not a fast poll — same reasoning as every other multi-day-window automation in
  * this package ({@link LapsedCustomerWinbackScheduler}, {@link RepeatCustomerWinbackScheduler}):
  * the eligibility window moves day-to-day, not minute-to-minute.
+ *
+ * <p><b>Real-visit check (added 2026-09-04):</b> a Square Booking that's merely not cancelled is
+ * not proof the customer actually attended — a real incident found this the hard way for business
+ * 2 (PMU), where a booking can exist purely from an online deposit invoice with no in-person
+ * checkout ever following it; a live check found 55% of otherwise-"eligible" bookings had no
+ * matching settled visit at all. Every candidate is now cross-checked against {@code
+ * ProviderVisitRepository} (the same real-visit ledger {@link LapsedCustomerWinbackScheduler}/
+ * {@link RepeatCustomerWinbackScheduler} already require) before being treated as a genuine
+ * trigger — see {@link com.salonreview.repo.ProviderVisitRepository#existsByBusinessIdAndCustomerIdAndServiceDate}.
  */
 @Component
 public class TouchupReminderScheduler {
@@ -59,6 +69,7 @@ public class TouchupReminderScheduler {
 
     private final ServiceLifecycleRoleRepository roleRepository;
     private final ServiceLifecycleReminderSendRepository sendRepository;
+    private final ProviderVisitRepository visitRepository;
     private final SquareClientProvider squareClientProvider;
     private final TwilioSmsConfigRepository twilioConfigs;
     private final SmsAutomationService automationService;
@@ -68,6 +79,7 @@ public class TouchupReminderScheduler {
 
     public TouchupReminderScheduler(ServiceLifecycleRoleRepository roleRepository,
                                      ServiceLifecycleReminderSendRepository sendRepository,
+                                     ProviderVisitRepository visitRepository,
                                      SquareClientProvider squareClientProvider,
                                      TwilioSmsConfigRepository twilioConfigs,
                                      SmsAutomationService automationService,
@@ -76,6 +88,7 @@ public class TouchupReminderScheduler {
                                      TouchupReminderProperties properties) {
         this.roleRepository = roleRepository;
         this.sendRepository = sendRepository;
+        this.visitRepository = visitRepository;
         this.squareClientProvider = squareClientProvider;
         this.twilioConfigs = twilioConfigs;
         this.automationService = automationService;
@@ -142,6 +155,14 @@ public class TouchupReminderScheduler {
                         && booking.appointmentSegments().stream()
                                 .anyMatch(s -> initialProcedureIds.contains(s.serviceVariationId()));
                 if (!matchesInitialProcedure) continue;
+
+                // A Square Booking merely "not cancelled" is not proof a real visit happened — see
+                // ProviderVisitRepository#existsByBusinessIdAndCustomerIdAndServiceDate's own doc
+                // for the real incident this guards against (business 2's online-deposit bookings
+                // that were never actually attended in person).
+                if (!visitRepository.existsByBusinessIdAndCustomerIdAndServiceDate(businessId, booking.customerId(), triggerDate)) {
+                    continue;
+                }
 
                 if (sendRepository.existsByBusinessIdAndAutomationKeyAndSquareCustomerIdAndTriggerServiceDate(
                         businessId, AUTOMATION_KEY, booking.customerId(), triggerDate)) {

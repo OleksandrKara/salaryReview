@@ -24,6 +24,18 @@ public interface ProviderVisitRepository extends JpaRepository<ProviderVisit, Lo
 
     long countByBusinessIdAndServiceDateBetween(Long businessId, LocalDate from, LocalDate to);
 
+    /** Whether a real, settled visit (money actually collected for services rendered — see {@code
+     * ProviderVisitIngestService}, which populates this table from the same source settlements
+     * use) happened for this customer on this exact date, regardless of which provider. Added
+     * 2026-09-04 after a real production near-miss: {@code TouchupReminderScheduler}/{@code
+     * ColorBoosterReminderScheduler} were triggering off Square's raw Booking status alone
+     * ("accepted, not cancelled") with no check that a real checkout ever happened — for business 2
+     * (PMU, where a booking can exist purely from an online deposit invoice with no in-person
+     * checkout to follow), a real check against live data found 55% of otherwise-"eligible"
+     * bookings had no matching visit here at all. Any of that customer's providers counts — the
+     * point is confirming a real visit happened that day, not which staff member it was. */
+    boolean existsByBusinessIdAndCustomerIdAndServiceDate(Long businessId, String customerId, LocalDate serviceDate);
+
     @Transactional
     void deleteByBusinessIdAndServiceDateBetween(Long businessId, LocalDate from, LocalDate to);
 }
