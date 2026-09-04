@@ -4,6 +4,7 @@ import com.salonreview.domain.SmsAutomation;
 import com.salonreview.domain.WinbackEmailSend;
 import com.salonreview.repo.LapsedCustomerWinbackSendRepository;
 import com.salonreview.repo.RepeatCustomerWinbackSendRepository;
+import com.salonreview.repo.SameDayRebookingSendRepository;
 import com.salonreview.repo.ServiceLifecycleReminderSendRepository;
 import com.salonreview.repo.SmsAutomationRepository;
 import com.salonreview.repo.SmsMessageRepository;
@@ -40,22 +41,24 @@ public class SmsAutomationService {
                                      boolean tracksConversion, long convertedLast30Days,
                                      boolean tracksEmail, long emailSentLast30Days,
                                      long emailOpenedLast30Days, long emailClickedLast30Days,
+                                     long emailConvertedLast30Days,
                                      boolean ready, String readinessReason) {}
 
-    /** Automations with an email fallback leg (see {@code WinbackEmailFallbackScheduler}) — the
-     * only two right now. Drives whether {@link #list} bothers querying
-     * {@link WinbackEmailSendRepository} at all for a given automation, same
-     * "only compute what's actually meaningful" reasoning as {@code tracksClicks}/{@code
-     * tracksReplies}/{@code tracksConversion} on {@link SmsAutomationRegistry.AutomationMeta}. Kept
-     * here rather than added as a new field on that record so every other {@code AutomationMeta}
-     * entry didn't need a mechanical constructor-arity update for two automations' sake. */
+    /** Automations with an email fallback leg (see {@code WinbackEmailFallbackScheduler}). Drives
+     * whether {@link #list} bothers querying {@link WinbackEmailSendRepository} at all for a given
+     * automation, same "only compute what's actually meaningful" reasoning as {@code
+     * tracksClicks}/{@code tracksReplies}/{@code tracksConversion} on {@code
+     * SmsAutomationRegistry.AutomationMeta}. Kept here rather than added as a new field on that
+     * record so every other {@code AutomationMeta} entry didn't need a mechanical constructor-arity
+     * update for the automations that actually have a second channel. */
     private static final Set<String> EMAIL_FALLBACK_AUTOMATIONS =
-            Set.of("lapsed_customer_winback", "repeat_customer_winback");
+            Set.of("lapsed_customer_winback", "repeat_customer_winback", "same_day_rebooking_discount");
 
     private final SmsAutomationRepository repository;
     private final SmsMessageRepository messageRepository;
     private final LapsedCustomerWinbackSendRepository lapsedCustomerWinbackSendRepository;
     private final RepeatCustomerWinbackSendRepository repeatCustomerWinbackSendRepository;
+    private final SameDayRebookingSendRepository sameDayRebookingSendRepository;
     private final ServiceLifecycleReminderSendRepository serviceLifecycleReminderSendRepository;
     private final WinbackEmailSendRepository winbackEmailSendRepository;
     private final AutomationReadinessService readinessService;
@@ -63,6 +66,7 @@ public class SmsAutomationService {
     public SmsAutomationService(SmsAutomationRepository repository, SmsMessageRepository messageRepository,
                                  LapsedCustomerWinbackSendRepository lapsedCustomerWinbackSendRepository,
                                  RepeatCustomerWinbackSendRepository repeatCustomerWinbackSendRepository,
+                                 SameDayRebookingSendRepository sameDayRebookingSendRepository,
                                  ServiceLifecycleReminderSendRepository serviceLifecycleReminderSendRepository,
                                  WinbackEmailSendRepository winbackEmailSendRepository,
                                  AutomationReadinessService readinessService) {
@@ -70,6 +74,7 @@ public class SmsAutomationService {
         this.messageRepository = messageRepository;
         this.lapsedCustomerWinbackSendRepository = lapsedCustomerWinbackSendRepository;
         this.repeatCustomerWinbackSendRepository = repeatCustomerWinbackSendRepository;
+        this.sameDayRebookingSendRepository = sameDayRebookingSendRepository;
         this.serviceLifecycleReminderSendRepository = serviceLifecycleReminderSendRepository;
         this.winbackEmailSendRepository = winbackEmailSendRepository;
         this.readinessService = readinessService;
@@ -137,6 +142,7 @@ public class SmsAutomationService {
                     long converted = switch (meta.key()) {
                         case "lapsed_customer_winback" -> lapsedCustomerWinbackSendRepository.countConvertedSince(businessId, "SENT", since);
                         case "repeat_customer_winback" -> repeatCustomerWinbackSendRepository.countConvertedSince(businessId, "SENT", since);
+                        case "same_day_rebooking_discount" -> sameDayRebookingSendRepository.countConvertedSince(businessId, "SENT", since);
                         case "touchup_reminder", "color_booster_reminder" ->
                                 serviceLifecycleReminderSendRepository.countConvertedSince(businessId, meta.key(), "SENT", since);
                         default -> 0L;
@@ -144,19 +150,24 @@ public class SmsAutomationService {
 
                     // Email fallback stats (see WinbackEmailFallbackScheduler) — a distinct channel
                     // from the SMS clicked/replied numbers above, so shown as its own line on the
-                    // card rather than folded in. Conversion isn't split by channel: a visit after
-                    // the send counts as "converted" above regardless of which link the customer
-                    // actually clicked, so there's no separate emailConverted to compute here.
+                    // card rather than folded in. emailConverted is its own count (not just a copy
+                    // of `converted` above): a visit could follow the earlier SMS's click instead of
+                    // this email, so crediting every conversion to the email row would overstate
+                    // what the email itself accomplished — see WinbackEmailSendRepository
+                    // #countConvertedSince's own doc.
                     boolean tracksEmail = EMAIL_FALLBACK_AUTOMATIONS.contains(meta.key());
                     long emailSent = 0;
                     long emailOpened = 0;
                     long emailClicked = 0;
+                    long emailConverted = 0;
                     if (tracksEmail) {
                         emailSent = winbackEmailSendRepository.countByBusinessIdAndAutomationKeyAndStateAndCreatedAtAfter(
                                 businessId, meta.key(), WinbackEmailSend.STATE_SENT, since);
                         emailOpened = winbackEmailSendRepository.countByBusinessIdAndAutomationKeyAndStateAndOpenedAtIsNotNullAndCreatedAtAfter(
                                 businessId, meta.key(), WinbackEmailSend.STATE_SENT, since);
                         emailClicked = winbackEmailSendRepository.countByBusinessIdAndAutomationKeyAndStateAndEmailClickedAtIsNotNullAndCreatedAtAfter(
+                                businessId, meta.key(), WinbackEmailSend.STATE_SENT, since);
+                        emailConverted = winbackEmailSendRepository.countConvertedSince(
                                 businessId, meta.key(), WinbackEmailSend.STATE_SENT, since);
                     }
 
@@ -165,7 +176,7 @@ public class SmsAutomationService {
                     return new AutomationSummary(meta.key(), meta.name(), meta.audienceDescription(), enabled, sent,
                             meta.tracksClicks(), linkSent, clicked, meta.tracksReplies(), replies,
                             meta.tracksConversion(), converted, tracksEmail, emailSent, emailOpened, emailClicked,
-                            readiness.ready(), readiness.reason());
+                            emailConverted, readiness.ready(), readiness.reason());
                 })
                 .toList();
     }

@@ -34,10 +34,12 @@ public final class SmsAutomationRegistry {
      *
      * <p>{@code tracksConversion} says whether this automation's actual business outcome — did the
      * customer come back for a real visit afterward, not just click or reply — can be measured from
-     * data we already have. Currently only {@code repeat_customer_winback} sets this: its whole
-     * point is winning back a visit, and {@code provider_visit} lets us check directly whether one
-     * happened after the send, unlike (for example) {@code checkout_review_request}, whose "outcome"
-     * is a rating, not a future visit.
+     * data we already have: every automation whose whole point is a future visit (both winbacks,
+     * both service-lifecycle reminders, same-day rebooking) sets this, since {@code provider_visit}
+     * lets us check directly whether a completed visit happened after the send. Unset for
+     * automations whose "outcome" isn't a future visit at all — {@code checkout_review_request}'s
+     * is a rating, {@code lead_follow_up}/{@code consultation_lead_sms}/{@code four_hand_request}
+     * are single confirmations with nothing further to convert into.
      */
     public record AutomationMeta(String key, String name, String audienceDescription,
                                   List<String> primaryTemplateKeys, boolean tracksClicks, boolean tracksReplies,
@@ -88,8 +90,9 @@ public final class SmsAutomationRegistry {
                     "Same-day rebooking discount",
                     "Every in-salon checkout, 3 hours later, if they haven't already rebooked and have "
                             + "given SMS-marketing consent (in this app or in Square) — a $10-off nudge to "
-                            + "rebook before midnight, min. $99 order",
-                    List.of(), true, false, false
+                            + "rebook before midnight, min. $99 order. Customers who neither click nor reply "
+                            + "by evening also get a follow-up email — see WinbackEmailFallbackScheduler.",
+                    List.of(), true, true, true
             ),
             "lapsed_customer_winback", new AutomationMeta(
                     "lapsed_customer_winback",
