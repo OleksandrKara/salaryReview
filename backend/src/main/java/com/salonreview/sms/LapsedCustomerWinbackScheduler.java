@@ -8,7 +8,6 @@ import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.LapsedCustomerWinbackSendRepository;
 import com.salonreview.repo.TwilioSmsConfigRepository;
-import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
 import com.salonreview.util.Names;
@@ -20,9 +19,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
@@ -68,6 +65,7 @@ public class LapsedCustomerWinbackScheduler {
     private final String publicBaseUrl;
     private final BusinessRepository businessRepository;
     private final PromoConfigService promoConfigService;
+    private final SquareUpcomingAppointmentService upcomingAppointmentService;
 
     public LapsedCustomerWinbackScheduler(LapsedCustomerWinbackEligibilityRepository eligibilityRepository,
                                            LapsedCustomerWinbackSendRepository sendRepository,
@@ -77,7 +75,8 @@ public class LapsedCustomerWinbackScheduler {
                                            TwilioSmsConfigService configService, TwilioSmsClient client,
                                            SmsMessageTemplateService templateService,
                                            @Value("${app.public-base-url}") String publicBaseUrl,
-                                           BusinessRepository businessRepository, PromoConfigService promoConfigService) {
+                                           BusinessRepository businessRepository, PromoConfigService promoConfigService,
+                                           SquareUpcomingAppointmentService upcomingAppointmentService) {
         this.eligibilityRepository = eligibilityRepository;
         this.sendRepository = sendRepository;
         this.squareClientProvider = squareClientProvider;
@@ -92,6 +91,7 @@ public class LapsedCustomerWinbackScheduler {
         this.publicBaseUrl = publicBaseUrl;
         this.businessRepository = businessRepository;
         this.promoConfigService = promoConfigService;
+        this.upcomingAppointmentService = upcomingAppointmentService;
     }
 
     // zone is mandatory — the container runs on UTC (confirmed via `date` on
@@ -140,7 +140,7 @@ public class LapsedCustomerWinbackScheduler {
 
         boolean upcoming;
         try {
-            upcoming = hasUpcomingAppointment(customer.squareCustomerId(), square);
+            upcoming = upcomingAppointmentService.hasUpcomingAppointment(phoneNumber, square);
         } catch (RuntimeException ex) {
             // Fails closed, same as every other scheduler in this package: a transient Square
             // failure means "don't know," not "assume unbooked" — no row written, retried on the
@@ -193,15 +193,6 @@ public class LapsedCustomerWinbackScheduler {
         } catch (org.springframework.dao.DataIntegrityViolationException e) {
             return false;
         }
-    }
-
-    /** Live check for any not-cancelled, not-yet-happened Square appointment — same helper every
-     * other scheduler in this package uses. */
-    private boolean hasUpcomingAppointment(String customerId, SquareClient square) {
-        LocalDate today = LocalDate.now(ZoneOffset.UTC);
-        return square.bookingsForCustomer(customerId, Instant.now()).stream()
-                .filter(SquareBookingFilters::didHappen)
-                .anyMatch(b -> SquareBookingFilters.isTodayOrLater(b.startAt(), today));
     }
 
     /** Consent from *either* source is sufficient — same dual-source check

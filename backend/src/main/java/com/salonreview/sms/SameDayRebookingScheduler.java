@@ -6,7 +6,6 @@ import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.SameDayRebookingSendRepository;
 import com.salonreview.repo.TwilioSmsConfigRepository;
-import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
@@ -17,8 +16,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 
@@ -58,6 +55,7 @@ public class SameDayRebookingScheduler {
     private final SmsMessageTemplateService templateService;
     private final String publicBaseUrl;
     private final PromoConfigService promoConfigService;
+    private final SquareUpcomingAppointmentService upcomingAppointmentService;
 
     public SameDayRebookingScheduler(SameDayRebookingSendRepository repository, SquareClientProvider squareClientProvider,
                                       TwilioSmsConfigRepository twilioConfigs,
@@ -66,7 +64,8 @@ public class SameDayRebookingScheduler {
                                       TwilioSmsConfigService configService, TwilioSmsClient client,
                                       TechnicianNameResolver technicianNameResolver, SmsMessageTemplateService templateService,
                                       @Value("${app.public-base-url}") String publicBaseUrl,
-                                      PromoConfigService promoConfigService) {
+                                      PromoConfigService promoConfigService,
+                                      SquareUpcomingAppointmentService upcomingAppointmentService) {
         this.repository = repository;
         this.squareClientProvider = squareClientProvider;
         this.twilioConfigs = twilioConfigs;
@@ -80,6 +79,7 @@ public class SameDayRebookingScheduler {
         this.templateService = templateService;
         this.publicBaseUrl = publicBaseUrl;
         this.promoConfigService = promoConfigService;
+        this.upcomingAppointmentService = upcomingAppointmentService;
     }
 
     // initialDelay: @Scheduled triggers can start firing before ApplicationRunners (incl.
@@ -123,7 +123,7 @@ public class SameDayRebookingScheduler {
 
         boolean upcoming;
         try {
-            upcoming = hasUpcomingAppointment(send.getSquareCustomerId(), square);
+            upcoming = upcomingAppointmentService.hasUpcomingAppointment(send.getPhoneNumber(), square);
         } catch (RuntimeException ex) {
             // Fails closed, same as LeadFollowUpScheduler: a transient Square failure means
             // "don't know," not "assume unbooked" — no row update, retried next poll tick.
@@ -157,16 +157,6 @@ public class SameDayRebookingScheduler {
 
         sendNudge(send, hasConsent(send, square), businessId, promoTerms.get());
         save(send, SameDayRebookingSend.STATE_SENT);
-    }
-
-    /** Live check for any not-cancelled, not-yet-happened Square appointment — same helper
-     * {@code lead_follow_up} uses, but the customer id here is already known from the triggering
-     * order, no phone-number-lookup fallback needed. */
-    private boolean hasUpcomingAppointment(String customerId, SquareClient square) {
-        LocalDate today = LocalDate.now(ZoneOffset.UTC);
-        return square.bookingsForCustomer(customerId, Instant.now()).stream()
-                .filter(SquareBookingFilters::didHappen)
-                .anyMatch(b -> SquareBookingFilters.isTodayOrLater(b.startAt(), today));
     }
 
     /** Consent from *either* source is sufficient — see design.md D3. */

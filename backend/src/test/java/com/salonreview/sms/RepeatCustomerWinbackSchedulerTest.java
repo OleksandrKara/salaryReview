@@ -82,11 +82,14 @@ class RepeatCustomerWinbackSchedulerTest {
         scheduler = new RepeatCustomerWinbackScheduler(eligibilityRepository, sendRepository, squareClientProvider,
                 twilioConfigs, automationService, consentRepository, rebookingProperties, messageLogService,
                 blockedNumberRepository, configService, client, templateService, "https://salon.akluxnails.com",
-                businessRepository, promoConfigService);
+                businessRepository, promoConfigService, new SquareUpcomingAppointmentService());
 
         when(automationService.isEnabled(1L, "repeat_customer_winback")).thenReturn(true);
         when(square.customerPhone(CUSTOMER_ID)).thenReturn(PHONE);
         when(square.customerGivenNames(List.of(CUSTOMER_ID))).thenReturn(Map.of(CUSTOMER_ID, "Jane"));
+        // hasUpcomingAppointment (SquareUpcomingAppointmentService) checks every Square customer
+        // profile for the phone number, not just CUSTOMER_ID — see that class's own doc comment.
+        when(square.customerIdsForPhone(PHONE)).thenReturn(List.of(CUSTOMER_ID));
         when(square.bookingsForCustomer(eq(CUSTOMER_ID), any())).thenReturn(List.of());
         when(blockedNumberRepository.existsById(PHONE)).thenReturn(false);
         when(messageLogService.generateUniqueClickToken()).thenReturn("tok123");
@@ -375,6 +378,7 @@ class RepeatCustomerWinbackSchedulerTest {
         SquareClient otherSquare = mock(SquareClient.class);
         when(otherSquare.customerPhone("cust2")).thenReturn(otherPhone);
         when(otherSquare.customerGivenNames(List.of("cust2"))).thenReturn(Map.of("cust2", "Other"));
+        when(otherSquare.customerIdsForPhone(otherPhone)).thenReturn(List.of("cust2"));
         when(otherSquare.bookingsForCustomer(eq("cust2"), any())).thenReturn(List.of());
         when(twilioConfigs.findAll()).thenReturn(List.of(
                 TwilioSmsConfig.builder().businessId(BUSINESS_ID).build(),
