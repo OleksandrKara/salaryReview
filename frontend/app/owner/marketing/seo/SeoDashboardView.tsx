@@ -1332,9 +1332,16 @@ export default function SeoDashboardView({
         </div>
       )}
 
-      <div className="flex flex-col gap-4 sm:flex-row">
-        <CoreWebVitalsCard label="Mobile" vitals={data.mobile} />
-        <CoreWebVitalsCard label="Desktop" vitals={data.desktop} />
+      <div>
+        <p className="mb-2 text-xs text-zinc-400">
+          Core Web Vitals update once a week (PageSpeed Insights is too slow/quota-limited to run on
+          every &ldquo;Sync now&rdquo; click) — the date on each card below is its own last-checked
+          date, not the &ldquo;Last synced&rdquo; timestamp above.
+        </p>
+        <div className="flex flex-col gap-4 sm:flex-row">
+          <CoreWebVitalsCard label="Mobile" vitals={data.mobile} />
+          <CoreWebVitalsCard label="Desktop" vitals={data.desktop} />
+        </div>
       </div>
 
       <div className="rounded-lg p-3 ring-1 ring-zinc-200 sm:p-4">
