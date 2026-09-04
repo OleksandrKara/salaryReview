@@ -526,14 +526,16 @@ export interface SmsAutomationSummary {
   replyLast30Days: number;
   tracksConversion: boolean;
   convertedLast30Days: number;
-  // The email fallback leg (see WinbackEmailFallbackScheduler) — only lapsed_customer_winback and
-  // repeat_customer_winback set tracksEmail true. A distinct channel from the SMS click/reply
-  // stats above, shown as its own line — conversion isn't split by channel (see
-  // SmsAutomationService#list's own doc), so there's no separate emailConverted count.
+  // The email fallback leg (see WinbackEmailFallbackScheduler) — set by lapsed_customer_winback,
+  // repeat_customer_winback, and same_day_rebooking_discount. A distinct channel from the SMS
+  // click/reply stats above, shown as its own line — emailConvertedLast30Days is its own count,
+  // not a copy of convertedLast30Days, since a visit could follow the earlier SMS's click instead
+  // of the email (see SmsAutomationService#list's own doc).
   tracksEmail: boolean;
   emailSentLast30Days: number;
   emailOpenedLast30Days: number;
   emailClickedLast30Days: number;
+  emailConvertedLast30Days: number;
   // Whether required config (a coupon, review links, lifecycle-role services, ...) is present —
   // separate from `enabled`. false blocks turning the toggle ON (never blocks turning it OFF) —
   // see AutomationReadinessService.

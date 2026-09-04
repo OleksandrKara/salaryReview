@@ -67,4 +67,21 @@ public interface WinbackEmailSendRepository extends JpaRepository<WinbackEmailSe
             + "AND v.customer_id = :customerId AND v.service_date > CAST(:sentAt AS date))", nativeQuery = true)
     boolean hasConversionSince(@Param("businessId") Long businessId, @Param("customerId") String customerId,
                                 @Param("sentAt") Instant sentAt);
+
+    /** Aggregate form of {@link #hasConversionSince}, per automation — backs each automation
+     * card's own "returned" stat for the email channel specifically (see {@code
+     * SmsAutomationService#list}), same "did they actually come back" outcome definition as the
+     * SMS-side {@code countConvertedSince} methods, just anchored to this row's own send time
+     * rather than a pre-automation last-visit/visit-date column. Only counts real {@code STATE_SENT}
+     * rows — a {@code SKIPPED_*}/{@code SEND_FAILED} row was never actually delivered, so crediting
+     * a later visit to it would overstate what this specific email accomplished. */
+    @Query(value = "SELECT COUNT(*) FROM winback_email_send w "
+            + "WHERE w.business_id = :businessId AND w.automation_key = :automationKey "
+            + "AND w.state = :state AND w.created_at >= :since "
+            + "AND EXISTS (SELECT 1 FROM provider_visit v "
+            + "            WHERE v.business_id = :businessId AND v.customer_id = w.square_customer_id "
+            + "              AND v.service_date > CAST(w.created_at AS date))",
+            nativeQuery = true)
+    long countConvertedSince(@Param("businessId") Long businessId, @Param("automationKey") String automationKey,
+                              @Param("state") String state, @Param("since") Instant since);
 }

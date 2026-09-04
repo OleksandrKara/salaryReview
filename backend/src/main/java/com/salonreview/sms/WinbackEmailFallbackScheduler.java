@@ -27,13 +27,15 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Evening email follow-up for the two win-back SMS automations — SMS goes out first, once daily at
- * 10am (see {@link LapsedCustomerWinbackScheduler}/{@link RepeatCustomerWinbackScheduler}); this
- * scheduler runs later the same day and emails only the customers who neither clicked their SMS
- * link nor replied by then. Deliberately not a parallel/simultaneous channel — SMS is the
- * higher-converting channel for this business (see the 2026-08-27 open-rate/CTR analysis), so email
- * is a second touch for non-responders, not a duplicate one, and it's framed in the templates as a
- * "last call" follow-up ("the $5 off I texted you about earlier") rather than a cold open.
+ * Evening email follow-up for the SMS automations that offer a discount to come back — SMS goes
+ * out first (see {@link LapsedCustomerWinbackScheduler}/{@link RepeatCustomerWinbackScheduler},
+ * both once-daily at 10am; {@link SameDayRebookingScheduler} fires 3 hours after checkout, same
+ * day); this scheduler runs at a fixed evening time and emails only the customers who neither
+ * clicked their SMS link nor replied by then. Deliberately not a parallel/simultaneous channel —
+ * SMS is the higher-converting channel for this business (see the 2026-08-27 open-rate/CTR
+ * analysis), so email is a second touch for non-responders, not a duplicate one, and it's framed
+ * in the templates as a "last call" follow-up ("the $10 off I texted you about earlier") rather
+ * than a cold open.
  *
  * <p>Reuses the exact same click-tracked short link the SMS carried ({@link SmsMessage#getClickToken()})
  * rather than minting a new one — a click from either channel marks the same {@code sms_message}
@@ -41,14 +43,18 @@ import java.util.Optional;
  *
  * <p>7pm, not right at the coupon's midnight expiry — late enough that most people who were going
  * to see and act on the morning SMS already have, early enough that the email doesn't arrive after
- * most people have stopped checking their inbox for the night.
+ * most people have stopped checking their inbox for the night. Same fixed time regardless of which
+ * automation sent the morning SMS, same-day-rebooking included, even though that one's own SMS
+ * fires at a variable time (3 hours after checkout) rather than a fixed 10am — the email leg's own
+ * timing was never meant to track the SMS's send time, just to land in the evening either way.
  */
 @Component
 public class WinbackEmailFallbackScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(WinbackEmailFallbackScheduler.class);
     private static final List<String> AUTOMATION_KEYS = List.of(
-            LapsedCustomerWinbackScheduler.AUTOMATION_KEY, RepeatCustomerWinbackScheduler.AUTOMATION_KEY);
+            LapsedCustomerWinbackScheduler.AUTOMATION_KEY, RepeatCustomerWinbackScheduler.AUTOMATION_KEY,
+            SameDayRebookingScheduler.AUTOMATION_KEY);
     private static final ZoneId SALON_ZONE = ZoneId.of("America/Los_Angeles");
 
     private final SmsMessageRepository smsMessageRepository;
@@ -146,7 +152,12 @@ public class WinbackEmailFallbackScheduler {
             return;
         }
 
-        var promoTerms = promoConfigService.get(businessId, PromoConfigService.WINBACK_PROMO_CODE);
+        // same_day_rebooking_discount's own coupon (REBOOK10, $10) is a different one from the two
+        // winback automations' (WINBACK5, $5) — see PromoConfigService's own constants and
+        // SmsAutomationRegistry's per-automation descriptions.
+        String promoCode = SameDayRebookingScheduler.AUTOMATION_KEY.equals(automationKey)
+                ? PromoConfigService.REBOOK_PROMO_CODE : PromoConfigService.WINBACK_PROMO_CODE;
+        var promoTerms = promoConfigService.get(businessId, promoCode);
         String discountAmount = promoTerms.map(t -> PromoConfigService.formatDollars(t.discountCents())).orElse("$5");
 
         String givenName = Names.capitalizeFirst(

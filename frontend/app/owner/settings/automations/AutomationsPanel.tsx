@@ -45,15 +45,17 @@ const CATEGORY_META: Record<AutomationCategory, { label: string; className: stri
 // Which channel(s) each automation actually sends over — a display badge per channel so it's
 // obvious at a glance without opening the SMS/Email/Telegram tabs. Every automation defaults to
 // ['sms'] (the vast majority) — override only for the ones that add a channel:
-// lapsed/repeat_customer_winback add an email fallback (see WinbackEmailFallbackScheduler: SMS
-// goes out first, email only follows up on customers who neither clicked nor replied by evening);
-// four_hand_request also pings staff on Telegram (see InternalNotificationController /
-// FourHandRequestNotification) — a different audience (staff, not the customer) than its SMS leg
-// (the customer's own confirmation text), but still a real second channel worth flagging.
+// lapsed/repeat_customer_winback and same_day_rebooking_discount add an email fallback (see
+// WinbackEmailFallbackScheduler: SMS goes out first, email only follows up on customers who
+// neither clicked nor replied by evening); four_hand_request also pings staff on Telegram (see
+// InternalNotificationController / FourHandRequestNotification) — a different audience (staff,
+// not the customer) than its SMS leg (the customer's own confirmation text), but still a real
+// second channel worth flagging.
 type Channel = 'sms' | 'email' | 'telegram';
 const AUTOMATION_CHANNELS: Record<string, Channel[]> = {
   lapsed_customer_winback: ['sms', 'email'],
   repeat_customer_winback: ['sms', 'email'],
+  same_day_rebooking_discount: ['sms', 'email'],
   four_hand_request: ['sms', 'telegram'],
 };
 const CHANNEL_META: Record<Channel, { label: string; dotClassName: string }> = {
@@ -214,6 +216,9 @@ function AutomationCard({
   const emailClickRate = automation.tracksEmail
     ? formatRate(automation.emailClickedLast30Days, automation.emailSentLast30Days)
     : undefined;
+  const emailConversionRate = automation.tracksEmail
+    ? formatRate(automation.emailConvertedLast30Days, automation.emailSentLast30Days)
+    : undefined;
 
   const hasSettings = !!(serviceRoles || promoCodes);
   const configuredRoleCount = serviceRoles?.filter((r) => serviceLifecycleRoles.some((x) => x.role === r.role)).length ?? 0;
@@ -345,7 +350,7 @@ function AutomationCard({
           Scheduler), so kept on its own row with a small envelope marker rather than mixed into the
           SMS pills, which would blur which channel each number is actually about. Omitted the same
           way as the SMS pills when the automation doesn't track email or hasn't sent one yet. */}
-      {(emailOpenRate || emailClickRate) && (
+      {(emailOpenRate || emailClickRate || emailConversionRate) && (
         <div className="flex flex-wrap items-center gap-1.5">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0 text-zinc-400">
             <rect x="3" y="5" width="18" height="14" rx="2" />
@@ -370,6 +375,20 @@ function AutomationCard({
               {emailClickRate} clicked
               <span className="font-normal text-indigo-600/70 tabular-nums">
                 · {automation.emailClickedLast30Days}/{automation.emailSentLast30Days}
+              </span>
+            </span>
+          )}
+          {emailConversionRate && (
+            <span
+              data-testid="automation-email-conversion-rate"
+              className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+              {emailConversionRate} returned
+              <span className="font-normal text-emerald-600/70 tabular-nums">
+                · {automation.emailConvertedLast30Days}/{automation.emailSentLast30Days}
               </span>
             </span>
           )}

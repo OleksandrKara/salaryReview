@@ -1,8 +1,10 @@
 package com.salonreview.sms;
 
 import com.salonreview.domain.SmsAutomation;
+import com.salonreview.domain.WinbackEmailSend;
 import com.salonreview.repo.LapsedCustomerWinbackSendRepository;
 import com.salonreview.repo.RepeatCustomerWinbackSendRepository;
+import com.salonreview.repo.SameDayRebookingSendRepository;
 import com.salonreview.repo.ServiceLifecycleReminderSendRepository;
 import com.salonreview.repo.SmsAutomationRepository;
 import com.salonreview.repo.SmsMessageRepository;
@@ -35,6 +37,7 @@ class SmsAutomationServiceTest {
     private SmsMessageRepository messageRepository;
     private LapsedCustomerWinbackSendRepository lapsedCustomerWinbackSendRepository;
     private RepeatCustomerWinbackSendRepository repeatCustomerWinbackSendRepository;
+    private SameDayRebookingSendRepository sameDayRebookingSendRepository;
     private ServiceLifecycleReminderSendRepository serviceLifecycleReminderSendRepository;
     private WinbackEmailSendRepository winbackEmailSendRepository;
     private AutomationReadinessService readinessService;
@@ -47,12 +50,13 @@ class SmsAutomationServiceTest {
         messageRepository = mock(SmsMessageRepository.class);
         lapsedCustomerWinbackSendRepository = mock(LapsedCustomerWinbackSendRepository.class);
         repeatCustomerWinbackSendRepository = mock(RepeatCustomerWinbackSendRepository.class);
+        sameDayRebookingSendRepository = mock(SameDayRebookingSendRepository.class);
         serviceLifecycleReminderSendRepository = mock(ServiceLifecycleReminderSendRepository.class);
         winbackEmailSendRepository = mock(WinbackEmailSendRepository.class);
         readinessService = mock(AutomationReadinessService.class);
         when(readinessService.readiness(eq(BUSINESS_ID), anyString())).thenReturn(AutomationReadinessService.Readiness.READY);
         service = new SmsAutomationService(repository, messageRepository, lapsedCustomerWinbackSendRepository,
-                repeatCustomerWinbackSendRepository, serviceLifecycleReminderSendRepository,
+                repeatCustomerWinbackSendRepository, sameDayRebookingSendRepository, serviceLifecycleReminderSendRepository,
                 winbackEmailSendRepository, readinessService);
         when(repository.findByBusinessIdAndAutomationKey(eq(BUSINESS_ID), anyString())).thenReturn(Optional.empty());
     }
@@ -120,14 +124,18 @@ class SmsAutomationServiceTest {
     }
 
     @Test
-    @DisplayName("same_day_rebooking_discount: tracks clicks but not replies, sent count is unfiltered by template")
-    void sameDayRebookingTracksClicksOnly() {
+    @DisplayName("same_day_rebooking_discount: tracks clicks, replies, AND conversion (2026-09-04 — "
+            + "added alongside the automation's own email fallback leg, same as both winbacks)")
+    void sameDayRebookingTracksClicksRepliesAndConversion() {
         when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
                 eq(BUSINESS_ID), eq("same_day_rebooking_discount"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(20L);
         when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndCreatedAtAfter(
                 eq(BUSINESS_ID), eq("same_day_rebooking_discount"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(20L);
         when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndClickedAtIsNotNullAndCreatedAtAfter(
                 eq(BUSINESS_ID), eq("same_day_rebooking_discount"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(6L);
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("same_day_rebooking_discount"), eq("INBOUND"), any(Instant.class))).thenReturn(4L);
+        when(sameDayRebookingSendRepository.countConvertedSince(eq(BUSINESS_ID), eq("SENT"), any(Instant.class))).thenReturn(9L);
 
         var summary = find("same_day_rebooking_discount");
 
@@ -135,8 +143,51 @@ class SmsAutomationServiceTest {
         assertThat(summary.tracksClicks()).isTrue();
         assertThat(summary.linkSentLast30Days()).isEqualTo(20);
         assertThat(summary.clickedLast30Days()).isEqualTo(6);
-        assertThat(summary.tracksReplies()).isFalse();
-        assertThat(summary.replyLast30Days()).isEqualTo(0);
+        assertThat(summary.tracksReplies()).isTrue();
+        assertThat(summary.replyLast30Days()).isEqualTo(4);
+        assertThat(summary.tracksConversion()).isTrue();
+        assertThat(summary.convertedLast30Days()).isEqualTo(9);
+    }
+
+    @Test
+    @DisplayName("same_day_rebooking_discount: also tracks its own email fallback leg now, same as "
+            + "both winbacks — opened/clicked/converted are queried and returned")
+    void sameDayRebookingTracksEmailFallback() {
+        when(winbackEmailSendRepository.countByBusinessIdAndAutomationKeyAndStateAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("same_day_rebooking_discount"), eq(WinbackEmailSend.STATE_SENT), any(Instant.class))).thenReturn(11L);
+        when(winbackEmailSendRepository.countByBusinessIdAndAutomationKeyAndStateAndOpenedAtIsNotNullAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("same_day_rebooking_discount"), eq(WinbackEmailSend.STATE_SENT), any(Instant.class))).thenReturn(7L);
+        when(winbackEmailSendRepository.countByBusinessIdAndAutomationKeyAndStateAndEmailClickedAtIsNotNullAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("same_day_rebooking_discount"), eq(WinbackEmailSend.STATE_SENT), any(Instant.class))).thenReturn(3L);
+        when(winbackEmailSendRepository.countConvertedSince(
+                eq(BUSINESS_ID), eq("same_day_rebooking_discount"), eq(WinbackEmailSend.STATE_SENT), any(Instant.class))).thenReturn(2L);
+
+        var summary = find("same_day_rebooking_discount");
+
+        assertThat(summary.tracksEmail()).isTrue();
+        assertThat(summary.emailSentLast30Days()).isEqualTo(11);
+        assertThat(summary.emailOpenedLast30Days()).isEqualTo(7);
+        assertThat(summary.emailClickedLast30Days()).isEqualTo(3);
+        assertThat(summary.emailConvertedLast30Days()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("an automation that doesn't track email (e.g. checkout_review_request) never "
+            + "queries winbackEmailSendRepository for its own key and reports zero for every email field")
+    void nonEmailAutomationSkipsEmailQueries() {
+        var summary = find("checkout_review_request");
+
+        assertThat(summary.tracksEmail()).isFalse();
+        assertThat(summary.emailSentLast30Days()).isEqualTo(0);
+        assertThat(summary.emailOpenedLast30Days()).isEqualTo(0);
+        assertThat(summary.emailClickedLast30Days()).isEqualTo(0);
+        assertThat(summary.emailConvertedLast30Days()).isEqualTo(0);
+        // Other automations in the same list() call (both winbacks, same_day_rebooking_discount)
+        // do track email, so verifyNoInteractions on the whole mock isn't valid here — this checks
+        // specifically that checkout_review_request's own key was never used to query it.
+        org.mockito.Mockito.verify(winbackEmailSendRepository, org.mockito.Mockito.never())
+                .countByBusinessIdAndAutomationKeyAndStateAndCreatedAtAfter(
+                        eq(BUSINESS_ID), eq("checkout_review_request"), anyString(), any(Instant.class));
     }
 
     @Test
