@@ -4,6 +4,7 @@ import com.salonreview.config.ColorBoosterReminderProperties;
 import com.salonreview.domain.ServiceLifecycleReminderSend;
 import com.salonreview.domain.ServiceLifecycleRole;
 import com.salonreview.domain.TwilioSmsConfig;
+import com.salonreview.repo.ProviderVisitRepository;
 import com.salonreview.repo.ServiceLifecycleReminderSendRepository;
 import com.salonreview.repo.ServiceLifecycleRoleRepository;
 import com.salonreview.repo.TwilioSmsConfigRepository;
@@ -48,6 +49,16 @@ import java.util.stream.Collectors;
  * provider_visit} carries no service identity, so there is no cheaper SQL-only path (contrast
  * {@code RepeatCustomerWinbackEligibilityRepository}, which can query {@code provider_visit}
  * directly because it only cares about visit dates, not which specific service was performed).
+ *
+ * <p><b>Real-visit check (added 2026-09-04):</b> a Square Booking that's merely not cancelled is
+ * not proof the customer actually attended — found the hard way for business 2 (PMU), where a
+ * booking can exist purely from an online deposit invoice with no in-person checkout ever
+ * following it; a live check found 55% of otherwise-"eligible" bookings had no matching settled
+ * visit at all. Every qualifying-event date (both in the wide candidate scan and in {@link
+ * #process}'s own authoritative re-check) is now cross-checked against {@link
+ * com.salonreview.repo.ProviderVisitRepository#existsByBusinessIdAndCustomerIdAndServiceDate}
+ * before counting — Square still supplies the service identity (which this table can't), the visit
+ * ledger now supplies proof it was actually paid for and rendered.
  */
 @Component
 public class ColorBoosterReminderScheduler {
@@ -60,6 +71,7 @@ public class ColorBoosterReminderScheduler {
 
     private final ServiceLifecycleRoleRepository roleRepository;
     private final ServiceLifecycleReminderSendRepository sendRepository;
+    private final ProviderVisitRepository visitRepository;
     private final SquareClientProvider squareClientProvider;
     private final TwilioSmsConfigRepository twilioConfigs;
     private final SmsAutomationService automationService;
@@ -69,6 +81,7 @@ public class ColorBoosterReminderScheduler {
 
     public ColorBoosterReminderScheduler(ServiceLifecycleRoleRepository roleRepository,
                                           ServiceLifecycleReminderSendRepository sendRepository,
+                                          ProviderVisitRepository visitRepository,
                                           SquareClientProvider squareClientProvider,
                                           TwilioSmsConfigRepository twilioConfigs,
                                           SmsAutomationService automationService,
@@ -77,6 +90,7 @@ public class ColorBoosterReminderScheduler {
                                           ColorBoosterReminderProperties properties) {
         this.roleRepository = roleRepository;
         this.sendRepository = sendRepository;
+        this.visitRepository = visitRepository;
         this.squareClientProvider = squareClientProvider;
         this.twilioConfigs = twilioConfigs;
         this.automationService = automationService;
@@ -125,11 +139,22 @@ public class ColorBoosterReminderScheduler {
             try {
                 Instant fetchStart = lookbackFloor.atStartOfDay(SALON_ZONE).toInstant();
                 Instant fetchEnd = eligibleBeforeDate.plusDays(1).atStartOfDay(SALON_ZONE).toInstant();
+                Long finalBusinessId = businessId;
                 candidateCustomerIds = square.bookings(fetchStart, fetchEnd).stream()
                         .filter(SquareBookingFilters::didHappen)
                         .filter(b -> b.customerId() != null)
                         .filter(b -> b.appointmentSegments() != null && b.appointmentSegments().stream()
                                 .anyMatch(s -> qualifyingIds.contains(s.serviceVariationId())))
+                        // A Square Booking merely "not cancelled" is not proof a real visit
+                        // happened — see ProviderVisitRepository
+                        // #existsByBusinessIdAndCustomerIdAndServiceDate's own doc for the real
+                        // incident this guards against (business 2's online-deposit bookings that
+                        // were never actually attended in person).
+                        .filter(b -> {
+                            LocalDate d = bookingDate(b);
+                            return d != null && visitRepository.existsByBusinessIdAndCustomerIdAndServiceDate(
+                                    finalBusinessId, b.customerId(), d);
+                        })
                         .map(SquareClient.Booking::customerId)
                         .collect(Collectors.toSet());
             } catch (RuntimeException e) {
@@ -178,6 +203,9 @@ public class ColorBoosterReminderScheduler {
                         .anyMatch(s -> qualifyingIds.contains(s.serviceVariationId())))
                 .map(ColorBoosterReminderScheduler::bookingDate)
                 .filter(java.util.Objects::nonNull)
+                // Same real-visit cross-check as the candidate scan above — a booking date alone
+                // isn't proof of a real, settled visit (see class doc's 2026-09-04 note).
+                .filter(d -> visitRepository.existsByBusinessIdAndCustomerIdAndServiceDate(businessId, customerId, d))
                 .max(LocalDate::compareTo)
                 .orElse(null);
         if (lastQualifyingDate == null) {

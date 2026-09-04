@@ -4,6 +4,7 @@ import com.salonreview.config.ColorBoosterReminderProperties;
 import com.salonreview.domain.ServiceLifecycleReminderSend;
 import com.salonreview.domain.ServiceLifecycleRole;
 import com.salonreview.domain.TwilioSmsConfig;
+import com.salonreview.repo.ProviderVisitRepository;
 import com.salonreview.repo.ServiceLifecycleReminderSendRepository;
 import com.salonreview.repo.ServiceLifecycleRoleRepository;
 import com.salonreview.repo.TwilioSmsConfigRepository;
@@ -37,6 +38,7 @@ class ColorBoosterReminderSchedulerTest {
 
     private ServiceLifecycleRoleRepository roleRepository;
     private ServiceLifecycleReminderSendRepository sendRepository;
+    private ProviderVisitRepository visitRepository;
     private SquareClient square;
     private SmsAutomationService automationService;
     private SmsMessageLogService messageLogService;
@@ -47,6 +49,7 @@ class ColorBoosterReminderSchedulerTest {
     void setUp() {
         roleRepository = mock(ServiceLifecycleRoleRepository.class);
         sendRepository = mock(ServiceLifecycleReminderSendRepository.class);
+        visitRepository = mock(ProviderVisitRepository.class);
         square = mock(SquareClient.class);
         SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
         TwilioSmsConfigRepository twilioConfigs = mock(TwilioSmsConfigRepository.class);
@@ -59,8 +62,8 @@ class ColorBoosterReminderSchedulerTest {
         smsService = mock(TwilioSmsService.class);
         ColorBoosterReminderProperties properties = new ColorBoosterReminderProperties();
 
-        scheduler = new ColorBoosterReminderScheduler(roleRepository, sendRepository, squareClientProvider, twilioConfigs,
-                automationService, messageLogService, smsService, properties);
+        scheduler = new ColorBoosterReminderScheduler(roleRepository, sendRepository, visitRepository, squareClientProvider,
+                twilioConfigs, automationService, messageLogService, smsService, properties);
 
         givenRoles(List.of(role("INITIAL_PROCEDURE", INITIAL_ID)), List.of(role("COLOR_BOOSTER", BOOSTER_ID)));
         when(smsService.sendTemplated(any(), any(), any(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
@@ -69,6 +72,10 @@ class ColorBoosterReminderSchedulerTest {
         when(messageLogService.hasNegativeFeedback(eq(BUSINESS_ID), any())).thenReturn(false);
         when(sendRepository.existsByBusinessIdAndAutomationKeyAndSquareCustomerIdAndStateAndCreatedAtAfter(
                 eq(BUSINESS_ID), eq("color_booster_reminder"), any(), any(), any())).thenReturn(false);
+        // Default: a real settled visit exists for whatever date a test's booking claims — see
+        // the dedicated "no real visit" test below. 2026-09-04: added after a real incident
+        // (business 2's online-deposit bookings with no actual in-person checkout).
+        when(visitRepository.existsByBusinessIdAndCustomerIdAndServiceDate(eq(BUSINESS_ID), any(), any())).thenReturn(true);
     }
 
     private void givenRoles(List<ServiceLifecycleRole> initial, List<ServiceLifecycleRole> booster) {
@@ -249,6 +256,45 @@ class ColorBoosterReminderSchedulerTest {
 
         verifyNoInteractions(smsService);
         verify(sendRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("2026-09-04 regression: qualifying booking exists but no real settled visit on "
+            + "file (e.g. an online-deposit booking never actually attended) → not even a candidate")
+    void bookingWithoutARealVisitIsNotACandidate() {
+        when(square.bookings(any(), any())).thenReturn(List.of(qualifying(400)));
+        when(visitRepository.existsByBusinessIdAndCustomerIdAndServiceDate(eq(BUSINESS_ID), eq("cust1"), any()))
+                .thenReturn(false);
+
+        scheduler.sendDueReminders();
+
+        verifyNoInteractions(smsService, sendRepository);
+        verify(square, never()).bookingsForCustomer(any(), any());
+    }
+
+    @Test
+    @DisplayName("2026-09-04 regression: candidate scan passes (real visit exists for the old "
+            + "qualifying booking), but process()'s own true-most-recent-event re-check must also "
+            + "reject a qualifying booking with no real visit, not just accept the first one found")
+    void trueRecentEventWithoutARealVisitIsIgnored() {
+        // cust1 has two qualifying bookings: one 400 days ago (real visit on file) and one 100
+        // days ago (no real visit — e.g. a deposit-only booking) that would otherwise look like a
+        // more recent qualifying event and push the customer's "true" trigger date forward,
+        // wrongly making them look not-yet-due.
+        SquareClient.Booking recentNoVisit = booking("bk-recent-noviz", -100, INITIAL_ID, "ACCEPTED");
+        when(square.bookings(any(), any())).thenReturn(List.of(qualifying(400)));
+        when(square.bookingsForCustomer(eq("cust1"), any())).thenReturn(List.of(qualifying(400), recentNoVisit));
+        LocalDate oldDate = LocalDate.now(SALON_ZONE).minusDays(400);
+        LocalDate recentDate = LocalDate.now(SALON_ZONE).minusDays(100);
+        when(visitRepository.existsByBusinessIdAndCustomerIdAndServiceDate(BUSINESS_ID, "cust1", oldDate)).thenReturn(true);
+        when(visitRepository.existsByBusinessIdAndCustomerIdAndServiceDate(BUSINESS_ID, "cust1", recentDate)).thenReturn(false);
+
+        scheduler.sendDueReminders();
+
+        // The true most recent *real* qualifying event is still 400 days ago (the 100-day-old one
+        // doesn't count), so the customer is correctly due — proves the fake-recent booking didn't
+        // silently suppress a real reminder.
+        verify(smsService).sendTemplated(eq(BUSINESS_ID), eq("color_booster_reminder_nudge"), eq(PHONE), any());
     }
 
     @Test
