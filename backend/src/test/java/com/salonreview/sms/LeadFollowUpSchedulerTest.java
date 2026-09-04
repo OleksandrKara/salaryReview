@@ -51,10 +51,16 @@ class LeadFollowUpSchedulerTest {
         automationService = mock(SmsAutomationService.class);
         smsService = mock(TwilioSmsService.class);
         scheduler = new LeadFollowUpScheduler(contactsRepository, sendRepository, squareClientProvider, twilioConfigs,
-                automationService, smsService);
+                automationService, smsService, new SquareUpcomingAppointmentService());
 
         when(automationService.isEnabled(1L, "lead_follow_up")).thenReturn(true);
         when(smsService.sendTemplated(any(), any(), any(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
+        // hasUpcomingAppointment (SquareUpcomingAppointmentService) now always resolves via a live
+        // phone lookup first (checking every Square profile for the phone number, not just one
+        // tracked customer id — see that class's own doc comment), so every test below needs this
+        // stubbed even when the contact already has a tracked squareCustomerId. "cust1" is the id
+        // most tests use; the fallback/no-tracked-id tests override this with their own value.
+        when(square.customerIdsForPhone(PHONE)).thenReturn(List.of("cust1"));
     }
 
     private static RawContact contact(UUID id, String name, String squareCustomerId) {
@@ -138,6 +144,31 @@ class LeadFollowUpSchedulerTest {
 
         verify(square).customerIdsForPhone(PHONE);
         verify(smsService).sendTemplated(eq(BUSINESS_ID), eq("lead_follow_up_nudge"), eq(PHONE), any());
+    }
+
+    @Test
+    @DisplayName("upcoming booking under a *different* Square customer profile sharing the same "
+            + "phone number still skips (2026-09-04 regression: Square can create more than one "
+            + "customer_id for one real person)")
+    void upcomingBookingUnderSiblingSquareProfileSkips() {
+        RawContact c = contact(UUID.randomUUID(), "Jane", "cust1");
+        givenPending(c);
+        String futureIso = Instant.now().plusSeconds(3600).toString();
+        // "cust1" (the contact's own tracked id) has no bookings at all — the only upcoming
+        // appointment is under a sibling profile Square happens to share the same phone number
+        // with.
+        when(square.customerIdsForPhone(PHONE)).thenReturn(List.of("cust1", "cust1-sibling"));
+        when(square.bookingsForCustomer(eq("cust1"), any())).thenReturn(List.of());
+        when(square.bookingsForCustomer(eq("cust1-sibling"), any()))
+                .thenReturn(List.of(new SquareClient.Booking("bk2", "ACCEPTED", futureIso, null, null, null,
+                        "cust1-sibling", null, null, null)));
+
+        scheduler.sendDueFollowUps();
+
+        verifyNoInteractions(smsService);
+        ArgumentCaptor<LeadFollowUpSend> captor = ArgumentCaptor.forClass(LeadFollowUpSend.class);
+        verify(sendRepository).save(captor.capture());
+        assertThat(captor.getValue().getState()).isEqualTo(LeadFollowUpSend.STATE_SKIPPED_BOOKED);
     }
 
     @Test

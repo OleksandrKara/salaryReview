@@ -75,10 +75,13 @@ class SameDayRebookingSchedulerTest {
                 .thenReturn(Optional.of(new PromoConfigService.PromoTerms(1000, null, "GROUP1", true)));
         scheduler = new SameDayRebookingScheduler(repository, squareClientProvider, twilioConfigs, automationService,
                 consentRepository, rebookingProperties, messageLogService, configService, client, technicianNameResolver,
-                templateService, "https://salon.akluxnails.com", promoConfigService);
+                templateService, "https://salon.akluxnails.com", promoConfigService, new SquareUpcomingAppointmentService());
 
         when(automationService.isEnabled(1L, "same_day_rebooking_discount")).thenReturn(true);
         when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(true);
+        // hasUpcomingAppointment (SquareUpcomingAppointmentService) checks every Square customer
+        // profile for the phone number, not just CUSTOMER_ID — see that class's own doc comment.
+        when(square.customerIdsForPhone(PHONE)).thenReturn(List.of(CUSTOMER_ID));
         when(square.bookingsForCustomer(eq(CUSTOMER_ID), any())).thenReturn(List.of());
         when(messageLogService.generateUniqueClickToken()).thenReturn("tok123");
         SmsMessage reserved = SmsMessage.builder().id(1L).direction("OUTBOUND").phoneNumber(PHONE).body("").status("NOT_SENT").build();
@@ -313,6 +316,7 @@ class SameDayRebookingSchedulerTest {
     void oneBusinessSquareFailureDoesNotBlockAnother() throws Exception {
         Long otherBusinessId = 2L;
         SquareClient otherSquare = mock(SquareClient.class);
+        when(otherSquare.customerIdsForPhone("+15559998888")).thenReturn(List.of("cust2"));
         when(otherSquare.bookingsForCustomer(any(), any())).thenReturn(List.of());
         when(twilioConfigs.findAll()).thenReturn(List.of(
                 TwilioSmsConfig.builder().businessId(BUSINESS_ID).build(),

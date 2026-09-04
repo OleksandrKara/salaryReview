@@ -82,11 +82,17 @@ class LapsedCustomerWinbackSchedulerTest {
                 .thenReturn(Optional.of(new PromoConfigService.PromoTerms(500, 9900L, "GROUP1", true)));
         scheduler = new LapsedCustomerWinbackScheduler(eligibilityRepository, sendRepository, squareClientProvider,
                 twilioConfigs, automationService, consentRepository, rebookingProperties, messageLogService, configService,
-                client, templateService, "https://salon.akluxnails.com", businessRepository, promoConfigService);
+                client, templateService, "https://salon.akluxnails.com", businessRepository, promoConfigService,
+                new SquareUpcomingAppointmentService());
 
         when(automationService.isEnabled(1L, "lapsed_customer_winback")).thenReturn(true);
         when(square.customerPhone(CUSTOMER_ID)).thenReturn(PHONE);
         when(square.customerGivenNames(List.of(CUSTOMER_ID))).thenReturn(Map.of(CUSTOMER_ID, "Jane"));
+        // hasUpcomingAppointment (SquareUpcomingAppointmentService) now checks every Square
+        // customer profile for the phone number, not just CUSTOMER_ID directly — see that class's
+        // own doc comment for why (a real customer had two separate Square profiles under one
+        // phone number).
+        when(square.customerIdsForPhone(PHONE)).thenReturn(List.of(CUSTOMER_ID));
         when(square.bookingsForCustomer(eq(CUSTOMER_ID), any())).thenReturn(List.of());
         when(messageLogService.generateUniqueClickToken()).thenReturn("tok123");
         SmsMessage reserved = SmsMessage.builder().id(1L).direction("OUTBOUND").phoneNumber(PHONE).body("").status("NOT_SENT").build();
@@ -220,6 +226,29 @@ class LapsedCustomerWinbackSchedulerTest {
     }
 
     @Test
+    @DisplayName("upcoming appointment booked under a *different* Square customer profile sharing "
+            + "the same phone number still skips (2026-09-04 regression: Square can create more "
+            + "than one customer_id for one real person)")
+    void upcomingAppointmentUnderSiblingSquareProfileSkipsWithoutSend() {
+        givenEligible(eligible("Susan"));
+        String siblingCustomerId = "cust1-sibling";
+        String futureIso = Instant.now().plusSeconds(3600).toString();
+        // CUSTOMER_ID itself has no bookings at all — the only upcoming appointment is under a
+        // second Square profile Square happens to associate with the exact same phone number.
+        when(square.customerIdsForPhone(PHONE)).thenReturn(List.of(CUSTOMER_ID, siblingCustomerId));
+        when(square.bookingsForCustomer(eq(siblingCustomerId), any()))
+                .thenReturn(List.of(new SquareClient.Booking("bk2", "ACCEPTED", futureIso, null, null, null,
+                        siblingCustomerId, null, null, null)));
+
+        scheduler.sendDueWinbacks();
+
+        verifyNoInteractions(client);
+        ArgumentCaptor<LapsedCustomerWinbackSend> captor = ArgumentCaptor.forClass(LapsedCustomerWinbackSend.class);
+        verify(sendRepository).save(captor.capture());
+        assertThat(captor.getValue().getState()).isEqualTo(LapsedCustomerWinbackSend.STATE_SKIPPED_BOOKED);
+    }
+
+    @Test
     @DisplayName("automation disabled → SKIPPED_DISABLED, no send")
     void disabledAutomationSkipsWithoutSend() {
         when(automationService.isEnabled(1L, "lapsed_customer_winback")).thenReturn(false);
@@ -327,6 +356,7 @@ class LapsedCustomerWinbackSchedulerTest {
         SquareClient otherSquare = mock(SquareClient.class);
         when(otherSquare.customerPhone("cust2")).thenReturn(otherPhone);
         when(otherSquare.customerGivenNames(List.of("cust2"))).thenReturn(Map.of("cust2", "Other"));
+        when(otherSquare.customerIdsForPhone(otherPhone)).thenReturn(List.of("cust2"));
         when(otherSquare.bookingsForCustomer(eq("cust2"), any())).thenReturn(List.of());
         when(twilioConfigs.findAll()).thenReturn(List.of(
                 TwilioSmsConfig.builder().businessId(BUSINESS_ID).build(),

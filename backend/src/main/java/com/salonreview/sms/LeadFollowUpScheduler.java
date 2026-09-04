@@ -6,7 +6,6 @@ import com.salonreview.marketing.MarketingContactsRepository;
 import com.salonreview.marketing.MarketingContactsRepository.RawContact;
 import com.salonreview.repo.LeadFollowUpSendRepository;
 import com.salonreview.repo.TwilioSmsConfigRepository;
-import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
@@ -17,8 +16,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 
@@ -50,19 +47,22 @@ public class LeadFollowUpScheduler {
     private final TwilioSmsConfigRepository twilioConfigs;
     private final SmsAutomationService automationService;
     private final TwilioSmsService smsService;
+    private final SquareUpcomingAppointmentService upcomingAppointmentService;
 
     public LeadFollowUpScheduler(MarketingContactsRepository contactsRepository,
                                   LeadFollowUpSendRepository sendRepository,
                                   SquareClientProvider squareClientProvider,
                                   TwilioSmsConfigRepository twilioConfigs,
                                   SmsAutomationService automationService,
-                                  TwilioSmsService smsService) {
+                                  TwilioSmsService smsService,
+                                  SquareUpcomingAppointmentService upcomingAppointmentService) {
         this.contactsRepository = contactsRepository;
         this.sendRepository = sendRepository;
         this.squareClientProvider = squareClientProvider;
         this.twilioConfigs = twilioConfigs;
         this.automationService = automationService;
         this.smsService = smsService;
+        this.upcomingAppointmentService = upcomingAppointmentService;
     }
 
     // initialDelay: see SameDayRebookingScheduler's identical comment — gives
@@ -96,7 +96,7 @@ public class LeadFollowUpScheduler {
     private void process(RawContact contact, SquareClient square, Long businessId) {
         boolean upcoming;
         try {
-            upcoming = hasUpcomingAppointment(contact, square);
+            upcoming = upcomingAppointmentService.hasUpcomingAppointment(contact.phoneNumber(), square);
         } catch (RuntimeException ex) {
             // Fails closed: a transient Square failure means "don't know," not "assume unbooked."
             // No row is written, so this contact is simply retried on the next poll tick rather
@@ -124,25 +124,6 @@ public class LeadFollowUpScheduler {
         save(contact, LeadFollowUpSend.STATE_SENT);
     }
 
-    /** Live check for any not-cancelled, not-yet-happened Square appointment — not limited to a
-     * booking made through this specific contact-capture session (see design.md D2). Resolves a
-     * Square customer via the contact's own {@code squareCustomerId} if the tracked flow already
-     * set it, otherwise falls back to a live phone lookup, same as
-     * {@code MarketingContactsService.syncSquareLinks}. */
-    private boolean hasUpcomingAppointment(RawContact contact, SquareClient square) {
-        String customerId = contact.squareCustomerId();
-        if (customerId == null) {
-            List<String> candidates = square.customerIdsForPhone(contact.phoneNumber());
-            if (candidates.isEmpty()) {
-                return false;
-            }
-            customerId = candidates.get(0);
-        }
-        LocalDate today = LocalDate.now(ZoneOffset.UTC);
-        return square.bookingsForCustomer(customerId, Instant.now()).stream()
-                .filter(SquareBookingFilters::didHappen)
-                .anyMatch(b -> SquareBookingFilters.isTodayOrLater(b.startAt(), today));
-    }
 
     private void save(RawContact contact, String state) {
         sendRepository.save(LeadFollowUpSend.builder()
