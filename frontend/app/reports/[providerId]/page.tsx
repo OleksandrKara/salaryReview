@@ -4,6 +4,7 @@ import type { ProviderDetail } from '../../lib/types';
 import ProviderTrace from '../../components/ProviderTrace';
 import { SyncBadge } from '../../components/SyncBadge';
 import SetupRequiredNotice from '../../components/SetupRequiredNotice';
+import PageHeader from '../../components/PageHeader';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -33,6 +34,7 @@ export default async function ProviderDetailPage({
     if (err instanceof ApiError && err.code === 'square_not_connected') {
       return (
         <main className="mx-auto max-w-5xl p-4 sm:p-8">
+          <PageHeader title="Salary report" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
           <Link href={backHref} className="text-sm text-zinc-500 hover:text-zinc-800">← Report</Link>
           <SetupRequiredNotice
             title="Connect Square to see this provider's detail"
@@ -48,6 +50,7 @@ export default async function ProviderDetailPage({
 
   return (
     <main className="mx-auto max-w-5xl p-4 sm:p-8">
+      <PageHeader title="Salary report" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <div className="mb-1 flex items-baseline gap-3">
         <Link href={backHref} className="text-sm text-zinc-500 hover:text-zinc-800">← Report</Link>
         <h1 className="text-2xl font-semibold">{detail.name ?? 'Provider'}</h1>
