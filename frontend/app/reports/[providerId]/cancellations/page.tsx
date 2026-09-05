@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { serverApi } from '../../../lib/serverApi';
 import type { CancelledAppointment } from '../../../lib/types';
 import CancelledList from './CancelledList';
+import PageHeader from '../../../components/PageHeader';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -36,6 +37,7 @@ export default async function CancellationsPage({
 
   return (
     <main className="mx-auto max-w-4xl p-4 sm:p-8">
+      <PageHeader title="Salary report" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <div className="mb-1 flex items-baseline gap-3">
         <Link href={backHref} className="text-sm text-zinc-500 hover:text-zinc-800">← Report</Link>
         <h1 className="text-xl font-semibold sm:text-2xl">Cancelled appointments</h1>

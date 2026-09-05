@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation';
 import { serverApi } from '../../lib/serverApi';
 import type { SuspiciousBooking } from '../../lib/types';
 import MySuspiciousList from './MySuspiciousList';
+import PageHeader from '../../components/PageHeader';
+import { t } from '../../lib/i18n';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -33,6 +35,7 @@ export default async function MySuspiciousPage({
 
   return (
     <main className="mx-auto max-w-2xl p-4 sm:p-8">
+      <PageHeader title={t(me.preferredLanguage, 'navMySuspicious')} role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <div className="mb-1 flex items-baseline gap-3">
         <Link href={backHref} className="text-sm text-zinc-500 hover:text-zinc-800">← My report</Link>
         <h1 className="text-xl font-semibold sm:text-2xl">Appointments needing a note</h1>

@@ -137,6 +137,7 @@ const STRINGS = {
   navMyTime: { EN: 'My time', RU: 'Моё время' },
   navManagerTime: { EN: 'Manager time', RU: 'Время менеджеров' },
   navMyDocuments: { EN: 'My Documents', RU: 'Мои документы' },
+  navMySuspicious: { EN: 'Needs a note', RU: 'Требует отметки' },
 
   // My Documents (provider/manager self-service, read-only)
   myDocumentsTitle: { EN: 'My Documents', RU: 'Мои документы' },
