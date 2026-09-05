@@ -252,4 +252,75 @@ class TelegramNotificationServiceTest {
                 .contains("👤 Client: —")
                 .contains("👤 Клиент: —");
     }
+
+    @Test
+    @DisplayName("payment-failed alert: resolves config by businessId, same pattern as the same-day alert")
+    void paymentFailedAlertResolvesConfigByBusinessId() {
+        TelegramConfigService configService = mock(TelegramConfigService.class);
+        when(configService.get(2L)).thenReturn(
+                TelegramNotificationConfig.builder().businessId(2L).botToken(null).chatId("999888777").build());
+
+        PaymentFailedNotification notification = new PaymentFailedNotification(
+                2L, "pmu", "Tara Lumley", "+15551234567", "Touch-Up", 100.0,
+                "Your card was declined. Please try a different card.", "CARD_DECLINED", true);
+
+        assertThat(service(configService).sendPaymentFailedAlert(2L, notification)).isFalse(); // blank token → skipped, but proves it read business 2's own config
+    }
+
+    @Test
+    @DisplayName("payment-failed alert: blank chat id → false, no exception")
+    void paymentFailedAlertBlankChatIdSkips() {
+        TelegramConfigService configService = mock(TelegramConfigService.class);
+        when(configService.get(1L)).thenReturn(
+                TelegramNotificationConfig.builder().businessId(1L).botToken("some-token").chatId("").build());
+
+        PaymentFailedNotification notification = new PaymentFailedNotification(
+                1L, null, "Tara Lumley", "+15551234567", "Touch-Up", 100.0, "Unable to process payment", null, false);
+
+        assertThat(service(configService).sendPaymentFailedAlert(1L, notification)).isFalse();
+    }
+
+    @Test
+    @DisplayName("formatPaymentFailedMessage: client-side decline — English on top, Russian below a "
+            + "divider, error code appended, \"card/client-side\" framing on both sides")
+    void formatPaymentFailedMessageClientError() {
+        PaymentFailedNotification notification = new PaymentFailedNotification(
+                2L, "pmu", "Tara Lumley", "+15551234567", "Touch-Up", 100.0,
+                "Your card was declined. Please try a different card.", "CARD_DECLINED", true);
+
+        String text = TelegramNotificationService.formatPaymentFailedMessage(notification);
+
+        assertThat(text)
+                .contains("👤 Client: Tara Lumley")
+                .contains("📱 Phone: +15551234567")
+                .contains("💳 Attempted: $100 for Touch-Up")
+                .contains("❌ Reason: Your card was declined. Please try a different card. (CARD_DECLINED)")
+                .contains("card/client-side issue")
+                .contains("\n\n—\n\n") // the EN/RU divider
+                .contains("👤 Клиент: Tara Lumley")
+                .contains("💳 Попытка оплаты: $100 за Touch-Up")
+                .contains("проблема на стороне карты/клиента")
+                .doesNotContain("problem on our side");
+    }
+
+    @Test
+    @DisplayName("formatPaymentFailedMessage: our-side error, no error code, no customer name/phone on "
+            + "file — renders \"—\" rather than a null/blank gap, \"our side\" framing on both languages")
+    void formatPaymentFailedMessageSystemErrorNoDetails() {
+        PaymentFailedNotification notification = new PaymentFailedNotification(
+                1L, null, null, null, "Nano Hairstrokes — Anna Kara", null,
+                "Unable to process payment", null, false);
+
+        String text = TelegramNotificationService.formatPaymentFailedMessage(notification);
+
+        assertThat(text)
+                .contains("👤 Client: —")
+                .contains("📱 Phone: —")
+                .contains("💳 Attempted: — for Nano Hairstrokes — Anna Kara")
+                .contains("❌ Reason: Unable to process payment")
+                .contains("problem on our side")
+                .contains("👤 Клиент: —")
+                .contains("проблема на нашей стороне")
+                .doesNotContain("(null)"); // error code omitted entirely, not literally "(null)"
+    }
 }

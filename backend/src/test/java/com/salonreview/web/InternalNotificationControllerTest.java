@@ -500,4 +500,59 @@ class InternalNotificationControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.valid").value(false));
     }
+
+    private static final String PAYMENT_FAILED_BODY = "{\"customerName\":\"Tara Lumley\",\"phoneNumber\":\"+15551234567\","
+            + "\"serviceName\":\"Touch-Up\",\"amount\":100.0,\"errorMessage\":\"Your card was declined.\","
+            + "\"errorCode\":\"CARD_DECLINED\",\"clientError\":true,\"businessId\":2}";
+
+    @Test
+    @DisplayName("payment-failed: missing key → 401")
+    void paymentFailedMissingKeyReturns401() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+
+        mvc.perform(post("/api/internal/notifications/payment-failed")
+                        .contentType("application/json").content(PAYMENT_FAILED_BODY))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("payment-failed: correct key, businessId present → resolves that business, sends alert")
+    void paymentFailedWithBusinessIdSendsAlert() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        when(businessesMock.findById(2L)).thenReturn(java.util.Optional.of(
+                Business.builder().id(2L).name("PMU").shortCode("pmu").timezone("UTC").active(true).build()));
+        when(telegram.sendPaymentFailedAlert(org.mockito.ArgumentMatchers.eq(2L), any())).thenReturn(true);
+
+        mvc.perform(post("/api/internal/notifications/payment-failed")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content(PAYMENT_FAILED_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sent").value(true));
+
+        org.mockito.ArgumentCaptor<com.salonreview.telegram.PaymentFailedNotification> captor =
+                org.mockito.ArgumentCaptor.forClass(com.salonreview.telegram.PaymentFailedNotification.class);
+        verify(telegram).sendPaymentFailedAlert(org.mockito.ArgumentMatchers.eq(2L), captor.capture());
+        assertThat(captor.getValue().customerName()).isEqualTo("Tara Lumley");
+        assertThat(captor.getValue().serviceName()).isEqualTo("Touch-Up");
+        assertThat(captor.getValue().errorCode()).isEqualTo("CARD_DECLINED");
+        assertThat(captor.getValue().clientError()).isTrue();
+    }
+
+    @Test
+    @DisplayName("payment-failed: unrecognized businessShortCode → sent:false unknown_business, never falls back to legacy business")
+    void paymentFailedUnknownBusinessShortCodeRefused() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        String bogusBody = "{\"customerName\":\"Tara Lumley\",\"phoneNumber\":\"+15551234567\","
+                + "\"serviceName\":\"Touch-Up\",\"amount\":100.0,\"errorMessage\":\"Unable to process payment\","
+                + "\"clientError\":false,\"businessShortCode\":\"nonexistent\"}";
+
+        mvc.perform(post("/api/internal/notifications/payment-failed")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content(bogusBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sent").value(false))
+                .andExpect(jsonPath("$.reason").value("unknown_business"));
+
+        org.mockito.Mockito.verifyNoInteractions(telegram);
+    }
 }
