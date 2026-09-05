@@ -260,17 +260,6 @@ class ColorBoosterWinbackOneOffServiceTest {
     }
 
     @Test
-    @DisplayName("formatTimeSince: whole months only, whole years only, and years+months mix")
-    void formatTimeSinceVariants() {
-        LocalDate to = LocalDate.of(2026, 9, 5);
-        assertThat(ColorBoosterWinbackOneOffService.formatTimeSince(LocalDate.of(2026, 2, 5), to)).isEqualTo("7 months");
-        assertThat(ColorBoosterWinbackOneOffService.formatTimeSince(LocalDate.of(2025, 9, 5), to)).isEqualTo("1 year");
-        assertThat(ColorBoosterWinbackOneOffService.formatTimeSince(LocalDate.of(2025, 2, 5), to)).isEqualTo("1 year and 7 months");
-        assertThat(ColorBoosterWinbackOneOffService.formatTimeSince(LocalDate.of(2024, 9, 5), to)).isEqualTo("2 years");
-        assertThat(ColorBoosterWinbackOneOffService.formatTimeSince(LocalDate.of(2026, 8, 5), to)).isEqualTo("1 month");
-    }
-
-    @Test
     @DisplayName("Mailchimp send throws -> SEND_FAILED recorded, no campaign id/content stored")
     void sendFailureRecordsSendFailed() throws Exception {
         LocalDate visitDate = LocalDate.now(ZONE).minusDays(600);

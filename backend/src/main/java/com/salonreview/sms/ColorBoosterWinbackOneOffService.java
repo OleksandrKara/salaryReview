@@ -19,7 +19,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.Period;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -193,7 +192,7 @@ public class ColorBoosterWinbackOneOffService {
         String rawGivenName = square.customerGivenNames(List.of(customerId)).get(customerId);
         String givenName = Names.capitalizeFirst(rawGivenName);
         String providerName = technicianFirstName(lastQualifying, businessId);
-        String timeSince = formatTimeSince(lastQualifyingDate, today);
+        String timeSince = com.salonreview.util.TimePeriods.formatTimeSince(lastQualifyingDate, today);
 
         Map<String, String> vars = new HashMap<>();
         vars.put("FNAME", givenName == null ? "there" : givenName);
@@ -246,21 +245,6 @@ public class ColorBoosterWinbackOneOffService {
                 .map(Provider::getDisplayName)
                 .map(Names::firstNameOnly)
                 .orElse(null);
-    }
-
-    /** E.g. "1 year and 7 months", "7 months", "2 years" — no "and 0 months" tail. */
-    static String formatTimeSince(LocalDate from, LocalDate to) {
-        Period period = Period.between(from, to);
-        int years = period.getYears();
-        int months = period.getMonths();
-        if (years <= 0) {
-            return months + (months == 1 ? " month" : " months");
-        }
-        String yearsPart = years + (years == 1 ? " year" : " years");
-        if (months <= 0) {
-            return yearsPart;
-        }
-        return yearsPart + " and " + months + (months == 1 ? " month" : " months");
     }
 
     private Set<String> eligibleRoleIds(Long businessId, String role) {
