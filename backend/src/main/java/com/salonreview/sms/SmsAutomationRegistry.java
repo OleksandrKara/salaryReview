@@ -146,6 +146,19 @@ public final class SmsAutomationRegistry {
                             + "subject to a 60-day cooldown per customer. Customers who neither click nor reply "
                             + "by evening also get a follow-up email — see WinbackEmailFallbackScheduler.",
                     List.of(), true, true, true
+            ),
+            // Email-only (owner request 2026-09-05) — no SMS leg at all, so sentLast30Days always
+            // reads 0 here (a real, accurate count — zero texts sent under this key — just not
+            // where the meaningful "email sent" number lives; see PreVisitNurtureScheduler, which
+            // logs its own state on pre_visit_nurture_send rather than sms_message/winback_email_send).
+            "pre_visit_nurture", new AutomationMeta(
+                    "pre_visit_nurture",
+                    "Pre-visit nurture emails",
+                    "Every customer with a confirmed booking — a warm welcome email shortly after "
+                            + "booking, then (if the appointment is far enough out) a day-before reminder. "
+                            + "Goal is fewer cancellations/no-shows through familiarity with the studio before "
+                            + "the visit, not a booking-conversion ask.",
+                    List.of(), false, false, false
             )
     );
 

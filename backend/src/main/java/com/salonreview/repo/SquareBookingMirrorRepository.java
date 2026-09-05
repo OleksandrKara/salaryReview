@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 public interface SquareBookingMirrorRepository extends JpaRepository<SquareBookingMirror, Long> {
 
@@ -30,6 +31,19 @@ public interface SquareBookingMirrorRepository extends JpaRepository<SquareBooki
      * SquareMonthAggregator}, which matches a whole month's bookings against orders/cash-notes at
      * once rather than one customer at a time. */
     List<SquareBookingMirror> findByBusinessIdAndStartAtBetween(Long businessId, Instant from, Instant to);
+
+    /** One business's own single booking by Square's own id — used by {@code
+     * PreVisitNurtureScheduler} both to find newly-created bookings to welcome (via {@code
+     * createdAt} rather than {@code startAt}) and to re-check a booking's current status right
+     * before sending its day-before reminder (a cancellation between the welcome email and then
+     * must not get a reminder for a visit that's no longer happening). */
+    Optional<SquareBookingMirror> findByBusinessIdAndSquareBookingId(Long businessId, String squareBookingId);
+
+    /** Recently-created bookings still in a given status, for one business — the welcome email's
+     * own trigger query. Bounded scan (a booking created outside this window is simply never
+     * welcomed), same "bounded, not indefinite" shape every poller in this codebase already uses. */
+    List<SquareBookingMirror> findByBusinessIdAndStatusAndCreatedAtBetween(
+            Long businessId, String status, Instant createdAfter, Instant createdBefore);
 
     /** Insert-or-update by the natural key (business + Square's own booking id) — used by both the
      * bulk window ingest (backfill/reconciliation) and the single-event webhook path. Native, not a
