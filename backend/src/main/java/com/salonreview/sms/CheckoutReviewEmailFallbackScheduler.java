@@ -10,6 +10,7 @@ import com.salonreview.repo.SmsReplyFlowRepository;
 import com.salonreview.repo.WinbackEmailSendRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
+import com.salonreview.telegram.TelegramNotificationService;
 import com.salonreview.util.Names;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
@@ -68,6 +69,7 @@ public class CheckoutReviewEmailFallbackScheduler {
     private final SmsAutomationService automationService;
     private final ProviderRepository providerRepository;
     private final CheckoutReviewRatingSigner ratingSigner;
+    private final TelegramNotificationService telegram;
     private final String publicBaseUrl;
 
     public CheckoutReviewEmailFallbackScheduler(SmsReplyFlowRepository replyFlowRepository,
@@ -79,6 +81,7 @@ public class CheckoutReviewEmailFallbackScheduler {
                                                  SmsAutomationService automationService,
                                                  ProviderRepository providerRepository,
                                                  CheckoutReviewRatingSigner ratingSigner,
+                                                 TelegramNotificationService telegram,
                                                  @Value("${app.public-base-url}") String publicBaseUrl) {
         this.replyFlowRepository = replyFlowRepository;
         this.winbackEmailSendRepository = winbackEmailSendRepository;
@@ -89,6 +92,7 @@ public class CheckoutReviewEmailFallbackScheduler {
         this.automationService = automationService;
         this.providerRepository = providerRepository;
         this.ratingSigner = ratingSigner;
+        this.telegram = telegram;
         this.publicBaseUrl = publicBaseUrl;
     }
 
@@ -178,6 +182,8 @@ public class CheckoutReviewEmailFallbackScheduler {
             String campaignId = mailchimpEmailService.sendWinbackEmail(
                     config, email, subjectLine, previewText, campaignTitle, html.get());
             save(flow, customerId, email, WinbackEmailSend.STATE_SENT, campaignId, html.get());
+            String automationName = SmsAutomationRegistry.all().get(AUTOMATION_KEY).name();
+            telegram.sendEmailFallbackSentAlert(businessId, automationName, vars.get("FNAME"), email);
         } catch (Exception e) {
             log.warn("Checkout-review email send failed for flow {} (not retried): {}", flow.getId(), e.getMessage());
             save(flow, customerId, email, WinbackEmailSend.STATE_SEND_FAILED, null, null);

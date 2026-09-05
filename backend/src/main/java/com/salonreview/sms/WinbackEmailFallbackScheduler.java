@@ -10,6 +10,7 @@ import com.salonreview.repo.SmsMessageRepository;
 import com.salonreview.repo.WinbackEmailSendRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
+import com.salonreview.telegram.TelegramNotificationService;
 import com.salonreview.util.Names;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
@@ -66,6 +67,7 @@ public class WinbackEmailFallbackScheduler {
     private final SmsAutomationService automationService;
     private final PromoConfigService promoConfigService;
     private final ProviderVisitRepository providerVisitRepository;
+    private final TelegramNotificationService telegram;
     private final String publicBaseUrl;
 
     public WinbackEmailFallbackScheduler(SmsMessageRepository smsMessageRepository,
@@ -77,6 +79,7 @@ public class WinbackEmailFallbackScheduler {
                                           SmsAutomationService automationService,
                                           PromoConfigService promoConfigService,
                                           ProviderVisitRepository providerVisitRepository,
+                                          TelegramNotificationService telegram,
                                           @Value("${app.public-base-url}") String publicBaseUrl) {
         this.smsMessageRepository = smsMessageRepository;
         this.winbackEmailSendRepository = winbackEmailSendRepository;
@@ -87,6 +90,7 @@ public class WinbackEmailFallbackScheduler {
         this.automationService = automationService;
         this.promoConfigService = promoConfigService;
         this.providerVisitRepository = providerVisitRepository;
+        this.telegram = telegram;
         this.publicBaseUrl = publicBaseUrl;
     }
 
@@ -188,6 +192,10 @@ public class WinbackEmailFallbackScheduler {
             String campaignId = mailchimpEmailService.sendWinbackEmail(
                     config, email, subjectLine, previewText, campaignTitle, html.get());
             save(sms, customerId, email, WinbackEmailSend.STATE_SENT, campaignId, html.get());
+            // automationKey here is always one of AUTOMATION_KEYS above, always a real registry
+            // entry — no fallback needed the way a caller-supplied key elsewhere might.
+            String automationName = SmsAutomationRegistry.all().get(automationKey).name();
+            telegram.sendEmailFallbackSentAlert(businessId, automationName, vars.get("FNAME"), email);
         } catch (Exception e) {
             log.warn("Winback email send failed for sms_message {} (not retried): {}", sms.getId(), e.getMessage());
             save(sms, customerId, email, WinbackEmailSend.STATE_SEND_FAILED, null, null);

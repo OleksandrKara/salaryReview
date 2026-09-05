@@ -348,6 +348,50 @@ public class TelegramNotificationService {
         return en + "\n\n—\n\n" + ru;
     }
 
+    /** Alerts a business's staff Telegram channel every time an automation's email fallback leg
+     * actually sends (real Mailchimp campaign delivered — never for a SKIPPED_ or SEND_FAILED
+     * outcome) — see {@code WinbackEmailFallbackScheduler}/{@code CheckoutReviewEmailFallbackScheduler},
+     * whichever automation's email leg fired ({@code lapsed_customer_winback}, {@code
+     * repeat_customer_winback}, {@code same_day_rebooking_discount}, {@code checkout_review_request}).
+     * Owner request 2026-09-05: email sends were otherwise only visible as a cumulative 30-day
+     * count on {@code /owner/settings/automations}, with no way to see one happen in real time the
+     * way an SMS send already implicitly is (the customer's own reply/click shows up immediately).
+     * {@code automationName} is the same human-readable label {@code /owner/settings/automations}
+     * itself shows (see {@code SmsAutomationRegistry.AutomationMeta#name}), not the raw key. Never
+     * throws, same contract as every other send method here. */
+    public boolean sendEmailFallbackSentAlert(Long businessId, String automationName, String customerName, String email) {
+        TelegramNotificationConfig cfg = configService.get(businessId);
+        String token = cfg.getBotToken();
+        String chatId = cfg.getChatId();
+        if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
+            log.info("Email-fallback-sent Telegram alert skipped — bot token or chat id not configured for business {}", businessId);
+            return false;
+        }
+
+        String client = (customerName == null || customerName.isBlank()) ? "—" : customerName;
+        String text = "📧 " + automationName + " — email sent\n"
+                + "👤 " + client + "\n"
+                + "✉️ " + email;
+        try {
+            Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", text);
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
+                    .timeout(Duration.ofSeconds(5))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(reqBody)))
+                    .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                log.warn("Email-fallback-sent Telegram alert send failed: HTTP {} {}", res.statusCode(), res.body());
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.warn("Email-fallback-sent Telegram alert send failed (caller unaffected): {}", e.getMessage());
+            return false;
+        }
+    }
+
     /** "45 min" under an hour, "3h" or "3h 20m" at/past one — matches how a person would actually
      * say it, not a raw minute count. Package-private for direct unit testing. */
     static String formatLeadTime(Duration d) {

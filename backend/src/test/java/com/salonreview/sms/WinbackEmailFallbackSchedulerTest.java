@@ -10,6 +10,7 @@ import com.salonreview.repo.SmsMessageRepository;
 import com.salonreview.repo.WinbackEmailSendRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
+import com.salonreview.telegram.TelegramNotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -47,6 +48,7 @@ class WinbackEmailFallbackSchedulerTest {
     private SmsAutomationService automationService;
     private PromoConfigService promoConfigService;
     private ProviderVisitRepository providerVisitRepository;
+    private TelegramNotificationService telegram;
     private WinbackEmailFallbackScheduler scheduler;
 
     @BeforeEach
@@ -61,9 +63,10 @@ class WinbackEmailFallbackSchedulerTest {
         automationService = mock(SmsAutomationService.class);
         promoConfigService = mock(PromoConfigService.class);
         providerVisitRepository = mock(ProviderVisitRepository.class);
+        telegram = mock(TelegramNotificationService.class);
         scheduler = new WinbackEmailFallbackScheduler(smsMessageRepository, winbackEmailSendRepository,
                 mailchimpConfigRepository, mailchimpEmailService, templateService, squareClientProvider,
-                automationService, promoConfigService, providerVisitRepository, "https://salon.akluxnails.com");
+                automationService, promoConfigService, providerVisitRepository, telegram, "https://salon.akluxnails.com");
 
         MailchimpConfig config = MailchimpConfig.builder().businessId(BUSINESS_ID)
                 .apiKey("k-us1").audienceId("a1").fromName("Lucy").fromEmail("lucy@akluxnails.com")
@@ -173,6 +176,36 @@ class WinbackEmailFallbackSchedulerTest {
         assertThat(saved.getEmailAddress()).isEqualTo("jane@example.com");
         assertThat(saved.getMailchimpCampaignId()).isEqualTo("campaign123");
         assertThat(saved.getAutomationKey()).isEqualTo(SameDayRebookingScheduler.AUTOMATION_KEY);
+        // Owner request 2026-09-05: a real send is also announced to the staff Telegram channel,
+        // using the same human-readable automation name /owner/settings/automations shows.
+        verify(telegram).sendEmailFallbackSentAlert(eq(BUSINESS_ID),
+                eq(SmsAutomationRegistry.all().get(SameDayRebookingScheduler.AUTOMATION_KEY).name()),
+                eq("Jane"), eq("jane@example.com"));
+    }
+
+    @Test
+    @DisplayName("Mailchimp send fails → no Telegram alert (nothing real to announce)")
+    void failedSendNeverAlertsTelegram() {
+        SmsMessage sms = candidate(3L, SameDayRebookingScheduler.AUTOMATION_KEY, "tok3");
+        when(smsMessageRepository.findByBusinessIdAndAutomationKeyInAndDirectionAndStatusAndClickedAtIsNullAndCreatedAtBetween(
+                eq(BUSINESS_ID), any(), eq("OUTBOUND"), eq("SENT"), any(), any())).thenReturn(List.of(sms));
+        when(smsMessageRepository.existsByBusinessIdAndPhoneNumberAndDirectionAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq(PHONE), eq("INBOUND"), any())).thenReturn(false);
+        when(promoConfigService.get(BUSINESS_ID, PromoConfigService.REBOOK_PROMO_CODE))
+                .thenReturn(Optional.of(new PromoConfigService.PromoTerms(1000, 9900L, "GROUP1", true)));
+        when(providerVisitRepository.findByBusinessIdAndCustomerIdOrderByServiceDateDesc(eq(BUSINESS_ID), eq(CUSTOMER_ID), any()))
+                .thenReturn(List.of());
+
+        try {
+            when(mailchimpEmailService.sendWinbackEmail(any(), any(), any(), any(), any(), any()))
+                    .thenThrow(new RuntimeException("Mailchimp API error"));
+        } catch (Exception ignored) {
+            // mock setup only
+        }
+
+        scheduler.sendDueFollowUps();
+
+        org.mockito.Mockito.verifyNoInteractions(telegram);
     }
 
     @Test
