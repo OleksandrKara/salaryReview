@@ -35,9 +35,10 @@ public class MailchimpEmailTemplateService {
                     "lead_follow_up", "email-templates/business-1/lead_follow_up.html",
                     "pre_visit_nurture_welcome", "email-templates/business-1/pre_visit_nurture_welcome.html",
                     "pre_visit_nurture_reminder", "email-templates/business-1/pre_visit_nurture_reminder.html"
+            ),
+            2L, Map.of(
+                    "color_booster_winback_oneoff", "email-templates/business-2/color_booster_winback_oneoff.html"
             )
-            // Business 2 (Anna Kara's Brow Studio / PMU) gets its own entry here once its email
-            // design exists — pulled from its own site's tokens/fonts, not a recolor of business 1's.
     );
 
     private final Map<String, String> cache = new ConcurrentHashMap<>();

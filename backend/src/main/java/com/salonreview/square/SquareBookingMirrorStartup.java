@@ -16,7 +16,9 @@ import org.springframework.stereotype.Component;
 public class SquareBookingMirrorStartup {
 
     private static final Logger log = LoggerFactory.getLogger(SquareBookingMirrorStartup.class);
-    private static final int BACKFILL_MONTHS = 24;
+    // Was 24 until 2026-09-05, bumped to 36 alongside ProviderVisitStartup's own identical bump —
+    // see that class's doc for why (color_booster_reminder's maxLookbackDays is 1095 days/36 months).
+    private static final int BACKFILL_MONTHS = 36;
 
     private final SquareBookingMirrorIngestService ingest;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;

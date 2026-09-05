@@ -15,7 +15,14 @@ import org.springframework.stereotype.Component;
 public class ProviderVisitStartup {
 
     private static final Logger log = LoggerFactory.getLogger(ProviderVisitStartup.class);
-    private static final int BACKFILL_MONTHS = 12;
+    // Was 12 until 2026-09-05: found while investigating why color_booster_reminder (business 2)
+    // only reached 2 of ~116 real customers overdue for a color booster — that automation's own
+    // real-visit cross-check (see ColorBoosterReminderScheduler's class doc) requires a
+    // provider_visit row, and this ledger's 12-month floor meant almost none of that 1-3-year-old
+    // backlog could ever be verified. Bumped to 36 to match ColorBoosterReminderProperties'
+    // own maxLookbackDays (1095 days) — the ledger should cover at least as far back as that
+    // automation is willing to look.
+    private static final int BACKFILL_MONTHS = 36;
 
     private final ProviderVisitIngestService ingest;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
