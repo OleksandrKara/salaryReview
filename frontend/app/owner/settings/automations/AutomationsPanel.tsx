@@ -62,6 +62,12 @@ const AUTOMATION_CHANNELS: Record<string, Channel[]> = {
   // request at all gets a one-tap emoji-rating email 24h later, same "SMS first, email only for
   // non-responders" shape as the three automations above.
   checkout_review_request: ['sms', 'email'],
+  // 2026-09-05: lead_follow_up grew into a 3-step funnel — SMS at ~2min, an email properly
+  // introducing the studio at ~24h if still unbooked, a final plain SMS at ~72h (see
+  // LeadFollowUpScheduler). Its email leg doesn't yet have open/click/converted metrics the way
+  // the other email-fallback automations do (it logs state directly on lead_followup_send, not
+  // winback_email_send) — the tag here is accurate, the numbers on that row just aren't there yet.
+  lead_follow_up: ['sms', 'email'],
 };
 const CHANNEL_META: Record<Channel, { label: string; dotClassName: string }> = {
   sms: { label: 'SMS', dotClassName: 'bg-sky-500' },

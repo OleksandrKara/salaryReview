@@ -1,10 +1,14 @@
 package com.salonreview.sms;
 
+import com.salonreview.domain.Business;
 import com.salonreview.domain.LeadFollowUpSend;
+import com.salonreview.domain.MailchimpConfig;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.marketing.MarketingContactsRepository;
 import com.salonreview.marketing.MarketingContactsRepository.RawContact;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.LeadFollowUpSendRepository;
+import com.salonreview.repo.MailchimpConfigRepository;
 import com.salonreview.repo.TwilioSmsConfigRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
@@ -16,6 +20,7 @@ import org.mockito.ArgumentCaptor;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,6 +41,10 @@ class LeadFollowUpSchedulerTest {
     private SquareClient square;
     private SmsAutomationService automationService;
     private TwilioSmsService smsService;
+    private MailchimpConfigRepository mailchimpConfigRepository;
+    private MailchimpEmailService mailchimpEmailService;
+    private MailchimpEmailTemplateService templateService;
+    private BusinessRepository businessRepository;
     private LeadFollowUpScheduler scheduler;
 
     @BeforeEach
@@ -50,8 +59,13 @@ class LeadFollowUpSchedulerTest {
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         automationService = mock(SmsAutomationService.class);
         smsService = mock(TwilioSmsService.class);
+        mailchimpConfigRepository = mock(MailchimpConfigRepository.class);
+        mailchimpEmailService = mock(MailchimpEmailService.class);
+        templateService = mock(MailchimpEmailTemplateService.class);
+        businessRepository = mock(BusinessRepository.class);
         scheduler = new LeadFollowUpScheduler(contactsRepository, sendRepository, squareClientProvider, twilioConfigs,
-                automationService, smsService, new SquareUpcomingAppointmentService());
+                automationService, smsService, new SquareUpcomingAppointmentService(),
+                mailchimpConfigRepository, mailchimpEmailService, templateService, businessRepository);
 
         when(automationService.isEnabled(1L, "lead_follow_up")).thenReturn(true);
         when(smsService.sendTemplated(any(), any(), any(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
@@ -68,14 +82,23 @@ class LeadFollowUpSchedulerTest {
     }
 
     private static RawContact contact(UUID id, String name, String squareCustomerId, Instant updatedAt) {
+        return contactWithEmail(id, name, null, squareCustomerId, updatedAt);
+    }
+
+    private static RawContact contactWithEmail(UUID id, String name, String email, String squareCustomerId, Instant updatedAt) {
         // id, phoneNumber, givenName, emailAddress, originalTrafficSource, marketingTrafficSource,
         // channel, utmSource, utmMedium, utmCampaign, landingPageSlug, variantName, deviceType,
         // osName, osVersion, browserName, browserVersion, smsMarketingConsent,
         // emailMarketingConsent, squareCustomerId, squareBookingId, bookingStatus,
         // bookingStartAt, bookingServiceName, bookingPrice, bookingArtistName, createdAt, updatedAt
-        return new RawContact(id, PHONE, name, null, null, null, null, null, null, null, null, null,
+        return new RawContact(id, PHONE, name, email, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, squareCustomerId, null, null, null, null, null, null,
                 updatedAt, updatedAt);
+    }
+
+    private static LeadFollowUpSend touch(Long id, UUID contactId, String state) {
+        return LeadFollowUpSend.builder().id(id).businessId(BUSINESS_ID).contactId(contactId)
+                .contactUpdatedAt(Instant.now()).phoneNumber(PHONE).state(state).build();
     }
 
     private static SquareClient.Booking booking(String status, String startAt) {
@@ -289,5 +312,137 @@ class LeadFollowUpSchedulerTest {
 
         verifyNoInteractions(smsService, square);
         verify(sendRepository, never()).save(any());
+    }
+
+    // --- Step 2: email follow-up (~24h) ---
+
+    private MailchimpConfig configuredMailchimpConfig() {
+        return MailchimpConfig.builder().businessId(BUSINESS_ID)
+                .apiKey("k-us1").audienceId("a1").fromName("Lucy").fromEmail("lucy@akluxnails.com")
+                .replyToEmail("lucy@akluxnails.com").build();
+    }
+
+    @Test
+    @DisplayName("email step: still unbooked, has an email on file → sends via Mailchimp, saves EMAIL_STATE_SENT")
+    void emailFollowUpSendsWhenStillUnbooked() throws Exception {
+        UUID contactId = UUID.randomUUID();
+        LeadFollowUpSend row = touch(1L, contactId, LeadFollowUpSend.STATE_SENT);
+        when(sendRepository.findByStateAndEmailFollowupStateIsNullAndCreatedAtBetween(eq(LeadFollowUpSend.STATE_SENT), any(), any()))
+                .thenReturn(List.of(row));
+        when(square.bookingsForCustomer(eq("cust1"), any())).thenReturn(List.of());
+        when(mailchimpConfigRepository.findByBusinessId(BUSINESS_ID)).thenReturn(Optional.of(configuredMailchimpConfig()));
+        when(contactsRepository.findByIds(List.of(contactId), BUSINESS_ID))
+                .thenReturn(List.of(contactWithEmail(contactId, "Jane", "jane@example.com", "cust1", Instant.now())));
+        when(businessRepository.findById(BUSINESS_ID)).thenReturn(Optional.of(
+                Business.builder().id(BUSINESS_ID).name("AK.LUX.NAILS").shortCode("akluxnails")
+                        .timezone("America/Los_Angeles").active(true).publicDomain("mani.akluxnails.com").build()));
+        when(templateService.render(eq(BUSINESS_ID), eq("lead_follow_up"), any())).thenReturn(Optional.of("<html></html>"));
+        when(mailchimpEmailService.sendWinbackEmail(any(), eq("jane@example.com"), any(), any(), any(), any())).thenReturn("campaign-1");
+
+        scheduler.sendDueEmailFollowUps();
+
+        assertThat(row.getEmailFollowupState()).isEqualTo(LeadFollowUpSend.EMAIL_STATE_SENT);
+        verify(sendRepository).save(row);
+    }
+
+    @Test
+    @DisplayName("email step: already booked by the time we check → SKIPPED_BOOKED, no email sent")
+    void emailFollowUpSkipsWhenBooked() {
+        UUID contactId = UUID.randomUUID();
+        LeadFollowUpSend row = touch(1L, contactId, LeadFollowUpSend.STATE_SENT);
+        when(sendRepository.findByStateAndEmailFollowupStateIsNullAndCreatedAtBetween(eq(LeadFollowUpSend.STATE_SENT), any(), any()))
+                .thenReturn(List.of(row));
+        String futureIso = Instant.now().plusSeconds(3600).toString();
+        when(square.bookingsForCustomer(eq("cust1"), any())).thenReturn(List.of(booking("ACCEPTED", futureIso)));
+
+        scheduler.sendDueEmailFollowUps();
+
+        assertThat(row.getEmailFollowupState()).isEqualTo(LeadFollowUpSend.EMAIL_STATE_SKIPPED_BOOKED);
+        verifyNoInteractions(mailchimpEmailService);
+    }
+
+    @Test
+    @DisplayName("email step: no email address on file → SKIPPED_NO_EMAIL")
+    void emailFollowUpSkipsWhenNoEmail() {
+        UUID contactId = UUID.randomUUID();
+        LeadFollowUpSend row = touch(1L, contactId, LeadFollowUpSend.STATE_SENT);
+        when(sendRepository.findByStateAndEmailFollowupStateIsNullAndCreatedAtBetween(eq(LeadFollowUpSend.STATE_SENT), any(), any()))
+                .thenReturn(List.of(row));
+        when(square.bookingsForCustomer(eq("cust1"), any())).thenReturn(List.of());
+        when(mailchimpConfigRepository.findByBusinessId(BUSINESS_ID)).thenReturn(Optional.of(configuredMailchimpConfig()));
+        when(contactsRepository.findByIds(List.of(contactId), BUSINESS_ID))
+                .thenReturn(List.of(contact(contactId, "Jane", "cust1")));
+
+        scheduler.sendDueEmailFollowUps();
+
+        assertThat(row.getEmailFollowupState()).isEqualTo(LeadFollowUpSend.EMAIL_STATE_SKIPPED_NO_EMAIL);
+        verifyNoInteractions(mailchimpEmailService);
+    }
+
+    @Test
+    @DisplayName("email step: automation disabled since step 1 → SKIPPED_DISABLED")
+    void emailFollowUpSkipsWhenDisabled() {
+        UUID contactId = UUID.randomUUID();
+        LeadFollowUpSend row = touch(1L, contactId, LeadFollowUpSend.STATE_SENT);
+        when(sendRepository.findByStateAndEmailFollowupStateIsNullAndCreatedAtBetween(eq(LeadFollowUpSend.STATE_SENT), any(), any()))
+                .thenReturn(List.of(row));
+        when(square.bookingsForCustomer(eq("cust1"), any())).thenReturn(List.of());
+        when(automationService.isEnabled(BUSINESS_ID, "lead_follow_up")).thenReturn(false);
+
+        scheduler.sendDueEmailFollowUps();
+
+        assertThat(row.getEmailFollowupState()).isEqualTo(LeadFollowUpSend.EMAIL_STATE_SKIPPED_DISABLED);
+        verifyNoInteractions(mailchimpEmailService);
+    }
+
+    // --- Step 3: final SMS follow-up (~72h) ---
+
+    @Test
+    @DisplayName("final SMS step: still unbooked → sends lead_follow_up_final_nudge, saves SMS_FOLLOWUP_STATE_SENT")
+    void finalSmsFollowUpSendsWhenStillUnbooked() {
+        UUID contactId = UUID.randomUUID();
+        LeadFollowUpSend row = touch(1L, contactId, LeadFollowUpSend.STATE_SENT);
+        when(sendRepository.findByStateAndSmsFollowupStateIsNullAndCreatedAtBetween(eq(LeadFollowUpSend.STATE_SENT), any(), any()))
+                .thenReturn(List.of(row));
+        when(square.bookingsForCustomer(eq("cust1"), any())).thenReturn(List.of());
+        when(contactsRepository.findByIds(List.of(contactId), BUSINESS_ID))
+                .thenReturn(List.of(contact(contactId, "Jane", "cust1")));
+
+        scheduler.sendDueSmsFinalFollowUps();
+
+        verify(smsService).sendTemplated(BUSINESS_ID, "lead_follow_up_final_nudge", PHONE, Map.of("greeting", "Hi Jane!"));
+        assertThat(row.getSmsFollowupState()).isEqualTo(LeadFollowUpSend.SMS_FOLLOWUP_STATE_SENT);
+    }
+
+    @Test
+    @DisplayName("final SMS step: booked by now → SKIPPED_BOOKED, no text sent")
+    void finalSmsFollowUpSkipsWhenBooked() {
+        UUID contactId = UUID.randomUUID();
+        LeadFollowUpSend row = touch(1L, contactId, LeadFollowUpSend.STATE_SENT);
+        when(sendRepository.findByStateAndSmsFollowupStateIsNullAndCreatedAtBetween(eq(LeadFollowUpSend.STATE_SENT), any(), any()))
+                .thenReturn(List.of(row));
+        String futureIso = Instant.now().plusSeconds(3600).toString();
+        when(square.bookingsForCustomer(eq("cust1"), any())).thenReturn(List.of(booking("ACCEPTED", futureIso)));
+
+        scheduler.sendDueSmsFinalFollowUps();
+
+        verifyNoInteractions(smsService);
+        assertThat(row.getSmsFollowupState()).isEqualTo(LeadFollowUpSend.SMS_FOLLOWUP_STATE_SKIPPED_BOOKED);
+    }
+
+    @Test
+    @DisplayName("final SMS step: automation disabled → SKIPPED_DISABLED, no text sent")
+    void finalSmsFollowUpSkipsWhenDisabled() {
+        UUID contactId = UUID.randomUUID();
+        LeadFollowUpSend row = touch(1L, contactId, LeadFollowUpSend.STATE_SENT);
+        when(sendRepository.findByStateAndSmsFollowupStateIsNullAndCreatedAtBetween(eq(LeadFollowUpSend.STATE_SENT), any(), any()))
+                .thenReturn(List.of(row));
+        when(square.bookingsForCustomer(eq("cust1"), any())).thenReturn(List.of());
+        when(automationService.isEnabled(BUSINESS_ID, "lead_follow_up")).thenReturn(false);
+
+        scheduler.sendDueSmsFinalFollowUps();
+
+        verifyNoInteractions(smsService);
+        assertThat(row.getSmsFollowupState()).isEqualTo(LeadFollowUpSend.SMS_FOLLOWUP_STATE_SKIPPED_DISABLED);
     }
 }
