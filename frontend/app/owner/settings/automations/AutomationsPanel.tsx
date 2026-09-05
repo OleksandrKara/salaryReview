@@ -68,6 +68,9 @@ const AUTOMATION_CHANNELS: Record<string, Channel[]> = {
   // the other email-fallback automations do (it logs state directly on lead_followup_send, not
   // winback_email_send) — the tag here is accurate, the numbers on that row just aren't there yet.
   lead_follow_up: ['sms', 'email'],
+  // 2026-09-05: email-only, no SMS leg at all — a welcome email shortly after booking, then a
+  // day-before reminder if the appointment is far enough out (see PreVisitNurtureScheduler).
+  pre_visit_nurture: ['email'],
 };
 const CHANNEL_META: Record<Channel, { label: string; dotClassName: string }> = {
   sms: { label: 'SMS', dotClassName: 'bg-sky-500' },
