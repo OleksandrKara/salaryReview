@@ -422,7 +422,7 @@ export interface MailchimpSettingsUpdateRequest {
 // which email went to which customer, when, whether they opened/clicked it, and whether they
 // actually came back (a real completed visit, not just a click).
 export interface MailchimpActivitySendView {
-  id: number;
+  id: string;
   automationKey: string;
   emailAddress: string | null;
   state: string;

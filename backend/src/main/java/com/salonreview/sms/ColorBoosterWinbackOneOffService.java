@@ -276,15 +276,24 @@ public class ColorBoosterWinbackOneOffService {
      * column — the {@code phoneNumber} column holds the email address here instead, purely for a
      * human reviewing the row later; nothing reads it back programmatically (idempotency only
      * needs {@code squareCustomerId}/{@code state}/{@code createdAt}). */
+    /** Upsert, not a blind insert — a re-run of this campaign (e.g. to pick up SEND_FAILED
+     * stragglers) targets the same (business, automation, customer, date) tuple a prior attempt
+     * already wrote, which the table's unique constraint rejects as a second insert. Found live
+     * 2026-09-05: an insert-only version of this method threw on retry for customers who had
+     * actually just been sent a real email, losing the SENT outcome and leaving them stuck on a
+     * stale SEND_FAILED row that a future run would have retried again — a real duplicate-send risk. */
     private void save(Long businessId, String customerId, LocalDate today, String email, String customerName, String state) {
-        sendRepository.save(ServiceLifecycleReminderSend.builder()
-                .businessId(businessId)
-                .automationKey(AUTOMATION_KEY)
-                .squareCustomerId(customerId)
-                .triggerServiceDate(today)
-                .phoneNumber(email)
-                .customerName(customerName)
-                .state(state)
-                .build());
+        ServiceLifecycleReminderSend row = sendRepository
+                .findByBusinessIdAndAutomationKeyAndSquareCustomerIdAndTriggerServiceDate(businessId, AUTOMATION_KEY, customerId, today)
+                .orElseGet(() -> ServiceLifecycleReminderSend.builder()
+                        .businessId(businessId)
+                        .automationKey(AUTOMATION_KEY)
+                        .squareCustomerId(customerId)
+                        .triggerServiceDate(today)
+                        .build());
+        row.setPhoneNumber(email);
+        row.setCustomerName(customerName);
+        row.setState(state);
+        sendRepository.save(row);
     }
 }
