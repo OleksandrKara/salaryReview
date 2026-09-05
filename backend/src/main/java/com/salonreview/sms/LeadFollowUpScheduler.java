@@ -41,6 +41,14 @@ public class LeadFollowUpScheduler {
      * in an ever-growing scan. */
     private static final Duration MAX_AGE = Duration.ofMinutes(10);
 
+    /** 2026-09-05 live incident: a lead who resubmitted contact info twice within 4 minutes (a
+     * double form submit) got the identical nudge text twice — {@code contactUpdatedAt} moved
+     * both times, so the per-touch idempotency check alone couldn't catch it (see {@link
+     * LeadFollowUpSend}'s own doc on why that's by design for a genuinely later resubmission). A
+     * day is long enough that a real same-day double-submit never gets a second identical text,
+     * short enough that a lead who comes back and leaves their info again days later still does. */
+    private static final Duration RESEND_COOLDOWN = Duration.ofHours(24);
+
     private final MarketingContactsRepository contactsRepository;
     private final LeadFollowUpSendRepository sendRepository;
     private final SquareClientProvider squareClientProvider;
@@ -107,6 +115,11 @@ public class LeadFollowUpScheduler {
         }
         if (upcoming) {
             save(contact, LeadFollowUpSend.STATE_SKIPPED_BOOKED);
+            return;
+        }
+        if (sendRepository.existsByPhoneNumberAndStateAndCreatedAtAfter(
+                contact.phoneNumber(), LeadFollowUpSend.STATE_SENT, Instant.now().minus(RESEND_COOLDOWN))) {
+            save(contact, LeadFollowUpSend.STATE_SKIPPED_RECENTLY_SENT);
             return;
         }
         if (!automationService.isEnabled(businessId, "lead_follow_up")) {
