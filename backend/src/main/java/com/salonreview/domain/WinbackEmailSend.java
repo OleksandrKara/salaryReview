@@ -37,7 +37,9 @@ public class WinbackEmailSend {
     @Column(name = "automation_key", nullable = false)
     private String automationKey;
 
-    @Column(name = "sms_message_id", nullable = false)
+    /** Null for a pure-email campaign with no SMS leg at all (e.g. {@code color_booster_winback_oneoff},
+     * see {@code ColorBoosterWinbackOneOffService}) — every other automation here always sets it. */
+    @Column(name = "sms_message_id")
     private Long smsMessageId;
 
     @Column(name = "square_customer_id", nullable = false)

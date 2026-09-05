@@ -422,7 +422,7 @@ export interface MailchimpSettingsUpdateRequest {
 // which email went to which customer, when, whether they opened/clicked it, and whether they
 // actually came back (a real completed visit, not just a click).
 export interface MailchimpActivitySendView {
-  id: string;
+  id: number;
   automationKey: string;
   emailAddress: string | null;
   state: string;
@@ -571,6 +571,19 @@ export interface SmsReactionDto {
 export interface EmailFollowUpDto {
   state: string;
   emailAddress: string | null;
+  sentAt: string;
+  openedAt: string | null;
+  clickedAt: string | null;
+  contentHtml: string | null;
+}
+
+// One row of the flat "Emails" tab log at /admin/messages/emails (SmsActivityController#emailSends)
+// — every email ever sent, including a pure-email campaign with no SMS thread to attach to.
+export interface EmailSendDto {
+  id: number;
+  automationKey: string;
+  emailAddress: string | null;
+  state: string;
   sentAt: string;
   openedAt: string | null;
   clickedAt: string | null;

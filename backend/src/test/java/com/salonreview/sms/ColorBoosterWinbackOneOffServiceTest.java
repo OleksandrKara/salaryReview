@@ -2,13 +2,13 @@ package com.salonreview.sms;
 
 import com.salonreview.domain.MailchimpConfig;
 import com.salonreview.domain.Provider;
-import com.salonreview.domain.ServiceLifecycleReminderSend;
 import com.salonreview.domain.ServiceLifecycleRole;
+import com.salonreview.domain.WinbackEmailSend;
 import com.salonreview.repo.MailchimpConfigRepository;
 import com.salonreview.repo.ProviderRepository;
 import com.salonreview.repo.ProviderVisitRepository;
-import com.salonreview.repo.ServiceLifecycleReminderSendRepository;
 import com.salonreview.repo.ServiceLifecycleRoleRepository;
+import com.salonreview.repo.WinbackEmailSendRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,7 +44,7 @@ class ColorBoosterWinbackOneOffServiceTest {
     private static final String BOOSTER_VARIATION = "BOOSTER1";
 
     private ServiceLifecycleRoleRepository roleRepository;
-    private ServiceLifecycleReminderSendRepository sendRepository;
+    private WinbackEmailSendRepository sendRepository;
     private ProviderVisitRepository visitRepository;
     private ProviderRepository providerRepository;
     private SquareClientProvider squareClientProvider;
@@ -57,7 +57,7 @@ class ColorBoosterWinbackOneOffServiceTest {
     @BeforeEach
     void setUp() {
         roleRepository = mock(ServiceLifecycleRoleRepository.class);
-        sendRepository = mock(ServiceLifecycleReminderSendRepository.class);
+        sendRepository = mock(WinbackEmailSendRepository.class);
         visitRepository = mock(ProviderVisitRepository.class);
         providerRepository = mock(ProviderRepository.class);
         squareClientProvider = mock(SquareClientProvider.class);
@@ -78,8 +78,8 @@ class ColorBoosterWinbackOneOffServiceTest {
         when(square.customerEmail(CUSTOMER_ID)).thenReturn("jane@example.com");
         when(square.customerGivenNames(List.of(CUSTOMER_ID))).thenReturn(Map.of(CUSTOMER_ID, "jane"));
         when(templateService.render(eq(BUSINESS_ID), anyString(), any())).thenReturn(Optional.of("<html></html>"));
-        when(sendRepository.existsByBusinessIdAndAutomationKeyAndSquareCustomerIdAndStateAndCreatedAtAfter(
-                any(), anyString(), anyString(), anyString(), any())).thenReturn(false);
+        when(sendRepository.existsByBusinessIdAndAutomationKeyAndSquareCustomerIdAndState(
+                any(), anyString(), anyString(), anyString())).thenReturn(false);
     }
 
     private static ServiceLifecycleRole role(String role, String variationId) {
@@ -119,7 +119,7 @@ class ColorBoosterWinbackOneOffServiceTest {
     }
 
     @Test
-    @DisplayName("real run: sends and saves a SENT row with the email in the phoneNumber column")
+    @DisplayName("real run: sends and saves a SENT WinbackEmailSend row with campaign id + content, no sms_message_id")
     void realRunSendsAndSaves() throws Exception {
         LocalDate visitDate = LocalDate.now(ZONE).minusDays(600);
         stubCandidateScanAndHistory(visitDate, null);
@@ -131,11 +131,15 @@ class ColorBoosterWinbackOneOffServiceTest {
         assertThat(results.get(0).state()).isEqualTo("SENT");
         assertThat(results.get(0).email()).isEqualTo("jane@example.com");
 
-        ArgumentCaptor<ServiceLifecycleReminderSend> captor = ArgumentCaptor.forClass(ServiceLifecycleReminderSend.class);
+        ArgumentCaptor<WinbackEmailSend> captor = ArgumentCaptor.forClass(WinbackEmailSend.class);
         verify(sendRepository).save(captor.capture());
-        assertThat(captor.getValue().getState()).isEqualTo(ServiceLifecycleReminderSend.STATE_SENT);
-        assertThat(captor.getValue().getPhoneNumber()).isEqualTo("jane@example.com");
-        assertThat(captor.getValue().getAutomationKey()).isEqualTo("color_booster_winback_oneoff");
+        WinbackEmailSend saved = captor.getValue();
+        assertThat(saved.getState()).isEqualTo(WinbackEmailSend.STATE_SENT);
+        assertThat(saved.getEmailAddress()).isEqualTo("jane@example.com");
+        assertThat(saved.getAutomationKey()).isEqualTo("color_booster_winback_oneoff");
+        assertThat(saved.getMailchimpCampaignId()).isEqualTo("campaign-1");
+        assertThat(saved.getContentHtml()).isEqualTo("<html></html>");
+        assertThat(saved.getSmsMessageId()).isNull();
     }
 
     @Test
@@ -143,12 +147,11 @@ class ColorBoosterWinbackOneOffServiceTest {
     void retryUpdatesExistingRowInPlace() throws Exception {
         LocalDate visitDate = LocalDate.now(ZONE).minusDays(600);
         stubCandidateScanAndHistory(visitDate, null);
-        ServiceLifecycleReminderSend existing = ServiceLifecycleReminderSend.builder()
+        WinbackEmailSend existing = WinbackEmailSend.builder()
                 .id(42L).businessId(BUSINESS_ID).automationKey("color_booster_winback_oneoff")
-                .squareCustomerId(CUSTOMER_ID).triggerServiceDate(LocalDate.now(ZONE))
-                .phoneNumber("jane@example.com").state("SEND_FAILED").build();
-        when(sendRepository.findByBusinessIdAndAutomationKeyAndSquareCustomerIdAndTriggerServiceDate(
-                eq(BUSINESS_ID), eq("color_booster_winback_oneoff"), eq(CUSTOMER_ID), any()))
+                .squareCustomerId(CUSTOMER_ID).emailAddress("jane@example.com").state(WinbackEmailSend.STATE_SEND_FAILED).build();
+        when(sendRepository.findByBusinessIdAndAutomationKeyAndSquareCustomerId(
+                eq(BUSINESS_ID), eq("color_booster_winback_oneoff"), eq(CUSTOMER_ID)))
                 .thenReturn(Optional.of(existing));
         when(mailchimpEmailService.sendWinbackEmail(any(), any(), any(), any(), any(), any())).thenReturn("campaign-1");
 
@@ -157,10 +160,10 @@ class ColorBoosterWinbackOneOffServiceTest {
         assertThat(results).hasSize(1);
         assertThat(results.get(0).state()).isEqualTo("SENT");
 
-        ArgumentCaptor<ServiceLifecycleReminderSend> captor = ArgumentCaptor.forClass(ServiceLifecycleReminderSend.class);
+        ArgumentCaptor<WinbackEmailSend> captor = ArgumentCaptor.forClass(WinbackEmailSend.class);
         verify(sendRepository, times(1)).save(captor.capture());
         assertThat(captor.getValue().getId()).isEqualTo(42L);
-        assertThat(captor.getValue().getState()).isEqualTo(ServiceLifecycleReminderSend.STATE_SENT);
+        assertThat(captor.getValue().getState()).isEqualTo(WinbackEmailSend.STATE_SENT);
     }
 
     @Test
@@ -168,9 +171,9 @@ class ColorBoosterWinbackOneOffServiceTest {
     void alreadySentSkipped() {
         LocalDate visitDate = LocalDate.now(ZONE).minusDays(600);
         stubCandidateScanAndHistory(visitDate, null);
-        when(sendRepository.existsByBusinessIdAndAutomationKeyAndSquareCustomerIdAndStateAndCreatedAtAfter(
-                eq(BUSINESS_ID), eq("color_booster_winback_oneoff"), eq(CUSTOMER_ID),
-                eq(ServiceLifecycleReminderSend.STATE_SENT), any())).thenReturn(true);
+        when(sendRepository.existsByBusinessIdAndAutomationKeyAndSquareCustomerIdAndState(
+                eq(BUSINESS_ID), eq("color_booster_winback_oneoff"), eq(CUSTOMER_ID), eq(WinbackEmailSend.STATE_SENT)))
+                .thenReturn(true);
 
         List<ColorBoosterWinbackOneOffService.CandidateResult> results = service.run(BUSINESS_ID, false);
 
@@ -268,7 +271,7 @@ class ColorBoosterWinbackOneOffServiceTest {
     }
 
     @Test
-    @DisplayName("Mailchimp send throws -> SEND_FAILED recorded")
+    @DisplayName("Mailchimp send throws -> SEND_FAILED recorded, no campaign id/content stored")
     void sendFailureRecordsSendFailed() throws Exception {
         LocalDate visitDate = LocalDate.now(ZONE).minusDays(600);
         stubCandidateScanAndHistory(visitDate, null);
@@ -279,6 +282,12 @@ class ColorBoosterWinbackOneOffServiceTest {
 
         assertThat(results).hasSize(1);
         assertThat(results.get(0).state()).isEqualTo("SEND_FAILED");
+
+        ArgumentCaptor<WinbackEmailSend> captor = ArgumentCaptor.forClass(WinbackEmailSend.class);
+        verify(sendRepository).save(captor.capture());
+        assertThat(captor.getValue().getState()).isEqualTo(WinbackEmailSend.STATE_SEND_FAILED);
+        assertThat(captor.getValue().getMailchimpCampaignId()).isNull();
+        assertThat(captor.getValue().getContentHtml()).isNull();
     }
 
     @Test
