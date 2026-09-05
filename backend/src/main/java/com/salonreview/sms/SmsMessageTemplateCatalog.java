@@ -214,14 +214,16 @@ public final class SmsMessageTemplateCatalog {
             // Same shape as touchup_reminder_nudge — no discount/link, a plain service reminder.
             // Business name hardcoded rather than {{businessName}} — the business's own legal name
             // ("Anna Kara's Brow Studio LLC") reads wrong in a text (owner correction 2026-09-05);
-            // only business 2 has this automation configured today. No exact elapsed time either
-            // (owner preference 2026-09-05, over a variant that stated it) — framed as a personal
-            // heads-up relayed from Anna rather than a claim about how overdue they are, which also
-            // sidesteps ever getting that figure wrong.
+            // "Beauty Studio" (not "Brow Studio") per owner correction 2026-09-05, matching the
+            // brand name already used in this business's own email templates. Only business 2 has
+            // this automation configured today. No exact elapsed time either (owner preference
+            // 2026-09-05, over a variant that stated it) — framed as a personal heads-up relayed
+            // from Anna rather than a claim about how overdue they are, which also sidesteps ever
+            // getting that figure wrong.
             Map.entry("color_booster_reminder_nudge", new TemplateDefault(
                     "color_booster_reminder_nudge", "color_booster_reminder", SmsMessageClass.TRANSACTIONAL,
                     "Color booster reminder",
-                    List.of("{{greeting}} It's {{sender}} from Anna Kara's Brow Studio 💛 Anna wanted me to let you know "
+                    List.of("{{greeting}} It's {{sender}} from Anna Kara's Beauty Studio 💛 Anna wanted me to let you know "
                             + "you're due for a color booster. It's a must to keep your results looking fresh, want me to grab you a spot?"),
                     List.of("greeting", "sender")
             )),
