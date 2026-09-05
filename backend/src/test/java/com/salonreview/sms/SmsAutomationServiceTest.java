@@ -86,8 +86,8 @@ class SmsAutomationServiceTest {
                 eq(BUSINESS_ID), eq("checkout_review_request"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(8L);
         when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndLinkTargetIsNotNullAndClickedAtIsNotNullAndCreatedAtAfter(
                 eq(BUSINESS_ID), eq("checkout_review_request"), eq("OUTBOUND"), eq("SENT"), any(Instant.class))).thenReturn(5L);
-        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNotNullAndCreatedAtAfter(
-                eq(BUSINESS_ID), eq("checkout_review_request"), eq("INBOUND"), any(Instant.class))).thenReturn(8L);
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNotNullAndStatusNotAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("checkout_review_request"), eq("INBOUND"), eq("RATED_VIA_EMAIL"), any(Instant.class))).thenReturn(8L);
 
         var summary = find("checkout_review_request");
 
@@ -111,8 +111,8 @@ class SmsAutomationServiceTest {
         // requests sent — the fix must not use this raw count for checkout_review_request at all.
         when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndCreatedAtAfter(
                 eq(BUSINESS_ID), eq("checkout_review_request"), eq("INBOUND"), any(Instant.class))).thenReturn(60L);
-        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNotNullAndCreatedAtAfter(
-                eq(BUSINESS_ID), eq("checkout_review_request"), eq("INBOUND"), any(Instant.class))).thenReturn(6L);
+        when(messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNotNullAndStatusNotAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("checkout_review_request"), eq("INBOUND"), eq("RATED_VIA_EMAIL"), any(Instant.class))).thenReturn(6L);
 
         var summary = find("checkout_review_request");
 
@@ -172,22 +172,47 @@ class SmsAutomationServiceTest {
     }
 
     @Test
-    @DisplayName("an automation that doesn't track email (e.g. checkout_review_request) never "
+    @DisplayName("an automation that doesn't track email (e.g. four_hand_request) never "
             + "queries winbackEmailSendRepository for its own key and reports zero for every email field")
     void nonEmailAutomationSkipsEmailQueries() {
-        var summary = find("checkout_review_request");
+        var summary = find("four_hand_request");
 
         assertThat(summary.tracksEmail()).isFalse();
         assertThat(summary.emailSentLast30Days()).isEqualTo(0);
         assertThat(summary.emailOpenedLast30Days()).isEqualTo(0);
         assertThat(summary.emailClickedLast30Days()).isEqualTo(0);
         assertThat(summary.emailConvertedLast30Days()).isEqualTo(0);
-        // Other automations in the same list() call (both winbacks, same_day_rebooking_discount)
-        // do track email, so verifyNoInteractions on the whole mock isn't valid here — this checks
-        // specifically that checkout_review_request's own key was never used to query it.
+        // Other automations in the same list() call (both winbacks, same_day_rebooking_discount,
+        // checkout_review_request) do track email, so verifyNoInteractions on the whole mock isn't
+        // valid here — this checks specifically that four_hand_request's own key was never used.
         org.mockito.Mockito.verify(winbackEmailSendRepository, org.mockito.Mockito.never())
                 .countByBusinessIdAndAutomationKeyAndStateAndCreatedAtAfter(
-                        eq(BUSINESS_ID), eq("checkout_review_request"), anyString(), any(Instant.class));
+                        eq(BUSINESS_ID), eq("four_hand_request"), anyString(), any(Instant.class));
+    }
+
+    @Test
+    @DisplayName("checkout_review_request: tracks its own email fallback leg too — \"converted\" means "
+            + "\"actually rated\" (countRespondedSince), not \"came back for a visit\" (there's no "
+            + "discount here, so countConvertedSince would always read 0)")
+    void checkoutReviewTracksEmailFallbackWithRespondedNotConverted() {
+        when(winbackEmailSendRepository.countByBusinessIdAndAutomationKeyAndStateAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("checkout_review_request"), eq(WinbackEmailSend.STATE_SENT), any(Instant.class))).thenReturn(14L);
+        when(winbackEmailSendRepository.countByBusinessIdAndAutomationKeyAndStateAndOpenedAtIsNotNullAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("checkout_review_request"), eq(WinbackEmailSend.STATE_SENT), any(Instant.class))).thenReturn(9L);
+        when(winbackEmailSendRepository.countByBusinessIdAndAutomationKeyAndStateAndEmailClickedAtIsNotNullAndCreatedAtAfter(
+                eq(BUSINESS_ID), eq("checkout_review_request"), eq(WinbackEmailSend.STATE_SENT), any(Instant.class))).thenReturn(6L);
+        when(winbackEmailSendRepository.countRespondedSince(
+                eq(BUSINESS_ID), eq("checkout_review_request"), eq(WinbackEmailSend.STATE_SENT), any(Instant.class))).thenReturn(5L);
+
+        var summary = find("checkout_review_request");
+
+        assertThat(summary.tracksEmail()).isTrue();
+        assertThat(summary.emailSentLast30Days()).isEqualTo(14);
+        assertThat(summary.emailOpenedLast30Days()).isEqualTo(9);
+        assertThat(summary.emailClickedLast30Days()).isEqualTo(6);
+        assertThat(summary.emailConvertedLast30Days()).isEqualTo(5);
+        org.mockito.Mockito.verify(winbackEmailSendRepository, org.mockito.Mockito.never())
+                .countConvertedSince(eq(BUSINESS_ID), eq("checkout_review_request"), anyString(), any(Instant.class));
     }
 
     @Test

@@ -84,4 +84,20 @@ public interface WinbackEmailSendRepository extends JpaRepository<WinbackEmailSe
             nativeQuery = true)
     long countConvertedSince(@Param("businessId") Long businessId, @Param("automationKey") String automationKey,
                               @Param("state") String state, @Param("since") Instant since);
+
+    /** {@code checkout_review_request}'s own "returned" stat for the email channel — "converted"
+     * for a satisfaction-rating automation isn't "came back for a paid visit" (there's no
+     * discount/incentive here, so {@link #countConvertedSince} would always read 0), it's "the
+     * customer actually rated their visit" — i.e. the {@link com.salonreview.domain.SmsReplyFlow}
+     * this row's own {@code sms_message.id} was the "ask" for reached {@code COMPLETED} (see
+     * {@code CheckoutReviewRatingController}, which is the only thing that can complete a flow
+     * already past its 24h SMS window). See {@code SmsAutomationService#list}. */
+    @Query(value = "SELECT COUNT(*) FROM winback_email_send w "
+            + "JOIN sms_reply_flow f ON f.ask_sms_message_id = w.sms_message_id "
+            + "AND f.automation_key = w.automation_key "
+            + "WHERE w.business_id = :businessId AND w.automation_key = :automationKey "
+            + "AND w.state = :state AND w.created_at >= :since AND f.state = 'COMPLETED'",
+            nativeQuery = true)
+    long countRespondedSince(@Param("businessId") Long businessId, @Param("automationKey") String automationKey,
+                             @Param("state") String state, @Param("since") Instant since);
 }

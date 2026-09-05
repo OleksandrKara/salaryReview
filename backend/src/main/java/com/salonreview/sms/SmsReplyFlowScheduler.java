@@ -2,6 +2,7 @@ package com.salonreview.sms;
 
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.domain.TwilioSmsConfig;
+import com.salonreview.repo.SmsMessageRepository;
 import com.salonreview.repo.SmsReplyFlowRepository;
 import com.salonreview.repo.TwilioSmsConfigRepository;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
@@ -38,13 +39,16 @@ public class SmsReplyFlowScheduler {
     private final TwilioSmsService smsService;
     private final TechnicianNameResolver technicianNameResolver;
     private final TwilioSmsConfigRepository twilioConfigs;
+    private final SmsMessageRepository smsMessageRepository;
 
     public SmsReplyFlowScheduler(SmsReplyFlowRepository repository, TwilioSmsService smsService,
-                                  TechnicianNameResolver technicianNameResolver, TwilioSmsConfigRepository twilioConfigs) {
+                                  TechnicianNameResolver technicianNameResolver, TwilioSmsConfigRepository twilioConfigs,
+                                  SmsMessageRepository smsMessageRepository) {
         this.repository = repository;
         this.smsService = smsService;
         this.technicianNameResolver = technicianNameResolver;
         this.twilioConfigs = twilioConfigs;
+        this.smsMessageRepository = smsMessageRepository;
     }
 
     // Single lock covers the whole per-business loop below — still correct (no duplicate sends
@@ -83,6 +87,12 @@ public class SmsReplyFlowScheduler {
         if (result.sent()) {
             flow.setState(SmsReplyFlow.STATE_AWAITING_REPLY);
             flow.setReplyExpiresAt(now.plus(REPLY_WINDOW));
+            // The send above just logged its own SmsMessage row (see TwilioSmsService#sendTemplated) —
+            // this is that exact row, "most recent outbound to this number" being unambiguous at
+            // this instant (see CheckoutReviewEmailFallbackScheduler for why this link matters).
+            smsMessageRepository.findFirstByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(
+                            businessId, flow.getPhoneNumber(), "OUTBOUND")
+                    .ifPresent(msg -> flow.setAskSmsMessageId(msg.getId()));
         } else {
             // Nothing went out — there's no reply to ever wait for, and this isn't a durable
             // retry queue (see proposal.md Non-goals on missed-delivery reconciliation).

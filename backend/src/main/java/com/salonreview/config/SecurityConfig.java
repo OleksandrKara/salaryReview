@@ -88,6 +88,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/public/webhooks/square", "/api/public/sms/inbound",
                                 "/api/public/sms/status", "/api/public/voice/inbound", "/r/**")
                                 .permitAll()
+                        // The checkout-review-request satisfaction email's rating links — same "harmless
+                        // public redirect, own signature check" shape as /r/** above (see
+                        // CheckoutReviewRatingController/CheckoutReviewRatingSigner).
+                        .requestMatchers("/api/public/checkout-review/rate").permitAll()
                         // MMS photo serving — same "harmless public endpoint" shape as /r/**, keyed by an
                         // opaque, unguessable token rather than a session, so both the dashboard's <img>
                         // tags and Twilio's own outbound-media-fetch requests can retrieve a file with no

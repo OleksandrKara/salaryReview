@@ -52,7 +52,8 @@ public class SmsAutomationService {
      * record so every other {@code AutomationMeta} entry didn't need a mechanical constructor-arity
      * update for the automations that actually have a second channel. */
     private static final Set<String> EMAIL_FALLBACK_AUTOMATIONS =
-            Set.of("lapsed_customer_winback", "repeat_customer_winback", "same_day_rebooking_discount");
+            Set.of("lapsed_customer_winback", "repeat_customer_winback", "same_day_rebooking_discount",
+                    "checkout_review_request");
 
     private final SmsAutomationRepository repository;
     private final SmsMessageRepository messageRepository;
@@ -124,10 +125,16 @@ public class SmsAutomationService {
                     // separate its "sent" count from a branch reply that isn't a new firing.
                     // Every other tracksReplies automation only ever sends one text expecting at
                     // most one reply, so the plain inbound count is already correct for it.
+                    // The flow-scoped branch below excludes RATED_VIA_EMAIL rows (see
+                    // CheckoutReviewRatingController) — the only automation using it,
+                    // checkout_review_request, now has a second channel that can complete the same
+                    // flow, and its SMS-side reply count must stay genuinely SMS-only (see
+                    // SmsMessageRepository#countByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNotNullAndStatusNotAndCreatedAtAfter's
+                    // own doc).
                     long replies = !meta.tracksReplies() ? 0
                             : !meta.primaryTemplateKeys().isEmpty()
-                                    ? messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNotNullAndCreatedAtAfter(
-                                            businessId, meta.key(), "INBOUND", since)
+                                    ? messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNotNullAndStatusNotAndCreatedAtAfter(
+                                            businessId, meta.key(), "INBOUND", "RATED_VIA_EMAIL", since)
                                     : messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndCreatedAtAfter(
                                             businessId, meta.key(), "INBOUND", since);
 
@@ -167,8 +174,13 @@ public class SmsAutomationService {
                                 businessId, meta.key(), WinbackEmailSend.STATE_SENT, since);
                         emailClicked = winbackEmailSendRepository.countByBusinessIdAndAutomationKeyAndStateAndEmailClickedAtIsNotNullAndCreatedAtAfter(
                                 businessId, meta.key(), WinbackEmailSend.STATE_SENT, since);
-                        emailConverted = winbackEmailSendRepository.countConvertedSince(
-                                businessId, meta.key(), WinbackEmailSend.STATE_SENT, since);
+                        // checkout_review_request has no discount/incentive to "come back" for —
+                        // its own email-channel "converted" is "actually rated their visit" instead
+                        // (see WinbackEmailSendRepository#countRespondedSince's own doc), not the
+                        // provider_visit-based definition every other email-fallback automation uses.
+                        emailConverted = "checkout_review_request".equals(meta.key())
+                                ? winbackEmailSendRepository.countRespondedSince(businessId, meta.key(), WinbackEmailSend.STATE_SENT, since)
+                                : winbackEmailSendRepository.countConvertedSince(businessId, meta.key(), WinbackEmailSend.STATE_SENT, since);
                     }
 
                     AutomationReadinessService.Readiness readiness = readinessService.readiness(businessId, meta.key());

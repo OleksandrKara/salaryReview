@@ -318,6 +318,15 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
     long countByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNotNullAndCreatedAtAfter(
             Long businessId, String automationKey, String direction, Instant since);
 
+    /** Same as above but excluding a given status — used for {@code checkout_review_request}'s
+     * SMS-side reply count specifically, so a rating recorded via the satisfaction email fallback
+     * (status {@code RATED_VIA_EMAIL}, see {@code CheckoutReviewRatingController}) isn't
+     * double-counted as an SMS reply too. The two channels' counts need to stay genuinely
+     * distinct — see {@code SmsAutomationService#list}, and the owner's own request to see SMS
+     * and email broken out separately for this automation. */
+    long countByBusinessIdAndAutomationKeyAndDirectionAndReplyFlowIdIsNotNullAndStatusNotAndCreatedAtAfter(
+            Long businessId, String automationKey, String direction, String excludedStatus, Instant since);
+
     /** All-time successful-send count of one exact template to one phone number, for one business
      * — used by {@code SmsMessageTemplateService} to deterministically rotate a multi-variant
      * template's wording (count mod variant count) so the same regular customer sees a different
