@@ -57,6 +57,11 @@ const AUTOMATION_CHANNELS: Record<string, Channel[]> = {
   repeat_customer_winback: ['sms', 'email'],
   same_day_rebooking_discount: ['sms', 'email'],
   four_hand_request: ['sms', 'telegram'],
+  // 2026-09-05: checkout_review_request grew its own email fallback leg (see
+  // CheckoutReviewEmailFallbackScheduler) — a customer who never replies to the SMS rating
+  // request at all gets a one-tap emoji-rating email 24h later, same "SMS first, email only for
+  // non-responders" shape as the three automations above.
+  checkout_review_request: ['sms', 'email'],
 };
 const CHANNEL_META: Record<Channel, { label: string; dotClassName: string }> = {
   sms: { label: 'SMS', dotClassName: 'bg-sky-500' },
@@ -247,7 +252,10 @@ function AutomationCard({
                 key={ch}
                 className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600"
                 title={
-                  ch === 'email' ? 'Email fallback for customers who don’t click/reply to the SMS by evening'
+                  ch === 'email'
+                    ? automation.key === 'checkout_review_request'
+                      ? 'Email fallback for customers who never reply to the SMS rating request within 24 hours'
+                      : 'Email fallback for customers who don’t click/reply to the SMS by evening'
                     : ch === 'telegram' ? 'Pings staff on Telegram'
                     : 'Sends SMS'
                 }
