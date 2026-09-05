@@ -254,7 +254,7 @@ public class LeadFollowUpScheduler {
         }
 
         String subjectLine = "Still thinking about it, " + vars.get("FNAME") + "?";
-        String previewText = "No rush — just wanted to properly introduce ourselves";
+        String previewText = "No rush, just wanted to say hi";
         String campaignTitle = "lead_follow_up email follow-up — touch " + touch.getId();
 
         try {

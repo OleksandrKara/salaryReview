@@ -149,7 +149,7 @@ public class PreVisitNurtureScheduler {
         }
 
         String subjectLine = "You're booked, " + vars.get("FNAME") + "! A little about us";
-        String previewText = "Excited to see you — here's what to expect";
+        String previewText = "Excited to see you, here's what to expect";
         String campaignTitle = AUTOMATION_KEY + " welcome — booking " + booking.getSquareBookingId();
 
         String savedState;
