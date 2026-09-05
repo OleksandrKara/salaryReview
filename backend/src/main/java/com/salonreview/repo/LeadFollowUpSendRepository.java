@@ -4,6 +4,7 @@ import com.salonreview.domain.LeadFollowUpSend;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public interface LeadFollowUpSendRepository extends JpaRepository<LeadFollowUpSend, Long> {
@@ -25,4 +26,15 @@ public interface LeadFollowUpSendRepository extends JpaRepository<LeadFollowUpSe
      * reads as the same confused moment, not a new inquiry worth a second nudge; one genuinely
      * later (days, not minutes) still gets one. */
     boolean existsByPhoneNumberAndStateAndCreatedAtAfter(String phoneNumber, String state, Instant after);
+
+    /** Step 2 candidates: a touch whose own SMS actually sent, not yet considered for the email
+     * follow-up, old enough (~24h) but not so old the poll's own window has long since passed —
+     * see {@code LeadFollowUpScheduler}. */
+    List<LeadFollowUpSend> findByStateAndEmailFollowupStateIsNullAndCreatedAtBetween(
+            String state, Instant createdAfter, Instant createdBefore);
+
+    /** Step 3 candidates: same shape, ~72h, independent of whether step 2 ever completed (a
+     * skipped/failed email doesn't block the final SMS). */
+    List<LeadFollowUpSend> findByStateAndSmsFollowupStateIsNullAndCreatedAtBetween(
+            String state, Instant createdAfter, Instant createdBefore);
 }

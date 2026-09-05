@@ -189,6 +189,17 @@ public final class SmsMessageTemplateCatalog {
                             + "is there anything specific you are looking for?"),
                     List.of("greeting", "sender", "businessName")
             )),
+            // Step 3 of the funnel (owner request 2026-09-05, ~72h after step 1's own nudge above,
+            // with an email in between — see LeadFollowUpScheduler#sendDueSmsFinalFollowUps) — a
+            // plain last check-in, no discount (owner direction: same no-incentive shape as step 1,
+            // not worth standing up a new Square promo code for).
+            Map.entry("lead_follow_up_final_nudge", new TemplateDefault(
+                    "lead_follow_up_final_nudge", "lead_follow_up", SmsMessageClass.TRANSACTIONAL,
+                    "Lead follow-up (final)",
+                    List.of("{{greeting}} It's {{sender}} from {{businessName}} again 💛 Just checking in one last time — "
+                            + "still want help finding a spot? Happy to help whenever works for you."),
+                    List.of("greeting", "sender", "businessName")
+            )),
             // Plain service reminder, no discount/link — a helpful nudge, not a promo, so
             // TRANSACTIONAL (same reasoning as lead_follow_up_nudge above). Wording is a starting
             // point, not final copy — owner-editable like every other template here.

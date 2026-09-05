@@ -31,7 +31,8 @@ public class MailchimpEmailTemplateService {
                     "lapsed_customer_winback", "email-templates/business-1/lapsed_customer_winback.html",
                     "repeat_customer_winback", "email-templates/business-1/repeat_customer_winback.html",
                     "same_day_rebooking_discount", "email-templates/business-1/same_day_rebooking_discount.html",
-                    "checkout_review_request", "email-templates/business-1/checkout_review_request.html"
+                    "checkout_review_request", "email-templates/business-1/checkout_review_request.html",
+                    "lead_follow_up", "email-templates/business-1/lead_follow_up.html"
             )
             // Business 2 (Anna Kara's Brow Studio / PMU) gets its own entry here once its email
             // design exists — pulled from its own site's tokens/fonts, not a recolor of business 1's.

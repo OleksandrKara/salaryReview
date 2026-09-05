@@ -84,8 +84,15 @@ public final class SmsAutomationRegistry {
                     "lead_follow_up",
                     "Lead follow-up nudge",
                     "Every lead who leaves contact info but has no upcoming appointment 2 minutes later — "
-                            + "a purely helpful, no-incentive text offering to help find a time",
-                    List.of(), false, false, false
+                            + "a purely helpful, no-incentive text offering to help find a time. Still unbooked "
+                            + "at ~24h gets an email properly introducing the studio; still unbooked at ~72h "
+                            + "gets one final plain check-in text (see LeadFollowUpScheduler).",
+                    // Restricted to the step 1 template only — lead_follow_up_final_nudge (step 3)
+                    // shares this same automationKey, and an unfiltered "any send under this key"
+                    // count would conflate a NEW lead's first nudge with an existing one's final
+                    // check-in, the exact 857% overcounting bug checkout_review_request's own
+                    // primaryTemplateKeys entry already fixed for the same reason.
+                    List.of("lead_follow_up_nudge"), false, false, false
             ),
             "same_day_rebooking_discount", new AutomationMeta(
                     "same_day_rebooking_discount",
