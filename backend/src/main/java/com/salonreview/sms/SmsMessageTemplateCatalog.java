@@ -212,16 +212,18 @@ public final class SmsMessageTemplateCatalog {
                     List.of("greeting", "sender", "businessName")
             )),
             // Same shape as touchup_reminder_nudge — no discount/link, a plain service reminder.
+            // Business name hardcoded rather than {{businessName}} — the business's own legal name
+            // ("Anna Kara's Brow Studio LLC") reads wrong in a text (owner correction 2026-09-05);
+            // only business 2 has this automation configured today. No exact elapsed time either
+            // (owner preference 2026-09-05, over a variant that stated it) — framed as a personal
+            // heads-up relayed from Anna rather than a claim about how overdue they are, which also
+            // sidesteps ever getting that figure wrong.
             Map.entry("color_booster_reminder_nudge", new TemplateDefault(
                     "color_booster_reminder_nudge", "color_booster_reminder", SmsMessageClass.TRANSACTIONAL,
                     "Color booster reminder",
-                    // {{timeSince}} — real elapsed time (e.g. "1 year and 7 months"), not a generic
-                    // "about a year": found live 2026-09-05 that a hardcoded "about a year" read as
-                    // wrong/careless once this automation's own real-visit backfill was widened to
-                    // 3 years, surfacing customers who were actually 2-3 years overdue.
-                    List.of("{{greeting}} It's {{sender}} from {{businessName}} 💛 It's been {{timeSince}} since your "
-                            + "procedure — a color booster helps keep your result looking fresh. Want me to grab you a spot?"),
-                    List.of("greeting", "sender", "businessName", "timeSince")
+                    List.of("{{greeting}} It's {{sender}} from Anna Kara's Brow Studio 💛 Anna wanted me to let you know "
+                            + "you're due for a color booster. It's a must to keep your results looking fresh, want me to grab you a spot?"),
+                    List.of("greeting", "sender")
             )),
             // spotClause is pre-computed by the caller: "want to lock in your next spot" or
             // "want to lock in your next spot with {technician}" — see class doc on why this is a

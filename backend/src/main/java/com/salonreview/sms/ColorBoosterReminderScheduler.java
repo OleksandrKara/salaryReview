@@ -239,9 +239,7 @@ public class ColorBoosterReminderScheduler {
         String rawGivenName = square.customerGivenNames(List.of(customerId)).get(customerId);
         String name = com.salonreview.util.Names.capitalizeFirst(rawGivenName);
         String greeting = (name == null || name.isBlank()) ? "Hi!" : "Hi " + name + "!";
-        String timeSince = com.salonreview.util.TimePeriods.formatTimeSince(lastQualifyingDate, today);
-        var result = smsService.sendTemplated(businessId, TEMPLATE_KEY, phoneNumber,
-                Map.of("greeting", greeting, "timeSince", timeSince));
+        var result = smsService.sendTemplated(businessId, TEMPLATE_KEY, phoneNumber, Map.of("greeting", greeting));
         String state = result.sent() ? ServiceLifecycleReminderSend.STATE_SENT : ServiceLifecycleReminderSend.STATE_NOT_SENT;
         if (!result.sent()) {
             log.info("{} not sent for customer {} ({}): {}", TEMPLATE_KEY, customerId, phoneNumber, result.reason());
