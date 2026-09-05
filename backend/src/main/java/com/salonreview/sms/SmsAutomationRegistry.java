@@ -66,7 +66,9 @@ public final class SmsAutomationRegistry {
                             + "asked to rate their visit 1–5. A 5-star reply is routed to a Google review the "
                             + "first time, a Yelp review once Google's already been clicked, then a private "
                             + "feedback form once both have been; a low rating gets a plain reply asking what "
-                            + "happened",
+                            + "happened. A customer who never replies by text at all gets a one-tap emoji-rating "
+                            + "email 24 hours later (see CheckoutReviewEmailFallbackScheduler) — never a second "
+                            + "channel for someone who already answered.",
                     // "checkout_rating_request" (no suffix) is the pre-2026-08-20 template key,
                     // from before the with-technician/no-technician split — still real, recent
                     // history inside any 30-day window until 2026-09-20, after which no row will

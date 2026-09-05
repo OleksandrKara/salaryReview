@@ -386,7 +386,7 @@ function AutomationCard({
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
                 <path d="M20 6 9 17l-5-5" />
               </svg>
-              {emailConversionRate} returned
+              {emailConversionRate} {automation.key === 'checkout_review_request' ? 'rated' : 'returned'}
               <span className="font-normal text-emerald-600/70 tabular-nums">
                 · {automation.emailConvertedLast30Days}/{automation.emailSentLast30Days}
               </span>

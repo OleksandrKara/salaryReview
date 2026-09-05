@@ -1,8 +1,10 @@
 package com.salonreview.sms;
 
 import com.salonreview.domain.Provider;
+import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.domain.TwilioSmsConfig;
+import com.salonreview.repo.SmsMessageRepository;
 import com.salonreview.repo.SmsReplyFlowRepository;
 import com.salonreview.repo.TwilioSmsConfigRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,6 +34,7 @@ class SmsReplyFlowSchedulerTest {
     private TwilioSmsService smsService;
     private TechnicianNameResolver technicianNameResolver;
     private TwilioSmsConfigRepository twilioConfigs;
+    private SmsMessageRepository smsMessageRepository;
     private SmsReplyFlowScheduler scheduler;
 
     @BeforeEach
@@ -42,7 +45,10 @@ class SmsReplyFlowSchedulerTest {
         when(technicianNameResolver.resolveProviderForCustomer(any(), any(), any())).thenReturn(Optional.empty());
         twilioConfigs = mock(TwilioSmsConfigRepository.class);
         when(twilioConfigs.findAll()).thenReturn(List.of(TwilioSmsConfig.builder().businessId(BUSINESS_ID).build()));
-        scheduler = new SmsReplyFlowScheduler(repository, smsService, technicianNameResolver, twilioConfigs);
+        smsMessageRepository = mock(SmsMessageRepository.class);
+        when(smsMessageRepository.findFirstByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(any(), any(), any()))
+                .thenReturn(Optional.empty());
+        scheduler = new SmsReplyFlowScheduler(repository, smsService, technicianNameResolver, twilioConfigs, smsMessageRepository);
     }
 
     private static SmsReplyFlow flow(String state) {
@@ -166,6 +172,38 @@ class SmsReplyFlowSchedulerTest {
         verify(smsService).sendTemplated(BUSINESS_ID, "checkout_rating_request_with_technician", PHONE,
                 Map.of("greeting", "Hi Jane!", "technician", "Susan"));
         assertThat(due.getProviderId()).isEqualTo(7L);
+    }
+
+    @Test
+    @DisplayName("send succeeds → askSmsMessageId is set from the just-logged outbound message "
+            + "(see CheckoutReviewEmailFallbackScheduler, which needs this link)")
+    void successfulSendCapturesAskMessageId() {
+        SmsReplyFlow due = flow(SmsReplyFlow.STATE_AWAITING_SEND);
+        when(repository.findByBusinessIdAndStateAndSendDueAtBefore(eq(BUSINESS_ID), eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
+                .thenReturn(List.of(due));
+        when(smsService.sendTemplated(any(), any(), any(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
+        SmsMessage logged = SmsMessage.builder().id(42L).businessId(BUSINESS_ID).direction("OUTBOUND")
+                .phoneNumber(PHONE).body("...").status("SENT").build();
+        when(smsMessageRepository.findFirstByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(BUSINESS_ID, PHONE, "OUTBOUND"))
+                .thenReturn(Optional.of(logged));
+
+        scheduler.sendDueRatingRequests();
+
+        assertThat(due.getAskSmsMessageId()).isEqualTo(42L);
+    }
+
+    @Test
+    @DisplayName("send fails → askSmsMessageId is never looked up or set")
+    void failedSendNeverCapturesAskMessageId() {
+        SmsReplyFlow due = flow(SmsReplyFlow.STATE_AWAITING_SEND);
+        when(repository.findByBusinessIdAndStateAndSendDueAtBefore(eq(BUSINESS_ID), eq(SmsReplyFlow.STATE_AWAITING_SEND), any()))
+                .thenReturn(List.of(due));
+        when(smsService.sendTemplated(any(), any(), any(), any())).thenReturn(new TwilioSmsService.SmsSendResult(false, "not_configured"));
+
+        scheduler.sendDueRatingRequests();
+
+        assertThat(due.getAskSmsMessageId()).isNull();
+        verifyNoInteractions(smsMessageRepository);
     }
 
     @Test

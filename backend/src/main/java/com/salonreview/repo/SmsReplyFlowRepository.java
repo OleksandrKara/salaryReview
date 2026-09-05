@@ -55,4 +55,12 @@ public interface SmsReplyFlowRepository extends JpaRepository<SmsReplyFlow, Long
      * {@code AWAITING_REPLY} to {@code COMPLETED}, so matching on state here would never find it. */
     Optional<SmsReplyFlow> findFirstByBusinessIdAndPhoneNumberAndAutomationKeyAndCreatedAtBeforeOrderByCreatedAtDesc(
             Long businessId, String phoneNumber, String automationKey, Instant before);
+
+    /** Rows {@code CheckoutReviewEmailFallbackScheduler} should consider for the satisfaction
+     * email follow-up — expired with no SMS reply, for one business. {@code askSmsMessageId}
+     * non-null is required to hang a {@code WinbackEmailSend} row off (see that field's own doc);
+     * a row without one (created before V152, or whose send somehow logged no matching message)
+     * is simply never offered an email fallback rather than erroring. */
+    List<SmsReplyFlow> findByBusinessIdAndAutomationKeyAndStateAndAskSmsMessageIdIsNotNull(
+            Long businessId, String automationKey, String state);
 }

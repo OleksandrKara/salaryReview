@@ -58,6 +58,14 @@ public class SmsReplyFlow {
     @Column(name = "provider_id")
     private Long providerId;
 
+    /** The {@link SmsMessage} row logged for this flow's own "ask" send (see
+     * {@code SmsReplyFlowScheduler#sendOne}) — {@code null} until that send succeeds, and for
+     * every row created before V152. Lets {@code CheckoutReviewEmailFallbackScheduler} hang its
+     * {@link WinbackEmailSend} row off a real {@code sms_message.id}, reusing that table's shape
+     * (and its email metrics/Mailchimp-activity-sync plumbing) instead of a parallel one. */
+    @Column(name = "ask_sms_message_id")
+    private Long askSmsMessageId;
+
     @Column(name = "send_due_at", nullable = false)
     private Instant sendDueAt;
 
