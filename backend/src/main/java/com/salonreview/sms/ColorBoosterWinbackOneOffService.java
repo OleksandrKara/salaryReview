@@ -2,13 +2,13 @@ package com.salonreview.sms;
 
 import com.salonreview.domain.MailchimpConfig;
 import com.salonreview.domain.Provider;
-import com.salonreview.domain.ServiceLifecycleReminderSend;
 import com.salonreview.domain.ServiceLifecycleRole;
+import com.salonreview.domain.WinbackEmailSend;
 import com.salonreview.repo.MailchimpConfigRepository;
 import com.salonreview.repo.ProviderRepository;
 import com.salonreview.repo.ProviderVisitRepository;
-import com.salonreview.repo.ServiceLifecycleReminderSendRepository;
 import com.salonreview.repo.ServiceLifecycleRoleRepository;
+import com.salonreview.repo.WinbackEmailSendRepository;
 import com.salonreview.square.SquareBookingFilters;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
@@ -43,10 +43,13 @@ import java.util.stream.Collectors;
  * this is a different channel (email, not SMS) and a different template for the same underlying
  * "you're overdue" fact, not a way to bypass that automation's own safety bar.
  *
- * <p>Idempotency: logged into the same {@code service_lifecycle_reminder_send} table the recurring
- * automations use, under the {@code color_booster_winback_oneoff} key, so re-running this (e.g. to
- * pick up stragglers who lacked an email address the first time and later added one) never
- * double-emails a customer who was already actually sent one.
+ * <p>Idempotency/outcome log: {@link WinbackEmailSend} (same table the SMS-fallback automations
+ * use), not {@code service_lifecycle_reminder_send} — this campaign has no SMS leg at all, so
+ * {@code smsMessageId} is always null here, but reusing this table (rather than a dedicated one)
+ * means the owner's existing Mailchimp activity view and {@code MailchimpActivitySyncScheduler}
+ * pick up real opened/clicked tracking for it for free. Found live 2026-09-05:
+ * {@code service_lifecycle_reminder_send} was tried first, but it has no email/campaign-id/opened/
+ * clicked columns at all, so it could never support that.
  */
 @Service
 public class ColorBoosterWinbackOneOffService {
@@ -54,6 +57,9 @@ public class ColorBoosterWinbackOneOffService {
     private static final Logger log = LoggerFactory.getLogger(ColorBoosterWinbackOneOffService.class);
     static final String AUTOMATION_KEY = "color_booster_winback_oneoff";
     private static final String TEMPLATE_KEY = "color_booster_winback_oneoff";
+    // The "color-booster" slug itself points at the "1-2 year" Square tier, not "10 month-1 year"
+    // — owner decision 2026-09-05: the shorter tier isn't sold at all anymore (see salonLandings'
+    // pmu_catalog.py for the full reasoning), so the plain slug is correct here without a suffix.
     private static final String BOOKING_LINK = "https://book.pmu-annakara.com/?book=color-booster";
     private static final ZoneId SALON_ZONE = ZoneId.of("America/Los_Angeles");
     private static final int ELIGIBILITY_DAYS = 365;
@@ -62,7 +68,7 @@ public class ColorBoosterWinbackOneOffService {
     public record CandidateResult(String squareCustomerId, String email, String state, String detail) {}
 
     private final ServiceLifecycleRoleRepository roleRepository;
-    private final ServiceLifecycleReminderSendRepository sendRepository;
+    private final WinbackEmailSendRepository sendRepository;
     private final ProviderVisitRepository visitRepository;
     private final ProviderRepository providerRepository;
     private final SquareClientProvider squareClientProvider;
@@ -71,7 +77,7 @@ public class ColorBoosterWinbackOneOffService {
     private final MailchimpEmailTemplateService templateService;
 
     public ColorBoosterWinbackOneOffService(ServiceLifecycleRoleRepository roleRepository,
-                                             ServiceLifecycleReminderSendRepository sendRepository,
+                                             WinbackEmailSendRepository sendRepository,
                                              ProviderVisitRepository visitRepository,
                                              ProviderRepository providerRepository,
                                              SquareClientProvider squareClientProvider,
@@ -129,8 +135,8 @@ public class ColorBoosterWinbackOneOffService {
                 .collect(Collectors.toSet());
 
         for (String customerId : candidateCustomerIds) {
-            if (sendRepository.existsByBusinessIdAndAutomationKeyAndSquareCustomerIdAndStateAndCreatedAtAfter(
-                    businessId, AUTOMATION_KEY, customerId, ServiceLifecycleReminderSend.STATE_SENT, Instant.EPOCH)) {
+            if (sendRepository.existsByBusinessIdAndAutomationKeyAndSquareCustomerIdAndState(
+                    businessId, AUTOMATION_KEY, customerId, WinbackEmailSend.STATE_SENT)) {
                 continue; // already actually sent by this campaign before — never re-sent, even on a re-run
             }
             try {
@@ -208,11 +214,11 @@ public class ColorBoosterWinbackOneOffService {
         String previewText = "Time for your color booster";
         String campaignTitle = AUTOMATION_KEY + " - " + customerId;
         try {
-            mailchimpEmailService.sendWinbackEmail(config, email, subjectLine, previewText, campaignTitle, html.get());
-            save(businessId, customerId, today, email, rawGivenName, ServiceLifecycleReminderSend.STATE_SENT);
+            String campaignId = mailchimpEmailService.sendWinbackEmail(config, email, subjectLine, previewText, campaignTitle, html.get());
+            save(businessId, customerId, email, WinbackEmailSend.STATE_SENT, campaignId, html.get());
             return new CandidateResult(customerId, email, "SENT", timeSince);
         } catch (Exception e) {
-            save(businessId, customerId, today, email, rawGivenName, "SEND_FAILED");
+            save(businessId, customerId, email, WinbackEmailSend.STATE_SEND_FAILED, null, null);
             log.warn("Color-booster winback one-off email send failed for customer {} (business {}): {}",
                     customerId, businessId, e.getMessage());
             return new CandidateResult(customerId, email, "SEND_FAILED", e.getMessage());
@@ -272,28 +278,26 @@ public class ColorBoosterWinbackOneOffService {
         }
     }
 
-    /** {@code service_lifecycle_reminder_send} was built for SMS automations and has no email
-     * column — the {@code phoneNumber} column holds the email address here instead, purely for a
-     * human reviewing the row later; nothing reads it back programmatically (idempotency only
-     * needs {@code squareCustomerId}/{@code state}/{@code createdAt}). */
     /** Upsert, not a blind insert — a re-run of this campaign (e.g. to pick up SEND_FAILED
-     * stragglers) targets the same (business, automation, customer, date) tuple a prior attempt
-     * already wrote, which the table's unique constraint rejects as a second insert. Found live
-     * 2026-09-05: an insert-only version of this method threw on retry for customers who had
-     * actually just been sent a real email, losing the SENT outcome and leaving them stuck on a
-     * stale SEND_FAILED row that a future run would have retried again — a real duplicate-send risk. */
-    private void save(Long businessId, String customerId, LocalDate today, String email, String customerName, String state) {
-        ServiceLifecycleReminderSend row = sendRepository
-                .findByBusinessIdAndAutomationKeyAndSquareCustomerIdAndTriggerServiceDate(businessId, AUTOMATION_KEY, customerId, today)
-                .orElseGet(() -> ServiceLifecycleReminderSend.builder()
+     * stragglers) targets the same (business, automation, customer) a prior attempt may have
+     * already logged, and there's no DB-level unique constraint covering that shape here (unlike
+     * the SMS-fallback automations, which key off {@code sms_message_id}) — found live 2026-09-05
+     * on the {@code service_lifecycle_reminder_send} version of this method: a naive insert-only
+     * save threw on retry for customers who had actually just been sent a real email, losing the
+     * SENT outcome and leaving them stuck on a stale failed row a future run would have retried
+     * again — a real duplicate-send risk. */
+    private void save(Long businessId, String customerId, String email, String state, String mailchimpCampaignId, String contentHtml) {
+        WinbackEmailSend row = sendRepository
+                .findByBusinessIdAndAutomationKeyAndSquareCustomerId(businessId, AUTOMATION_KEY, customerId)
+                .orElseGet(() -> WinbackEmailSend.builder()
                         .businessId(businessId)
                         .automationKey(AUTOMATION_KEY)
                         .squareCustomerId(customerId)
-                        .triggerServiceDate(today)
                         .build());
-        row.setPhoneNumber(email);
-        row.setCustomerName(customerName);
+        row.setEmailAddress(email);
         row.setState(state);
+        row.setMailchimpCampaignId(mailchimpCampaignId);
+        row.setContentHtml(contentHtml);
         sendRepository.save(row);
     }
 }

@@ -25,6 +25,7 @@ import type {
   SmsAutomationSummary,
   SmsConversationDto,
   SmsConversationPageDto,
+  EmailSendDto,
   FunnelDashboardData,
   MarketingAdsReportData,
   MarketingLtvData,
@@ -222,6 +223,10 @@ export const serverApi = {
   // salon has ever had; MessagesView fetches subsequent pages client-side via api.ts.
   listSmsConversationsPage: (limit = 10) =>
     serverFetch<SmsConversationPageDto>(`/api/owner/automations/activity/conversations/paged?limit=${limit}`),
+
+  // Flat, unbounded log of every email this business has ever sent (SMS-fallback automations plus
+  // any pure-email campaign with no SMS leg) — backs /admin/messages/emails.
+  listEmailSends: () => serverFetch<EmailSendDto[]>(`/api/owner/automations/activity/email-sends`),
 
   // Unread-count badge on the nav entry, fetched from every OWNER page via PageHeader — same
   // never-throws-except-session-redirect shape as getKbRequestOpenCount, so a hiccup here can't

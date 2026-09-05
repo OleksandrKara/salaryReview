@@ -14,6 +14,19 @@ public interface WinbackEmailSendRepository extends JpaRepository<WinbackEmailSe
      * {@code WinbackEmailFallbackScheduler}. */
     boolean existsBySmsMessageId(Long smsMessageId);
 
+    /** Idempotency check for a pure-email campaign with no {@code sms_message_id} to key off of
+     * (see {@code ColorBoosterWinbackOneOffService}) — has this exact customer already been
+     * genuinely sent this automation, ever. */
+    boolean existsByBusinessIdAndAutomationKeyAndSquareCustomerIdAndState(
+            Long businessId, String automationKey, String squareCustomerId, String state);
+
+    /** Upsert target for the same campaign — finds the one row (if any) already logged for this
+     * customer under this automation, so a retry updates it in place instead of risking a second
+     * row for the same real send (no DB-level unique constraint covers this shape the way
+     * {@code sms_message_id} does for the SMS-fallback automations). */
+    java.util.Optional<WinbackEmailSend> findByBusinessIdAndAutomationKeyAndSquareCustomerId(
+            Long businessId, String automationKey, String squareCustomerId);
+
     /** Real sends still missing an open or a click, within the sync window — see
      * {@code MailchimpActivitySyncScheduler}. Bounded by {@code since} so this never re-checks a
      * campaign from months ago (Mailchimp's own activity report doesn't change after a customer
@@ -26,6 +39,11 @@ public interface WinbackEmailSendRepository extends JpaRepository<WinbackEmailSe
      * (SENT and every SKIPPED_ / SEND_FAILED reason), so the owner can see why a candidate didn't
      * get an email, not just the ones that sent. */
     List<WinbackEmailSend> findByBusinessIdAndCreatedAtAfterOrderByCreatedAtDesc(Long businessId, Instant since);
+
+    /** Same listing, unbounded by a window — backs the manager conversation view's "Emails" tab
+     * (see {@code SmsActivityController#emailSends}), a flat historical log rather than a
+     * recent-activity dashboard. */
+    List<WinbackEmailSend> findByBusinessIdOrderByCreatedAtDesc(Long businessId);
 
     long countByBusinessIdAndStateAndCreatedAtAfter(Long businessId, String state, Instant since);
 

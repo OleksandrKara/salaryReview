@@ -6,11 +6,6 @@ const AUTOMATION_LABELS: Record<string, string> = {
   color_booster_winback_oneoff: 'Color booster win-back (one-time)',
 };
 
-// One-off campaigns logged on service_lifecycle_reminder_send (see MailchimpActivityController's
-// own doc) have no opened/clicked tracking at all — always null, not "not yet". Showing the usual
-// gray "Not opened yet" dot for these would misleadingly imply it's just pending.
-const NO_ENGAGEMENT_TRACKING = new Set(['color_booster_winback_oneoff']);
-
 const STATE_LABELS: Record<string, string> = {
   SENT: 'Sent',
   SKIPPED_CLICKED: 'Skipped — clicked SMS link',
@@ -90,12 +85,8 @@ function SendCard({ send }: { send: MailchimpActivitySendView }) {
         <StatePill state={send.state} />
         {send.state === 'SENT' && (
           <>
-            {!NO_ENGAGEMENT_TRACKING.has(send.automationKey) && (
-              <>
-                <EventDot label="Opened" at={send.openedAt} />
-                <EventDot label="Clicked" at={send.clickedAt} />
-              </>
-            )}
+            <EventDot label="Opened" at={send.openedAt} />
+            <EventDot label="Clicked" at={send.clickedAt} />
             <ConvertedPill converted={send.converted} />
           </>
         )}
@@ -177,13 +168,11 @@ export default function MailchimpActivityLog({ data }: { data: MailchimpActivity
                     <td className="px-3 py-2.5 text-zinc-500">{AUTOMATION_LABELS[s.automationKey] ?? s.automationKey}</td>
                     <td className="px-3 py-2.5"><StatePill state={s.state} /></td>
                     <td className="px-3 py-2.5">
-                      {s.state === 'SENT' && !NO_ENGAGEMENT_TRACKING.has(s.automationKey) ? (
+                      {s.state === 'SENT' ? (
                         <div className="flex items-center gap-1">
                           <EventDot label="Opened" at={s.openedAt} />
                           <EventDot label="Clicked" at={s.clickedAt} />
                         </div>
-                      ) : s.state === 'SENT' ? (
-                        <span className="text-xs text-zinc-400">Not tracked</span>
                       ) : '—'}
                     </td>
                     <td className="px-3 py-2.5">{s.state === 'SENT' ? <ConvertedPill converted={s.converted} /> : '—'}</td>

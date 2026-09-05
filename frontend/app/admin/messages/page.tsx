@@ -3,6 +3,7 @@ import { serverApi, ApiError } from '../../lib/serverApi';
 import type { SmsConversationPageDto } from '../../lib/types';
 import PageHeader from '../../components/PageHeader';
 import MessagesView from './MessagesView';
+import MessagesTabs from './MessagesTabs';
 import SetupRequiredNotice from '../../components/SetupRequiredNotice';
 
 // Shared OWNER+MANAGER conversation view — see openspec/changes/lead-followup-and-manager-inbox
@@ -92,6 +93,7 @@ export default async function MessagesPage({
         className="shrink-0 px-4 pt-4 sm:px-0 sm:pt-0 max-sm:group-has-[.thread-open]/messages:hidden"
       >
         <PageHeader title="Messages" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
+        <MessagesTabs active="conversations" />
       </div>
       <div className="min-h-0 flex-1">
         <MessagesView

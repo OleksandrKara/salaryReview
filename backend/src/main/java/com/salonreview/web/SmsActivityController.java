@@ -98,6 +98,12 @@ public class SmsActivityController {
     public record EmailFollowUpDto(String state, String emailAddress, Instant sentAt, Instant openedAt,
                                     Instant clickedAt, String contentHtml) {}
 
+    /** One row of the flat "Emails" tab log (see {@link #emailSends()}) — same shape as {@link
+     * EmailFollowUpDto} plus {@code id} (React list key) and {@code automationKey} (which campaign
+     * this was), since this view isn't anchored under a specific SMS bubble the way that one is. */
+    public record EmailSendDto(Long id, String automationKey, String emailAddress, String state, Instant sentAt,
+                                Instant openedAt, Instant clickedAt, String contentHtml) {}
+
     public record SmsMessageDto(long id, String direction, String automationKey, String phoneNumber,
                                  String templateKey, String body, String status, String reason,
                                  String linkTarget, Instant clickedAt, Instant readAt, Instant createdAt,
@@ -178,6 +184,21 @@ public class SmsActivityController {
     @GetMapping("/conversations")
     public List<ConversationDto> conversations() {
         return enrich(service.conversations(currentBusinessContext.id()));
+    }
+
+    /** Every email this business has ever sent through {@link WinbackEmailSend} — both the SMS
+     * fallback automations (which also show inline under their own SMS bubble via {@code
+     * emailFollowUp} above) and any pure-email campaign with no SMS leg at all (e.g. {@code
+     * color_booster_winback_oneoff}, see {@code ColorBoosterWinbackOneOffService}), which has no
+     * conversation thread to attach to. Backs the manager conversation view's separate "Emails"
+     * tab — see {@code EmailSendsView.tsx}. Unbounded by design (unlike the paged conversation
+     * list): this is a flat historical log, not a live inbox a manager scrolls through daily. */
+    @GetMapping("/email-sends")
+    public List<EmailSendDto> emailSends() {
+        return winbackEmailSendRepository.findByBusinessIdOrderByCreatedAtDesc(currentBusinessContext.id()).stream()
+                .map(w -> new EmailSendDto(w.getId(), w.getAutomationKey(), w.getEmailAddress(), w.getState(),
+                        w.getCreatedAt(), w.getOpenedAt(), w.getEmailClickedAt(), w.getContentHtml()))
+                .toList();
     }
 
     /** Cursor-paginated form of {@link #conversations()} — the manager conversation view's initial
