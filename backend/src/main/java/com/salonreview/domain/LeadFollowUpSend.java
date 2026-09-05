@@ -24,6 +24,11 @@ public class LeadFollowUpSend {
     public static final String STATE_SENT = "SENT";
     public static final String STATE_SKIPPED_BOOKED = "SKIPPED_BOOKED";
     public static final String STATE_SKIPPED_DISABLED = "SKIPPED_DISABLED";
+    /** A different {@code contactUpdatedAt} touch for the same phone number already got a SENT
+     * nudge within {@code LeadFollowUpScheduler}'s own resend cooldown — see that scheduler and
+     * {@code LeadFollowUpSendRepository#existsByPhoneNumberAndStateAndCreatedAtAfter}'s own doc for
+     * the 2026-09-05 duplicate-text incident this guards against. */
+    public static final String STATE_SKIPPED_RECENTLY_SENT = "SKIPPED_RECENTLY_SENT";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

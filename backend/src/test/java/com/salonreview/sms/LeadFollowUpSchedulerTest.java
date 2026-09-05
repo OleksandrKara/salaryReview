@@ -262,6 +262,25 @@ class LeadFollowUpSchedulerTest {
     }
 
     @Test
+    @DisplayName("2026-09-05 duplicate-text incident: a different contactUpdatedAt touch for the "
+            + "same phone number already got a SENT nudge within the cooldown → skipped, no second "
+            + "identical text, even though the per-touch idempotency check alone would allow it")
+    void recentlySentToSamePhoneNumberSkipsEvenForAResubmission() {
+        UUID id = UUID.randomUUID();
+        RawContact c = contact(id, "Stacy", "cust1");
+        givenPending(c);
+        when(sendRepository.existsByPhoneNumberAndStateAndCreatedAtAfter(
+                eq(PHONE), eq(LeadFollowUpSend.STATE_SENT), any())).thenReturn(true);
+
+        scheduler.sendDueFollowUps();
+
+        verifyNoInteractions(smsService);
+        ArgumentCaptor<LeadFollowUpSend> captor = ArgumentCaptor.forClass(LeadFollowUpSend.class);
+        verify(sendRepository).save(captor.capture());
+        assertThat(captor.getValue().getState()).isEqualTo(LeadFollowUpSend.STATE_SKIPPED_RECENTLY_SENT);
+    }
+
+    @Test
     @DisplayName("no pending contacts → nothing happens")
     void noPendingContactsNoOp() {
         givenPending();
