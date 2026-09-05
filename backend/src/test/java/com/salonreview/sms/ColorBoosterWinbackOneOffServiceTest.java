@@ -30,6 +30,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -135,6 +136,31 @@ class ColorBoosterWinbackOneOffServiceTest {
         assertThat(captor.getValue().getState()).isEqualTo(ServiceLifecycleReminderSend.STATE_SENT);
         assertThat(captor.getValue().getPhoneNumber()).isEqualTo("jane@example.com");
         assertThat(captor.getValue().getAutomationKey()).isEqualTo("color_booster_winback_oneoff");
+    }
+
+    @Test
+    @DisplayName("retry over an existing SEND_FAILED row updates it in place (upsert), never a second insert")
+    void retryUpdatesExistingRowInPlace() throws Exception {
+        LocalDate visitDate = LocalDate.now(ZONE).minusDays(600);
+        stubCandidateScanAndHistory(visitDate, null);
+        ServiceLifecycleReminderSend existing = ServiceLifecycleReminderSend.builder()
+                .id(42L).businessId(BUSINESS_ID).automationKey("color_booster_winback_oneoff")
+                .squareCustomerId(CUSTOMER_ID).triggerServiceDate(LocalDate.now(ZONE))
+                .phoneNumber("jane@example.com").state("SEND_FAILED").build();
+        when(sendRepository.findByBusinessIdAndAutomationKeyAndSquareCustomerIdAndTriggerServiceDate(
+                eq(BUSINESS_ID), eq("color_booster_winback_oneoff"), eq(CUSTOMER_ID), any()))
+                .thenReturn(Optional.of(existing));
+        when(mailchimpEmailService.sendWinbackEmail(any(), any(), any(), any(), any(), any())).thenReturn("campaign-1");
+
+        List<ColorBoosterWinbackOneOffService.CandidateResult> results = service.run(BUSINESS_ID, false);
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).state()).isEqualTo("SENT");
+
+        ArgumentCaptor<ServiceLifecycleReminderSend> captor = ArgumentCaptor.forClass(ServiceLifecycleReminderSend.class);
+        verify(sendRepository, times(1)).save(captor.capture());
+        assertThat(captor.getValue().getId()).isEqualTo(42L);
+        assertThat(captor.getValue().getState()).isEqualTo(ServiceLifecycleReminderSend.STATE_SENT);
     }
 
     @Test
