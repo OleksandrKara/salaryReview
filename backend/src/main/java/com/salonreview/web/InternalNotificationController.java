@@ -10,6 +10,7 @@ import com.salonreview.repo.BusinessRepository;
 import com.salonreview.sms.TwilioSmsService;
 import com.salonreview.square.SquareClientProvider;
 import com.salonreview.telegram.FourHandRequestNotification;
+import com.salonreview.telegram.PaymentFailedNotification;
 import com.salonreview.telegram.TelegramNotificationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -95,6 +96,36 @@ public class InternalNotificationController {
         response.put("sent", result.sent());
         response.put("reason", result.reason());
         return ResponseEntity.ok(response);
+    }
+
+    /** Fired the moment a customer-entered card fails to charge, regardless of which business's
+     * landing page collected it (today only PMU's deposit-first flow — see
+     * SquarePaymentGateway's own doc comment in salonLandings — but any future card-collecting
+     * flow for any business posts here the same way). {@code businessShortCode}/{@code businessId}
+     * resolved via {@link #resolveBusiness}, same both-nullable convention as every other request
+     * record here. Never blocks or fails loudly — same "sent: false" outcome whether the business
+     * couldn't be resolved or the Telegram config isn't set up, since the caller (already handling
+     * its own real payment failure) has nothing useful to do differently either way. */
+    public record PaymentFailedRequest(String customerName, String phoneNumber, String serviceName, Double amount,
+                                        String errorMessage, String errorCode, boolean clientError,
+                                        String businessShortCode, Long businessId) {
+    }
+
+    @PostMapping("/notifications/payment-failed")
+    public ResponseEntity<Map<String, Object>> notifyPaymentFailed(
+            @RequestHeader(value = "X-Internal-Api-Key", required = false) String key,
+            @RequestBody PaymentFailedRequest body) {
+        if (!keyMatches(key)) {
+            return ResponseEntity.status(401).build();
+        }
+        Business business = resolveBusiness(body.businessShortCode(), body.businessId());
+        if (business == null) {
+            return ResponseEntity.ok(Map.of("sent", false, "reason", "unknown_business"));
+        }
+        PaymentFailedNotification notification = new PaymentFailedNotification(
+                business.getId(), body.businessShortCode(), body.customerName(), body.phoneNumber(),
+                body.serviceName(), body.amount(), body.errorMessage(), body.errorCode(), body.clientError());
+        return ResponseEntity.ok(Map.of("sent", telegram.sendPaymentFailedAlert(business.getId(), notification)));
     }
 
     /** {@code expEpochSeconds}/{@code signature} are re-verified here independently of whatever

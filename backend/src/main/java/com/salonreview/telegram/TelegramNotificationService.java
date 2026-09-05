@@ -280,6 +280,74 @@ public class TelegramNotificationService {
         return en + "\n\n—\n\n" + ru;
     }
 
+    /** Alerts a business's staff Telegram channel the moment a customer's card fails to charge —
+     * a genuine decline (their card/bank said no) or a failure on our own side (Square API error,
+     * bad request, etc.), distinguished by {@code n.clientError()} so staff know whether to expect
+     * the customer to just retry themselves or whether something needs actual investigation.
+     * Business-scoped via {@code businessId} (resolved by the caller — see
+     * {@code InternalNotificationController#resolveBusiness}), same pattern as
+     * {@link #sendSameDayBookingAlert}. Never throws, same contract as every other send method
+     * here. */
+    public boolean sendPaymentFailedAlert(Long businessId, PaymentFailedNotification n) {
+        TelegramNotificationConfig cfg = configService.get(businessId);
+        String token = cfg.getBotToken();
+        String chatId = cfg.getChatId();
+        if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
+            log.info("Payment-failed Telegram alert skipped — bot token or chat id not configured for business {}", businessId);
+            return false;
+        }
+
+        String text = formatPaymentFailedMessage(n);
+        try {
+            Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", text);
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
+                    .timeout(Duration.ofSeconds(5))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(reqBody)))
+                    .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                log.warn("Payment-failed Telegram alert send failed: HTTP {} {}", res.statusCode(), res.body());
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.warn("Payment-failed Telegram alert send failed (caller unaffected): {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /** English on top, Russian below a divider — same reasoning and audience as
+     * {@link #formatSameDayBookingMessage}. Package-private for direct unit testing. */
+    static String formatPaymentFailedMessage(PaymentFailedNotification n) {
+        String client = n.customerName() == null || n.customerName().isBlank() ? "—" : n.customerName();
+        String phone = n.phoneNumber() == null || n.phoneNumber().isBlank() ? "—" : n.phoneNumber();
+        String amount = n.amount() == null ? "—" : formatEstimatedPrice(n.amount());
+        String reason = n.errorMessage() == null || n.errorMessage().isBlank() ? "Unknown error" : n.errorMessage();
+        String reasonWithCode = n.errorCode() == null || n.errorCode().isBlank() ? reason : reason + " (" + n.errorCode() + ")";
+
+        String en = "⚠️ Payment failed\n"
+                + "👤 Client: " + client + "\n"
+                + "📱 Phone: " + phone + "\n"
+                + "💳 Attempted: " + amount + " for " + n.serviceName() + "\n"
+                + "❌ Reason: " + reasonWithCode + "\n\n"
+                + (n.clientError()
+                        ? "This looks like a card/client-side issue — they may just need to try a different card."
+                        : "⚠️ This looks like a problem on our side — please check Square / the booking system.");
+
+        String ru = "⚠️ Ошибка оплаты\n"
+                + "👤 Клиент: " + client + "\n"
+                + "📱 Телефон: " + phone + "\n"
+                + "💳 Попытка оплаты: " + amount + " за " + n.serviceName() + "\n"
+                + "❌ Причина: " + reasonWithCode + "\n\n"
+                + (n.clientError()
+                        ? "Похоже, проблема на стороне карты/клиента — возможно, стоит попробовать другую карту."
+                        : "⚠️ Похоже, проблема на нашей стороне — проверьте Square / систему записи.");
+
+        return en + "\n\n—\n\n" + ru;
+    }
+
     /** "45 min" under an hour, "3h" or "3h 20m" at/past one — matches how a person would actually
      * say it, not a raw minute count. Package-private for direct unit testing. */
     static String formatLeadTime(Duration d) {
