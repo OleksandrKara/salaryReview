@@ -215,9 +215,13 @@ public final class SmsMessageTemplateCatalog {
             Map.entry("color_booster_reminder_nudge", new TemplateDefault(
                     "color_booster_reminder_nudge", "color_booster_reminder", SmsMessageClass.TRANSACTIONAL,
                     "Color booster reminder",
-                    List.of("{{greeting}} It's {{sender}} from {{businessName}} 💛 It's been about a year since your "
+                    // {{timeSince}} — real elapsed time (e.g. "1 year and 7 months"), not a generic
+                    // "about a year": found live 2026-09-05 that a hardcoded "about a year" read as
+                    // wrong/careless once this automation's own real-visit backfill was widened to
+                    // 3 years, surfacing customers who were actually 2-3 years overdue.
+                    List.of("{{greeting}} It's {{sender}} from {{businessName}} 💛 It's been {{timeSince}} since your "
                             + "procedure — a color booster helps keep your result looking fresh. Want me to grab you a spot?"),
-                    List.of("greeting", "sender", "businessName")
+                    List.of("greeting", "sender", "businessName", "timeSince")
             )),
             // spotClause is pre-computed by the caller: "want to lock in your next spot" or
             // "want to lock in your next spot with {technician}" — see class doc on why this is a

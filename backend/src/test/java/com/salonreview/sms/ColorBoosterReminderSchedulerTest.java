@@ -136,7 +136,10 @@ class ColorBoosterReminderSchedulerTest {
 
         scheduler.sendDueReminders();
 
-        verify(smsService).sendTemplated(BUSINESS_ID, "color_booster_reminder_nudge", PHONE, Map.of("greeting", "Hi Jane!"));
+        ArgumentCaptor<Map<String, String>> varsCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(smsService).sendTemplated(eq(BUSINESS_ID), eq("color_booster_reminder_nudge"), eq(PHONE), varsCaptor.capture());
+        assertThat(varsCaptor.getValue().get("greeting")).isEqualTo("Hi Jane!");
+        assertThat(varsCaptor.getValue().get("timeSince")).contains("year"); // ~400 days ago is always over a year
         ArgumentCaptor<ServiceLifecycleReminderSend> captor = ArgumentCaptor.forClass(ServiceLifecycleReminderSend.class);
         verify(sendRepository).save(captor.capture());
         assertThat(captor.getValue().getState()).isEqualTo(ServiceLifecycleReminderSend.STATE_SENT);
