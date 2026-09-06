@@ -887,6 +887,22 @@ public class SquareClient {
                 .orElse(null);
     }
 
+    /** Overwrites a Square customer's email address on file — used to fix an obviously-typo'd
+     * domain found by an automated typo scan (owner request 2026-09-06, e.g. "gmail.con" ->
+     * "gmail.com"). Uncached, mutating; throws on failure so the caller can report exactly which
+     * customers failed to update rather than silently skipping them. Evicts the cached
+     * {@link Customer} for this id so a subsequent {@link #customerEmail} reflects the change
+     * immediately rather than the stale pre-update value. */
+    public void updateCustomerEmail(String customerId, String newEmail) {
+        Map<String, Object> body = Map.of("email_address", newEmail);
+        throttled(() -> http.put()
+                .uri("/v2/customers/{customerId}", customerId)
+                .body(body)
+                .retrieve()
+                .toBodilessEntity());
+        customerCache.remove(customerId);
+    }
+
     /** The Square customer-group ids this customer belongs to — used by the
      * {@code same_day_rebooking_discount} automation to check Square's own "Text Subscribers"
      * segment as an alternate consent source (see openspec/changes/same-day-rebooking-discount
