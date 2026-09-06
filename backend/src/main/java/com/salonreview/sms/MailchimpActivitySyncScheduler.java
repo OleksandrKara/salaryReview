@@ -12,7 +12,10 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -25,6 +28,13 @@ import java.util.Map;
  * <p>Only checks sends from the last 14 days (see {@link WinbackEmailSendRepository#findNeedingActivitySync})
  * — a customer who hasn't opened an email within two weeks essentially never will, so there's no
  * value in checking indefinitely.
+ *
+ * <p>Groups pending rows by {@code (businessId, mailchimpCampaignId)} and fetches each campaign's
+ * activity report exactly once via {@link MailchimpClient#fetchAllEmailActivity} — for the
+ * single-recipient automations this is one row per group, same as before; for a
+ * {@code MailchimpBatchCampaignService} mass send, many rows share one campaign id, and this
+ * collapses what would otherwise be one report call per recipient into one call for the whole
+ * campaign.
  */
 @Component
 public class MailchimpActivitySyncScheduler {
@@ -44,6 +54,8 @@ public class MailchimpActivitySyncScheduler {
         this.client = client;
     }
 
+    private record GroupKey(Long businessId, String campaignId) {}
+
     @Scheduled(cron = "0 */30 * * * *", zone = "America/Los_Angeles")
     @SchedulerLock(name = "MailchimpActivitySyncScheduler_sync", lockAtLeastFor = "PT10S", lockAtMostFor = "PT10M")
     public void sync() {
@@ -52,31 +64,51 @@ public class MailchimpActivitySyncScheduler {
         if (pending.isEmpty()) {
             return;
         }
-        Map<Long, MailchimpConfig> configByBusiness = new HashMap<>();
+        Map<GroupKey, List<WinbackEmailSend>> byCampaign = new HashMap<>();
         for (WinbackEmailSend row : pending) {
-            MailchimpConfig config = configByBusiness.computeIfAbsent(row.getBusinessId(),
+            byCampaign.computeIfAbsent(new GroupKey(row.getBusinessId(), row.getMailchimpCampaignId()),
+                    k -> new ArrayList<>()).add(row);
+        }
+
+        Map<Long, MailchimpConfig> configByBusiness = new HashMap<>();
+        for (var entry : byCampaign.entrySet()) {
+            GroupKey key = entry.getKey();
+            MailchimpConfig config = configByBusiness.computeIfAbsent(key.businessId(),
                     id -> mailchimpConfigRepository.findByBusinessId(id).orElse(null));
             if (config == null || !config.isConfigured()) {
                 continue; // credentials were cleared since the send; nothing to check against
             }
             try {
-                MailchimpClient.EmailActivity activity = client.fetchEmailActivity(config, row.getMailchimpCampaignId());
-                boolean changed = false;
-                if (activity.openedAt() != null && row.getOpenedAt() == null) {
-                    row.setOpenedAt(activity.openedAt());
-                    changed = true;
-                }
-                if (activity.clickedAt() != null && row.getEmailClickedAt() == null) {
-                    row.setEmailClickedAt(activity.clickedAt());
-                    changed = true;
-                }
-                if (changed) {
-                    winbackEmailSendRepository.save(row);
+                Map<String, MailchimpClient.EmailActivity> activityByEmail = client.fetchAllEmailActivity(config, key.campaignId());
+                for (WinbackEmailSend row : entry.getValue()) {
+                    applyActivity(row, activityByEmail);
                 }
             } catch (Exception e) {
-                log.warn("Failed to sync Mailchimp activity for winback_email_send {} (retried next run): {}",
-                        row.getId(), e.getMessage());
+                log.warn("Failed to sync Mailchimp activity for campaign {} (business {}, {} row(s), retried next run): {}",
+                        key.campaignId(), key.businessId(), entry.getValue().size(), e.getMessage());
             }
+        }
+    }
+
+    private void applyActivity(WinbackEmailSend row, Map<String, MailchimpClient.EmailActivity> activityByEmail) {
+        if (row.getEmailAddress() == null) {
+            return;
+        }
+        MailchimpClient.EmailActivity activity = activityByEmail.get(row.getEmailAddress().toLowerCase(Locale.ROOT));
+        if (activity == null) {
+            return;
+        }
+        boolean changed = false;
+        if (activity.openedAt() != null && row.getOpenedAt() == null) {
+            row.setOpenedAt(activity.openedAt());
+            changed = true;
+        }
+        if (activity.clickedAt() != null && row.getEmailClickedAt() == null) {
+            row.setEmailClickedAt(activity.clickedAt());
+            changed = true;
+        }
+        if (changed) {
+            winbackEmailSendRepository.save(row);
         }
     }
 }

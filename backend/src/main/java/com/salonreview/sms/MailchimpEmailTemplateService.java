@@ -42,6 +42,12 @@ public class MailchimpEmailTemplateService {
             )
     );
 
+    // Templates for MailchimpBatchCampaignService's one-off mass-send path — these are authored
+    // with Mailchimp's own *|FNAME|* native merge tags (Mailchimp resolves them per recipient at
+    // send time against the batch-upserted FNAME merge field), not this service's {{TOKEN}}
+    // substitution, since a batch campaign has no per-recipient render step to substitute into.
+    private static final Map<Long, Map<String, String>> BATCH_TEMPLATE_PATHS = Map.of();
+
     private final Map<String, String> cache = new ConcurrentHashMap<>();
 
     /** Renders the given automation's HTML for a business, substituting every {@code {{TOKEN}}} in
@@ -57,6 +63,19 @@ public class MailchimpEmailTemplateService {
             html = html.replace("{{" + e.getKey() + "}}", e.getValue() == null ? "" : e.getValue());
         }
         return Optional.of(html);
+    }
+
+    /** The unmodified HTML for a registered {@link #BATCH_TEMPLATE_PATHS} entry — no {@code
+     * {{TOKEN}}} substitution, since a batch mass campaign is set as content exactly once and
+     * personalized per recipient by Mailchimp's own native merge tags instead. Empty if this
+     * business/automation has no batch template registered. */
+    public Optional<String> loadRaw(Long businessId, String automationKey) {
+        Map<String, String> byAutomation = BATCH_TEMPLATE_PATHS.get(businessId);
+        String path = byAutomation == null ? null : byAutomation.get(automationKey);
+        if (path == null) {
+            return Optional.empty();
+        }
+        return Optional.of(cache.computeIfAbsent(path, this::load));
     }
 
     private String load(String classpathPath) {
