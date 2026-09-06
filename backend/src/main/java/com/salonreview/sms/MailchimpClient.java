@@ -15,9 +15,11 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -32,6 +34,14 @@ import java.util.Optional;
  * matches only that member's email — is the standard way to do 1:1 triggered sends on the
  * Marketing API. Low daily volume for these automations means campaign-per-send is not a
  * meaningful cost/rate-limit concern. See {@link MailchimpEmailService}.
+ *
+ * <p>A genuine one-off mass blast to a collected list (owner request 2026-09-06, after the
+ * Labor Day promo's 1,358-campaign send took ~74 minutes and hit heavy "recipients not ready"
+ * contention) is the opposite case: there's exactly one send moment shared by everyone, so it
+ * belongs on Mailchimp's own bulk-send path instead — {@link #batchUpsertMembers} +
+ * {@link #createStaticSegment} + {@link #createCampaignForSegment} build and target a real
+ * audience segment, and Mailchimp's own {@code *|FNAME|*} merge tags personalize each copy, not
+ * this integration's per-customer template substitution. See {@code MailchimpBatchCampaignService}.
  */
 @Component
 public class MailchimpClient {
@@ -39,7 +49,12 @@ public class MailchimpClient {
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
-    private final ObjectMapper mapper = new ObjectMapper();
+    // NON_NULL: SegmentOpts carries two mutually-exclusive shapes (single-email match/conditions vs.
+    // a batch campaign's saved_segment_id) — without this, the unused pair would serialize as an
+    // explicit "conditions": null / "saved_segment_id": null Mailchimp has to ignore rather than
+    // simply never seeing.
+    private final ObjectMapper mapper = new ObjectMapper()
+            .setSerializationInclusion(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL);
 
     /** Adds the customer as an audience member if they're not already one — a campaign's segment
      * can only target existing members. {@code status_if_new} is {@code "subscribed"}, not
@@ -74,7 +89,7 @@ public class MailchimpClient {
         CreateCampaignRequest payload = new CreateCampaignRequest(
                 "regular",
                 new Recipients(config.getAudienceId(), new SegmentOpts("all",
-                        new SegmentCondition[] { new SegmentCondition("EmailAddress", "EMAIL", "is", toEmail) })),
+                        new SegmentCondition[] { new SegmentCondition("EmailAddress", "EMAIL", "is", toEmail) }, null)),
                 new CampaignSettings(subjectLine, previewText, campaignTitle, config.getFromName(),
                         config.getFromEmail(), config.getReplyToEmail()));
         String body = mapper.writeValueAsString(payload);
@@ -85,6 +100,92 @@ public class MailchimpClient {
         HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         requireSuccess(res, "create campaign");
         return mapper.readValue(res.body(), CampaignIdResponse.class).id();
+    }
+
+    /** Mailchimp's own documented ceiling for the batch subscribe/unsubscribe endpoint below — a
+     * one-off mass campaign's recipient count only needs to be split at this boundary, not any
+     * hard per-request byte cap. */
+    private static final int BATCH_UPSERT_CHUNK = 500;
+
+    /** One audience member to batch-upsert ahead of a one-off mass campaign (see
+     * {@code MailchimpBatchCampaignService}). {@code givenName} becomes the FNAME merge field so
+     * the campaign's own {@code *|FNAME|*} native merge tag resolves per recipient — unlike the
+     * single-recipient send path, a batch campaign has no per-recipient hook to substitute a name
+     * manually, so personalization has to happen through Mailchimp's own merge tags here. */
+    public record BatchMember(String email, String givenName) {}
+
+    /** Upserts many audience members in as few HTTP calls as possible (chunked at {@value
+     * #BATCH_UPSERT_CHUNK}) — the batch counterpart to {@link #upsertMember}, for a one-off mass
+     * campaign where upserting one-by-one would mean thousands of sequential calls. Same
+     * {@code status_if_new = "subscribed"} reasoning as {@link #upsertMember}; unlike that method,
+     * this does send merge fields (just FNAME), since the whole point of the batch path is letting
+     * Mailchimp's own merge tags personalize the one shared campaign body. */
+    public void batchUpsertMembers(MailchimpConfig config, List<BatchMember> members) throws IOException, InterruptedException {
+        for (int start = 0; start < members.size(); start += BATCH_UPSERT_CHUNK) {
+            List<BatchMember> chunk = members.subList(start, Math.min(start + BATCH_UPSERT_CHUNK, members.size()));
+            List<BatchUpsertEntry> entries = chunk.stream()
+                    .map(m -> new BatchUpsertEntry(m.email(), "subscribed",
+                            m.givenName() == null || m.givenName().isBlank() ? null : Map.of("FNAME", m.givenName())))
+                    .toList();
+            String body = mapper.writeValueAsString(new BatchUpsertRequest(entries, true));
+            HttpRequest req = baseRequest(config, "/lists/" + config.getAudienceId())
+                    .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                    .header("Content-Type", "application/json")
+                    .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            requireSuccess(res, "batch upsert members");
+        }
+    }
+
+    /** Creates a static segment containing exactly this email list — the "here is my exact
+     * recipient list" primitive a one-off mass campaign targets instead of the single-recipient
+     * send path's per-email match condition. Every email must already be an audience member (call
+     * {@link #batchUpsertMembers} first) — Mailchimp silently drops any address it doesn't
+     * recognize rather than erroring. Returns the new segment's id. */
+    public Long createStaticSegment(MailchimpConfig config, String name, List<String> emails) throws IOException, InterruptedException {
+        String body = mapper.writeValueAsString(new CreateStaticSegmentRequest(name, emails));
+        HttpRequest req = baseRequest(config, "/lists/" + config.getAudienceId() + "/segments")
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .header("Content-Type", "application/json")
+                .build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        requireSuccess(res, "create static segment");
+        return mapper.readValue(res.body(), SegmentIdResponse.class).id();
+    }
+
+    /** Creates a draft "regular" campaign targeted at a whole saved/static segment — the one-off
+     * mass-campaign counterpart to {@link #createSingleRecipientCampaign}'s one-email match
+     * condition. Returns the new campaign's id. */
+    public String createCampaignForSegment(MailchimpConfig config, Long segmentId, String subjectLine,
+                                            String previewText, String campaignTitle) throws IOException, InterruptedException {
+        CreateCampaignRequest payload = new CreateCampaignRequest(
+                "regular",
+                new Recipients(config.getAudienceId(), new SegmentOpts(null, null, segmentId)),
+                new CampaignSettings(subjectLine, previewText, campaignTitle, config.getFromName(),
+                        config.getFromEmail(), config.getReplyToEmail()));
+        String body = mapper.writeValueAsString(payload);
+        HttpRequest req = baseRequest(config, "/campaigns")
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .header("Content-Type", "application/json")
+                .build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        requireSuccess(res, "create campaign for segment");
+        return mapper.readValue(res.body(), CampaignIdResponse.class).id();
+    }
+
+    /** Sends a real preview of a draft campaign to a handful of inboxes without touching its real
+     * recipient list — the safety check to run once before the real, irreversible {@link #send}
+     * of a one-off mass campaign that (unlike the single-recipient path) can't just be re-reviewed
+     * per customer. Mailchimp caps this at 1000 test addresses; a one-off campaign's own operator
+     * sanity check needs at most a handful. */
+    public void sendTestEmail(MailchimpConfig config, String campaignId, List<String> testEmails) throws IOException, InterruptedException {
+        String body = mapper.writeValueAsString(new SendTestRequest(testEmails, "html"));
+        HttpRequest req = baseRequest(config, "/campaigns/" + campaignId + "/actions/test")
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .header("Content-Type", "application/json")
+                .build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        requireSuccess(res, "send test email");
     }
 
     public void setContent(MailchimpConfig config, String campaignId, String html) throws IOException, InterruptedException {
@@ -106,29 +207,6 @@ public class MailchimpClient {
         requireSuccess(res, "send campaign");
     }
 
-    /** Per-recipient open/click events for a single-recipient campaign — since every campaign this
-     * integration creates has exactly one recipient (see class doc), {@code emails[0]}'s activity
-     * list is unambiguously this one customer's own opens/clicks, not an aggregate across many
-     * people. Returns (earliest open, earliest click), either possibly empty if that action hasn't
-     * happened (yet). Used by {@code MailchimpActivitySyncScheduler} to back the win-back email
-     * activity dashboard. */
-    public EmailActivity fetchEmailActivity(MailchimpConfig config, String campaignId) throws IOException, InterruptedException {
-        HttpRequest req = baseRequest(config, "/reports/" + campaignId + "/email-activity")
-                .GET()
-                .build();
-        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        requireSuccess(res, "fetch email activity");
-        EmailActivityResponse parsed = mapper.readValue(res.body(), EmailActivityResponse.class);
-        List<ActivityEvent> events = parsed.emails() == null || parsed.emails().isEmpty()
-                ? List.of() : parsed.emails().get(0).activity();
-        if (events == null) events = List.of();
-        Optional<Instant> firstOpen = events.stream()
-                .filter(e -> "open".equals(e.action())).map(e -> parseTimestamp(e.timestamp())).min(Instant::compareTo);
-        Optional<Instant> firstClick = events.stream()
-                .filter(e -> "click".equals(e.action())).map(e -> parseTimestamp(e.timestamp())).min(Instant::compareTo);
-        return new EmailActivity(firstOpen.orElse(null), firstClick.orElse(null));
-    }
-
     /** Mailchimp's timestamps use a {@code +00:00} offset suffix (e.g.
      * {@code "2026-08-27T21:09:05+00:00"}), not {@code Instant.parse}'s required {@code Z} — this
      * {@code ObjectMapper} instance has no JSR-310 module registered (a hand-rolled client, not the
@@ -139,6 +217,41 @@ public class MailchimpClient {
     }
 
     public record EmailActivity(Instant openedAt, Instant clickedAt) {}
+
+    /** Per-recipient open/click events for every recipient of a campaign — works identically for a
+     * single-recipient campaign (one entry) or a {@code MailchimpBatchCampaignService} mass
+     * campaign (many), keyed by lower-cased email so a caller can match case-insensitively against
+     * its own stored addresses. Pages through the full report at Mailchimp's max page size (1000)
+     * rather than the endpoint's low default (10), since a mass campaign's recipient count
+     * routinely exceeds that default. Used by {@code MailchimpActivitySyncScheduler}. */
+    public Map<String, EmailActivity> fetchAllEmailActivity(MailchimpConfig config, String campaignId) throws IOException, InterruptedException {
+        Map<String, EmailActivity> result = new HashMap<>();
+        int count = 1000;
+        int offset = 0;
+        while (true) {
+            HttpRequest req = baseRequest(config, "/reports/" + campaignId + "/email-activity?count=" + count + "&offset=" + offset)
+                    .GET().build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            requireSuccess(res, "fetch email activity");
+            EmailActivityResponse parsed = mapper.readValue(res.body(), EmailActivityResponse.class);
+            List<EmailActivityEntry> entries = parsed.emails() == null ? List.of() : parsed.emails();
+            for (EmailActivityEntry entry : entries) {
+                if (entry.email_address() == null) continue;
+                List<ActivityEvent> events = entry.activity() == null ? List.of() : entry.activity();
+                Optional<Instant> firstOpen = events.stream()
+                        .filter(e -> "open".equals(e.action())).map(e -> parseTimestamp(e.timestamp())).min(Instant::compareTo);
+                Optional<Instant> firstClick = events.stream()
+                        .filter(e -> "click".equals(e.action())).map(e -> parseTimestamp(e.timestamp())).min(Instant::compareTo);
+                result.put(entry.email_address().toLowerCase(Locale.ROOT),
+                        new EmailActivity(firstOpen.orElse(null), firstClick.orElse(null)));
+            }
+            if (entries.size() < count) {
+                break;
+            }
+            offset += count;
+        }
+        return result;
+    }
 
     private HttpRequest.Builder baseRequest(MailchimpConfig config, String path) {
         String dc = config.serverPrefix();
@@ -176,9 +289,24 @@ public class MailchimpClient {
 
     private record Recipients(String list_id, SegmentOpts segment_opts) {}
 
-    private record SegmentOpts(String match, SegmentCondition[] conditions) {}
+    // Either (match, conditions) for the single-recipient path's one-email condition, or
+    // saved_segment_id alone for the batch mass-campaign path targeting a whole static segment —
+    // never both; the unused pair is left null and the mapper (configured NON_NULL below) omits it
+    // from the request body rather than sending an explicit null Mailchimp would have to ignore.
+    private record SegmentOpts(String match, SegmentCondition[] conditions, Long saved_segment_id) {}
 
     private record SegmentCondition(String condition_type, String field, String op, String value) {}
+
+    private record BatchUpsertRequest(List<BatchUpsertEntry> members, boolean update_existing) {}
+
+    private record BatchUpsertEntry(String email_address, String status_if_new, Map<String, String> merge_fields) {}
+
+    private record CreateStaticSegmentRequest(String name, List<String> static_segment) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record SegmentIdResponse(Long id) {}
+
+    private record SendTestRequest(List<String> test_emails, String send_type) {}
 
     private record CampaignSettings(String subject_line, String preview_text, String title,
                                      String from_name, String from_email, String reply_to) {}
