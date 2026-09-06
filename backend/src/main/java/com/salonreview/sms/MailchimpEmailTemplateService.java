@@ -34,7 +34,8 @@ public class MailchimpEmailTemplateService {
                     "checkout_review_request", "email-templates/business-1/checkout_review_request.html",
                     "lead_follow_up", "email-templates/business-1/lead_follow_up.html",
                     "pre_visit_nurture_welcome", "email-templates/business-1/pre_visit_nurture_welcome.html",
-                    "pre_visit_nurture_reminder", "email-templates/business-1/pre_visit_nurture_reminder.html"
+                    "pre_visit_nurture_reminder", "email-templates/business-1/pre_visit_nurture_reminder.html",
+                    "labor_day_design_promo", "email-templates/business-1/labor_day_design_promo.html"
             ),
             2L, Map.of(
                     "color_booster_winback_oneoff", "email-templates/business-2/color_booster_winback_oneoff.html"
