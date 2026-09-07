@@ -128,7 +128,7 @@ public class MailchimpClient {
                             m.givenName() == null || m.givenName().isBlank() ? null : Map.of("FNAME", m.givenName())))
                     .toList();
             String body = mapper.writeValueAsString(new BatchUpsertRequest(entries, true));
-            HttpRequest req = baseRequest(config, "/lists/" + config.getAudienceId())
+            HttpRequest req = baseRequest(config, "/lists/" + config.getAudienceId(), BULK_TIMEOUT)
                     .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                     .header("Content-Type", "application/json")
                     .build();
@@ -144,7 +144,7 @@ public class MailchimpClient {
      * recognize rather than erroring. Returns the new segment's id. */
     public Long createStaticSegment(MailchimpConfig config, String name, List<String> emails) throws IOException, InterruptedException {
         String body = mapper.writeValueAsString(new CreateStaticSegmentRequest(name, emails));
-        HttpRequest req = baseRequest(config, "/lists/" + config.getAudienceId() + "/segments")
+        HttpRequest req = baseRequest(config, "/lists/" + config.getAudienceId() + "/segments", BULK_TIMEOUT)
                 .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                 .header("Content-Type", "application/json")
                 .build();
@@ -306,13 +306,25 @@ public class MailchimpClient {
     // timeout also governs.
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
 
+    // Confirmed live 2026-09-07: even 30s wasn't enough for #createStaticSegment with ~3,400
+    // emails embedded in the body (the segment was never actually created server-side either —
+    // verified directly against the account afterward, not just a slow response to an already-done
+    // write) — Mailchimp's own processing time for that endpoint scales with list size well past
+    // 30s. 2 minutes for the specific bulk calls that carry a large embedded payload
+    // (#createStaticSegment, #batchUpsertMembers); every other call keeps the shorter default.
+    private static final Duration BULK_TIMEOUT = Duration.ofSeconds(120);
+
     private HttpRequest.Builder baseRequest(MailchimpConfig config, String path) {
+        return baseRequest(config, path, REQUEST_TIMEOUT);
+    }
+
+    private HttpRequest.Builder baseRequest(MailchimpConfig config, String path, Duration timeout) {
         String dc = config.serverPrefix();
         String auth = Base64.getEncoder().encodeToString(
                 ("anystring:" + config.getApiKey()).getBytes(StandardCharsets.UTF_8));
         return HttpRequest.newBuilder()
                 .uri(URI.create("https://" + dc + ".api.mailchimp.com/3.0" + path))
-                .timeout(REQUEST_TIMEOUT)
+                .timeout(timeout)
                 .header("Authorization", "Basic " + auth);
     }
 
