@@ -46,7 +46,11 @@ public class MailchimpEmailTemplateService {
     // with Mailchimp's own *|FNAME|* native merge tags (Mailchimp resolves them per recipient at
     // send time against the batch-upserted FNAME merge field), not this service's {{TOKEN}}
     // substitution, since a batch campaign has no per-recipient render step to substitute into.
-    private static final Map<Long, Map<String, String>> BATCH_TEMPLATE_PATHS = Map.of();
+    private static final Map<Long, Map<String, String>> BATCH_TEMPLATE_PATHS = Map.of(
+            2L, Map.of(
+                    "pmu_thank_you_offer", "email-templates/business-2/pmu_thank_you_offer.html"
+            )
+    );
 
     private final Map<String, String> cache = new ConcurrentHashMap<>();
 

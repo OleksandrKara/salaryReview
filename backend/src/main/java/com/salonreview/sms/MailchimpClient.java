@@ -253,6 +253,51 @@ public class MailchimpClient {
         return result;
     }
 
+    /** Every email in this audience Mailchimp will never actually deliver to — {@code unsubscribed}
+     * (opted out) and {@code cleaned} (hard-bounced, permanently invalid), lower-cased for
+     * case-insensitive matching. A one-off mass campaign's candidate-discovery step (see {@code
+     * PmuThankYouOfferOneOffService}) excludes these up front rather than relying on Mailchimp to
+     * silently skip them at send time — the caller wants an accurate final recipient count, not
+     * just a correct outcome. Two full paginated list scans (status has no combined-value filter on
+     * this endpoint); cheap compared to the campaign send itself. */
+    public java.util.Set<String> fetchUndeliverableEmails(MailchimpConfig config) throws IOException, InterruptedException {
+        java.util.Set<String> emails = new java.util.HashSet<>();
+        emails.addAll(fetchMemberEmailsByStatus(config, "unsubscribed"));
+        emails.addAll(fetchMemberEmailsByStatus(config, "cleaned"));
+        return emails;
+    }
+
+    private java.util.Set<String> fetchMemberEmailsByStatus(MailchimpConfig config, String status) throws IOException, InterruptedException {
+        java.util.Set<String> emails = new java.util.HashSet<>();
+        int count = 1000;
+        int offset = 0;
+        while (true) {
+            HttpRequest req = baseRequest(config, "/lists/" + config.getAudienceId() + "/members?status=" + status
+                            + "&count=" + count + "&offset=" + offset + "&fields=members.email_address")
+                    .GET().build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            requireSuccess(res, "fetch members by status");
+            MembersEmailResponse parsed = mapper.readValue(res.body(), MembersEmailResponse.class);
+            List<MemberEmailEntry> members = parsed.members() == null ? List.of() : parsed.members();
+            for (MemberEmailEntry m : members) {
+                if (m.email_address() != null) {
+                    emails.add(m.email_address().toLowerCase(Locale.ROOT));
+                }
+            }
+            if (members.size() < count) {
+                break;
+            }
+            offset += count;
+        }
+        return emails;
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record MembersEmailResponse(List<MemberEmailEntry> members) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record MemberEmailEntry(String email_address) {}
+
     private HttpRequest.Builder baseRequest(MailchimpConfig config, String path) {
         String dc = config.serverPrefix();
         String auth = Base64.getEncoder().encodeToString(
