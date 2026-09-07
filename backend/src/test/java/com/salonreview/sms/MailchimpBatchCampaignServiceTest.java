@@ -114,6 +114,32 @@ class MailchimpBatchCampaignServiceTest {
     }
 
     @Test
+    @DisplayName("two customers sharing one email -> Mailchimp sees it once (upsert+segment), but both still get a SENT row")
+    void dedupesSharedEmailForMailchimpButRecordsBothCustomers() throws Exception {
+        List<MailchimpBatchCampaignService.Recipient> recipients = List.of(
+                recipient("cust1", "shared@example.com", "Jane"),
+                recipient("cust2", "SHARED@example.com", "Bob")); // same inbox, different case
+        when(client.createStaticSegment(any(), anyString(), any())).thenReturn(42L);
+        when(client.createCampaignForSegment(any(), eq(42L), any(), any(), any())).thenReturn("campaign-1");
+
+        MailchimpBatchCampaignService.BatchSendResult result = service.send(BUSINESS_ID, AUTOMATION_KEY, config,
+                "seg", "Subject", "Preview", "Title", recipients);
+
+        assertThat(result.state()).isEqualTo("SENT");
+        assertThat(result.recipientCount()).isEqualTo(2);
+
+        ArgumentCaptor<List<MailchimpClient.BatchMember>> membersCaptor = ArgumentCaptor.forClass(List.class);
+        verify(client).batchUpsertMembers(any(), membersCaptor.capture());
+        assertThat(membersCaptor.getValue()).hasSize(1);
+
+        ArgumentCaptor<List<String>> emailsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(client).createStaticSegment(any(), anyString(), emailsCaptor.capture());
+        assertThat(emailsCaptor.getValue()).hasSize(1);
+
+        verify(sendRepository, times(2)).save(any());
+    }
+
+    @Test
     @DisplayName("a failure partway through (e.g. segment creation) -> SEND_FAILED, no WinbackEmailSend rows written")
     void failurePartwayRecordsSendFailedAndWritesNoRows() throws Exception {
         when(client.createStaticSegment(any(), anyString(), any())).thenThrow(new RuntimeException("Mailchimp API error"));

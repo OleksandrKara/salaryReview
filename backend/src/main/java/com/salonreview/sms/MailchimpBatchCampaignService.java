@@ -7,7 +7,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -75,12 +77,24 @@ public class MailchimpBatchCampaignService {
         }
 
         try {
-            List<MailchimpClient.BatchMember> members = recipients.stream()
+            // Two different Square customer profiles can share one email (found live 2026-09-07,
+            // business 2: a shared family/work inbox) — Mailchimp's batch upsert rejects the whole
+            // call outright on a duplicate email in the payload ("Duplicate items found for email
+            // X"), and a static segment built from a list with repeats would be equally meaningless
+            // (Mailchimp has exactly one member per email regardless). Dedupe to one entry per email
+            // for what's sent to Mailchimp; every original recipient (including the ones collapsed
+            // away here) still gets its own SENT row below, since the actual email did reach them.
+            List<Recipient> uniqueByEmail = recipients.stream()
+                    .collect(java.util.stream.Collectors.toMap(r -> r.email().toLowerCase(Locale.ROOT), r -> r,
+                            (first, dup) -> first, LinkedHashMap::new))
+                    .values().stream().toList();
+
+            List<MailchimpClient.BatchMember> members = uniqueByEmail.stream()
                     .map(r -> new MailchimpClient.BatchMember(r.email(), r.givenName()))
                     .toList();
             client.batchUpsertMembers(config, members);
 
-            List<String> emails = recipients.stream().map(Recipient::email).toList();
+            List<String> emails = uniqueByEmail.stream().map(Recipient::email).toList();
             Long segmentId = client.createStaticSegment(config, segmentName, emails);
 
             String campaignId = client.createCampaignForSegment(config, segmentId, subjectLine, previewText, campaignTitle);
