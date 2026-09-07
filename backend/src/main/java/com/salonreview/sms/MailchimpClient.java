@@ -254,16 +254,26 @@ public class MailchimpClient {
     }
 
     /** Every email in this audience Mailchimp will never actually deliver to — {@code unsubscribed}
-     * (opted out) and {@code cleaned} (hard-bounced, permanently invalid), lower-cased for
-     * case-insensitive matching. A one-off mass campaign's candidate-discovery step (see {@code
-     * PmuThankYouOfferOneOffService}) excludes these up front rather than relying on Mailchimp to
-     * silently skip them at send time — the caller wants an accurate final recipient count, not
-     * just a correct outcome. Two full paginated list scans (status has no combined-value filter on
-     * this endpoint); cheap compared to the campaign send itself. */
+     * (opted out), {@code cleaned} (hard-bounced, permanently invalid), and {@code archived}
+     * (removed from marketing, requires explicit re-permission before Mailchimp will send to them
+     * again) — lower-cased for case-insensitive matching. A one-off mass campaign's
+     * candidate-discovery step (see {@code PmuThankYouOfferOneOffService}) excludes these up front
+     * rather than relying on Mailchimp to silently skip them at send time — the caller wants an
+     * accurate final recipient count, not just a correct outcome.
+     *
+     * <p>{@code archived} was missing here through the PMU thank-you offer's real send on
+     * 2026-09-07: {@code batchUpsertMembers}' {@code status_if_new} never touches an existing
+     * member's status (same deliberate no-merge-field-revalidation reasoning as {@link
+     * #upsertMember}), so an already-archived member simply stayed archived and was then silently
+     * dropped from the static segment — 711 of 3,391 intended recipients (found only by diffing the
+     * segment's actual membership against the intended list after the fact). Three full paginated
+     * list scans (status has no combined-value filter on this endpoint); cheap compared to the
+     * campaign send itself. */
     public java.util.Set<String> fetchUndeliverableEmails(MailchimpConfig config) throws IOException, InterruptedException {
         java.util.Set<String> emails = new java.util.HashSet<>();
         emails.addAll(fetchMemberEmailsByStatus(config, "unsubscribed"));
         emails.addAll(fetchMemberEmailsByStatus(config, "cleaned"));
+        emails.addAll(fetchMemberEmailsByStatus(config, "archived"));
         return emails;
     }
 
