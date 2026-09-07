@@ -298,13 +298,21 @@ public class MailchimpClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record MemberEmailEntry(String email_address) {}
 
+    // Found live 2026-09-07 running the PMU thank-you offer's real send: a static segment created
+    // with ~3,400 emails embedded in the request body (see #createStaticSegment) took long enough
+    // on Mailchimp's side that 10s wasn't enough, throwing HttpTimeoutException before a campaign
+    // was ever created. 30s comfortably covers a batch call's larger body/processing time without
+    // meaningfully changing behavior for the many small, frequent per-customer calls this same
+    // timeout also governs.
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
+
     private HttpRequest.Builder baseRequest(MailchimpConfig config, String path) {
         String dc = config.serverPrefix();
         String auth = Base64.getEncoder().encodeToString(
                 ("anystring:" + config.getApiKey()).getBytes(StandardCharsets.UTF_8));
         return HttpRequest.newBuilder()
                 .uri(URI.create("https://" + dc + ".api.mailchimp.com/3.0" + path))
-                .timeout(Duration.ofSeconds(10))
+                .timeout(REQUEST_TIMEOUT)
                 .header("Authorization", "Basic " + auth);
     }
 
