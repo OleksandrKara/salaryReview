@@ -287,8 +287,27 @@ export default function MessagesView({
     }
     syncViewportHeight();
     viewport.addEventListener('resize', syncViewportHeight);
+    // Found live 2026-09-08 (owner report, mobile Chrome): reopening the browser after leaving
+    // this page backgrounded for a while left the whole page collapsed into an unusable sliver —
+    // no scrolling, the search box gone. Root cause: `--vvh` only ever got set once on mount plus
+    // on `visualViewport`'s own `resize` event, and Android backgrounding a tab for long enough to
+    // freeze/bfcache-restore it does neither — the page comes back exactly as it was frozen, with
+    // whatever `--vvh` last held (verified: a stuck small value, e.g. from mid keyboard-close right
+    // as it backgrounded, collapses `main`'s h-[var(--vvh,100dvh)] to that same small height, which
+    // cascades down through this column's flex layout enough to squash the search bar and the
+    // conversation-list scroll box to 0 height — reproduced directly against a static copy of this
+    // layout). `pageshow` fires on both a bfcache restore and a plain reload; `visibilitychange`
+    // additionally covers a plain tab background/foreground with no freeze at all. Both just
+    // re-read the CURRENT real `visualViewport.height`, correcting whatever was stale.
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') syncViewportHeight();
+    }
+    window.addEventListener('pageshow', syncViewportHeight);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       viewport.removeEventListener('resize', syncViewportHeight);
+      window.removeEventListener('pageshow', syncViewportHeight);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.documentElement.style.removeProperty('--vvh');
     };
   }, []);
