@@ -13,7 +13,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -51,8 +53,14 @@ class LaborDayPromoOneOffServiceTest {
         mailchimpConfigRepository = mock(MailchimpConfigRepository.class);
         mailchimpEmailService = mock(MailchimpEmailService.class);
         templateService = mock(MailchimpEmailTemplateService.class);
+        // Fixed clock, not the real system clock — the promo's own deadline (Sept 7, 2026) is a
+        // real calendar date in the past by now; the no-arg constructor's real-clock path is only
+        // exercised implicitly through Spring wiring in production, never in these tests. Pinned a
+        // day before the deadline so every test below exercises the normal candidate-resolution
+        // path, same as when this suite was first written.
+        Clock fixedClock = Clock.fixed(Instant.parse("2026-09-06T12:00:00Z"), ZoneId.of("America/Los_Angeles"));
         service = new LaborDayPromoOneOffService(sendRepository, bookingMirrorRepository,
-                squareClientProvider, mailchimpConfigRepository, mailchimpEmailService, templateService);
+                squareClientProvider, mailchimpConfigRepository, mailchimpEmailService, templateService, fixedClock);
 
         when(mailchimpConfigRepository.findByBusinessId(BUSINESS_ID)).thenReturn(Optional.of(configuredMailchimp()));
         when(squareClientProvider.forBusiness(BUSINESS_ID)).thenReturn(square);
@@ -230,5 +238,20 @@ class LaborDayPromoOneOffServiceTest {
         assertThat(results).hasSize(1);
         assertThat(results.get(0).state()).isEqualTo("SKIPPED_NOT_CONFIGURED");
         verifyNoInteractions(square);
+    }
+
+    @Test
+    @DisplayName("today is after the promo's own deadline -> single SKIPPED_EXPIRED result, no Mailchimp/Square calls at all — "
+            + "this is real production's actual current state as of 2026-09-08")
+    void expiredDeadlineSkipped() {
+        Clock afterDeadline = Clock.fixed(Instant.parse("2026-09-08T12:00:00Z"), ZoneId.of("America/Los_Angeles"));
+        LaborDayPromoOneOffService expiredService = new LaborDayPromoOneOffService(sendRepository, bookingMirrorRepository,
+                squareClientProvider, mailchimpConfigRepository, mailchimpEmailService, templateService, afterDeadline);
+
+        List<LaborDayPromoOneOffService.CandidateResult> results = expiredService.run(BUSINESS_ID, false);
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).state()).isEqualTo("SKIPPED_EXPIRED");
+        verifyNoInteractions(square, mailchimpEmailService, mailchimpConfigRepository);
     }
 }

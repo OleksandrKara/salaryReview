@@ -11,6 +11,7 @@ import com.salonreview.square.SquareClientProvider;
 import com.salonreview.util.Names;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -60,19 +61,38 @@ public class LaborDayPromoOneOffService {
     private final MailchimpConfigRepository mailchimpConfigRepository;
     private final MailchimpEmailService mailchimpEmailService;
     private final MailchimpEmailTemplateService templateService;
+    private final java.time.Clock clock;
 
+    @Autowired
     public LaborDayPromoOneOffService(WinbackEmailSendRepository sendRepository,
                                        SquareBookingMirrorRepository bookingMirrorRepository,
                                        SquareClientProvider squareClientProvider,
                                        MailchimpConfigRepository mailchimpConfigRepository,
                                        MailchimpEmailService mailchimpEmailService,
                                        MailchimpEmailTemplateService templateService) {
+        this(sendRepository, bookingMirrorRepository, squareClientProvider, mailchimpConfigRepository,
+                mailchimpEmailService, templateService, java.time.Clock.system(SALON_ZONE));
+    }
+
+    /** Test-only constructor — lets tests fix "today" instead of racing the real deadline
+     * (found live 2026-09-08: every test in {@code LaborDayPromoOneOffServiceTest} broke the
+     * instant the real calendar passed {@link #PROMO_DEADLINE}, since the no-arg path read the
+     * real system clock directly). Same pattern as {@code MarketingAnalyticsService}'s own
+     * test-only {@code Clock} constructor. */
+    LaborDayPromoOneOffService(WinbackEmailSendRepository sendRepository,
+                                SquareBookingMirrorRepository bookingMirrorRepository,
+                                SquareClientProvider squareClientProvider,
+                                MailchimpConfigRepository mailchimpConfigRepository,
+                                MailchimpEmailService mailchimpEmailService,
+                                MailchimpEmailTemplateService templateService,
+                                java.time.Clock clock) {
         this.sendRepository = sendRepository;
         this.bookingMirrorRepository = bookingMirrorRepository;
         this.squareClientProvider = squareClientProvider;
         this.mailchimpConfigRepository = mailchimpConfigRepository;
         this.mailchimpEmailService = mailchimpEmailService;
         this.templateService = templateService;
+        this.clock = clock;
     }
 
     /** {@code dryRun}: when true, resolves and renders everything but never calls Mailchimp and
@@ -80,7 +100,7 @@ public class LaborDayPromoOneOffService {
      * to run against production as many times as needed while reviewing the list. */
     public List<CandidateResult> run(Long businessId, boolean dryRun) {
         List<CandidateResult> results = new ArrayList<>();
-        LocalDate today = LocalDate.now(SALON_ZONE);
+        LocalDate today = LocalDate.now(clock);
         if (today.isAfter(PROMO_DEADLINE)) {
             results.add(new CandidateResult(null, null, "SKIPPED_EXPIRED", "Promo deadline " + PROMO_DEADLINE + " has passed"));
             return results;
