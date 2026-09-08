@@ -869,7 +869,7 @@ export default function MessagesView({
     <>
     <div
       data-testid="diag-overlay"
-      style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 99999, background: '#000', color: '#0f0', fontSize: '9px', fontFamily: 'monospace', padding: '2px 4px', whiteSpace: 'pre-wrap', pointerEvents: 'none' }}
+      style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 99999, background: '#000', color: '#0f0', fontSize: '9px', fontFamily: 'monospace', padding: '2px 4px', whiteSpace: 'pre-wrap', pointerEvents: 'none' }}
     >
       {diag}
     </div>
