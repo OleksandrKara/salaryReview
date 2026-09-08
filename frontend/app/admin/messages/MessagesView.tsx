@@ -227,9 +227,35 @@ export default function MessagesView({
     const previousHtmlOverscroll = document.documentElement.style.overscrollBehaviorY;
     document.body.style.overflow = 'hidden';
     document.documentElement.style.overscrollBehaviorY = 'none';
+    // Found live 2026-09-08 (owner report, Chrome on iOS specifically — Mobile Safari unaffected):
+    // force-quitting and relaunching the browser could leave the whole page visibly shifted down a
+    // bit, with the title row's content scrolled up out of view behind the browser's own address
+    // bar — not a layout bug, a genuine leftover *scroll* position. Locking body overflow above
+    // stops any *new* scroll, but does nothing about one that already happened — and on a cold
+    // relaunch, WebKit can apply an initial scroll offset (its own address-bar-collapse handling,
+    // running before this effect gets a chance to mount and lock things down) that then never gets
+    // corrected, since nothing was ever asking the page to scroll back to the top. Chrome for iOS
+    // wraps the same WebKit engine as Safari but re-implements its own chrome/toolbar handling on
+    // top of it, which is almost certainly why only Chrome showed this and Safari's own first-party
+    // handling didn't. window.scrollTo(0, 0) costs nothing on a page that's already at the top.
+    //
+    // Same pageshow/visibilitychange re-trigger as the --vvh fix just above (see its own doc for
+    // why a plain mount-only effect isn't enough) — a plain background/foreground cycle, not just a
+    // full kill, is just as capable of leaving this same stuck scroll offset behind.
+    function resetScroll() {
+      window.scrollTo(0, 0);
+    }
+    function handleVisible() {
+      if (document.visibilityState === 'visible') resetScroll();
+    }
+    resetScroll();
+    window.addEventListener('pageshow', resetScroll);
+    document.addEventListener('visibilitychange', handleVisible);
     return () => {
       document.body.style.overflow = previousBodyOverflow;
       document.documentElement.style.overscrollBehaviorY = previousHtmlOverscroll;
+      window.removeEventListener('pageshow', resetScroll);
+      document.removeEventListener('visibilitychange', handleVisible);
     };
   }, []);
 
