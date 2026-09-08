@@ -221,6 +221,12 @@ public class LeadFollowUpScheduler {
             saveEmailState(touch, LeadFollowUpSend.EMAIL_STATE_SKIPPED_BOOKED);
             return;
         }
+        if (sendRepository.existsByPhoneNumberAndEmailFollowupStateAndCreatedAtBetween(
+                touch.getPhoneNumber(), LeadFollowUpSend.EMAIL_STATE_SENT,
+                touch.getCreatedAt().minus(RESEND_COOLDOWN), touch.getCreatedAt().plus(RESEND_COOLDOWN))) {
+            saveEmailState(touch, LeadFollowUpSend.EMAIL_STATE_SKIPPED_RECENTLY_SENT);
+            return;
+        }
         if (!automationService.isEnabled(businessId, "lead_follow_up")) {
             saveEmailState(touch, LeadFollowUpSend.EMAIL_STATE_SKIPPED_DISABLED);
             return;
@@ -309,6 +315,12 @@ public class LeadFollowUpScheduler {
         }
         if (upcoming) {
             saveSmsFollowupState(touch, LeadFollowUpSend.SMS_FOLLOWUP_STATE_SKIPPED_BOOKED);
+            return;
+        }
+        if (sendRepository.existsByPhoneNumberAndSmsFollowupStateAndCreatedAtBetween(
+                touch.getPhoneNumber(), LeadFollowUpSend.SMS_FOLLOWUP_STATE_SENT,
+                touch.getCreatedAt().minus(RESEND_COOLDOWN), touch.getCreatedAt().plus(RESEND_COOLDOWN))) {
+            saveSmsFollowupState(touch, LeadFollowUpSend.SMS_FOLLOWUP_STATE_SKIPPED_RECENTLY_SENT);
             return;
         }
         if (!automationService.isEnabled(businessId, "lead_follow_up")) {
