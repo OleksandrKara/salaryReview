@@ -266,6 +266,42 @@ export default function MessagesView({
     };
   }, []);
 
+  // Found live 2026-09-08 (owner report, Chrome on iOS): the on-screen diagnostic overlay from
+  // PR #586 proved the title row is NOT hidden and NOT mis-positioned on a cold Chrome-iOS relaunch
+  // — scrollY=0, --vvh matched innerHeight exactly, and the title row's own getBoundingClientRect()
+  // reported a completely normal top:0/height:102/display:block. Yet nothing painted there. That
+  // rules out every layout/scroll theory tried so far (PRs #584/#585/#586) — this is the page being
+  // logically correct but visually *stuck unpainted*, a known class of WebKit/Chrome compositor bug
+  // where content coming back from a cold app relaunch doesn't get freshly composited until
+  // something forces it to (exactly why a reload or a rotate-and-back — both force a full
+  // recomposite — already self-heal it, per the owner's own report).
+  //
+  // A transform toggle is the standard, flicker-free way to force that recomposite: promoting an
+  // element onto its own compositor layer and back doesn't move anything or repaint any pixels
+  // differently, but it does force the browser to actually re-draw that layer from scratch.
+  // document.body covers whatever's stuck, wherever it is, without needing to know exactly which
+  // element WebKit failed to paint.
+  useEffect(() => {
+    function nudgeRepaint() {
+      document.body.style.transform = 'translateZ(0)';
+      requestAnimationFrame(() => {
+        document.body.style.transform = '';
+      });
+    }
+    nudgeRepaint();
+    const settleTimer = setTimeout(nudgeRepaint, 400);
+    function handleVisible() {
+      if (document.visibilityState === 'visible') nudgeRepaint();
+    }
+    window.addEventListener('pageshow', nudgeRepaint);
+    document.addEventListener('visibilitychange', handleVisible);
+    return () => {
+      clearTimeout(settleTimer);
+      window.removeEventListener('pageshow', nudgeRepaint);
+      document.removeEventListener('visibilitychange', handleVisible);
+    };
+  }, []);
+
   // Object URLs for the staged attachment previews — revoked whenever the staged set changes or
   // the component unmounts, so switching photos (or threads) doesn't leak blob URLs.
   const attachedPreviews = useMemo(() => attachedFiles.map((f) => URL.createObjectURL(f)), [attachedFiles]);
@@ -842,12 +878,18 @@ export default function MessagesView({
       const titleRow = document.querySelector('[data-testid="messages-page-title-row"]') as HTMLElement | null;
       const rect = titleRow?.getBoundingClientRect();
       const cs = titleRow ? getComputedStyle(titleRow) : null;
+      const menuBtn = document.querySelector('[aria-label="Menu"]') as HTMLElement | null;
+      const menuRect = menuBtn?.getBoundingClientRect();
+      const menuCs = menuBtn ? getComputedStyle(menuBtn) : null;
       setDiag(
         `scrollY=${window.scrollY} innerH=${window.innerHeight} vvH=${vv?.height?.toFixed(0)} ` +
         `vvOffTop=${vv?.offsetTop?.toFixed(0)} vvPageTop=${vv?.pageTop?.toFixed(0)} ` +
         `--vvh=${getComputedStyle(document.documentElement).getPropertyValue('--vvh')} ` +
         `title:display=${cs?.display} top=${rect?.top?.toFixed(0)} h=${rect?.height?.toFixed(0)} ` +
-        `dpr=${window.devicePixelRatio}`
+        `dpr=${window.devicePixelRatio}\n` +
+        `menuBtn: top=${menuRect?.top?.toFixed(0)} left=${menuRect?.left?.toFixed(0)} ` +
+        `visible=${menuRect ? (menuRect.width > 0 && menuRect.height > 0) : 'notfound'} ` +
+        `opacity=${menuCs?.opacity} visibility=${menuCs?.visibility}`
       );
     }
     readDiag();
