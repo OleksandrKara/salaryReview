@@ -8,6 +8,7 @@ import com.salonreview.repo.SmsReplyFlowRepository;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -47,6 +48,7 @@ public class CheckoutReviewRatingController {
         this.messageLogService = messageLogService;
     }
 
+    @Transactional
     @GetMapping("/api/public/checkout-review/rate")
     public ResponseEntity<Void> rate(@RequestParam("flow") long flowId, @RequestParam("rating") int rating,
                                       @RequestParam("exp") long expEpochSeconds, @RequestParam("sig") String signature) {
@@ -81,7 +83,14 @@ public class CheckoutReviewRatingController {
         // meantime) redirects to whatever the ladder currently resolves to, without re-logging or
         // overwriting the rating already on record — first response wins, same as the SMS side
         // (see TwilioInboundSmsController's own AWAITING_REPLY-only pending lookup).
-        if (!SmsReplyFlow.STATE_COMPLETED.equals(flow.getState())) {
+        //
+        // Atomic claim, not a read-then-write check on flow.getState() — found live 2026-09-08:
+        // email link-prescanning security scanners fetch all 5 rating links within milliseconds of
+        // each other, and a plain check let multiple concurrent requests all see "not yet
+        // completed" before any of them persisted, recording several different ratings for one
+        // flow (2 real customers hit this, 3 ratings logged each). completeIfNotAlready is a
+        // single atomic UPDATE — only the request that actually flips the row wins.
+        if (replyFlowRepository.completeIfNotAlready(flow.getId()) == 1) {
             recordRating(flow, rating, linkTarget);
         }
 
@@ -121,7 +130,9 @@ public class CheckoutReviewRatingController {
      * needed), and an OUTBOUND click-tracked row recording which destination this rating resolved
      * to (so a later ask sees the escalation ladder already advanced, and {@code
      * CheckoutReviewTriggerService}'s "covered all three channels" permanent-stop check sees it
-     * too). */
+     * too). Only ever called after {@link SmsReplyFlowRepository#completeIfNotAlready} has already
+     * atomically flipped the flow to {@code COMPLETED} — this no longer needs to (and must not
+     * redundantly) set that state itself. */
     private void recordRating(SmsReplyFlow flow, int rating, String linkTarget) {
         SmsMessage inbound = messageLogService.logInbound(flow.getBusinessId(), flow.getPhoneNumber(),
                 "[Rated " + rating + "/5 via email]", CheckoutReviewReplyService.AUTOMATION_KEY);
@@ -138,9 +149,6 @@ public class CheckoutReviewRatingController {
                 linkTarget, messageLogService.generateUniqueClickToken());
         outbound.setClickedAt(Instant.now());
         messageLogService.save(outbound);
-
-        flow.setState(SmsReplyFlow.STATE_COMPLETED);
-        replyFlowRepository.save(flow);
     }
 
     private ResponseEntity<Void> notFound() {

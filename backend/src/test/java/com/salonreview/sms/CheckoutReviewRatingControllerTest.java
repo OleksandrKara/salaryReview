@@ -58,6 +58,9 @@ class CheckoutReviewRatingControllerTest {
                 .automationKey(CheckoutReviewReplyService.AUTOMATION_KEY).phoneNumber(PHONE)
                 .customerName("Jane").state(SmsReplyFlow.STATE_EXPIRED).sendDueAt(Instant.now()).build();
         when(replyFlowRepository.findById(FLOW_ID)).thenReturn(Optional.of(flow));
+        // Default: this call wins the atomic completion race — see completeIfNotAlreadyLosesRaceSkipsRecording
+        // for the "someone else already claimed it" case.
+        when(replyFlowRepository.completeIfNotAlready(FLOW_ID)).thenReturn(1);
 
         when(messageLogService.logInbound(any(), any(), any(), any())).thenAnswer(inv ->
                 SmsMessage.builder().id(100L).businessId(BUSINESS_ID).direction("INBOUND")
@@ -191,8 +194,24 @@ class CheckoutReviewRatingControllerTest {
                 .automationKey(CheckoutReviewReplyService.AUTOMATION_KEY).phoneNumber(PHONE)
                 .customerName("Jane").state(SmsReplyFlow.STATE_COMPLETED).sendDueAt(Instant.now()).build();
         when(replyFlowRepository.findById(FLOW_ID)).thenReturn(Optional.of(completed));
+        when(replyFlowRepository.completeIfNotAlready(FLOW_ID)).thenReturn(0);
 
         var response = controller.rate(FLOW_ID, 5, FUTURE_EXP, sign(5));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(302);
+        verify(messageLogService, never()).logInbound(any(), any(), any(), any());
+        verify(messageLogService, never()).logOutboundWithLink(any(), any(), any(), any(), any(), anyBool(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("completeIfNotAlready loses the race (0 rows updated) → no rating recorded, even "
+            + "though the in-memory flow object itself still reads AWAITING_REPLY — the exact real "
+            + "bug found 2026-09-08: email link-prescanning bots fetching all 5 rating links within "
+            + "milliseconds let a plain flow.getState() check pass for several concurrent requests")
+    void completeIfNotAlreadyLosesRaceSkipsRecording() {
+        when(replyFlowRepository.completeIfNotAlready(FLOW_ID)).thenReturn(0);
+
+        var response = controller.rate(FLOW_ID, 3, FUTURE_EXP, sign(3));
 
         assertThat(response.getStatusCode().value()).isEqualTo(302);
         verify(messageLogService, never()).logInbound(any(), any(), any(), any());
