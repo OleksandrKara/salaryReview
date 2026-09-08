@@ -227,78 +227,9 @@ export default function MessagesView({
     const previousHtmlOverscroll = document.documentElement.style.overscrollBehaviorY;
     document.body.style.overflow = 'hidden';
     document.documentElement.style.overscrollBehaviorY = 'none';
-    // Found live 2026-09-08 (owner report, Chrome on iOS specifically — Mobile Safari unaffected):
-    // force-quitting and relaunching the browser could leave the whole page visibly shifted down a
-    // bit, with the title row's content scrolled up out of view behind the browser's own address
-    // bar — not a layout bug, a genuine leftover *scroll* position. Locking body overflow above
-    // stops any *new* scroll, but does nothing about one that already happened — and on a cold
-    // relaunch, WebKit can apply an initial scroll offset (its own address-bar-collapse handling,
-    // running before this effect gets a chance to mount and lock things down) that then never gets
-    // corrected, since nothing was ever asking the page to scroll back to the top. Chrome for iOS
-    // wraps the same WebKit engine as Safari but re-implements its own chrome/toolbar handling on
-    // top of it, which is almost certainly why only Chrome showed this and Safari's own first-party
-    // handling didn't. window.scrollTo(0, 0) costs nothing on a page that's already at the top.
-    //
-    // Same pageshow/visibilitychange re-trigger as the --vvh fix just above (see its own doc for
-    // why a plain mount-only effect isn't enough) — a plain background/foreground cycle, not just a
-    // full kill, is just as capable of leaving this same stuck scroll offset behind.
-    function resetScroll() {
-      window.scrollTo(0, 0);
-    }
-    function handleVisible() {
-      if (document.visibilityState === 'visible') resetScroll();
-    }
-    resetScroll();
-    // Same deferred-resettle reasoning as the --vvh effect above (found together, same report):
-    // reload or rotate-and-back both fixed it, a plain reopen alone didn't — pointing at a cold-
-    // launch race rather than a stale value, so a couple of delayed re-reads catch up with whatever
-    // WKWebView was still settling right after this effect's first, too-early resetScroll() above.
-    requestAnimationFrame(() => requestAnimationFrame(resetScroll));
-    const settleTimer = setTimeout(resetScroll, 400);
-    window.addEventListener('pageshow', resetScroll);
-    document.addEventListener('visibilitychange', handleVisible);
     return () => {
-      clearTimeout(settleTimer);
       document.body.style.overflow = previousBodyOverflow;
       document.documentElement.style.overscrollBehaviorY = previousHtmlOverscroll;
-      window.removeEventListener('pageshow', resetScroll);
-      document.removeEventListener('visibilitychange', handleVisible);
-    };
-  }, []);
-
-  // Found live 2026-09-08 (owner report, Chrome on iOS): the on-screen diagnostic overlay from
-  // PR #586 proved the title row is NOT hidden and NOT mis-positioned on a cold Chrome-iOS relaunch
-  // — scrollY=0, --vvh matched innerHeight exactly, and the title row's own getBoundingClientRect()
-  // reported a completely normal top:0/height:102/display:block. Yet nothing painted there. That
-  // rules out every layout/scroll theory tried so far (PRs #584/#585/#586) — this is the page being
-  // logically correct but visually *stuck unpainted*, a known class of WebKit/Chrome compositor bug
-  // where content coming back from a cold app relaunch doesn't get freshly composited until
-  // something forces it to (exactly why a reload or a rotate-and-back — both force a full
-  // recomposite — already self-heal it, per the owner's own report).
-  //
-  // A transform toggle is the standard, flicker-free way to force that recomposite: promoting an
-  // element onto its own compositor layer and back doesn't move anything or repaint any pixels
-  // differently, but it does force the browser to actually re-draw that layer from scratch.
-  // document.body covers whatever's stuck, wherever it is, without needing to know exactly which
-  // element WebKit failed to paint.
-  useEffect(() => {
-    function nudgeRepaint() {
-      document.body.style.transform = 'translateZ(0)';
-      requestAnimationFrame(() => {
-        document.body.style.transform = '';
-      });
-    }
-    nudgeRepaint();
-    const settleTimer = setTimeout(nudgeRepaint, 400);
-    function handleVisible() {
-      if (document.visibilityState === 'visible') nudgeRepaint();
-    }
-    window.addEventListener('pageshow', nudgeRepaint);
-    document.addEventListener('visibilitychange', handleVisible);
-    return () => {
-      clearTimeout(settleTimer);
-      window.removeEventListener('pageshow', nudgeRepaint);
-      document.removeEventListener('visibilitychange', handleVisible);
     };
   }, []);
 
@@ -356,19 +287,6 @@ export default function MessagesView({
     }
     syncViewportHeight();
     viewport.addEventListener('resize', syncViewportHeight);
-    // Found live 2026-09-08 (owner report, Chrome on iOS specifically): after force-quitting and
-    // relaunching, the page stayed visibly wrong (title row's content pushed off-screen) — UNLESS
-    // the owner reloaded, or even just rotated the screen and rotated straight back. Rotating fires
-    // a real `resize` on `visualViewport`, caught by the listener above; a plain reload starts the
-    // effect fresh. Since it's specifically a *later* resize event that fixes it, not a reload's own
-    // freshness, the actual bug is a race on cold launch: WKWebView (what Chrome-for-iOS wraps) can
-    // still be settling its own toolbar/viewport geometry at the exact moment this effect's first
-    // `syncViewportHeight()` call above reads `visualViewport.height` — reading a still-transient
-    // value that then never gets corrected because no further real resize happens on its own. A
-    // couple of deferred re-reads shortly after mount give WKWebView time to settle, mimicking
-    // exactly what a rotate-and-back already does, without needing the owner to actually rotate.
-    requestAnimationFrame(() => requestAnimationFrame(syncViewportHeight));
-    const settleTimer = setTimeout(syncViewportHeight, 400);
     // Found live 2026-09-08 (owner report, mobile Chrome): reopening the browser after leaving
     // this page backgrounded for a while left the whole page collapsed into an unusable sliver —
     // no scrolling, the search box gone. Root cause: `--vvh` only ever got set once on mount plus
@@ -387,7 +305,6 @@ export default function MessagesView({
     window.addEventListener('pageshow', syncViewportHeight);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
-      clearTimeout(settleTimer);
       viewport.removeEventListener('resize', syncViewportHeight);
       window.removeEventListener('pageshow', syncViewportHeight);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -867,57 +784,10 @@ export default function MessagesView({
     overscan: 8,
   });
 
-  // TEMPORARY — diagnostic overlay for the 2026-09-08 Chrome-on-iOS "everything shifted down"
-  // report (two prior fix attempts, --vvh re-sync and a scroll(0,0) reset, both DIDN'T fix it —
-  // see PRs #584/#585). Remove once the real cause is found. Fixed to the viewport (not affected
-  // by whatever's shifting the rest of the page) so it stays readable regardless.
-  const [diag, setDiag] = useState('');
-  useEffect(() => {
-    function readDiag() {
-      const vv = window.visualViewport;
-      const titleRow = document.querySelector('[data-testid="messages-page-title-row"]') as HTMLElement | null;
-      const rect = titleRow?.getBoundingClientRect();
-      const cs = titleRow ? getComputedStyle(titleRow) : null;
-      const menuBtn = document.querySelector('[aria-label="Menu"]') as HTMLElement | null;
-      const menuRect = menuBtn?.getBoundingClientRect();
-      const menuCs = menuBtn ? getComputedStyle(menuBtn) : null;
-      setDiag(
-        `scrollY=${window.scrollY} innerH=${window.innerHeight} vvH=${vv?.height?.toFixed(0)} ` +
-        `vvOffTop=${vv?.offsetTop?.toFixed(0)} vvPageTop=${vv?.pageTop?.toFixed(0)} ` +
-        `--vvh=${getComputedStyle(document.documentElement).getPropertyValue('--vvh')} ` +
-        `title:display=${cs?.display} top=${rect?.top?.toFixed(0)} h=${rect?.height?.toFixed(0)} ` +
-        `dpr=${window.devicePixelRatio}\n` +
-        `menuBtn: top=${menuRect?.top?.toFixed(0)} left=${menuRect?.left?.toFixed(0)} ` +
-        `visible=${menuRect ? (menuRect.width > 0 && menuRect.height > 0) : 'notfound'} ` +
-        `opacity=${menuCs?.opacity} visibility=${menuCs?.visibility}`
-      );
-    }
-    readDiag();
-    const id = setInterval(readDiag, 500);
-    window.addEventListener('pageshow', readDiag);
-    document.addEventListener('visibilitychange', readDiag);
-    window.addEventListener('scroll', readDiag);
-    window.visualViewport?.addEventListener('resize', readDiag);
-    return () => {
-      clearInterval(id);
-      window.removeEventListener('pageshow', readDiag);
-      document.removeEventListener('visibilitychange', readDiag);
-      window.removeEventListener('scroll', readDiag);
-      window.visualViewport?.removeEventListener('resize', readDiag);
-    };
-  }, []);
-
   return (
-    <>
-    <div
-      data-testid="diag-overlay"
-      style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 99999, background: '#000', color: '#0f0', fontSize: '9px', fontFamily: 'monospace', padding: '2px 4px', whiteSpace: 'pre-wrap', pointerEvents: 'none' }}
-    >
-      {diag}
-    </div>
-    {/* Desktop height now comes from page.tsx (sm:h-[calc(100vh-8rem)] on `main`) — this just fills
-    whatever that gives it, rather than inventing its own independent sm:h-[70vh] guess (see
-    page.tsx's doc comment on why that guess didn't track actual available screen space). */}
+    // Desktop height now comes from page.tsx (sm:h-[calc(100vh-8rem)] on `main`) — this just fills
+    // whatever that gives it, rather than inventing its own independent sm:h-[70vh] guess (see
+    // page.tsx's doc comment on why that guess didn't track actual available screen space).
     <div data-testid="messages-view-root" className="relative flex h-full min-h-0 overflow-hidden sm:rounded-lg sm:ring-1 sm:ring-zinc-200">
       {/* Contact list — full width on mobile until a thread is opened, fixed sidebar on desktop.
           sm:w-96 (not sm:w-72) — narrower than this cut real customer names off mid-word before a
@@ -1497,6 +1367,5 @@ export default function MessagesView({
         </div>
       ) : null}
     </div>
-    </>
   );
 }
