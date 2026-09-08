@@ -769,13 +769,24 @@ export default function MessagesView({
     // Desktop height now comes from page.tsx (sm:h-[calc(100vh-8rem)] on `main`) — this just fills
     // whatever that gives it, rather than inventing its own independent sm:h-[70vh] guess (see
     // page.tsx's doc comment on why that guess didn't track actual available screen space).
-    <div data-testid="messages-view-root" className="flex h-full min-h-0 overflow-hidden sm:rounded-lg sm:ring-1 sm:ring-zinc-200">
+    <div data-testid="messages-view-root" className="relative flex h-full min-h-0 overflow-hidden sm:rounded-lg sm:ring-1 sm:ring-zinc-200">
       {/* Contact list — full width on mobile until a thread is opened, fixed sidebar on desktop.
           sm:w-96 (not sm:w-72) — narrower than this cut real customer names off mid-word before a
-          manager could tell who they were looking at without opening the thread. */}
+          manager could tell who they were looking at without opening the thread.
+
+          Mobile show/hide is a transform, not `hidden`/`display:none` — found live 2026-09-08
+          (owner report): this column's scroll element is virtualized (see rowVirtualizer below),
+          and `display:none` collapses it to a 0×0 rect while a thread is open; @tanstack/react-
+          virtual's ResizeObserver only learns the real size back *asynchronously* once this
+          becomes visible again, so returning to the list briefly rendered the wrong virtualized
+          rows for a frame or two (looked like the list had reordered/scrolled on its own). An
+          `absolute inset-0` + translate-x keeps this column at its real pixel size the entire
+          time — off-screen, never display:none — so there's never a 0-size rect for the
+          virtualizer to recover from. sm:static/sm:translate-x-0 fully reverts to the normal
+          in-flow side-by-side desktop layout, unchanged from before. */}
       <div
         data-testid="conversation-list"
-        className={`flex w-full shrink-0 flex-col overflow-hidden border-r border-zinc-200 sm:flex sm:w-96 ${selectedPhone ? 'hidden sm:flex' : ''}`}
+        className={`absolute inset-0 flex w-full shrink-0 flex-col overflow-hidden border-r border-zinc-200 transition-transform sm:static sm:flex sm:w-96 sm:translate-x-0 ${selectedPhone ? '-translate-x-full' : 'translate-x-0'}`}
       >
         {conversations.length > 0 && (
           // text-base (16px), not text-sm, on mobile — matches the composer input's own note
@@ -974,7 +985,7 @@ export default function MessagesView({
           page.tsx's `group-has-[.thread-open]/messages` reads to hide this page's own title bar
           on mobile while a thread is open, so the thread's own back/name/info header is the only
           one on screen (see page.tsx's doc comment). */}
-      <div data-testid="thread-column" className={`flex min-h-0 min-w-0 flex-1 flex-col ${selectedPhone ? 'thread-open flex' : 'hidden sm:flex'}`}>
+      <div data-testid="thread-column" className={`absolute inset-0 flex min-h-0 min-w-0 flex-1 flex-col transition-transform sm:static sm:flex sm:translate-x-0 ${selectedPhone ? 'thread-open translate-x-0' : 'translate-x-full'}`}>
         {!selectedPhone ? (
           <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
             Select a conversation
