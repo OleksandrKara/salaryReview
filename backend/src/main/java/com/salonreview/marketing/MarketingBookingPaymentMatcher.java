@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -59,7 +60,50 @@ public class MarketingBookingPaymentMatcher {
         Instant to = booking.getStartAt().plus(MATCH_WINDOW);
         List<SquareOrderMirror> candidates =
                 orderRepository.findByBusinessIdAndSquareCustomerIdAndClosedAtBetween(businessId, canonicalCustomerId, from, to);
+        return bestMatch(booking, candidates, catalogPrices);
+    }
 
+    /** Same matching as {@link #match}, for every one of a customer's bookings at once — one order
+     * query total instead of one per booking. Found live 2026-09-08 fixing the contact info
+     * panel's appointment history: once that history stopped being artificially truncated (see
+     * {@code MarketingContactsService#fetchAppointments}'s own doc), a loyal repeat customer's
+     * panel could mean dozens of sequential per-booking order queries — genuinely slow, unlike a
+     * single indexed customer-scoped scan. {@code canonicalCustomerId == null} still falls back to
+     * the cash-note per booking, same as {@link #match}, with no order query attempted at all. */
+    public Map<String, SquareMonthAggregator.BookingPayment> matchAll(Long businessId, String canonicalCustomerId,
+                                                                        List<SquareBookingMirror> bookings,
+                                                                        Map<String, BigDecimal> catalogPrices) {
+        Map<String, SquareMonthAggregator.BookingPayment> out = new HashMap<>();
+        if (canonicalCustomerId == null) {
+            for (SquareBookingMirror booking : bookings) {
+                matchFromCashNote(booking, catalogPrices).ifPresent(p -> out.put(booking.getSquareBookingId(), p));
+            }
+            return out;
+        }
+        // Unbounded per customer, not per-booking-windowed — a local, single-customer, indexed
+        // scan has none of the "must bound the query" cost a live Square call would (same
+        // reasoning as SquareBookingMirrorRepository#findByBusinessIdAndSquareCustomerId's own
+        // doc); every booking's own MATCH_WINDOW filter below still applies exactly as before,
+        // just against this one shared, already-fetched list instead of a fresh query each time.
+        List<SquareOrderMirror> allOrders = orderRepository.findByBusinessIdAndSquareCustomerId(businessId, canonicalCustomerId);
+        for (SquareBookingMirror booking : bookings) {
+            if (booking.getStartAt() == null) {
+                matchFromCashNote(booking, catalogPrices).ifPresent(p -> out.put(booking.getSquareBookingId(), p));
+                continue;
+            }
+            Instant from = booking.getStartAt().minus(MATCH_WINDOW);
+            Instant to = booking.getStartAt().plus(MATCH_WINDOW);
+            List<SquareOrderMirror> candidates = allOrders.stream()
+                    .filter(o -> o.getClosedAt() != null && !o.getClosedAt().isBefore(from) && !o.getClosedAt().isAfter(to))
+                    .toList();
+            bestMatch(booking, candidates, catalogPrices).ifPresent(p -> out.put(booking.getSquareBookingId(), p));
+        }
+        return out;
+    }
+
+    private Optional<SquareMonthAggregator.BookingPayment> bestMatch(SquareBookingMirror booking,
+                                                                       List<SquareOrderMirror> candidates,
+                                                                       Map<String, BigDecimal> catalogPrices) {
         Set<String> variationIds = variationIds(booking);
         SquareOrderMirror best = null;
         Duration bestDistance = null;

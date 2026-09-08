@@ -99,7 +99,12 @@ class MarketingContactsServiceTest {
                 .thenReturn(new com.salonreview.sms.SmsMessageLogService.LinkEngagement(null, null));
         // Default: no mirrored bookings for anyone unless a test opts in via stubBookings() — the
         // local-mirror replacement for the old "square.bookingsForCustomer(...) -> List.of()" default.
+        // Both the since-bounded method (still used only by the follow-up-eligibility path now —
+        // see fetchAppointments' own doc) and the unbounded one (2026-09-08: used for all display
+        // call sites, including contactFromLivePhoneLookup as of the same date) default to empty here.
         when(bookingMirrorRepository.findByBusinessIdAndSquareCustomerIdAndStartAtAfter(any(), any(), any()))
+                .thenReturn(List.of());
+        when(bookingMirrorRepository.findByBusinessIdAndSquareCustomerId(any(), any()))
                 .thenReturn(List.of());
     }
 
@@ -121,11 +126,16 @@ class MarketingContactsServiceTest {
 
     /** Stubs {@link #bookingMirrorRepository} to return the given fixture bookings (converted to
      * {@link SquareBookingMirror} rows) for this one customer — the local-mirror replacement for
-     * the old {@code when(square.bookingsForCustomer(eq(customerId), any())).thenReturn(...)}. */
+     * the old {@code when(square.bookingsForCustomer(eq(customerId), any())).thenReturn(...)}.
+     * Stubs both the since-bounded and unbounded repository methods identically, so a test doesn't
+     * need to know or care which of {@code fetchAppointments}' two overloads the code path under
+     * test actually calls (see that method's own doc for which callers use which). */
     private void stubBookings(String customerId, Booking... bookings) {
         List<SquareBookingMirror> rows = java.util.Arrays.stream(bookings)
                 .map(MarketingContactsServiceTest::toMirror).toList();
         when(bookingMirrorRepository.findByBusinessIdAndSquareCustomerIdAndStartAtAfter(eq(1L), eq(customerId), any()))
+                .thenReturn(rows);
+        when(bookingMirrorRepository.findByBusinessIdAndSquareCustomerId(eq(1L), eq(customerId)))
                 .thenReturn(rows);
     }
 
@@ -522,8 +532,8 @@ class MarketingContactsServiceTest {
         Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2020-06-15T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
         stubBookings("SQCUST123", booking);
-        when(paymentMatcher.match(eq(1L), eq("SQCUST123"), any(), any()))
-                .thenReturn(Optional.of(new BookingPayment("CASH", new BigDecimal("50.00"), new BigDecimal("50.00"))));
+        when(paymentMatcher.matchAll(eq(1L), eq("SQCUST123"), any(), any()))
+                .thenReturn(Map.of("SQBOOK1", new BookingPayment("CASH", new BigDecimal("50.00"), new BigDecimal("50.00"))));
 
         Map<String, MarketingContactsService.ContactEnrichment> result =
                 service.enrichContacts(List.of(id.toString()));
@@ -541,7 +551,7 @@ class MarketingContactsServiceTest {
         Booking booking = new Booking("SQBOOK1", "ACCEPTED", "2020-06-15T17:00:00Z", null, null,
                 "LOC1", "SQCUST123", null, null, List.of());
         stubBookings("SQCUST123", booking);
-        when(paymentMatcher.match(eq(1L), eq("SQCUST123"), any(), any())).thenReturn(Optional.empty());
+        when(paymentMatcher.matchAll(eq(1L), eq("SQCUST123"), any(), any())).thenReturn(Map.of());
 
         Map<String, MarketingContactsService.ContactEnrichment> result =
                 service.enrichContacts(List.of(id.toString()));
@@ -565,7 +575,7 @@ class MarketingContactsServiceTest {
 
         var appt = result.get(id.toString()).appointments().get(0);
         assertThat(appt.paymentChannel()).isNull();
-        verify(paymentMatcher, never()).match(any(), any(), any(), any());
+        verify(paymentMatcher, never()).matchAll(any(), any(), any(), any());
     }
 
     @Test
@@ -573,7 +583,9 @@ class MarketingContactsServiceTest {
     void toleratesSquareFailure() {
         UUID id = UUID.randomUUID();
         when(repository.findByIds(List.of(id), 1L)).thenReturn(List.of(rawContact(id, "SQCUST123")));
-        when(bookingMirrorRepository.findByBusinessIdAndSquareCustomerIdAndStartAtAfter(eq(1L), eq("SQCUST123"), any()))
+        // enrichContacts -> enrichOne -> fetchAppointments(customerId) uses the unbounded overload
+        // (2026-09-08) — see that method's own doc.
+        when(bookingMirrorRepository.findByBusinessIdAndSquareCustomerId(eq(1L), eq("SQCUST123")))
                 .thenThrow(new RuntimeException("DB unreachable"));
 
         Map<String, MarketingContactsService.ContactEnrichment> result =

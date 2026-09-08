@@ -69,11 +69,6 @@ public class MarketingContactsService {
     private static final Duration NAMES_CACHE_TTL = Duration.ofMinutes(10);
     private static final String NAMES_CACHE_KEY_PREFIX = "names:";
 
-    // See #contactFromLivePhoneLookup and MarketingAnalyticsService#BOOKING_HISTORY_LOOKBACK for
-    // the same rationale: with no contact createdAt to anchor the Square scan on, this caps it at
-    // a generous window rather than paying for an unbounded "their whole history" lookup.
-    private static final Duration LIVE_LOOKUP_HISTORY_WINDOW = Duration.ofDays(400);
-
     private final MarketingContactsRepository repository;
     private final MarketingContactSquareLinkRepository squareLinks;
     private final SquareClientProvider squareClientProvider;
@@ -151,7 +146,16 @@ public class MarketingContactsService {
      * appointments here, since this method previously gave up the moment marketing.contacts had no
      * row — same fallback resolveDisplayNames/LeadFollowUpScheduler already use, just extended to
      * build the full contact rather than only a name). Empty only if the schema is unreachable or
-     * no Square customer resolves either way. */
+     * no Square customer resolves either way.
+     *
+     * <p>Appointments are fetched unbounded, same as {@link #toContact} — this method's own doc
+     * used to justify a 400-day cap here as avoiding "an unbounded whole history Square scan," but
+     * {@link #fetchAppointments(String)} only ever reads the local {@code square_booking} mirror,
+     * never Square itself; that made this a fourth truncation site for the exact contact-info-panel
+     * bug fixed 2026-09-08, and the one that hit hardest — a phone number with no marketing.contacts
+     * row (any real regular who only ever booked directly, never through the tracked capture flow)
+     * had ITS ENTIRE history capped, unlike the two per-row call sites which merely truncated the
+     * tail of an otherwise-tracked contact. */
     public Optional<Contact> contactByPhone(String phoneNumber) {
         try {
             Optional<Contact> tracked = repository.findByPhoneNumber(phoneNumber, currentBusinessContext.id())
@@ -167,11 +171,10 @@ public class MarketingContactsService {
      * live Square phone lookup — same resolution ladder's last resort as
      * {@link #resolveDisplayNames} and {@code LeadFollowUpScheduler#hasUpcomingAppointment}. Every
      * capture-flow-only field (traffic source, UTMs, device info, createdAt/updatedAt) is null —
-     * there was never a capture event to record them from. {@code since} is capped at
-     * {@link #LIVE_LOOKUP_HISTORY_WINDOW} back, same rationale as
-     * MarketingAnalyticsService#BOOKING_HISTORY_LOOKBACK: with no contact createdAt to anchor on,
-     * an unbounded "their whole history" Square scan isn't free, so this caps it at a generous
-     * window instead. Empty if Square has no customer for this phone either. */
+     * there was never a capture event to record them from. Appointments are unbounded (see
+     * {@link #contactByPhone}'s doc — the 400-day cap this used to apply here was removed
+     * 2026-09-08, it was bounding a local-mirror read, not a live Square scan). Empty if Square has
+     * no customer for this phone either. */
     private Optional<Contact> contactFromLivePhoneLookup(String phoneNumber) {
         SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
         List<String> candidates = square.customerIdsForPhone(phoneNumber);
@@ -185,8 +188,7 @@ public class MarketingContactsService {
 
         List<Submission> submissions = repository.findSubmissionHistory(phoneNumber)
                 .stream().map(MarketingContactsService::toSubmission).collect(Collectors.toList());
-        Instant since = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.DAYS).minus(LIVE_LOOKUP_HISTORY_WINDOW);
-        List<Appointment> appointments = fetchAppointments(customerId, since);
+        List<Appointment> appointments = fetchAppointments(customerId);
         ContactLinkEngagement engagement = linkEngagementFor(phoneNumber);
         long visitCount = visitCountsByCustomerId().getOrDefault(customerId, 0L);
 
@@ -434,7 +436,7 @@ public class MarketingContactsService {
         }
         SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
         String familyName = square.customerFamilyNames(List.of(customerId)).get(customerId);
-        List<Appointment> appointments = fetchAppointments(customerId, raw.createdAt());
+        List<Appointment> appointments = fetchAppointments(customerId);
         return new ContactEnrichment(familyName, appointments);
     }
 
@@ -709,7 +711,7 @@ public class MarketingContactsService {
 
         List<Appointment> appointments = effectiveSquareCustomerId == null
                 ? List.of()
-                : fetchAppointments(effectiveSquareCustomerId, raw.createdAt());
+                : fetchAppointments(effectiveSquareCustomerId);
 
         // True from *either* source — the same "either source" consent rule
         // SameDayRebookingScheduler#hasConsent already uses for sending, so this field never
@@ -757,13 +759,39 @@ public class MarketingContactsService {
         );
     }
 
-    /** Best-effort: if Square is unreachable, the contact's own data still renders with an
-     * empty appointments list rather than breaking the whole page. {@code since} bounds how far
-     * back to look for this customer's booking history — a real appointment can't predate the
-     * moment this lead first appeared in our own funnel, so the contact's own createdAt is used
-     * (see SquareClient#bookingsForCustomer for why an explicit bound is required at all).
-     */
+    /** {@code since}-bounded appointment history — kept for the two callers that genuinely need a
+     * bound: {@link #contactFromLivePhoneLookup} (no marketing.contacts row to anchor on, so a
+     * generous fixed window instead) and {@link #uncountedAppointments} (follow-up-eligibility
+     * logic, not just display — left alone rather than risking a behavior change there). */
     private List<Appointment> fetchAppointments(String squareCustomerId, Instant since) {
+        return buildAppointments(squareCustomerId,
+                () -> bookingMirrorRepository.findByBusinessIdAndSquareCustomerIdAndStartAtAfter(
+                        currentBusinessContext.id(), squareCustomerId, since));
+    }
+
+    /** Full, unbounded appointment history — the contact info panel's actual "why doesn't my
+     * appointment count match my visit count" fix (found live 2026-09-08, owner report): the
+     * {@code since}-bounded overload above used the contact's own {@code createdAt} as a lower
+     * bound, on the assumption "a real appointment can't predate the moment this lead first
+     * appeared in our own funnel" — false for a real customer whose Square history predates their
+     * marketing.contacts row (a walk-in later captured by a landing-page visit, a contact row
+     * recreated for an unrelated reason, etc.), silently dropping real older visits from the
+     * panel while {@link #visitCountsByCustomerId} counted them anyway. Used wherever appointments
+     * are shown for display ({@link #toContact}, {@link #enrichContacts}) — see
+     * {@code SquareBookingMirrorRepository#findByBusinessIdAndSquareCustomerId}'s own doc for why
+     * an unbounded *local* query has none of the cost concern the old bound (inherited from when
+     * this hit live Square) was actually guarding against. */
+    private List<Appointment> fetchAppointments(String squareCustomerId) {
+        return buildAppointments(squareCustomerId,
+                () -> bookingMirrorRepository.findByBusinessIdAndSquareCustomerId(currentBusinessContext.id(), squareCustomerId));
+    }
+
+    /** Best-effort: if Square is unreachable, the contact's own data still renders with an empty
+     * appointments list rather than breaking the whole page. Shared by both {@code
+     * fetchAppointments} overloads above — they differ only in how {@code mirrorRowsSupplier}
+     * bounds the query, everything else (team/catalog resolution, submission matching, payment
+     * matching, mapping) is identical. */
+    private List<Appointment> buildAppointments(String squareCustomerId, java.util.function.Supplier<List<SquareBookingMirror>> mirrorRowsSupplier) {
         try {
             Long businessId = currentBusinessContext.id();
             // Local mirror, not a live Square round trip — see the Phase 1 sync plan. This one
@@ -771,8 +799,7 @@ public class MarketingContactsService {
             // tab and the Overview dashboard's follow-up count: one real Square API call (fanned
             // out per 30-day window) per contact, hundreds of them on a cold cache for a business
             // with a large contact list.
-            List<SquareBookingMirror> mirrorRows = bookingMirrorRepository
-                    .findByBusinessIdAndSquareCustomerIdAndStartAtAfter(businessId, squareCustomerId, since);
+            List<SquareBookingMirror> mirrorRows = mirrorRowsSupplier.get();
             if (mirrorRows.isEmpty()) return List.of();
             List<Booking> bookings = mirrorRows.stream().map(MarketingContactsService::toSquareBooking).toList();
 
@@ -832,17 +859,21 @@ public class MarketingContactsService {
                                                              List<SquareBookingMirror> mirrorRows,
                                                              Map<String, BigDecimal> catalogPrices) {
         Instant now = Instant.now();
-        Map<String, BookingPayment> out = new HashMap<>();
-        for (SquareBookingMirror row : mirrorRows) {
-            if (row.getStartAt() == null || !row.getStartAt().isBefore(now)) continue; // only a past appointment can have been paid already
-            try {
-                paymentMatcher.match(businessId, squareCustomerId, row, catalogPrices)
-                        .ifPresent(bp -> out.put(row.getSquareBookingId(), bp));
-            } catch (RuntimeException ex) {
-                log.warn("Failed to match payment for booking {}", row.getSquareBookingId(), ex);
-            }
+        // Only a past appointment can have been paid already.
+        List<SquareBookingMirror> pastRows = mirrorRows.stream()
+                .filter(row -> row.getStartAt() != null && row.getStartAt().isBefore(now))
+                .toList();
+        if (pastRows.isEmpty()) return Map.of();
+        try {
+            // Batched — one order query for every past row at once (see matchAll's own doc), not
+            // one per booking. A single failure here fails the whole batch rather than just one
+            // row, but the only real I/O left is the one upfront query itself, so the practical
+            // risk is unchanged from the old per-row try/catch.
+            return paymentMatcher.matchAll(businessId, squareCustomerId, pastRows, catalogPrices);
+        } catch (RuntimeException ex) {
+            log.warn("Failed to match payments for customer {}", squareCustomerId, ex);
+            return Map.of();
         }
-        return out;
     }
 
     private static Appointment toAppointment(
