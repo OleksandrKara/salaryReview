@@ -380,6 +380,26 @@ class LeadFollowUpSchedulerTest {
     }
 
     @Test
+    @DisplayName("email step: another close-together touch for the same phone already got this "
+            + "step's email → SKIPPED_RECENTLY_SENT, no second email — the real 2026-09-08 fix "
+            + "(a pre-2026-09-05 double form submit's two touches both marching through the "
+            + "funnel independently, each firing its own email)")
+    void emailFollowUpSkipsWhenAnotherCloseTouchAlreadySent() {
+        UUID contactId = UUID.randomUUID();
+        LeadFollowUpSend row = touch(1L, contactId, LeadFollowUpSend.STATE_SENT);
+        when(sendRepository.findByStateAndEmailFollowupStateIsNullAndCreatedAtBetween(eq(LeadFollowUpSend.STATE_SENT), any(), any()))
+                .thenReturn(List.of(row));
+        when(square.bookingsForCustomer(eq("cust1"), any())).thenReturn(List.of());
+        when(sendRepository.existsByPhoneNumberAndEmailFollowupStateAndCreatedAtBetween(
+                eq(PHONE), eq(LeadFollowUpSend.EMAIL_STATE_SENT), any(), any())).thenReturn(true);
+
+        scheduler.sendDueEmailFollowUps();
+
+        assertThat(row.getEmailFollowupState()).isEqualTo(LeadFollowUpSend.EMAIL_STATE_SKIPPED_RECENTLY_SENT);
+        verifyNoInteractions(mailchimpEmailService);
+    }
+
+    @Test
     @DisplayName("email step: automation disabled since step 1 → SKIPPED_DISABLED")
     void emailFollowUpSkipsWhenDisabled() {
         UUID contactId = UUID.randomUUID();
@@ -428,6 +448,26 @@ class LeadFollowUpSchedulerTest {
 
         verifyNoInteractions(smsService);
         assertThat(row.getSmsFollowupState()).isEqualTo(LeadFollowUpSend.SMS_FOLLOWUP_STATE_SKIPPED_BOOKED);
+    }
+
+    @Test
+    @DisplayName("final SMS step: another close-together touch for the same phone already got "
+            + "this step's SMS → SKIPPED_RECENTLY_SENT, no second text — the real customer "
+            + "(\"Stacy\") impact of the 2026-09-08 fix: her two pre-2026-09-05 touches, 4 minutes "
+            + "apart, each independently fired their own final SMS 72h later")
+    void finalSmsFollowUpSkipsWhenAnotherCloseTouchAlreadySent() {
+        UUID contactId = UUID.randomUUID();
+        LeadFollowUpSend row = touch(1L, contactId, LeadFollowUpSend.STATE_SENT);
+        when(sendRepository.findByStateAndSmsFollowupStateIsNullAndCreatedAtBetween(eq(LeadFollowUpSend.STATE_SENT), any(), any()))
+                .thenReturn(List.of(row));
+        when(square.bookingsForCustomer(eq("cust1"), any())).thenReturn(List.of());
+        when(sendRepository.existsByPhoneNumberAndSmsFollowupStateAndCreatedAtBetween(
+                eq(PHONE), eq(LeadFollowUpSend.SMS_FOLLOWUP_STATE_SENT), any(), any())).thenReturn(true);
+
+        scheduler.sendDueSmsFinalFollowUps();
+
+        verifyNoInteractions(smsService);
+        assertThat(row.getSmsFollowupState()).isEqualTo(LeadFollowUpSend.SMS_FOLLOWUP_STATE_SKIPPED_RECENTLY_SENT);
     }
 
     @Test

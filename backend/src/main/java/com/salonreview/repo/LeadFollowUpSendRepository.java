@@ -37,4 +37,22 @@ public interface LeadFollowUpSendRepository extends JpaRepository<LeadFollowUpSe
      * skipped/failed email doesn't block the final SMS). */
     List<LeadFollowUpSend> findByStateAndSmsFollowupStateIsNullAndCreatedAtBetween(
             String state, Instant createdAfter, Instant createdBefore);
+
+    /** Steps 2/3's own sibling of {@link #existsByPhoneNumberAndStateAndCreatedAtAfter} — found
+     * live 2026-09-08 (owner report, customer "Stacy"): the 2026-09-05 fix stops step 1 from
+     * double-touching a phone number close together, but two touches created *before* that fix
+     * shipped (a real pre-fix double form submit) each independently ran their own step 2/3
+     * timers with no equivalent guard at those steps, so the identical final SMS went out twice,
+     * 72h later. Bounded by the *candidate touch's own* {@code createdAt} (not {@code now}) — step
+     * 2/3 fire days after creation, so "now" would never overlap another close-together touch's
+     * own creation window the way it correctly does for step 1's ~2-minute-later check. A touch
+     * created weeks after an earlier one is a genuinely separate engagement and still gets its own
+     * full sequence, since it falls outside this window. */
+    boolean existsByPhoneNumberAndEmailFollowupStateAndCreatedAtBetween(
+            String phoneNumber, String emailFollowupState, Instant createdAfter, Instant createdBefore);
+
+    /** Same guard, for step 3 (the final SMS) — the specific check that would have prevented the
+     * real duplicate final SMS described above. */
+    boolean existsByPhoneNumberAndSmsFollowupStateAndCreatedAtBetween(
+            String phoneNumber, String smsFollowupState, Instant createdAfter, Instant createdBefore);
 }

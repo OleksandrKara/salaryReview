@@ -40,10 +40,18 @@ public class LeadFollowUpSend {
     public static final String EMAIL_STATE_SKIPPED_NOT_CONFIGURED = "SKIPPED_NOT_CONFIGURED";
     public static final String EMAIL_STATE_SKIPPED_NO_TEMPLATE = "SKIPPED_NO_TEMPLATE";
     public static final String EMAIL_STATE_SEND_FAILED = "SEND_FAILED";
+    /** A different touch for the same phone number already got this step's email sent, created
+     * close enough to this one to be the same real-world double-touch, not a genuinely later
+     * separate engagement — see {@code LeadFollowUpSendRepository
+     * #existsByPhoneNumberAndEmailFollowupStateAndCreatedAtBetween}'s own doc for the 2026-09-08
+     * incident this guards against. */
+    public static final String EMAIL_STATE_SKIPPED_RECENTLY_SENT = "SKIPPED_RECENTLY_SENT";
 
     public static final String SMS_FOLLOWUP_STATE_SENT = "SENT";
     public static final String SMS_FOLLOWUP_STATE_SKIPPED_BOOKED = "SKIPPED_BOOKED";
     public static final String SMS_FOLLOWUP_STATE_SKIPPED_DISABLED = "SKIPPED_DISABLED";
+    /** Same guard as {@link #EMAIL_STATE_SKIPPED_RECENTLY_SENT}, for the final SMS step. */
+    public static final String SMS_FOLLOWUP_STATE_SKIPPED_RECENTLY_SENT = "SKIPPED_RECENTLY_SENT";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
