@@ -10,6 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -147,5 +148,71 @@ class MarketingBookingPaymentMatcherTest {
         Optional<BookingPayment> result = matcher.match(1L, "CUST1", b, Map.of());
 
         assertThat(result).isEmpty();
+    }
+
+    // --- matchAll: the batched sibling backing the contact info panel's fix (2026-09-08) ---
+
+    @Test
+    @DisplayName("matchAll: one order query for all bookings, each still matched against its own MATCH_WINDOW")
+    void matchAllQueriesOnceAndMatchesEachBookingIndependently() {
+        Instant start1 = Instant.parse("2026-06-01T15:00:00Z");
+        Instant start2 = Instant.parse("2026-07-01T15:00:00Z");
+        SquareBookingMirror b1 = SquareBookingMirror.builder().squareBookingId("bk1").startAt(start1)
+                .appointmentSegments(List.of(new SquareBookingMirror.Segment("TM1", "VAR1", 60))).build();
+        SquareBookingMirror b2 = SquareBookingMirror.builder().squareBookingId("bk2").startAt(start2)
+                .appointmentSegments(List.of(new SquareBookingMirror.Segment("TM1", "VAR2", 60))).build();
+
+        SquareOrderMirror.LineItem li1 = new SquareOrderMirror.LineItem("VAR1", null,
+                new BigDecimal("40.00"), new BigDecimal("40.00"), BigDecimal.ZERO, null);
+        SquareOrderMirror order1 = SquareOrderMirror.builder().closedAt(start1)
+                .lineItems(List.of(li1)).tenders(List.of(new SquareOrderMirror.Tender("CARD", new BigDecimal("40.00")))).build();
+        SquareOrderMirror.LineItem li2 = new SquareOrderMirror.LineItem("VAR2", null,
+                new BigDecimal("60.00"), new BigDecimal("60.00"), BigDecimal.ZERO, null);
+        SquareOrderMirror order2 = SquareOrderMirror.builder().closedAt(start2)
+                .lineItems(List.of(li2)).tenders(List.of(new SquareOrderMirror.Tender("CASH", new BigDecimal("60.00")))).build();
+
+        when(orderRepository.findByBusinessIdAndSquareCustomerId(1L, "CUST1")).thenReturn(List.of(order1, order2));
+
+        Map<String, BookingPayment> results = matcher.matchAll(1L, "CUST1", List.of(b1, b2), Map.of());
+
+        assertThat(results).hasSize(2);
+        assertThat(results.get("bk1").channel()).isEqualTo("CARD");
+        assertThat(results.get("bk1").collected()).isEqualByComparingTo("40.00");
+        assertThat(results.get("bk2").channel()).isEqualTo("CASH");
+        assertThat(results.get("bk2").collected()).isEqualByComparingTo("60.00");
+        org.mockito.Mockito.verify(orderRepository, org.mockito.Mockito.times(1))
+                .findByBusinessIdAndSquareCustomerId(1L, "CUST1");
+    }
+
+    @Test
+    @DisplayName("matchAll: an order outside a booking's own MATCH_WINDOW is not matched to it, even though it's in the shared fetched list")
+    void matchAllRespectsPerBookingWindowAgainstSharedList() {
+        Instant start = Instant.parse("2026-06-01T15:00:00Z");
+        SquareBookingMirror b = SquareBookingMirror.builder().squareBookingId("bk1").startAt(start)
+                .appointmentSegments(List.of(new SquareBookingMirror.Segment("TM1", "VAR1", 60))).build();
+        SquareOrderMirror.LineItem li = new SquareOrderMirror.LineItem("VAR1", null,
+                new BigDecimal("40.00"), new BigDecimal("40.00"), BigDecimal.ZERO, null);
+        SquareOrderMirror farOrder = SquareOrderMirror.builder().closedAt(start.plus(Duration.ofDays(10)))
+                .lineItems(List.of(li)).tenders(List.of(new SquareOrderMirror.Tender("CARD", new BigDecimal("40.00")))).build();
+        when(orderRepository.findByBusinessIdAndSquareCustomerId(1L, "CUST1")).thenReturn(List.of(farOrder));
+
+        Map<String, BookingPayment> results = matcher.matchAll(1L, "CUST1", List.of(b), Map.of());
+
+        assertThat(results).doesNotContainKey("bk1");
+    }
+
+    @Test
+    @DisplayName("matchAll: null canonicalCustomerId falls back to cash-note per booking, no order query at all")
+    void matchAllWithNullCustomerIdUsesCashNoteOnly() {
+        Instant start = Instant.parse("2026-06-01T15:00:00Z");
+        SquareBookingMirror b = SquareBookingMirror.builder().squareBookingId("bk1").startAt(start)
+                .appointmentSegments(List.of(new SquareBookingMirror.Segment("TM1", "VAR1", 60)))
+                .sellerNote("cashew $80").build();
+
+        Map<String, BookingPayment> results = matcher.matchAll(1L, null, List.of(b), Map.of("VAR1", new BigDecimal("100.00")));
+
+        assertThat(results.get("bk1").channel()).isEqualTo("CASH-NOTE");
+        assertThat(results.get("bk1").collected()).isEqualByComparingTo("80.00");
+        org.mockito.Mockito.verifyNoInteractions(orderRepository);
     }
 }

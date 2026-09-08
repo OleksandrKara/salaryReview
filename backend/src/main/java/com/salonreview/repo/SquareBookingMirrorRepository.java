@@ -19,6 +19,17 @@ public interface SquareBookingMirrorRepository extends JpaRepository<SquareBooki
     List<SquareBookingMirror> findByBusinessIdAndSquareCustomerIdAndStartAtAfter(
             Long businessId, String squareCustomerId, Instant since);
 
+    /** A customer's full mirrored booking history, unbounded — the contact info panel's "why does
+     * my appointment count not match the actual visit count" fix (found live 2026-09-08): a real
+     * customer's Square history can predate the moment their marketing.contacts row was created
+     * (a walk-in later captured by a landing-page visit, a marketing row recreated for an
+     * unrelated reason, etc.), so bounding by that createdAt silently dropped real older visits —
+     * exactly the kind of loyal repeat customer whose visit count the panel most needs to get
+     * right. A local, single-customer, indexed query has none of the "must bound the window" cost
+     * concern a live Square call would (see the {@code *AndStartAtAfter} sibling's own doc, added
+     * back when this read a live Square API instead of the local mirror). */
+    List<SquareBookingMirror> findByBusinessIdAndSquareCustomerId(Long businessId, String squareCustomerId);
+
     /** Every mirrored booking for several customers at once, since a given instant — batches what
      * would otherwise be one query per customer (see {@code MarketingAnalyticsService
      * #bookingHistoryByCustomer}, which used to make one live Square call per customer for exactly
