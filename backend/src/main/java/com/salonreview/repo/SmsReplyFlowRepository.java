@@ -2,6 +2,9 @@ package com.salonreview.repo;
 
 import com.salonreview.domain.SmsReplyFlow;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.List;
@@ -63,4 +66,16 @@ public interface SmsReplyFlowRepository extends JpaRepository<SmsReplyFlow, Long
      * is simply never offered an email fallback rather than erroring. */
     List<SmsReplyFlow> findByBusinessIdAndAutomationKeyAndStateAndAskSmsMessageIdIsNotNull(
             Long businessId, String automationKey, String state);
+
+    /** Atomically claims completion for a flow — fixes a real race found live 2026-09-08:
+     * email link-prescanning security scanners (Outlook Safe Links and similar) fetch every
+     * rating link in the checkout-review satisfaction email within milliseconds of each other, and
+     * a plain read-then-write check ({@code if (!STATE_COMPLETED.equals(flow.getState()))}) let
+     * several near-simultaneous requests all see "not yet completed" before any of them persisted
+     * — confirmed on 2 real customers, 3 different ratings recorded each, all within ~15ms.
+     * Returns 1 if this call won the race (the caller should record its rating), 0 if the flow was
+     * already completed by another request. See {@code CheckoutReviewRatingController#rate}. */
+    @Modifying
+    @Query("UPDATE SmsReplyFlow f SET f.state = 'COMPLETED' WHERE f.id = :id AND f.state <> 'COMPLETED'")
+    int completeIfNotAlready(@Param("id") Long id);
 }
