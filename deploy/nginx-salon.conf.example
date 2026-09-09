@@ -17,6 +17,11 @@
 # else, and the frontend's own server-side calls to the backend go through the internal
 # backend-lb container instead (see nginx/backend-lb.conf) — this host-level upstream is only
 # for requests nginx itself proxies.
+#
+# backend-green (127.0.0.1:8090) is TEMPORARILY OUT of rotation (commented below) — running two
+# permanently-live backend instances raced several @Scheduled jobs with no distributed lock,
+# risking duplicate SMS sends. Re-enable once that's fixed. frontend stays blue/green throughout
+# since it has no scheduled jobs.
 upstream salaryreview_frontend {
     server 127.0.0.1:3000 max_fails=1 fail_timeout=3s;
     server 127.0.0.1:3010 max_fails=1 fail_timeout=3s;
@@ -24,7 +29,7 @@ upstream salaryreview_frontend {
 
 upstream salaryreview_backend {
     server 127.0.0.1:8080 max_fails=1 fail_timeout=3s;
-    server 127.0.0.1:8090 max_fails=1 fail_timeout=3s;
+    # server 127.0.0.1:8090 max_fails=1 fail_timeout=3s;
 }
 
 server {
@@ -76,6 +81,26 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_next_upstream error timeout http_502 http_503 http_504;
+        proxy_next_upstream_tries 2;
+    }
+
+    # The SEO AI Advisor's "Analyze" button calls Claude synchronously and can comfortably run
+    # past the 60s default proxy_read_timeout below (up to 4096 output tokens on a fairly involved
+    # consultant-style prompt) — surfaced live as a 504 on this route specifically (2026-09-08).
+    # `location =` exact-match takes precedence over the generic `/` prefix location regardless of
+    # file order, so this alone gives just this one route more room. The frontend's own internal
+    # call to backend-lb needs the same longer timeout too (see nginx/backend-lb.conf) — this nginx
+    # layer's timeout isn't the only one in that request's path.
+    location = /api/owner/marketing/seo/advisor/analyze {
+        proxy_pass http://salaryreview_frontend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 180s;
+        proxy_send_timeout 180s;
         proxy_next_upstream error timeout http_502 http_503 http_504;
         proxy_next_upstream_tries 2;
     }
