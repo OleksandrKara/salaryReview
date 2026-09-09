@@ -7,14 +7,17 @@ import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SmsReplyFlowRepository;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
 import java.time.Instant;
+import java.util.regex.Pattern;
 
 /**
  * Public click target for the checkout-review-request satisfaction email's five rating options
@@ -31,9 +34,37 @@ import java.time.Instant;
  *
  * <p>{@code permitAll()} in {@link com.salonreview.config.SecurityConfig} — nothing sensitive
  * here beyond what the signed link itself already gates.
+ *
+ * <p><b>{@link #rate} is a stateless interstitial, {@link #confirm} does the real work.</b> Found
+ * live 2026-09-09: EVERY rating ever recorded (6 for 6, going back to launch) landed 2-5 seconds
+ * after its email was sent — including one customer's real email-open (Mailchimp's own open-pixel
+ * timestamp) arriving 45 minutes AFTER her "rating" had already been recorded and the flow marked
+ * COMPLETED, and two other customers each getting two different ratings ~15ms apart for the same
+ * flow (the exact race {@code completeIfNotAlready} already guards the DB write against — this is
+ * the same underlying cause, just not the same symptom). No human reads an email and picks a
+ * rating within low single-digit seconds of receiving it, let alone 45 minutes before opening it
+ * at all — corporate email gateways and security scanners (Microsoft Defender for Office 365 Safe
+ * Links, Barracuda, Mimecast, etc.) fetch every link in an inbound email within seconds of
+ * delivery to check it for malware, and the direct-GET-does-the-write design here had no way to
+ * tell that apart from a real click. The one thing those scanners essentially never do is execute
+ * JavaScript — they're link-safety crawlers, not full browser engines — so {@link #rate} (the
+ * literal link the email carries) now does nothing but verify the signature/expiry look
+ * well-formed enough to be worth rendering a redirect for for and return a tiny HTML page whose
+ * inline script immediately navigates to {@link #confirm} with the same four params; a scanner
+ * fetching {@link #rate} gets back inert HTML and never reaches {@link #confirm} at all, while a
+ * real browser's near-instant script-driven navigation is indistinguishable from the old direct
+ * redirect to an actual customer (still "redirect straight through," per the owner's original
+ * 2026-09-05 direction — just via one extra sub-second hop instead of zero).
  */
 @RestController
 public class CheckoutReviewRatingController {
+
+    /** Matches exactly what {@link CheckoutReviewRatingSigner#sign} can ever produce
+     * (unpadded URL-safe base64) — validated before this untrusted query param is embedded in the
+     * interstitial's HTML/JS in {@link #rate}, so a malformed/malicious {@code sig} is rejected
+     * outright rather than ever reaching string interpolation. {@link #confirm} re-derives and
+     * compares it properly regardless; this is only about what's safe to echo back into markup. */
+    private static final Pattern SAFE_SIGNATURE = Pattern.compile("^[A-Za-z0-9_-]+$");
 
     private final CheckoutReviewRatingSigner signer;
     private final SmsReplyFlowRepository replyFlowRepository;
@@ -48,10 +79,48 @@ public class CheckoutReviewRatingController {
         this.messageLogService = messageLogService;
     }
 
+    /** The actual link the email carries. Deliberately does NOT touch the database at all — see
+     * this class's own doc for why: an automated scanner fetching this must never be able to
+     * record a rating, and the only reliable way to tell it apart from a real customer's browser
+     * is that the scanner won't run the script below. */
+    @GetMapping(value = "/api/public/checkout-review/rate", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> rate(@RequestParam("flow") long flowId, @RequestParam("rating") int rating,
+                                        @RequestParam("exp") long expEpochSeconds, @RequestParam("sig") String signature) {
+        if (rating < 1 || rating > 5 || !SAFE_SIGNATURE.matcher(signature).matches()) {
+            return ResponseEntity.notFound().build();
+        }
+        String confirmUrl = UriComponentsBuilder.fromPath("/api/public/checkout-review/confirm")
+                .queryParam("flow", flowId).queryParam("rating", rating)
+                .queryParam("exp", expEpochSeconds).queryParam("sig", signature)
+                .build().toUriString();
+        String html = "<!doctype html><html><head><meta charset=\"utf-8\">"
+                + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                + "<title>One moment…</title></head><body>"
+                + "<script>window.location.replace(" + toJsStringLiteral(confirmUrl) + ");</script>"
+                + "<noscript><a href=\"" + confirmUrl + "\">Continue</a></noscript>"
+                + "</body></html>";
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_HTML)
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(html);
+    }
+
+    /** {@code confirmUrl} is built server-side from an already-validated signature (see {@link
+     * #SAFE_SIGNATURE}) plus numeric params Spring itself already typed as {@code long}/{@code
+     * int} — nothing attacker-controlled reaches this beyond that restricted charset, but escaping
+     * it properly for a JS string literal anyway (not just trusting "it can't contain a quote")
+     * costs nothing and isn't a place to cut a corner. */
+    private static String toJsStringLiteral(String value) {
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("<", "\\u003C") + "\"";
+    }
+
+    /** Does what {@link #rate} used to do directly: verify, record, redirect. Only ever reached
+     * via {@link #rate}'s own script-driven navigation (or its {@code <noscript>} fallback link, a
+     * real click either way) — never the literal link text in the email. */
     @Transactional
-    @GetMapping("/api/public/checkout-review/rate")
-    public ResponseEntity<Void> rate(@RequestParam("flow") long flowId, @RequestParam("rating") int rating,
-                                      @RequestParam("exp") long expEpochSeconds, @RequestParam("sig") String signature) {
+    @GetMapping("/api/public/checkout-review/confirm")
+    public ResponseEntity<Void> confirm(@RequestParam("flow") long flowId, @RequestParam("rating") int rating,
+                                         @RequestParam("exp") long expEpochSeconds, @RequestParam("sig") String signature) {
         if (rating < 1 || rating > 5) {
             return notFound();
         }

@@ -81,51 +81,106 @@ class CheckoutReviewRatingControllerTest {
         return signer.sign(FLOW_ID, rating, FUTURE_EXP);
     }
 
+    // --- rate(): the stateless interstitial the email link itself points to ---
+
     @Test
-    @DisplayName("invalid signature → 404, nothing recorded")
-    void invalidSignatureRejected() {
-        var response = controller.rate(FLOW_ID, 5, FUTURE_EXP, "tampered");
+    @DisplayName("rate(): valid rating+signature → 200 HTML whose script navigates to confirm() with "
+            + "the same params, no-store, and absolutely no DB/messageLogService interaction — this is "
+            + "exactly the point, an automated link scanner fetching this must never be able to record "
+            + "a rating (see this class's own doc, 2026-09-09)")
+    void rateRendersInterstitialWithNoSideEffects() {
+        var response = controller.rate(FLOW_ID, 5, FUTURE_EXP, sign(5));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getHeaders().getCacheControl()).isEqualTo("no-store");
+        String body = response.getBody();
+        assertThat(body).contains("/api/public/checkout-review/confirm");
+        assertThat(body).contains("flow=7").contains("rating=5").contains("sig=" + sign(5));
+
+        verify(replyFlowRepository, never()).findById(any());
+        verify(replyFlowRepository, never()).completeIfNotAlready(any());
+        verify(messageLogService, never()).logInbound(any(), any(), any(), any());
+        verify(messageLogService, never())
+                .logOutboundWithLink(any(), any(), any(), any(), any(), anyBool(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("rate(): out-of-range rating → 404 without rendering anything")
+    void rateOutOfRangeRatingRejected() {
+        var response = controller.rate(FLOW_ID, 6, FUTURE_EXP, "anything");
+
+        assertThat(response.getStatusCode().value()).isEqualTo(404);
+    }
+
+    @Test
+    @DisplayName("rate(): a signature containing characters outside base64url is rejected outright "
+            + "rather than ever being echoed into the interstitial's HTML/JS — defense in depth against "
+            + "reflected injection via this otherwise-unverified param (confirm() re-verifies properly "
+            + "regardless; this is only about what's safe to interpolate into markup)")
+    void rateRejectsUnsafeSignatureCharset() {
+        var response = controller.rate(FLOW_ID, 5, FUTURE_EXP, "</script><script>alert(1)</script>");
+
+        assertThat(response.getStatusCode().value()).isEqualTo(404);
+    }
+
+    @Test
+    @DisplayName("rate(): deliberately does NOT check expiry or flow existence — only confirm() does. "
+            + "An expired or unknown-flow link still renders the interstitial (harmless: confirm() "
+            + "rejects it the same way rate() used to, just one hop later)")
+    void rateDoesNotValidateExpiryOrFlowExistence() {
+        long pastExp = Instant.now().minusSeconds(60).getEpochSecond();
+        var response = controller.rate(FLOW_ID, 5, pastExp, signer.sign(FLOW_ID, 5, pastExp));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+    }
+
+    // --- confirm(): the real verify/record/redirect logic (what rate() used to do directly) ---
+
+    @Test
+    @DisplayName("confirm(): invalid signature → 404, nothing recorded")
+    void confirmInvalidSignatureRejected() {
+        var response = controller.confirm(FLOW_ID, 5, FUTURE_EXP, "tampered");
 
         assertThat(response.getStatusCode().value()).isEqualTo(404);
         verify(replyFlowRepository, never()).save(any());
     }
 
     @Test
-    @DisplayName("expired link (exp in the past) → 404 even with an otherwise-valid signature")
-    void expiredLinkRejectedEvenWithValidSignature() {
+    @DisplayName("confirm(): expired link (exp in the past) → 404 even with an otherwise-valid signature")
+    void confirmExpiredLinkRejectedEvenWithValidSignature() {
         long pastExp = Instant.now().minusSeconds(60).getEpochSecond();
         String validSignature = signer.sign(FLOW_ID, 5, pastExp);
 
-        var response = controller.rate(FLOW_ID, 5, pastExp, validSignature);
+        var response = controller.confirm(FLOW_ID, 5, pastExp, validSignature);
 
         assertThat(response.getStatusCode().value()).isEqualTo(404);
     }
 
     @Test
-    @DisplayName("rating out of 1-5 range → 404 regardless of signature validity")
-    void outOfRangeRatingRejected() {
-        var response = controller.rate(FLOW_ID, 6, FUTURE_EXP, signer.sign(FLOW_ID, 6, FUTURE_EXP));
+    @DisplayName("confirm(): rating out of 1-5 range → 404 regardless of signature validity")
+    void confirmOutOfRangeRatingRejected() {
+        var response = controller.confirm(FLOW_ID, 6, FUTURE_EXP, signer.sign(FLOW_ID, 6, FUTURE_EXP));
 
         assertThat(response.getStatusCode().value()).isEqualTo(404);
     }
 
     @Test
-    @DisplayName("unknown flow id → 404")
-    void unknownFlowRejected() {
+    @DisplayName("confirm(): unknown flow id → 404")
+    void confirmUnknownFlowRejected() {
         when(replyFlowRepository.findById(999L)).thenReturn(Optional.empty());
 
-        var response = controller.rate(999L, 5, FUTURE_EXP, signer.sign(999L, 5, FUTURE_EXP));
+        var response = controller.confirm(999L, 5, FUTURE_EXP, signer.sign(999L, 5, FUTURE_EXP));
 
         assertThat(response.getStatusCode().value()).isEqualTo(404);
     }
 
     @Test
-    @DisplayName("first-time 5-star click, Google not yet clicked → redirects to Google, records rating=5, "
-            + "no negative-feedback timestamp, flow marked COMPLETED")
-    void firstFiveStarClickGoesToGoogle() {
+    @DisplayName("confirm(): first-time 5-star click, Google not yet clicked → redirects to Google, "
+            + "records rating=5, no negative-feedback timestamp, flow marked COMPLETED")
+    void confirmFirstFiveStarClickGoesToGoogle() {
         when(messageLogService.hasClickedLinkTarget(eq(BUSINESS_ID), eq(PHONE), anyString())).thenReturn(false);
 
-        var response = controller.rate(FLOW_ID, 5, FUTURE_EXP, sign(5));
+        var response = controller.confirm(FLOW_ID, 5, FUTURE_EXP, sign(5));
 
         assertThat(response.getStatusCode().value()).isEqualTo(302);
         assertThat(response.getHeaders().getLocation().toString()).isEqualTo("https://google.example/review");
@@ -139,32 +194,33 @@ class CheckoutReviewRatingControllerTest {
     }
 
     @Test
-    @DisplayName("5-star click after Google already clicked → escalates to Yelp")
-    void fiveStarClickAfterGoogleGoesToYelp() {
+    @DisplayName("confirm(): 5-star click after Google already clicked → escalates to Yelp")
+    void confirmFiveStarClickAfterGoogleGoesToYelp() {
         when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
         when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.YELP_REVIEW_TARGET)).thenReturn(false);
 
-        var response = controller.rate(FLOW_ID, 5, FUTURE_EXP, sign(5));
+        var response = controller.confirm(FLOW_ID, 5, FUTURE_EXP, sign(5));
 
         assertThat(response.getHeaders().getLocation().toString()).isEqualTo("https://yelp.example/review");
     }
 
     @Test
-    @DisplayName("5-star click after both Google and Yelp already clicked → private feedback form")
-    void fiveStarClickAfterBothGoesToFeedbackForm() {
+    @DisplayName("confirm(): 5-star click after both Google and Yelp already clicked → private feedback form")
+    void confirmFiveStarClickAfterBothGoesToFeedbackForm() {
         when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.GOOGLE_REVIEW_TARGET)).thenReturn(true);
         when(messageLogService.hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.YELP_REVIEW_TARGET)).thenReturn(true);
 
-        var response = controller.rate(FLOW_ID, 5, FUTURE_EXP, sign(5));
+        var response = controller.confirm(FLOW_ID, 5, FUTURE_EXP, sign(5));
 
         assertThat(response.getHeaders().getLocation().toString()).isEqualTo("https://forms.example/feedback");
     }
 
     @Test
-    @DisplayName("a 1-4 rating always goes straight to the private feedback form, never the Google/Yelp "
-            + "ladder, and records a negative-feedback timestamp — same gate the SMS branch enforces")
-    void lowRatingGoesStraightToFeedbackFormAndFlagsNegative() {
-        var response = controller.rate(FLOW_ID, 2, FUTURE_EXP, sign(2));
+    @DisplayName("confirm(): a 1-4 rating always goes straight to the private feedback form, never the "
+            + "Google/Yelp ladder, and records a negative-feedback timestamp — same gate the SMS branch "
+            + "enforces")
+    void confirmLowRatingGoesStraightToFeedbackFormAndFlagsNegative() {
+        var response = controller.confirm(FLOW_ID, 2, FUTURE_EXP, sign(2));
 
         assertThat(response.getHeaders().getLocation().toString()).isEqualTo("https://forms.example/feedback");
         ArgumentCaptor<SmsMessage> inboundCaptor = ArgumentCaptor.forClass(SmsMessage.class);
@@ -175,10 +231,10 @@ class CheckoutReviewRatingControllerTest {
     }
 
     @Test
-    @DisplayName("recorded rows use status RATED_VIA_EMAIL, not RECEIVED — so the SMS-side reply "
-            + "count can exclude them (see SmsAutomationService)")
-    void recordedInboundRowUsesEmailRatingStatus() {
-        controller.rate(FLOW_ID, 5, FUTURE_EXP, sign(5));
+    @DisplayName("confirm(): recorded rows use status RATED_VIA_EMAIL, not RECEIVED — so the SMS-side "
+            + "reply count can exclude them (see SmsAutomationService)")
+    void confirmRecordedInboundRowUsesEmailRatingStatus() {
+        controller.confirm(FLOW_ID, 5, FUTURE_EXP, sign(5));
 
         ArgumentCaptor<SmsMessage> captor = ArgumentCaptor.forClass(SmsMessage.class);
         verify(messageLogService, org.mockito.Mockito.times(2)).save(captor.capture());
@@ -187,16 +243,16 @@ class CheckoutReviewRatingControllerTest {
     }
 
     @Test
-    @DisplayName("flow already COMPLETED (double-click, or already answered by SMS meanwhile) → "
-            + "still redirects correctly, but doesn't re-record or overwrite the rating")
-    void alreadyCompletedFlowIsIdempotent() {
+    @DisplayName("confirm(): flow already COMPLETED (double-click, or already answered by SMS meanwhile) "
+            + "→ still redirects correctly, but doesn't re-record or overwrite the rating")
+    void confirmAlreadyCompletedFlowIsIdempotent() {
         SmsReplyFlow completed = SmsReplyFlow.builder().id(FLOW_ID).businessId(BUSINESS_ID)
                 .automationKey(CheckoutReviewReplyService.AUTOMATION_KEY).phoneNumber(PHONE)
                 .customerName("Jane").state(SmsReplyFlow.STATE_COMPLETED).sendDueAt(Instant.now()).build();
         when(replyFlowRepository.findById(FLOW_ID)).thenReturn(Optional.of(completed));
         when(replyFlowRepository.completeIfNotAlready(FLOW_ID)).thenReturn(0);
 
-        var response = controller.rate(FLOW_ID, 5, FUTURE_EXP, sign(5));
+        var response = controller.confirm(FLOW_ID, 5, FUTURE_EXP, sign(5));
 
         assertThat(response.getStatusCode().value()).isEqualTo(302);
         verify(messageLogService, never()).logInbound(any(), any(), any(), any());
@@ -204,14 +260,14 @@ class CheckoutReviewRatingControllerTest {
     }
 
     @Test
-    @DisplayName("completeIfNotAlready loses the race (0 rows updated) → no rating recorded, even "
-            + "though the in-memory flow object itself still reads AWAITING_REPLY — the exact real "
+    @DisplayName("confirm(): completeIfNotAlready loses the race (0 rows updated) → no rating recorded, "
+            + "even though the in-memory flow object itself still reads AWAITING_REPLY — the exact real "
             + "bug found 2026-09-08: email link-prescanning bots fetching all 5 rating links within "
             + "milliseconds let a plain flow.getState() check pass for several concurrent requests")
-    void completeIfNotAlreadyLosesRaceSkipsRecording() {
+    void confirmCompleteIfNotAlreadyLosesRaceSkipsRecording() {
         when(replyFlowRepository.completeIfNotAlready(FLOW_ID)).thenReturn(0);
 
-        var response = controller.rate(FLOW_ID, 3, FUTURE_EXP, sign(3));
+        var response = controller.confirm(FLOW_ID, 3, FUTURE_EXP, sign(3));
 
         assertThat(response.getStatusCode().value()).isEqualTo(302);
         verify(messageLogService, never()).logInbound(any(), any(), any(), any());
