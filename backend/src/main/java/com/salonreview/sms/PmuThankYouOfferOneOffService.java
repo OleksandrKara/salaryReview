@@ -9,6 +9,7 @@ import com.salonreview.repo.WinbackEmailSendRepository;
 import com.salonreview.square.SquareClient;
 import com.salonreview.square.SquareClientProvider;
 import com.salonreview.util.Names;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -56,18 +57,39 @@ public class PmuThankYouOfferOneOffService {
     private final WinbackEmailSendRepository sendRepository;
     private final MailchimpBatchCampaignService batchCampaignService;
 
+    private final java.time.Clock clock;
+
+    @Autowired
     public PmuThankYouOfferOneOffService(SquareBookingMirrorRepository bookingMirrorRepository,
                                           SquareClientProvider squareClientProvider,
                                           MailchimpConfigRepository mailchimpConfigRepository,
                                           MailchimpClient mailchimpClient,
                                           WinbackEmailSendRepository sendRepository,
                                           MailchimpBatchCampaignService batchCampaignService) {
+        this(bookingMirrorRepository, squareClientProvider, mailchimpConfigRepository, mailchimpClient,
+                sendRepository, batchCampaignService, java.time.Clock.system(SALON_ZONE));
+    }
+
+    /** Test-only: lets a fixed {@link java.time.Clock} stand in for "today" instead of the real
+     * system clock, same pattern as {@code LaborDayPromoOneOffService} — this offer's own
+     * deadline is a fixed calendar date, so once the real system clock moves past it, any test
+     * exercising "not yet expired" behavior against {@code LocalDate.now()} directly starts
+     * failing through no fault of its own (found live 2026-09-09, the exact bug already fixed
+     * once for LaborDayPromoOneOffService). */
+    PmuThankYouOfferOneOffService(SquareBookingMirrorRepository bookingMirrorRepository,
+                                   SquareClientProvider squareClientProvider,
+                                   MailchimpConfigRepository mailchimpConfigRepository,
+                                   MailchimpClient mailchimpClient,
+                                   WinbackEmailSendRepository sendRepository,
+                                   MailchimpBatchCampaignService batchCampaignService,
+                                   java.time.Clock clock) {
         this.bookingMirrorRepository = bookingMirrorRepository;
         this.squareClientProvider = squareClientProvider;
         this.mailchimpConfigRepository = mailchimpConfigRepository;
         this.mailchimpClient = mailchimpClient;
         this.sendRepository = sendRepository;
         this.batchCampaignService = batchCampaignService;
+        this.clock = clock;
     }
 
     /** Read-only: resolves the exact recipient list and reports counts at every exclusion step,
@@ -111,7 +133,7 @@ public class PmuThankYouOfferOneOffService {
      * then hands it to {@link MailchimpBatchCampaignService} as one shared campaign. Refuses to run
      * past the offer's own deadline. */
     public MailchimpBatchCampaignService.BatchSendResult send() throws Exception {
-        LocalDate today = LocalDate.now(SALON_ZONE);
+        LocalDate today = LocalDate.now(clock);
         if (today.isAfter(OFFER_DEADLINE)) {
             return new MailchimpBatchCampaignService.BatchSendResult(
                     "SKIPPED_EXPIRED", "Offer deadline " + OFFER_DEADLINE + " has passed", null, null, 0);
