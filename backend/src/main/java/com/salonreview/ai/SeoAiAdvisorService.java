@@ -38,7 +38,15 @@ public class SeoAiAdvisorService {
      * FunnelAnalysisService} and {@code SmsDraftService} already clear. */
     static final String MODEL = "claude-sonnet-5";
 
-    private static final long MAX_OUTPUT_TOKENS = 4096L;
+    // Found live 2026-09-09: 4096 (the same budget FunnelAnalysisResult uses without issue) was
+    // routinely too small for THIS schema specifically — up to 8 Recommendation objects, each with
+    // 9 fields including several free-text ones (why/evidence/suggestedImplementation/...), plus
+    // 3-5 wins, 3-5 problems, and an executive summary. The model hit max_tokens mid-JSON on real
+    // requests (confirmed via the ~45s request duration, consistent with genuinely generating that
+    // much output, not a hung call), leaving no complete structured block for the SDK to parse —
+    // surfaced to the owner as a 502 ("Claude response had no text block"), not a truncation error,
+    // since a partial/invalid JSON object just doesn't match the expected shape at all.
+    private static final long MAX_OUTPUT_TOKENS = 8192L;
 
     private static final int OVERVIEW_WINDOW_DAYS = 28;
 
@@ -150,7 +158,8 @@ public class SeoAiAdvisorService {
         var firstTyped = response.content().stream()
                 .flatMap(cb -> cb.text().stream())
                 .findFirst()
-                .orElseThrow(() -> new AnalysisFailedException("Claude response had no text block", null));
+                .orElseThrow(() -> new AnalysisFailedException(
+                        "Claude response had no text block (stopReason=" + stopReason + ")", null));
 
         SeoAnalysisResult parsed = firstTyped.text();
         // createdAt is a placeholder here — the caller always re-wraps the persisted entity via
