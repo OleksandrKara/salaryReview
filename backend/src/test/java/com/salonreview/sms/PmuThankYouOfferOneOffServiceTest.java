@@ -13,8 +13,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -51,8 +53,12 @@ class PmuThankYouOfferOneOffServiceTest {
         mailchimpClient = mock(MailchimpClient.class);
         sendRepository = mock(WinbackEmailSendRepository.class);
         batchCampaignService = mock(MailchimpBatchCampaignService.class);
+        // Fixed at a date on/before the offer's own hardcoded 2026-09-08 deadline — otherwise
+        // send() reads the real system clock, which has since moved past it, and every "not
+        // expired yet" test here starts returning SKIPPED_EXPIRED instead of actually running.
+        Clock beforeDeadline = Clock.fixed(Instant.parse("2026-09-07T12:00:00Z"), ZoneId.of("America/Los_Angeles"));
         service = new PmuThankYouOfferOneOffService(bookingMirrorRepository, squareClientProvider,
-                mailchimpConfigRepository, mailchimpClient, sendRepository, batchCampaignService);
+                mailchimpConfigRepository, mailchimpClient, sendRepository, batchCampaignService, beforeDeadline);
 
         config = MailchimpConfig.builder().businessId(BUSINESS_ID).apiKey("k-us1").audienceId("a1")
                 .fromName("Anna Kara").fromEmail("anna@pmu-annakara.com").replyToEmail("anna@pmu-annakara.com").build();
@@ -126,6 +132,20 @@ class PmuThankYouOfferOneOffServiceTest {
         when(mailchimpConfigRepository.findByBusinessId(BUSINESS_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.send()).isInstanceOf(IllegalStateException.class);
+        verifyNoInteractions(squareClientProvider, batchCampaignService);
+    }
+
+    @Test
+    @DisplayName("send: past the offer's own 2026-09-08 deadline -> SKIPPED_EXPIRED, no Square/batch calls")
+    void sendSkipsPastDeadline() throws Exception {
+        Clock afterDeadline = Clock.fixed(Instant.parse("2026-09-09T12:00:00Z"), ZoneId.of("America/Los_Angeles"));
+        PmuThankYouOfferOneOffService expiredService = new PmuThankYouOfferOneOffService(bookingMirrorRepository,
+                squareClientProvider, mailchimpConfigRepository, mailchimpClient, sendRepository, batchCampaignService,
+                afterDeadline);
+
+        MailchimpBatchCampaignService.BatchSendResult result = expiredService.send();
+
+        assertThat(result.state()).isEqualTo("SKIPPED_EXPIRED");
         verifyNoInteractions(squareClientProvider, batchCampaignService);
     }
 
