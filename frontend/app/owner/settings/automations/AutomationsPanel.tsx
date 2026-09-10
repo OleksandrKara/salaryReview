@@ -71,6 +71,9 @@ const AUTOMATION_CHANNELS: Record<string, Channel[]> = {
   // 2026-09-05: email-only, no SMS leg at all — a welcome email shortly after booking, then a
   // day-before reminder if the appointment is far enough out (see PreVisitNurtureScheduler).
   pre_visit_nurture: ['email'],
+  // 2026-09-02: Telegram-only, no SMS leg at all — an internal ops alert to the staff Telegram
+  // chat, never a customer-facing message (see ProviderScheduleClosureAlertScheduler).
+  provider_schedule_closure_alert: ['telegram'],
 };
 const CHANNEL_META: Record<Channel, { label: string; dotClassName: string }> = {
   sms: { label: 'SMS', dotClassName: 'bg-sky-500' },

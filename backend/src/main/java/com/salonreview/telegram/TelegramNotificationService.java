@@ -390,4 +390,68 @@ public class TelegramNotificationService {
             return isoStartAt;
         }
     }
+
+    /** Alerts a business's staff Telegram channel when {@code ProviderScheduleClosureAlertScheduler}
+     * finds that a provider's own Square calendar lost one or more previously-open slots starting
+     * less than a day out, with no real customer booking behind the gap — i.e. the provider (not a
+     * customer) closed that time themselves, on short notice. Grouped into one alert per provider
+     * per poll (a provider very often blocks their whole remaining day at once, not one slot at a
+     * time — see the scheduler's own doc) rather than one message per slot. Business-scoped via
+     * {@code businessId}, same pattern as {@link #sendSameDayBookingAlert}/
+     * {@link #sendPaymentFailedAlert}. Never throws, same contract as every other send method
+     * here. */
+    public boolean sendProviderScheduleClosureAlert(Long businessId, String providerName, int slotCount,
+                                                      Instant earliestSlotAt, Instant latestSlotAt) {
+        TelegramNotificationConfig cfg = configService.get(businessId);
+        String token = cfg.getBotToken();
+        String chatId = cfg.getChatId();
+        if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
+            log.info("Provider-schedule-closure Telegram alert skipped — bot token or chat id not configured for business {}", businessId);
+            return false;
+        }
+
+        String text = formatProviderScheduleClosureMessage(providerName, slotCount, earliestSlotAt, latestSlotAt);
+        try {
+            Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", text);
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
+                    .timeout(Duration.ofSeconds(5))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(reqBody)))
+                    .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                log.warn("Provider-schedule-closure Telegram alert send failed: HTTP {} {}", res.statusCode(), res.body());
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.warn("Provider-schedule-closure Telegram alert send failed (caller unaffected): {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /** English on top, Russian below a divider — same reasoning and audience as
+     * {@link #formatSameDayBookingMessage}. A single slot reads as one time ("2:00 PM"); more than
+     * one reads as a range ("2:00 PM – 6:00 PM") — a provider closing several consecutive slots at
+     * once (very often their whole remaining day) reads as one clear window rather than a list.
+     * Package-private for direct unit testing. */
+    static String formatProviderScheduleClosureMessage(String providerName, int slotCount,
+                                                          Instant earliestSlotAt, Instant latestSlotAt) {
+        String when = slotCount <= 1 || earliestSlotAt.equals(latestSlotAt)
+                ? PACIFIC_TIME_FORMATTER.format(earliestSlotAt)
+                : PACIFIC_TIME_FORMATTER.format(earliestSlotAt) + " – " + PACIFIC_TIME_FORMATTER.format(latestSlotAt);
+
+        String en = "📅 " + providerName + " closed " + slotCount + (slotCount == 1 ? " slot" : " slots")
+                + " on their own calendar with less than a day's notice\n"
+                + "🕐 " + when + "\n\n"
+                + "Please check whether this was actually arranged in advance.";
+
+        String ru = "📅 " + providerName + " закрыл(а) " + slotCount + (slotCount == 1 ? " слот" : " слотов")
+                + " в своём календаре меньше чем за день\n"
+                + "🕐 " + when + "\n\n"
+                + "Пожалуйста, проверьте, было ли это действительно согласовано заранее.";
+
+        return en + "\n\n—\n\n" + ru;
+    }
 }

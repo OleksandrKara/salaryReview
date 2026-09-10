@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -322,5 +323,63 @@ class TelegramNotificationServiceTest {
                 .contains("👤 Клиент: —")
                 .contains("проблема на нашей стороне")
                 .doesNotContain("(null)"); // error code omitted entirely, not literally "(null)"
+    }
+
+    // ---------------------------------------------------------------- provider schedule-closure alert
+
+    @Test
+    @DisplayName("provider schedule-closure alert: resolves config by businessId, same pattern as the "
+            + "same-day and payment-failed alerts — it fires from a scheduled poll with no session")
+    void providerScheduleClosureAlertResolvesConfigByBusinessId() {
+        TelegramConfigService configService = mock(TelegramConfigService.class);
+        when(configService.get(1L)).thenReturn(
+                TelegramNotificationConfig.builder().businessId(1L).botToken(null).chatId("999888777").build());
+
+        boolean sent = service(configService).sendProviderScheduleClosureAlert(
+                1L, "Susan Alieva", 3, Instant.parse("2026-09-01T18:00:00Z"), Instant.parse("2026-09-01T22:00:00Z"));
+
+        assertThat(sent).isFalse(); // blank token → skipped, but proves it read business 1's own config
+    }
+
+    @Test
+    @DisplayName("provider schedule-closure alert: blank chat id → false, no exception")
+    void providerScheduleClosureAlertBlankChatIdSkips() {
+        TelegramConfigService configService = mock(TelegramConfigService.class);
+        when(configService.get(1L)).thenReturn(
+                TelegramNotificationConfig.builder().businessId(1L).botToken("some-token").chatId("").build());
+
+        assertThat(service(configService).sendProviderScheduleClosureAlert(
+                1L, "Susan Alieva", 1, Instant.parse("2026-09-01T18:00:00Z"), Instant.parse("2026-09-01T18:00:00Z")))
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("formatProviderScheduleClosureMessage: a single closed slot renders one time, singular "
+            + "\"slot\"/\"слот\", English on top, Russian below a divider")
+    void formatProviderScheduleClosureMessageSingleSlot() {
+        String text = TelegramNotificationService.formatProviderScheduleClosureMessage(
+                "Susan Alieva", 1, Instant.parse("2026-08-01T18:00:00Z"), Instant.parse("2026-08-01T18:00:00Z"));
+
+        assertThat(text)
+                .contains("Susan Alieva closed 1 slot on their own calendar with less than a day's notice")
+                .contains("🕐 Sat, Aug 1, 2026 at 11:00 AM PDT")
+                .doesNotContain(" – ") // one slot renders as a single time, not a range
+                .contains("Please check whether this was actually arranged in advance.")
+                .contains("\n\n—\n\n") // the EN/RU divider
+                .contains("Susan Alieva закрыл(а) 1 слот в своём календаре меньше чем за день")
+                .contains("Пожалуйста, проверьте, было ли это действительно согласовано заранее.");
+    }
+
+    @Test
+    @DisplayName("formatProviderScheduleClosureMessage: several closed slots render as one time range "
+            + "and pluralize \"slots\"/\"слотов\" — a whole-day closure is one clear window, not a list")
+    void formatProviderScheduleClosureMessageMultipleSlots() {
+        String text = TelegramNotificationService.formatProviderScheduleClosureMessage(
+                "Susan Alieva", 6, Instant.parse("2026-08-01T18:00:00Z"), Instant.parse("2026-08-01T23:00:00Z"));
+
+        assertThat(text)
+                .contains("Susan Alieva closed 6 slots on their own calendar with less than a day's notice")
+                .contains("🕐 Sat, Aug 1, 2026 at 11:00 AM PDT – Sat, Aug 1, 2026 at 4:00 PM PDT")
+                .contains("Susan Alieva закрыл(а) 6 слотов в своём календаре меньше чем за день");
     }
 }

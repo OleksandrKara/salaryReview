@@ -41,25 +41,44 @@ public final class SmsAutomationRegistry {
      * is a rating, {@code lead_follow_up}/{@code consultation_lead_sms}/{@code four_hand_request}
      * are single confirmations with nothing further to convert into.
      */
+    /** SMS is the default/original channel every automation here shipped with; TELEGRAM marks the
+     * one exception (see {@code provider_schedule_closure_alert}) that never touches
+     * {@code sms_message} at all — it's an internal ops alert to the staff Telegram channel, not a
+     * customer-facing text. {@link SmsAutomationService#list} uses this to know its "sent" count
+     * lives in a different table (no sms_message row to count) and its click/reply/conversion
+     * stats are never meaningful (there's no customer on the other end to click/reply/convert). */
+    public enum Channel { SMS, TELEGRAM }
+
     public record AutomationMeta(String key, String name, String audienceDescription,
                                   List<String> primaryTemplateKeys, boolean tracksClicks, boolean tracksReplies,
-                                  boolean tracksConversion) {}
+                                  boolean tracksConversion, Channel channel) {
 
-    private static final Map<String, AutomationMeta> META = Map.of(
-            "four_hand_request", new AutomationMeta(
+        /** Every automation below except {@code provider_schedule_closure_alert} is SMS-channel —
+         * this factory keeps their own constructor calls unchanged rather than adding an explicit
+         * {@code Channel.SMS} argument to all nine of them. */
+        static AutomationMeta sms(String key, String name, String audienceDescription,
+                                           List<String> primaryTemplateKeys, boolean tracksClicks,
+                                           boolean tracksReplies, boolean tracksConversion) {
+            return new AutomationMeta(key, name, audienceDescription, primaryTemplateKeys,
+                    tracksClicks, tracksReplies, tracksConversion, Channel.SMS);
+        }
+    }
+
+    private static final Map<String, AutomationMeta> META = Map.ofEntries(
+            Map.entry("four_hand_request", AutomationMeta.sms(
                     "four_hand_request",
                     "4-Hand request confirmation",
                     "Every customer who submits a 4-Hand manicure/pedicure request on mani or akluxnails-home",
                     List.of(), false, false, false
-            ),
-            "consultation_lead_sms", new AutomationMeta(
+            )),
+            Map.entry("consultation_lead_sms", AutomationMeta.sms(
                     "consultation_lead_sms",
                     "Consultation booking confirmation",
                     "Every customer who books a PMU consultation — Square's own confirmation text doesn't "
                             + "reliably fire for this booking type, so a custom one is sent instead",
                     List.of(), false, false, false
-            ),
-            "checkout_review_request", new AutomationMeta(
+            )),
+            Map.entry("checkout_review_request", AutomationMeta.sms(
                     "checkout_review_request",
                     "Post-checkout satisfaction request",
                     "Every customer who completes an in-salon checkout at the register — 2 minutes later, "
@@ -79,8 +98,8 @@ public final class SmsAutomationRegistry {
                     List.of("checkout_rating_request", "checkout_rating_request_with_technician",
                             "checkout_rating_request_no_technician"),
                     true, true, false
-            ),
-            "lead_follow_up", new AutomationMeta(
+            )),
+            Map.entry("lead_follow_up", AutomationMeta.sms(
                     "lead_follow_up",
                     "Lead follow-up nudge",
                     "Every lead who leaves contact info but has no upcoming appointment 2 minutes later — "
@@ -93,8 +112,8 @@ public final class SmsAutomationRegistry {
                     // check-in, the exact 857% overcounting bug checkout_review_request's own
                     // primaryTemplateKeys entry already fixed for the same reason.
                     List.of("lead_follow_up_nudge"), false, false, false
-            ),
-            "same_day_rebooking_discount", new AutomationMeta(
+            )),
+            Map.entry("same_day_rebooking_discount", AutomationMeta.sms(
                     "same_day_rebooking_discount",
                     "Same-day rebooking discount",
                     "Every in-salon checkout, 3 hours later, if they haven't already rebooked and have "
@@ -102,8 +121,8 @@ public final class SmsAutomationRegistry {
                             + "rebook before midnight, min. $99 order. Customers who neither click nor reply "
                             + "by evening also get a follow-up email — see WinbackEmailFallbackScheduler.",
                     List.of(), true, true, true
-            ),
-            "lapsed_customer_winback", new AutomationMeta(
+            )),
+            Map.entry("lapsed_customer_winback", AutomationMeta.sms(
                     "lapsed_customer_winback",
                     "Lapsed customer win-back",
                     "Every customer with exactly one all-time visit, 21–35 days after that visit, if they "
@@ -113,8 +132,8 @@ public final class SmsAutomationRegistry {
                             + "Customers who neither click nor reply by evening also get a follow-up email — "
                             + "see WinbackEmailFallbackScheduler.",
                     List.of(), true, true, true
-            ),
-            "touchup_reminder", new AutomationMeta(
+            )),
+            Map.entry("touchup_reminder", AutomationMeta.sms(
                     "touchup_reminder",
                     "Touch-up reminder",
                     "Every customer roughly 4 weeks after a service configured as an \"initial procedure\" "
@@ -126,8 +145,8 @@ public final class SmsAutomationRegistry {
                     // ServiceLifecycleReminderSendRepository#countConvertedSince's own doc for why
                     // this checks "any subsequent visit," not specifically a touch-up.
                     List.of(), false, false, true
-            ),
-            "color_booster_reminder", new AutomationMeta(
+            )),
+            Map.entry("color_booster_reminder", AutomationMeta.sms(
                     "color_booster_reminder",
                     "Annual color booster reminder",
                     "Every customer roughly 12+ months past their most recent \"initial procedure\" or "
@@ -135,8 +154,8 @@ public final class SmsAutomationRegistry {
                             + "booked a color booster. Recurs roughly annually for a customer who never books. "
                             + "Inert until both roles have at least one service configured for this business.",
                     List.of(), false, false, true
-            ),
-            "repeat_customer_winback", new AutomationMeta(
+            )),
+            Map.entry("repeat_customer_winback", AutomationMeta.sms(
                     "repeat_customer_winback",
                     "Repeat customer win-back",
                     "Every customer with 2+ all-time visits, 40+ days after their last visit, if they haven't "
@@ -146,12 +165,12 @@ public final class SmsAutomationRegistry {
                             + "subject to a 60-day cooldown per customer. Customers who neither click nor reply "
                             + "by evening also get a follow-up email — see WinbackEmailFallbackScheduler.",
                     List.of(), true, true, true
-            ),
+            )),
             // Email-only (owner request 2026-09-05) — no SMS leg at all, so sentLast30Days always
             // reads 0 here (a real, accurate count — zero texts sent under this key — just not
             // where the meaningful "email sent" number lives; see PreVisitNurtureScheduler, which
             // logs its own state on pre_visit_nurture_send rather than sms_message/winback_email_send).
-            "pre_visit_nurture", new AutomationMeta(
+            Map.entry("pre_visit_nurture", AutomationMeta.sms(
                     "pre_visit_nurture",
                     "Pre-visit nurture emails",
                     "Every customer with a confirmed booking — a warm welcome email shortly after "
@@ -159,7 +178,23 @@ public final class SmsAutomationRegistry {
                             + "Goal is fewer cancellations/no-shows through familiarity with the studio before "
                             + "the visit, not a booking-conversion ask.",
                     List.of(), false, false, false
-            )
+            )),
+            // Telegram-channel, business-1-only (owner request 2026-09-02) — an internal ops alert to
+            // the staff Telegram chat, never a customer-facing message, so it tracks no clicks/replies/
+            // conversion and has no sms_message rows; see ProviderScheduleClosureAlertScheduler and
+            // ProviderScheduleClosureAlertRepository#countByBusinessIdAndSentAtAfter for its "sent" count.
+            Map.entry("provider_schedule_closure_alert", new AutomationMeta(
+                    "provider_schedule_closure_alert",
+                    "Provider schedule-closure alert",
+                    "Internal alert to the staff Telegram chat whenever a provider blocks part of their own "
+                            + "Square calendar with less than a day's notice — lets the on-shift manager confirm "
+                            + "whether it was actually arranged in advance. Detected by polling Square's "
+                            + "availability search and diffing against the previous snapshot (Square has no "
+                            + "direct API/webhook for a team member's own schedule changes); all slots newly "
+                            + "closed for the same provider in one poll are grouped into a single message so a "
+                            + "provider closing a whole day doesn't produce a flood of alerts.",
+                    List.of(), false, false, false, Channel.TELEGRAM
+            ))
     );
 
     private SmsAutomationRegistry() {
