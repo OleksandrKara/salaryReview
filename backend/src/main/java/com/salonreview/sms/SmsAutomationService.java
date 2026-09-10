@@ -3,6 +3,7 @@ package com.salonreview.sms;
 import com.salonreview.domain.SmsAutomation;
 import com.salonreview.domain.WinbackEmailSend;
 import com.salonreview.repo.LapsedCustomerWinbackSendRepository;
+import com.salonreview.repo.ProviderScheduleClosureAlertRepository;
 import com.salonreview.repo.RepeatCustomerWinbackSendRepository;
 import com.salonreview.repo.SameDayRebookingSendRepository;
 import com.salonreview.repo.ServiceLifecycleReminderSendRepository;
@@ -42,7 +43,8 @@ public class SmsAutomationService {
                                      boolean tracksEmail, long emailSentLast30Days,
                                      long emailOpenedLast30Days, long emailClickedLast30Days,
                                      long emailConvertedLast30Days,
-                                     boolean ready, String readinessReason) {}
+                                     boolean ready, String readinessReason,
+                                     SmsAutomationRegistry.Channel channel) {}
 
     /** Automations with an email fallback leg (see {@code WinbackEmailFallbackScheduler}). Drives
      * whether {@link #list} bothers querying {@link WinbackEmailSendRepository} at all for a given
@@ -63,6 +65,7 @@ public class SmsAutomationService {
     private final ServiceLifecycleReminderSendRepository serviceLifecycleReminderSendRepository;
     private final WinbackEmailSendRepository winbackEmailSendRepository;
     private final AutomationReadinessService readinessService;
+    private final ProviderScheduleClosureAlertRepository providerScheduleClosureAlertRepository;
 
     public SmsAutomationService(SmsAutomationRepository repository, SmsMessageRepository messageRepository,
                                  LapsedCustomerWinbackSendRepository lapsedCustomerWinbackSendRepository,
@@ -70,7 +73,8 @@ public class SmsAutomationService {
                                  SameDayRebookingSendRepository sameDayRebookingSendRepository,
                                  ServiceLifecycleReminderSendRepository serviceLifecycleReminderSendRepository,
                                  WinbackEmailSendRepository winbackEmailSendRepository,
-                                 AutomationReadinessService readinessService) {
+                                 AutomationReadinessService readinessService,
+                                 ProviderScheduleClosureAlertRepository providerScheduleClosureAlertRepository) {
         this.repository = repository;
         this.messageRepository = messageRepository;
         this.lapsedCustomerWinbackSendRepository = lapsedCustomerWinbackSendRepository;
@@ -79,6 +83,7 @@ public class SmsAutomationService {
         this.serviceLifecycleReminderSendRepository = serviceLifecycleReminderSendRepository;
         this.winbackEmailSendRepository = winbackEmailSendRepository;
         this.readinessService = readinessService;
+        this.providerScheduleClosureAlertRepository = providerScheduleClosureAlertRepository;
     }
 
     /** {@code true} for a template with no {@code automationKey} (nothing to gate) — but a real
@@ -104,11 +109,16 @@ public class SmsAutomationService {
                     boolean enabled = repository.findByBusinessIdAndAutomationKey(businessId, meta.key())
                             .map(SmsAutomation::isEnabled).orElse(false);
 
-                    long sent = !meta.primaryTemplateKeys().isEmpty()
-                            ? messageRepository.countByBusinessIdAndAutomationKeyAndTemplateKeyInAndDirectionAndStatusAndCreatedAtAfter(
-                                    businessId, meta.key(), meta.primaryTemplateKeys(), "OUTBOUND", "SENT", since)
-                            : messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
-                                    businessId, meta.key(), "OUTBOUND", "SENT", since);
+                    // Telegram-channel automations have no sms_message rows at all — their "sent"
+                    // count lives in provider_schedule_closure_alert instead (one row per grouped
+                    // alert actually sent, see ProviderScheduleClosureAlertScheduler).
+                    long sent = meta.channel() == SmsAutomationRegistry.Channel.TELEGRAM
+                            ? providerScheduleClosureAlertRepository.countByBusinessIdAndSentAtAfter(businessId, since)
+                            : !meta.primaryTemplateKeys().isEmpty()
+                                    ? messageRepository.countByBusinessIdAndAutomationKeyAndTemplateKeyInAndDirectionAndStatusAndCreatedAtAfter(
+                                            businessId, meta.key(), meta.primaryTemplateKeys(), "OUTBOUND", "SENT", since)
+                                    : messageRepository.countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
+                                            businessId, meta.key(), "OUTBOUND", "SENT", since);
 
                     long linkSent = 0;
                     long clicked = 0;
@@ -188,7 +198,7 @@ public class SmsAutomationService {
                     return new AutomationSummary(meta.key(), meta.name(), meta.audienceDescription(), enabled, sent,
                             meta.tracksClicks(), linkSent, clicked, meta.tracksReplies(), replies,
                             meta.tracksConversion(), converted, tracksEmail, emailSent, emailOpened, emailClicked,
-                            emailConverted, readiness.ready(), readiness.reason());
+                            emailConverted, readiness.ready(), readiness.reason(), meta.channel());
                 })
                 .toList();
     }

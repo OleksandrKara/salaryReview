@@ -184,6 +184,48 @@ public class SquareClient {
     }
 
     /**
+     * Open appointment-slot start times for one team member + service variation in [start, end) —
+     * the closest thing Square's API exposes to "is this provider generally open right now."
+     * Square has no endpoint for a team member's regular hours or time-off directly (confirmed
+     * against Square's own developer forum, 2026-09-10: "the ability to get the team member's
+     * booking hours outside of SearchAvailability isn't currently available") — this, scoped to
+     * one representative service (see {@code ProviderScheduleClosureAlertScheduler
+     * #representativeServiceVariationId}), is the only available proxy.
+     *
+     * <p>Deliberately UNCACHED, unlike every other read in this class — the whole point of calling
+     * this is a fresh read each poll to diff against the previous one; a cached stale answer would
+     * silently defeat that.
+     */
+    public List<Instant> availableSlotStarts(String teamMemberId, String serviceVariationId, Instant start, Instant end) {
+        Map<String, Object> body = Map.of("query", Map.of("filter", Map.of(
+                "start_at_range", Map.of("start_at", start.toString(), "end_at", end.toString()),
+                "location_id", locationId,
+                "segment_filters", List.of(Map.of(
+                        "service_variation_id", serviceVariationId,
+                        "team_member_id_filter", Map.of("any", List.of(teamMemberId)))))));
+
+        AvailabilitySearchResponse resp = throttled(() -> http.post()
+                .uri("/v2/bookings/availability/search")
+                .body(body)
+                .retrieve()
+                .body(AvailabilitySearchResponse.class));
+        if (resp == null || resp.availabilities() == null) return List.of();
+        return resp.availabilities().stream()
+                .map(Availability::startAt)
+                .filter(java.util.Objects::nonNull)
+                .map(Instant::parse)
+                .toList();
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record Availability(String startAt, String locationId, List<AppointmentSegment> appointmentSegments) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record AvailabilitySearchResponse(List<Availability> availabilities) {}
+
+    /**
      * All bookings whose start falls in [start, end), following pagination. The Bookings API caps a
      * single query at 31 days, so the range is fetched in &le;30-day chunks and de-duplicated by id.
      */

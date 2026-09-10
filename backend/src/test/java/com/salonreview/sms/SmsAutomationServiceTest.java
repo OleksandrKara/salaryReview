@@ -3,6 +3,7 @@ package com.salonreview.sms;
 import com.salonreview.domain.SmsAutomation;
 import com.salonreview.domain.WinbackEmailSend;
 import com.salonreview.repo.LapsedCustomerWinbackSendRepository;
+import com.salonreview.repo.ProviderScheduleClosureAlertRepository;
 import com.salonreview.repo.RepeatCustomerWinbackSendRepository;
 import com.salonreview.repo.SameDayRebookingSendRepository;
 import com.salonreview.repo.ServiceLifecycleReminderSendRepository;
@@ -41,6 +42,7 @@ class SmsAutomationServiceTest {
     private ServiceLifecycleReminderSendRepository serviceLifecycleReminderSendRepository;
     private WinbackEmailSendRepository winbackEmailSendRepository;
     private AutomationReadinessService readinessService;
+    private ProviderScheduleClosureAlertRepository providerScheduleClosureAlertRepository;
     private SmsAutomationService service;
     private static final Long BUSINESS_ID = 1L;
 
@@ -54,10 +56,11 @@ class SmsAutomationServiceTest {
         serviceLifecycleReminderSendRepository = mock(ServiceLifecycleReminderSendRepository.class);
         winbackEmailSendRepository = mock(WinbackEmailSendRepository.class);
         readinessService = mock(AutomationReadinessService.class);
+        providerScheduleClosureAlertRepository = mock(ProviderScheduleClosureAlertRepository.class);
         when(readinessService.readiness(eq(BUSINESS_ID), anyString())).thenReturn(AutomationReadinessService.Readiness.READY);
         service = new SmsAutomationService(repository, messageRepository, lapsedCustomerWinbackSendRepository,
                 repeatCustomerWinbackSendRepository, sameDayRebookingSendRepository, serviceLifecycleReminderSendRepository,
-                winbackEmailSendRepository, readinessService);
+                winbackEmailSendRepository, readinessService, providerScheduleClosureAlertRepository);
         when(repository.findByBusinessIdAndAutomationKey(eq(BUSINESS_ID), anyString())).thenReturn(Optional.empty());
     }
 
@@ -233,6 +236,34 @@ class SmsAutomationServiceTest {
                         eq(BUSINESS_ID), eq("four_hand_request"), anyString(), anyString(), any(Instant.class));
         org.mockito.Mockito.verify(messageRepository, org.mockito.Mockito.never())
                 .countByBusinessIdAndAutomationKeyAndDirectionAndCreatedAtAfter(eq(BUSINESS_ID), eq("four_hand_request"), anyString(), any(Instant.class));
+    }
+
+    @Test
+    @DisplayName("provider_schedule_closure_alert: Telegram-channel automation counts \"sent\" from "
+            + "provider_schedule_closure_alert, never sms_message, and tracks no clicks/replies/conversion")
+    void providerScheduleClosureAlertUsesTelegramRepositoryForSentCount() {
+        when(providerScheduleClosureAlertRepository.countByBusinessIdAndSentAtAfter(eq(BUSINESS_ID), any(Instant.class)))
+                .thenReturn(3L);
+
+        var summary = find("provider_schedule_closure_alert");
+
+        assertThat(summary.channel()).isEqualTo(SmsAutomationRegistry.Channel.TELEGRAM);
+        assertThat(summary.sentLast30Days()).isEqualTo(3);
+        assertThat(summary.tracksClicks()).isFalse();
+        assertThat(summary.tracksReplies()).isFalse();
+        assertThat(summary.tracksConversion()).isFalse();
+        assertThat(summary.tracksEmail()).isFalse();
+        org.mockito.Mockito.verify(messageRepository, org.mockito.Mockito.never())
+                .countByBusinessIdAndAutomationKeyAndDirectionAndStatusAndCreatedAtAfter(
+                        eq(BUSINESS_ID), eq("provider_schedule_closure_alert"), anyString(), anyString(), any(Instant.class));
+    }
+
+    @Test
+    @DisplayName("an SMS-channel automation (e.g. four_hand_request) reports Channel.SMS")
+    void smsAutomationReportsSmsChannel() {
+        var summary = find("four_hand_request");
+
+        assertThat(summary.channel()).isEqualTo(SmsAutomationRegistry.Channel.SMS);
     }
 
     @Test
