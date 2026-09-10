@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api } from '../../lib/api';
-import type { MarketingContact, SmsConversationDto, SmsConversationSearchHitDto, SmsMessageDto } from '../../lib/types';
+import type { EmailFollowUpDto, MarketingContact, SmsConversationDto, SmsConversationSearchHitDto, SmsMessageDto } from '../../lib/types';
 import { Spinner } from '../../components/Spinner';
 import ContactInfoPanel from './ContactInfoPanel';
 import SmsConsentIcon from './SmsConsentIcon';
@@ -111,6 +111,13 @@ function highlightMatch(text: string, query: string): ReactNode {
   );
 }
 
+// One entry in the thread's merged, chronologically-sorted timeline — see threadItems' own doc
+// for why an email follow-up needs to be its own entry (sorted by its own sentAt) rather than
+// always nested under whichever message triggered it.
+type ThreadItem =
+  | { kind: 'message'; key: string; effectiveAt: string; message: SmsMessageDto }
+  | { kind: 'emailFollowUp'; key: string; effectiveAt: string; parentMessageId: number; followUp: EmailFollowUpDto };
+
 export default function MessagesView({
   initialConversations,
   initialNextCursor,
@@ -156,6 +163,29 @@ export default function MessagesView({
   const [selectedPhone, setSelectedPhone] = useState<string | null>(initialSelectedPhone ?? null);
   const [thread, setThread] = useState<SmsMessageDto[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
+  // Merges each message with its (optional) email-follow-up into one chronologically-sorted
+  // timeline, rather than always nesting the follow-up card under its trigger SMS — found live
+  // 2026-09-10 (owner report, real customer "Julia Bulka"): a 24h-no-reply fallback email can go
+  // out the better part of a day after the SMS that triggered it, and any ordinary message sent in
+  // between used to render ABOVE the follow-up card regardless of which actually happened first,
+  // since the card's position reflected the trigger message's timestamp, not the email's own.
+  const threadItems = useMemo(() => {
+    const items: ThreadItem[] = [];
+    for (const m of thread) {
+      items.push({ kind: 'message', key: `m-${m.id}`, effectiveAt: m.createdAt, message: m });
+      if (m.emailFollowUp) {
+        items.push({
+          kind: 'emailFollowUp',
+          key: `ef-${m.id}`,
+          effectiveAt: m.emailFollowUp.sentAt,
+          parentMessageId: m.id,
+          followUp: m.emailFollowUp,
+        });
+      }
+    }
+    items.sort((a, b) => new Date(a.effectiveAt).getTime() - new Date(b.effectiveAt).getTime());
+    return items;
+  }, [thread]);
   // undefined = still loading, null = resolved but no marketing.contacts profile for this number.
   const [contact, setContact] = useState<MarketingContact | null | undefined>(undefined);
   // Mobile only — desktop always shows the panel inline (see the sm:flex override below). Reset
@@ -1074,12 +1104,37 @@ export default function MessagesView({
                 <div className="text-center text-sm text-zinc-400">Loading…</div>
               ) : (
                 <div className="flex flex-col gap-2">
-                  {thread.map((m, i) => {
-                    const prev = thread[i - 1];
+                  {threadItems.map((item, i) => {
+                    const prev = threadItems[i - 1];
                     const showDateSeparator =
-                      !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString();
+                      !prev || new Date(prev.effectiveAt).toDateString() !== new Date(item.effectiveAt).toDateString();
+                    if (item.kind === 'emailFollowUp') {
+                      // Its own timeline entry, positioned by when the email actually sent — not
+                      // nested under the (possibly much earlier) SMS that triggered it. Found live
+                      // 2026-09-10 (owner report, real customer "Julia Bulka"): the fallback email
+                      // for a 24h-no-reply automation can go out the better part of a day after its
+                      // trigger SMS, and any ordinary message sent in between (a same-day-rebooking
+                      // discount text, here) used to render ABOVE the follow-up card even though it
+                      // happened chronologically before the email — nesting under the trigger
+                      // message meant this card's position reflected the trigger's timestamp, not
+                      // its own. items-end matches the always-outbound (business→customer) styling
+                      // EmailFollowUpCard's own self-end class already assumes.
+                      return (
+                        <div key={item.key} data-testid="thread-message" data-email-followup-parent-id={item.parentMessageId}>
+                          {showDateSeparator && (
+                            <div data-testid="thread-date-separator" className="my-2 text-center text-xs font-medium text-zinc-400">
+                              {formatDateSeparator(item.effectiveAt)}
+                            </div>
+                          )}
+                          <div className="flex min-w-0 flex-col items-end">
+                            <EmailFollowUpCard followUp={item.followUp} />
+                          </div>
+                        </div>
+                      );
+                    }
+                    const m = item.message;
                     return (
-                      <div key={m.id} data-testid="thread-message" data-message-id={m.id}>
+                      <div key={item.key} data-testid="thread-message" data-message-id={m.id}>
                         {showDateSeparator && (
                           <div data-testid="thread-date-separator" className="my-2 text-center text-xs font-medium text-zinc-400">
                             {formatDateSeparator(m.createdAt)}
@@ -1148,7 +1203,6 @@ export default function MessagesView({
                               </p>
                             ) : null}
                           </div>
-                          {m.emailFollowUp && <EmailFollowUpCard followUp={m.emailFollowUp} />}
                           {m.reactions.length > 0 && (
                             <div data-testid="thread-message-reactions" className="mt-0.5 flex flex-wrap gap-1">
                               {m.reactions.map((r, ri) => (
