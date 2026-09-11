@@ -15,7 +15,17 @@ export default async function AutomationsSettingsPage() {
   const me = await serverApi.getMe();
   if (me.role !== 'OWNER') redirect('/reports');
 
-  const [settings, mailchimpSettings, mailchimpActivity, telegramSettings, automations, templates, promoTerms, serviceLifecycleRoles] = await Promise.all([
+  const [
+    settings,
+    mailchimpSettings,
+    mailchimpActivity,
+    telegramSettings,
+    automations,
+    templates,
+    promoTerms,
+    serviceLifecycleRoles,
+    providerScheduleClosureAlertSettings,
+  ] = await Promise.all([
     serverApi.getTwilioSmsSettings(),
     serverApi.getMailchimpSettings(),
     serverApi.getMailchimpActivity(),
@@ -24,6 +34,7 @@ export default async function AutomationsSettingsPage() {
     serverApi.listSmsTemplates(),
     serverApi.listPromoTerms(),
     serverApi.listServiceLifecycleRoles(),
+    serverApi.getProviderScheduleClosureAlertSettings(),
   ]);
 
   return (
@@ -39,6 +50,7 @@ export default async function AutomationsSettingsPage() {
         mailchimpSettings={mailchimpSettings}
         mailchimpActivity={mailchimpActivity}
         telegramSettings={telegramSettings}
+        providerScheduleClosureAlertSettings={providerScheduleClosureAlertSettings}
       />
     </main>
   );

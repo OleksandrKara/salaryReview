@@ -47,6 +47,16 @@ export interface TelegramSettingsDto {
   updatedBy: string | null;
 }
 
+// Owner-editable "less than how many hours' notice counts as a closure" threshold for the
+// provider_schedule_closure_alert Telegram automation — see
+// ProviderScheduleClosureAlertConfigService. updatedAt/updatedBy are null when the business is
+// still on the 24h default and has never saved this setting.
+export interface ProviderScheduleClosureAlertSettingsDto {
+  noticeThresholdHours: number;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
 export interface SquareConnectionDto {
   accessTokenMasked: string | null;
   accessTokenSet: boolean;

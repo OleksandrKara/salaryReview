@@ -36,9 +36,10 @@ import java.util.stream.Collectors;
  * so this polls {@link SquareClient#availableSlotStarts} (deliberately uncached, unlike every
  * other Square read in this codebase — its whole purpose is detecting change between polls) and
  * diffs against the previous snapshot stored in {@code provider_availability_snapshot}. A slot
- * present last poll and missing this poll, starting less than {@link #NOTICE_THRESHOLD} from now
- * and not explained by a real customer booking (see {@link #hasRealBooking}), is treated as the
- * provider having just closed it.
+ * present last poll and missing this poll, starting less than the business's own configured notice
+ * threshold from now (see {@link ProviderScheduleClosureAlertConfigService}, owner-editable, 24h
+ * default) and not explained by a real customer booking (see {@link #hasRealBooking}), is treated
+ * as the provider having just closed it.
  *
  * <p>Anti-spam (owner's explicit requirement — a provider very often blocks a whole remaining day
  * at once, not one slot at a time): every newly-closed slot found for the same provider in the
@@ -60,8 +61,16 @@ public class ProviderScheduleClosureAlertScheduler {
     private static final Logger log = LoggerFactory.getLogger(ProviderScheduleClosureAlertScheduler.class);
     static final String AUTOMATION_KEY = "provider_schedule_closure_alert";
 
-    private static final Duration LOOKAHEAD = Duration.ofHours(48);
-    private static final Duration NOTICE_THRESHOLD = Duration.ofHours(24);
+    /** Fixed margin added on top of the owner-configured notice threshold to get the availability
+     * search's lookahead window — the threshold alone isn't enough: a slot has to have already been
+     * seen in a <em>previous</em> snapshot to ever register as "newly missing," so the search
+     * window must reach comfortably past the threshold, not stop exactly at it. Not owner-facing
+     * (unlike the threshold itself) — this is an internal margin, not a business policy, same
+     * "implementation detail vs. owner setting" split as {@link #BOOKING_MATCH_WINDOW}/{@link
+     * #REPRESENTATIVE_SERVICE_LOOKBACK} below. Reproduces this automation's original fixed 48h
+     * lookahead exactly for the 24h default threshold it shipped with.
+     */
+    private static final Duration LOOKAHEAD_BUFFER = Duration.ofHours(24);
     private static final Duration BOOKING_MATCH_WINDOW = Duration.ofMinutes(30);
     private static final Duration REPRESENTATIVE_SERVICE_LOOKBACK = Duration.ofDays(90);
 
@@ -70,6 +79,7 @@ public class ProviderScheduleClosureAlertScheduler {
 
     private final BusinessRepository businessRepository;
     private final SmsAutomationService automationService;
+    private final ProviderScheduleClosureAlertConfigService configService;
     private final SquareClientProvider squareClientProvider;
     private final ProviderRepository providerRepository;
     private final ProviderAvailabilitySnapshotRepository snapshotRepository;
@@ -81,14 +91,15 @@ public class ProviderScheduleClosureAlertScheduler {
     @Autowired
     public ProviderScheduleClosureAlertScheduler(BusinessRepository businessRepository,
                                                   SmsAutomationService automationService,
+                                                  ProviderScheduleClosureAlertConfigService configService,
                                                   SquareClientProvider squareClientProvider,
                                                   ProviderRepository providerRepository,
                                                   ProviderAvailabilitySnapshotRepository snapshotRepository,
                                                   ProviderScheduleClosureAlertRepository alertRepository,
                                                   SquareBookingMirrorRepository bookingMirrorRepository,
                                                   TelegramNotificationService telegramService) {
-        this(businessRepository, automationService, squareClientProvider, providerRepository, snapshotRepository,
-                alertRepository, bookingMirrorRepository, telegramService, Clock.systemUTC());
+        this(businessRepository, automationService, configService, squareClientProvider, providerRepository,
+                snapshotRepository, alertRepository, bookingMirrorRepository, telegramService, Clock.systemUTC());
     }
 
     /** Test-only: a fixed {@link Clock} stands in for "now" — same pattern established for
@@ -96,6 +107,7 @@ public class ProviderScheduleClosureAlertScheduler {
      * class of hardcoded-real-clock test breakage already hit twice in this codebase. */
     ProviderScheduleClosureAlertScheduler(BusinessRepository businessRepository,
                                            SmsAutomationService automationService,
+                                           ProviderScheduleClosureAlertConfigService configService,
                                            SquareClientProvider squareClientProvider,
                                            ProviderRepository providerRepository,
                                            ProviderAvailabilitySnapshotRepository snapshotRepository,
@@ -105,6 +117,7 @@ public class ProviderScheduleClosureAlertScheduler {
                                            Clock clock) {
         this.businessRepository = businessRepository;
         this.automationService = automationService;
+        this.configService = configService;
         this.squareClientProvider = squareClientProvider;
         this.providerRepository = providerRepository;
         this.snapshotRepository = snapshotRepository;
@@ -147,9 +160,11 @@ public class ProviderScheduleClosureAlertScheduler {
         }
 
         Instant now = Instant.now(clock);
+        Duration noticeThreshold = Duration.ofHours(configService.getNoticeThresholdHours(businessId));
+        Duration lookahead = noticeThreshold.plus(LOOKAHEAD_BUFFER);
         for (SquareClient.TeamMember teamMember : square.activeTeamMembers()) {
             try {
-                pollProvider(businessId, serviceVariationId, teamMember, square, now);
+                pollProvider(businessId, serviceVariationId, teamMember, square, now, noticeThreshold, lookahead);
             } catch (RuntimeException e) {
                 log.warn("Provider schedule-closure check failed for team member {} (business {}); retrying next run",
                         teamMember.id(), businessId, e);
@@ -158,11 +173,11 @@ public class ProviderScheduleClosureAlertScheduler {
     }
 
     private void pollProvider(Long businessId, String serviceVariationId, SquareClient.TeamMember teamMember,
-                               SquareClient square, Instant now) {
+                               SquareClient square, Instant now, Duration noticeThreshold, Duration lookahead) {
         String teamMemberId = teamMember.id();
 
         List<Instant> currentSlots = square.availableSlotStarts(
-                teamMemberId, serviceVariationId, now, now.plus(LOOKAHEAD));
+                teamMemberId, serviceVariationId, now, now.plus(lookahead));
         Set<Instant> currentSet = new HashSet<>(currentSlots);
 
         List<ProviderAvailabilitySnapshot> previousRows =
@@ -173,9 +188,10 @@ public class ProviderScheduleClosureAlertScheduler {
 
         List<Instant> closures = previousSet.stream()
                 .filter(slot -> !currentSet.contains(slot))
-                // Only "less than a day's notice" closures are alert-worthy — a slot removed while
-                // still comfortably in the future is normal advance schedule planning.
-                .filter(slot -> slot.isAfter(now) && Duration.between(now, slot).compareTo(NOTICE_THRESHOLD) < 0)
+                // Only closures within the business's own configured notice threshold are
+                // alert-worthy — a slot removed while still comfortably in the future is normal
+                // advance schedule planning.
+                .filter(slot -> slot.isAfter(now) && Duration.between(now, slot).compareTo(noticeThreshold) < 0)
                 // A slot a customer just booked disappears from availability too — that's not a
                 // provider-initiated closure, so it must not alert.
                 .filter(slot -> !hasRealBooking(businessId, teamMemberId, slot))

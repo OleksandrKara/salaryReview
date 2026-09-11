@@ -14,6 +14,7 @@ import type {
   MailchimpActivityResponse,
   MailchimpSettingsDto,
   PromoTermsDto,
+  ProviderScheduleClosureAlertSettingsDto,
   ServiceLifecycleRoleDto,
   SmsAutomationSummary,
   SmsTemplateView,
@@ -54,6 +55,7 @@ export default function AutomationsTabs({
   mailchimpSettings,
   mailchimpActivity,
   telegramSettings,
+  providerScheduleClosureAlertSettings,
 }: {
   automations: SmsAutomationSummary[];
   serviceLifecycleRoles: ServiceLifecycleRoleDto[];
@@ -63,6 +65,7 @@ export default function AutomationsTabs({
   mailchimpSettings: MailchimpSettingsDto;
   mailchimpActivity: MailchimpActivityResponse;
   telegramSettings: TelegramSettingsDto;
+  providerScheduleClosureAlertSettings: ProviderScheduleClosureAlertSettingsDto;
 }) {
   const searchParams = useSearchParams();
   const initialTab = searchParams.get('tab');
@@ -104,6 +107,7 @@ export default function AutomationsTabs({
               initialAutomations={automations}
               initialServiceLifecycleRoles={serviceLifecycleRoles}
               initialPromoTerms={promoTerms}
+              initialProviderScheduleClosureAlertSettings={providerScheduleClosureAlertSettings}
             />
           </div>
         </section>
