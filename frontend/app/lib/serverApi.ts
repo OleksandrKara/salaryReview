@@ -10,6 +10,7 @@ import type {
   Me,
   Sop,
   TelegramSettingsDto,
+  ProviderScheduleClosureAlertSettingsDto,
   SquareConnectionDto,
   SeoConnectionDto,
   SeoOverviewDto,
@@ -190,6 +191,9 @@ export const serverApi = {
   listUsers: () => serverFetch<AppUser[]>(`/api/users`),
 
   getTelegramSettings: () => serverFetch<TelegramSettingsDto>(`/api/owner/settings/telegram`),
+
+  getProviderScheduleClosureAlertSettings: () =>
+    serverFetch<ProviderScheduleClosureAlertSettingsDto>(`/api/owner/settings/provider-schedule-closure-alert`),
 
   getSquareConnection: () => serverFetch<SquareConnectionDto>(`/api/owner/settings/square`),
 

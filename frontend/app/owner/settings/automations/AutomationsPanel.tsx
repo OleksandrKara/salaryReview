@@ -4,7 +4,13 @@ import { useState } from 'react';
 import { api } from '../../../lib/api';
 import PromoTermsEditor from './PromoTermsEditor';
 import ServiceRolePicker from './ServiceRolePicker';
-import type { PromoTermsDto, ServiceLifecycleRoleDto, SmsAutomationSummary } from '../../../lib/types';
+import NoticeThresholdEditor from './NoticeThresholdEditor';
+import type {
+  PromoTermsDto,
+  ProviderScheduleClosureAlertSettingsDto,
+  ServiceLifecycleRoleDto,
+  SmsAutomationSummary,
+} from '../../../lib/types';
 
 // Automation keys whose settings need more than an on/off toggle — each maps to the specific
 // ServiceLifecycleRole roles that automation's own eligibility depends on (see
@@ -23,6 +29,12 @@ const AUTOMATION_SERVICE_ROLES: Record<string, { role: string; label: string }[]
     { role: 'COLOR_BOOSTER', label: 'Color booster' },
   ],
 };
+
+// Automations with an owner-editable "hours' notice" threshold — currently just the one, but kept
+// as a set (not a single hardcoded key check) so a future similar automation only needs adding
+// here, not a new branch of card-rendering logic. See NoticeThresholdEditor /
+// ProviderScheduleClosureAlertConfigService.
+const AUTOMATION_NOTICE_THRESHOLD: Set<string> = new Set(['provider_schedule_closure_alert']);
 
 // Which vertical each automation is actually about — purely a display grouping/badge (doesn't
 // affect eligibility or config), added per direct request now that PMU automations sit alongside
@@ -99,14 +111,18 @@ export default function AutomationsPanel({
   initialAutomations,
   initialServiceLifecycleRoles,
   initialPromoTerms,
+  initialProviderScheduleClosureAlertSettings,
 }: {
   initialAutomations: SmsAutomationSummary[];
   initialServiceLifecycleRoles: ServiceLifecycleRoleDto[];
   initialPromoTerms: PromoTermsDto[];
+  initialProviderScheduleClosureAlertSettings: ProviderScheduleClosureAlertSettingsDto;
 }) {
   const [automations, setAutomations] = useState(initialAutomations);
   const [serviceLifecycleRoles, setServiceLifecycleRoles] = useState(initialServiceLifecycleRoles);
   const [promoTerms, setPromoTerms] = useState(initialPromoTerms);
+  const [providerScheduleClosureAlertSettings, setProviderScheduleClosureAlertSettings] =
+    useState(initialProviderScheduleClosureAlertSettings);
 
   async function toggle(key: string, enabled: boolean) {
     // Optimistic — the toggle is the whole interaction, a spinner-then-flip would feel laggy for
@@ -149,6 +165,8 @@ export default function AutomationsPanel({
         promoCodes={AUTOMATION_PROMO_CODES[a.key]}
         promoTerms={promoTerms}
         onPromoTermsSaved={updatePromoTerms}
+        noticeThresholdSettings={AUTOMATION_NOTICE_THRESHOLD.has(a.key) ? providerScheduleClosureAlertSettings : undefined}
+        onNoticeThresholdSaved={setProviderScheduleClosureAlertSettings}
         sharedWith={AUTOMATION_PROMO_CODES[a.key]?.flatMap((code) =>
           Object.entries(AUTOMATION_PROMO_CODES)
             .filter(([otherKey, codes]) => otherKey !== a.key && codes.includes(code))
@@ -205,6 +223,8 @@ function AutomationCard({
   promoCodes,
   promoTerms,
   onPromoTermsSaved,
+  noticeThresholdSettings,
+  onNoticeThresholdSaved,
   sharedWith,
   sharedRoleNames,
 }: {
@@ -218,6 +238,8 @@ function AutomationCard({
   promoCodes?: string[];
   promoTerms: PromoTermsDto[];
   onPromoTermsSaved: (t: PromoTermsDto) => void;
+  noticeThresholdSettings?: ProviderScheduleClosureAlertSettingsDto;
+  onNoticeThresholdSaved: (s: ProviderScheduleClosureAlertSettingsDto) => void;
   sharedWith?: string[];
   sharedRoleNames?: (role: string) => string[];
 }) {
@@ -237,7 +259,7 @@ function AutomationCard({
     ? formatRate(automation.emailConvertedLast30Days, automation.emailSentLast30Days)
     : undefined;
 
-  const hasSettings = !!(serviceRoles || promoCodes);
+  const hasSettings = !!(serviceRoles || promoCodes || noticeThresholdSettings);
   const configuredRoleCount = serviceRoles?.filter((r) => serviceLifecycleRoles.some((x) => x.role === r.role)).length ?? 0;
   const roleTotal = serviceRoles?.length ?? 0;
   const configuredPromoCount = promoCodes?.filter((code) => promoTerms.find((t) => t.promoCode === code)?.configured).length ?? 0;
@@ -471,6 +493,9 @@ function AutomationCard({
                   </div>
                 );
               })}
+              {noticeThresholdSettings && (
+                <NoticeThresholdEditor settings={noticeThresholdSettings} onSaved={onNoticeThresholdSaved} />
+              )}
             </div>
           )}
         </div>

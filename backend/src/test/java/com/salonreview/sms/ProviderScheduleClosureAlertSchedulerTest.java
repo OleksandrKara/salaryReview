@@ -46,6 +46,7 @@ class ProviderScheduleClosureAlertSchedulerTest {
 
     private BusinessRepository businessRepository;
     private SmsAutomationService automationService;
+    private ProviderScheduleClosureAlertConfigService configService;
     private SquareClientProvider squareClientProvider;
     private SquareClient square;
     private ProviderRepository providerRepository;
@@ -59,6 +60,7 @@ class ProviderScheduleClosureAlertSchedulerTest {
     void setUp() {
         businessRepository = mock(BusinessRepository.class);
         automationService = mock(SmsAutomationService.class);
+        configService = mock(ProviderScheduleClosureAlertConfigService.class);
         squareClientProvider = mock(SquareClientProvider.class);
         square = mock(SquareClient.class);
         providerRepository = mock(ProviderRepository.class);
@@ -71,6 +73,7 @@ class ProviderScheduleClosureAlertSchedulerTest {
                 List.of(Business.builder().id(BUSINESS_ID).name("AK.LUX.NAILS").shortCode("akluxnails")
                         .timezone("America/Los_Angeles").active(true).build()));
         when(automationService.isEnabled(BUSINESS_ID, "provider_schedule_closure_alert")).thenReturn(true);
+        when(configService.getNoticeThresholdHours(BUSINESS_ID)).thenReturn(24);
         when(squareClientProvider.forBusiness(BUSINESS_ID)).thenReturn(square);
         when(square.activeTeamMembers()).thenReturn(
                 List.of(new SquareClient.TeamMember(TEAM_MEMBER_ID, "Susan", "Alieva", "ACTIVE", false, null, null)));
@@ -80,8 +83,9 @@ class ProviderScheduleClosureAlertSchedulerTest {
         when(bookingMirrorRepository.findByBusinessIdAndStartAtBetween(eq(BUSINESS_ID), any(), any()))
                 .thenReturn(List.of(mirrorBooking("SENT", TEAM_MEMBER_ID, SERVICE_VARIATION_ID, NOW.minusSeconds(3600))));
 
-        scheduler = new ProviderScheduleClosureAlertScheduler(businessRepository, automationService, squareClientProvider,
-                providerRepository, snapshotRepository, alertRepository, bookingMirrorRepository, telegramService, CLOCK);
+        scheduler = new ProviderScheduleClosureAlertScheduler(businessRepository, automationService, configService,
+                squareClientProvider, providerRepository, snapshotRepository, alertRepository, bookingMirrorRepository,
+                telegramService, CLOCK);
     }
 
     private static SquareBookingMirror mirrorBooking(String status, String teamMemberId, String variationId, Instant startAt) {
@@ -184,6 +188,56 @@ class ProviderScheduleClosureAlertSchedulerTest {
 
         verifyNoInteractions(telegramService);
         verify(alertRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("owner-configured threshold is honored: a slot 30h out doesn't alert under the 24h "
+            + "default, but does once the business configures a 40h threshold")
+    void configuredThresholdWidensWhatCountsAsShortNotice() {
+        when(configService.getNoticeThresholdHours(BUSINESS_ID)).thenReturn(40);
+        Instant slot30hOut = NOW.plus(java.time.Duration.ofHours(30));
+        when(snapshotRepository.findByBusinessIdAndTeamMemberId(BUSINESS_ID, TEAM_MEMBER_ID))
+                .thenReturn(List.of(snapshot(slot30hOut)));
+        when(square.availableSlotStarts(eq(TEAM_MEMBER_ID), eq(SERVICE_VARIATION_ID), any(), any()))
+                .thenReturn(List.of());
+        when(bookingMirrorRepository.findByBusinessIdAndStartAtBetween(eq(BUSINESS_ID),
+                eq(slot30hOut.minusSeconds(1800)), eq(slot30hOut.plusSeconds(1800)))).thenReturn(List.of());
+
+        scheduler.poll();
+
+        verify(telegramService).sendProviderScheduleClosureAlert(
+                eq(BUSINESS_ID), anyString(), eq(1), eq(slot30hOut), eq(slot30hOut));
+    }
+
+    @Test
+    @DisplayName("owner-configured threshold is honored: a slot 10h out DOES alert under the 24h default, "
+            + "but not once the business narrows its threshold to 6h")
+    void configuredThresholdNarrowsWhatCountsAsShortNotice() {
+        when(configService.getNoticeThresholdHours(BUSINESS_ID)).thenReturn(6);
+        Instant slot10hOut = NOW.plus(java.time.Duration.ofHours(10));
+        when(snapshotRepository.findByBusinessIdAndTeamMemberId(BUSINESS_ID, TEAM_MEMBER_ID))
+                .thenReturn(List.of(snapshot(slot10hOut)));
+        when(square.availableSlotStarts(eq(TEAM_MEMBER_ID), eq(SERVICE_VARIATION_ID), any(), any()))
+                .thenReturn(List.of());
+
+        scheduler.poll();
+
+        verifyNoInteractions(telegramService);
+    }
+
+    @Test
+    @DisplayName("the availability search's lookahead window is derived from the configured threshold "
+            + "(threshold + a fixed 24h buffer), not a separately hardcoded constant")
+    void lookaheadWindowIsDerivedFromConfiguredThreshold() {
+        when(configService.getNoticeThresholdHours(BUSINESS_ID)).thenReturn(48);
+        when(snapshotRepository.findByBusinessIdAndTeamMemberId(BUSINESS_ID, TEAM_MEMBER_ID)).thenReturn(List.of());
+        when(square.availableSlotStarts(eq(TEAM_MEMBER_ID), eq(SERVICE_VARIATION_ID), any(), any()))
+                .thenReturn(List.of());
+
+        scheduler.poll();
+
+        // 48h threshold + the fixed 24h lookahead buffer = 72h.
+        verify(square).availableSlotStarts(TEAM_MEMBER_ID, SERVICE_VARIATION_ID, NOW, NOW.plus(java.time.Duration.ofHours(72)));
     }
 
     @Test

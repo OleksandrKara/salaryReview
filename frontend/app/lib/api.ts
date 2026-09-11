@@ -28,6 +28,7 @@ import type {
   RagAgentConfigDto,
   TelegramSettingsDto,
   TelegramSettingsUpdateRequest,
+  ProviderScheduleClosureAlertSettingsDto,
   SquareConnectionDto,
   SquareConnectionUpdateRequest,
   SeoConnectionDto,
@@ -238,6 +239,16 @@ export const api = {
 
   updateTelegramSettings: (body: TelegramSettingsUpdateRequest) =>
     proxyJson<TelegramSettingsDto>(`/api/owner/settings/telegram`, 'PUT', body),
+
+  // Provider schedule-closure Telegram alert: owner-editable notice-threshold (hours) — see
+  // ProviderScheduleClosureAlertConfigService.
+  getProviderScheduleClosureAlertSettings: () =>
+    proxyGet<ProviderScheduleClosureAlertSettingsDto>(`/api/owner/settings/provider-schedule-closure-alert`),
+
+  updateProviderScheduleClosureAlertSettings: (noticeThresholdHours: number) =>
+    proxyJson<ProviderScheduleClosureAlertSettingsDto>(
+      `/api/owner/settings/provider-schedule-closure-alert`, 'PUT', { noticeThresholdHours },
+    ),
 
   // Square connection settings (owner) — Phase 6.4.
   getSquareConnection: () => proxyGet<SquareConnectionDto>(`/api/owner/settings/square`),
