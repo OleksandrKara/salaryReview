@@ -90,8 +90,14 @@ public class SecurityConfig {
                                 .permitAll()
                         // The checkout-review-request satisfaction email's rating links — same "harmless
                         // public redirect, own signature check" shape as /r/** above (see
-                        // CheckoutReviewRatingController/CheckoutReviewRatingSigner).
-                        .requestMatchers("/api/public/checkout-review/rate").permitAll()
+                        // CheckoutReviewRatingController/CheckoutReviewRatingSigner). Both endpoints:
+                        // /rate is the literal link the email carries (stateless interstitial), /confirm
+                        // is where its script-driven navigation actually lands and does the real work —
+                        // found live 2026-09-11 (a manual owner test caught it, real customers hit the
+                        // same 401 since this split shipped) that only /rate was ever added here, so
+                        // every real click 404'd into a login wall at the one step that matters.
+                        .requestMatchers("/api/public/checkout-review/rate", "/api/public/checkout-review/confirm")
+                                .permitAll()
                         // MMS photo serving — same "harmless public endpoint" shape as /r/**, keyed by an
                         // opaque, unguessable token rather than a session, so both the dashboard's <img>
                         // tags and Twilio's own outbound-media-fetch requests can retrieve a file with no
