@@ -201,15 +201,21 @@ public final class SmsMessageTemplateCatalog {
                     List.of("greeting", "sender", "businessName")
             )),
             // Plain service reminder, no discount/link — a helpful nudge, not a promo, so
-            // TRANSACTIONAL (same reasoning as lead_follow_up_nudge above). Wording is a starting
-            // point, not final copy — owner-editable like every other template here.
+            // TRANSACTIONAL (same reasoning as lead_follow_up_nudge above). Same "due, not
+            // optional" framing as color_booster_reminder_nudge below (owner request 2026-09-11) —
+            // the touch-up is where the final result actually locks in, not routine maintenance,
+            // so this says so plainly instead of reading as a soft, skippable suggestion. Same
+            // business-name/no-elapsed-time reasoning as that template too: "Anna Kara's Brow
+            // Studio LLC" ({{businessName}}) reads wrong in a text, and a stated week-count risks
+            // being wrong — hardcoded "Beauty Studio" name, relayed as a personal heads-up from
+            // Anna, no specific elapsed time. Only business 2 has this automation configured today.
             Map.entry("touchup_reminder_nudge", new TemplateDefault(
                     "touchup_reminder_nudge", "touchup_reminder", SmsMessageClass.TRANSACTIONAL,
                     "Touch-up reminder",
-                    List.of("{{greeting}} It's {{sender}} from {{businessName}} 💛 It's been about 4 weeks since your "
-                            + "procedure — touch-ups done in the 4-6 week window help lock in your result best. "
-                            + "Want me to grab you a spot?"),
-                    List.of("greeting", "sender", "businessName")
+                    List.of("{{greeting}} It's {{sender}} from Anna Kara's Beauty Studio 💛 Anna wanted me to let you know "
+                            + "you're due for your touch-up — it's part of the procedure, not optional, and it's where "
+                            + "your results really lock in. Want me to grab you a spot this week or next?"),
+                    List.of("greeting", "sender")
             )),
             // Same shape as touchup_reminder_nudge — no discount/link, a plain service reminder.
             // Business name hardcoded rather than {{businessName}} — the business's own legal name
