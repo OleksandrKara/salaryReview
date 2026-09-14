@@ -194,14 +194,35 @@ public class TwilioInboundSmsController {
             // positive and negative-feedback at once, since the two checks weren't mutually
             // exclusive) now resolve to exactly one outcome. Digits only, same as before — no
             // attempt to parse spelled-out numbers ("Five" still doesn't match).
+            // 2026-09-14 live incident: a customer replying "Amazing as always" (Habiba, no digit
+            // at all) got the checkout_review_negative apology — orElse(false) treated "no number
+            // found" the same as "an explicit low rating", which is wrong specifically when the
+            // reply is unambiguously positive in words. Fixed by making the outcome a genuine
+            // three-way Optional<Boolean> instead of defaulting the unclear case to negative: a
+            // reply with neither a number nor a recognizable positive/negation word sends no
+            // auto-reply at all (owner's call — guessing wrong in either direction, a false
+            // apology or a false "you loved it, leave us a review", is worse than staying quiet).
+            // The Telegram alert above already fires unconditionally for every inbound reply, so
+            // staff still see it and can follow up personally — nothing is silently dropped, only
+            // the canned branch reply is skipped.
             Optional<Integer> highestNumber = highestStandaloneNumber(body);
-            boolean positive = highestNumber.map(n -> n >= 5).orElse(false);
+            Optional<Boolean> positive = highestNumber.isPresent()
+                    ? Optional.of(highestNumber.get() >= 5)
+                    : hasPositiveSentiment(body) ? Optional.of(true) : Optional.empty();
             if (highestNumber.map(n -> n >= 1 && n <= 4).orElse(false)) {
                 logged.setNegativeFeedbackAt(Instant.now());
                 messageLogService.save(logged);
             }
+            if (positive.isEmpty()) {
+                log.info("Checkout-review reply from {} (body=\"{}\") had no parseable rating and no "
+                        + "clear sentiment — no auto-reply sent, flow {} completed silently (staff "
+                        + "already notified via Telegram)", from, body, flow.getId());
+                flow.setState(SmsReplyFlow.STATE_COMPLETED);
+                replyFlowRepository.save(flow);
+                return ResponseEntity.ok().build();
+            }
             try {
-                replyService.sendBranchReply(flow, positive);
+                replyService.sendBranchReply(flow, positive.get());
                 flow.setState(SmsReplyFlow.STATE_COMPLETED);
                 replyFlowRepository.save(flow);
             } catch (RuntimeException e) {
@@ -212,7 +233,7 @@ public class TwilioInboundSmsController {
                 // POST /api/owner/settings/sms/reply-flows/{id}/retry once the cause is fixed.
                 log.error("Checkout-review branch reply failed for flow {} ({}, positive={}) — flow "
                         + "left AWAITING_REPLY, recoverable via reply-flows/{}/retry",
-                        flow.getId(), from, positive, flow.getId(), e);
+                        flow.getId(), from, positive.get(), flow.getId(), e);
                 throw e;
             }
         } else if (CheckoutReviewReplyService.AUTOMATION_KEY.equals(automationKey)) {
@@ -242,6 +263,36 @@ public class TwilioInboundSmsController {
     }
 
     private static final java.util.regex.Pattern STANDALONE_NUMBER = java.util.regex.Pattern.compile("\\b(\\d{1,3})\\b");
+
+    /** Only a fallback for a reply with zero standalone digits (see highestNumber usage above) —
+     * a reply that already has a number is always judged by that number instead, never by these
+     * words. Deliberately short and unambiguous (no "good"/"fine"/"ok", which read as lukewarm,
+     * not clearly positive) — a false "positive" here means a genuinely unhappy customer gets a
+     * review-request link instead of the chance to tell us what went wrong. */
+    private static final java.util.regex.Pattern POSITIVE_WORD = java.util.regex.Pattern.compile(
+            "\\b(amazing|awesome|great|love(d)?|perfect|wonderful|fantastic|excellent)\\b",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /** Any of these anywhere in the reply suppresses the positive-word match entirely (no attempt
+     * at proximity/scope — "not great honestly" and "honestly not great" must both stay negative,
+     * same as the existing negativeBranchWithoutFive test fixture already relies on) — a wrongly
+     * suppressed real positive just falls through to the existing safe default (ask what happened),
+     * while a wrongly *kept* positive on a negated reply is the same class of bug this fix exists
+     * to remove. "no" deliberately excluded — too often a filler/tag word ("no?", "no complaints")
+     * unrelated to negating the adjective that follows it. */
+    // "n't" gets its own alternative (trailing \b only, not \b(n't)\b) because a leading \b would
+    // never match: in "wasn't"/"isn't"/"didn't" etc. the "n" is preceded by a word character (the
+    // preceding letter of the verb stem), so there's no word boundary immediately before "n't" —
+    // found via a real test failure (a fabricated "wasn't" test case) before this ever shipped.
+    private static final java.util.regex.Pattern NEGATION_WORD = java.util.regex.Pattern.compile(
+            "\\b(not|never)\\b|n't\\b", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    private static boolean hasPositiveSentiment(String body) {
+        if (body == null || NEGATION_WORD.matcher(body).find()) {
+            return false;
+        }
+        return POSITIVE_WORD.matcher(body).find();
+    }
 
     /** The highest standalone number in the reply (word-boundary safe, so a number embedded in a
      * longer token — a phone-number fragment, "$50" — never counts), not just the first one found:

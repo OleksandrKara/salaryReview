@@ -260,9 +260,9 @@ class TwilioInboundSmsControllerTest {
     }
 
     @Test
-    @DisplayName("valid signature, body has no digit '5' → negative branch sent, flow completed")
-    void negativeBranchWithoutFive() throws Exception {
-        var p = params(PHONE, "not great honestly");
+    @DisplayName("2026-09-14 fix: body has no digit and no clear sentiment either way → no auto-reply sent, flow still completed")
+    void noSignalReplyStaysSilent() throws Exception {
+        var p = params(PHONE, "I was with Tatiana no?");
         String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
         SmsReplyFlow pending = SmsReplyFlow.builder().id(8L).automationKey("checkout_review_request")
                 .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
@@ -275,7 +275,47 @@ class TwilioInboundSmsControllerTest {
                         .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
                 .andExpect(status().isOk());
 
-        verify(replyService).sendBranchReply(pending, false);
+        verify(replyService, never()).sendBranchReply(any(), anyBoolean());
+        org.assertj.core.api.Assertions.assertThat(pending.getState()).isEqualTo(SmsReplyFlow.STATE_COMPLETED);
+    }
+
+    @Test
+    @DisplayName("2026-09-14 fix: reply of \"Amazing as always\" (no digit at all) → positive branch sent, not the negative apology")
+    void positiveWordWithNoDigitIsPositive() throws Exception {
+        var p = params(PHONE, "Amazing as always");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        SmsReplyFlow pending = SmsReplyFlow.builder().id(12L).automationKey("checkout_review_request")
+                .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.of(pending));
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        verify(replyService).sendBranchReply(pending, true);
+        org.assertj.core.api.Assertions.assertThat(pending.getState()).isEqualTo(SmsReplyFlow.STATE_COMPLETED);
+    }
+
+    @Test
+    @DisplayName("2026-09-14 fix: a negated positive word (\"wasn't amazing\") does not count as positive — stays silent, not falsely positive")
+    void negatedPositiveWordStaysSilent() throws Exception {
+        var p = params(PHONE, "honestly wasn't amazing today");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        SmsReplyFlow pending = SmsReplyFlow.builder().id(13L).automationKey("checkout_review_request")
+                .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.of(pending));
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        verify(replyService, never()).sendBranchReply(any(), anyBoolean());
         org.assertj.core.api.Assertions.assertThat(pending.getState()).isEqualTo(SmsReplyFlow.STATE_COMPLETED);
     }
 
