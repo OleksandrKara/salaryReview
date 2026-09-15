@@ -40,7 +40,8 @@ public class MailchimpEmailTemplateService {
             2L, Map.of(
                     "color_booster_winback_oneoff", "email-templates/business-2/color_booster_winback_oneoff.html",
                     "color_booster_reminder", "email-templates/business-2/color_booster_reminder.html",
-                    "touchup_reminder", "email-templates/business-2/touchup_reminder.html"
+                    "touchup_reminder", "email-templates/business-2/touchup_reminder.html",
+                    "checkout_review_request", "email-templates/business-2/checkout_review_request.html"
             )
     );
 
