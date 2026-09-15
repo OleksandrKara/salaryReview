@@ -81,6 +81,28 @@ class SecurityConfigErrorDispatchTest {
         assertThat(duplicate.body()).contains("\"status\":409");
     }
 
+    // 2026-09-15 live incident: the per-business Square webhook route
+    // ("/api/public/webhooks/square/{businessId}") was never added to SecurityConfig's permitAll
+    // matchers alongside the legacy no-path-variable route — every delivery to it hit Spring
+    // Security's own anonymous-401 entry point before ever reaching SquareWebhookController, with
+    // no application-level log line to show it (confirmed live against a real business 2 delivery
+    // via Square's own webhook-subscription test-send endpoint). A standalone MockMvc controller
+    // test (SquareWebhookControllerTest) can't catch this — it never loads the real filter chain
+    // (same class-doc point above about container-level error dispatch). An unauthenticated
+    // request to a real @PostMapping must reach the controller, whatever it then decides — a 404
+    // for a business id with no webhook key configured can only come from inside
+    // receiveForBusiness() itself, never from Spring Security, which would instead answer with its
+    // own blanket 401 before the method body ever runs.
+    @Test
+    void perBusinessSquareWebhookRouteIsReachableWithoutAuth() throws Exception {
+        HttpRequest req = HttpRequest.newBuilder(URI.create(url("/api/public/webhooks/square/999999")))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                .build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+        assertThat(res.statusCode()).isEqualTo(404);
+    }
+
     private void seedOwner() {
         if (appUsers.findByUsername(USERNAME).isPresent()) return;
         Business businessA = businesses.findByShortCode("akluxnails").orElseThrow();
