@@ -38,7 +38,9 @@ public class MailchimpEmailTemplateService {
                     "labor_day_design_promo", "email-templates/business-1/labor_day_design_promo.html"
             ),
             2L, Map.of(
-                    "color_booster_winback_oneoff", "email-templates/business-2/color_booster_winback_oneoff.html"
+                    "color_booster_winback_oneoff", "email-templates/business-2/color_booster_winback_oneoff.html",
+                    "color_booster_reminder", "email-templates/business-2/color_booster_reminder.html",
+                    "touchup_reminder", "email-templates/business-2/touchup_reminder.html"
             )
     );
 

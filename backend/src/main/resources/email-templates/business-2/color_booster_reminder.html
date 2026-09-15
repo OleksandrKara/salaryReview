@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Anna Kara PMU</title>
+<style>
+  body { margin: 0; padding: 0; background: #f4f2ef; font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  table { border-collapse: collapse; }
+  img { border: 0; display: block; }
+  a { text-decoration: none; }
+</style>
+</head>
+<body style="margin:0; padding:0; background:#f4f2ef;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f2ef;">
+    <tr>
+      <td align="center" style="padding: 32px 12px;">
+        <table role="presentation" width="520" cellpadding="0" cellspacing="0" style="width:520px; max-width:520px; background:#ffffff;">
+
+          <!-- Real wordmark logo, sized modestly — not a hero, this should read like a real email, not an ad. -->
+          <tr>
+            <td align="left" style="padding: 4px 8px 18px;">
+              <img src="https://book.pmu-annakara.com/pmu-email-logo.png" width="180" alt="Anna Kara's Beauty PMU Studio" style="width:180px; height:auto;">
+            </td>
+          </tr>
+
+          <!-- Personal hero: a real photo of Anna herself, filling its cell exactly (no gap on
+               either side of the photo, so no stray border color shows). -->
+          <tr>
+            <td>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td width="300" valign="middle" style="padding: 10px 14px 0 8px;">
+                    <p style="margin:0 0 10px; font-size:17px; line-height:1.5; color:#262626;">Hi {{FNAME}}, it's Anna &#128155;</p>
+                    <p style="margin:0; font-size:14.5px; line-height:1.55; color:#6b6b6b;">Just me, reaching out personally &mdash; not a template.</p>
+                  </td>
+                  <td width="220" valign="bottom" style="background:#ffffff;">
+                    <img src="https://book.pmu-annakara.com/pmu-email-anna-portrait.jpg" width="220" alt="Anna Kara" style="width:220px; height:auto; display:block;">
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- The whole email reads as one personal note, left-aligned like a real letter, not a
+               centered marketing layout. Framed as a standard-of-care notice, not an optional
+               offer — per owner direction 2026-09-05: this is a required step in the process, not
+               a discretionary upsell, and the copy should read that way without being preachy. -->
+          <tr>
+            <td style="padding: 22px 8px 0;">
+              <p style="margin:0 0 16px; font-size:16px; line-height:1.65; color:#262626;">
+                It's officially been a year since your procedure &mdash; booster time. This one isn't
+                optional either: <b style="color:#1a1a1a;">permanent makeup holds for 3&ndash;4 years, but only with the yearly color booster on schedule</b>.
+                Skip it, and the color fades further than it should.
+              </p>
+              <p style="margin:0 0 26px; font-size:16px; line-height:1.65; color:#262626;">
+                If you want it looking just as fresh as day one, this is the step that makes it
+                happen &mdash; please pick a date within the next two weeks. Reply <b style="color:#1a1a1a;">YES</b>
+                and I'll pencil you in myself, or book below.
+              </p>
+            </td>
+          </tr>
+
+          <!-- One clear, simple, high-contrast action — black on white, matching the studio's own
+               real look. Names the exact procedure rather than a generic "book now," per owner
+               direction 2026-09-05. {{LINK}} must resolve to
+               https://book.pmu-annakara.com/?book=color-booster — the real, deployed deep link
+               (2026-09-05) that opens the deposit-booking modal pre-set to the Color Booster
+               (10 month-1 year) Square service, real availability included (see salonLandings
+               PR #118). Not yet populated by any sender — no code fills this merge tag today,
+               since this automation isn't wired to send email at all yet. -->
+          <tr>
+            <td align="left" style="padding: 0 8px 30px;">
+              <table role="presentation" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="background:#1a1a1a;">
+                    <a href="{{LINK}}" style="display:inline-block; padding:15px 40px; font-size:13px; font-weight:600; letter-spacing:0.08em; color:#ffffff; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;">BOOK MY COLOR BOOSTER</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Signature -->
+          <tr>
+            <td style="padding: 0 8px 28px;">
+              <p style="margin:0; font-size:16px; line-height:1.5; color:#262626;">Talk soon,</p>
+              <p style="margin:2px 0 0; font-family: 'Cormorant', Georgia, 'Times New Roman', serif; font-style:italic; font-weight:600; font-size:22px; color:#1a1a1a;">Anna Kara</p>
+            </td>
+          </tr>
+
+          <!-- Footer — plain, quiet, not a heavy dark marketing band -->
+          <tr>
+            <td style="padding: 28px 8px 6px; border-top:1px solid #eee;">
+              <p style="margin:0 0 6px; font-size:11.5px; line-height:1.6; color:#9a9a9a;">Anna Kara PMU &middot; 1357 Seventh Ave, Ste C, San Diego, CA 92101</p>
+              <p style="margin:0; font-size:11.5px; line-height:1.6; color:#9a9a9a;">You're receiving this because you had a procedure with us. <a href="*|UNSUB|*" style="color:#9a9a9a; text-decoration:underline;">Unsubscribe</a></p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
