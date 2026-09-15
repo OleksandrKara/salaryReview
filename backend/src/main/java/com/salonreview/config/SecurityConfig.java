@@ -85,8 +85,18 @@ public class SecurityConfig {
                         // Twilio's inbound-Voice webhook is the same "harmless public endpoint" shape —
                         // a fixed <Dial> response regardless of caller, nothing to protect (see
                         // openspec/changes/lead-followup-and-manager-inbox tasks.md section 6).
-                        .requestMatchers("/api/public/webhooks/square", "/api/public/sms/inbound",
-                                "/api/public/sms/status", "/api/public/voice/inbound", "/r/**")
+                        // 2026-09-15 live incident: "/api/public/webhooks/square" (business 1's legacy,
+                        // no-path-variable route) was permitted, but Phase 3.6's newer per-business route
+                        // "/api/public/webhooks/square/{businessId}" (SquareWebhookController's other
+                        // @PostMapping) never got its own matcher here — every business 2 webhook delivery
+                        // hit Spring Security's default 401 before ever reaching the controller's own
+                        // signature check, with no application-level log line to flag it (confirmed via
+                        // Square's own webhook-subscription test-send endpoint: status_code 401, nothing
+                        // in the app logs for that request). Exactly the same shape as the /checkout-review
+                        // /confirm gap below — a later route added without updating this list.
+                        .requestMatchers("/api/public/webhooks/square", "/api/public/webhooks/square/*",
+                                "/api/public/sms/inbound", "/api/public/sms/status",
+                                "/api/public/voice/inbound", "/r/**")
                                 .permitAll()
                         // The checkout-review-request satisfaction email's rating links — same "harmless
                         // public redirect, own signature check" shape as /r/** above (see
