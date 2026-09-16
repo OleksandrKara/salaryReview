@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { MarketingContact, MarketingContactAppointment } from '../../lib/types';
 import SmsConsentIcon from './SmsConsentIcon';
 import NegativeFeedbackIcon from './NegativeFeedbackIcon';
@@ -26,8 +27,42 @@ function formatDate(iso: string | null): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/** Date + time, for the expanded appointment detail — the collapsed row only needs the date
+ * (see formatDate above) to keep the list scannable; the exact time is a "tap for more" detail. */
+function formatDateTime(iso: string | null): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
+}
+
 function formatMoney(n: number | null): string | null {
   return n == null ? null : `$${Math.round(n)}`;
+}
+
+/** Whole-dollar total across every appointment with a real collected amount on file — upcoming/
+ * cancelled/no-show/unmatched appointments contribute nothing (collectedAmount is null for all of
+ * those, see MarketingContactAppointment's own doc), so this is a true "money actually received"
+ * figure, not a projection. */
+function totalPaid(appointments: MarketingContactAppointment[]): number {
+  return appointments.reduce((sum, a) => sum + (a.collectedAmount ?? 0), 0);
+}
+
+function paymentChannelLabel(channel: MarketingContactAppointment['paymentChannel']): string | null {
+  switch (channel) {
+    case 'CASH': return 'Cash';
+    case 'CARD': return 'Card';
+    case 'CASH-NOTE': return 'Cash (note only)';
+    default: return null;
+  }
+}
+
+/** "Instagram · Mobile · Safari" — only the parts actually on file, so a booking with partial
+ * data (e.g. traffic source known but browser not) still reads cleanly. Null entirely when none
+ * of the three are known, which the caller uses to decide whether to show this row at all. */
+function bookingSourceSummary(a: MarketingContactAppointment): string | null {
+  const parts = [a.trafficSource, a.deviceType, a.browserName].filter((p): p is string => Boolean(p && p.trim()));
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 function displayName(givenName: string | null | undefined, familyName: string | null | undefined): string | null {
@@ -131,6 +166,9 @@ export default function ContactInfoPanel({
 }) {
   const resolvedSquareProfileUrl = squareProfileUrl ?? contact?.squareProfileUrl ?? null;
   const name = conversationName ?? displayName(contact?.givenName, contact?.familyName);
+  // Single-open accordion, not a Set of many — a manager scanning appointments compares one at a
+  // time; letting several stay expanded at once just means more scrolling to find the next one.
+  const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
 
   return (
     <div data-testid="contact-info-panel" className="flex h-full flex-col">
@@ -265,6 +303,28 @@ export default function ContactInfoPanel({
               ) : null}
             </div>
 
+            {/* The headline number this panel exists to answer at a glance — real money actually
+                collected across every appointment on file (see totalPaid's own doc), not a
+                catalog-price estimate. Visit count rides along for free context (already resolved
+                by the caller for the VIP badge above) rather than making a manager do the math
+                themselves from the list below. */}
+            {contact && contact.appointments.length > 0 ? (
+              <div data-testid="contact-info-lifetime-stats" className="mb-5 grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-zinc-50 px-3 py-2.5 ring-1 ring-zinc-100">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Total paid</div>
+                  <div data-testid="contact-info-total-paid" className="mt-0.5 text-lg font-semibold tabular-nums text-zinc-900">
+                    {formatMoney(totalPaid(contact.appointments))}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-zinc-50 px-3 py-2.5 ring-1 ring-zinc-100">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Visits</div>
+                  <div className="mt-0.5 text-lg font-semibold tabular-nums text-zinc-900">
+                    {visitCount ?? contact.appointments.length}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             {/* Whether this contact has ever been sent — and actually clicked — the checkout-
                 review automation's Google-review / Yelp-review / feedback-form links. A row only
                 appears once that link type has actually been sent at least once (sentAt non-null);
@@ -354,19 +414,57 @@ export default function ContactInfoPanel({
                   {contact.appointments.map((a) => {
                     const badge = appointmentBadge(a);
                     const price = formatMoney(a.collectedAmount ?? a.price);
+                    const isExpanded = expandedBookingId === a.bookingId;
+                    const paymentLabel = paymentChannelLabel(a.paymentChannel);
+                    const sourceSummary = bookingSourceSummary(a);
                     return (
-                      <li key={a.bookingId} data-testid="contact-info-appointment" className="rounded-lg ring-1 ring-zinc-100 px-3 py-2 text-sm">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium text-zinc-900">{formatDate(a.startAt)}</span>
-                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${badge.className}`}>
-                            {badge.label}
-                          </span>
-                        </div>
-                        <div className="mt-0.5 truncate text-zinc-500">
-                          {a.serviceName ?? 'Service'}
-                          {a.artistName ? ` · ${a.artistName}` : ''}
-                          {price ? ` · ${price}` : ''}
-                        </div>
+                      <li key={a.bookingId} data-testid="contact-info-appointment" className="overflow-hidden rounded-lg ring-1 ring-zinc-100">
+                        {/* The whole row is the tap target (not just a small chevron) — on a
+                            phone this is a thumb-width hit area, not a precision tap. Collapsed
+                            state is unchanged from before this was expandable; expanding only
+                            ever adds a detail panel below, never rearranges what's already
+                            visible. */}
+                        <button
+                          type="button"
+                          onClick={() => setExpandedBookingId(isExpanded ? null : a.bookingId)}
+                          aria-expanded={isExpanded}
+                          data-testid="contact-info-appointment-toggle"
+                          className="flex w-full items-start gap-2 px-3 py-2.5 text-left text-sm active:bg-zinc-50"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-medium text-zinc-900">{formatDate(a.startAt)}</span>
+                              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${badge.className}`}>
+                                {badge.label}
+                              </span>
+                            </div>
+                            <div className="mt-0.5 truncate text-zinc-500">
+                              {a.serviceName ?? 'Service'}
+                              {a.artistName ? ` · ${a.artistName}` : ''}
+                              {price ? ` · ${price}` : ''}
+                            </div>
+                          </div>
+                          <svg
+                            width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                            strokeLinecap="round" strokeLinejoin="round" aria-hidden
+                            className={`mt-1 shrink-0 text-zinc-300 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                          >
+                            <path d="m6 9 6 6 6-6" />
+                          </svg>
+                        </button>
+                        {isExpanded ? (
+                          <div
+                            data-testid="contact-info-appointment-detail"
+                            className="flex flex-col gap-1 border-t border-zinc-100 bg-zinc-50/70 px-3 py-2 text-xs text-zinc-500"
+                          >
+                            <div>{formatDateTime(a.startAt)}</div>
+                            {paymentLabel ? <div>Paid: {paymentLabel}</div> : null}
+                            {/* Only present for a booking that came through our own funnel — an
+                                in-person or Square-direct booking has no submission row to match,
+                                so this line is simply absent rather than showing "Unknown". */}
+                            {sourceSummary ? <div>Booked via: {sourceSummary}</div> : null}
+                          </div>
+                        ) : null}
                       </li>
                     );
                   })}
