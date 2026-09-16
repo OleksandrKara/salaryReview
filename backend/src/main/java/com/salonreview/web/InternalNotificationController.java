@@ -66,7 +66,9 @@ public class InternalNotificationController {
         if (!keyMatches(key)) {
             return ResponseEntity.status(401).build();
         }
-        return ResponseEntity.ok(Map.of("sent", telegram.sendFourHandRequestAlert(body)));
+        Business business = resolveBusiness(body.businessShortCode(), body.businessId());
+        Long businessId = business != null ? business.getId() : businesses.legacySmsBusiness().getId();
+        return ResponseEntity.ok(Map.of("sent", telegram.sendFourHandRequestAlert(businessId, body)));
     }
 
     /** {@code messageClass} is deliberately not a field on {@link SmsSendRequest} — it is fixed
@@ -190,7 +192,7 @@ public class InternalNotificationController {
                 .build());
         // Best-effort, doesn't affect the "enrolled" outcome above — matches how every other
         // notification in this codebase is decoupled from the primary action it accompanies.
-        telegram.sendRebookingPromoAlert(body.customerName(), body.phoneNumber(), body.appointmentStartAt());
+        telegram.sendRebookingPromoAlert(businessId, body.customerName(), body.phoneNumber(), body.appointmentStartAt());
         return ResponseEntity.ok(Map.of("enrolled", true));
     }
 

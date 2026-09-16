@@ -174,7 +174,7 @@ public class TwilioInboundSmsController {
             // is already resolved above; populate the context explicitly for this one call, same
             // established pattern every other background/webhook caller in this codebase uses.
             String customerName = currentBusinessContext.runAsAndGet(businessId, () -> resolveCustomerName(from));
-            telegramService.sendInboundSmsAlert(from, customerName, body, logged.getAutomationKey());
+            telegramService.sendInboundSmsAlert(businessId, from, customerName, body, logged.getAutomationKey());
         }
 
         // A STOP-style reply isn't a satisfaction-rating reply — the block above already stops

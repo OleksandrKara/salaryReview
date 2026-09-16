@@ -20,6 +20,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -112,20 +113,26 @@ class InternalNotificationControllerTest {
     @DisplayName("correct key + alert sent → 200 sent:true")
     void correctKeySentTrue() throws Exception {
         when(props.getKey()).thenReturn("secret");
-        when(telegram.sendFourHandRequestAlert(any())).thenReturn(true);
+        when(telegram.sendFourHandRequestAlert(any(), any())).thenReturn(true);
 
         mvc.perform(post("/api/internal/notifications/four-hand-request")
                         .header("X-Internal-Api-Key", "secret")
                         .contentType("application/json").content(BODY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sent").value(true));
+
+        // BODY carries neither businessShortCode nor businessId — mani/akluxnails-home's real,
+        // current callers send neither — so this must resolve to Business A (legacySmsBusiness,
+        // stubbed to id 1 above), the same backward-compatible default resolveBusiness already
+        // gives every other endpoint in this controller.
+        verify(telegram).sendFourHandRequestAlert(eq(1L), any());
     }
 
     @Test
     @DisplayName("correct key + alert not configured → 200 sent:false, not an error")
     void correctKeySentFalse() throws Exception {
         when(props.getKey()).thenReturn("secret");
-        when(telegram.sendFourHandRequestAlert(any())).thenReturn(false);
+        when(telegram.sendFourHandRequestAlert(any(), any())).thenReturn(false);
 
         mvc.perform(post("/api/internal/notifications/four-hand-request")
                         .header("X-Internal-Api-Key", "secret")
@@ -275,7 +282,7 @@ class InternalNotificationControllerTest {
         // enrolled into (see V71) to remove it from the right one later — this was previously
         // never set at all, silently defaulting to null on every row.
         assertThat(captor.getValue().getGroupId()).isEqualTo("grp1");
-        verify(telegram).sendRebookingPromoAlert(any(), any(), any());
+        verify(telegram).sendRebookingPromoAlert(any(), any(), any(), any());
     }
 
     @Test

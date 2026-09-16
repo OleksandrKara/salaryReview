@@ -22,13 +22,6 @@ public class TelegramConfigService {
                 .orElseThrow(() -> new IllegalStateException("telegram_notification_config missing for business " + businessId));
     }
 
-    /** Convenience for the scheduler/webhook/internal-endpoint call sites with no session to
-     * derive a business from — see {@link BusinessRepository#legacySmsBusiness}'s own doc for why
-     * this always resolves to Business A regardless of which business triggered the call. */
-    public TelegramNotificationConfig getForAutomation() {
-        return get(businesses.legacySmsBusiness().getId());
-    }
-
     /**
      * {@code null} field = leave unchanged; {@code ""} (explicit empty string) = clear it. The
      * owner UI's GET only ever returns a masked token, so it must never round-trip that masked
