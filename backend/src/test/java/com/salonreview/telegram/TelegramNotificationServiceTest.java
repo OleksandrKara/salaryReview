@@ -1,11 +1,14 @@
 package com.salonreview.telegram;
 
+import com.salonreview.domain.Business;
 import com.salonreview.domain.TelegramNotificationConfig;
+import com.salonreview.repo.BusinessRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -22,31 +25,41 @@ class TelegramNotificationServiceTest {
 
     private static final String BASE_URL = "https://salon.akluxnails.com";
 
-    private static final FourHandRequestNotification NOTIFICATION = new FourHandRequestNotification(
-            "mani", "Jane Doe", "+15551234567", "manicure + pedicure", "2026-08-01T18:00:00Z", null, 254.0);
+    private static final Long BUSINESS_ID = 1L;
 
+    private static final FourHandRequestNotification NOTIFICATION = new FourHandRequestNotification(
+            "mani", "Jane Doe", "+15551234567", "manicure + pedicure", "2026-08-01T18:00:00Z", null, 254.0, null, null);
+
+    /** Bare mock — {@code findById} on an unstubbed {@link BusinessRepository} mock returns
+     * {@code Optional.empty()} (Mockito's default answer for {@code Optional}-returning methods),
+     * so {@code businessLabel} resolves to {@code ""} and every existing assertion below (written
+     * before the business-label prefix existed) still matches exactly. */
     private static TelegramNotificationService service(TelegramConfigService configService) {
-        return new TelegramNotificationService(configService, BASE_URL);
+        return service(configService, mock(BusinessRepository.class));
+    }
+
+    private static TelegramNotificationService service(TelegramConfigService configService, BusinessRepository businesses) {
+        return new TelegramNotificationService(configService, businesses, BASE_URL);
     }
 
     @Test
     @DisplayName("blank bot token → false, no exception")
     void blankBotTokenSkips() {
         TelegramConfigService configService = mock(TelegramConfigService.class);
-        when(configService.getForAutomation()).thenReturn(
+        when(configService.get(BUSINESS_ID)).thenReturn(
                 TelegramNotificationConfig.builder().botToken(null).chatId("999888777").build());
 
-        assertThat(service(configService).sendFourHandRequestAlert(NOTIFICATION)).isFalse();
+        assertThat(service(configService).sendFourHandRequestAlert(BUSINESS_ID, NOTIFICATION)).isFalse();
     }
 
     @Test
     @DisplayName("blank chat id → false, no exception")
     void blankChatIdSkips() {
         TelegramConfigService configService = mock(TelegramConfigService.class);
-        when(configService.getForAutomation()).thenReturn(
+        when(configService.get(BUSINESS_ID)).thenReturn(
                 TelegramNotificationConfig.builder().botToken("some-token").chatId("").build());
 
-        assertThat(service(configService).sendFourHandRequestAlert(NOTIFICATION)).isFalse();
+        assertThat(service(configService).sendFourHandRequestAlert(BUSINESS_ID, NOTIFICATION)).isFalse();
     }
 
     @Test
@@ -77,7 +90,7 @@ class TelegramNotificationServiceTest {
     void formatMessageOmitsEstimatedPriceWhenAbsent() {
         TelegramNotificationService service = service(mock(TelegramConfigService.class));
         FourHandRequestNotification withoutPrice = new FourHandRequestNotification(
-                "mani", "Jane Doe", "+15551234567", "manicure + pedicure", "2026-08-01T18:00:00Z", null, null);
+                "mani", "Jane Doe", "+15551234567", "manicure + pedicure", "2026-08-01T18:00:00Z", null, null, null, null);
 
         assertThat(service.formatMessage(withoutPrice)).doesNotContain("Estimated price");
     }
@@ -86,20 +99,20 @@ class TelegramNotificationServiceTest {
     @DisplayName("inbound-SMS alert: blank bot token → false, no exception")
     void inboundSmsAlertBlankBotTokenSkips() {
         TelegramConfigService configService = mock(TelegramConfigService.class);
-        when(configService.getForAutomation()).thenReturn(
+        when(configService.get(BUSINESS_ID)).thenReturn(
                 TelegramNotificationConfig.builder().botToken(null).chatId("999888777").build());
 
-        assertThat(service(configService).sendInboundSmsAlert("+15551234567", "Jane Doe", "hi", null)).isFalse();
+        assertThat(service(configService).sendInboundSmsAlert(BUSINESS_ID, "+15551234567", "Jane Doe", "hi", null)).isFalse();
     }
 
     @Test
     @DisplayName("inbound-SMS alert: blank chat id → false, no exception")
     void inboundSmsAlertBlankChatIdSkips() {
         TelegramConfigService configService = mock(TelegramConfigService.class);
-        when(configService.getForAutomation()).thenReturn(
+        when(configService.get(BUSINESS_ID)).thenReturn(
                 TelegramNotificationConfig.builder().botToken("some-token").chatId("").build());
 
-        assertThat(service(configService).sendInboundSmsAlert("+15551234567", "Jane Doe", "hi", "checkout_review_request"))
+        assertThat(service(configService).sendInboundSmsAlert(BUSINESS_ID, "+15551234567", "Jane Doe", "hi", "checkout_review_request"))
                 .isFalse();
     }
 
@@ -157,6 +170,44 @@ class TelegramNotificationServiceTest {
         assertThat(text).doesNotContain("5 < 10 & I'm happy");
     }
 
+    // ---------------------------------------------------------------- business label
+
+    @Test
+    @DisplayName("businessLabel: resolves the real business name into a bold-free, newline-terminated prefix")
+    void businessLabelResolvesRealName() {
+        BusinessRepository businesses = mock(BusinessRepository.class);
+        when(businesses.findById(2L)).thenReturn(Optional.of(
+                Business.builder().id(2L).name("Anna Kara's Brow Studio LLC").shortCode("annakarapmu")
+                        .timezone("America/Los_Angeles").active(true).build()));
+        TelegramNotificationService service = service(mock(TelegramConfigService.class), businesses);
+
+        assertThat(service.businessLabel(2L)).isEqualTo("🏢 Anna Kara's Brow Studio LLC\n");
+    }
+
+    @Test
+    @DisplayName("businessLabel: unresolvable business id → empty string, not a placeholder or an exception")
+    void businessLabelEmptyWhenUnresolvable() {
+        BusinessRepository businesses = mock(BusinessRepository.class);
+        when(businesses.findById(999L)).thenReturn(Optional.empty());
+        TelegramNotificationService service = service(mock(TelegramConfigService.class), businesses);
+
+        assertThat(service.businessLabel(999L)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("businessLabel: HTML-escapes the business name (harmless today, but sendInboundSmsAlert "
+            + "uses Telegram's HTML parse_mode, so this can't be skipped just because neither real "
+            + "business name currently needs it)")
+    void businessLabelEscapesHtml() {
+        BusinessRepository businesses = mock(BusinessRepository.class);
+        when(businesses.findById(3L)).thenReturn(Optional.of(
+                Business.builder().id(3L).name("A & B <Salon>").shortCode("test3")
+                        .timezone("UTC").active(true).build()));
+        TelegramNotificationService service = service(mock(TelegramConfigService.class), businesses);
+
+        assertThat(service.businessLabel(3L)).isEqualTo("🏢 A &amp; B &lt;Salon&gt;\n");
+    }
+
     @Test
     @DisplayName("formatPhoneDisplay renders a plain 10/11-digit US number, falls back otherwise")
     void formatPhoneDisplayFormatsUsNumbers() {
@@ -177,8 +228,9 @@ class TelegramNotificationServiceTest {
 
     @Test
     @DisplayName("same-day alert is business-scoped — resolves via configService.get(businessId), "
-            + "NOT the always-legacy-business getForAutomation() every other alert here uses, since "
-            + "it fires from a real per-business webhook")
+            + "same as every other alert here now (2026-09-16: all of them took an explicit "
+            + "businessId once the Telegram messages themselves needed a business label — see "
+            + "businessLabel)")
     void sameDayAlertResolvesConfigByBusinessId() {
         TelegramConfigService configService = mock(TelegramConfigService.class);
         when(configService.get(2L)).thenReturn(

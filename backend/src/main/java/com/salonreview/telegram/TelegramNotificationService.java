@@ -2,6 +2,7 @@ package com.salonreview.telegram;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonreview.domain.TelegramNotificationConfig;
+import com.salonreview.repo.BusinessRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,21 +43,36 @@ public class TelegramNotificationService {
             .withZone(ZoneId.of("America/Los_Angeles"));
 
     private final TelegramConfigService configService;
+    private final BusinessRepository businesses;
     private final String publicBaseUrl;
     private final ObjectMapper json = new ObjectMapper();
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
-    public TelegramNotificationService(TelegramConfigService configService,
+    public TelegramNotificationService(TelegramConfigService configService, BusinessRepository businesses,
                                         @Value("${app.public-base-url}") String publicBaseUrl) {
         this.configService = configService;
+        this.businesses = businesses;
         this.publicBaseUrl = publicBaseUrl;
     }
 
+    /** "🏢 &lt;business name&gt;\n" prefix — both businesses currently share one staff Telegram
+     * chat (same bot, same chat id), so without this a message has no reliable way to say which
+     * business it's about (2026-09-16 owner request). Empty string — no prefix, no extra line —
+     * if the business can't be resolved; a missing label is cosmetic, never a reason to fail the
+     * whole alert. Package-private for direct unit testing, same convention as {@link #formatMessage}. */
+    String businessLabel(Long businessId) {
+        // escapeHtml is a no-op for both real business names today (neither contains &/</>), but
+        // costs nothing and keeps this safe for the one send method (sendInboundSmsAlert) that
+        // actually uses Telegram's HTML parse_mode — the other send methods here are plain text,
+        // where escaping is equally harmless.
+        return businesses.findById(businessId).map(b -> "🏢 " + escapeHtml(b.getName()) + "\n").orElse("");
+    }
+
     /** Returns {@code true} only on a confirmed successful send — never throws. */
-    public boolean sendFourHandRequestAlert(FourHandRequestNotification n) {
-        TelegramNotificationConfig cfg = configService.getForAutomation();
+    public boolean sendFourHandRequestAlert(Long businessId, FourHandRequestNotification n) {
+        TelegramNotificationConfig cfg = configService.get(businessId);
         String token = cfg.getBotToken();
         String chatId = cfg.getChatId();
         if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
@@ -65,7 +81,7 @@ public class TelegramNotificationService {
         }
 
         try {
-            Map<String, Object> body = Map.of("chat_id", chatId, "text", formatMessage(n));
+            Map<String, Object> body = Map.of("chat_id", chatId, "text", businessLabel(businessId) + formatMessage(n));
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
                     .timeout(Duration.ofSeconds(5))
@@ -94,8 +110,8 @@ public class TelegramNotificationService {
      * customer's thread on {@code /admin/messages} (see MessagesView's {@code ?phone=} handling),
      * so reading the alert and replying is one tap, not "open the app, find the right
      * conversation." Never throws, same contract as {@link #sendFourHandRequestAlert}. */
-    public boolean sendInboundSmsAlert(String phoneNumber, String customerName, String body, String automationKey) {
-        TelegramNotificationConfig cfg = configService.getForAutomation();
+    public boolean sendInboundSmsAlert(Long businessId, String phoneNumber, String customerName, String body, String automationKey) {
+        TelegramNotificationConfig cfg = configService.get(businessId);
         String token = cfg.getBotToken();
         String chatId = cfg.getChatId();
         if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
@@ -104,7 +120,8 @@ public class TelegramNotificationService {
         }
 
         try {
-            Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", formatInboundSmsAlert(phoneNumber, customerName, body, automationKey),
+            Map<String, Object> reqBody = Map.of("chat_id", chatId,
+                    "text", businessLabel(businessId) + formatInboundSmsAlert(phoneNumber, customerName, body, automationKey),
                     "parse_mode", "HTML", "disable_web_page_preview", true);
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
@@ -175,8 +192,8 @@ public class TelegramNotificationService {
      * auto-enrolled in the Square discount group, but staff still need to know NOT to also apply
      * the old manual "Same day rebooking discount" (would stack to $20 off). Never throws, same
      * contract as {@link #sendFourHandRequestAlert}. */
-    public boolean sendRebookingPromoAlert(String customerName, String phoneNumber, String appointmentStartAt) {
-        TelegramNotificationConfig cfg = configService.getForAutomation();
+    public boolean sendRebookingPromoAlert(Long businessId, String customerName, String phoneNumber, String appointmentStartAt) {
+        TelegramNotificationConfig cfg = configService.get(businessId);
         String token = cfg.getBotToken();
         String chatId = cfg.getChatId();
         if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
@@ -184,7 +201,7 @@ public class TelegramNotificationService {
             return false;
         }
 
-        String text = "🎁 Same-day rebooking discount booked\n"
+        String text = businessLabel(businessId) + "🎁 Same-day rebooking discount booked\n"
                 + "Name: " + (customerName == null ? "—" : customerName) + '\n'
                 + "Phone: " + (phoneNumber == null ? "—" : phoneNumber) + '\n'
                 + "Appointment: " + formatPreferredTime(appointmentStartAt) + '\n'
@@ -227,7 +244,7 @@ public class TelegramNotificationService {
             return false;
         }
 
-        String text = formatSameDayBookingMessage(providerNames, customerName, appointmentStartAt, leadTime);
+        String text = businessLabel(businessId) + formatSameDayBookingMessage(providerNames, customerName, appointmentStartAt, leadTime);
         try {
             Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", text);
             HttpRequest req = HttpRequest.newBuilder()
@@ -297,7 +314,7 @@ public class TelegramNotificationService {
             return false;
         }
 
-        String text = formatPaymentFailedMessage(n);
+        String text = businessLabel(businessId) + formatPaymentFailedMessage(n);
         try {
             Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", text);
             HttpRequest req = HttpRequest.newBuilder()
@@ -410,7 +427,7 @@ public class TelegramNotificationService {
             return false;
         }
 
-        String text = formatProviderScheduleClosureMessage(providerName, slotCount, earliestSlotAt, latestSlotAt);
+        String text = businessLabel(businessId) + formatProviderScheduleClosureMessage(providerName, slotCount, earliestSlotAt, latestSlotAt);
         try {
             Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", text);
             HttpRequest req = HttpRequest.newBuilder()
