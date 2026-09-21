@@ -218,19 +218,24 @@ public final class SmsMessageTemplateCatalog {
                     List.of("greeting", "sender")
             )),
             // Same shape as touchup_reminder_nudge — no discount/link, a plain service reminder.
-            // Business name hardcoded rather than {{businessName}} — the business's own legal name
-            // ("Anna Kara's Brow Studio LLC") reads wrong in a text (owner correction 2026-09-05);
-            // "Beauty Studio" (not "Brow Studio") per owner correction 2026-09-05, matching the
-            // brand name already used in this business's own email templates. Only business 2 has
-            // this automation configured today. No exact elapsed time either (owner preference
-            // 2026-09-05, over a variant that stated it) — framed as a personal heads-up relayed
-            // from Anna rather than a claim about how overdue they are, which also sidesteps ever
-            // getting that figure wrong.
+            // No exact elapsed time (owner preference 2026-09-05, over a variant that stated it) —
+            // framed as a personal heads-up relayed from Anna rather than a claim about how
+            // overdue they are, which also sidesteps ever getting that figure wrong. Only
+            // business 2 has this automation configured today.
+            //
+            // Rewritten 2026-09-21 (owner request, 0 inbound replies in the 30 days prior):
+            // dropped "from Anna Kara's Beauty Studio" to shorten (the business name was costing
+            // an extra SMS segment — the 💛 forces UCS-2 encoding, 70 chars/segment, and the old
+            // copy ran to 3). Swapped the closing "want me to grab you a spot?" open question for
+            // an assumptive "Reply YES and I'll get you booked!" — owner's own read: an open
+            // question makes the customer compose a real answer, "reply YES" only asks for one
+            // word, same lower-friction principle behind checkout_review_request's ~46% reply
+            // rate on business 1 (reply with a single digit, not a sentence).
             Map.entry("color_booster_reminder_nudge", new TemplateDefault(
                     "color_booster_reminder_nudge", "color_booster_reminder", SmsMessageClass.TRANSACTIONAL,
                     "Color booster reminder",
-                    List.of("{{greeting}} It's {{sender}} from Anna Kara's Beauty Studio 💛 Anna wanted me to let you know "
-                            + "you're due for a color booster. It's a must to keep your results looking fresh, want me to grab you a spot?"),
+                    List.of("{{greeting}} {{sender}} here 💛 Anna asked me to check in — your color's due for its next boost. "
+                            + "Reply YES and I'll get you booked!"),
                     List.of("greeting", "sender")
             )),
             // spotClause is pre-computed by the caller: "want to lock in your next spot" or
