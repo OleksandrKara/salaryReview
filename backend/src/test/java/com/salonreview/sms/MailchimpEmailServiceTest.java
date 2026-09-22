@@ -62,7 +62,7 @@ class MailchimpEmailServiceTest {
     }
 
     @Test
-    @DisplayName("\"recipients not ready\" on every attempt -> throws after exhausting retries, tried exactly 3 times")
+    @DisplayName("\"recipients not ready\" on every attempt -> throws after exhausting retries, tried exactly 5 times")
     void givesUpAfterMaxAttempts() throws Exception {
         when(client.createSingleRecipientCampaign(any(), any(), any(), any(), any())).thenReturn("campaign-1");
         doThrow(new IOException("Mailchimp API failed to send campaign (400): recipients not ready"))
@@ -72,7 +72,7 @@ class MailchimpEmailServiceTest {
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("recipients not ready");
 
-        verify(client, times(3)).send(eq(config), eq("campaign-1"));
+        verify(client, times(5)).send(eq(config), eq("campaign-1"));
     }
 
     @Test
