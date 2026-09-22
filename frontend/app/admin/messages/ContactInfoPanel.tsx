@@ -48,6 +48,17 @@ function totalPaid(appointments: MarketingContactAppointment[]): number {
   return appointments.reduce((sum, a) => sum + (a.collectedAmount ?? 0), 0);
 }
 
+/** Most recent (or soonest-upcoming) first — a manager opening this panel wants to see the last
+ * visit at a glance, not scroll to find it. A missing `startAt` (shouldn't happen in practice,
+ * but the type allows it) sorts to the very end rather than crashing the comparator. */
+function sortByDateDesc(appointments: MarketingContactAppointment[]): MarketingContactAppointment[] {
+  return [...appointments].sort((a, b) => {
+    const aTime = a.startAt ? new Date(a.startAt).getTime() : -Infinity;
+    const bTime = b.startAt ? new Date(b.startAt).getTime() : -Infinity;
+    return bTime - aTime;
+  });
+}
+
 function paymentChannelLabel(channel: MarketingContactAppointment['paymentChannel']): string | null {
   switch (channel) {
     case 'CASH': return 'Cash';
@@ -411,7 +422,7 @@ export default function ContactInfoPanel({
               <div className="mb-5">
                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Appointments</h3>
                 <ul className="flex flex-col gap-2">
-                  {contact.appointments.map((a) => {
+                  {sortByDateDesc(contact.appointments).map((a) => {
                     const badge = appointmentBadge(a);
                     const price = formatMoney(a.collectedAmount ?? a.price);
                     const isExpanded = expandedBookingId === a.bookingId;
