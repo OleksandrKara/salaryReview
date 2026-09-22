@@ -21,10 +21,18 @@ public class MailchimpEmailService {
      * rare at the low, spread-out volume the regular automations send at, but real and frequent
      * under a fast back-to-back loop: found 2026-09-05 running the color-booster winback one-off
      * (~30% of a 174-email batch hit it on the first attempt). Bounded retry absorbs it here so
-     * every caller doesn't need its own workaround. */
+     * every caller doesn't need its own workaround.
+     *
+     * <p>Budget raised 2026-09-22 (3 attempts/1500ms -> 5/2000ms): the color-booster backlog
+     * release (see ColorBoosterReminderScheduler's own backlog) pushed {@code
+     * LifecycleReminderEmailFallbackScheduler}'s evening run to a much higher back-to-back volume
+     * than the original 3-attempt budget was sized for — 30 distinct people hit SEND_FAILED over
+     * a week, ~90% of them this same retryable race per the live logs. Worst case per candidate
+     * goes from ~4.5s to ~20s (2000*(1+2+3+4)) — a non-issue for this once-daily, best-effort
+     * evening channel; nothing else in the request path waits on it. */
     private static final String RECIPIENTS_NOT_READY = "recipients not ready";
-    private static final int SEND_ATTEMPTS = 3;
-    private static final long RETRY_BACKOFF_MILLIS = 1500L;
+    private static final int SEND_ATTEMPTS = 5;
+    private static final long RETRY_BACKOFF_MILLIS = 2000L;
 
     private final MailchimpClient client;
 
