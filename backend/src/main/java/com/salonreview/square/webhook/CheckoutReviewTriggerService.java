@@ -75,6 +75,20 @@ public class CheckoutReviewTriggerService {
                 log.warn("Checkout-review trigger: order {} not found for payment {}", payment.orderId(), payment.id());
                 return;
             }
+            // 2026-09-23 live incident: two real customers (owner-confirmed) paid a deposit via a
+            // Square Invoice and never actually visited, but both still got a checkout_review_request
+            // "how was your visit" text and were queued for the same-day-rebooking discount below —
+            // this order source check (separate from Order itself, see SquareClient#orderSourceName's
+            // own doc) skips both for any order Square attributes to its Invoices product. Placed
+            // before the BOOKING-fulfillment discussion right below on purpose: that comment explains
+            // why a *booking link* isn't a safe exclusion signal, this one is a different, narrower
+            // signal (Invoices specifically) that the 2026-08-17 investigation's own 99-order sample
+            // happened not to contain any real example of.
+            if (square.orderSourceName(payment.orderId()).map(name -> "Invoices".equalsIgnoreCase(name)).orElse(false)) {
+                log.info("Checkout-review/same-day-rebooking triggers skipped for payment {} — order source is Invoices (a deposit/balance payment, not an in-salon checkout)",
+                        payment.id());
+                return;
+            }
             // 2026-08-17 live incident: design.md D2 originally excluded any order with a
             // fulfillments[].type == "BOOKING" here, on the assumption that meant "an online
             // prepaid booking, not an in-salon checkout" (see the removed SquareClient

@@ -94,6 +94,22 @@ class CheckoutReviewTriggerServiceTest {
     }
 
     @Test
+    @DisplayName("order source is Invoices (a deposit/balance payment) → neither the review flow nor the "
+            + "same-day-rebooking trigger fires, even though everything else about the order looks eligible")
+    void invoiceOrderSkipsBothTriggers() {
+        when(repository.existsBySquarePaymentId("pay_1")).thenReturn(false);
+        when(square.orderById("order_1")).thenReturn(Optional.of(order("cust_1", null)));
+        when(square.orderSourceName("order_1")).thenReturn(Optional.of("Invoices"));
+
+        service.handlePaymentUpdated(BUSINESS_ID, payment("COMPLETED", "order_1", "cust_1"));
+
+        verify(repository, never()).save(any());
+        verify(rebookingTrigger, never()).enqueue(any(), any(), any(), any(), any());
+        // Never even resolved a phone/name for an order we're skipping outright.
+        verify(square, never()).customerPhone(any());
+    }
+
+    @Test
     @DisplayName("business has no Google-review/Yelp-review/feedback-form URL configured yet → no checkout_review_request flow, "
             + "but the independent same-day-rebooking trigger still fires")
     void reviewLinksNotConfiguredSkipsFlowButNotRebookingTrigger() {
