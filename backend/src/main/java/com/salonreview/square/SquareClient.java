@@ -909,6 +909,37 @@ public class SquareClient {
         }
     }
 
+    /** Just the order's {@code source.name} — Square's own record of which product/channel
+     * created the order ("Point of Sale" for a real in-salon checkout, "Invoices" for a Square
+     * Invoice payment, etc.). Fetched via a second, narrow request rather than adding this to
+     * {@link Order} itself — that record is constructed positionally by ~17 unrelated test
+     * fixtures plus the month aggregator and prepaid-service logic, so appending a field there
+     * would force touching all of them for what only {@link
+     * com.salonreview.square.webhook.CheckoutReviewTriggerService} needs. Empty on any failure,
+     * same "never block" contract as {@link #orderById}.
+     *
+     * <p>Added 2026-09-23 after two real customers (owner-confirmed: paid a deposit via a Square
+     * Invoice, never actually visited) got a checkout_review_request "how was your visit" text
+     * and were queued for a same-day-rebooking discount — see that class's own doc for the
+     * 2026-08-17 history of a similar filter being removed for being unreliable at the time.
+     * "Invoices" as the exact string is based on the owner's description of those two specific
+     * orders' behavior, not a verified raw Square payload — if a future false positive/negative
+     * shows up, check this method's actual returned value in the logs before assuming the string
+     * is wrong. */
+    public java.util.Optional<String> orderSourceName(String orderId) {
+        try {
+            OrderSourceResponse resp = throttled(() ->
+                    http.get().uri("/v2/orders/{id}", orderId).retrieve().body(OrderSourceResponse.class));
+            return java.util.Optional.ofNullable(resp)
+                    .map(OrderSourceResponse::order)
+                    .map(OrderSourceOnly::source)
+                    .map(OrderSource::name);
+        } catch (RuntimeException e) {
+            log.warn("Failed to fetch Square order {} source: {}", orderId, e.getMessage());
+            return java.util.Optional.empty();
+        }
+    }
+
     /** The phone number on file for a Square customer, or {@code null} if absent/unresolvable — a
      * genuinely anonymous walk-in with no profile is the expected reason for {@code null}, not an
      * error (see design.md D2). */
@@ -1317,6 +1348,20 @@ public class SquareClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record OrderResponse(Order order) {}
+
+    /** Narrow types for {@link #orderSourceName} — deliberately separate from {@link Order}/
+     * {@link OrderResponse}, see that method's own doc. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record OrderSource(String name) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record OrderSourceOnly(OrderSource source) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record OrderSourceResponse(OrderSourceOnly order) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
