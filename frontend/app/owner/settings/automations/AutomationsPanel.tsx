@@ -69,6 +69,12 @@ const AUTOMATION_CHANNELS: Record<string, Channel[]> = {
   repeat_customer_winback: ['sms', 'email'],
   same_day_rebooking_discount: ['sms', 'email'],
   four_hand_request: ['sms', 'telegram'],
+  // 2026-09-25: consultation_lead_sms grew a Telegram leg too — same "staff heads-up, not a
+  // customer-facing message" role as four_hand_request's own Telegram leg above (see
+  // InternalNotificationController#notifyConsultationRequest / ConsultationRequestNotification).
+  // The customer's SMS confirmation is unchanged; staff previously had no visibility that a
+  // consultation had even been booked at all.
+  consultation_lead_sms: ['sms', 'telegram'],
   // 2026-09-05: checkout_review_request grew its own email fallback leg (see
   // CheckoutReviewEmailFallbackScheduler) — a customer who never replies to the SMS rating
   // request at all gets a one-tap emoji-rating email 24h later, same "SMS first, email only for

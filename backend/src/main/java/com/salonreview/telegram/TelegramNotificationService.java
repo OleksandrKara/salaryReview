@@ -365,6 +365,73 @@ public class TelegramNotificationService {
         return en + "\n\n—\n\n" + ru;
     }
 
+    /** Alerts a business's staff Telegram channel the moment a customer books a free PMU
+     * consultation — the {@code consultation_lead_sms} automation already text-confirms the
+     * customer (see {@code SmsAutomationRegistry}), but until now staff had no visibility that a
+     * booking had happened at all (2026-09-25 owner report: "нам приходило оповещение также помимо
+     * СМС"). Same shared staff chat as every other business-2 alert here (payment-failed, same-day
+     * booking, provider-schedule-closure). Business-scoped via {@code businessId}, same pattern as
+     * {@link #sendPaymentFailedAlert}. Never throws, same contract as every other send method here. */
+    public boolean sendConsultationRequestAlert(Long businessId, ConsultationRequestNotification n) {
+        TelegramNotificationConfig cfg = configService.get(businessId);
+        String token = cfg.getBotToken();
+        String chatId = cfg.getChatId();
+        if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
+            log.info("Consultation-request Telegram alert skipped — bot token or chat id not configured for business {}", businessId);
+            return false;
+        }
+
+        String text = businessLabel(businessId) + formatConsultationRequestMessage(n);
+        try {
+            Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", text);
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
+                    .timeout(Duration.ofSeconds(5))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(reqBody)))
+                    .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                log.warn("Consultation-request Telegram alert send failed: HTTP {} {}", res.statusCode(), res.body());
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.warn("Consultation-request Telegram alert send failed (caller unaffected): {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /** English on top, Russian below a divider — same reasoning and audience as
+     * {@link #formatSameDayBookingMessage}. {@code locationAddress} only ever renders (and is only
+     * ever populated by the caller) for an in-person consultation — an online one just says
+     * "Online (phone call)" with no address line, mirroring the SMS's own online/in-person
+     * {@code detailsClause} branch (see salonLandings' {@code notify_consultation_request_sms}).
+     * Package-private for direct unit testing. */
+    static String formatConsultationRequestMessage(ConsultationRequestNotification n) {
+        String client = n.customerName() == null || n.customerName().isBlank() ? "—" : n.customerName();
+        String phone = n.phoneNumber() == null || n.phoneNumber().isBlank() ? "—" : n.phoneNumber();
+        String when = formatPreferredTime(n.startAt());
+        boolean hasAddress = n.locationAddress() != null && !n.locationAddress().isBlank();
+
+        String typeEn = n.online() ? "Online (phone call)" : hasAddress ? "In person — " + n.locationAddress() : "In person";
+        String typeRu = n.online() ? "Онлайн (по телефону)" : hasAddress ? "Очно — " + n.locationAddress() : "Очно";
+
+        String en = "🆕 New free consultation booked\n"
+                + "👤 Client: " + client + "\n"
+                + "📱 Phone: " + phone + "\n"
+                + "🕐 Appointment: " + when + "\n"
+                + "📍 Format: " + typeEn;
+
+        String ru = "🆕 Забронирована бесплатная консультация\n"
+                + "👤 Клиент: " + client + "\n"
+                + "📱 Телефон: " + phone + "\n"
+                + "🕐 Запись: " + when + "\n"
+                + "📍 Формат: " + typeRu;
+
+        return en + "\n\n—\n\n" + ru;
+    }
+
     /** "45 min" under an hour, "3h" or "3h 20m" at/past one — matches how a person would actually
      * say it, not a raw minute count. Package-private for direct unit testing. */
     static String formatLeadTime(Duration d) {
