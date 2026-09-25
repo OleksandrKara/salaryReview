@@ -9,6 +9,7 @@ import com.salonreview.sms.RebookingPromoSigner;
 import com.salonreview.repo.BusinessRepository;
 import com.salonreview.sms.TwilioSmsService;
 import com.salonreview.square.SquareClientProvider;
+import com.salonreview.telegram.ConsultationRequestNotification;
 import com.salonreview.telegram.FourHandRequestNotification;
 import com.salonreview.telegram.PaymentFailedNotification;
 import com.salonreview.telegram.TelegramNotificationService;
@@ -128,6 +129,37 @@ public class InternalNotificationController {
                 business.getId(), body.businessShortCode(), body.customerName(), body.phoneNumber(),
                 body.serviceName(), body.amount(), body.errorMessage(), body.errorCode(), body.clientError());
         return ResponseEntity.ok(Map.of("sent", telegram.sendPaymentFailedAlert(business.getId(), notification)));
+    }
+
+    /** Fired the moment a customer books a free PMU consultation (Business 2's
+     * {@code consultation_lead_sms} automation) — this is a second, independent leg alongside the
+     * customer's own SMS confirmation (sent separately via {@link #sendSms}/{@code /sms/send}), not
+     * a replacement for it: staff get a Telegram heads-up, the customer still gets their text.
+     * {@code businessShortCode}/{@code businessId} resolved via {@link #resolveBusiness}, same
+     * both-nullable convention as every other request record here. Same "sent: false" fail-open
+     * outcome as {@link #notifyPaymentFailed} whether the business couldn't be resolved or the
+     * Telegram config isn't set up — the caller (already done booking) has nothing useful to do
+     * differently either way. */
+    public record ConsultationRequestRequest(String customerName, String phoneNumber, String startAt,
+                                              boolean online, String locationAddress,
+                                              String businessShortCode, Long businessId) {
+    }
+
+    @PostMapping("/notifications/consultation-request")
+    public ResponseEntity<Map<String, Object>> notifyConsultationRequest(
+            @RequestHeader(value = "X-Internal-Api-Key", required = false) String key,
+            @RequestBody ConsultationRequestRequest body) {
+        if (!keyMatches(key)) {
+            return ResponseEntity.status(401).build();
+        }
+        Business business = resolveBusiness(body.businessShortCode(), body.businessId());
+        if (business == null) {
+            return ResponseEntity.ok(Map.of("sent", false, "reason", "unknown_business"));
+        }
+        ConsultationRequestNotification notification = new ConsultationRequestNotification(
+                business.getId(), body.businessShortCode(), body.customerName(), body.phoneNumber(),
+                body.startAt(), body.online(), body.locationAddress());
+        return ResponseEntity.ok(Map.of("sent", telegram.sendConsultationRequestAlert(business.getId(), notification)));
     }
 
     /** {@code expEpochSeconds}/{@code signature} are re-verified here independently of whatever

@@ -75,7 +75,9 @@ public final class SmsAutomationRegistry {
                     "consultation_lead_sms",
                     "Consultation booking confirmation",
                     "Every customer who books a PMU consultation — Square's own confirmation text doesn't "
-                            + "reliably fire for this booking type, so a custom one is sent instead",
+                            + "reliably fire for this booking type, so a custom one is sent instead. Also "
+                            + "pings staff on Telegram (2026-09-25) so a booking doesn't go unnoticed — see "
+                            + "TelegramNotificationService#sendConsultationRequestAlert.",
                     List.of(), false, false, false
             )),
             Map.entry("checkout_review_request", AutomationMeta.sms(
