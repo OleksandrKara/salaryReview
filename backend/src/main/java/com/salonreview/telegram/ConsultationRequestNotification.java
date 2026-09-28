@@ -14,6 +14,7 @@ public record ConsultationRequestNotification(
         String phoneNumber,      // nullable
         String startAt,          // ISO-8601 UTC instant — the booked appointment's start time
         boolean online,          // true: phone-call consultation. false: in-person, at locationAddress
-        String locationAddress   // nullable — only meaningful (and only ever populated) when !online
+        String locationAddress,  // nullable — only meaningful (and only ever populated) when !online
+        String artistName        // nullable — the booked team member's display name (2026-09-28 owner request)
 ) {
 }

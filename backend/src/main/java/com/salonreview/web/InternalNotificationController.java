@@ -141,7 +141,7 @@ public class InternalNotificationController {
      * Telegram config isn't set up — the caller (already done booking) has nothing useful to do
      * differently either way. */
     public record ConsultationRequestRequest(String customerName, String phoneNumber, String startAt,
-                                              boolean online, String locationAddress,
+                                              boolean online, String locationAddress, String artistName,
                                               String businessShortCode, Long businessId) {
     }
 
@@ -158,7 +158,7 @@ public class InternalNotificationController {
         }
         ConsultationRequestNotification notification = new ConsultationRequestNotification(
                 business.getId(), body.businessShortCode(), body.customerName(), body.phoneNumber(),
-                body.startAt(), body.online(), body.locationAddress());
+                body.startAt(), body.online(), body.locationAddress(), body.artistName());
         return ResponseEntity.ok(Map.of("sent", telegram.sendConsultationRequestAlert(business.getId(), notification)));
     }
 
