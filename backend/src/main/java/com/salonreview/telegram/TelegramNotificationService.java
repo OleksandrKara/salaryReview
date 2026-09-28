@@ -407,9 +407,12 @@ public class TelegramNotificationService {
      * ever populated by the caller) for an in-person consultation — an online one just says
      * "Online (phone call)" with no address line, mirroring the SMS's own online/in-person
      * {@code detailsClause} branch (see salonLandings' {@code notify_consultation_request_sms}).
-     * Package-private for direct unit testing. */
+     * {@code artistName} (2026-09-28 owner request: "хочу видеть на какого мастера была сделана
+     * консультация") renders as "—" when unresolved rather than omitting the line, same convention
+     * as every other optional field here. Package-private for direct unit testing. */
     static String formatConsultationRequestMessage(ConsultationRequestNotification n) {
         String client = n.customerName() == null || n.customerName().isBlank() ? "—" : n.customerName();
+        String artist = n.artistName() == null || n.artistName().isBlank() ? "—" : n.artistName();
         String phone = n.phoneNumber() == null || n.phoneNumber().isBlank() ? "—" : n.phoneNumber();
         String when = formatPreferredTime(n.startAt());
         boolean hasAddress = n.locationAddress() != null && !n.locationAddress().isBlank();
@@ -419,12 +422,14 @@ public class TelegramNotificationService {
 
         String en = "🆕 New free consultation booked\n"
                 + "👤 Client: " + client + "\n"
+                + "💇 Artist: " + artist + "\n"
                 + "📱 Phone: " + phone + "\n"
                 + "🕐 Appointment: " + when + "\n"
                 + "📍 Format: " + typeEn;
 
         String ru = "🆕 Забронирована бесплатная консультация\n"
                 + "👤 Клиент: " + client + "\n"
+                + "💇 Мастер: " + artist + "\n"
                 + "📱 Телефон: " + phone + "\n"
                 + "🕐 Запись: " + when + "\n"
                 + "📍 Формат: " + typeRu;
