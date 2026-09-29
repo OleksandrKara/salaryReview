@@ -110,10 +110,9 @@ public class SmsAutomationService {
                             .map(SmsAutomation::isEnabled).orElse(false);
 
                     // Telegram-channel automations have no sms_message rows at all — their "sent"
-                    // count lives in provider_schedule_closure_alert instead (one row per grouped
-                    // alert actually sent, see ProviderScheduleClosureAlertScheduler).
+                    // count uses confirmed delivery_status=SENT and delivered_at in the outbox.
                     long sent = meta.channel() == SmsAutomationRegistry.Channel.TELEGRAM
-                            ? providerScheduleClosureAlertRepository.countByBusinessIdAndSentAtAfter(businessId, since)
+                            ? providerScheduleClosureAlertRepository.countByBusinessIdAndDeliveryStatusAndDeliveredAtAfter(businessId, "SENT", since)
                             : !meta.primaryTemplateKeys().isEmpty()
                                     ? messageRepository.countByBusinessIdAndAutomationKeyAndTemplateKeyInAndDirectionAndStatusAndCreatedAtAfter(
                                             businessId, meta.key(), meta.primaryTemplateKeys(), "OUTBOUND", "SENT", since)

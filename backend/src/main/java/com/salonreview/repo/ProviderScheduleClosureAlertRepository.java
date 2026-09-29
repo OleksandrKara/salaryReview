@@ -8,4 +8,6 @@ import java.time.Instant;
 public interface ProviderScheduleClosureAlertRepository extends JpaRepository<ProviderScheduleClosureAlert, Long> {
 
     long countByBusinessIdAndSentAtAfter(Long businessId, Instant since);
+
+    long countByBusinessIdAndDeliveryStatusAndDeliveredAtAfter(Long businessId, String deliveryStatus, Instant since);
 }

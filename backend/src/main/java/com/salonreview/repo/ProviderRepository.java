@@ -20,4 +20,8 @@ public interface ProviderRepository extends JpaRepository<Provider, Long> {
     /** The provider that owns the given Square team-member ID, if any. */
     @Query("select p from Provider p join p.squareTeamMemberIds m where m = :teamMemberId")
     Optional<Provider> findBySquareTeamMemberId(@Param("teamMemberId") String teamMemberId);
+
+    @Query("select p from Provider p join p.squareTeamMemberIds m where p.businessId = :businessId and m = :teamMemberId")
+    Optional<Provider> findBySquareTeamMemberIdAndBusinessId(@Param("teamMemberId") String teamMemberId,
+                                                          @Param("businessId") Long businessId);
 }

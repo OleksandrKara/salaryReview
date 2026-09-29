@@ -29,23 +29,29 @@ public class ProviderScheduleClosureAlertSettingsController {
         this.currentBusinessContext = currentBusinessContext;
     }
 
-    public record SettingsDto(int noticeThresholdHours, Instant updatedAt, String updatedBy) {
+    public record SettingsDto(int noticeThresholdHours, int minimumLossWindowMinutes, boolean observationOnly,
+                              Instant updatedAt, String updatedBy) {
     }
 
-    public record UpdateRequest(int noticeThresholdHours) {
+    public record UpdateRequest(int noticeThresholdHours, Integer minimumLossWindowMinutes, Boolean observationOnly) {
     }
 
     @GetMapping
     public SettingsDto get() {
         var settings = configService.getSettings(currentBusinessContext.id());
-        return new SettingsDto(settings.noticeThresholdHours(), settings.updatedAt(), settings.updatedBy());
+        return new SettingsDto(settings.noticeThresholdHours(), settings.minimumLossWindowMinutes(),
+                settings.observationOnly(), settings.updatedAt(), settings.updatedBy());
     }
 
     @PutMapping
     public SettingsDto update(@RequestBody UpdateRequest body, Principal principal) {
         Long businessId = currentBusinessContext.id();
         ProviderScheduleClosureAlertConfig config =
-                configService.update(businessId, body.noticeThresholdHours(), principal.getName());
-        return new SettingsDto(config.getNoticeThresholdHours(), config.getUpdatedAt(), config.getUpdatedBy());
+                body.minimumLossWindowMinutes() == null && body.observationOnly() == null
+                        ? configService.update(businessId, body.noticeThresholdHours(), principal.getName())
+                        : configService.update(businessId, body.noticeThresholdHours(), body.minimumLossWindowMinutes(),
+                                body.observationOnly(), principal.getName());
+        return new SettingsDto(config.getNoticeThresholdHours(), config.getMinimumLossWindowMinutes(),
+                config.isObservationOnly(), config.getUpdatedAt(), config.getUpdatedBy());
     }
 }

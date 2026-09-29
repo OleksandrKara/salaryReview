@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
  * restart mid-backfill is safe. Same shape as {@code ProviderVisitStartup}.
  */
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.external-startup.enabled", havingValue = "true", matchIfMissing = true)
 public class SquareBookingMirrorStartup {
 
     private static final Logger log = LoggerFactory.getLogger(SquareBookingMirrorStartup.class);

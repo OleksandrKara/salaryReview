@@ -29,6 +29,7 @@ import type {
   TelegramSettingsDto,
   TelegramSettingsUpdateRequest,
   ProviderScheduleClosureAlertSettingsDto,
+  ProviderScheduleChangeHistoryDto,
   SquareConnectionDto,
   SquareConnectionUpdateRequest,
   SeoConnectionDto,
@@ -245,10 +246,15 @@ export const api = {
   getProviderScheduleClosureAlertSettings: () =>
     proxyGet<ProviderScheduleClosureAlertSettingsDto>(`/api/owner/settings/provider-schedule-closure-alert`),
 
-  updateProviderScheduleClosureAlertSettings: (noticeThresholdHours: number) =>
+  updateProviderScheduleClosureAlertSettings: (body: Pick<ProviderScheduleClosureAlertSettingsDto,
+    'noticeThresholdHours' | 'minimumLossWindowMinutes' | 'observationOnly'>) =>
     proxyJson<ProviderScheduleClosureAlertSettingsDto>(
-      `/api/owner/settings/provider-schedule-closure-alert`, 'PUT', { noticeThresholdHours },
+      `/api/owner/settings/provider-schedule-closure-alert`, 'PUT', body,
     ),
+
+  getProviderScheduleChangeHistory: () => proxyGet<ProviderScheduleChangeHistoryDto>(
+    `/api/owner/automations/activity/provider-schedule-changes`,
+  ),
 
   // Square connection settings (owner) — Phase 6.4.
   getSquareConnection: () => proxyGet<SquareConnectionDto>(`/api/owner/settings/square`),

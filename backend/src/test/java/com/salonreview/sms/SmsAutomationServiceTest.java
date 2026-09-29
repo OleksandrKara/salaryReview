@@ -242,7 +242,7 @@ class SmsAutomationServiceTest {
     @DisplayName("provider_schedule_closure_alert: Telegram-channel automation counts \"sent\" from "
             + "provider_schedule_closure_alert, never sms_message, and tracks no clicks/replies/conversion")
     void providerScheduleClosureAlertUsesTelegramRepositoryForSentCount() {
-        when(providerScheduleClosureAlertRepository.countByBusinessIdAndSentAtAfter(eq(BUSINESS_ID), any(Instant.class)))
+        when(providerScheduleClosureAlertRepository.countByBusinessIdAndDeliveryStatusAndDeliveredAtAfter(eq(BUSINESS_ID), eq("SENT"), any(Instant.class)))
                 .thenReturn(3L);
 
         var summary = find("provider_schedule_closure_alert");

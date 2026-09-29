@@ -225,6 +225,147 @@ public class SquareClient {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record AvailabilitySearchResponse(List<Availability> availabilities) {}
 
+    /** Read-only introspection also supports personal access tokens. Never infer full calendar
+     * visibility from a successful buyer-level ListBookings response. */
+    public boolean hasCompleteScheduleBookingAccess() {
+        return cached("scheduleReadScopes", Duration.ofMinutes(5), () -> {
+            var response = throttled(() -> http.post().uri("/oauth2/token/status")
+                    .body(Map.of()).retrieve().body(SquareScheduleData.TokenStatus.class));
+            SquareScheduleData.requireSuccess(response, response == null ? null : response.errors());
+            return response.scopes() != null && response.scopes().contains("APPOINTMENTS_ALL_READ");
+        });
+    }
+
+    public String scheduleLocationId() { return locationId; }
+
+    public SquareScheduleData.BusinessProfile scheduleBusinessProfile() {
+        var response = throttled(() -> http.get().uri("/v2/bookings/business-booking-profile")
+                .retrieve().body(SquareScheduleData.BusinessProfileResponse.class));
+        SquareScheduleData.requireSuccess(response, response == null ? null : response.errors());
+        if (response.businessBookingProfile() == null) throw new IllegalStateException("Missing booking profile");
+        return response.businessBookingProfile();
+    }
+
+    public List<SquareScheduleData.TeamProfile> scheduleBookableTeamMembers() {
+        List<SquareScheduleData.TeamProfile> all = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        String cursor = null;
+        do {
+            final String pageCursor = cursor;
+            var response = throttled(() -> http.get().uri(builder -> {
+                builder.path("/v2/bookings/team-member-booking-profiles")
+                        .queryParam("location_id", locationId).queryParam("bookable_only", true)
+                        .queryParam("limit", PAGE_LIMIT);
+                if (pageCursor != null) builder.queryParam("cursor", pageCursor);
+                return builder.build();
+            }).retrieve().body(SquareScheduleData.TeamProfilesResponse.class));
+            SquareScheduleData.requireSuccess(response, response == null ? null : response.errors());
+            if (response.teamMemberBookingProfiles() != null) all.addAll(response.teamMemberBookingProfiles());
+            cursor = validScheduleCursor(response.cursor(), seen);
+        } while (cursor != null);
+        return all.stream().filter(team -> Boolean.TRUE.equals(team.isBookable()))
+                .peek(team -> {
+                    if (team.teamMemberId() == null || team.teamMemberId().isBlank())
+                        throw new IllegalStateException("Missing schedule team member ID");
+                }).toList();
+    }
+
+    /** Catalog metadata is refreshed each poll; payroll catalog DTOs/caches remain unchanged. */
+    public List<SquareScheduleData.Service> scheduleBookableServices() {
+        List<SquareScheduleData.Service> services = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        String cursor = null;
+        do {
+            final String pageCursor = cursor;
+            var response = throttled(() -> http.get().uri(builder -> {
+                builder.path("/v2/catalog/list").queryParam("types", "ITEM");
+                if (pageCursor != null) builder.queryParam("cursor", pageCursor);
+                return builder.build();
+            }).retrieve().body(SquareScheduleData.CatalogResponse.class));
+            SquareScheduleData.requireSuccess(response, response == null ? null : response.errors());
+            if (response.objects() != null) for (var item : response.objects()) {
+                if (Boolean.TRUE.equals(item.isDeleted()) || !schedulePresentAtLocation(item)
+                        || item.itemData() == null || Boolean.TRUE.equals(item.itemData().isArchived())
+                        || item.itemData().variations() == null) continue;
+                for (var variation : item.itemData().variations()) {
+                    var data = variation.itemVariationData();
+                    if (Boolean.TRUE.equals(variation.isDeleted()) || !schedulePresentAtLocation(variation)
+                            || data == null || !Boolean.TRUE.equals(data.availableForBooking())
+                            || data.serviceDuration() == null || data.serviceDuration() <= 0
+                            || data.serviceDuration() % 60_000 != 0 || data.serviceDuration() > 1500L * 60_000
+                            || variation.id() == null || variation.version() == null
+                            || data.teamMemberIds() == null || data.teamMemberIds().isEmpty()) continue;
+                    services.add(new SquareScheduleData.Service(variation.id(), variation.version(),
+                            item.itemData().name(), Math.toIntExact(data.serviceDuration() / 60_000),
+                            List.copyOf(data.teamMemberIds())));
+                }
+            }
+            cursor = validScheduleCursor(response.cursor(), seen);
+        } while (cursor != null);
+        return List.copyOf(services);
+    }
+
+    private boolean schedulePresentAtLocation(SquareScheduleData.CatalogObject object) {
+        if (object.presentAtAllLocations() == null || object.presentAtAllLocations())
+            return object.absentAtLocationIds() == null || !object.absentAtLocationIds().contains(locationId);
+        return object.presentAtLocationIds() != null && object.presentAtLocationIds().contains(locationId);
+    }
+
+    /** POST search is a read. A legitimate empty response is distinct from an error/null body. */
+    public List<SquareScheduleData.Availability> scheduleAvailability(String teamMemberId, String serviceId,
+                                                                     Instant start, Instant end) {
+        if (Duration.between(start, end).compareTo(Duration.ofHours(24)) < 0)
+            throw new IllegalArgumentException("Square availability search requires at least 24 hours");
+        Map<String, Object> body = Map.of("query", Map.of("filter", Map.of(
+                "start_at_range", Map.of("start_at", start.toString(), "end_at", end.toString()),
+                "location_id", locationId, "segment_filters", List.of(Map.of(
+                        "service_variation_id", serviceId,
+                        "team_member_id_filter", Map.of("any", List.of(teamMemberId)))))));
+        var response = throttled(() -> http.post().uri("/v2/bookings/availability/search")
+                .body(body).retrieve().body(SquareScheduleData.AvailabilityResponse.class));
+        SquareScheduleData.requireSuccess(response, response == null ? null : response.errors());
+        return response.availabilities() == null ? List.of() : List.copyOf(response.availabilities());
+    }
+
+    /** Fresh seller-visible schedule data. Does not populate, invalidate or reuse payroll caches. */
+    public List<SquareScheduleData.Booking> scheduleBookings(Instant start, Instant end) {
+        Map<String, SquareScheduleData.Booking> all = new LinkedHashMap<>();
+        for (Instant from = start; from.isBefore(end); ) {
+            Instant to = from.plus(Duration.ofDays(30));
+            if (to.isAfter(end)) to = end;
+            final Instant windowStart = from;
+            final Instant windowEnd = to;
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            String cursor = null;
+            do {
+                final String pageCursor = cursor;
+                var response = throttled(() -> http.get().uri(builder -> {
+                    builder.path("/v2/bookings").queryParam("location_id", locationId)
+                            .queryParam("start_at_min", windowStart.toString())
+                            .queryParam("start_at_max", windowEnd.toString()).queryParam("limit", PAGE_LIMIT);
+                    if (pageCursor != null) builder.queryParam("cursor", pageCursor);
+                    return builder.build();
+                }).retrieve().body(SquareScheduleData.BookingsResponse.class));
+                SquareScheduleData.requireSuccess(response, response == null ? null : response.errors());
+                if (response.bookings() != null) for (var booking : response.bookings()) {
+                    if (booking.id() == null || !locationId.equals(booking.locationId()))
+                        throw new IllegalStateException("Invalid schedule booking identity/location");
+                    all.put(booking.id(), booking);
+                }
+                cursor = validScheduleCursor(response.cursor(), seen);
+            } while (cursor != null);
+            from = to;
+        }
+        return List.copyOf(all.values());
+    }
+
+    private static String validScheduleCursor(String cursor, java.util.Set<String> seen) {
+        if (cursor == null || cursor.isBlank()) return null;
+        if (!seen.add(cursor) || seen.size() > 1000)
+            throw new IllegalStateException("Incomplete Square schedule pagination");
+        return cursor;
+    }
+
     /**
      * All bookings whose start falls in [start, end), following pagination. The Bookings API caps a
      * single query at 31 days, so the range is fetched in &le;30-day chunks and de-duplicated by id.

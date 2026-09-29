@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
  * backfill doesn't block the ready event; idempotent, so a restart mid-backfill is safe.
  */
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.external-startup.enabled", havingValue = "true", matchIfMissing = true)
 public class ProviderVisitStartup {
 
     private static final Logger log = LoggerFactory.getLogger(ProviderVisitStartup.class);
