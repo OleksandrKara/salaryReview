@@ -1,0 +1,19 @@
+# Design
+
+Use dedicated schedule-read DTOs in the per-business Square client. Verify APPOINTMENTS_ALL_READ with read-only token introspection, retrieve bookable staff, booking settings, eligible real service variations, full availability segments, and uncached paginated bookings. Keep payroll DTOs unchanged.
+
+A short assigned bookable service (at most 60 minutes) provides the primary probe. A distinct representative eligible service provides corroboration. Retain valid probe selections across observations; catalog/booking-policy/settings changes invalidate comparisons. Reject malformed responses, incomplete pages, unexpected segments, unsupported timing and ambiguous data.
+
+The detector operates on immutable observations. Only common query coverage above the live minimum booking lead plus a two-minute margin is comparable. Remove probe intervals explained by actual bookings, including segment offsets, intermissions, terminal transition time and shared resource overlap. Break a lost-start chain on a baseline gap, a current start (including a shifted start), an explained start, or a local-day boundary. Its duration is last minus first start, without adding the service duration. Apply notice to the first affected start, without clipping a same-day window's end to notice.
+
+V160 is the next migration at implementation start; recheck before integration. Add business-scoped observation, state and daily candidate records; extend the existing alert table for an outbox with explicit delivery states. Atomically persist observations, baseline and candidates. Freeze candidate evidence for later confirmation rather than comparing only with the latest snapshot. Use elapsed time and transactional state/unique keys in addition to ShedLock. Do not import legacy snapshots as trustworthy observations.
+
+Sample every ten minutes while preserving an elapsed twenty-minute confirmation interval. This avoids depending on response-time jitter between exactly two twenty-minute polls. Retain a 45-minute initial evidence/pending limit and a five-minute outbox freshness limit. Recheck the minimum lead plus margin and current business timezone during the atomic delivery claim. Daily dedup retains sent/unknown attempts even if availability flaps; an unsent suppressed candidate may be reconfirmed with fresh evidence.
+
+Default observationOnly=true prevents new outbound notifications until the owner opts into delivery after burn-in. Outbox claims happen before network calls. Successful, definite failed, and ambiguous attempts have separate outcomes; ambiguous attempts are never automatically repeated. A crash after claim becomes UNKNOWN. Failed attempts may be retried only following fresh detector confirmation, with a bounded attempt count. Count only confirmed deliveries.
+
+Existing settings remain OWNER-only. Read-only event activity uses the existing /api/owner/automations/activity/** OWNER/MANAGER matcher. All IDs/queries/keys are scoped by business; jobs establish CurrentBusinessContext.runAs. Use business-local dates/timezones and UTC instants. Add missing Next.js settings proxy, two independent policy fields, observation mode and readable event history.
+
+Local DB verification must use a fresh pgvector/pg16 instance. Disable schedulers for full-context tests and remove messaging/Square credentials. If Docker is unavailable, running the binaries extracted from that image in an isolated writable directory is acceptable: it retains the required Postgres/pgvector version and avoids the production database.
+
+The production rollout must disable the legacy automation before a mixed-replica deployment because the old code ignores observationOnly. Deploy through the repository CI after explicit authorization, then enable only AK.LUX.NAILS in observation mode after both replicas are updated. Outbound Telegram activation follows the observation period; see docs/provider-availability-alert-rollout.md.

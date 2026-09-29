@@ -82,6 +82,8 @@ class ProviderScheduleClosureAlertSettingsControllerTest {
         mvc.perform(get("/api/owner/settings/provider-schedule-closure-alert"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.noticeThresholdHours").value(24))
+                .andExpect(jsonPath("$.minimumLossWindowMinutes").value(240))
+                .andExpect(jsonPath("$.observationOnly").value(true))
                 .andExpect(jsonPath("$.updatedAt").doesNotExist())
                 .andExpect(jsonPath("$.updatedBy").doesNotExist());
     }
@@ -116,5 +118,19 @@ class ProviderScheduleClosureAlertSettingsControllerTest {
                         .contentType("application/json")
                         .content(json.writeValueAsString(Map.of("noticeThresholdHours", 0))))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void putSavesIndependentWindowAndObservationMode() throws Exception {
+        when(configService.update(BUSINESS_ID, 24, 300, false, "owner")).thenReturn(
+                ProviderScheduleClosureAlertConfig.builder().businessId(BUSINESS_ID).noticeThresholdHours(24)
+                        .minimumLossWindowMinutes(300).observationOnly(false).build());
+        mvc.perform(put("/api/owner/settings/provider-schedule-closure-alert").principal(() -> "owner")
+                        .contentType("application/json")
+                        .content("{\"noticeThresholdHours\":24,\"minimumLossWindowMinutes\":300,\"observationOnly\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.minimumLossWindowMinutes").value(300))
+                .andExpect(jsonPath("$.observationOnly").value(false));
+        verify(configService).update(BUSINESS_ID, 24, 300, false, "owner");
     }
 }

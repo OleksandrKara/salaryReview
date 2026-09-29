@@ -28,6 +28,14 @@ public class ProviderScheduleClosureAlertConfig {
     @Column(name = "notice_threshold_hours", nullable = false)
     private Integer noticeThresholdHours;
 
+    @Column(name = "minimum_loss_window_minutes", nullable = false)
+    @Builder.Default
+    private Integer minimumLossWindowMinutes = 240;
+
+    @Column(name = "observation_only", nullable = false)
+    @Builder.Default
+    private boolean observationOnly = true;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 

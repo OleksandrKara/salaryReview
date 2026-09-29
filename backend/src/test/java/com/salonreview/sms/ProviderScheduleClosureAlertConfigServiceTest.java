@@ -54,6 +54,8 @@ class ProviderScheduleClosureAlertConfigServiceTest {
         var settings = service.getSettings(BUSINESS_ID);
 
         assertThat(settings.noticeThresholdHours()).isEqualTo(24);
+        assertThat(settings.minimumLossWindowMinutes()).isEqualTo(240);
+        assertThat(settings.observationOnly()).isTrue();
         assertThat(settings.updatedAt()).isNull();
         assertThat(settings.updatedBy()).isNull();
     }
@@ -113,5 +115,26 @@ class ProviderScheduleClosureAlertConfigServiceTest {
         ProviderScheduleClosureAlertConfig saved = service.update(BUSINESS_ID, 168, "owner@test");
 
         assertThat(saved.getNoticeThresholdHours()).isEqualTo(168);
+    }
+
+    @Test
+    void independentWindowAndObservationPolicyAreSavedAndOmittedFieldsArePreserved() {
+        var existing = ProviderScheduleClosureAlertConfig.builder().businessId(BUSINESS_ID)
+                .noticeThresholdHours(24).minimumLossWindowMinutes(300).observationOnly(false).build();
+        when(repository.findByBusinessId(BUSINESS_ID)).thenReturn(Optional.of(existing));
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        var saved = service.update(BUSINESS_ID, 12, "owner");
+        assertThat(saved.getMinimumLossWindowMinutes()).isEqualTo(300);
+        assertThat(saved.isObservationOnly()).isFalse();
+        saved = service.update(BUSINESS_ID, 24, 240, true, "owner");
+        assertThat(saved.getMinimumLossWindowMinutes()).isEqualTo(240);
+        assertThat(saved.isObservationOnly()).isTrue();
+    }
+
+    @Test
+    void rejectsLossWindowOutsideAllowedBoundsWithoutWriting() {
+        assertThatThrownBy(() -> service.update(BUSINESS_ID, 24, 59, false, "owner")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.update(BUSINESS_ID, 24, 1441, false, "owner")).isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(repository);
     }
 }

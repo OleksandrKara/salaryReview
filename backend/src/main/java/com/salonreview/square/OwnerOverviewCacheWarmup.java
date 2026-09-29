@@ -20,6 +20,7 @@ import java.time.ZoneOffset;
  * ProviderVisitStartup}, so a slow Square pull doesn't delay the app's health-check readiness.
  */
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.external-startup.enabled", havingValue = "true", matchIfMissing = true)
 public class OwnerOverviewCacheWarmup {
 
     private static final Logger log = LoggerFactory.getLogger(OwnerOverviewCacheWarmup.class);

@@ -6,12 +6,8 @@ import lombok.*;
 import java.time.Instant;
 
 /**
- * One Telegram alert actually sent by {@code ProviderScheduleClosureAlertScheduler} — a single
- * poll can find several slots newly closed for the same provider (a provider very often blocks
- * their whole remaining day at once, not one slot at a time), grouped into exactly one row/one
- * message rather than one per slot. Doubles as this automation's "sent" count on the
- * {@code /owner/automations} hub (see {@code SmsAutomationService#list}), since it has no
- * {@code sms_message} row to count the way every SMS-channel automation does.
+ * Schedule notification audit/outbox. V160 distinguishes legacy rows, queued attempts and
+ * confirmed Telegram delivery; only SENT/deliveredAt contributes to automation delivery counts.
  */
 @Entity
 @Table(name = "provider_schedule_closure_alert")
@@ -44,4 +40,11 @@ public class ProviderScheduleClosureAlert {
     @Column(name = "sent_at", nullable = false)
     @Builder.Default
     private Instant sentAt = Instant.now();
+
+    @Column(name = "delivery_status", nullable = false)
+    @Builder.Default
+    private String deliveryStatus = "LEGACY";
+
+    @Column(name = "delivered_at")
+    private Instant deliveredAt;
 }

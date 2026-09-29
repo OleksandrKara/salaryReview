@@ -37,6 +37,7 @@ import java.util.Optional;
  * Square call needed.
  */
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.external-startup.enabled", havingValue = "true", matchIfMissing = true)
 public class CheckoutReviewProviderRatingBackfillStartup {
 
     private static final Logger log = LoggerFactory.getLogger(CheckoutReviewProviderRatingBackfillStartup.class);

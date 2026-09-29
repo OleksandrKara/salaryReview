@@ -1,0 +1,10 @@
+- [x] Add forward-only migration for policy, observations, candidates and delivery audit.
+- [x] Add dedicated validated Square schedule reads and stable provider-specific probes.
+- [x] Implement pure cutoff/booking/lost-window detector and atomic candidate state.
+- [x] Replace scheduler with tenant-scoped observations and persistent confirmation.
+- [x] Implement idempotent outbox claims, neutral bilingual message and delivery audit.
+- [x] Extend OWNER settings and business-scoped activity; preserve security matchers.
+- [x] Add frontend settings proxy, independent thresholds, observation mode and history.
+- [x] Add regression tests for cutoff, interval overlap, shifting, confirmation and dedup.
+- [x] Verify isolated DB migration/transactions/tenant scope and backend coverage: 1,731 tests, zero failures/errors/skips; 19 state/delivery DB checks; coverage gates passed unchanged.
+- [x] Verify frontend types/build and document rollout/remaining production activation: TypeScript and production build passed; rollout documented.

@@ -184,17 +184,15 @@ public final class SmsAutomationRegistry {
             // Telegram-channel, business-1-only (owner request 2026-09-02) — an internal ops alert to
             // the staff Telegram chat, never a customer-facing message, so it tracks no clicks/replies/
             // conversion and has no sms_message rows; see ProviderScheduleClosureAlertScheduler and
-            // ProviderScheduleClosureAlertRepository#countByBusinessIdAndSentAtAfter for its "sent" count.
+            // ProviderScheduleClosureAlertRepository's confirmed-delivery count for its "sent" count.
             Map.entry("provider_schedule_closure_alert", new AutomationMeta(
                     "provider_schedule_closure_alert",
-                    "Provider schedule-closure alert",
-                    "Internal alert to the staff Telegram chat whenever a provider blocks part of their own "
-                            + "Square calendar with less than a day's notice — lets the on-shift manager confirm "
-                            + "whether it was actually arranged in advance. Detected by polling Square's "
-                            + "availability search and diffing against the previous snapshot (Square has no "
-                            + "direct API/webhook for a team member's own schedule changes); all slots newly "
-                            + "closed for the same provider in one poll are grouped into a single message so a "
-                            + "provider closing a whole day doesn't produce a flood of alerts.",
+                    "Provider availability-change alert",
+                    "Internal alert for a large continuous loss of previously available online booking starts, "
+                            + "within the configured notice threshold and confirmed after at least 20 minutes. "
+                            + "Booking cutoffs and customer appointments are excluded. At most one Telegram "
+                            + "message per provider and affected date. Starts in observation mode; calendar "
+                            + "changes are recorded without claiming who changed the schedule.",
                     List.of(), false, false, false, Channel.TELEGRAM
             ))
     );

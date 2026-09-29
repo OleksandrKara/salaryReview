@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
  * a runaway loop. Catches and logs any failure so a Square hiccup at boot doesn't kill the app.
  */
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.external-startup.enabled", havingValue = "true", matchIfMissing = true)
 public class RevenueSnapshotStartup {
 
     private static final Logger log = LoggerFactory.getLogger(RevenueSnapshotStartup.class);

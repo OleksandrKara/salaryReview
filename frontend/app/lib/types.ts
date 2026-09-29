@@ -53,8 +53,28 @@ export interface TelegramSettingsDto {
 // still on the 24h default and has never saved this setting.
 export interface ProviderScheduleClosureAlertSettingsDto {
   noticeThresholdHours: number;
+  minimumLossWindowMinutes: number;
+  observationOnly: boolean;
   updatedAt: string | null;
   updatedBy: string | null;
+}
+
+export interface ProviderScheduleChangeHistoryDto {
+  events: Array<{
+    id: number;
+    providerName: string;
+    date: string;
+    status: string;
+    reason: string;
+    firstStart: string;
+    lastStart: string;
+    windowMinutes: number;
+    detectedAt: string;
+    confirmedAt: string | null;
+    deliveryStatus: string | null;
+    timezone: string;
+  }>;
+  providers: Array<{ teamMemberId: string; checkedAt: string; status: string; reason: string }>;
 }
 
 export interface SquareConnectionDto {
