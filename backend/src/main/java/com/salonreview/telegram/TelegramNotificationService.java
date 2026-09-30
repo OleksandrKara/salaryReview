@@ -383,7 +383,9 @@ public class TelegramNotificationService {
 
         String text = businessLabel(businessId) + formatConsultationRequestMessage(n);
         try {
-            Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", text);
+            // No link preview: the message now carries the booking page's URL, and a big preview card
+            // of our own page would push the actual lead details off screen.
+            Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", text, "disable_web_page_preview", true);
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
                     .timeout(Duration.ofSeconds(5))
@@ -409,7 +411,12 @@ public class TelegramNotificationService {
      * {@code detailsClause} branch (see salonLandings' {@code notify_consultation_request_sms}).
      * {@code artistName} (2026-09-28 owner request: "хочу видеть на какого мастера была сделана
      * консультация") renders as "—" when unresolved rather than omitting the line, same convention
-     * as every other optional field here. Package-private for direct unit testing. */
+     * as every other optional field here.
+     * {@code sourcePageUrl}/{@code sourcePageTitle}/{@code adCampaign} (2026-09-30 owner request:
+     * managers should see which page the booking came from, to guess what the client wants): the
+     * page line always renders ("—" if unknown), the ad line only when the visit came from an ad.
+     * The heading no longer says "free" for the in-person one: that consultation is paid ($50).
+     * Package-private for direct unit testing. */
     static String formatConsultationRequestMessage(ConsultationRequestNotification n) {
         String client = n.customerName() == null || n.customerName().isBlank() ? "—" : n.customerName();
         String artist = n.artistName() == null || n.artistName().isBlank() ? "—" : n.artistName();
@@ -417,24 +424,41 @@ public class TelegramNotificationService {
         String when = formatPreferredTime(n.startAt());
         boolean hasAddress = n.locationAddress() != null && !n.locationAddress().isBlank();
 
+        String page = formatSourcePage(n.sourcePageTitle(), n.sourcePageUrl());
+        boolean hasAd = n.adCampaign() != null && !n.adCampaign().isBlank();
         String typeEn = n.online() ? "Online (phone call)" : hasAddress ? "In person — " + n.locationAddress() : "In person";
         String typeRu = n.online() ? "Онлайн (по телефону)" : hasAddress ? "Очно — " + n.locationAddress() : "Очно";
 
-        String en = "🆕 New free consultation booked\n"
+        String en = (n.online() ? "🆕 New free consultation booked\n" : "🆕 New in-studio consultation booked\n")
                 + "👤 Client: " + client + "\n"
                 + "💇 Artist: " + artist + "\n"
                 + "📱 Phone: " + phone + "\n"
                 + "🕐 Appointment: " + when + "\n"
-                + "📍 Format: " + typeEn;
+                + "📍 Format: " + typeEn + "\n"
+                + "📄 Page: " + page
+                + (hasAd ? "\n📣 Ad: " + n.adCampaign().strip() : "");
 
-        String ru = "🆕 Забронирована бесплатная консультация\n"
+        String ru = (n.online() ? "🆕 Забронирована бесплатная консультация\n" : "🆕 Забронирована консультация в студии\n")
                 + "👤 Клиент: " + client + "\n"
                 + "💇 Мастер: " + artist + "\n"
                 + "📱 Телефон: " + phone + "\n"
                 + "🕐 Запись: " + when + "\n"
-                + "📍 Формат: " + typeRu;
+                + "📍 Формат: " + typeRu + "\n"
+                + "📄 Страница: " + page
+                + (hasAd ? "\n📣 Реклама: " + n.adCampaign().strip() : "");
 
         return en + "\n\n—\n\n" + ru;
+    }
+
+    /** "Permanent Lips — https://…" when both are known, whichever one is known otherwise, "—" if
+     * neither. Package-private for direct unit testing. */
+    static String formatSourcePage(String title, String url) {
+        boolean hasTitle = title != null && !title.isBlank();
+        boolean hasUrl = url != null && !url.isBlank();
+        if (hasTitle && hasUrl) return title.strip() + " — " + url.strip();
+        if (hasUrl) return url.strip();
+        if (hasTitle) return title.strip();
+        return "—";
     }
 
     /** "45 min" under an hour, "3h" or "3h 20m" at/past one — matches how a person would actually
