@@ -15,6 +15,9 @@ public record ConsultationRequestNotification(
         String startAt,          // ISO-8601 UTC instant — the booked appointment's start time
         boolean online,          // true: phone-call consultation. false: in-person, at locationAddress
         String locationAddress,  // nullable — only meaningful (and only ever populated) when !online
-        String artistName        // nullable — the booked team member's display name (2026-09-28 owner request)
+        String artistName,       // nullable — the booked team member's display name (2026-09-28 owner request)
+        String sourcePageUrl,    // nullable — page the booking was made from; salonLandings only forwards our own domains
+        String sourcePageTitle,  // nullable — that page's title, a readable hint of what the client was looking at
+        String adCampaign        // nullable — utm_campaign from the visit's first-touch tracking, if it came from an ad
 ) {
 }
