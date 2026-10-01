@@ -335,6 +335,95 @@ public class TelegramNotificationService {
         }
     }
 
+    /** Card-on-file page alerts (akluxnails.com/card): a card saved (with any warning signs, such
+     * as a prepaid card or a cardholder name that doesn't match), a card refused by Square/the bank,
+     * or the page pausing itself after a burst of failures (possible card testing). Same shared
+     * staff chat and never-throws contract as every other send method here. */
+    public boolean sendCardOnFileAlert(Long businessId, CardOnFileNotification n) {
+        TelegramNotificationConfig cfg = configService.get(businessId);
+        String token = cfg.getBotToken();
+        String chatId = cfg.getChatId();
+        if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
+            log.info("Card-on-file Telegram alert skipped: bot token or chat id not configured for business {}", businessId);
+            return false;
+        }
+        String text = businessLabel(businessId) + formatCardOnFileMessage(n);
+        try {
+            Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", text);
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
+                    .timeout(Duration.ofSeconds(5))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(reqBody)))
+                    .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                log.warn("Card-on-file Telegram alert send failed: HTTP {} {}", res.statusCode(), res.body());
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.warn("Card-on-file Telegram alert send failed (caller unaffected): {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /** English on top, Russian below a divider, same as {@link #formatPaymentFailedMessage}.
+     * Package-private for direct unit testing. */
+    static String formatCardOnFileMessage(CardOnFileNotification n) {
+        String client = blankToDash(n.customerName());
+        String phone = blankToDash(n.phoneNumber());
+        String email = n.email() == null || n.email().isBlank() ? "" : "📧 " + n.email() + "\n";
+        String card = (n.cardBrand() == null ? "Card" : n.cardBrand()) + (n.last4() == null ? "" : " •••• " + n.last4())
+                + (n.cardType() == null ? "" : ", " + n.cardType())
+                + (n.expiry() == null ? "" : ", exp " + n.expiry());
+        String attempts = n.failedAttempts() == null || n.failedAttempts() <= 0 ? "" : String.valueOf(n.failedAttempts());
+        java.util.List<String> warnings = n.warnings() == null ? java.util.List.of() : n.warnings();
+        String reason = blankToDash(n.errorMessage()) + (n.errorCode() == null || n.errorCode().isBlank() ? "" : " (" + n.errorCode() + ")");
+
+        String en;
+        String ru;
+        switch (n.event()) {
+            case SAVED -> {
+                en = (warnings.isEmpty() ? "✅ Card on file added" : "⚠️ Card on file added, please check") + "\n"
+                        + "👤 Client: " + client + "\n📱 Phone: " + phone + "\n" + email
+                        + "💳 " + card
+                        + (warnings.isEmpty() ? "" : "\n" + warnings.stream().map(w -> "⚠️ " + w).collect(java.util.stream.Collectors.joining("\n")));
+                ru = (warnings.isEmpty() ? "✅ Клиент добавил карту" : "⚠️ Клиент добавил карту, проверьте") + "\n"
+                        + "👤 Клиент: " + client + "\n📱 Телефон: " + phone + "\n" + email
+                        + "💳 " + card
+                        + (warnings.isEmpty() ? "" : "\n" + warnings.stream().map(w -> "⚠️ " + w).collect(java.util.stream.Collectors.joining("\n")));
+            }
+            case DECLINED -> {
+                en = "❌ Card on file refused\n"
+                        + "👤 Client: " + client + "\n📱 Phone: " + phone + "\n" + email
+                        + "❌ Reason: " + reason
+                        + (attempts.isEmpty() ? "" : "\n🔁 Failed tries (last hour): " + attempts)
+                        + "\n\nThe card was NOT saved. If they don't succeed, reach out before the appointment.";
+                ru = "❌ Карта не принята\n"
+                        + "👤 Клиент: " + client + "\n📱 Телефон: " + phone + "\n" + email
+                        + "❌ Причина: " + reason
+                        + (attempts.isEmpty() ? "" : "\n🔁 Неудачных попыток за час: " + attempts)
+                        + "\n\nКарта НЕ сохранена. Если клиент так и не добавит карту, свяжитесь с ним до записи.";
+            }
+            default -> {
+                en = "🚨 Card page paused\n"
+                        + "Too many refused cards in a short time" + (attempts.isEmpty() ? "" : " (" + attempts + ")")
+                        + ". This looks like card testing by a bot, so akluxnails.com/card stopped accepting cards for an hour. "
+                        + "Nothing was charged. Clients can still book; their card step in the booking flow is unaffected.";
+                ru = "🚨 Страница карты на паузе\n"
+                        + "Слишком много отклонённых карт за короткое время" + (attempts.isEmpty() ? "" : " (" + attempts + ")")
+                        + ". Похоже на проверку украденных карт ботом, поэтому akluxnails.com/card не принимает карты час. "
+                        + "Ничего не списано. Запись на сайте работает как обычно.";
+            }
+        }
+        return en + "\n\n· · ·\n\n" + ru;
+    }
+
+    private static String blankToDash(String s) {
+        return s == null || s.isBlank() ? "-" : s;
+    }
+
     /** English on top, Russian below a divider — same reasoning and audience as
      * {@link #formatSameDayBookingMessage}. Package-private for direct unit testing. */
     static String formatPaymentFailedMessage(PaymentFailedNotification n) {
