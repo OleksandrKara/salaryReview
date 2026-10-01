@@ -122,8 +122,9 @@ public final class SmsAutomationRegistry {
                             + "review link), if they haven't already rebooked. Never after 8:45pm: a late visit "
                             + "gets it at 8:45pm, or 10am the next morning, with the offer extended to that day. "
                             + "Consented customers get the $10-off version (min. $99 order), others a plain "
-                            + "rebooking reminder with the same link. Customers who neither click nor reply by "
-                            + "7pm also get a follow-up email — see WinbackEmailFallbackScheduler.",
+                            + "rebooking reminder with the same link. Customers who neither click nor reply get "
+                            + "a follow-up email at 7pm, or at 10am the next morning if the text went out after "
+                            + "7pm — see WinbackEmailFallbackScheduler.",
                     List.of(), true, true, true
             )),
             Map.entry("lapsed_customer_winback", AutomationMeta.sms(

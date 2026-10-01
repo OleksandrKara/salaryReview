@@ -211,26 +211,32 @@ class WinbackEmailFallbackSchedulerTest {
     }
 
     @Test
-    @DisplayName("yesterday-evening texts: same-day rebooking with a live offer is processed, a winback one isn't, an expired offer isn't")
-    void yesterdayEveningCandidates() {
-        Instant yesterdayEvening = Instant.now().minusSeconds(20 * 3600);
-        SmsMessage rebookLive = candidate(10L, SameDayRebookingScheduler.AUTOMATION_KEY, "a");
-        rebookLive.setCreatedAt(yesterdayEvening);
-        rebookLive.setLinkTarget("REBOOK:" + Instant.now().plusSeconds(3600).getEpochSecond());
-        SmsMessage rebookExpired = candidate(11L, SameDayRebookingScheduler.AUTOMATION_KEY, "b");
-        rebookExpired.setCreatedAt(yesterdayEvening);
-        rebookExpired.setLinkTarget("REBOOK:" + Instant.now().minusSeconds(60).getEpochSecond());
-        SmsMessage winbackYesterday = candidate(12L, LapsedCustomerWinbackScheduler.AUTOMATION_KEY, "c");
-        winbackYesterday.setCreatedAt(java.time.LocalDate.now(java.time.ZoneId.of("America/Los_Angeles"))
-                .atStartOfDay(java.time.ZoneId.of("America/Los_Angeles")).toInstant().minusSeconds(3600));
+    @DisplayName("10:00 run: only same-day rebooking texts, yesterday 19:00 to midnight; a live offer is emailed, an expired one isn't")
+    void morningRunForYesterdayEveningRebookingTexts() {
+        java.time.ZoneId pt = java.time.ZoneId.of("America/Los_Angeles");
+        java.time.LocalDate today = java.time.LocalDate.now(pt);
+        Instant yesterday1930 = today.minusDays(1).atTime(19, 30).atZone(pt).toInstant();
+        SmsMessage live = candidate(10L, SameDayRebookingScheduler.AUTOMATION_KEY, "a");
+        live.setCreatedAt(yesterday1930);
+        live.setLinkTarget("REBOOK:" + Instant.now().plusSeconds(3600).getEpochSecond());
+        SmsMessage expired = candidate(11L, SameDayRebookingScheduler.AUTOMATION_KEY, "b");
+        expired.setCreatedAt(yesterday1930);
+        expired.setLinkTarget("REBOOK:" + Instant.now().minusSeconds(60).getEpochSecond());
         when(smsMessageRepository.findByBusinessIdAndAutomationKeyInAndDirectionAndStatusAndClickedAtIsNullAndCreatedAtBetween(
                 eq(BUSINESS_ID), any(), eq("OUTBOUND"), eq("SENT"), any(), any()))
-                .thenReturn(List.of(rebookLive, rebookExpired, winbackYesterday));
+                .thenReturn(List.of(live, expired));
 
-        scheduler.sendDueFollowUps();
+        scheduler.sendMorningRebookingFollowUps();
 
+        ArgumentCaptor<List<String>> keys = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<Instant> from = ArgumentCaptor.forClass(Instant.class);
+        ArgumentCaptor<Instant> to = ArgumentCaptor.forClass(Instant.class);
+        verify(smsMessageRepository).findByBusinessIdAndAutomationKeyInAndDirectionAndStatusAndClickedAtIsNullAndCreatedAtBetween(
+                eq(BUSINESS_ID), keys.capture(), eq("OUTBOUND"), eq("SENT"), from.capture(), to.capture());
+        assertThat(keys.getValue()).containsExactly(SameDayRebookingScheduler.AUTOMATION_KEY);
+        assertThat(from.getValue()).isEqualTo(today.minusDays(1).atTime(19, 0).atZone(pt).toInstant());
+        assertThat(to.getValue()).isEqualTo(today.atStartOfDay(pt).toInstant());
         verify(winbackEmailSendRepository).existsBySmsMessageId(10L);
         verify(winbackEmailSendRepository, never()).existsBySmsMessageId(11L);
-        verify(winbackEmailSendRepository, never()).existsBySmsMessageId(12L);
     }
 }
