@@ -191,4 +191,46 @@ class WinbackEmailFallbackSchedulerTest {
         assertThat(captor.getValue().getState()).isEqualTo(WinbackEmailSend.STATE_SKIPPED_REPLIED);
         org.mockito.Mockito.verifyNoInteractions(mailchimpEmailService);
     }
+
+    // --- 2026-10-01: same-day rebooking texts sent after yesterday's 19:00 run ------------------
+
+    @Test
+    @DisplayName("promoStillValid: REBOOK link with a future expiry is valid, a past one isn't, other links always are")
+    void promoStillValid() {
+        Instant now = Instant.now();
+        SmsMessage future = candidate(1L, SameDayRebookingScheduler.AUTOMATION_KEY, "t1");
+        future.setLinkTarget("REBOOK:" + now.plusSeconds(3600).getEpochSecond());
+        SmsMessage past = candidate(2L, SameDayRebookingScheduler.AUTOMATION_KEY, "t2");
+        past.setLinkTarget("REBOOK:" + now.minusSeconds(60).getEpochSecond());
+        SmsMessage other = candidate(3L, LapsedCustomerWinbackScheduler.AUTOMATION_KEY, "t3");
+        other.setLinkTarget("WINBACK");
+
+        assertThat(WinbackEmailFallbackScheduler.promoStillValid(future, now)).isTrue();
+        assertThat(WinbackEmailFallbackScheduler.promoStillValid(past, now)).isFalse();
+        assertThat(WinbackEmailFallbackScheduler.promoStillValid(other, now)).isTrue();
+    }
+
+    @Test
+    @DisplayName("yesterday-evening texts: same-day rebooking with a live offer is processed, a winback one isn't, an expired offer isn't")
+    void yesterdayEveningCandidates() {
+        Instant yesterdayEvening = Instant.now().minusSeconds(20 * 3600);
+        SmsMessage rebookLive = candidate(10L, SameDayRebookingScheduler.AUTOMATION_KEY, "a");
+        rebookLive.setCreatedAt(yesterdayEvening);
+        rebookLive.setLinkTarget("REBOOK:" + Instant.now().plusSeconds(3600).getEpochSecond());
+        SmsMessage rebookExpired = candidate(11L, SameDayRebookingScheduler.AUTOMATION_KEY, "b");
+        rebookExpired.setCreatedAt(yesterdayEvening);
+        rebookExpired.setLinkTarget("REBOOK:" + Instant.now().minusSeconds(60).getEpochSecond());
+        SmsMessage winbackYesterday = candidate(12L, LapsedCustomerWinbackScheduler.AUTOMATION_KEY, "c");
+        winbackYesterday.setCreatedAt(java.time.LocalDate.now(java.time.ZoneId.of("America/Los_Angeles"))
+                .atStartOfDay(java.time.ZoneId.of("America/Los_Angeles")).toInstant().minusSeconds(3600));
+        when(smsMessageRepository.findByBusinessIdAndAutomationKeyInAndDirectionAndStatusAndClickedAtIsNullAndCreatedAtBetween(
+                eq(BUSINESS_ID), any(), eq("OUTBOUND"), eq("SENT"), any(), any()))
+                .thenReturn(List.of(rebookLive, rebookExpired, winbackYesterday));
+
+        scheduler.sendDueFollowUps();
+
+        verify(winbackEmailSendRepository).existsBySmsMessageId(10L);
+        verify(winbackEmailSendRepository, never()).existsBySmsMessageId(11L);
+        verify(winbackEmailSendRepository, never()).existsBySmsMessageId(12L);
+    }
 }

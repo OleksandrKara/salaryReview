@@ -231,6 +231,14 @@ public class SmsMessageLogService {
         return repository.existsByBusinessIdAndPhoneNumberAndNegativeFeedbackAtIsNotNull(businessId, PhoneNumbers.normalize(phoneNumber));
     }
 
+    /** True if this number clicked the Google or Yelp review link (only ever sent after a 4-5 star
+     * reply to the checkout rating text) within [from, to]. */
+    public boolean clickedReviewLinkBetween(Long businessId, String phoneNumber, Instant from, Instant to) {
+        return repository.existsByBusinessIdAndPhoneNumberAndLinkTargetInAndClickedAtBetween(
+                businessId, PhoneNumbers.normalize(phoneNumber),
+                java.util.List.of(CheckoutReviewLinks.GOOGLE_REVIEW_TARGET, CheckoutReviewLinks.YELP_REVIEW_TARGET), from, to);
+    }
+
     /** Best-effort automation attribution for an inbound reply that doesn't match a pending
      * {@link com.salonreview.domain.SmsReplyFlow} (i.e. every automation except
      * {@code checkout_review_request}) — the automation key of this phone number's single most

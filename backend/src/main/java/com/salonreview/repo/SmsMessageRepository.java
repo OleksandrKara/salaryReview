@@ -223,6 +223,11 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
      * E.164-normalized. */
     boolean existsByBusinessIdAndPhoneNumberAndNegativeFeedbackAtIsNotNull(Long businessId, String phoneNumber);
 
+    /** Did this number click one of the given tracked links within the window? Used by
+     * SameDayRebookingScheduler's early send after a Google/Yelp review-link click. */
+    boolean existsByBusinessIdAndPhoneNumberAndLinkTargetInAndClickedAtBetween(
+            Long businessId, String phoneNumber, java.util.Collection<String> linkTargets, Instant from, Instant to);
+
     /** Batch form of "has any OUTBOUND message to this number ever come back with one of these
      * Twilio delivery-status error codes", for one business — same one-query-not-one-per-row
      * pattern as {@link #findPhoneNumbersWithClickedLinkTarget}. */

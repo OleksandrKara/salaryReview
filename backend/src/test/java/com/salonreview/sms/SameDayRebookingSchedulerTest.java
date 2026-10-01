@@ -47,6 +47,9 @@ class SameDayRebookingSchedulerTest {
     private TwilioSmsConfigRepository twilioConfigs;
     private PromoConfigService promoConfigService;
     private SameDayRebookingScheduler scheduler;
+    private static final java.time.ZoneId ZONE = java.time.ZoneId.of("America/Los_Angeles");
+    /** Fixed "now", inside the 09:00-20:45 send window (salon time). */
+    private static final Instant NOW = java.time.ZonedDateTime.of(2026, 9, 30, 15, 0, 0, 0, ZONE).toInstant();
 
     @BeforeEach
     void setUp() {
@@ -75,7 +78,8 @@ class SameDayRebookingSchedulerTest {
                 .thenReturn(Optional.of(new PromoConfigService.PromoTerms(1000, null, "GROUP1", true)));
         scheduler = new SameDayRebookingScheduler(repository, squareClientProvider, twilioConfigs, automationService,
                 consentRepository, rebookingProperties, messageLogService, configService, client, technicianNameResolver,
-                templateService, "https://salon.akluxnails.com", promoConfigService, new SquareUpcomingAppointmentService());
+                templateService, "https://salon.akluxnails.com", promoConfigService, new SquareUpcomingAppointmentService(),
+                java.time.Clock.fixed(NOW, ZONE));
 
         when(automationService.isEnabled(1L, "same_day_rebooking_discount")).thenReturn(true);
         when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(true);
@@ -115,7 +119,7 @@ class SameDayRebookingSchedulerTest {
     @Test
     @DisplayName("unbooked, enabled, consented, unexpired → sends and writes SENT")
     void sendsWhenAllConditionsMet() throws Exception {
-        SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
+        SameDayRebookingSend s = send(NOW.minusSeconds(5), NOW.plusSeconds(3600));
         givenDue(s);
         when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
 
@@ -130,7 +134,7 @@ class SameDayRebookingSchedulerTest {
     @Test
     @DisplayName("offer already expired by send time → SKIPPED_EXPIRED, never sent")
     void expiredOfferIsSkipped() throws Exception {
-        SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().minusSeconds(60));
+        SameDayRebookingSend s = send(NOW.minusSeconds(5), NOW.minusSeconds(60));
         givenDue(s);
 
         scheduler.sendDueRebookingNudges();
@@ -144,7 +148,7 @@ class SameDayRebookingSchedulerTest {
     @Test
     @DisplayName("customer already has an upcoming appointment → SKIPPED_BOOKED, never sent")
     void upcomingAppointmentIsSkipped() throws Exception {
-        SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
+        SameDayRebookingSend s = send(NOW.minusSeconds(5), NOW.plusSeconds(3600));
         givenDue(s);
         String futureIso = Instant.now().plusSeconds(1800).toString();
         when(square.bookingsForCustomer(eq(CUSTOMER_ID), any()))
@@ -162,7 +166,7 @@ class SameDayRebookingSchedulerTest {
     @DisplayName("automation disabled → SKIPPED_DISABLED, never sent")
     void disabledAutomationIsSkipped() throws Exception {
         when(automationService.isEnabled(1L, "same_day_rebooking_discount")).thenReturn(false);
-        SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
+        SameDayRebookingSend s = send(NOW.minusSeconds(5), NOW.plusSeconds(3600));
         givenDue(s);
 
         scheduler.sendDueRebookingNudges();
@@ -178,7 +182,7 @@ class SameDayRebookingSchedulerTest {
             + "(the coupon link would 404)")
     void promoNotConfiguredIsSkipped() throws Exception {
         when(promoConfigService.get(BUSINESS_ID, PromoConfigService.REBOOK_PROMO_CODE)).thenReturn(Optional.empty());
-        SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
+        SameDayRebookingSend s = send(NOW.minusSeconds(5), NOW.plusSeconds(3600));
         givenDue(s);
 
         scheduler.sendDueRebookingNudges();
@@ -194,7 +198,7 @@ class SameDayRebookingSchedulerTest {
     void noConsentAnywhereSendsTransactionalReminder() throws Exception {
         when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(false);
         when(square.customerSegmentIds(CUSTOMER_ID)).thenReturn(List.of());
-        SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
+        SameDayRebookingSend s = send(NOW.minusSeconds(5), NOW.plusSeconds(3600));
         givenDue(s);
         when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
 
@@ -224,7 +228,7 @@ class SameDayRebookingSchedulerTest {
     void consentOnlyInSquareSegmentStillSends() throws Exception {
         when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(false);
         when(square.customerSegmentIds(CUSTOMER_ID)).thenReturn(List.of(SEGMENT_ID));
-        SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
+        SameDayRebookingSend s = send(NOW.minusSeconds(5), NOW.plusSeconds(3600));
         givenDue(s);
         when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
 
@@ -237,7 +241,7 @@ class SameDayRebookingSchedulerTest {
     @DisplayName("consent present only in marketing.contacts → still sends")
     void consentOnlyInMarketingContactsStillSends() throws Exception {
         when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(true);
-        SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
+        SameDayRebookingSend s = send(NOW.minusSeconds(5), NOW.plusSeconds(3600));
         givenDue(s);
         when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
 
@@ -251,7 +255,7 @@ class SameDayRebookingSchedulerTest {
     @DisplayName("customer has ever left negative feedback → SKIPPED_NEGATIVE_FEEDBACK, never sent, regardless of consent")
     void negativeFeedbackIsSkipped() throws Exception {
         when(messageLogService.hasNegativeFeedback(BUSINESS_ID, PHONE)).thenReturn(true);
-        SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
+        SameDayRebookingSend s = send(NOW.minusSeconds(5), NOW.plusSeconds(3600));
         givenDue(s);
 
         scheduler.sendDueRebookingNudges();
@@ -265,7 +269,7 @@ class SameDayRebookingSchedulerTest {
     @Test
     @DisplayName("Square failure while checking upcoming bookings → no row written, retried next poll")
     void squareFailureRetriesNextPoll() {
-        SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
+        SameDayRebookingSend s = send(NOW.minusSeconds(5), NOW.plusSeconds(3600));
         givenDue(s);
         when(square.bookingsForCustomer(eq(CUSTOMER_ID), any())).thenThrow(new RuntimeException("Square down"));
 
@@ -279,7 +283,7 @@ class SameDayRebookingSchedulerTest {
     @DisplayName("consented branch: resolved technician name is name-dropped in the body")
     void consentedBranchNamesResolvedTechnician() throws Exception {
         when(technicianNameResolver.resolveForCustomer(eq(BUSINESS_ID), eq(CUSTOMER_ID), any())).thenReturn(Optional.of("Susan"));
-        SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
+        SameDayRebookingSend s = send(NOW.minusSeconds(5), NOW.plusSeconds(3600));
         givenDue(s);
         when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
 
@@ -298,7 +302,7 @@ class SameDayRebookingSchedulerTest {
         when(consentRepository.hasMarketingConsent(PHONE)).thenReturn(false);
         when(square.customerSegmentIds(CUSTOMER_ID)).thenReturn(List.of());
         when(technicianNameResolver.resolveForCustomer(eq(BUSINESS_ID), eq(CUSTOMER_ID), any())).thenReturn(Optional.of("Tatiana"));
-        SameDayRebookingSend s = send(Instant.now().minusSeconds(5), Instant.now().plusSeconds(3600));
+        SameDayRebookingSend s = send(NOW.minusSeconds(5), NOW.plusSeconds(3600));
         givenDue(s);
         when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
 
@@ -327,7 +331,7 @@ class SameDayRebookingSchedulerTest {
         SameDayRebookingSend otherSend = SameDayRebookingSend.builder()
                 .id(2L).businessId(otherBusinessId).phoneNumber("+15559998888").customerName("Other")
                 .squareCustomerId("cust2").squarePaymentId("pay2")
-                .sendDueAt(Instant.now().minusSeconds(5)).promoExpiresAt(Instant.now().plusSeconds(3600))
+                .sendDueAt(NOW.minusSeconds(5)).promoExpiresAt(NOW.plusSeconds(3600))
                 .state(SameDayRebookingSend.STATE_AWAITING_SEND).build();
         when(repository.findByBusinessIdAndStateAndSendDueAtBefore(
                 eq(otherBusinessId), eq(SameDayRebookingSend.STATE_AWAITING_SEND), any()))
@@ -347,5 +351,74 @@ class SameDayRebookingSchedulerTest {
         verify(repository, never()).findByBusinessIdAndStateAndSendDueAtBefore(
                 eq(BUSINESS_ID), any(), any());
         verify(client).send(any(), eq("+15559998888"), any());
+    }
+
+    // --- 2026-10-01 timing changes ------------------------------------------------------------
+
+    private SameDayRebookingScheduler schedulerAt(Instant now) {
+        var overrideRepo = mock(com.salonreview.repo.SmsTemplateOverrideRepository.class);
+        when(overrideRepo.findByBusinessIdAndTemplateKeyAndVariantIndex(any(), any(), anyInt())).thenReturn(Optional.empty());
+        SmsMessageTemplateService templateService = new SmsMessageTemplateService(overrideRepo, mock(com.salonreview.repo.SmsMessageRepository.class));
+        return new SameDayRebookingScheduler(repository, squareClientProvider, twilioConfigs, automationService,
+                consentRepository, rebookingProperties, messageLogService, configService, client, technicianNameResolver,
+                templateService, "https://salon.akluxnails.com", promoConfigService, new SquareUpcomingAppointmentService(),
+                java.time.Clock.fixed(now, ZONE));
+    }
+
+    @Test
+    @DisplayName("never texts after 20:45 salon time: a due row just waits (no send, no state change)")
+    void outsideSendWindowWaits() throws Exception {
+        Instant late = java.time.ZonedDateTime.of(2026, 9, 30, 22, 47, 0, 0, ZONE).toInstant();
+        SameDayRebookingSend s = send(late.minusSeconds(5), late.plusSeconds(3600));
+        givenDue(s);
+
+        schedulerAt(late).sendDueRebookingNudges();
+
+        verify(client, never()).send(any(), any(), any());
+        assertThat(s.getState()).isEqualTo(SameDayRebookingSend.STATE_AWAITING_SEND);
+    }
+
+    @Test
+    @DisplayName("early send: client clicked the review link 2+ min ago → text now, not at the 1h mark")
+    void earlySendAfterReviewClick() throws Exception {
+        SameDayRebookingSend s = send(NOW.plusSeconds(50 * 60), NOW.plusSeconds(8 * 3600));
+        s.setCreatedAt(NOW.minusSeconds(10 * 60));
+        when(repository.findByBusinessIdAndState(BUSINESS_ID, SameDayRebookingSend.STATE_AWAITING_SEND)).thenReturn(List.of(s));
+        when(messageLogService.clickedReviewLinkBetween(eq(BUSINESS_ID), eq(PHONE), eq(s.getCreatedAt()), eq(NOW.minusSeconds(120))))
+                .thenReturn(true);
+        when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
+
+        scheduler.sendDueRebookingNudges();
+
+        verify(client).send(any(), eq(PHONE), any());
+        assertThat(s.getState()).isEqualTo(SameDayRebookingSend.STATE_SENT);
+    }
+
+    @Test
+    @DisplayName("no review click yet → a not-yet-due row is left alone")
+    void noEarlySendWithoutClick() throws Exception {
+        SameDayRebookingSend s = send(NOW.plusSeconds(50 * 60), NOW.plusSeconds(8 * 3600));
+        s.setCreatedAt(NOW.minusSeconds(10 * 60));
+        when(repository.findByBusinessIdAndState(BUSINESS_ID, SameDayRebookingSend.STATE_AWAITING_SEND)).thenReturn(List.of(s));
+
+        scheduler.sendDueRebookingNudges();
+
+        verify(client, never()).send(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("next-morning send after a late visit uses the 'yesterday' wording, not 'already here today'")
+    void nextMorningWording() throws Exception {
+        Instant morning = java.time.ZonedDateTime.of(2026, 10, 1, 10, 0, 0, 0, ZONE).toInstant();
+        SameDayRebookingSend s = send(morning.minusSeconds(5), morning.plusSeconds(14 * 3600));
+        s.setCreatedAt(java.time.ZonedDateTime.of(2026, 9, 30, 20, 40, 0, 0, ZONE).toInstant());
+        givenDue(s);
+        when(client.send(any(), eq(PHONE), any())).thenReturn("SM123");
+
+        schedulerAt(morning).sendDueRebookingNudges();
+
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+        verify(client).send(any(), eq(PHONE), body.capture());
+        assertThat(body.getValue()).contains("yesterday's nails").doesNotContain("already here today");
     }
 }

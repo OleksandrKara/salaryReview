@@ -258,6 +258,20 @@ public final class SmsMessageTemplateCatalog {
                     ),
                     List.of("spotClause", "discountAmount", "link")
             )),
+            // Morning-after version of same_day_rebooking_nudge (2026-10-01): a late checkout's text
+            // moves to 10:00 the next day (SameDayRebookingTriggerService#scheduleFor), so no
+            // "you're already here today" wording. The promo runs to midnight of this day.
+            Map.entry("same_day_rebooking_nudge_next_day", new TemplateDefault(
+                    "same_day_rebooking_nudge_next_day", "same_day_rebooking_discount", SmsMessageClass.MARKETING,
+                    "Next-morning nudge after a late visit (consented)",
+                    List.of(
+                            "Hope you're still loving yesterday's nails 💛 While it's fresh, {{spotClause}}? "
+                                    + "I'll knock {{discountAmount}} off if you book before midnight tonight: {{link}}",
+                            "Hope you're still loving yesterday's nails 💛 Before the week gets busy, {{spotClause}}? "
+                                    + "Book before midnight tonight and I'll take {{discountAmount}} off: {{link}}"
+                    ),
+                    List.of("spotClause", "discountAmount", "link")
+            )),
             // urgencyClause is pre-computed: "Spots are filling up fast this time of year" or
             // "{technician}'s spots are filling up fast this time of year".
             Map.entry("same_day_rebooking_reminder", new TemplateDefault(

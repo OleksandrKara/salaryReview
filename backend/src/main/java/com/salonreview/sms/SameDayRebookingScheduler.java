@@ -15,7 +15,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -41,6 +44,12 @@ public class SameDayRebookingScheduler {
      * gate behind marketing consent. The signed link is identical either way, so a click still
      * silently applies the same-day discount — see design.md D3 and sendNudge below. */
     static final String TEMPLATE_KEY_TRANSACTIONAL = "same_day_rebooking_reminder";
+    /** Consented version for a text that goes out the morning after a late checkout (see
+     * SameDayRebookingTriggerService#scheduleFor): no "you're already here today" wording. */
+    static final String TEMPLATE_KEY_NEXT_DAY = "same_day_rebooking_nudge_next_day";
+    /** Owner request 2026-10-01: a client who rated 4-5 and clicked the review link is happy right
+     * now, so the rebooking text goes out this long after that click instead of waiting the hour. */
+    static final Duration EARLY_SEND_AFTER_REVIEW_CLICK = Duration.ofMinutes(2);
 
     private final SameDayRebookingSendRepository repository;
     private final SquareClientProvider squareClientProvider;
@@ -56,7 +65,9 @@ public class SameDayRebookingScheduler {
     private final String publicBaseUrl;
     private final PromoConfigService promoConfigService;
     private final SquareUpcomingAppointmentService upcomingAppointmentService;
+    private final Clock clock;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public SameDayRebookingScheduler(SameDayRebookingSendRepository repository, SquareClientProvider squareClientProvider,
                                       TwilioSmsConfigRepository twilioConfigs,
                                       SmsAutomationService automationService, SmsConsentRepository consentRepository,
@@ -66,6 +77,21 @@ public class SameDayRebookingScheduler {
                                       @Value("${app.public-base-url}") String publicBaseUrl,
                                       PromoConfigService promoConfigService,
                                       SquareUpcomingAppointmentService upcomingAppointmentService) {
+        this(repository, squareClientProvider, twilioConfigs, automationService, consentRepository, rebookingProperties,
+                messageLogService, configService, client, technicianNameResolver, templateService, publicBaseUrl,
+                promoConfigService, upcomingAppointmentService, Clock.system(SameDayRebookingTriggerService.SALON_ZONE));
+    }
+
+    /** Test-only: fixed clock (the send window depends on the salon's local time of day). */
+    SameDayRebookingScheduler(SameDayRebookingSendRepository repository, SquareClientProvider squareClientProvider,
+                              TwilioSmsConfigRepository twilioConfigs,
+                              SmsAutomationService automationService, SmsConsentRepository consentRepository,
+                              RebookingProperties rebookingProperties, SmsMessageLogService messageLogService,
+                              TwilioSmsConfigService configService, TwilioSmsClient client,
+                              TechnicianNameResolver technicianNameResolver, SmsMessageTemplateService templateService,
+                              String publicBaseUrl, PromoConfigService promoConfigService,
+                              SquareUpcomingAppointmentService upcomingAppointmentService, Clock clock) {
+        this.clock = clock;
         this.repository = repository;
         this.squareClientProvider = squareClientProvider;
         this.twilioConfigs = twilioConfigs;
@@ -94,7 +120,7 @@ public class SameDayRebookingScheduler {
     @Scheduled(fixedDelay = 15_000, initialDelay = 15_000)
     @SchedulerLock(name = "SameDayRebookingScheduler_sendDueRebookingNudges", lockAtLeastFor = "PT10S", lockAtMostFor = "PT2M")
     public void sendDueRebookingNudges() {
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         for (TwilioSmsConfig config : twilioConfigs.findAll()) {
             Long businessId = config.getBusinessId();
             SquareClient square;
@@ -105,8 +131,17 @@ public class SameDayRebookingScheduler {
                         businessId, e.getMessage());
                 continue;
             }
-            List<SameDayRebookingSend> due = repository.findByBusinessIdAndStateAndSendDueAtBefore(
-                    businessId, SameDayRebookingSend.STATE_AWAITING_SEND, now);
+            List<SameDayRebookingSend> due = new ArrayList<>(repository.findByBusinessIdAndStateAndSendDueAtBefore(
+                    businessId, SameDayRebookingSend.STATE_AWAITING_SEND, now));
+            // Early send: not due yet, but the client already clicked the Google/Yelp review link
+            // (i.e. answered 4-5 and is happy right now) at least EARLY_SEND_AFTER_REVIEW_CLICK ago.
+            Instant clickedBy = now.minus(EARLY_SEND_AFTER_REVIEW_CLICK);
+            for (SameDayRebookingSend send : repository.findByBusinessIdAndState(businessId, SameDayRebookingSend.STATE_AWAITING_SEND)) {
+                if (send.getSendDueAt() != null && send.getSendDueAt().isAfter(now) && send.getCreatedAt() != null
+                        && messageLogService.clickedReviewLinkBetween(businessId, send.getPhoneNumber(), send.getCreatedAt(), clickedBy)) {
+                    due.add(send);
+                }
+            }
             for (SameDayRebookingSend send : due) {
                 process(send, now, square, businessId);
             }
@@ -118,6 +153,12 @@ public class SameDayRebookingScheduler {
         // edge case.
         if (send.getPromoExpiresAt().isBefore(now)) {
             save(send, SameDayRebookingSend.STATE_SKIPPED_EXPIRED);
+            return;
+        }
+        // Never text between 20:45 and 09:00 salon time, whatever the row's due time says (an
+        // early send, or a row queued before the 2026-10-01 timing change). It just waits: next
+        // morning if its promo still runs, otherwise it expires above.
+        if (!SameDayRebookingTriggerService.isWithinSendWindow(now)) {
             return;
         }
 
@@ -155,7 +196,7 @@ public class SameDayRebookingScheduler {
             return;
         }
 
-        sendNudge(send, hasConsent(send, square), businessId, promoTerms.get());
+        sendNudge(send, hasConsent(send, square), businessId, promoTerms.get(), now);
         save(send, SameDayRebookingSend.STATE_SENT);
     }
 
@@ -171,7 +212,8 @@ public class SameDayRebookingScheduler {
         return square.customerSegmentIds(send.getSquareCustomerId()).contains(segmentId);
     }
 
-    private void sendNudge(SameDayRebookingSend send, boolean consented, Long businessId, PromoConfigService.PromoTerms promoTerms) {
+    private void sendNudge(SameDayRebookingSend send, boolean consented, Long businessId, PromoConfigService.PromoTerms promoTerms,
+                           Instant now) {
         String clickToken = messageLogService.generateUniqueClickToken();
         long expEpochSeconds = send.getPromoExpiresAt().getEpochSecond();
         // Reconstructed deterministically by ShortLinkController at click time — see
@@ -179,13 +221,15 @@ public class SameDayRebookingScheduler {
         // Identical regardless of consent — the discount is applied on click either way, it's
         // only the SMS wording that differs (see class doc).
         String linkTarget = "REBOOK:" + expEpochSeconds;
-        String templateKey = consented ? TEMPLATE_KEY : TEMPLATE_KEY_TRANSACTIONAL;
+        boolean nextDay = send.getCreatedAt() != null && send.getCreatedAt().atZone(SameDayRebookingTriggerService.SALON_ZONE).toLocalDate()
+                .isBefore(now.atZone(SameDayRebookingTriggerService.SALON_ZONE).toLocalDate());
+        String templateKey = !consented ? TEMPLATE_KEY_TRANSACTIONAL : nextDay ? TEMPLATE_KEY_NEXT_DAY : TEMPLATE_KEY;
         SmsMessage reserved = messageLogService.logOutboundWithLink(
                 businessId, templateKey, AUTOMATION_KEY, send.getPhoneNumber(), "", false, "pending", null, linkTarget, clickToken);
 
         String shortLink = publicBaseUrl + "/r/" + clickToken;
         String technician = technicianNameResolver
-                .resolveForCustomer(businessId, send.getSquareCustomerId(), Instant.now())
+                .resolveForCustomer(businessId, send.getSquareCustomerId(), now)
                 .orElse(null);
         boolean hasTechnician = technician != null && !technician.isBlank();
         Map<String, String> vars = consented
