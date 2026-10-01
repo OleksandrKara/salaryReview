@@ -379,7 +379,9 @@ public class TelegramNotificationService {
                 + (n.expiry() == null ? "" : ", exp " + n.expiry());
         String attempts = n.failedAttempts() == null || n.failedAttempts() <= 0 ? "" : String.valueOf(n.failedAttempts());
         java.util.List<String> warnings = n.warnings() == null ? java.util.List.of() : n.warnings();
-        String reason = blankToDash(n.errorMessage()) + (n.errorCode() == null || n.errorCode().isBlank() ? "" : " (" + n.errorCode() + ")");
+        String code = n.errorCode() == null || n.errorCode().isBlank() ? "" : " (" + n.errorCode() + ")";
+        String reasonEn = blankToDash(languagePart(n.errorMessage(), false)) + code;
+        String reasonRu = blankToDash(languagePart(n.errorMessage(), true)) + code;
 
         String en;
         String ru;
@@ -388,21 +390,21 @@ public class TelegramNotificationService {
                 en = (warnings.isEmpty() ? "✅ Card on file added" : "⚠️ Card on file added, please check") + "\n"
                         + "👤 Client: " + client + "\n📱 Phone: " + phone + "\n" + email
                         + "💳 " + card
-                        + (warnings.isEmpty() ? "" : "\n" + warnings.stream().map(w -> "⚠️ " + w).collect(java.util.stream.Collectors.joining("\n")));
+                        + (warnings.isEmpty() ? "" : "\n" + warnings.stream().map(w -> "⚠️ " + languagePart(w, false)).collect(java.util.stream.Collectors.joining("\n")));
                 ru = (warnings.isEmpty() ? "✅ Клиент добавил карту" : "⚠️ Клиент добавил карту, проверьте") + "\n"
                         + "👤 Клиент: " + client + "\n📱 Телефон: " + phone + "\n" + email
                         + "💳 " + card
-                        + (warnings.isEmpty() ? "" : "\n" + warnings.stream().map(w -> "⚠️ " + w).collect(java.util.stream.Collectors.joining("\n")));
+                        + (warnings.isEmpty() ? "" : "\n" + warnings.stream().map(w -> "⚠️ " + languagePart(w, true)).collect(java.util.stream.Collectors.joining("\n")));
             }
             case DECLINED -> {
                 en = "❌ Card on file refused\n"
                         + "👤 Client: " + client + "\n📱 Phone: " + phone + "\n" + email
-                        + "❌ Reason: " + reason
+                        + "❌ Reason: " + reasonEn
                         + (attempts.isEmpty() ? "" : "\n🔁 Failed tries (last hour): " + attempts)
                         + "\n\nThe card was NOT saved. If they don't succeed, reach out before the appointment.";
                 ru = "❌ Карта не принята\n"
                         + "👤 Клиент: " + client + "\n📱 Телефон: " + phone + "\n" + email
-                        + "❌ Причина: " + reason
+                        + "❌ Причина: " + reasonRu
                         + (attempts.isEmpty() ? "" : "\n🔁 Неудачных попыток за час: " + attempts)
                         + "\n\nКарта НЕ сохранена. Если клиент так и не добавит карту, свяжитесь с ним до записи.";
             }
@@ -418,6 +420,15 @@ public class TelegramNotificationService {
             }
         }
         return en + "\n\n· · ·\n\n" + ru;
+    }
+
+    /** akluxnails-home sends reasons and warnings as "English / Russian"; each language section
+     * shows only its own half. A string without the separator is shown as is in both. */
+    static String languagePart(String s, boolean russian) {
+        if (s == null) return null;
+        int i = s.indexOf(" / ");
+        if (i < 0) return s;
+        return russian ? s.substring(i + 3).trim() : s.substring(0, i).trim();
     }
 
     private static String blankToDash(String s) {
