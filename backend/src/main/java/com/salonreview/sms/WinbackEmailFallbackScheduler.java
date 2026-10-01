@@ -95,11 +95,27 @@ public class WinbackEmailFallbackScheduler {
     @SchedulerLock(name = "WinbackEmailFallbackScheduler_sendDueFollowUps", lockAtLeastFor = "PT10S", lockAtMostFor = "PT10M")
     public void sendDueFollowUps() {
         Instant startOfToday = LocalDate.now(SALON_ZONE).atStartOfDay(SALON_ZONE).toInstant();
-        // A same-day-rebooking text sent after yesterday's 19:00 run (19:00-20:45) was never
-        // offered an email; its promo runs to tonight's midnight (scheduleFor), so it gets its
-        // "last call" tonight. The other automations still only look at today's texts.
-        Instant sinceYesterdayEvening = LocalDate.now(SALON_ZONE).minusDays(1)
-                .atTime(SameDayRebookingTriggerService.EMAIL_FOLLOW_UP).atZone(SALON_ZONE).toInstant();
+        sendFollowUps(AUTOMATION_KEYS, startOfToday, Instant.now());
+    }
+
+    /**
+     * 10:00 run, same-day rebooking only (owner decision 2026-10-01). A rebooking text that went
+     * out after the 19:00 run (19:00-20:45, see SameDayRebookingTriggerService#scheduleFor) gets
+     * its email the next morning instead of the next evening: ~14 h after the text instead of ~23,
+     * and a whole day left on its offer (which runs to that night's midnight) instead of 5 hours.
+     * Data behind it: the 19:00 rebooking email had 0 clicks in its first 38 sends.
+     */
+    @Scheduled(cron = "0 0 10 * * *", zone = "America/Los_Angeles")
+    @SchedulerLock(name = "WinbackEmailFallbackScheduler_sendMorningRebookingFollowUps", lockAtLeastFor = "PT10S", lockAtMostFor = "PT10M")
+    public void sendMorningRebookingFollowUps() {
+        LocalDate today = LocalDate.now(SALON_ZONE);
+        Instant yesterdayEvening = today.minusDays(1).atTime(SameDayRebookingTriggerService.EMAIL_FOLLOW_UP)
+                .atZone(SALON_ZONE).toInstant();
+        Instant startOfToday = today.atStartOfDay(SALON_ZONE).toInstant();
+        sendFollowUps(List.of(SameDayRebookingScheduler.AUTOMATION_KEY), yesterdayEvening, startOfToday);
+    }
+
+    private void sendFollowUps(List<String> automationKeys, Instant from, Instant to) {
         Instant now = Instant.now();
         for (MailchimpConfig config : mailchimpConfigRepository.findAll()) {
             if (!config.isConfigured()) {
@@ -108,14 +124,10 @@ public class WinbackEmailFallbackScheduler {
             Long businessId = config.getBusinessId();
             List<SmsMessage> candidates = smsMessageRepository
                     .findByBusinessIdAndAutomationKeyInAndDirectionAndStatusAndClickedAtIsNullAndCreatedAtBetween(
-                            businessId, AUTOMATION_KEYS, "OUTBOUND", "SENT", sinceYesterdayEvening, now);
+                            businessId, automationKeys, "OUTBOUND", "SENT", from, to);
             for (SmsMessage sms : candidates) {
-                boolean sameDayRebooking = SameDayRebookingScheduler.AUTOMATION_KEY.equals(sms.getAutomationKey());
-                if (!sameDayRebooking && sms.getCreatedAt().isBefore(startOfToday)) {
-                    continue;
-                }
-                if (sameDayRebooking && !promoStillValid(sms, now)) {
-                    continue; // e.g. a text queued before the 2026-10-01 timing change: offer already over
+                if (SameDayRebookingScheduler.AUTOMATION_KEY.equals(sms.getAutomationKey()) && !promoStillValid(sms, now)) {
+                    continue; // the email says the offer "expires tonight": never send it for a dead one
                 }
                 try {
                     process(sms, config);

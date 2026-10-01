@@ -45,10 +45,11 @@ public class SameDayRebookingTriggerService {
      *       A late checkout whose +1 h would pass 20:45 is sent at 20:45 instead, as long as that
      *       is still {@link #MIN_LEAD} after paying; otherwise it moves to 10:00 the next morning.</li>
      *   <li>Never before {@link #EARLIEST_SAME_DAY}.</li>
-     *   <li>The promo runs to midnight of the day the evening email follow-up goes out
-     *       ({@link WinbackEmailFallbackScheduler}, 19:00): the send day if the text goes before
-     *       19:00, else the next day. So a next-morning or 19:00-20:45 text still has a live offer,
-     *       and its email "last call" ("expires tonight") is still true.</li>
+     *   <li>The promo runs to midnight of the day the email follow-up goes out
+     *       ({@link WinbackEmailFallbackScheduler}): a text before 19:00 gets its email at 19:00 the
+     *       same day (offer to that midnight); a 19:00-20:45 text gets its email at 10:00 the next
+     *       morning, and a next-morning text at 19:00 that day (offer to that next midnight). So the
+     *       email's "expires tonight" is always true.</li>
      * </ul>
      */
     static final Duration SEND_DELAY = Duration.ofHours(1);
