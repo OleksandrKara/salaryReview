@@ -35,6 +35,7 @@ import java.util.Optional;
 public class InternalNotificationController {
 
     private static final Logger log = LoggerFactory.getLogger(InternalNotificationController.class);
+    private final com.salonreview.sms.VipRebookEligibilityService vipRebookEligibility;
 
     private final InternalApiProperties internalApi;
     private final TelegramNotificationService telegram;
@@ -49,7 +50,9 @@ public class InternalNotificationController {
                                           TwilioSmsService sms, RebookingPromoSigner promoSigner,
                                           PromoConfigService promoConfigService,
                                           SameDayRebookingGroupMembershipRepository groupMembershipRepository,
-                                          SquareClientProvider squareClientProvider, BusinessRepository businesses) {
+                                          SquareClientProvider squareClientProvider, BusinessRepository businesses,
+                                          com.salonreview.sms.VipRebookEligibilityService vipRebookEligibility) {
+        this.vipRebookEligibility = vipRebookEligibility;
         this.internalApi = internalApi;
         this.telegram = telegram;
         this.sms = sms;
@@ -201,6 +204,11 @@ public class InternalNotificationController {
         if (expiresAt.isBefore(Instant.now())) {
             return ResponseEntity.ok(Map.of("enrolled", false, "reason", "expired"));
         }
+        // VIP perk: only for a next visit within 4 weeks (akluxnails-home already blocks a later
+        // date before booking; this is the server-side backstop).
+        if (PromoConfigService.VIP_PROMO_CODE.equals(promoCode) && !withinVipWindow(body.appointmentStartAt())) {
+            return ResponseEntity.ok(Map.of("enrolled", false, "reason", "outside_window"));
+        }
         Business business = resolveBusiness(body.businessShortCode(), body.businessId());
         if (business == null) {
             return ResponseEntity.ok(Map.of("enrolled", false, "reason", "unknown_business"));
@@ -288,6 +296,55 @@ public class InternalNotificationController {
             return businesses.legacySmsBusiness();
         }
         return businesses.findByShortCode(shortCode).orElse(null);
+    }
+
+    private static boolean withinVipWindow(String appointmentStartAt) {
+        if (appointmentStartAt == null || appointmentStartAt.isBlank()) return false;
+        try {
+            return Instant.parse(appointmentStartAt).isBefore(com.salonreview.sms.VipRebookEligibilityService.latestStartFor(Instant.now()));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public record VipRebookCheckRequest(String phoneNumber, String businessShortCode, Long businessId) {
+    }
+
+    /** akluxnails.com/vip: may this phone number get the VIP rebooking perk today? Yes/no plus,
+     * when yes, the signed VIP10 offer and what the page needs to personalize itself. See
+     * {@link com.salonreview.sms.VipRebookEligibilityService}. */
+    @PostMapping("/vip-rebook/check")
+    public ResponseEntity<Map<String, Object>> checkVipRebook(
+            @RequestHeader(value = "X-Internal-Api-Key", required = false) String key,
+            @RequestBody VipRebookCheckRequest body) {
+        if (!keyMatches(key)) {
+            return ResponseEntity.status(401).build();
+        }
+        Business business = resolveBusiness(body.businessShortCode(), body.businessId());
+        if (business == null) {
+            return ResponseEntity.ok(Map.of("eligible", false, "reason", "unknown_business"));
+        }
+        com.salonreview.sms.VipRebookEligibilityService.Result r;
+        try {
+            r = vipRebookEligibility.check(business.getId(), body.phoneNumber());
+        } catch (RuntimeException e) {
+            log.warn("VIP rebook check failed: {}", e.getMessage());
+            return ResponseEntity.ok(Map.of("eligible", false, "reason", "error"));
+        }
+        if (!r.eligible()) {
+            return ResponseEntity.ok(Map.of("eligible", false, "reason", r.reason()));
+        }
+        Map<String, Object> out = new HashMap<>();
+        out.put("eligible", true);
+        out.put("promoCode", com.salonreview.sms.PromoConfigService.VIP_PROMO_CODE);
+        out.put("expEpochSeconds", r.expEpochSeconds());
+        out.put("signature", r.signature());
+        out.put("latestStartEpochSeconds", r.latestStartEpochSeconds());
+        out.put("givenName", r.givenName());
+        out.put("technicianName", r.technicianName());
+        out.put("teamMemberId", r.teamMemberId());
+        out.put("newClient", r.newClient());
+        return ResponseEntity.ok(out);
     }
 
     private boolean keyMatches(String provided) {

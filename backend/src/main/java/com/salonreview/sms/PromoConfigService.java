@@ -43,6 +43,10 @@ public class PromoConfigService {
 
     public static final String REBOOK_PROMO_CODE = "REBOOK10";
     public static final String WINBACK_PROMO_CODE = "WINBACK5";
+    /** VIP rebooking perk (akluxnails.com/vip, 2026-10-01): same $10 discount and Square customer
+     * group as {@link #REBOOK_PROMO_CODE}, but its own signed code so enrollment can enforce the
+     * 4-week window (see VipRebookEligibilityService) without changing the SMS offer's rules. */
+    public static final String VIP_PROMO_CODE = "VIP10";
 
     private final BusinessPromoConfigRepository repository;
     private final BusinessRepository businesses;
@@ -63,6 +67,9 @@ public class PromoConfigService {
     /** Empty when this business hasn't set up this promo (or Business A's env config for it is
      * blank) — callers treat that as "this discount isn't available," never a default amount. */
     public Optional<PromoTerms> get(Long businessId, String promoCode) {
+        if (VIP_PROMO_CODE.equals(promoCode)) {
+            promoCode = REBOOK_PROMO_CODE;
+        }
         Optional<BusinessPromoConfig> row = repository.findByBusinessIdAndPromoCode(businessId, promoCode);
         if (row.isPresent()) {
             BusinessPromoConfig c = row.get();

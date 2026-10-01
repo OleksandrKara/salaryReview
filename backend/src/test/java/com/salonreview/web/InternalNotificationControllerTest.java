@@ -34,6 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * callers), so it's tested directly rather than left to {@code SecurityConfig}.
  */
 class InternalNotificationControllerTest {
+    private com.salonreview.sms.VipRebookEligibilityService vipService;
 
     private static final String BODY = "{\"source\":\"mani\",\"customerName\":\"Jane\",\"phoneNumber\":\"+15551234567\"," +
             "\"requestedServices\":\"manicure\",\"preferredStartAt\":\"2026-08-01T18:00:00Z\",\"note\":null}";
@@ -60,6 +61,7 @@ class InternalNotificationControllerTest {
                 .thenReturn(java.util.Optional.of(new PromoConfigService.PromoTerms(1000, null, "grp1", true)));
         when(promoConfigService.get(1L, "WINBACK5"))
                 .thenReturn(java.util.Optional.of(new PromoConfigService.PromoTerms(500, 9900L, "grp2", true)));
+        vipService = mock(com.salonreview.sms.VipRebookEligibilityService.class);
         groupMembershipRepository = mock(SameDayRebookingGroupMembershipRepository.class);
         square = mock(SquareClient.class);
         SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
@@ -73,7 +75,7 @@ class InternalNotificationControllerTest {
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         InternalNotificationController controller = new InternalNotificationController(
                 props, telegram, sms, promoSigner, promoConfigService, groupMembershipRepository,
-                squareClientProvider, businessesMock);
+                squareClientProvider, businessesMock, vipService);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -364,7 +366,7 @@ class InternalNotificationControllerTest {
                 .thenReturn(java.util.Optional.of(new PromoConfigService.PromoTerms(1500, null, "pmugrp", true)));
         InternalNotificationController controller = new InternalNotificationController(
                 props, telegram, sms, promoSigner, promoConfigService, groupMembershipRepository,
-                squareClientProvider, businesses);
+                squareClientProvider, businesses, vipService);
         MockMvc pmuMvc = MockMvcBuilders.standaloneSetup(controller).build();
         when(promoSigner.verify("REBOOK10", 9999999999L, "sig123")).thenReturn(true);
         String pmuBody = "{\"squareCustomerId\":\"cust1\",\"expEpochSeconds\":9999999999,"
@@ -396,7 +398,7 @@ class InternalNotificationControllerTest {
                 .thenReturn(java.util.Optional.of(new PromoConfigService.PromoTerms(1500, null, "pmugrp", true)));
         InternalNotificationController controller = new InternalNotificationController(
                 props, telegram, sms, promoSigner, promoConfigService, groupMembershipRepository,
-                squareClientProvider, businesses);
+                squareClientProvider, businesses, vipService);
         MockMvc pmuMvc = MockMvcBuilders.standaloneSetup(controller).build();
         when(promoSigner.verify("REBOOK10", 9999999999L, "sig123")).thenReturn(true);
         String pmuBody = "{\"squareCustomerId\":\"cust1\",\"expEpochSeconds\":9999999999,"
@@ -561,5 +563,61 @@ class InternalNotificationControllerTest {
                 .andExpect(jsonPath("$.reason").value("unknown_business"));
 
         org.mockito.Mockito.verifyNoInteractions(telegram);
+    }
+
+    // --- VIP rebooking perk (2026-10-01) -----------------------------------------------------------
+
+    @Test
+    @DisplayName("enroll VIP10: appointment within 4 weeks → enrolled; later → outside_window, no Square call")
+    void enrollVipWindow() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        when(promoConfigService.get(1L, "VIP10"))
+                .thenReturn(java.util.Optional.of(new PromoConfigService.PromoTerms(1000, null, "grp1", true)));
+        when(promoSigner.verify("VIP10", 9999999999L, "sig123")).thenReturn(true);
+        String inside = java.time.Instant.now().plus(java.time.Duration.ofDays(20)).toString();
+        String outside = java.time.Instant.now().plus(java.time.Duration.ofDays(40)).toString();
+
+        mvc.perform(post("/api/internal/rebooking-promo/enroll").header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content("{\"squareCustomerId\":\"cust1\",\"expEpochSeconds\":9999999999,"
+                                + "\"signature\":\"sig123\",\"promoCode\":\"VIP10\",\"appointmentStartAt\":\"" + outside + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enrolled").value(false))
+                .andExpect(jsonPath("$.reason").value("outside_window"));
+        verifyNoSquareCall();
+
+        mvc.perform(post("/api/internal/rebooking-promo/enroll").header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content("{\"squareCustomerId\":\"cust1\",\"expEpochSeconds\":9999999999,"
+                                + "\"signature\":\"sig123\",\"promoCode\":\"VIP10\",\"appointmentStartAt\":\"" + inside + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enrolled").value(true));
+        verify(square).addCustomerToGroup("cust1", "grp1");
+    }
+
+    @Test
+    @DisplayName("vip-rebook/check: missing key → 401; eligible → signed offer + personalization; not eligible → reason only")
+    void vipCheck() throws Exception {
+        mvc.perform(post("/api/internal/vip-rebook/check").contentType("application/json").content("{\"phoneNumber\":\"6195550100\"}"))
+                .andExpect(status().isUnauthorized());
+
+        when(props.getKey()).thenReturn("secret");
+        when(vipService.check(1L, "6195550100")).thenReturn(new com.salonreview.sms.VipRebookEligibilityService.Result(
+                true, null, "cust1", "Ina", "Lesya", "TM1", false, 1800000000L, "sigVIP", 1802419200L));
+        mvc.perform(post("/api/internal/vip-rebook/check").header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content("{\"phoneNumber\":\"6195550100\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.eligible").value(true))
+                .andExpect(jsonPath("$.promoCode").value("VIP10"))
+                .andExpect(jsonPath("$.signature").value("sigVIP"))
+                .andExpect(jsonPath("$.givenName").value("Ina"))
+                .andExpect(jsonPath("$.technicianName").value("Lesya"))
+                .andExpect(jsonPath("$.newClient").value(false))
+                .andExpect(jsonPath("$.squareCustomerId").doesNotExist());
+
+        when(vipService.check(1L, "6195550199")).thenReturn(com.salonreview.sms.VipRebookEligibilityService.Result.no("no_visit_today"));
+        mvc.perform(post("/api/internal/vip-rebook/check").header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content("{\"phoneNumber\":\"6195550199\"}"))
+                .andExpect(jsonPath("$.eligible").value(false))
+                .andExpect(jsonPath("$.reason").value("no_visit_today"))
+                .andExpect(jsonPath("$.signature").doesNotExist());
     }
 }
