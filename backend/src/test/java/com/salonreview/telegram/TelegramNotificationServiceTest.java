@@ -522,4 +522,26 @@ class TelegramNotificationServiceTest {
         assertThat(service(configService).sendCardOnFileAlert(BUSINESS_ID,
                 card(CardOnFileNotification.Event.SAVED, null, null, null))).isFalse();
     }
+
+    @Test
+    @DisplayName("card refused with a bilingual reason: English half in the English section, Russian half in the Russian one")
+    void cardDeclinedBilingualReasonSplit() {
+        CardOnFileNotification n = new CardOnFileNotification(null, null, CardOnFileNotification.Event.DECLINED,
+                "Jane Doe", "+15551234567", null, null, null, null, null, "INVALID_CARD_DATA",
+                "Card details rejected, usually a typo / Данные карты не прошли проверку, обычно опечатка", null, 1);
+        String[] halves = TelegramNotificationService.formatCardOnFileMessage(n).split("· · ·");
+        assertThat(halves[0]).contains("❌ Reason: Card details rejected, usually a typo (INVALID_CARD_DATA)").doesNotContain("Данные");
+        assertThat(halves[1]).contains("❌ Причина: Данные карты не прошли проверку, обычно опечатка (INVALID_CARD_DATA)").doesNotContain("usually");
+    }
+
+    @Test
+    @DisplayName("saved with a bilingual warning: each section shows only its own language")
+    void cardSavedBilingualWarningSplit() {
+        CardOnFileNotification n = new CardOnFileNotification(null, null, CardOnFileNotification.Event.SAVED,
+                "Jane Doe", "+15551234567", null, "MASTERCARD", "7035", "CREDIT", "08/2028", null, null,
+                java.util.List.of("Saved after 1 refused attempt(s) this hour / Карта сохранена не с первой попытки"), null);
+        String[] halves = TelegramNotificationService.formatCardOnFileMessage(n).split("· · ·");
+        assertThat(halves[0]).contains("⚠️ Saved after 1 refused attempt(s) this hour").doesNotContain("Карта сохранена");
+        assertThat(halves[1]).contains("⚠️ Карта сохранена не с первой попытки").doesNotContain("Saved after");
+    }
 }
