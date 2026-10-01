@@ -118,10 +118,12 @@ public final class SmsAutomationRegistry {
             Map.entry("same_day_rebooking_discount", AutomationMeta.sms(
                     "same_day_rebooking_discount",
                     "Same-day rebooking discount",
-                    "Every in-salon checkout, 3 hours later, if they haven't already rebooked and have "
-                            + "given SMS-marketing consent (in this app or in Square) — a $10-off nudge to "
-                            + "rebook before midnight, min. $99 order. Customers who neither click nor reply "
-                            + "by evening also get a follow-up email — see WinbackEmailFallbackScheduler.",
+                    "Every in-salon checkout, 1 hour later (or 2 minutes after they click the Google/Yelp "
+                            + "review link), if they haven't already rebooked. Never after 8:45pm: a late visit "
+                            + "gets it at 8:45pm, or 10am the next morning, with the offer extended to that day. "
+                            + "Consented customers get the $10-off version (min. $99 order), others a plain "
+                            + "rebooking reminder with the same link. Customers who neither click nor reply by "
+                            + "7pm also get a follow-up email — see WinbackEmailFallbackScheduler.",
                     List.of(), true, true, true
             )),
             Map.entry("lapsed_customer_winback", AutomationMeta.sms(

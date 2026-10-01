@@ -29,8 +29,9 @@ import java.util.Optional;
 /**
  * Evening email follow-up for the SMS automations that offer a discount to come back — SMS goes
  * out first (see {@link LapsedCustomerWinbackScheduler}/{@link RepeatCustomerWinbackScheduler},
- * both once-daily at 10am; {@link SameDayRebookingScheduler} fires 3 hours after checkout, same
- * day); this scheduler runs at a fixed evening time and emails only the customers who neither
+ * both once-daily at 10am; {@link SameDayRebookingScheduler} fires 1 hour after checkout, or the
+ * next morning for a late visit, see SameDayRebookingTriggerService#scheduleFor); this scheduler
+ * runs at a fixed evening time and emails only the customers who neither
  * clicked their SMS link nor replied by then. Deliberately not a parallel/simultaneous channel —
  * SMS is the higher-converting channel for this business (see the 2026-08-27 open-rate/CTR
  * analysis), so email is a second touch for non-responders, not a duplicate one, and it's framed
@@ -45,7 +46,7 @@ import java.util.Optional;
  * to see and act on the morning SMS already have, early enough that the email doesn't arrive after
  * most people have stopped checking their inbox for the night. Same fixed time regardless of which
  * automation sent the morning SMS, same-day-rebooking included, even though that one's own SMS
- * fires at a variable time (3 hours after checkout) rather than a fixed 10am — the email leg's own
+ * fires at a variable time (1 hour after checkout) rather than a fixed 10am — the email leg's own
  * timing was never meant to track the SMS's send time, just to land in the evening either way.
  */
 @Component
@@ -94,6 +95,11 @@ public class WinbackEmailFallbackScheduler {
     @SchedulerLock(name = "WinbackEmailFallbackScheduler_sendDueFollowUps", lockAtLeastFor = "PT10S", lockAtMostFor = "PT10M")
     public void sendDueFollowUps() {
         Instant startOfToday = LocalDate.now(SALON_ZONE).atStartOfDay(SALON_ZONE).toInstant();
+        // A same-day-rebooking text sent after yesterday's 19:00 run (19:00-20:45) was never
+        // offered an email; its promo runs to tonight's midnight (scheduleFor), so it gets its
+        // "last call" tonight. The other automations still only look at today's texts.
+        Instant sinceYesterdayEvening = LocalDate.now(SALON_ZONE).minusDays(1)
+                .atTime(SameDayRebookingTriggerService.EMAIL_FOLLOW_UP).atZone(SALON_ZONE).toInstant();
         Instant now = Instant.now();
         for (MailchimpConfig config : mailchimpConfigRepository.findAll()) {
             if (!config.isConfigured()) {
@@ -102,8 +108,15 @@ public class WinbackEmailFallbackScheduler {
             Long businessId = config.getBusinessId();
             List<SmsMessage> candidates = smsMessageRepository
                     .findByBusinessIdAndAutomationKeyInAndDirectionAndStatusAndClickedAtIsNullAndCreatedAtBetween(
-                            businessId, AUTOMATION_KEYS, "OUTBOUND", "SENT", startOfToday, now);
+                            businessId, AUTOMATION_KEYS, "OUTBOUND", "SENT", sinceYesterdayEvening, now);
             for (SmsMessage sms : candidates) {
+                boolean sameDayRebooking = SameDayRebookingScheduler.AUTOMATION_KEY.equals(sms.getAutomationKey());
+                if (!sameDayRebooking && sms.getCreatedAt().isBefore(startOfToday)) {
+                    continue;
+                }
+                if (sameDayRebooking && !promoStillValid(sms, now)) {
+                    continue; // e.g. a text queued before the 2026-10-01 timing change: offer already over
+                }
                 try {
                     process(sms, config);
                 } catch (RuntimeException e) {
@@ -111,6 +124,21 @@ public class WinbackEmailFallbackScheduler {
                             sms.getId(), e.getMessage(), e);
                 }
             }
+        }
+    }
+
+    /** Same-day-rebooking links carry their promo expiry ("REBOOK:<epochSeconds>", see
+     * SameDayRebookingScheduler#sendNudge); the email says the offer "expires tonight", so it must
+     * still be live. Unknown format counts as valid (old behavior). */
+    static boolean promoStillValid(SmsMessage sms, Instant now) {
+        String target = sms.getLinkTarget();
+        if (target == null || !target.startsWith("REBOOK:")) {
+            return true;
+        }
+        try {
+            return Instant.ofEpochSecond(Long.parseLong(target.substring("REBOOK:".length()))).isAfter(now);
+        } catch (NumberFormatException e) {
+            return true;
         }
     }
 

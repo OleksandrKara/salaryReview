@@ -24,6 +24,9 @@ public interface SameDayRebookingSendRepository extends JpaRepository<SameDayReb
 
     List<SameDayRebookingSend> findByBusinessIdAndStateAndSendDueAtBefore(Long businessId, String state, Instant now);
 
+    /** Every row in a state regardless of due time: for SameDayRebookingScheduler's early send. */
+    List<SameDayRebookingSend> findByBusinessIdAndState(Long businessId, String state);
+
     /** Of the automation's sends, how many customers have since completed a NEW visit — same
      * outcome definition and native-query reasoning as {@code LapsedCustomerWinbackSendRepository
      * #countConvertedSince}, anchored to this row's own {@code created_at} date (the day of the
