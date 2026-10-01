@@ -471,4 +471,55 @@ class TelegramNotificationServiceTest {
         assertThat(TelegramNotificationService.formatSourcePage("Lips", "  ")).isEqualTo("Lips");
         assertThat(TelegramNotificationService.formatSourcePage(null, null)).isEqualTo("—");
     }
+
+    private static CardOnFileNotification card(CardOnFileNotification.Event event, java.util.List<String> warnings,
+                                               String errorCode, Integer attempts) {
+        return new CardOnFileNotification(null, null, event, "Jane Doe", "+15551234567", "jane@example.com",
+                "VISA", "4242", "DEBIT", "08/2028", errorCode,
+                errorCode == null ? null : "The security code (CVV) doesn't match your card.", warnings, attempts);
+    }
+
+    @Test
+    @DisplayName("card saved, no warnings: green check, card summary, both languages")
+    void cardSavedClean() {
+        String msg = TelegramNotificationService.formatCardOnFileMessage(card(CardOnFileNotification.Event.SAVED, null, null, null));
+        assertThat(msg).contains("✅ Card on file added").contains("VISA •••• 4242, DEBIT, exp 08/2028")
+                .contains("✅ Клиент добавил карту").contains("Jane Doe").contains("+15551234567")
+                .doesNotContain("⚠️").doesNotContain("—");
+    }
+
+    @Test
+    @DisplayName("card saved with warnings: flagged for a check, each warning listed")
+    void cardSavedWithWarnings() {
+        String msg = TelegramNotificationService.formatCardOnFileMessage(card(CardOnFileNotification.Event.SAVED,
+                java.util.List.of("Prepaid card", "Cardholder name differs"), null, null));
+        assertThat(msg).contains("⚠️ Card on file added, please check").contains("⚠️ Prepaid card")
+                .contains("⚠️ Cardholder name differs").contains("проверьте");
+    }
+
+    @Test
+    @DisplayName("card refused: reason with Square code and failed-try count, card NOT saved")
+    void cardDeclined() {
+        String msg = TelegramNotificationService.formatCardOnFileMessage(card(CardOnFileNotification.Event.DECLINED, null, "CVV_FAILURE", 3));
+        assertThat(msg).contains("❌ Card on file refused").contains("(CVV_FAILURE)")
+                .contains("Failed tries (last hour): 3").contains("NOT saved").contains("Карта НЕ сохранена");
+    }
+
+    @Test
+    @DisplayName("page paused: card-testing warning")
+    void cardPageBlocked() {
+        String msg = TelegramNotificationService.formatCardOnFileMessage(new CardOnFileNotification(null, null,
+                CardOnFileNotification.Event.BLOCKED, null, null, null, null, null, null, null, null, null, null, 20));
+        assertThat(msg).contains("🚨 Card page paused").contains("(20)").contains("на паузе");
+    }
+
+    @Test
+    @DisplayName("card-on-file alert with blank config → false, no exception")
+    void cardOnFileBlankConfigSkips() {
+        TelegramConfigService configService = mock(TelegramConfigService.class);
+        when(configService.get(BUSINESS_ID)).thenReturn(
+                TelegramNotificationConfig.builder().botToken(null).chatId(null).build());
+        assertThat(service(configService).sendCardOnFileAlert(BUSINESS_ID,
+                card(CardOnFileNotification.Event.SAVED, null, null, null))).isFalse();
+    }
 }

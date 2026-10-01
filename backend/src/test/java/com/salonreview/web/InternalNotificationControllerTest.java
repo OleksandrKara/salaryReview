@@ -510,6 +510,52 @@ class InternalNotificationControllerTest {
                 .andExpect(jsonPath("$.valid").value(false));
     }
 
+    private static final String CARD_ON_FILE_BODY = "{\"event\":\"DECLINED\",\"customerName\":\"Jane Doe\","
+            + "\"phoneNumber\":\"+15551234567\",\"errorCode\":\"CVV_FAILURE\",\"failedAttempts\":2}";
+
+    @Test
+    @DisplayName("card-on-file: missing key → 401, nothing sent")
+    void cardOnFileMissingKeyReturns401() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        mvc.perform(post("/api/internal/notifications/card-on-file")
+                        .contentType("application/json").content(CARD_ON_FILE_BODY))
+                .andExpect(status().isUnauthorized());
+        org.mockito.Mockito.verifyNoInteractions(telegram);
+    }
+
+    @Test
+    @DisplayName("card-on-file: no business given → legacy business (akluxnails-home), alert sent with event and code")
+    void cardOnFileSendsAlertForLegacyBusiness() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        when(businessesMock.legacySmsBusiness()).thenReturn(
+                Business.builder().id(1L).name("AK.LUX.NAILS").shortCode("akl").timezone("UTC").active(true).build());
+        when(telegram.sendCardOnFileAlert(org.mockito.ArgumentMatchers.eq(1L), any())).thenReturn(true);
+
+        mvc.perform(post("/api/internal/notifications/card-on-file")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content(CARD_ON_FILE_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sent").value(true));
+
+        org.mockito.ArgumentCaptor<com.salonreview.telegram.CardOnFileNotification> captor =
+                org.mockito.ArgumentCaptor.forClass(com.salonreview.telegram.CardOnFileNotification.class);
+        verify(telegram).sendCardOnFileAlert(org.mockito.ArgumentMatchers.eq(1L), captor.capture());
+        assertThat(captor.getValue().event()).isEqualTo(com.salonreview.telegram.CardOnFileNotification.Event.DECLINED);
+        assertThat(captor.getValue().errorCode()).isEqualTo("CVV_FAILURE");
+        assertThat(captor.getValue().failedAttempts()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("card-on-file: missing event → 400, nothing sent")
+    void cardOnFileMissingEventRejected() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        mvc.perform(post("/api/internal/notifications/card-on-file")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content("{\"customerName\":\"Jane\"}"))
+                .andExpect(status().isBadRequest());
+        org.mockito.Mockito.verifyNoInteractions(telegram);
+    }
+
     private static final String PAYMENT_FAILED_BODY = "{\"customerName\":\"Tara Lumley\",\"phoneNumber\":\"+15551234567\","
             + "\"serviceName\":\"Touch-Up\",\"amount\":100.0,\"errorMessage\":\"Your card was declined.\","
             + "\"errorCode\":\"CARD_DECLINED\",\"clientError\":true,\"businessId\":2}";

@@ -134,6 +134,25 @@ public class InternalNotificationController {
         return ResponseEntity.ok(Map.of("sent", telegram.sendPaymentFailedAlert(business.getId(), notification)));
     }
 
+    /** akluxnails.com/card (standalone card-on-file page, 2026-10-01): a card saved, refused, or
+     * the page pausing itself after a burst of failures. Fail-open like every alert here. */
+    @PostMapping("/notifications/card-on-file")
+    public ResponseEntity<Map<String, Object>> notifyCardOnFile(
+            @RequestHeader(value = "X-Internal-Api-Key", required = false) String key,
+            @RequestBody com.salonreview.telegram.CardOnFileNotification body) {
+        if (!keyMatches(key)) {
+            return ResponseEntity.status(401).build();
+        }
+        if (body.event() == null) {
+            return ResponseEntity.badRequest().body(Map.of("sent", false, "reason", "missing_event"));
+        }
+        Business business = resolveBusiness(body.businessShortCode(), body.businessId());
+        if (business == null) {
+            return ResponseEntity.ok(Map.of("sent", false, "reason", "unknown_business"));
+        }
+        return ResponseEntity.ok(Map.of("sent", telegram.sendCardOnFileAlert(business.getId(), body)));
+    }
+
     /** Fired the moment a customer books a free PMU consultation (Business 2's
      * {@code consultation_lead_sms} automation) — this is a second, independent leg alongside the
      * customer's own SMS confirmation (sent separately via {@link #sendSms}/{@code /sms/send}), not
