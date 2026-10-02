@@ -185,3 +185,14 @@ logging:
   level:
     org.flywaydb: INFO
     org.hibernate.SQL: INFO
+
+# Task bot for tasks the owner delegates to Anya (Notion DB + Telegram buttons), see
+# com.salonreview.tasks.TaskBotService. Off unless TASKS_NOTION_TOKEN is set.
+tasks:
+  notion-token: ${TASKS_NOTION_TOKEN:}
+  notion-data-source-id: ${TASKS_NOTION_DATA_SOURCE_ID:}
+  assignee-telegram-username: ${TASKS_ASSIGNEE_TELEGRAM_USERNAME:}
+  owner-telegram-username: ${TASKS_OWNER_TELEGRAM_USERNAME:}
+  assignee-chat-id: ${TASKS_ASSIGNEE_CHAT_ID:}
+  owner-chat-id: ${TASKS_OWNER_CHAT_ID:}
+  bot-business-id: ${TASKS_BOT_BUSINESS_ID:1}
