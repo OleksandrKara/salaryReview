@@ -94,7 +94,7 @@ class TaskBotServiceTest {
 
         verify(notion).setStatus("abc", "Done");
         verify(telegram).editMessage(ANYA, 9, "✅ Сделано: Визитки");
-        verify(telegram).sendMessage(eq(ALEX), eq("✅ Аня сделала: Визитки"), isNull());
+        verify(telegram).sendMessage(eq(ALEX), eq("✅ Аня сделала: Визитки\n📄 https://www.notion.so/abc"), isNull());
     }
 
     @Test
@@ -106,7 +106,7 @@ class TaskBotServiceTest {
         bot.handleUpdate(message(ANYA, "annakara87", "Нет доступа к Vistaprint"));
 
         verify(notion).setBlocker("abc", "Нет доступа к Vistaprint");
-        verify(telegram).sendMessage(eq(ALEX), eq("⛔ Аня застряла: Визитки\nЧто мешает: Нет доступа к Vistaprint"), isNull());
+        verify(telegram).sendMessage(eq(ALEX), eq("⛔ Аня застряла: Визитки\nЧто мешает: Нет доступа к Vistaprint\n📄 https://www.notion.so/abc"), isNull());
     }
 
     @Test
@@ -135,7 +135,7 @@ class TaskBotServiceTest {
 
         bot.sendEveningOverdue();
 
-        verify(telegram).sendMessage(eq(ALEX), eq("⚠️ Просрочено у Ани:\n\n• Отзывы (просрочено на 2 дн.)"), isNull());
+        verify(telegram).sendMessage(eq(ALEX), eq("⚠️ Просрочено у Ани:\n\n• Отзывы (просрочено на 2 дн.)\n  https://www.notion.so/a1"), isNull());
         verify(telegram).sendMessage(eq(ANYA), any(), eq(TaskBotService.buttons(task("a1", "Отзывы", "To do", null))));
     }
 
@@ -183,5 +183,14 @@ class TaskBotServiceTest {
         assertThat(t.due()).isEqualTo(LocalDate.of(2026, 10, 5));
         assertThat(t.doneWhen()).isEqualTo("В салоне");
         assertThat(("t|" + t.id() + "|d").getBytes(java.nio.charset.StandardCharsets.UTF_8).length).isLessThanOrEqualTo(64);
+    }
+
+    @Test
+    @DisplayName("each task card has a link button to the task in Notion")
+    void cardHasNotionLink() {
+        var rows = TaskBotService.buttons(task("3ed7aea26d5c81669692d48504216675", "Шампанское", "To do", null));
+        assertThat(rows).hasSize(3);
+        assertThat(rows.get(2).get(0).url()).isEqualTo("https://www.notion.so/3ed7aea26d5c81669692d48504216675");
+        assertThat(rows.get(2).get(0).data()).isNull();
     }
 }

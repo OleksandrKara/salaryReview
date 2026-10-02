@@ -146,7 +146,7 @@ public class TaskBotService {
             notion.setBlocker(pending, text);
             Task task = notion.get(pending);
             telegram.sendMessage(chatId, "Спасибо, передала Алексу 🙏", null);
-            notifyOwner("⛔ Аня застряла: " + task.title() + "\nЧто мешает: " + text);
+            notifyOwner("⛔ Аня застряла: " + task.title() + "\nЧто мешает: " + text + link(pending));
             return;
         }
         if (role.equals("assignee")) {
@@ -172,12 +172,12 @@ public class TaskBotService {
                 notion.setStatus(pageId, "Done");
                 telegram.answerCallback(q.path("id").asText(), "Отлично! ✅");
                 telegram.editMessage(chatId, messageId, "✅ Сделано: " + task.title());
-                notifyOwner("✅ Аня сделала: " + task.title());
+                notifyOwner("✅ Аня сделала: " + task.title() + link(pageId));
             }
             case "p" -> {
                 notion.setStatus(pageId, "In progress");
                 telegram.answerCallback(q.path("id").asText(), "Отметила: в работе 🚧");
-                notifyOwner("🚧 Аня взяла в работу: " + task.title());
+                notifyOwner("🚧 Аня взяла в работу: " + task.title() + link(pageId));
             }
             case "b" -> {
                 awaitingReason.put(chatId, pageId);
@@ -189,7 +189,7 @@ public class TaskBotService {
                 notion.setDue(pageId, tomorrow);
                 telegram.answerCallback(q.path("id").asText(), "Перенесла на завтра ⏰");
                 telegram.editMessage(chatId, messageId, "⏰ Перенесено на завтра: " + task.title());
-                notifyOwner("⏰ Аня перенесла на завтра (" + DAY.format(tomorrow) + "): " + task.title());
+                notifyOwner("⏰ Аня перенесла на завтра (" + DAY.format(tomorrow) + "): " + task.title() + link(pageId));
             }
             default -> { }
         }
@@ -211,7 +211,10 @@ public class TaskBotService {
                 .filter(t -> t.due() != null && t.due().isBefore(today())).toList();
         if (overdue.isEmpty()) return;
         StringBuilder sb = new StringBuilder("⚠️ Просрочено у Ани:\n");
-        for (Task t : overdue) sb.append("\n• ").append(t.title()).append(" (").append(dueLabel(t.due())).append(")").append(statusSuffix(t));
+        for (Task t : overdue) {
+            sb.append("\n• ").append(t.title()).append(" (").append(dueLabel(t.due())).append(")").append(statusSuffix(t))
+                    .append("\n  ").append(NotionTasksClient.pageUrl(t.id()));
+        }
         notifyOwner(sb.toString());
         Long chatId = chatIds.get("assignee");
         if (chatId != null) {
@@ -259,7 +262,8 @@ public class TaskBotService {
         String id = t.id();
         return List.of(
                 List.of(new Button("✅ Сделала", "t|" + id + "|d"), new Button("🚧 В работе", "t|" + id + "|p")),
-                List.of(new Button("⛔ Застряла", "t|" + id + "|b"), new Button("⏰ Завтра", "t|" + id + "|l")));
+                List.of(new Button("⛔ Застряла", "t|" + id + "|b"), new Button("⏰ Завтра", "t|" + id + "|l")),
+                List.of(Button.link("📄 Детали в Notion", NotionTasksClient.pageUrl(id))));
     }
 
     String dueLabel(LocalDate due) {
@@ -276,9 +280,13 @@ public class TaskBotService {
         for (Task t : open) {
             sb.append("\n• ").append(t.title());
             if (t.due() != null) sb.append(" (").append(dueLabel(t.due())).append(")");
-            sb.append(statusSuffix(t));
+            sb.append(statusSuffix(t)).append("\n  ").append(NotionTasksClient.pageUrl(t.id()));
         }
         return sb.toString();
+    }
+
+    private static String link(String pageId) {
+        return "\n📄 " + NotionTasksClient.pageUrl(pageId);
     }
 
     private static String statusSuffix(Task t) {
@@ -296,7 +304,7 @@ public class TaskBotService {
             sb.append("• ").append(t.title());
             if (t.due() != null && !"Done".equals(t.status())) sb.append(" (").append(dueLabel(t.due())).append(")");
             if (withBlocker && !t.blocker().isBlank()) sb.append(": ").append(t.blocker());
-            sb.append("\n");
+            sb.append("\n  ").append(NotionTasksClient.pageUrl(t.id())).append("\n");
         }
     }
 
