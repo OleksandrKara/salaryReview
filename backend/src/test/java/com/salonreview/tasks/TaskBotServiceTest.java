@@ -94,7 +94,7 @@ class TaskBotServiceTest {
 
         verify(notion).setStatus("abc", "Done");
         verify(telegram).editMessage(ANYA, 9, "✅ Сделано: Визитки");
-        verify(telegram).sendMessage(eq(ALEX), eq("✅ Аня сделала: Визитки\n📄 https://www.notion.so/abc"), isNull());
+        verify(telegram).sendMessage(eq(ALEX), eq("✅ Аня сделала: Визитки"), eq(List.of(List.of(new TaskBotTelegram.Button("📄 Подробнее", "t|abc|i")))));
     }
 
     @Test
@@ -106,7 +106,7 @@ class TaskBotServiceTest {
         bot.handleUpdate(message(ANYA, "annakara87", "Нет доступа к Vistaprint"));
 
         verify(notion).setBlocker("abc", "Нет доступа к Vistaprint");
-        verify(telegram).sendMessage(eq(ALEX), eq("⛔ Аня застряла: Визитки\nЧто мешает: Нет доступа к Vistaprint\n📄 https://www.notion.so/abc"), isNull());
+        verify(telegram).sendMessage(eq(ALEX), eq("⛔ Аня застряла: Визитки\nЧто мешает: Нет доступа к Vistaprint"), eq(List.of(List.of(new TaskBotTelegram.Button("📄 Подробнее", "t|abc|i")))));
     }
 
     @Test
@@ -135,7 +135,7 @@ class TaskBotServiceTest {
 
         bot.sendEveningOverdue();
 
-        verify(telegram).sendMessage(eq(ALEX), eq("⚠️ Просрочено у Ани:\n\n• Отзывы (просрочено на 2 дн.)\n  https://www.notion.so/a1"), isNull());
+        verify(telegram).sendMessage(eq(ALEX), eq("⚠️ Просрочено у Ани:\n\n• Отзывы (просрочено на 2 дн.)"), any());
         verify(telegram).sendMessage(eq(ANYA), any(), eq(TaskBotService.buttons(task("a1", "Отзывы", "To do", null))));
     }
 
@@ -186,11 +186,50 @@ class TaskBotServiceTest {
     }
 
     @Test
-    @DisplayName("each task card has a link button to the task in Notion")
-    void cardHasNotionLink() {
+    @DisplayName("each task card has a 📄 details button")
+    void cardHasDetailsButton() {
         var rows = TaskBotService.buttons(task("3ed7aea26d5c81669692d48504216675", "Шампанское", "To do", null));
         assertThat(rows).hasSize(3);
-        assertThat(rows.get(2).get(0).url()).isEqualTo("https://www.notion.so/3ed7aea26d5c81669692d48504216675");
-        assertThat(rows.get(2).get(0).data()).isNull();
+        assertThat(rows.get(2).get(0).data()).isEqualTo("t|3ed7aea26d5c81669692d48504216675|i");
+    }
+
+    @Test
+    @DisplayName("📄 details: owner can open them too; fields + page steps sent as HTML, no action buttons for the owner")
+    void detailsForOwner() throws Exception {
+        when(notion.get("abc")).thenReturn(new Task("abc", "Шампанское <для> клиенток", "Blocked", "Аня",
+                LocalDate.of(2026, 10, 16), "В салоне", "Нет пропуска", NOW));
+        when(notion.bodyHtml("abc")).thenReturn("<b>Шаги</b>\n1. Цены");
+
+        bot.handleUpdate(press(ALEX, "alexkara", "t|abc|i"));
+
+        ArgumentCaptor<String> html = ArgumentCaptor.forClass(String.class);
+        verify(telegram).sendHtml(eq(ALEX), html.capture(), isNull());
+        assertThat(html.getValue())
+                .contains("<b>📌 Шампанское &lt;для&gt; клиенток</b>")
+                .contains("<b>Статус:</b> застряла")
+                .contains("<b>Где застряла:</b> Нет пропуска")
+                .contains("1. Цены");
+        verify(notion, never()).setStatus(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("📄 details for Anya come with her action buttons")
+    void detailsForAnya() throws Exception {
+        when(notion.get("abc")).thenReturn(task("abc", "Визитки", "To do", LocalDate.of(2026, 10, 5)));
+        when(notion.bodyHtml("abc")).thenReturn("");
+        bot.handleUpdate(press(ANYA, "annakara87", "t|abc|i"));
+        verify(telegram).sendHtml(eq(ANYA), anyString(), org.mockito.ArgumentMatchers.argThat(k -> k != null && k.size() == 2));
+    }
+
+    @Test
+    @DisplayName("Notion blocks become Telegram HTML (headings, numbered and bulleted lists, bold, links, escaping)")
+    void blocksToHtml() throws Exception {
+        JsonNode blocks = JSON.readTree("""
+                [{"type":"heading_2","heading_2":{"rich_text":[{"plain_text":"Шаги","annotations":{}}]}},
+                 {"type":"numbered_list_item","numbered_list_item":{"rich_text":[{"plain_text":"Цены","annotations":{"bold":true}}]}},
+                 {"type":"numbered_list_item","numbered_list_item":{"rich_text":[{"plain_text":"abc.ca.gov","href":"https://abc.ca.gov","annotations":{}}]}},
+                 {"type":"bulleted_list_item","bulleted_list_item":{"rich_text":[{"plain_text":"21+ & ID","annotations":{}}]}}]""");
+        assertThat(NotionTasksClient.blocksToHtml(blocks)).isEqualTo(
+                "<b>Шаги</b>\n1. <b>Цены</b>\n2. <a href=\"https://abc.ca.gov\">abc.ca.gov</a>\n• 21+ &amp; ID");
     }
 }

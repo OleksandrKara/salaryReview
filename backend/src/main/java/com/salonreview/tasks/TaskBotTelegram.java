@@ -66,6 +66,17 @@ public class TaskBotTelegram {
         call("sendMessage", body);
     }
 
+    /** Same as sendMessage, but with Telegram HTML formatting (bold, italics, links). */
+    public void sendHtml(long chatId, String html, List<List<Button>> keyboard) throws IOException, InterruptedException {
+        Map<String, Object> body = new HashMap<>();
+        body.put("chat_id", chatId);
+        body.put("text", html);
+        body.put("parse_mode", "HTML");
+        body.put("disable_web_page_preview", true);
+        if (keyboard != null && !keyboard.isEmpty()) body.put("reply_markup", markup(keyboard));
+        call("sendMessage", body);
+    }
+
     public void editMessage(long chatId, long messageId, String text) throws IOException, InterruptedException {
         call("editMessageText", Map.of("chat_id", chatId, "message_id", messageId, "text", text));
     }
