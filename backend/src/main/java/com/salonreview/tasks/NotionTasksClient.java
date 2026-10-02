@@ -52,6 +52,11 @@ public class NotionTasksClient {
         this.dataSourceId = dataSourceId;
     }
 
+    /** Link that opens the task in Notion (app or browser) for anyone the database is shared with. */
+    public static String pageUrl(String pageId) {
+        return "https://www.notion.so/" + pageId.replace("-", "");
+    }
+
     public boolean configured() {
         return token != null && !token.isBlank() && dataSourceId != null && !dataSourceId.isBlank();
     }

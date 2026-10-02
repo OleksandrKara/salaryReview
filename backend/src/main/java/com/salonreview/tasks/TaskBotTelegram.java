@@ -25,8 +25,15 @@ import java.util.Map;
 @Component
 public class TaskBotTelegram {
 
-    /** One inline button: label + callback data (max 64 bytes). */
-    public record Button(String text, String data) {
+    /** One inline button: label + either callback data (max 64 bytes) or a URL to open. */
+    public record Button(String text, String data, String url) {
+        public Button(String text, String data) {
+            this(text, data, null);
+        }
+
+        public static Button link(String text, String url) {
+            return new Button(text, null, url);
+        }
     }
 
     private final TelegramConfigService configService;
@@ -69,7 +76,9 @@ public class TaskBotTelegram {
 
     private static Map<String, Object> markup(List<List<Button>> keyboard) {
         return Map.of("inline_keyboard", keyboard.stream()
-                .map(row -> row.stream().map(b -> Map.of("text", b.text(), "callback_data", b.data())).toList())
+                .map(row -> row.stream().map(b -> b.url() != null
+                        ? Map.of("text", b.text(), "url", b.url())
+                        : Map.of("text", b.text(), "callback_data", b.data())).toList())
                 .toList());
     }
 
