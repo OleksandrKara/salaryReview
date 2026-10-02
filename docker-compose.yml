@@ -81,6 +81,13 @@ x-backend-env: &backend-env
   # Shared secret for service-to-service calls from mani/akluxnails-home (Telegram
   # 4-hand-request relay) — blank means every internal call is rejected.
   INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
+  # Task bot (Notion tasks for Anya via Telegram buttons). Off while TASKS_NOTION_TOKEN is blank.
+  TASKS_NOTION_TOKEN: ${TASKS_NOTION_TOKEN:-}
+  TASKS_NOTION_DATA_SOURCE_ID: ${TASKS_NOTION_DATA_SOURCE_ID:-}
+  TASKS_ASSIGNEE_TELEGRAM_USERNAME: ${TASKS_ASSIGNEE_TELEGRAM_USERNAME:-}
+  TASKS_OWNER_TELEGRAM_USERNAME: ${TASKS_OWNER_TELEGRAM_USERNAME:-}
+  TASKS_ASSIGNEE_CHAT_ID: ${TASKS_ASSIGNEE_CHAT_ID:-}
+  TASKS_OWNER_CHAT_ID: ${TASKS_OWNER_CHAT_ID:-}
 
 x-backend-healthcheck: &backend-healthcheck
   test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
