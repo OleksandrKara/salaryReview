@@ -94,6 +94,52 @@ public class NotionTasksClient {
                 BLOCKER, Map.of("rich_text", List.of(Map.of("text", Map.of("content", clipped))))));
     }
 
+    /** The task page's own content (steps, notes), as Telegram HTML. Top-level blocks only. */
+    public String bodyHtml(String pageId) throws IOException, InterruptedException {
+        JsonNode res = send("GET", "/v1/blocks/" + pageId + "/children?page_size=100", null);
+        return blocksToHtml(res.path("results"));
+    }
+
+    static String blocksToHtml(JsonNode blocks) {
+        StringBuilder sb = new StringBuilder();
+        int number = 0;
+        for (JsonNode b : blocks) {
+            String type = b.path("type").asText();
+            String text = richTextHtml(b.path(type).path("rich_text"));
+            number = type.equals("numbered_list_item") ? number + 1 : 0;
+            switch (type) {
+                case "heading_1", "heading_2", "heading_3" -> sb.append("\n<b>").append(text).append("</b>\n");
+                case "bulleted_list_item" -> sb.append("• ").append(text).append("\n");
+                case "numbered_list_item" -> sb.append(number).append(". ").append(text).append("\n");
+                case "to_do" -> sb.append(b.path("to_do").path("checked").asBoolean() ? "☑️ " : "◻️ ").append(text).append("\n");
+                case "quote", "callout" -> sb.append("<i>").append(text).append("</i>\n");
+                case "divider" -> sb.append("\n");
+                case "paragraph" -> sb.append(text).append("\n");
+                default -> { }
+            }
+        }
+        return sb.toString().trim();
+    }
+
+    private static String richTextHtml(JsonNode richText) {
+        StringBuilder sb = new StringBuilder();
+        for (JsonNode t : richText) {
+            String piece = escapeHtml(t.path("plain_text").asText(""));
+            JsonNode a = t.path("annotations");
+            if (a.path("code").asBoolean()) piece = "<code>" + piece + "</code>";
+            if (a.path("bold").asBoolean()) piece = "<b>" + piece + "</b>";
+            if (a.path("italic").asBoolean()) piece = "<i>" + piece + "</i>";
+            String href = t.path("href").asText("");
+            if (href.startsWith("http")) piece = "<a href=\"" + escapeHtml(href) + "\">" + piece + "</a>";
+            sb.append(piece);
+        }
+        return sb.toString();
+    }
+
+    static String escapeHtml(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
+    }
+
     private void update(String pageId, Map<String, Object> properties) throws IOException, InterruptedException {
         send("PATCH", "/v1/pages/" + pageId, Map.of("properties", properties));
     }

@@ -138,7 +138,10 @@ public class TaskBotService {
         }
         if (text.startsWith("/tasks")) {
             if (role.equals("assignee")) sendAssigneeTasks(chatId, true);
-            else telegram.sendMessage(chatId, ownerOverview(notion.openTasksFor(ASSIGNEE_NAME)), null);
+            else {
+                List<Task> open = notion.openTasksFor(ASSIGNEE_NAME);
+                telegram.sendMessage(chatId, ownerOverview(open), detailButtons(open));
+            }
             return;
         }
         String pending = awaitingReason.remove(chatId);
@@ -146,7 +149,7 @@ public class TaskBotService {
             notion.setBlocker(pending, text);
             Task task = notion.get(pending);
             telegram.sendMessage(chatId, "Спасибо, передала Алексу 🙏", null);
-            notifyOwner("⛔ Аня застряла: " + task.title() + "\nЧто мешает: " + text + link(pending));
+            notifyOwner("⛔ Аня застряла: " + task.title() + "\nЧто мешает: " + text, pending);
             return;
         }
         if (role.equals("assignee")) {
@@ -158,26 +161,31 @@ public class TaskBotService {
         long chatId = q.path("message").path("chat").path("id").asLong();
         long messageId = q.path("message").path("message_id").asLong();
         String role = role(q.path("from"), chatId);
+        String[] parts = q.path("data").asText("").split("\\|");
+        if (role == null || parts.length != 3 || !parts[0].equals("t")) return;
+        String pageId = parts[1];
+        if (parts[2].equals("i")) { // details: for both of them
+            telegram.answerCallback(q.path("id").asText(), "Открываю детали");
+            sendDetails(chatId, pageId, role.equals("assignee"));
+            return;
+        }
         if (!"assignee".equals(role)) {
             telegram.answerCallback(q.path("id").asText(), "Эти кнопки только для Ани");
             return;
         }
         chatIds.put(role, chatId);
-        String[] parts = q.path("data").asText("").split("\\|");
-        if (parts.length != 3 || !parts[0].equals("t")) return;
-        String pageId = parts[1];
         Task task = notion.get(pageId);
         switch (parts[2]) {
             case "d" -> {
                 notion.setStatus(pageId, "Done");
                 telegram.answerCallback(q.path("id").asText(), "Отлично! ✅");
                 telegram.editMessage(chatId, messageId, "✅ Сделано: " + task.title());
-                notifyOwner("✅ Аня сделала: " + task.title() + link(pageId));
+                notifyOwner("✅ Аня сделала: " + task.title(), pageId);
             }
             case "p" -> {
                 notion.setStatus(pageId, "In progress");
                 telegram.answerCallback(q.path("id").asText(), "Отметила: в работе 🚧");
-                notifyOwner("🚧 Аня взяла в работу: " + task.title() + link(pageId));
+                notifyOwner("🚧 Аня взяла в работу: " + task.title(), pageId);
             }
             case "b" -> {
                 awaitingReason.put(chatId, pageId);
@@ -189,7 +197,7 @@ public class TaskBotService {
                 notion.setDue(pageId, tomorrow);
                 telegram.answerCallback(q.path("id").asText(), "Перенесла на завтра ⏰");
                 telegram.editMessage(chatId, messageId, "⏰ Перенесено на завтра: " + task.title());
-                notifyOwner("⏰ Аня перенесла на завтра (" + DAY.format(tomorrow) + "): " + task.title() + link(pageId));
+                notifyOwner("⏰ Аня перенесла на завтра (" + DAY.format(tomorrow) + "): " + task.title(), pageId);
             }
             default -> { }
         }
@@ -212,10 +220,9 @@ public class TaskBotService {
         if (overdue.isEmpty()) return;
         StringBuilder sb = new StringBuilder("⚠️ Просрочено у Ани:\n");
         for (Task t : overdue) {
-            sb.append("\n• ").append(t.title()).append(" (").append(dueLabel(t.due())).append(")").append(statusSuffix(t))
-                    .append("\n  ").append(NotionTasksClient.pageUrl(t.id()));
+            sb.append("\n• ").append(t.title()).append(" (").append(dueLabel(t.due())).append(")").append(statusSuffix(t));
         }
-        notifyOwner(sb.toString());
+        notifyOwner(sb.toString(), detailButtons(overdue));
         Long chatId = chatIds.get("assignee");
         if (chatId != null) {
             telegram.sendMessage(chatId, "Аня, напоминание: эти задачи уже просрочены 🙏", null);
@@ -232,7 +239,8 @@ public class TaskBotService {
         section(sb, "⚠️ Просрочено", all.stream().filter(t -> !"Done".equals(t.status()) && t.due() != null && t.due().isBefore(today())).toList(), false);
         section(sb, "🚧 В работе", all.stream().filter(t -> "In progress".equals(t.status())).toList(), false);
         section(sb, "📌 Впереди", all.stream().filter(t -> "To do".equals(t.status()) && (t.due() == null || !t.due().isBefore(today()))).toList(), false);
-        notifyOwner(sb.toString());
+        List<Task> open = all.stream().filter(t -> !"Done".equals(t.status())).toList();
+        notifyOwner(sb.toString(), detailButtons(open));
     }
 
     // ---------------------------------------------------------------- helpers
@@ -263,7 +271,7 @@ public class TaskBotService {
         return List.of(
                 List.of(new Button("✅ Сделала", "t|" + id + "|d"), new Button("🚧 В работе", "t|" + id + "|p")),
                 List.of(new Button("⛔ Застряла", "t|" + id + "|b"), new Button("⏰ Завтра", "t|" + id + "|l")),
-                List.of(Button.link("📄 Детали в Notion", NotionTasksClient.pageUrl(id))));
+                List.of(new Button("📄 Подробнее", "t|" + id + "|i")));
     }
 
     String dueLabel(LocalDate due) {
@@ -280,13 +288,48 @@ public class TaskBotService {
         for (Task t : open) {
             sb.append("\n• ").append(t.title());
             if (t.due() != null) sb.append(" (").append(dueLabel(t.due())).append(")");
-            sb.append(statusSuffix(t)).append("\n  ").append(NotionTasksClient.pageUrl(t.id()));
+            sb.append(statusSuffix(t));
         }
         return sb.toString();
     }
 
-    private static String link(String pageId) {
-        return "\n📄 " + NotionTasksClient.pageUrl(pageId);
+    /** One "📄 title" button per task, opening its details right in Telegram. */
+    static List<List<Button>> detailButtons(List<Task> tasks) {
+        List<List<Button>> rows = new ArrayList<>();
+        for (Task t : tasks.stream().limit(20).toList()) {
+            String label = t.title().length() > 40 ? t.title().substring(0, 39) + "…" : t.title();
+            rows.add(List.of(new Button("📄 " + label, "t|" + t.id() + "|i")));
+        }
+        return rows;
+    }
+
+    /** Full task, formatted, so nobody has to open Notion: fields + the page's own steps/notes. */
+    void sendDetails(long chatId, String pageId, boolean forAssignee) throws Exception {
+        Task t = notion.get(pageId);
+        StringBuilder sb = new StringBuilder("<b>📌 ").append(NotionTasksClient.escapeHtml(t.title())).append("</b>\n");
+        sb.append("\n<b>Статус:</b> ").append(statusRu(t.status()));
+        if (t.due() != null) sb.append("\n<b>Срок:</b> ").append(DAY.format(t.due())).append(" (").append(dueLabel(t.due())).append(")");
+        if (!t.doneWhen().isBlank()) sb.append("\n<b>Готово, когда:</b> ").append(NotionTasksClient.escapeHtml(t.doneWhen()));
+        if (!t.blocker().isBlank()) sb.append("\n<b>Где застряла:</b> ").append(NotionTasksClient.escapeHtml(t.blocker()));
+        String body = notion.bodyHtml(pageId);
+        if (!body.isBlank()) sb.append("\n\n").append(body);
+        String html = sb.length() > 3900 ? sb.substring(0, 3900) + "…" : sb.toString();
+        telegram.sendHtml(chatId, html, forAssignee && !"Done".equals(t.status()) ? actionButtons(t.id()) : null);
+    }
+
+    private static List<List<Button>> actionButtons(String id) {
+        return List.of(
+                List.of(new Button("✅ Сделала", "t|" + id + "|d"), new Button("🚧 В работе", "t|" + id + "|p")),
+                List.of(new Button("⛔ Застряла", "t|" + id + "|b"), new Button("⏰ Завтра", "t|" + id + "|l")));
+    }
+
+    private static String statusRu(String status) {
+        return switch (status) {
+            case "Done" -> "сделано ✅";
+            case "In progress" -> "в работе 🚧";
+            case "Blocked" -> "застряла ⛔";
+            default -> "не начато";
+        };
     }
 
     private static String statusSuffix(Task t) {
@@ -304,17 +347,25 @@ public class TaskBotService {
             sb.append("• ").append(t.title());
             if (t.due() != null && !"Done".equals(t.status())) sb.append(" (").append(dueLabel(t.due())).append(")");
             if (withBlocker && !t.blocker().isBlank()) sb.append(": ").append(t.blocker());
-            sb.append("\n  ").append(NotionTasksClient.pageUrl(t.id())).append("\n");
+            sb.append("\n");
         }
     }
 
     private void notifyOwner(String text) throws Exception {
+        notifyOwner(text, (List<List<Button>>) null);
+    }
+
+    private void notifyOwner(String text, String pageId) throws Exception {
+        notifyOwner(text, List.of(List.of(new Button("📄 Подробнее", "t|" + pageId + "|i"))));
+    }
+
+    private void notifyOwner(String text, List<List<Button>> keyboard) throws Exception {
         Long chatId = chatIds.get("owner");
         if (chatId == null) {
             log.info("Task bot: owner hasn't pressed Start yet, not sent: {}", text);
             return;
         }
-        telegram.sendMessage(chatId, text, null);
+        telegram.sendMessage(chatId, text, keyboard == null || keyboard.isEmpty() ? null : keyboard);
     }
 
     private String role(JsonNode from, long chatId) {
