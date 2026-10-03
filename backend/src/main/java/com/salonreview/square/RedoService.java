@@ -59,6 +59,40 @@ public class RedoService {
 
     @Transactional
     public RedoView create(CreateRequest req, String by) {
+        validate(req);
+        Redo saved = redos.save(Redo.builder()
+                .originalProviderId(req.originalProviderId())
+                .redoProviderId(req.redoProviderId())
+                .originalDate(req.originalDate())
+                .redoDate(req.redoDate())
+                .amount(req.amount())
+                .serviceName(cleanServiceName(req.serviceName()))
+                .createdBy(by)
+                .build());
+        settlementPreview.invalidateCache();
+        return view(saved);
+    }
+
+    /** Edits an existing redo (owner request 2026-10-03: fix a wrong provider/date/amount without
+     * deleting and re-entering it). Same validation and same business scoping as {@link #create}
+     * and {@link #delete}: a redo of another business is a 404, never editable. */
+    @Transactional
+    public RedoView update(Long id, CreateRequest req) {
+        Redo redo = redos.findByIdAndBusinessId(id, currentBusinessContext.id())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "no such redo"));
+        validate(req);
+        redo.setOriginalProviderId(req.originalProviderId());
+        redo.setRedoProviderId(req.redoProviderId());
+        redo.setOriginalDate(req.originalDate());
+        redo.setRedoDate(req.redoDate());
+        redo.setAmount(req.amount());
+        redo.setServiceName(cleanServiceName(req.serviceName()));
+        Redo saved = redos.save(redo);
+        settlementPreview.invalidateCache();
+        return view(saved);
+    }
+
+    private void validate(CreateRequest req) {
         if (req.originalProviderId() == null || req.redoProviderId() == null || req.originalDate() == null
                 || req.redoDate() == null || req.amount() == null || req.amount().signum() <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -72,16 +106,13 @@ public class RedoService {
                 || !providers.existsByIdAndBusinessId(req.redoProviderId(), businessId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "no such provider");
         }
-        Redo saved = redos.save(Redo.builder()
-                .originalProviderId(req.originalProviderId())
-                .redoProviderId(req.redoProviderId())
-                .originalDate(req.originalDate())
-                .redoDate(req.redoDate())
-                .amount(req.amount())
-                .serviceName(req.serviceName() == null || req.serviceName().isBlank() ? null : req.serviceName().trim())
-                .createdBy(by)
-                .build());
-        settlementPreview.invalidateCache();
+    }
+
+    private static String cleanServiceName(String serviceName) {
+        return serviceName == null || serviceName.isBlank() ? null : serviceName.trim();
+    }
+
+    private RedoView view(Redo saved) {
         Function<Long, String> name = id -> providers.findById(id).map(Provider::getDisplayName).orElse("#" + id);
         return new RedoView(saved.getId(), saved.getOriginalProviderId(), name.apply(saved.getOriginalProviderId()),
                 saved.getRedoProviderId(), name.apply(saved.getRedoProviderId()), saved.getOriginalDate().toString(),

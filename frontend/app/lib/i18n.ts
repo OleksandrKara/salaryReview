@@ -363,6 +363,12 @@ const STRINGS = {
   redoErrCreateFallback: { EN: 'Failed to create', RU: 'Не удалось создать' },
   redoErrDelete: { EN: 'Could not delete.', RU: 'Не удалось удалить.' },
   redoConfirmDelete: { EN: 'Delete this redo ({from} → {to})?', RU: 'Удалить эту переделку ({from} → {to})?' },
+  redoEdit: { EN: 'Edit', RU: 'Изменить' },
+  redoEditing: { EN: 'Editing redo', RU: 'Редактирование переделки' },
+  redoSave: { EN: 'Save changes', RU: 'Сохранить' },
+  redoSaving: { EN: 'Saving…', RU: 'Сохранение…' },
+  redoCancel: { EN: 'Cancel', RU: 'Отмена' },
+  redoErrUpdate: { EN: 'Could not save the changes.', RU: 'Не удалось сохранить изменения.' },
 
   // Missed bookings (/admin/missed-bookings) — manager task
   missedBookingsTitle: { EN: 'Missed bookings', RU: 'Упущенные записи' },

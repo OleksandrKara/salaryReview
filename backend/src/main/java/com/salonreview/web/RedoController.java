@@ -34,6 +34,11 @@ public class RedoController {
         return redos.create(req, me == null ? null : me.getUsername());
     }
 
+    @PutMapping("/{id}")
+    public RedoView update(@PathVariable Long id, @RequestBody CreateRequest req) {
+        return redos.update(id, req);
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         redos.delete(id);

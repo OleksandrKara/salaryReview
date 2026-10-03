@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { t, tf } from '../../lib/i18n';
 import type { Language, Provider, Redo } from '../../lib/types';
@@ -38,6 +38,28 @@ export default function RedoManager({
   const [redoDate,           setRedoDate]           = useState('');
   const [amount,             setAmount]             = useState('');
   const [serviceName,        setServiceName]        = useState('');
+  // Set while an existing redo is loaded into the form: submit then saves it (PUT) instead of adding.
+  const [editingId,          setEditingId]          = useState<number | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  function clearForm() {
+    setOriginalProviderId(''); setRedoProviderId('');
+    setOriginalDate(''); setRedoDate('');
+    setAmount(''); setServiceName('');
+    setEditingId(null);
+  }
+
+  function startEdit(r: Redo) {
+    setError('');
+    setEditingId(r.id);
+    setOriginalProviderId(r.originalProviderId);
+    setRedoProviderId(r.redoProviderId);
+    setOriginalDate(r.originalDate);
+    setRedoDate(r.redoDate);
+    setAmount(String(r.amount));
+    setServiceName(r.serviceName ?? '');
+    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
   async function refresh() {
     setRedos(await fetch('/api/redos', { cache: 'no-store' }).then((r) => r.json()));
@@ -53,8 +75,8 @@ export default function RedoManager({
     }
     setBusy(true);
     try {
-      const res = await fetch('/api/redos', {
-        method: 'POST',
+      const res = await fetch(editingId === null ? '/api/redos' : `/api/redos/${editingId}`, {
+        method: editingId === null ? 'POST' : 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           originalProviderId: Number(originalProviderId),
@@ -64,10 +86,8 @@ export default function RedoManager({
           serviceName: serviceName || null,
         }),
       });
-      if (!res.ok) throw new Error(t(language, 'redoErrCreate'));
-      setOriginalProviderId(''); setRedoProviderId('');
-      setOriginalDate(''); setRedoDate('');
-      setAmount(''); setServiceName('');
+      if (!res.ok) throw new Error(t(language, editingId === null ? 'redoErrCreate' : 'redoErrUpdate'));
+      clearForm();
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : t(language, 'redoErrCreateFallback'));
@@ -81,13 +101,22 @@ export default function RedoManager({
     setError('');
     const res = await fetch(`/api/redos/${r.id}`, { method: 'DELETE' });
     if (!res.ok && res.status !== 204) { setError(t(language, 'redoErrDelete')); return; }
+    if (editingId === r.id) clearForm();
     await refresh();
   }
 
   return (
     <div className="flex flex-col gap-6">
       {/* Form — stacks on mobile, wraps on desktop */}
-      <form onSubmit={create} data-testid="redo-form" className="rounded-lg p-4 ring-1 ring-zinc-200">
+      <form
+        ref={formRef}
+        onSubmit={create}
+        data-testid="redo-form"
+        className={`scroll-mt-4 rounded-lg p-4 ring-1 ${editingId === null ? 'ring-zinc-200' : 'bg-amber-50 ring-amber-300'}`}
+      >
+        {editingId !== null && (
+          <p className="mb-3 text-sm font-medium text-amber-800">{t(language, 'redoEditing')}</p>
+        )}
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
           <Field label={t(language, 'redoOriginalProvider')}>
             <select
@@ -129,8 +158,20 @@ export default function RedoManager({
             data-testid="redo-submit"
           className="rounded bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50 sm:mb-px"
           >
-            {busy ? t(language, 'redoAdding') : t(language, 'redoAdd')}
+            {editingId === null
+              ? (busy ? t(language, 'redoAdding') : t(language, 'redoAdd'))
+              : (busy ? t(language, 'redoSaving') : t(language, 'redoSave'))}
           </button>
+          {editingId !== null && (
+            <button
+              type="button"
+              onClick={() => { clearForm(); setError(''); }}
+              data-testid="redo-cancel-edit"
+              className="rounded px-4 py-1.5 text-sm text-zinc-600 ring-1 ring-zinc-300 hover:bg-zinc-50 sm:mb-px"
+            >
+              {t(language, 'redoCancel')}
+            </button>
+          )}
         </div>
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </form>
@@ -159,7 +200,10 @@ export default function RedoManager({
                 {r.serviceName && <p className="text-xs text-zinc-400">{r.serviceName}</p>}
               </div>
             </div>
-            <div className="mt-3 border-t border-zinc-100 pt-3">
+            <div className="mt-3 flex gap-4 border-t border-zinc-100 pt-3">
+              <button data-testid={`redo-edit-${r.id}`} onClick={() => startEdit(r)} className="text-xs text-zinc-600 hover:text-zinc-900">
+                {t(language, 'redoEdit')}
+              </button>
               <button data-testid={`redo-delete-${r.id}`} onClick={() => remove(r)} className="text-xs text-red-500 hover:text-red-700">
                 {t(language, 'redoDelete')}
               </button>
@@ -184,16 +228,19 @@ export default function RedoManager({
           </thead>
           <tbody className="divide-y divide-zinc-100">
             {redos.map((r) => (
-              <tr key={r.id} className="hover:bg-zinc-50">
+              <tr key={r.id} className={editingId === r.id ? 'bg-amber-50' : 'hover:bg-zinc-50'}>
                 <td className="px-3 py-2 text-zinc-600">{r.originalProviderName}</td>
                 <td className="px-3 py-2 tabular-nums text-zinc-600">{r.originalDate}</td>
                 <td className="px-3 py-2 font-medium">{r.redoProviderName}</td>
                 <td className="px-3 py-2 tabular-nums text-zinc-600">{r.redoDate}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{usd(r.amount)}</td>
                 <td className="px-3 py-2 text-zinc-500">{r.serviceName ?? '—'}</td>
-                <td className="px-3 py-2 text-right">
+                <td className="whitespace-nowrap px-3 py-2 text-right">
+                  <button data-testid={`redo-edit-${r.id}`} onClick={() => startEdit(r)} className="mr-3 text-xs text-zinc-600 hover:text-zinc-900">
+                    {t(language, 'redoEdit')}
+                  </button>
                   <button data-testid={`redo-delete-${r.id}`} onClick={() => remove(r)} className="text-xs text-red-500 hover:text-red-700">
-                    Delete
+                    {t(language, 'redoDelete')}
                   </button>
                 </td>
               </tr>
