@@ -7,6 +7,7 @@ import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.domain.Business;
 import com.salonreview.marketing.MarketingContactsService;
+import com.salonreview.marketing.SmsWebsiteLeadService;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.repo.BusinessRepository;
@@ -58,6 +59,7 @@ class TwilioInboundSmsControllerTest {
     private BusinessRepository businesses;
     private TwilioSmsConfigRepository twilioConfigs;
     private CurrentBusinessContext currentBusinessContext;
+    private SmsWebsiteLeadService websiteLeadService;
     private MockMvc mvc;
 
     @BeforeEach
@@ -73,6 +75,8 @@ class TwilioInboundSmsControllerTest {
         blockedNumberRepository = mock(BlockedNumberRepository.class);
         mediaService = mock(SmsMediaService.class);
         reactionService = mock(SmsReactionService.class);
+        websiteLeadService = mock(SmsWebsiteLeadService.class);
+        when(websiteLeadService.capture(any(), any(), any())).thenReturn(java.util.Optional.empty());
         businesses = mock(BusinessRepository.class);
         when(businesses.legacySmsBusiness()).thenReturn(Business.builder().id(BUSINESS_ID).name("Test")
                 .shortCode("test").timezone("UTC").active(true).build());
@@ -100,7 +104,7 @@ class TwilioInboundSmsControllerTest {
         TwilioInboundSmsController controller = new TwilioInboundSmsController(
                 properties, messageLogService, replyFlowRepository, replyService, telegramService, contactsService,
                 blockedNumberRepository, mediaService, reactionService, businesses, twilioConfigs,
-                currentBusinessContext);
+                currentBusinessContext, websiteLeadService);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -166,7 +170,7 @@ class TwilioInboundSmsControllerTest {
         verify(messageLogService).logInbound(BUSINESS_ID, PHONE, p.get("Body"), "checkout_review_request");
         verify(replyService).sendBranchReply(pending, true);
         verify(replyFlowRepository).save(pending);
-        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, null, p.get("Body"), "checkout_review_request");
+        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, null, p.get("Body"), "checkout_review_request", null);
         org.assertj.core.api.Assertions.assertThat(pending.getState()).isEqualTo(SmsReplyFlow.STATE_COMPLETED);
     }
 
@@ -417,7 +421,7 @@ class TwilioInboundSmsControllerTest {
                 .andExpect(status().isOk());
 
         verify(messageLogService).logInbound(BUSINESS_ID, PHONE, p.get("Body"), null);
-        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, null, p.get("Body"), null);
+        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, null, p.get("Body"), null, null);
         verifyNoInteractions(replyService);
         verify(replyFlowRepository, never()).save(any());
     }
@@ -438,7 +442,7 @@ class TwilioInboundSmsControllerTest {
                 .andExpect(status().isOk());
 
         verify(messageLogService).logInbound(BUSINESS_ID, PHONE, p.get("Body"), "repeat_customer_winback");
-        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, null, p.get("Body"), "repeat_customer_winback");
+        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, null, p.get("Body"), "repeat_customer_winback", null);
         verifyNoInteractions(replyService);
     }
 
@@ -458,7 +462,7 @@ class TwilioInboundSmsControllerTest {
                         .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
                 .andExpect(status().isOk());
 
-        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, "Jane Doe", p.get("Body"), null);
+        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, "Jane Doe", p.get("Body"), null, null);
     }
 
     @Test
@@ -486,7 +490,7 @@ class TwilioInboundSmsControllerTest {
                         .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
                 .andExpect(status().isOk());
 
-        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, "Jane Doe", p.get("Body"), null);
+        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, "Jane Doe", p.get("Body"), null, null);
     }
 
     @Test
@@ -589,7 +593,7 @@ class TwilioInboundSmsControllerTest {
                 .andExpect(status().isOk());
 
         verify(blockedNumberRepository, never()).save(any());
-        verify(telegramService).sendInboundSmsAlert(eq(BUSINESS_ID), eq(PHONE), any(), eq(p.get("Body")), any());
+        verify(telegramService).sendInboundSmsAlert(eq(BUSINESS_ID), eq(PHONE), any(), eq(p.get("Body")), any(), any());
     }
 
     @Test

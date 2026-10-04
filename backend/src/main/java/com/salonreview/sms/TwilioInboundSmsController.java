@@ -7,6 +7,7 @@ import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.marketing.MarketingContactsService;
+import com.salonreview.marketing.SmsWebsiteLeadService;
 import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SmsReplyFlowRepository;
@@ -61,13 +62,15 @@ public class TwilioInboundSmsController {
     private final BusinessRepository businesses;
     private final TwilioSmsConfigRepository twilioConfigs;
     private final CurrentBusinessContext currentBusinessContext;
+    private final SmsWebsiteLeadService websiteLeadService;
 
     public TwilioInboundSmsController(TwilioInboundProperties properties, SmsMessageLogService messageLogService,
                                        SmsReplyFlowRepository replyFlowRepository, CheckoutReviewReplyService replyService,
                                        TelegramNotificationService telegramService, MarketingContactsService contactsService,
                                        BlockedNumberRepository blockedNumberRepository, SmsMediaService mediaService,
                                        SmsReactionService reactionService, BusinessRepository businesses,
-                                       TwilioSmsConfigRepository twilioConfigs, CurrentBusinessContext currentBusinessContext) {
+                                       TwilioSmsConfigRepository twilioConfigs, CurrentBusinessContext currentBusinessContext,
+                                       SmsWebsiteLeadService websiteLeadService) {
         this.properties = properties;
         this.messageLogService = messageLogService;
         this.replyFlowRepository = replyFlowRepository;
@@ -80,6 +83,7 @@ public class TwilioInboundSmsController {
         this.businesses = businesses;
         this.twilioConfigs = twilioConfigs;
         this.currentBusinessContext = currentBusinessContext;
+        this.websiteLeadService = websiteLeadService;
     }
 
     @PostMapping(value = "/api/public/sms/inbound", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
@@ -156,6 +160,11 @@ public class TwilioInboundSmsController {
         // Best-effort, same reasoning as the media ingestion above.
         reactionService.tryAttachCustomerReaction(businessId, from, body);
 
+        // A text sent from the website's Text button carries a short ref code tying it to that
+        // visit: creates the lead's contact with the visit's traffic source and tells staff where
+        // it came from (see SmsWebsiteLeadService). Never throws; empty for any other text.
+        String websiteContext = websiteLeadService.capture(businessId, from, body).orElse(null);
+
         // A customer reply always needs a human's attention right away, not just a dashboard entry
         // nobody's actively watching — see openspec/changes/sms-automations-hub proposal.md. Name
         // resolution is best-effort (same ladder resolveDisplayNames already uses for the Messages
@@ -174,7 +183,7 @@ public class TwilioInboundSmsController {
             // is already resolved above; populate the context explicitly for this one call, same
             // established pattern every other background/webhook caller in this codebase uses.
             String customerName = currentBusinessContext.runAsAndGet(businessId, () -> resolveCustomerName(from));
-            telegramService.sendInboundSmsAlert(businessId, from, customerName, body, logged.getAutomationKey());
+            telegramService.sendInboundSmsAlert(businessId, from, customerName, body, logged.getAutomationKey(), websiteContext);
         }
 
         // A STOP-style reply isn't a satisfaction-rating reply — the block above already stops
