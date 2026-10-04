@@ -88,6 +88,8 @@ x-backend-env: &backend-env
   TASKS_OWNER_TELEGRAM_USERNAME: ${TASKS_OWNER_TELEGRAM_USERNAME:-}
   TASKS_ASSIGNEE_CHAT_ID: ${TASKS_ASSIGNEE_CHAT_ID:-}
   TASKS_OWNER_CHAT_ID: ${TASKS_OWNER_CHAT_ID:-}
+  # GA4 Measurement Protocol for website SMS leads (SmsWebsiteLeadService): "2=G-XXXX:secret".
+  GA4_MP_TARGETS: ${GA4_MP_TARGETS:-}
 
 x-backend-healthcheck: &backend-healthcheck
   test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]

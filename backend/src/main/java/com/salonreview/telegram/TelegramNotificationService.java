@@ -111,6 +111,13 @@ public class TelegramNotificationService {
      * so reading the alert and replying is one tap, not "open the app, find the right
      * conversation." Never throws, same contract as {@link #sendFourHandRequestAlert}. */
     public boolean sendInboundSmsAlert(Long businessId, String phoneNumber, String customerName, String body, String automationKey) {
+        return sendInboundSmsAlert(businessId, phoneNumber, customerName, body, automationKey, null);
+    }
+
+    /** Same alert, plus an optional line saying the text came from the website's Text button
+     * (page and traffic source, see SmsWebsiteLeadService); null for any other text. */
+    public boolean sendInboundSmsAlert(Long businessId, String phoneNumber, String customerName, String body,
+                                       String automationKey, String websiteContext) {
         TelegramNotificationConfig cfg = configService.get(businessId);
         String token = cfg.getBotToken();
         String chatId = cfg.getChatId();
@@ -121,7 +128,7 @@ public class TelegramNotificationService {
 
         try {
             Map<String, Object> reqBody = Map.of("chat_id", chatId,
-                    "text", businessLabel(businessId) + formatInboundSmsAlert(phoneNumber, customerName, body, automationKey),
+                    "text", businessLabel(businessId) + formatInboundSmsAlert(phoneNumber, customerName, body, automationKey, websiteContext),
                     "parse_mode", "HTML", "disable_web_page_preview", true);
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
@@ -147,6 +154,11 @@ public class TelegramNotificationService {
      * {@code <}/{@code &} in a customer's own message can't break the formatting or, worse, get
      * silently swallowed by Telegram's parser. */
     String formatInboundSmsAlert(String phoneNumber, String customerName, String body, String automationKey) {
+        return formatInboundSmsAlert(phoneNumber, customerName, body, automationKey, null);
+    }
+
+    String formatInboundSmsAlert(String phoneNumber, String customerName, String body, String automationKey,
+                                 String websiteContext) {
         String displayPhone = formatPhoneDisplay(phoneNumber);
         StringBuilder sb = new StringBuilder("📩 <b>New message from ")
                 .append(escapeHtml(customerName != null && !customerName.isBlank() ? customerName : displayPhone))
@@ -156,6 +168,9 @@ public class TelegramNotificationService {
         }
         if (automationKey != null && !automationKey.isBlank()) {
             sb.append("↩️ Reply to: ").append(escapeHtml(automationKey.replace('_', ' '))).append('\n');
+        }
+        if (websiteContext != null && !websiteContext.isBlank()) {
+            sb.append(escapeHtml(websiteContext)).append('\n');
         }
         sb.append("\n“").append(escapeHtml(body)).append("”\n\n");
         sb.append("<a href=\"").append(escapeHtml(chatLink(phoneNumber))).append("\">💬 Open chat</a>");

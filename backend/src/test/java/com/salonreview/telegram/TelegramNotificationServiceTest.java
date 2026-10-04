@@ -128,6 +128,17 @@ class TelegramNotificationServiceTest {
     }
 
     @Test
+    @DisplayName("inbound alert shows the website line (page + source) when the text came from the site's Text button")
+    void inboundAlertShowsWebsiteContext() {
+        TelegramNotificationService service = service(mock(TelegramConfigService.class));
+        String text = service.formatInboundSmsAlert("+18585550100", null, "Hi! Ref: K7Q2X9", null,
+                "🌐 From the website: /3d-lips/ · Google Ads (google / cpc) (new contact)");
+
+        assertThat(text).contains("🌐 From the website: /3d-lips/ · Google Ads (google / cpc) (new contact)\n");
+        assertThat(service.formatInboundSmsAlert("+18585550100", null, "Hi", null, null)).doesNotContain("🌐");
+    }
+
+    @Test
     @DisplayName("inbound alert falls back to the formatted phone number when no name is known")
     void inboundAlertFallsBackToPhoneWhenNoName() {
         TelegramNotificationService service = service(mock(TelegramConfigService.class));

@@ -79,10 +79,14 @@ seo:
 # specific marketing variant on the owner marketing dashboard. Add an entry here whenever a new
 # landing page is added to that schema.
 marketing:
+  # GA4 Measurement Protocol targets for the sms_lead event (SmsWebsiteLeadService), per business:
+  # "2=G-XTPZZV1DKR:<api secret>". Blank = no GA4 send (the contact and Telegram line still happen).
+  ga4-mp-targets: ${GA4_MP_TARGETS:}
   landing-base-urls:
     mani: ${MARKETING_LANDING_BASE_URL_MANI:https://mani.akluxnails.com}
     home: ${MARKETING_LANDING_BASE_URL_HOME:https://akluxnails.com}
     pmu: ${MARKETING_LANDING_BASE_URL_PMU:https://book.pmu-annakara.com}
+    "[pmu-website]": ${MARKETING_LANDING_BASE_URL_PMU_WEBSITE:https://pmu-annakara.com}
 
 # Single shared owner login (Phase 1). The frontend holds these server-side and proxies calls.
 app:
