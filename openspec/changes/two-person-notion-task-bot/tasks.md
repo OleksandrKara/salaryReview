@@ -3,4 +3,4 @@
 - [x] Replace in-memory blocked-reason state with a reply tied to the task prompt.
 - [x] Extend morning, overdue, and weekly flows to both people.
 - [x] Validate Notion page parent before direct-page actions and cover authorization, stale cards, views, and replies with tests.
-- [ ] Run backend verification and open a reviewable PR; live task changes and Telegram sends are not part of verification.
+- [x] Run backend verification and open a reviewable PR; live task changes and Telegram sends are not part of verification.
