@@ -78,7 +78,33 @@ public class TaskBotTelegram {
     }
 
     public void editMessage(long chatId, long messageId, String text) throws IOException, InterruptedException {
-        call("editMessageText", Map.of("chat_id", chatId, "message_id", messageId, "text", text));
+        editMessage(chatId, messageId, text, null);
+    }
+
+    public void editMessage(long chatId, long messageId, String text, List<List<Button>> keyboard)
+            throws IOException, InterruptedException {
+        Map<String, Object> body = new HashMap<>();
+        body.put("chat_id", chatId);
+        body.put("message_id", messageId);
+        body.put("text", text);
+        if (keyboard != null && !keyboard.isEmpty()) body.put("reply_markup", markup(keyboard));
+        call("editMessageText", body);
+    }
+
+    /** Bind a blocker explanation to the task through Telegram's reply_to_message entity. */
+    public void askBlocker(long chatId, String title, String pageId) throws IOException, InterruptedException {
+        call("sendMessage", blockerPrompt(chatId, title, pageId));
+    }
+
+    static Map<String, Object> blockerPrompt(long chatId, String title, String pageId) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("chat_id", chatId);
+        body.put("text", "Что мешает с задачей <a href=\"" + NotionTasksClient.pageUrl(pageId) + "\">«"
+                + NotionTasksClient.escapeHtml(title) + "»</a>? Ответь на это сообщение одним текстом.");
+        body.put("parse_mode", "HTML");
+        body.put("disable_web_page_preview", true);
+        body.put("reply_markup", Map.of("force_reply", true, "input_field_placeholder", "Что мешает?"));
+        return body;
     }
 
     public void answerCallback(String callbackId, String text) throws IOException, InterruptedException {

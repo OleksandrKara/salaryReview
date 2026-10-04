@@ -20,7 +20,7 @@ import java.util.Map;
 
 /**
  * The owner's Notion task database ("Задачи AK.LUX.NAILS", 2026-10-02) as the source of truth for
- * tasks he hands to Anya. The Telegram task bot ({@link TaskBotService}) reads open tasks from here
+ * tasks assigned to Anya and Alex. The Telegram task bot ({@link TaskBotService}) reads open tasks from here
  * and writes status changes back, so the board in Notion and the buttons in Telegram never drift.
  *
  * <p>Property names are the database's own (Russian) column names. Uses Notion's data-source API
@@ -76,11 +76,16 @@ public class NotionTasksClient {
     }
 
     public Task get(String pageId) throws IOException, InterruptedException {
-        return parse(send("GET", "/v1/pages/" + pageId, null));
+        return parseScoped(send("GET", "/v1/pages/" + pageId, null));
     }
 
     public void setStatus(String pageId, String status) throws IOException, InterruptedException {
-        update(pageId, Map.of(STATUS, Map.of("select", Map.of("name", status))));
+        if ("Done".equals(status) || "In progress".equals(status)) {
+            update(pageId, Map.of(STATUS, Map.of("select", Map.of("name", status)),
+                    BLOCKER, Map.of("rich_text", List.of())));
+        } else {
+            update(pageId, Map.of(STATUS, Map.of("select", Map.of("name", status))));
+        }
     }
 
     public void setDue(String pageId, LocalDate due) throws IOException, InterruptedException {
@@ -152,7 +157,7 @@ public class NotionTasksClient {
             page.put("page_size", 100);
             if (cursor != null) page.put("start_cursor", cursor);
             JsonNode res = send("POST", "/v1/data_sources/" + dataSourceId + "/query", page);
-            for (JsonNode r : res.path("results")) tasks.add(parse(r));
+            for (JsonNode r : res.path("results")) tasks.add(parseScoped(r));
             cursor = res.path("has_more").asBoolean() ? res.path("next_cursor").asText(null) : null;
         } while (cursor != null);
         return tasks;
@@ -186,6 +191,16 @@ public class NotionTasksClient {
                 plain(p.path(DONE_WHEN).path("rich_text")),
                 plain(p.path(BLOCKER).path("rich_text")),
                 edited.isBlank() ? null : Instant.parse(edited));
+    }
+
+    Task parseScoped(JsonNode page) throws IOException {
+        JsonNode parent = page.path("parent");
+        if (!"data_source_id".equals(parent.path("type").asText())
+                || !parent.path("data_source_id").asText("").replace("-", "")
+                        .equalsIgnoreCase(dataSourceId.replace("-", ""))) {
+            throw new IOException("Notion task page is outside the configured data source");
+        }
+        return parse(page);
     }
 
     private static String plain(JsonNode richText) {
