@@ -41,7 +41,11 @@ public class MailchimpEmailTemplateService {
                     "color_booster_winback_oneoff", "email-templates/business-2/color_booster_winback_oneoff.html",
                     "color_booster_reminder", "email-templates/business-2/color_booster_reminder.html",
                     "touchup_reminder", "email-templates/business-2/touchup_reminder.html",
-                    "checkout_review_request", "email-templates/business-2/checkout_review_request.html"
+                    "checkout_review_request", "email-templates/business-2/checkout_review_request.html",
+                    "pre_visit_nurture_consultation_welcome", "email-templates/business-2/pre_visit_nurture_consultation_welcome.html",
+                    "pre_visit_nurture_consultation_meet_artist", "email-templates/business-2/pre_visit_nurture_consultation_meet_artist.html",
+                    "pre_visit_nurture_consultation_prep", "email-templates/business-2/pre_visit_nurture_consultation_prep.html",
+                    "pre_visit_nurture_consultation_reminder", "email-templates/business-2/pre_visit_nurture_consultation_reminder.html"
             )
     );
 
@@ -56,6 +60,13 @@ public class MailchimpEmailTemplateService {
     );
 
     private final Map<String, String> cache = new ConcurrentHashMap<>();
+
+    /** Whether this business has a template registered for the given key, so a caller can skip
+     * before doing any Square lookups for an email it could never render. */
+    public boolean has(Long businessId, String automationKey) {
+        Map<String, String> byAutomation = TEMPLATE_PATHS.get(businessId);
+        return byAutomation != null && byAutomation.containsKey(automationKey);
+    }
 
     /** Renders the given automation's HTML for a business, substituting every {@code {{TOKEN}}} in
      * {@code vars}. Empty if this business/automation has no template registered yet. */

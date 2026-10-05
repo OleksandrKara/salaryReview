@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Anna Kara's PMU Studio</title>
+<style>
+  body { margin: 0; padding: 0; background: #f4f2ef; font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  table { border-collapse: collapse; }
+  img { border: 0; display: block; }
+  a { text-decoration: none; }
+</style>
+</head>
+<body style="margin:0; padding:0; background:#f4f2ef;">
+  <!-- Meet your artist, ~2 days after booking, only when the consultation is 4+ days out.
+       Facts per artist live in pre_visit_nurture_content.json (owner-confirmed 2026-10-05).
+       Same look as this business's other emails (touchup_reminder.html): wordmark, a short
+       greeting next to a real photo, a left-aligned letter, one black button, quiet footer.
+       Tokens come from PreVisitNurtureScheduler#vars and pre_visit_nurture_content.json. -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f2ef;">
+    <tr>
+      <td align="center" style="padding: 32px 12px;">
+        <table role="presentation" width="520" cellpadding="0" cellspacing="0" style="width:520px; max-width:520px; background:#ffffff;">
+
+          <tr>
+            <td align="left" style="padding: 4px 8px 18px;">
+              <img src="https://book.pmu-annakara.com/pmu-email-logo.png" width="180" alt="Anna Kara's PMU Studio" style="width:180px; height:auto;">
+            </td>
+          </tr>
+
+          <tr>
+            <td>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td width="300" valign="middle" style="padding: 10px 14px 0 8px;">
+                    <p style="margin:0 0 10px; font-size:17px; line-height:1.5; color:#262626;">Hi {{FNAME}},</p>
+                    <p style="margin:0; font-size:14.5px; line-height:1.55; color:#6b6b6b;">Meet {{ARTIST_CAP}}, who you'll be talking to on {{DAY}}.</p>
+                  </td>
+                  <td width="220" valign="bottom" style="background:#ffffff;">
+                    <img src="{{ARTIST_PHOTO_URL}}" width="220" alt="{{ARTIST_CAP}}" style="width:220px; height:auto; display:block;">
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 22px 8px 0;">
+              <p style="margin:6px 0 8px; font-size:13px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:#1a1a1a;">{{ARTIST_HEADLINE}}</p>
+              <p style="margin:0 0 16px; font-size:16px; line-height:1.65; color:#262626;">{{ARTIST_BIO}}</p>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 22px;">
+                <tr>
+                  <td style="border-left:3px solid #1a1a1a; padding:4px 0 4px 16px;">
+                    <p style="margin:0 0 6px; font-family: Georgia, 'Times New Roman', serif; font-style:italic; font-size:17px; line-height:1.55; color:#1a1a1a;">&ldquo;{{ARTIST_QUOTE}}&rdquo;</p>
+                    <p style="margin:0; font-size:13px; color:#6b6b6b;">{{ARTIST_QUOTE_AUTHOR}}</p>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 16px; font-size:16px; line-height:1.65; color:#262626;">
+                Clients rate the studio <b style="color:#1a1a1a;">4.9 on Google</b> across 144 reviews. If you'd like to
+                know us a little better before {{DAY}}, here are a few places to start:
+              </p>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+                <tr><td style="padding:0 0 10px;"><a href="https://pmu-annakara.com/certificates/" style="font-size:15px; color:#1a1a1a; text-decoration:underline;">Our artists' certificates</a></td></tr>
+                <tr><td style="padding:0 0 10px;"><a href="https://pmu-annakara.com/gallery/" style="font-size:15px; color:#1a1a1a; text-decoration:underline;">Before and after photos of our work</a></td></tr>
+                <tr><td style="padding:0 0 10px;"><a href="https://pmu-annakara.com/mass-media-about-us/" style="font-size:15px; color:#1a1a1a; text-decoration:underline;">The studio in the press</a></td></tr>
+                <tr><td style="padding:0;"><a href="https://www.google.com/maps?cid=783896591762371930" style="font-size:15px; color:#1a1a1a; text-decoration:underline;">Reviews on Google</a></td></tr>
+              </table>
+              <p style="margin:0 0 26px; font-size:16px; line-height:1.65; color:#262626;">
+                Questions before then? Just reply to this email.
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 0 8px 28px;">
+              <p style="margin:0; font-size:16px; line-height:1.5; color:#262626;">Talk soon,</p>
+              <p style="margin:2px 0 0; font-family: 'Cormorant', Georgia, 'Times New Roman', serif; font-style:italic; font-weight:600; font-size:22px; color:#1a1a1a;">Anna Kara's PMU Studio</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 28px 8px 6px; border-top:1px solid #eee;">
+              <p style="margin:0 0 6px; font-size:11.5px; line-height:1.6; color:#9a9a9a;">Anna Kara's PMU Studio &middot; {{STUDIO_ADDRESS}} &middot; <a href="https://pmu-annakara.com/" style="color:#9a9a9a; text-decoration:underline;">pmu-annakara.com</a></p>
+              <p style="margin:0; font-size:11.5px; line-height:1.6; color:#9a9a9a;">You're receiving this because you booked a consultation with us. <a href="*|UNSUB|*" style="color:#9a9a9a; text-decoration:underline;">Unsubscribe</a></p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
