@@ -541,6 +541,9 @@ public class TelegramNotificationService {
 
         String page = formatSourcePage(n.sourcePageTitle(), n.sourcePageUrl());
         boolean hasAd = n.adCampaign() != null && !n.adCampaign().isBlank();
+        // The client's own words from the booking form (2026-10-04 owner request: the note was
+        // never shown, so staff called without knowing what the client had already told them).
+        boolean hasNote = n.note() != null && !n.note().isBlank();
         String typeEn = n.online() ? "Online (phone call)" : hasAddress ? "In person — " + n.locationAddress() : "In person";
         String typeRu = n.online() ? "Онлайн (по телефону)" : hasAddress ? "Очно — " + n.locationAddress() : "Очно";
 
@@ -551,7 +554,8 @@ public class TelegramNotificationService {
                 + "🕐 Appointment: " + when + "\n"
                 + "📍 Format: " + typeEn + "\n"
                 + "📄 Page: " + page
-                + (hasAd ? "\n📣 Ad: " + n.adCampaign().strip() : "");
+                + (hasAd ? "\n📣 Ad: " + n.adCampaign().strip() : "")
+                + (hasNote ? "\n💬 Client's note: " + n.note().strip() : "");
 
         String ru = (n.online() ? "🆕 Забронирована бесплатная консультация\n" : "🆕 Забронирована консультация в студии\n")
                 + "👤 Клиент: " + client + "\n"
@@ -560,7 +564,8 @@ public class TelegramNotificationService {
                 + "🕐 Запись: " + when + "\n"
                 + "📍 Формат: " + typeRu + "\n"
                 + "📄 Страница: " + page
-                + (hasAd ? "\n📣 Реклама: " + n.adCampaign().strip() : "");
+                + (hasAd ? "\n📣 Реклама: " + n.adCampaign().strip() : "")
+                + (hasNote ? "\n💬 Комментарий клиента: " + n.note().strip() : "");
 
         return en + "\n\n—\n\n" + ru;
     }
