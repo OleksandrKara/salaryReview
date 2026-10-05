@@ -368,6 +368,25 @@ class TwilioInboundSmsControllerTest {
     }
 
     @Test
+    @DisplayName("2026-10-05: a spelled-out \"Five\" reply is a 5-star rating → positive branch sent")
+    void spelledOutFiveIsPositive() throws Exception {
+        var p = params(PHONE, "Five");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        SmsReplyFlow pending = SmsReplyFlow.builder().id(13L).automationKey("checkout_review_request")
+                .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.of(pending));
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        verify(replyService).sendBranchReply(pending, true);
+    }
+
+    @Test
     @DisplayName("2026-08-27 fix: a \"4.5\"-style decimal reply resolves to positive only, not both branches' flags at once")
     void decimalReplyResolvesToHigherNumberOnly() throws Exception {
         var p = params(PHONE, "4.5, would recommend");

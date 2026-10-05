@@ -31,7 +31,7 @@ final class CheckoutReviewRatingParser {
         if (body == null) {
             return Optional.empty();
         }
-        var matcher = RATING.matcher(body);
+        var matcher = RATING.matcher(CheckoutReviewNumberWords.toDigits(body));
         return matcher.find() ? Optional.of(Integer.valueOf(matcher.group(1))) : Optional.empty();
     }
 }
