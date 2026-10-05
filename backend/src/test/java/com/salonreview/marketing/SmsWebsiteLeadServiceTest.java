@@ -91,4 +91,53 @@ class SmsWebsiteLeadServiceTest {
         when(jdbc.queryForList(anyString(), any(Object[].class))).thenThrow(new RuntimeException("db down"));
         assertThat(new SmsWebsiteLeadService(jdbc, "").capture(2L, "+16195550100", "Ref: K7Q2X9")).isEmpty();
     }
+
+    private static Map<String, Object> tap(String eventId, String visitor, String topic, String utmSource) {
+        return Map.of("event_id", eventId, "visitor_id", visitor,
+                "metadata", "{\"target\":\"sms\",\"path\":\"/lip-blush/\",\"topic\":\"" + topic + "\""
+                        + (utmSource == null ? "" : ",\"utm_source\":\"" + utmSource + "\"") + "}",
+                "landing_page_slug", "pmu-website", "variant_name", "Website");
+    }
+
+    @Test
+    @DisplayName("no code: the one recent tap on Text is the lead's source; the tap is then marked used")
+    void timeWindowSingleTap() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForList(contains("make_interval"), eq(2L), eq(SmsWebsiteLeadService.MATCH_WINDOW_MINUTES)))
+                .thenReturn(List.of(tap("e1", "v1", "Lip Blush Tattoo", "google")));
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
+        SmsWebsiteLeadService service = new SmsWebsiteLeadService(jdbc, "");
+
+        assertThat(service.capture(2L, "+16195550100", "Hi! I have a question about Lip Blush Tattoo."))
+                .contains("🌐 From the website: /lip-blush/ · google (new contact)");
+        verify(jdbc).update(contains("matched_phone"), eq("+16195550100"), eq("e1"));
+    }
+
+    @Test
+    @DisplayName("several visitors tapped: the text's topic picks one; otherwise 'possibly', no contact")
+    void timeWindowSeveralTaps() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForList(contains("make_interval"), eq(2L), eq(SmsWebsiteLeadService.MATCH_WINDOW_MINUTES)))
+                .thenReturn(List.of(tap("e1", "v1", "Lip Blush Tattoo", null), tap("e2", "v2", "3D Lips", "google")));
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
+        SmsWebsiteLeadService service = new SmsWebsiteLeadService(jdbc, "");
+
+        assertThat(service.capture(2L, "+16195550100", "Hi! I have a question about 3D Lips. Price?"))
+                .hasValueSatisfying(v -> assertThat(v).startsWith("🌐 From the website").contains("google"));
+        assertThat(service.capture(2L, "+16195550101", "Hi! I have a question about permanent makeup."))
+                .contains("🌐 Possibly from the website (2 visitors tapped Text in the last 30 min, can't tell which)");
+    }
+
+    @Test
+    @DisplayName("a client's reply to our own text (e.g. '5' to a review request) is never taken as a website lead")
+    void replyToOurTextIgnored() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForObject(contains("OUTBOUND"), eq(Integer.class), eq(2L), eq("+16195550100"))).thenReturn(1);
+        when(jdbc.queryForList(contains("make_interval"), eq(2L), eq(SmsWebsiteLeadService.MATCH_WINDOW_MINUTES)))
+                .thenReturn(List.of(tap("e1", "v1", "Lip Blush Tattoo", null)));
+        SmsWebsiteLeadService service = new SmsWebsiteLeadService(jdbc, "");
+
+        assertThat(service.capture(2L, "+16195550100", "5")).isEmpty();
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
 }
