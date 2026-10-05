@@ -201,8 +201,8 @@ public class TwilioInboundSmsController {
             // character). Deriving both from the single highest standalone number in the reply
             // fixes that: "10", "100%", and "4.5"-style decimal replies (previously flagged BOTH
             // positive and negative-feedback at once, since the two checks weren't mutually
-            // exclusive) now resolve to exactly one outcome. Digits only, same as before — no
-            // attempt to parse spelled-out numbers ("Five" still doesn't match).
+            // exclusive) now resolve to exactly one outcome. Spelled-out ratings ("Five", "ten out
+            // of ten") are read too since 2026-10-05, see CheckoutReviewNumberWords.
             // 2026-09-14 live incident: a customer replying "Amazing as always" (Habiba, no digit
             // at all) got the checkout_review_negative apology — orElse(false) treated "no number
             // found" the same as "an explicit low rating", which is wrong specifically when the
@@ -214,7 +214,7 @@ public class TwilioInboundSmsController {
             // The Telegram alert above already fires unconditionally for every inbound reply, so
             // staff still see it and can follow up personally — nothing is silently dropped, only
             // the canned branch reply is skipped.
-            Optional<Integer> highestNumber = highestStandaloneNumber(body);
+            Optional<Integer> highestNumber = highestStandaloneNumber(CheckoutReviewNumberWords.toDigits(body));
             Optional<Boolean> positive = highestNumber.isPresent()
                     ? Optional.of(highestNumber.get() >= 5)
                     : hasPositiveSentiment(body) ? Optional.of(true) : Optional.empty();
@@ -296,7 +296,7 @@ public class TwilioInboundSmsController {
     private static final java.util.regex.Pattern NEGATION_WORD = java.util.regex.Pattern.compile(
             "\\b(not|never)\\b|n't\\b", java.util.regex.Pattern.CASE_INSENSITIVE);
 
-    private static boolean hasPositiveSentiment(String body) {
+    static boolean hasPositiveSentiment(String body) {
         if (body == null || NEGATION_WORD.matcher(body).find()) {
             return false;
         }
@@ -308,7 +308,7 @@ public class TwilioInboundSmsController {
      * a "4.5"-style decimal reply is two separate standalone tokens (4 and 5) to this regex, and
      * taking the max reads it as the 5 the customer meant, not the 4. {@code empty} for a reply
      * with no standalone number at all. */
-    private static Optional<Integer> highestStandaloneNumber(String body) {
+    static Optional<Integer> highestStandaloneNumber(String body) {
         var matcher = STANDALONE_NUMBER.matcher(body);
         Integer max = null;
         while (matcher.find()) {
