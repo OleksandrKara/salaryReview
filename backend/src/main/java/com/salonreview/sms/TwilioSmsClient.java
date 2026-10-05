@@ -100,6 +100,22 @@ public class TwilioSmsClient {
                 .GET()
                 .build();
         HttpResponse<byte[]> res = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
+        // Twilio answers a media URL with a 307 to a short-lived signed CDN link
+        // (mms.twiliocdn.com/...?Expires=&Signature=). Found 2026-10-05: every inbound photo since
+        // ~2026-08 failed here with "returned 307", so clients' photos never showed in
+        // /admin/messages. Follow it once, WITHOUT our credentials: the link is already signed,
+        // and a second auth scheme on a signed URL is rejected.
+        if (res.statusCode() >= 300 && res.statusCode() < 400) {
+            int redirectStatus = res.statusCode();
+            String location = res.headers().firstValue("Location")
+                    .orElseThrow(() -> new IOException("Twilio media fetch returned " + redirectStatus + " without Location"));
+            HttpRequest cdn = HttpRequest.newBuilder()
+                    .uri(URI.create(mediaUrl).resolve(location))
+                    .timeout(Duration.ofSeconds(15))
+                    .GET()
+                    .build();
+            res = http.send(cdn, HttpResponse.BodyHandlers.ofByteArray());
+        }
         if (res.statusCode() < 200 || res.statusCode() >= 300) {
             throw new IOException("Twilio media fetch returned " + res.statusCode());
         }
