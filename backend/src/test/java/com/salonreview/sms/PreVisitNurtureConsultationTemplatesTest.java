@@ -33,8 +33,8 @@ class PreVisitNurtureConsultationTemplatesTest {
     @Test
     void bothConsultationArtistsHaveProfiles() {
         PreVisitNurtureContent content = new PreVisitNurtureContent();
-        assertThat(content.artist(2L, "Anna").orElseThrow().photoUrl()).endsWith("anna-round.jpg");
-        assertThat(content.artist(2L, "Anastasiia").orElseThrow().photoUrl()).endsWith("anastasiia-round-v2.jpg");
+        assertThat(content.artist(2L, "Anna").orElseThrow().photoUrl()).endsWith("anna-round-v2.jpg");
+        assertThat(content.artist(2L, "Anastasiia").orElseThrow().photoUrl()).endsWith("anastasiia-round-v3.jpg");
         assertThat(content.artist(2L, "Someone").orElseThrow().photoUrl()).endsWith("brows-circle.jpg");
         assertThat(content.studio(2L).orElseThrow().textNumber()).isEqualTo("(833) 912-5558");
         assertThat(content.artist(1L, "Anna")).isEmpty();
