@@ -204,10 +204,10 @@ public class SmsDraftService {
         String senderName = twilioSmsConfigService.get(businessId).getSenderName();
         List<TextBlockParam> system = new ArrayList<>();
         system.add(TextBlockParam.builder()
-                .text(SmsDraftPrompts.systemPrompt(senderName))
+                .text(SmsDraftPrompts.systemPrompt(businessId, senderName))
                 .cacheControl(CacheControlEphemeral.builder().build())
                 .build());
-        String directive = SmsDraftPrompts.languageDirective(lang, senderName);
+        String directive = SmsDraftPrompts.languageDirective(lang, senderName, SmsDraftPrompts.salonName(businessId));
         if (directive != null) {
             system.add(TextBlockParam.builder().text(directive).build());
         }
@@ -232,7 +232,7 @@ public class SmsDraftService {
                 .map(tb -> tb.text().trim())
                 .orElseThrow(() -> new DraftFailedException("Claude response had no text block", null));
 
-        return new DraftResult(text, SmsDraftPrompts.PROMPT_VERSION, MODEL);
+        return new DraftResult(text, SmsDraftPrompts.promptVersion(businessId), MODEL);
     }
 
     private DraftResult refusalFallback(Language lang) {
