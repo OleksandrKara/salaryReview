@@ -61,16 +61,17 @@ public final class SmsMessageTemplateCatalog {
             // consultation booking (Business 2 automation #1). Relayed through the same
             // businessId-parameterized /api/internal/notifications/sms/send endpoint, not a new
             // one — see InternalNotificationController's own doc.
-            // detailsClause is pre-computed by the caller (salonLandings): "We'll call you at
-            // {time}!" for an online consultation, "We'll be waiting for you at {address} at
-            // {time}!" for an in-person one — different enough in structure between the two that
+            // detailsClause is pre-computed by the caller (salonLandings consultation_details_clause):
+            // an online consultation says the artist will call this number (no studio visit), an
+            // in-person one gives the address and "arrive 5 minutes early"; both ask for photos.
+            // No emoji (owner 2026-10-05): plain GSM text is 160 chars per segment, not 70. Different enough in structure between the two that
             // a single {{preferredTime}}-only slot can't express it, same "caller pre-computes the
             // clause" convention this class's own doc already establishes for same_day_rebooking's
             // spotClause.
             Map.entry("consultation_request_confirmation", new TemplateDefault(
                     "consultation_request_confirmation", "consultation_lead_sms", SmsMessageClass.TRANSACTIONAL,
                     "Consultation confirmation",
-                    List.of("Hi {{name}}! Your consultation with {{businessName}} is confirmed 💛 {{detailsClause}}"),
+                    List.of("Hi {{name}}! Your consultation with {{businessName}} is confirmed. {{detailsClause}}"),
                     List.of("name", "businessName", "detailsClause")
             )),
             Map.entry("checkout_rating_request_with_technician", new TemplateDefault(
