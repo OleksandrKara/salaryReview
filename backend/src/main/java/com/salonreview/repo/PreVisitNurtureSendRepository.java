@@ -18,4 +18,21 @@ public interface PreVisitNurtureSendRepository extends JpaRepository<PreVisitNur
      * state needed; it's structurally excluded, not skipped). */
     List<PreVisitNurtureSend> findByBusinessIdAndWelcomeStateAndReminderStateIsNullAndAppointmentStartAtBetween(
             Long businessId, String welcomeState, Instant windowStart, Instant windowEnd);
+
+    /** "Meet your artist" candidates: welcomed, not yet considered for this step, booked at least
+     * {@code bookedBefore} ago and the visit still at least until {@code startsAfter} away. The
+     * scheduler applies the minimum total wait itself. */
+    List<PreVisitNurtureSend> findByBusinessIdAndWelcomeStateAndMeetArtistStateIsNullAndCreatedAtBeforeAndAppointmentStartAtAfter(
+            Long businessId, String welcomeState, Instant bookedBefore, Instant startsAfter);
+
+    /** "Getting ready" candidates: welcomed, not yet considered for this step, visit inside the
+     * window. */
+    List<PreVisitNurtureSend> findByBusinessIdAndWelcomeStateAndPrepStateIsNullAndAppointmentStartAtBetween(
+            Long businessId, String welcomeState, Instant windowStart, Instant windowEnd);
+
+    /** Welcomed bookings whose visit is still ahead and not yet reminded about: the set whose
+     * stored start time is re-read from the booking mirror each pass, so a rescheduled visit gets
+     * its later emails at the new time instead of the old one. */
+    List<PreVisitNurtureSend> findByBusinessIdAndWelcomeStateAndReminderStateIsNullAndAppointmentStartAtAfter(
+            Long businessId, String welcomeState, Instant startsAfter);
 }
