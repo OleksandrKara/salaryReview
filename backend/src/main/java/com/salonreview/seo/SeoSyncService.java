@@ -6,6 +6,7 @@ import com.salonreview.domain.SeoCompetitorPageSnapshot;
 import com.salonreview.domain.SeoConnection;
 import com.salonreview.domain.SeoPageSnapshot;
 import com.salonreview.domain.SeoSearchMetricsSnapshot;
+import com.salonreview.repo.BusinessRepository;
 import com.salonreview.repo.SeoAnalyticsSnapshotRepository;
 import com.salonreview.repo.SeoCompetitorPageSnapshotRepository;
 import com.salonreview.repo.SeoCompetitorRepository;
@@ -64,13 +65,16 @@ public class SeoSyncService {
     private final SeoIssueFlaggingService flaggingService;
     private final SeoCompetitorRepository competitorRepository;
     private final SeoCompetitorPageSnapshotRepository competitorPageSnapshotRepository;
+    private final BusinessRepository businessRepository;
 
     public SeoSyncService(SeoConnectionRepository connectionRepository, SeoConnectionService connectionService,
             SeoSearchMetricsSnapshotRepository searchMetricsRepository,
             SeoPageSnapshotRepository pageSnapshotRepository,
             SeoAnalyticsSnapshotRepository analyticsSnapshotRepository, SeoIssueFlaggingService flaggingService,
             SeoCompetitorRepository competitorRepository,
-            SeoCompetitorPageSnapshotRepository competitorPageSnapshotRepository) {
+            SeoCompetitorPageSnapshotRepository competitorPageSnapshotRepository,
+            BusinessRepository businessRepository) {
+        this.businessRepository = businessRepository;
         this.connectionRepository = connectionRepository;
         this.connectionService = connectionService;
         this.searchMetricsRepository = searchMetricsRepository;
@@ -95,7 +99,7 @@ public class SeoSyncService {
             if (sites.isEmpty()) {
                 throw new IllegalStateException("Service account has no visible Search Console sites");
             }
-            String siteUrl = sites.get(0).siteUrl();
+            String siteUrl = selectSite(sites, publicDomainOf(businessId)).siteUrl();
             LocalDate endDate = LocalDate.now(ZoneOffset.UTC);
             LocalDate startDate = endDate.minusDays(SEARCH_CONSOLE_WINDOW_DAYS - 1);
 
@@ -187,7 +191,7 @@ public class SeoSyncService {
             if (sites.isEmpty()) {
                 throw new IllegalStateException("Service account has no visible Search Console sites");
             }
-            homepageUrl = homepageUrlFromSiteUrl(sites.get(0).siteUrl());
+            homepageUrl = homepageUrlFromSiteUrl(selectSite(sites, publicDomainOf(businessId)).siteUrl());
             client = new PageSpeedInsightsClient(connectionService.decryptedPagespeedApiKey(connection));
         } catch (Exception e) {
             markFailure(connection, "PageSpeed sync failed: " + e.getMessage());
@@ -277,6 +281,54 @@ public class SeoSyncService {
                             businessId, competitor.getId(), strategy, e.toString());
                 }
             }
+        }
+    }
+
+    private String publicDomainOf(Long businessId) {
+        return businessRepository.findById(businessId).map(b -> b.getPublicDomain()).orElse(null);
+    }
+
+    /** The Search Console property that belongs to this business. One monitoring service account
+     * can see several businesses' properties (akluxnails.com and pmu-annakara.com share it since
+     * 2026-10-04), so "the first site it can see" would sync one business's data into another's
+     * dashboard. Matched on the registrable domain of the business's {@code public_domain}
+     * (book.pmu-annakara.com -> pmu-annakara.com, mani.akluxnails.com -> akluxnails.com), Domain
+     * properties preferred over URL-prefix ones. With no match: the only visible site if there is
+     * exactly one (the setup before sharing), otherwise an error rather than a guess.
+     * Package-private for direct unit testing. */
+    static SearchConsoleClient.Site selectSite(List<SearchConsoleClient.Site> sites, String publicDomain) {
+        String base = registrableDomain(publicDomain);
+        if (base != null) {
+            SearchConsoleClient.Site prefixMatch = null;
+            for (SearchConsoleClient.Site site : sites) {
+                String host = siteHost(site.siteUrl());
+                if (host == null || !(host.equals(base) || host.endsWith("." + base))) continue;
+                if (site.siteUrl().startsWith("sc-domain:")) return site;
+                if (prefixMatch == null) prefixMatch = site;
+            }
+            if (prefixMatch != null) return prefixMatch;
+        }
+        if (sites.size() == 1) return sites.get(0);
+        throw new IllegalStateException("No Search Console property for " + publicDomain + " among "
+                + sites.stream().map(SearchConsoleClient.Site::siteUrl).toList());
+    }
+
+    /** Last two labels: fine for the .com domains in use; not a public-suffix-list implementation. */
+    static String registrableDomain(String domain) {
+        if (domain == null || domain.isBlank()) return null;
+        String[] labels = domain.trim().toLowerCase(java.util.Locale.ROOT).split("\\.");
+        if (labels.length < 2) return null;
+        return labels[labels.length - 2] + "." + labels[labels.length - 1];
+    }
+
+    private static String siteHost(String siteUrl) {
+        if (siteUrl == null) return null;
+        if (siteUrl.startsWith("sc-domain:")) return siteUrl.substring("sc-domain:".length()).toLowerCase(java.util.Locale.ROOT);
+        try {
+            String host = java.net.URI.create(siteUrl).getHost();
+            return host == null ? null : host.toLowerCase(java.util.Locale.ROOT);
+        } catch (IllegalArgumentException e) {
+            return null;
         }
     }
 
