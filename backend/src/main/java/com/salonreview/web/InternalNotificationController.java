@@ -165,7 +165,8 @@ public class InternalNotificationController {
     public record ConsultationRequestRequest(String customerName, String phoneNumber, String startAt,
                                               boolean online, String locationAddress, String artistName,
                                               String businessShortCode, Long businessId,
-                                              String sourcePageUrl, String sourcePageTitle, String adCampaign) {
+                                              String sourcePageUrl, String sourcePageTitle, String adCampaign,
+                                              String note) {
     }
 
     @PostMapping("/notifications/consultation-request")
@@ -182,7 +183,7 @@ public class InternalNotificationController {
         ConsultationRequestNotification notification = new ConsultationRequestNotification(
                 business.getId(), body.businessShortCode(), body.customerName(), body.phoneNumber(),
                 body.startAt(), body.online(), body.locationAddress(), body.artistName(),
-                body.sourcePageUrl(), body.sourcePageTitle(), body.adCampaign());
+                body.sourcePageUrl(), body.sourcePageTitle(), body.adCampaign(), body.note());
         return ResponseEntity.ok(Map.of("sent", telegram.sendConsultationRequestAlert(business.getId(), notification)));
     }
 

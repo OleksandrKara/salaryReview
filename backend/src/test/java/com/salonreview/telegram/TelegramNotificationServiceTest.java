@@ -452,7 +452,8 @@ class TelegramNotificationServiceTest {
         ConsultationRequestNotification n = new ConsultationRequestNotification(
                 2L, null, "Kalynn", "2405772146", "2026-09-29T00:30:00Z", false,
                 "2527 University Ave, San Diego, CA 92104", "Anna Kara",
-                "https://pmu-annakara.com/permanent-makeup-lips/", "Permanent Lips | Anna Kara PMU", "lips_sept");
+                "https://pmu-annakara.com/permanent-makeup-lips/", "Permanent Lips | Anna Kara PMU", "lips_sept",
+                "Want soft powder brows, had microblading in 2022");
 
         String msg = TelegramNotificationService.formatConsultationRequestMessage(n);
 
@@ -460,18 +461,20 @@ class TelegramNotificationServiceTest {
         assertThat(msg).contains("📄 Page: Permanent Lips | Anna Kara PMU — https://pmu-annakara.com/permanent-makeup-lips/");
         assertThat(msg).contains("📄 Страница: Permanent Lips | Anna Kara PMU — https://pmu-annakara.com/permanent-makeup-lips/");
         assertThat(msg).contains("📣 Ad: lips_sept").contains("📣 Реклама: lips_sept");
+        assertThat(msg).contains("💬 Client's note: Want soft powder brows, had microblading in 2022")
+                .contains("💬 Комментарий клиента: Want soft powder brows, had microblading in 2022");
     }
 
     @Test
     @DisplayName("consultation alert: online one stays 'free', unknown page renders as a dash, no ad line without a campaign")
     void consultationAlertWithoutSourcePage() {
         ConsultationRequestNotification n = new ConsultationRequestNotification(
-                2L, null, "Kalynn", "2405772146", "2026-09-29T00:30:00Z", true, null, null, null, null, null);
+                2L, null, "Kalynn", "2405772146", "2026-09-29T00:30:00Z", true, null, null, null, null, null, "  ");
 
         String msg = TelegramNotificationService.formatConsultationRequestMessage(n);
 
         assertThat(msg).contains("New free consultation booked").contains("📄 Page: —").contains("📄 Страница: —");
-        assertThat(msg).doesNotContain("📣");
+        assertThat(msg).doesNotContain("📣").doesNotContain("💬");
     }
 
     @Test
