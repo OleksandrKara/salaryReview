@@ -151,7 +151,7 @@ public class TwilioInboundSmsController {
 
         // MMS photos, if any — see SmsMediaService's own doc for why this is best-effort and
         // never blocks the rest of this handler (the text/thread above is already durable).
-        mediaService.ingestInboundMedia(logged.getId(), params);
+        mediaService.ingestInboundMedia(businessId, logged.getId(), params);
 
         // An Apple tapback-over-SMS reaction (e.g. `Loved "..."`) still lands here as an ordinary
         // text — it's logged above like any other inbound message either way — but if it parses and
