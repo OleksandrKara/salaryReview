@@ -18,6 +18,7 @@ public record ConsultationRequestNotification(
         String artistName,       // nullable — the booked team member's display name (2026-09-28 owner request)
         String sourcePageUrl,    // nullable — page the booking was made from; salonLandings only forwards our own domains
         String sourcePageTitle,  // nullable — that page's title, a readable hint of what the client was looking at
-        String adCampaign        // nullable — utm_campaign from the visit's first-touch tracking, if it came from an ad
+        String adCampaign,       // nullable — utm_campaign from the visit's first-touch tracking, if it came from an ad
+        String note              // nullable — what the client wrote in "Anything you would like us to know?" (2026-10-04)
 ) {
 }
