@@ -532,7 +532,7 @@ class TwilioInboundSmsControllerTest {
                 .andExpect(status().isOk());
 
         ArgumentCaptor<java.util.Map<String, String>> paramsCaptor = ArgumentCaptor.forClass(java.util.Map.class);
-        verify(mediaService).ingestInboundMedia(eq(99L), paramsCaptor.capture());
+        verify(mediaService).ingestInboundMedia(eq(BUSINESS_ID), eq(99L), paramsCaptor.capture());
         assertThat(paramsCaptor.getValue()).containsEntry("MediaUrl0", "https://api.twilio.com/media/ME123");
     }
 
