@@ -50,7 +50,13 @@ public class CheckoutReviewFlowRecoveryService {
                         businessId, flow.getPhoneNumber(), "INBOUND")
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
                         "No inbound message on file for " + flow.getPhoneNumber() + " to retry against"));
-        boolean positive = reply.getBody() != null && reply.getBody().contains("5");
+        // Same reading as the live inbound path (TwilioInboundSmsController): the highest number in
+        // the reply, spelled-out ratings included, else clearly positive words. The old
+        // contains("5") check read "Five" (and "10") as negative.
+        String body = reply.getBody() == null ? "" : reply.getBody();
+        boolean positive = TwilioInboundSmsController.highestStandaloneNumber(CheckoutReviewNumberWords.toDigits(body))
+                .map(n -> n >= 5)
+                .orElseGet(() -> TwilioInboundSmsController.hasPositiveSentiment(body));
         log.info("Manually retrying checkout-review flow {} for {} — real reply on file: \"{}\" (positive={})",
                 flowId, flow.getPhoneNumber(), reply.getBody(), positive);
         replyService.sendBranchReply(flow, positive);

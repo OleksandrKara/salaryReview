@@ -51,4 +51,22 @@ class CheckoutReviewRatingParserTest {
         Optional<Integer> result = CheckoutReviewRatingParser.parse("was a 2 out of 5 honestly");
         assertThat(result).contains(2);
     }
+
+    @Test
+    @DisplayName("spelled-out ratings parse like digits (2026-10-05: a client replied Five)")
+    void spelledOutRatingParses() {
+        assertThat(CheckoutReviewRatingParser.parse("Five")).contains(5);
+        assertThat(CheckoutReviewRatingParser.parse("five stars!")).contains(5);
+        assertThat(CheckoutReviewRatingParser.parse("A solid four")).contains(4);
+        assertThat(CheckoutReviewRatingParser.parse("Two stars, she was late")).contains(2);
+        assertThat(CheckoutReviewRatingParser.parse("One")).contains(1);
+    }
+
+    @Test
+    @DisplayName("number words that aren't the rating stay unparsed")
+    void numberWordsInSentencesIgnored() {
+        assertThat(CheckoutReviewRatingParser.parse("Best one yet, thank you")).isEmpty();
+        assertThat(CheckoutReviewRatingParser.parse("We waited five minutes but it was ok")).isEmpty();
+        assertThat(CheckoutReviewRatingParser.parse("no one")).isEmpty();
+    }
 }

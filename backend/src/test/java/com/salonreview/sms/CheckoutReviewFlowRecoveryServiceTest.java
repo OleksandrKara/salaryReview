@@ -45,6 +45,18 @@ class CheckoutReviewFlowRecoveryServiceTest {
     }
 
     @Test
+    void spelledOutFiveRetriesAsPositive() {
+        SmsReplyFlow flow = flow(SmsReplyFlow.STATE_AWAITING_REPLY);
+        when(flows.findByIdAndBusinessId(9L, BUSINESS_ID)).thenReturn(Optional.of(flow));
+        when(messages.findFirstByBusinessIdAndPhoneNumberAndDirectionOrderByCreatedAtDesc(BUSINESS_ID, "+15551234567", "INBOUND"))
+                .thenReturn(Optional.of(SmsMessage.builder().body("Five").build()));
+
+        service.retry(BUSINESS_ID, 9L);
+
+        verify(replyService).sendBranchReply(flow, true);
+    }
+
+    @Test
     void negativeReplyTextRoutesToTheNegativeBranch() {
         SmsReplyFlow flow = flow(SmsReplyFlow.STATE_AWAITING_REPLY);
         when(flows.findByIdAndBusinessId(9L, BUSINESS_ID)).thenReturn(Optional.of(flow));
