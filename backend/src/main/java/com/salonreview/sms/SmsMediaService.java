@@ -90,11 +90,18 @@ public class SmsMediaService {
      * {@code TwilioInboundSmsController}, which already logs the message row unconditionally
      * before this runs — a photo that fails to download still leaves the text/thread intact). */
     public void ingestInboundMedia(long smsMessageId, Map<String, String> params) {
+        ingestInboundMedia(null, smsMessageId, params);
+    }
+
+    /** Same, with the Twilio credentials of the business the text was sent to (2026-10-05: AK PMU
+     * asks clients for photos in its consultation confirmation; its number may not always share
+     * the legacy business's Twilio account). {@code businessId} null = legacy business. */
+    public void ingestInboundMedia(Long businessId, long smsMessageId, Map<String, String> params) {
         int numMedia = parseNumMedia(params.get("NumMedia"));
         if (numMedia == 0) {
             return;
         }
-        TwilioSmsConfig config = configService.getForAutomation();
+        TwilioSmsConfig config = businessId != null ? configService.get(businessId) : configService.getForAutomation();
         if (!config.isConfigured()) {
             log.warn("Inbound MMS with {} attachment(s) on message {} skipped — Twilio credentials not configured",
                     numMedia, smsMessageId);
