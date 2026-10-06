@@ -215,6 +215,17 @@ public class PreVisitNurtureScheduler {
                     businessId, e.getMessage());
             return; // no row saved — retried next tick, same as this package's other Square-failure handling
         }
+        Optional<SquareClient.Booking> live;
+        try {
+            live = square.retrieveBooking(booking.getSquareBookingId());
+        } catch (RuntimeException e) {
+            log.warn("Pre-visit nurture welcome email for booking {} postponed (Square booking check failed): {}",
+                    booking.getSquareBookingId(), e.getMessage());
+            return; // no row saved, retried next tick while still inside the welcome window
+        }
+        if (live.isEmpty() || !ACCEPTED_STATUS.equals(live.get().status())) {
+            return; // cancelled within minutes of booking: no row, nothing to send
+        }
         String templateKey = templateKey(kind, "welcome");
         if (!templateService.has(businessId, templateKey)) {
             save(booking, PreVisitNurtureSend.STATE_SKIPPED_NO_TEMPLATE, kind);
@@ -361,6 +372,28 @@ public class PreVisitNurtureScheduler {
                     step.templateSuffix, businessId, e.getMessage());
             return;
         }
+        // The mirror only learns about a cancelled future visit from Square's webhook (its 15-minute
+        // reconciliation covers past days only), so ask Square itself right before sending: a
+        // client who cancelled must never get "see you tomorrow" (owner question 2026-10-06).
+        Optional<SquareClient.Booking> live;
+        try {
+            live = square.retrieveBooking(row.getSquareBookingId());
+        } catch (RuntimeException e) {
+            log.warn("Pre-visit nurture {} email for booking {} postponed (Square booking check failed): {}",
+                    step.templateSuffix, row.getSquareBookingId(), e.getMessage());
+            return; // no state saved, retried next tick
+        }
+        if (live.isEmpty() || !ACCEPTED_STATUS.equals(live.get().status())) {
+            saveStepState(row, step, PreVisitNurtureSend.STATE_SKIPPED_CANCELLED);
+            return;
+        }
+        Instant liveStart = live.get().startAt() == null ? null : Instant.parse(live.get().startAt());
+        if (liveStart != null && !liveStart.equals(row.getAppointmentStartAt())) {
+            row.setAppointmentStartAt(liveStart); // moved: picked up again in the new date's window
+            sendRepository.save(row);
+            return;
+        }
+
         String customerId = row.getSquareCustomerId();
         String email = customerId == null ? null : square.customerEmail(customerId);
         if (email == null || email.isBlank()) {

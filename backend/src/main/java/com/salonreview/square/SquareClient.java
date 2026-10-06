@@ -508,6 +508,21 @@ public class SquareClient {
         return all;
     }
 
+    /** One booking's current state straight from Square, never cached: for a caller about to
+     * act on a future appointment (e.g. a pre-visit email) that must not trust a possibly missed
+     * webhook. Empty if Square no longer has the booking. */
+    public java.util.Optional<Booking> retrieveBooking(String bookingId) {
+        try {
+            BookingResponse resp = throttled(() -> http.get()
+                    .uri("/v2/bookings/{id}", bookingId)
+                    .retrieve()
+                    .body(BookingResponse.class));
+            return java.util.Optional.ofNullable(resp).map(BookingResponse::booking);
+        } catch (org.springframework.web.client.HttpClientErrorException.NotFound e) {
+            return java.util.Optional.empty();
+        }
+    }
+
     /** Completed orders closed in [start, end) for the configured location, following pagination. */
     public List<Order> completedOrders(Instant start, Instant end) {
         return cached("orders:" + start + ":" + end, Duration.ofMinutes(10), () -> completedOrdersUncached(start, end));
@@ -1435,6 +1450,10 @@ public class SquareClient {
                     sellerNote, customerNote, appointmentSegments);
         }
     }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record BookingResponse(Booking booking) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)

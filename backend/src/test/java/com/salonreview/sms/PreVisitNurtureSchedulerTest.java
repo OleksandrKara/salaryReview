@@ -82,6 +82,7 @@ class PreVisitNurtureSchedulerTest {
         when(templateService.render(eq(BUSINESS_ID), anyString(), any())).thenReturn(Optional.of("<html></html>"));
         when(providerRepository.findAllByBusinessId(BUSINESS_ID)).thenReturn(List.of());
         when(templateService.has(eq(BUSINESS_ID), anyString())).thenReturn(true);
+        when(square.retrieveBooking(anyString())).thenReturn(Optional.of(liveBooking("ACCEPTED", null)));
         when(content.studio(BUSINESS_ID)).thenReturn(Optional.of(
                 new PreVisitNurtureContent.Studio("Anna Kara's PMU Studio", "1357 Seventh Ave", "(833) 912-5558")));
         when(content.artist(eq(BUSINESS_ID), any())).thenReturn(Optional.of(
@@ -474,5 +475,62 @@ class PreVisitNurtureSchedulerTest {
 
         assertThat(row.getAppointmentStartAt()).isEqualTo(moved);
         verify(sendRepository).save(row);
+    }
+
+    private static SquareClient.Booking liveBooking(String status, Instant startAt) {
+        return new SquareClient.Booking(BOOKING_ID, status, startAt == null ? null : startAt.toString(),
+                null, null, null, CUSTOMER_ID, null, null, List.of());
+    }
+
+    @Test
+    @DisplayName("2026-10-06: cancelled in Square but the mirror missed the webhook → live check skips the email")
+    void liveCancellationStopsLaterEmails() {
+        anastasiiaOnline();
+        PreVisitNurtureSend row = consultationRow(NOW.minus(5, ChronoUnit.DAYS), Instant.parse("2026-10-07T17:30:00Z"));
+        when(sendRepository.findByBusinessIdAndWelcomeStateAndReminderStateIsNullAndAppointmentStartAtBetween(
+                eq(BUSINESS_ID), eq(PreVisitNurtureSend.STATE_SENT), any(), any()))
+                .thenReturn(List.of(row));
+        when(bookingMirrorRepository.findByBusinessIdAndSquareBookingId(BUSINESS_ID, BOOKING_ID))
+                .thenReturn(Optional.of(consultation(NOW.minus(5, ChronoUnit.DAYS), Instant.parse("2026-10-07T17:30:00Z"))));
+        when(square.retrieveBooking(BOOKING_ID)).thenReturn(Optional.of(liveBooking("CANCELLED_BY_CUSTOMER", null)));
+
+        scheduler.sendDueReminderEmails();
+
+        assertThat(row.getReminderState()).isEqualTo(PreVisitNurtureSend.STATE_SKIPPED_CANCELLED);
+        verifyNoInteractions(mailchimpEmailService);
+    }
+
+    @Test
+    @DisplayName("2026-10-06: moved in Square but the mirror missed it → no email now, start time follows Square")
+    void liveRescheduleDefersEmail() {
+        anastasiiaOnline();
+        Instant oldStart = Instant.parse("2026-10-07T17:30:00Z");
+        Instant newStart = Instant.parse("2026-10-20T17:30:00Z");
+        PreVisitNurtureSend row = consultationRow(NOW.minus(5, ChronoUnit.DAYS), oldStart);
+        when(sendRepository.findByBusinessIdAndWelcomeStateAndReminderStateIsNullAndAppointmentStartAtBetween(
+                eq(BUSINESS_ID), eq(PreVisitNurtureSend.STATE_SENT), any(), any()))
+                .thenReturn(List.of(row));
+        when(bookingMirrorRepository.findByBusinessIdAndSquareBookingId(BUSINESS_ID, BOOKING_ID))
+                .thenReturn(Optional.of(consultation(NOW.minus(5, ChronoUnit.DAYS), oldStart)));
+        when(square.retrieveBooking(BOOKING_ID)).thenReturn(Optional.of(liveBooking("ACCEPTED", newStart)));
+
+        scheduler.sendDueReminderEmails();
+
+        assertThat(row.getAppointmentStartAt()).isEqualTo(newStart);
+        assertThat(row.getReminderState()).isNull();
+        verifyNoInteractions(mailchimpEmailService);
+    }
+
+    @Test
+    @DisplayName("2026-10-06: a booking already cancelled in Square gets no welcome email")
+    void liveCancellationStopsWelcome() {
+        when(bookingMirrorRepository.findByBusinessIdAndStatusAndCreatedAtBetween(eq(BUSINESS_ID), eq("ACCEPTED"), any(), any()))
+                .thenReturn(List.of(booking()));
+        when(square.retrieveBooking(BOOKING_ID)).thenReturn(Optional.of(liveBooking("CANCELLED_BY_CUSTOMER", null)));
+
+        scheduler.sendDueWelcomeEmails();
+
+        verify(sendRepository, never()).save(any());
+        verifyNoInteractions(mailchimpEmailService);
     }
 }
