@@ -71,7 +71,7 @@ public class ConsultationFollowUpScheduler {
     private static final Logger log = LoggerFactory.getLogger(ConsultationFollowUpScheduler.class);
     static final String AUTOMATION_KEY = "consultation_follow_up";
     private static final ZoneId PACIFIC = ZoneId.of("America/Los_Angeles");
-    private static final String BOOK_LINK = "https://book.pmu-annakara.com";
+    private static final String BOOK_LINK = "https://pmu-annakara.com/?book=procedure";
     private static final String ACCEPTED = "ACCEPTED";
 
     /** Enrolled from 20h after the consultation's start (it's over, and the alert can still land
