@@ -37,15 +37,17 @@ public class MailchimpEmailTemplateService {
                     "pre_visit_nurture_reminder", "email-templates/business-1/pre_visit_nurture_reminder.html",
                     "labor_day_design_promo", "email-templates/business-1/labor_day_design_promo.html"
             ),
-            2L, Map.of(
-                    "color_booster_winback_oneoff", "email-templates/business-2/color_booster_winback_oneoff.html",
-                    "color_booster_reminder", "email-templates/business-2/color_booster_reminder.html",
-                    "touchup_reminder", "email-templates/business-2/touchup_reminder.html",
-                    "checkout_review_request", "email-templates/business-2/checkout_review_request.html",
-                    "pre_visit_nurture_consultation_welcome", "email-templates/business-2/pre_visit_nurture_consultation_welcome.html",
-                    "pre_visit_nurture_consultation_meet_artist", "email-templates/business-2/pre_visit_nurture_consultation_meet_artist.html",
-                    "pre_visit_nurture_consultation_prep", "email-templates/business-2/pre_visit_nurture_consultation_prep.html",
-                    "pre_visit_nurture_consultation_reminder", "email-templates/business-2/pre_visit_nurture_consultation_reminder.html"
+            2L, Map.ofEntries(
+                    Map.entry("color_booster_winback_oneoff", "email-templates/business-2/color_booster_winback_oneoff.html"),
+                    Map.entry("color_booster_reminder", "email-templates/business-2/color_booster_reminder.html"),
+                    Map.entry("touchup_reminder", "email-templates/business-2/touchup_reminder.html"),
+                    Map.entry("checkout_review_request", "email-templates/business-2/checkout_review_request.html"),
+                    Map.entry("pre_visit_nurture_consultation_welcome", "email-templates/business-2/pre_visit_nurture_consultation_welcome.html"),
+                    Map.entry("pre_visit_nurture_consultation_meet_artist", "email-templates/business-2/pre_visit_nurture_consultation_meet_artist.html"),
+                    Map.entry("pre_visit_nurture_consultation_prep", "email-templates/business-2/pre_visit_nurture_consultation_prep.html"),
+                    Map.entry("pre_visit_nurture_consultation_reminder", "email-templates/business-2/pre_visit_nurture_consultation_reminder.html"),
+                    Map.entry("consultation_follow_up_info", "email-templates/business-2/consultation_follow_up_info.html"),
+                    Map.entry("consultation_follow_up_offer", "email-templates/business-2/consultation_follow_up_offer.html")
             )
     );
 

@@ -431,6 +431,11 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
     boolean existsByBusinessIdAndPhoneNumberAndDirectionAndCreatedAtAfter(
             Long businessId, String phoneNumber, String direction, Instant after);
 
+    /** Another automation already texted this number recently (consultation follow-up waits a few
+     * days rather than stacking on top of it). Only actually sent messages count. */
+    boolean existsByBusinessIdAndPhoneNumberAndDirectionAndStatusAndAutomationKeyNotAndCreatedAtAfter(
+            Long businessId, String phoneNumber, String direction, String status, String automationKey, Instant after);
+
     /** Every {@code reply_flow_id} already in use for this business/automation — the backfill's
      * "claimed" set, so it never links a second message to a flow that already has one (see
      * {@code CheckoutReviewProviderRatingBackfillStartup}). */

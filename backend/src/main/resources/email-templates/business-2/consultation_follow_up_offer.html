@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Anna Kara's PMU Studio</title>
+<style>
+  body { margin: 0; padding: 0; background: #f4f2ef; font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  table { border-collapse: collapse; }
+  img { border: 0; display: block; }
+  a { text-decoration: none; }
+</style>
+</head>
+<body style="margin:0; padding:0; background:#f4f2ef;">
+  <!-- Consultation follow-up, day 45: last chance $75 OFF, 7 days (owner decision 2026-10-06).
+       Same look as the pre-consultation emails (pre_visit_nurture_consultation_*.html): wordmark,
+       greeting next to the artist's round portrait, a left-aligned letter, one black button.
+       Tokens come from ConsultationFollowUpScheduler#emailVars and pre_visit_nurture_content.json. -->
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f2ef;">
+    <tr>
+      <td align="center" style="padding: 32px 12px;">
+        <table role="presentation" width="520" cellpadding="0" cellspacing="0" style="width:520px; max-width:520px; background:#ffffff;">
+          <tr>
+            <td align="left" style="padding: 4px 8px 18px;">
+              <img src="https://book.pmu-annakara.com/pmu-email-logo.png" width="180" alt="Anna Kara's PMU Studio" style="width:180px; height:auto;">
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td width="300" valign="middle" style="padding: 6px 14px 0 8px;">
+                    <p style="margin:0 0 10px; font-size:17px; line-height:1.5; color:#262626;">Hi {{FNAME}},</p>
+                    <p style="margin:0; font-size:14.5px; line-height:1.55; color:#6b6b6b;">{{ARTIST}} here. A special thank-you for considering us.</p>
+                  </td>
+                  <td width="220" valign="middle" align="center" style="padding: 6px 8px 0 0;">
+                    <img src="{{ARTIST_PHOTO_URL}}" width="200" height="200" alt="{{ARTIST}}" style="width:200px; height:200px; display:block; border:0;">
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 22px 8px 0;">
+              <p style="margin:0 0 16px; font-size:16px; line-height:1.65; color:#262626;">I'd love to see you, so here is something to make the decision a little easier.</p>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8f6f3; margin:0 0 20px;">
+                <tr>
+                  <td align="center" style="padding:24px 20px;">
+                    <p style="margin:0 0 6px; font-size:12px; letter-spacing:0.12em; text-transform:uppercase; color:#6b6b6b;">Last chance</p>
+                    <p style="margin:0 0 6px; font-family: 'Cormorant', Georgia, 'Times New Roman', serif; font-size:40px; line-height:1.1; font-weight:600; color:#1a1a1a;">$75 OFF</p>
+                    <p style="margin:0 0 4px; font-size:15px; line-height:1.55; color:#262626;">any procedure from $500</p>
+                    <p style="margin:0; font-size:15px; line-height:1.55; color:#262626;"><b>Book by {{EXPIRES}}</b></p>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 16px; font-size:16px; line-height:1.65; color:#262626;">No code needed: the discount is applied automatically at checkout when your procedure is booked by {{EXPIRES}}. You can still split the cost with Afterpay (4 interest-free payments) or a Cherry payment plan.</p>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 28px;">
+                <tr>
+                  <td style="background:#1a1a1a;">
+                    <a href="https://book.pmu-annakara.com/" style="display:inline-block; padding:15px 32px; font-size:13px; font-weight:600; letter-spacing:0.08em; color:#ffffff; font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;">BOOK WITH $75 OFF</a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0 0 26px; font-size:16px; line-height:1.65; color:#262626;">Questions? Just reply to this email, I'll get back to you.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 0 8px 28px;">
+              <p style="margin:0; font-size:16px; line-height:1.5; color:#262626;">Talk soon,</p>
+              <p style="margin:2px 0 0; font-family: 'Cormorant', Georgia, 'Times New Roman', serif; font-style:italic; font-weight:600; font-size:22px; color:#1a1a1a;">{{ARTIST}}</p>
+              <p style="margin:2px 0 0; font-size:13px; color:#6b6b6b;">Anna Kara's PMU Studio</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 28px 8px 6px; border-top:1px solid #eee;">
+              <p style="margin:0 0 6px; font-size:11.5px; line-height:1.6; color:#9a9a9a;">Anna Kara's PMU Studio &middot; 1357 Seventh Ave, Ste C, San Diego, CA 92101 &middot; <a href="https://pmu-annakara.com/" style="color:#9a9a9a; text-decoration:underline;">pmu-annakara.com</a></p>
+              <p style="margin:0; font-size:11.5px; line-height:1.6; color:#9a9a9a;">You're receiving this because you had a consultation with us. <a href="*|UNSUB|*" style="color:#9a9a9a; text-decoration:underline;">Unsubscribe</a></p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

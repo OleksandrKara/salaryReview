@@ -101,6 +101,15 @@ public final class SmsAutomationRegistry {
                             "checkout_rating_request_no_technician"),
                     true, true, false
             )),
+            Map.entry("consultation_follow_up", AutomationMeta.sms(
+                    "consultation_follow_up",
+                    "Consultation follow-up",
+                    "PMU clients who had a consultation and haven't booked a procedure: day 2 thank-you SMS, "
+                            + "day 5 email (how it works, payment plans), day 21 check-in SMS with real openings, "
+                            + "day 45 last-chance $75 OFF for 7 days. Stops when they book, reply or opt out, or "
+                            + "when staff tap \"Don't message her\" in Telegram (see ConsultationFollowUpScheduler).",
+                    List.of("consultation_follow_up_thanks"), false, true, false
+            )),
             Map.entry("lead_follow_up", AutomationMeta.sms(
                     "lead_follow_up",
                     "Lead follow-up nudge",

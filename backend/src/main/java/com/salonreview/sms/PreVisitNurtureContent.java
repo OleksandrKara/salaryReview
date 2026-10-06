@@ -23,6 +23,13 @@ public class PreVisitNurtureContent {
 
     public record Studio(String name, String address, String textNumber) {}
 
+    /** Square service variation used to look up an artist's real openings (consultation
+     * follow-up's day-21 text): a procedure every artist does, so its slots reflect a real
+     * procedure-length opening. Empty when not configured. */
+    public Optional<String> availabilityVariationId(Long businessId) {
+        return load(businessId).map(n -> n.path("availabilityVariationId").asText("")).filter(v -> !v.isBlank());
+    }
+
     public record Artist(String photoUrl, String headline, String bio, String quote, String quoteAuthor) {}
 
     private final ObjectMapper mapper = new ObjectMapper();
