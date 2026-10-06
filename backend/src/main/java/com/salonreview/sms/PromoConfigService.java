@@ -47,6 +47,9 @@ public class PromoConfigService {
      * group as {@link #REBOOK_PROMO_CODE}, but its own signed code so enrollment can enforce the
      * 4-week window (see VipRebookEligibilityService) without changing the SMS offer's rules. */
     public static final String VIP_PROMO_CODE = "VIP10";
+    /** Consultation follow-up last-chance offer (owner decision 2026-10-06): $75 off any procedure
+     * from $500, for 7 days, see ConsultationFollowUpScheduler. */
+    public static final String CONSULTATION_OFFER_PROMO_CODE = "READY75";
 
     private final BusinessPromoConfigRepository repository;
     private final BusinessRepository businesses;
@@ -141,6 +144,7 @@ public class PromoConfigService {
     }
 
     private static String promoLabel(String promoCode) {
+        if (CONSULTATION_OFFER_PROMO_CODE.equals(promoCode)) return "Consultation follow-up $75 off";
         return REBOOK_PROMO_CODE.equals(promoCode) ? "Same-day rebooking discount" : "Customer winback discount";
     }
 

@@ -113,6 +113,10 @@ public class SecurityConfig {
                         // tags and Twilio's own outbound-media-fetch requests can retrieve a file with no
                         // auth header (see SmsMediaController).
                         .requestMatchers("/api/public/sms-media/**").permitAll()
+                        // Consultation follow-up "Don't message her" link from the staff Telegram alert:
+                        // HMAC-signed per row (ConsultationFollowUpLinks), opened from staff phones with no
+                        // session, and it can only ever stop messages, never send them.
+                        .requestMatchers("/api/public/consultation-follow-up/stop").permitAll()
                         // Retention is read-only visibility for managers too (same data as owners, no
                         // other owner routes). Listed first so it wins over the owner-only catch-all.
                         .requestMatchers(HttpMethod.GET, "/api/owner/retention", "/api/owner/retention/**")

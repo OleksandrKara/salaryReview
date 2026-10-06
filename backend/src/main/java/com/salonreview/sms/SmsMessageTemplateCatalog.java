@@ -183,6 +183,47 @@ public final class SmsMessageTemplateCatalog {
                     ),
                     List.of("sender")
             )),
+            // consultation_follow_up (owner request 2026-10-06, business 2): a client who had a PMU
+            // consultation and left to think. Written as the artist they spoke with ({{artist}}), no
+            // emoji (the studio's SMS are plain text), see ConsultationFollowUpScheduler. Day 2.
+            Map.entry("consultation_follow_up_thanks", new TemplateDefault(
+                    "consultation_follow_up_thanks", "consultation_follow_up", SmsMessageClass.TRANSACTIONAL,
+                    "Consultation follow-up: thank you (day 2)",
+                    List.of("Hi {{name}}, it's {{artist}} from Anna Kara's PMU Studio. Thank you for your consultation! "
+                            + "If any questions came up, just reply here. When you're ready, you can book your procedure "
+                            + "here: {{link}}"),
+                    List.of("name", "artist", "link")
+            )),
+            // Day 21: a plain check-in, no discount. openingsClause is pre-computed from the artist's real
+            // Square availability (" I have openings on Tue, Oct 28 and Thu, Oct 30.") or empty.
+            Map.entry("consultation_follow_up_checkin", new TemplateDefault(
+                    "consultation_follow_up_checkin", "consultation_follow_up", SmsMessageClass.TRANSACTIONAL,
+                    "Consultation follow-up: check-in (day 21)",
+                    List.of("Hi {{name}}, {{artist}} here from Anna Kara's PMU Studio. Just checking in, no pressure."
+                            + "{{openingsClause}} You can also split the cost into 4 interest-free payments with "
+                            + "Afterpay. Reply here and I'll hold a time for you."),
+                    List.of("name", "artist", "openingsClause")
+            )),
+            // Day 45: the $75 OFF last-chance offer. MARKETING, so TwilioSmsService only sends it to a
+            // contact with marketing consent (see the sms_compliance_rule note); everyone else gets the
+            // email version and/or consultation_follow_up_last_checkin below.
+            Map.entry("consultation_follow_up_offer", new TemplateDefault(
+                    "consultation_follow_up_offer", "consultation_follow_up", SmsMessageClass.MARKETING,
+                    "Consultation follow-up: last chance $75 OFF (day 45)",
+                    List.of("Hi {{name}}, it's {{artist}} from Anna Kara's PMU Studio. Last chance: $75 OFF any "
+                            + "procedure from $500 if you book by {{expires}}. The discount is applied automatically "
+                            + "at checkout. Reply here or book: {{link}} Reply STOP to opt out."),
+                    List.of("name", "artist", "expires", "link")
+            )),
+            // Day 45 for a client without marketing consent and without an email: the same last touch
+            // with no discount in it.
+            Map.entry("consultation_follow_up_last_checkin", new TemplateDefault(
+                    "consultation_follow_up_last_checkin", "consultation_follow_up", SmsMessageClass.TRANSACTIONAL,
+                    "Consultation follow-up: last check-in (day 45, no consent)",
+                    List.of("Hi {{name}}, {{artist}} from Anna Kara's PMU Studio. Whenever you feel ready, I'm happy "
+                            + "to help, and payment plans are available too. Reply here or book: {{link}}"),
+                    List.of("name", "artist", "link")
+            )),
             Map.entry("lead_follow_up_nudge", new TemplateDefault(
                     "lead_follow_up_nudge", "lead_follow_up", SmsMessageClass.TRANSACTIONAL,
                     "Lead follow-up",

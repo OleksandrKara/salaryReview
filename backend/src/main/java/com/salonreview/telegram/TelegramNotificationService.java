@@ -519,6 +519,63 @@ public class TelegramNotificationService {
         }
     }
 
+    /** "Thinking it over" alert for the consultation_follow_up sequence (owner request 2026-10-06):
+     * the day after a consultation with no procedure booked, staff see who is about to get the
+     * artist's follow-up texts, with a URL button that stops the sequence for this client (not a
+     * candidate, consultation didn't happen, she'll come back later). A URL button, not a callback
+     * button: this bot has no update handler, and the link works from any staff member's phone.
+     * Same staff chat and never-throws contract as every other send method here. */
+    public boolean sendConsultationFollowUpAlert(Long businessId, String customerName, String artistName,
+                                                 java.time.Instant consultationStart, String stopUrl) {
+        TelegramNotificationConfig cfg = configService.get(businessId);
+        String token = cfg.getBotToken();
+        String chatId = cfg.getChatId();
+        if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
+            log.info("Consultation follow-up Telegram alert skipped: bot token or chat id not configured for business {}", businessId);
+            return false;
+        }
+        String text = businessLabel(businessId) + formatConsultationFollowUpMessage(customerName, artistName, consultationStart);
+        try {
+            Map<String, Object> reqBody = new java.util.HashMap<>(Map.of("chat_id", chatId, "text", text, "disable_web_page_preview", true));
+            if (stopUrl != null) {
+                Map<String, Object> button = Map.of("text", "🚫 Don't message this client / Не писать клиенту", "url", stopUrl);
+                reqBody.put("reply_markup", Map.of("inline_keyboard", java.util.List.of(java.util.List.of(button))));
+            }
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
+                    .timeout(Duration.ofSeconds(5))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(reqBody)))
+                    .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                log.warn("Consultation follow-up Telegram alert send failed: HTTP {} {}", res.statusCode(), res.body());
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.warn("Consultation follow-up Telegram alert send failed (caller unaffected): {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /** Package-private for direct unit testing. */
+    static String formatConsultationFollowUpMessage(String customerName, String artistName, java.time.Instant consultationStart) {
+        String client = customerName == null || customerName.isBlank() ? "Client" : customerName;
+        String artist = artistName == null || artistName.isBlank() ? "the artist" : artistName;
+        String artistRu = artistName == null || artistName.isBlank() ? "мастера" : artistName;
+        String when = consultationStart == null ? "?" : formatPreferredTime(consultationStart.toString());
+        String en = "💭 Thinking it over: " + client + "\n"
+                + "Consultation with " + artist + " (" + when + "), no procedure booked yet.\n"
+                + "Tomorrow they get a follow-up text from " + artist + ". Tap the button if they shouldn't get "
+                + "messages: not a candidate, the consultation didn't happen, or they'll come back on their own.";
+        String ru = "💭 Думает: " + client + "\n"
+                + "Консультация с " + artist + " (" + when + "), на процедуру пока не записан(а).\n"
+                + "Завтра клиенту уйдёт SMS от " + artistRu + ". Если писать не нужно (не подходит, консультация не "
+                + "состоялась, клиент сам вернётся позже), нажмите кнопку.";
+        return en + "\n\n-----\n\n" + ru;
+    }
+
     /** English on top, Russian below a divider — same reasoning and audience as
      * {@link #formatSameDayBookingMessage}. {@code locationAddress} only ever renders (and is only
      * ever populated by the caller) for an in-person consultation — an online one just says
