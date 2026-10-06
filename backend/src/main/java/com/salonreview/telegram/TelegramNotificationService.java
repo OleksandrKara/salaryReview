@@ -519,6 +519,37 @@ public class TelegramNotificationService {
         }
     }
 
+    /** Plain-text staff alert (online booking health checks, BookingHealthCheckScheduler). Same
+     * staff chat and never-throws contract as every other send method here. */
+    public boolean sendPlainAlert(Long businessId, String text) {
+        TelegramNotificationConfig cfg = configService.get(businessId);
+        String token = cfg.getBotToken();
+        String chatId = cfg.getChatId();
+        if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
+            log.info("Telegram alert skipped: bot token or chat id not configured for business {}", businessId);
+            return false;
+        }
+        try {
+            Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", businessLabel(businessId) + text,
+                    "disable_web_page_preview", true);
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
+                    .timeout(Duration.ofSeconds(5))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(reqBody)))
+                    .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                log.warn("Telegram alert send failed: HTTP {} {}", res.statusCode(), res.body());
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.warn("Telegram alert send failed (caller unaffected): {}", e.getMessage());
+            return false;
+        }
+    }
+
     /** "Thinking it over" alert for the consultation_follow_up sequence (owner request 2026-10-06):
      * the day after a consultation with no procedure booked, staff see who is about to get the
      * artist's follow-up texts, with a URL button that stops the sequence for this client (not a
