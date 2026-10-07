@@ -33,6 +33,7 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -55,6 +56,7 @@ class ConsultationReengageOneOffServiceTest {
     private MailchimpEmailService mailchimp;
     private PromoConfigService promos;
     private SameDayRebookingGroupMembershipRepository memberships;
+    private ConsultationFollowUpLinks links;
     private ConsultationReengageOneOffService service;
     private final List<SquareBookingMirror> all = new ArrayList<>();
     private final Map<String, SquareCustomerMirror> customerRows = new HashMap<>();
@@ -73,6 +75,8 @@ class ConsultationReengageOneOffServiceTest {
         mailchimp = mock(MailchimpEmailService.class);
         promos = mock(PromoConfigService.class);
         memberships = mock(SameDayRebookingGroupMembershipRepository.class);
+        links = mock(ConsultationFollowUpLinks.class);
+        when(links.offerBookUrl(anyLong())).thenAnswer(inv -> "https://pmu-annakara.com/?book=procedure&offer=" + inv.getArgument(0) + ".sig");
 
         when(squareProvider.forBusiness(BIZ)).thenReturn(square);
         when(bookings.findByBusinessIdAndStartAtBetween(eq(BIZ), any(), any())).thenReturn(all);
@@ -81,7 +85,11 @@ class ConsultationReengageOneOffServiceTest {
         when(customers.findByBusinessIdAndSquareCustomerId(eq(BIZ), anyString()))
                 .thenAnswer(inv -> Optional.ofNullable(customerRows.get(inv.<String>getArgument(1))));
         when(followUps.findAll()).thenReturn(List.of());
-        when(followUps.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(followUps.save(any())).thenAnswer(inv -> {
+            ConsultationFollowUp r = inv.getArgument(0);
+            if (r.getId() == null) r.setId(41L);
+            return r;
+        });
         when(providers.findAllByBusinessId(BIZ)).thenReturn(List.of(
                 Provider.builder().id(1L).displayName("Anastasiia Makarenko").squareTeamMemberIds(Set.of(TM_ANASTASIIA)).build()));
         when(mailchimpConfigs.findByBusinessId(BIZ)).thenReturn(Optional.of(MailchimpConfig.builder().businessId(BIZ)
@@ -93,7 +101,7 @@ class ConsultationReengageOneOffServiceTest {
         // Real templates and artist content: the rendered email is part of what's tested.
         service = new ConsultationReengageOneOffService(bookings, payments, customers, followUps, providers, squareProvider,
                 mailchimpConfigs, mailchimpClient, mailchimp, new MailchimpEmailTemplateService(), new PreVisitNurtureContent(),
-                promos, memberships, Clock.fixed(NOW, ZoneOffset.UTC));
+                promos, memberships, links, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private void consultation(String customer, String tm, int daysAgo, String email) {
@@ -155,7 +163,7 @@ class ConsultationReengageOneOffServiceTest {
         verify(mailchimp).sendWinbackEmail(any(), eq("a@example.com"), eq("Sarah, still thinking about it?"), anyString(), anyString(), html.capture());
         assertThat(html.getValue()).contains("It&#39;s Anastasiia from Anna Kara&#39;s PMU Studio.")
                 .contains("We met at your consultation a while ago").contains("Wednesday, October 14")
-                .contains("anastasiia-ring").doesNotContain("{{").doesNotContain("—");
+                .contains("anastasiia-ring").contains("book=procedure&amp;offer=41.sig").doesNotContain("{{").doesNotContain("—");
         verify(mailchimp).sendWinbackEmail(any(), eq("b@example.com"), anyString(), anyString(), anyString(), html.capture());
         assertThat(html.getValue()).contains("It&#39;s Anna, owner of Anna Kara&#39;s PMU Studio.")
                 .contains("You had a consultation with us a while ago").contains("anna-ring");
