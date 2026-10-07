@@ -24,6 +24,15 @@ class ConsultationFollowUpTemplatesTest {
     }
 
     @Test
+    void pmuLeadFollowUpEmailRendersAndOpensTheProcedurePopup() {
+        String html = new MailchimpEmailTemplateService().render(2L, "lead_follow_up", Map.of("FNAME", "Sarah", "LINK", "https://x/"))
+                .orElseThrow();
+        assertThat(html).contains("Hi Sarah,").contains("It's Lucy from Anna Kara's PMU Studio.")
+                .contains("https://pmu-annakara.com/?book=procedure").contains("*|UNSUB|*")
+                .doesNotContain("{{").doesNotContain("—").doesNotContain("$75");
+    }
+
+    @Test
     void smsTemplatesHaveTheRightClass() {
         SmsMessageTemplateCatalog.TemplateDefault offer = SmsMessageTemplateCatalog.get("consultation_follow_up_offer");
         assertThat(offer.messageClass()).isEqualTo(SmsMessageClass.MARKETING);
