@@ -1019,6 +1019,9 @@ export interface Me {
   // not a dropdown, for that case).
   activeBusinessId: number;
   businesses: MeBusinessOption[];
+  // Explicit since 2026-10-07: a manager working for both studios also has 2 businesses, so the
+  // switcher's option count no longer says who is a platform admin.
+  platformAdmin?: boolean;
 }
 
 export interface Features {

@@ -14,9 +14,8 @@ import java.util.List;
 /**
  * Loads {@link AppUserPrincipal}s from the {@code app_user} table for authentication, resolving each
  * login's {@code activeBusinessId} from its {@code business_membership} row(s) — see
- * openspec/changes/multi-tenant-salon-platform/design.md D3. Every real account today has exactly
- * one membership row; a user with zero or more than one fails loudly here rather than silently
- * picking a business, since there's no switcher UI yet to let them choose (design.md D3/D12).
+ * openspec/changes/multi-tenant-salon-platform/design.md D3. A login with several memberships
+ * starts in its home business and switches in-session (2026-10-07); zero memberships fails loudly.
  */
 @Service
 public class JpaUserDetailsService implements UserDetailsService {
@@ -34,11 +33,15 @@ public class JpaUserDetailsService implements UserDetailsService {
         AppUser user = users.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("Unknown user: " + username));
         List<BusinessMembership> rows = memberships.findByUserId(user.getId());
-        if (rows.size() != 1) {
-            throw new IllegalStateException("User '" + username + "' has " + rows.size()
-                    + " business_membership rows (expected exactly 1) — no switcher UI exists yet to"
-                    + " resolve which business this login belongs to");
+        if (rows.isEmpty()) {
+            throw new IllegalStateException("User '" + username + "' has no business_membership row");
         }
-        return new AppUserPrincipal(user, rows.get(0).getBusinessId());
+        // A login can belong to several businesses (owner request 2026-10-07: managers who work for
+        // both studios with one email). It starts in its home business (app_user.business_id) and
+        // switches from there (BusinessSwitchController, AdminMenu, ?business= deep links).
+        Long active = rows.stream().map(BusinessMembership::getBusinessId)
+                .filter(id -> id.equals(user.getBusinessId())).findFirst()
+                .orElse(rows.stream().map(BusinessMembership::getBusinessId).min(Long::compare).orElseThrow());
+        return new AppUserPrincipal(user, active);
     }
 }

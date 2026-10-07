@@ -128,7 +128,7 @@ public class TelegramNotificationService {
 
         try {
             Map<String, Object> reqBody = Map.of("chat_id", chatId,
-                    "text", businessLabel(businessId) + formatInboundSmsAlert(phoneNumber, customerName, body, automationKey, websiteContext),
+                    "text", businessLabel(businessId) + formatInboundSmsAlert(phoneNumber, customerName, body, automationKey, websiteContext, businessId),
                     "parse_mode", "HTML", "disable_web_page_preview", true);
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
@@ -159,6 +159,11 @@ public class TelegramNotificationService {
 
     String formatInboundSmsAlert(String phoneNumber, String customerName, String body, String automationKey,
                                  String websiteContext) {
+        return formatInboundSmsAlert(phoneNumber, customerName, body, automationKey, websiteContext, null);
+    }
+
+    String formatInboundSmsAlert(String phoneNumber, String customerName, String body, String automationKey,
+                                 String websiteContext, Long businessId) {
         String displayPhone = formatPhoneDisplay(phoneNumber);
         StringBuilder sb = new StringBuilder("📩 <b>New message from ")
                 .append(escapeHtml(customerName != null && !customerName.isBlank() ? customerName : displayPhone))
@@ -173,7 +178,7 @@ public class TelegramNotificationService {
             sb.append(escapeHtml(websiteContext)).append('\n');
         }
         sb.append("\n“").append(escapeHtml(body)).append("”\n\n");
-        sb.append("<a href=\"").append(escapeHtml(chatLink(phoneNumber))).append("\">💬 Open chat</a>");
+        sb.append("<a href=\"").append(escapeHtml(chatLink(phoneNumber, businessId))).append("\">💬 Open chat</a>");
         return sb.toString();
     }
 
@@ -181,7 +186,14 @@ public class TelegramNotificationService {
      * MessagesView's {@code ?phone=} handling on the frontend. Package-private for direct unit
      * testing. */
     String chatLink(String phoneNumber) {
-        return publicBaseUrl + "/admin/messages?phone=" + URLEncoder.encode(phoneNumber, StandardCharsets.UTF_8);
+        return chatLink(phoneNumber, null);
+    }
+
+    /** With the business the text came to (2026-10-07): the inbox switches a manager who works for
+     * both studios to that business before opening the thread (AdminMenu's ?business= handling). */
+    String chatLink(String phoneNumber, Long businessId) {
+        return publicBaseUrl + "/admin/messages?phone=" + URLEncoder.encode(phoneNumber, StandardCharsets.UTF_8)
+                + (businessId == null ? "" : "&business=" + businessId);
     }
 
     /** US-formatted "(858) 555-0100" for readability — falls back to the raw value for anything

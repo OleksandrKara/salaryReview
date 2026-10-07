@@ -233,6 +233,8 @@ class TelegramNotificationServiceTest {
         TelegramNotificationService service = service(mock(TelegramConfigService.class));
 
         assertThat(service.chatLink("+18585550100")).isEqualTo("https://salon.akluxnails.com/admin/messages?phone=%2B18585550100");
+        // With the business the text came to, so the inbox switches a two-studio manager first.
+        assertThat(service.chatLink("+18585550100", 2L)).isEqualTo("https://salon.akluxnails.com/admin/messages?phone=%2B18585550100&business=2");
     }
 
     // ---------------------------------------------------------------- same-day booking alert

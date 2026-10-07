@@ -64,15 +64,28 @@ class JpaUserDetailsServiceTest {
     }
 
     @Test
-    @DisplayName("more than one membership row fails loudly — no switcher UI exists yet to pick one")
-    void multipleMembershipsFailsLoudly() {
-        when(users.findByUsername("multi")).thenReturn(Optional.of(user(3L, "multi")));
+    @DisplayName("several memberships start in the login's home business (app_user.business_id)")
+    void multipleMembershipsStartInHomeBusiness() {
+        AppUser multi = user(3L, "multi"); multi.setBusinessId(8L);
+        when(users.findByUsername("multi")).thenReturn(Optional.of(multi));
         when(memberships.findByUserId(3L)).thenReturn(List.of(
-                BusinessMembership.builder().id(11L).businessId(7L).userId(3L).role(Role.OWNER).build(),
-                BusinessMembership.builder().id(12L).businessId(8L).userId(3L).role(Role.OWNER).build()));
+                BusinessMembership.builder().id(11L).businessId(7L).userId(3L).role(Role.MANAGER).build(),
+                BusinessMembership.builder().id(12L).businessId(8L).userId(3L).role(Role.MANAGER).build()));
 
-        assertThatThrownBy(() -> service.loadUserByUsername("multi"))
-                .isInstanceOf(IllegalStateException.class);
+        AppUserPrincipal p = (AppUserPrincipal) service.loadUserByUsername("multi");
+        assertThat(p.getActiveBusinessId()).isEqualTo(8L);
+    }
+
+    @Test
+    @DisplayName("several memberships without the home business among them start in the lowest id")
+    void multipleMembershipsWithoutHomeStartInLowestId() {
+        AppUser multi = user(4L, "multi2"); multi.setBusinessId(99L);
+        when(users.findByUsername("multi2")).thenReturn(Optional.of(multi));
+        when(memberships.findByUserId(4L)).thenReturn(List.of(
+                BusinessMembership.builder().id(13L).businessId(8L).userId(4L).role(Role.MANAGER).build(),
+                BusinessMembership.builder().id(14L).businessId(7L).userId(4L).role(Role.MANAGER).build()));
+
+        assertThat(((AppUserPrincipal) service.loadUserByUsername("multi2")).getActiveBusinessId()).isEqualTo(7L);
     }
 
     @Test
