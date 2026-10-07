@@ -34,7 +34,7 @@ class PreVisitNurtureConsultationTemplatesTest {
     void bothConsultationArtistsHaveProfiles() {
         PreVisitNurtureContent content = new PreVisitNurtureContent();
         assertThat(content.artist(2L, "Anna").orElseThrow().photoUrl()).endsWith("anna-ring.jpg");
-        assertThat(content.artist(2L, "Anastasiia").orElseThrow().photoUrl()).endsWith("anastasiia-ring.jpg");
+        assertThat(content.artist(2L, "Anastasiia").orElseThrow().photoUrl()).endsWith("anastasiia-ring-v2.jpg");
         // Unknown or former artist: Anna (owner decision 2026-10-07), never a client photo.
         assertThat(content.artist(2L, "Someone").orElseThrow().photoUrl()).endsWith("anna-ring.jpg");
         assertThat(content.artist(2L, null).orElseThrow().photoUrl()).endsWith("anna-ring.jpg");
