@@ -97,7 +97,7 @@ public class CheckoutReviewReplyService {
             reserved = messageLogService.logOutboundWithLink(
                     flow.getBusinessId(), templateKey, AUTOMATION_KEY, flow.getPhoneNumber(),
                     "", false, "pending", null, linkTarget, clickToken);
-            String shortLink = publicBaseUrl + "/r/" + clickToken;
+            String shortLink = shortLink(flow.getBusinessId(), clickToken);
             body = templateService.render(flow.getBusinessId(), templateKey, flow.getPhoneNumber(),
                     java.util.Map.of("link", shortLink, "sender", sender, "businessName", businessName));
         } else {
@@ -136,5 +136,18 @@ public class CheckoutReviewReplyService {
         reserved.setReason(reason);
         reserved.setTwilioMessageSid(twilioMessageSid);
         messageLogService.save(reserved);
+    }
+
+    private ShortLinkHosts shortLinkHosts;
+
+    /** Per-business short-link host (ShortLinkHosts); unset in hand-built tests, which keep the
+     * default public base URL. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setShortLinkHosts(ShortLinkHosts shortLinkHosts) {
+        this.shortLinkHosts = shortLinkHosts;
+    }
+
+    private String shortLink(Long businessId, String token) {
+        return shortLinkHosts == null ? publicBaseUrl + "/r/" + token : shortLinkHosts.shortLink(businessId, token);
     }
 }

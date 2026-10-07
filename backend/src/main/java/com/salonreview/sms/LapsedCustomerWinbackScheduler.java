@@ -229,7 +229,7 @@ public class LapsedCustomerWinbackScheduler {
         SmsMessage reserved = messageLogService.logOutboundWithLink(
                 businessId, templateKey, AUTOMATION_KEY, phoneNumber, "", false, "pending", null, linkTarget, clickToken);
 
-        String shortLink = publicBaseUrl + "/r/" + clickToken;
+        String shortLink = shortLink(businessId, clickToken);
         String name = Names.capitalizeFirst(rawGivenName);
         // provider_visit.provider_name is the free-text Square team-member display name (e.g.
         // "Susan Alieva") — never send a technician's last name to a customer, same rule
@@ -291,5 +291,18 @@ public class LapsedCustomerWinbackScheduler {
                 .promoExpiresAt(promoExpiresAt)
                 .state(state)
                 .build());
+    }
+
+    private ShortLinkHosts shortLinkHosts;
+
+    /** Per-business short-link host (ShortLinkHosts); unset in hand-built tests, which keep the
+     * default public base URL. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setShortLinkHosts(ShortLinkHosts shortLinkHosts) {
+        this.shortLinkHosts = shortLinkHosts;
+    }
+
+    private String shortLink(Long businessId, String token) {
+        return shortLinkHosts == null ? publicBaseUrl + "/r/" + token : shortLinkHosts.shortLink(businessId, token);
     }
 }
