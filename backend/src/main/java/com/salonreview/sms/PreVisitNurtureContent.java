@@ -45,8 +45,21 @@ public class PreVisitNurtureContent {
     public Optional<Artist> artist(Long businessId, String firstName) {
         return load(businessId).map(n -> {
             JsonNode a = firstName == null ? null : n.path("artists").get(firstName);
+            if (a == null) a = n.path("artists").get(n.path("defaultArtistName").asText(""));
             return toArtist(a != null ? a : n.path("defaultArtist"));
         });
+    }
+
+    /** Who a client's emails and texts come from (owner decision 2026-10-07): the booking's
+     * artist when they have a profile here, otherwise (artist unknown, no longer at the studio,
+     * or not one of the consulting artists) the business's {@code defaultArtistName}, Anna for
+     * business 2. Unchanged for a business without the file or without a default. */
+    public String artistName(Long businessId, String firstName) {
+        return load(businessId).map(n -> {
+            if (firstName != null && n.path("artists").has(firstName)) return firstName;
+            String fallback = n.path("defaultArtistName").asText("");
+            return fallback.isBlank() ? firstName : fallback;
+        }).orElse(firstName);
     }
 
     private static Artist toArtist(JsonNode a) {

@@ -85,6 +85,7 @@ class PreVisitNurtureSchedulerTest {
         when(square.retrieveBooking(anyString())).thenReturn(Optional.of(liveBooking("ACCEPTED", null)));
         when(content.studio(BUSINESS_ID)).thenReturn(Optional.of(
                 new PreVisitNurtureContent.Studio("Anna Kara's PMU Studio", "1357 Seventh Ave", "(833) 912-5558")));
+        when(content.artistName(any(), any())).thenAnswer(inv -> inv.getArgument(1));
         when(content.artist(eq(BUSINESS_ID), any())).thenReturn(Optional.of(
                 new PreVisitNurtureContent.Artist("https://x/p.jpg", "7+ years", "Bio", "Quote", "Author")));
     }

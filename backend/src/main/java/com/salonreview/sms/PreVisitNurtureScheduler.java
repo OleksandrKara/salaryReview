@@ -470,7 +470,8 @@ public class PreVisitNurtureScheduler {
         String customerId = booking.getSquareCustomerId();
         String givenName = Names.capitalizeFirst(
                 customerId == null ? null : square.customerGivenNames(List.of(customerId)).get(customerId));
-        String technician = technicianFirstName(booking, businessId);
+        String technician = kind == null ? technicianFirstName(booking, businessId)
+                : content.artistName(businessId, technicianFirstName(booking, businessId));
 
         Map<String, String> text = new HashMap<>();
         text.put("FNAME", givenName == null ? "there" : givenName);
