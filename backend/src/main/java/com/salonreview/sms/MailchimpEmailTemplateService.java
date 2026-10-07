@@ -47,7 +47,8 @@ public class MailchimpEmailTemplateService {
                     Map.entry("pre_visit_nurture_consultation_prep", "email-templates/business-2/pre_visit_nurture_consultation_prep.html"),
                     Map.entry("pre_visit_nurture_consultation_reminder", "email-templates/business-2/pre_visit_nurture_consultation_reminder.html"),
                     Map.entry("consultation_follow_up_info", "email-templates/business-2/consultation_follow_up_info.html"),
-                    Map.entry("consultation_follow_up_offer", "email-templates/business-2/consultation_follow_up_offer.html")
+                    Map.entry("consultation_follow_up_offer", "email-templates/business-2/consultation_follow_up_offer.html"),
+                    Map.entry("consultation_reengage_offer", "email-templates/business-2/consultation_reengage_offer.html")
             )
     );
 
