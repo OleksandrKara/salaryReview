@@ -212,7 +212,7 @@ public class WinbackEmailFallbackScheduler {
                 "DISCOUNT", discountAmount,
                 "OFFER_LABEL", offerLabel,
                 "TECHNICIAN_CLAUSE", technicianClause,
-                "LINK", publicBaseUrl + "/r/" + sms.getClickToken());
+                "LINK", shortLink(sms.getBusinessId(), sms.getClickToken()));
 
         Optional<String> html = templateService.render(businessId, automationKey, vars);
         if (html.isEmpty()) {
@@ -261,5 +261,18 @@ public class WinbackEmailFallbackScheduler {
                 .mailchimpCampaignId(campaignId)
                 .contentHtml(contentHtml)
                 .build());
+    }
+
+    private ShortLinkHosts shortLinkHosts;
+
+    /** Per-business short-link host (ShortLinkHosts); unset in hand-built tests, which keep the
+     * default public base URL. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setShortLinkHosts(ShortLinkHosts shortLinkHosts) {
+        this.shortLinkHosts = shortLinkHosts;
+    }
+
+    private String shortLink(Long businessId, String token) {
+        return shortLinkHosts == null ? publicBaseUrl + "/r/" + token : shortLinkHosts.shortLink(businessId, token);
     }
 }

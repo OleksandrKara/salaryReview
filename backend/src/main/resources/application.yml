@@ -97,6 +97,9 @@ app:
   # the checkout-review-request automation's reply messages (see
   # openspec/changes/sms-automations-hub).
   public-base-url: ${APP_PUBLIC_BASE_URL:https://salon.akluxnails.com}
+  # Business id -> host for its SMS short links (/r/...), see ShortLinkHosts. Business 2 (PMU) uses
+  # its own domain so a studio text never carries the nail salon's domain.
+  short-link-hosts: ${APP_SHORT_LINK_HOSTS:2=https://go.pmu-annakara.com}
 
 # Shared secret for service-to-service calls from mani/akluxnails-home (Telegram 4-hand-request
 # relay — see InternalApiProperties/InternalNotificationController). Blank means every internal
