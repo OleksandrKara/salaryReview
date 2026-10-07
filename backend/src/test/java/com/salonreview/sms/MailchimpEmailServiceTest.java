@@ -1,6 +1,9 @@
 package com.salonreview.sms;
 
 import com.salonreview.domain.MailchimpConfig;
+import com.salonreview.domain.MailchimpDeferredSend;
+import com.salonreview.repo.MailchimpDeferredSendRepository;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,12 +28,14 @@ class MailchimpEmailServiceTest {
 
     private MailchimpClient client;
     private MailchimpEmailService service;
+    private MailchimpDeferredSendRepository deferred;
     private MailchimpConfig config;
 
     @BeforeEach
     void setUp() {
         client = mock(MailchimpClient.class);
-        service = new MailchimpEmailService(client);
+        deferred = mock(MailchimpDeferredSendRepository.class);
+        service = new MailchimpEmailService(client, deferred);
         config = MailchimpConfig.builder().businessId(1L).apiKey("k-us1").audienceId("a1")
                 .fromName("Lucy").fromEmail("lucy@example.com").replyToEmail("lucy@example.com").build();
     }
@@ -62,17 +67,21 @@ class MailchimpEmailServiceTest {
     }
 
     @Test
-    @DisplayName("\"recipients not ready\" on every attempt -> throws after exhausting retries, tried exactly 5 times")
-    void givesUpAfterMaxAttempts() throws Exception {
+    @DisplayName("\"recipients not ready\" on every attempt -> tried 5 times, then queued for the deferred sender, not lost")
+    void queuesAfterMaxAttempts() throws Exception {
         when(client.createSingleRecipientCampaign(any(), any(), any(), any(), any())).thenReturn("campaign-1");
         doThrow(new IOException("Mailchimp API failed to send campaign (400): recipients not ready"))
                 .when(client).send(config, "campaign-1");
 
-        assertThatThrownBy(() -> service.sendWinbackEmail(config, "jane@example.com", "Subject", "Preview", "Title", "<html></html>"))
-                .isInstanceOf(IOException.class)
-                .hasMessageContaining("recipients not ready");
+        String campaignId = service.sendWinbackEmail(config, "jane@example.com", "Subject", "Preview", "Title", "<html></html>");
 
+        assertThat(campaignId).isEqualTo("campaign-1");
         verify(client, times(5)).send(eq(config), eq("campaign-1"));
+        ArgumentCaptor<MailchimpDeferredSend> queued = ArgumentCaptor.forClass(MailchimpDeferredSend.class);
+        verify(deferred).save(queued.capture());
+        assertThat(queued.getValue().getCampaignId()).isEqualTo("campaign-1");
+        assertThat(queued.getValue().getBusinessId()).isEqualTo(1L);
+        assertThat(queued.getValue().getState()).isEqualTo(MailchimpDeferredSend.STATE_PENDING);
     }
 
     @Test

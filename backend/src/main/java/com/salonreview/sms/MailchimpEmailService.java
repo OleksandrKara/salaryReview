@@ -1,9 +1,13 @@
 package com.salonreview.sms;
 
 import com.salonreview.domain.MailchimpConfig;
+import com.salonreview.domain.MailchimpDeferredSend;
+import com.salonreview.repo.MailchimpDeferredSendRepository;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
 
 /**
  * Orchestrates one win-back email send against the Mailchimp Marketing API — upsert the recipient
@@ -35,21 +39,42 @@ public class MailchimpEmailService {
     private static final long RETRY_BACKOFF_MILLIS = 2000L;
 
     private final MailchimpClient client;
+    private final MailchimpDeferredSendRepository deferredSends;
 
-    public MailchimpEmailService(MailchimpClient client) {
+    public MailchimpEmailService(MailchimpClient client, MailchimpDeferredSendRepository deferredSends) {
         this.client = client;
+        this.deferredSends = deferredSends;
     }
 
-    /** Returns the Mailchimp campaign id of the (now sent) campaign. Throws on any failure — the
-     * caller decides what state to record. */
+    /** Returns the Mailchimp campaign id of the sent campaign. Throws on any failure (the caller
+     * decides what state to record), except "recipients not ready" lasting through every inline
+     * retry (2026-10-07: ~2-4% of business 1's automation emails, almost all to a member upserted
+     * seconds earlier): the finished campaign is then queued and MailchimpDeferredSendScheduler
+     * sends it within about an hour, so the caller treats it as sent instead of losing the email
+     * and nobody's scheduler thread blocks waiting for Mailchimp. */
     public String sendWinbackEmail(MailchimpConfig config, String toEmail,
                                     String subjectLine, String previewText, String campaignTitle,
                                     String html) throws Exception {
         client.upsertMember(config, toEmail);
         String campaignId = client.createSingleRecipientCampaign(config, toEmail, subjectLine, previewText, campaignTitle);
         client.setContent(config, campaignId, html);
-        sendWithRetry(config, campaignId);
+        try {
+            sendWithRetry(config, campaignId);
+        } catch (IOException e) {
+            if (!isRecipientsNotReady(e)) throw e;
+            deferredSends.save(MailchimpDeferredSend.builder()
+                    .businessId(config.getBusinessId())
+                    .campaignId(campaignId)
+                    .campaignTitle(campaignTitle)
+                    .nextAttemptAt(Instant.now().plus(Duration.ofMinutes(2)))
+                    .lastError(e.getMessage())
+                    .build());
+        }
         return campaignId;
+    }
+
+    static boolean isRecipientsNotReady(IOException e) {
+        return e.getMessage() != null && e.getMessage().contains(RECIPIENTS_NOT_READY);
     }
 
     private void sendWithRetry(MailchimpConfig config, String campaignId) throws IOException, InterruptedException {
@@ -58,7 +83,7 @@ public class MailchimpEmailService {
                 client.send(config, campaignId);
                 return;
             } catch (IOException e) {
-                boolean retryable = e.getMessage() != null && e.getMessage().contains(RECIPIENTS_NOT_READY);
+                boolean retryable = isRecipientsNotReady(e);
                 if (!retryable || attempt == SEND_ATTEMPTS) {
                     throw e;
                 }
