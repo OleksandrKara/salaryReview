@@ -242,7 +242,7 @@ public class ConsultationFollowUpScheduler {
                 .squareBookingId(booking.getSquareBookingId())
                 .squareCustomerId(customerId)
                 .teamMemberId(teamMemberId)
-                .artistName(artistFirstName(businessId, teamMemberId))
+                .artistName(content.artistName(businessId, artistFirstName(businessId, teamMemberId)))
                 .visitKind(kind)
                 .consultationStartAt(booking.getStartAt())
                 .customerName(givenName)

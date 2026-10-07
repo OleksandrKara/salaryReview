@@ -99,6 +99,7 @@ class ConsultationFollowUpSchedulerTest {
                 Provider.builder().id(21L).displayName("Anastasiia Makarenko").squareTeamMemberIds(Set.of(TM)).build()));
         when(sms.sendTemplated(eq(BIZ), anyString(), anyString(), any())).thenReturn(new TwilioSmsService.SmsSendResult(true, null));
         when(templates.render(eq(BIZ), anyString(), any())).thenReturn(Optional.of("<html></html>"));
+        when(content.artistName(any(), any())).thenAnswer(inv -> inv.getArgument(1));
         when(content.artist(eq(BIZ), any())).thenReturn(Optional.empty());
         when(content.availabilityVariationId(BIZ)).thenReturn(Optional.of(PROC_VAR));
         when(links.stopUrl(anyLong())).thenReturn("https://salon/stop?id=1&sig=x");

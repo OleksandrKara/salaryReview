@@ -35,7 +35,13 @@ class PreVisitNurtureConsultationTemplatesTest {
         PreVisitNurtureContent content = new PreVisitNurtureContent();
         assertThat(content.artist(2L, "Anna").orElseThrow().photoUrl()).endsWith("anna-ring.jpg");
         assertThat(content.artist(2L, "Anastasiia").orElseThrow().photoUrl()).endsWith("anastasiia-ring.jpg");
-        assertThat(content.artist(2L, "Someone").orElseThrow().photoUrl()).endsWith("brows-ring.jpg");
+        // Unknown or former artist: Anna (owner decision 2026-10-07), never a client photo.
+        assertThat(content.artist(2L, "Someone").orElseThrow().photoUrl()).endsWith("anna-ring.jpg");
+        assertThat(content.artist(2L, null).orElseThrow().photoUrl()).endsWith("anna-ring.jpg");
+        assertThat(content.artistName(2L, "Someone")).isEqualTo("Anna");
+        assertThat(content.artistName(2L, null)).isEqualTo("Anna");
+        assertThat(content.artistName(2L, "Anastasiia")).isEqualTo("Anastasiia");
+        assertThat(content.artistName(1L, "Mila")).isEqualTo("Mila");
         assertThat(content.studio(2L).orElseThrow().textNumber()).isEqualTo("(833) 912-5558");
         assertThat(content.artist(1L, "Anna")).isEmpty();
     }

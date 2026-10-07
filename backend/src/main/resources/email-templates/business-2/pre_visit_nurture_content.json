@@ -20,11 +20,5 @@
       "quoteAuthor": "Hana E., Google review"
     }
   },
-  "defaultArtist": {
-    "photoUrl": "https://book.pmu-annakara.com/pmu-email-brows-ring.jpg",
-    "headline": "Permanent makeup and paramedical tattooing in San Diego",
-    "bio": "Our lead artists, Anna and Anastasiia, have 15+ and 7+ years in permanent makeup, and both have been teaching PMU techniques to other artists for more than 5 years.",
-    "quote": "The salon is cozy and very clean, and you immediately feel comfortable.",
-    "quoteAuthor": "Tatiana N., Google review"
-  }
+  "defaultArtistName": "Anna"
 }
