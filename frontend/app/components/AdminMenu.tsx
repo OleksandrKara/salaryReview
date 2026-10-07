@@ -138,6 +138,7 @@ export default function AdminMenu({
   smsUnreadCount = 0,
   activeBusinessId,
   businesses,
+  platformAdmin,
 }: {
   role: Role;
   language: Language | null;
@@ -147,13 +148,36 @@ export default function AdminMenu({
   // no switcher row at all, same as before this feature existed.
   activeBusinessId?: number;
   businesses?: MeBusinessOption[];
+  platformAdmin?: boolean;
 }) {
   const pathname = usePathname();
+
+  // Deep link from Telegram alerts (2026-10-07): ?business=<id> switches a login that belongs to
+  // several businesses to the one the text came to, then reloads the same page (phone kept). The
+  // backend checks membership, so an id the user can't access is simply ignored. The parameter is
+  // removed first, so a reload can never loop.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const wanted = Number(params.get('business'));
+    if (!params.has('business')) return;
+    params.delete('business');
+    const rest = params.toString();
+    const cleanUrl = window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash;
+    window.history.replaceState(null, '', cleanUrl);
+    if (!Number.isFinite(wanted) || wanted <= 0 || wanted === activeBusinessId) return;
+    api.switchBusiness(wanted).then(
+      () => window.location.replace(cleanUrl),
+      () => undefined,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // /owner/settings/businesses (platform_admin only, per PlatformBusinessController) 403s for any
   // other OWNER — found live 2026-08-18 for AK PMU's owner, who saw the link and got a raw crash on
   // click. Same signal the switcher dropdown already uses: a non-platform-admin's `businesses`
   // always has exactly one entry (their own real membership) today, so >1 is platform_admin.
-  const isPlatformAdmin = (businesses?.length ?? 0) > 1;
+  // Since 2026-10-07 a manager of both studios also has 2 options, so /api/me says it explicitly;
+  // the old inference stays only as a fallback for a caller that didn't pass it.
+  const isPlatformAdmin = platformAdmin ?? false;
   // seo-monitoring-dashboard design.md D6: hidden entirely for a business that hasn't turned the
   // feature on. AdminMenu (unlike PageHeader) is already 'use client' and renders on every
   // authenticated page regardless of whether that page's own PageHeader call already fetched `me`

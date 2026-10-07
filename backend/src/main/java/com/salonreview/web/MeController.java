@@ -101,6 +101,9 @@ public class MeController {
         // exactly one, so the frontend renders plain text, not a dropdown, for that case).
         body.put("activeBusinessId", currentBusinessContext.id());
         body.put("businesses", switchableBusinesses(principal.getUserId()));
+        // Explicit, so the frontend no longer infers "platform admin" from having >1 business (a
+        // manager working for both studios has 2 too, 2026-10-07).
+        body.put("platformAdmin", platformAdmins.existsById(principal.getUserId()));
         return body;
     }
 

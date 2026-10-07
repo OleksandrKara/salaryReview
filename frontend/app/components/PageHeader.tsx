@@ -23,12 +23,17 @@ export default async function PageHeader({
   let l = language;
   let abid = activeBusinessId;
   let biz = businesses;
+  let platformAdmin: boolean | undefined;
   if (r === undefined) {
     const me = await serverApi.getMe();
     r = me.role;
     l = me.preferredLanguage;
     abid = me.activeBusinessId;
     biz = me.businesses;
+    platformAdmin = me.platformAdmin;
+  } else if (biz && biz.length > 1) {
+    // Only needed to tell a platform admin from a manager of two studios (both have >1 option).
+    platformAdmin = (await serverApi.getMe()).platformAdmin;
   }
   // KB requests stay OWNER-only; the SMS unread badge is now also relevant to MANAGER (see
   // openspec/changes/lead-followup-and-manager-inbox — MANAGER gets read/reply access to the
@@ -50,6 +55,7 @@ export default async function PageHeader({
         smsUnreadCount={smsUnreadCount}
         activeBusinessId={abid}
         businesses={biz}
+        platformAdmin={platformAdmin}
       />
     </div>
   );
