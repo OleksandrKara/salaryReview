@@ -11,6 +11,8 @@ public interface ConsultationFollowUpRepository extends JpaRepository<Consultati
 
     boolean existsByBusinessIdAndSquareBookingId(Long businessId, String squareBookingId);
 
+    Optional<ConsultationFollowUp> findByBusinessIdAndSquareBookingId(Long businessId, String squareBookingId);
+
     Optional<ConsultationFollowUp> findByIdAndBusinessId(Long id, Long businessId);
 
     /** Sequences still running whose consultation started after {@code since} (bounded: the last

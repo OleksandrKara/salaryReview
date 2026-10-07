@@ -103,6 +103,7 @@ class ConsultationFollowUpSchedulerTest {
         when(content.artist(eq(BIZ), any())).thenReturn(Optional.empty());
         when(content.availabilityVariationId(BIZ)).thenReturn(Optional.of(PROC_VAR));
         when(links.stopUrl(anyLong())).thenReturn("https://salon/stop?id=1&sig=x");
+        when(links.offerBookUrl(anyLong())).thenReturn("https://pmu-annakara.com/?book=procedure&offer=7.sig");
     }
 
     private ConsultationFollowUpScheduler at(Instant now) {

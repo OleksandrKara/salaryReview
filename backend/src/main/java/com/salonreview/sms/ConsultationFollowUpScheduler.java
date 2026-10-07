@@ -409,7 +409,7 @@ public class ConsultationFollowUpScheduler {
         }
         if (row.getPhoneNumber() != null) {
             TwilioSmsService.SmsSendResult sms = smsService.sendTemplated(businessId, "consultation_follow_up_offer", row.getPhoneNumber(),
-                    Map.of("name", firstName(row), "artist", artist(row), "expires", expiresText, "link", BOOK_LINK));
+                    Map.of("name", firstName(row), "artist", artist(row), "expires", expiresText, "link", links.offerBookUrl(row.getId())));
             delivered |= sms.sent();
             if (!sms.sent() && !delivered) {
                 // No marketing consent and no email: the plain last check-in instead (no discount in it).
@@ -479,7 +479,10 @@ public class ConsultationFollowUpScheduler {
         v.put("ARTIST", HtmlUtils.htmlEscape(artist(row)));
         v.put("ARTIST_PHOTO_URL", content.artist(row.getBusinessId(), row.getArtistName())
                 .map(PreVisitNurtureContent.Artist::photoUrl).orElse(""));
-        if (expiresText != null) v.put("EXPIRES", HtmlUtils.htmlEscape(expiresText));
+        if (expiresText != null) {
+            v.put("EXPIRES", HtmlUtils.htmlEscape(expiresText));
+            v.put("BOOK_URL", HtmlUtils.htmlEscape(links.offerBookUrl(row.getId())));
+        }
         return v;
     }
 

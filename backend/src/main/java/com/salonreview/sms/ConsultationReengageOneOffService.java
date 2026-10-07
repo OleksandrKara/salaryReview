@@ -71,6 +71,7 @@ public class ConsultationReengageOneOffService {
     static final Long BUSINESS_ID = 2L;
     static final String TEMPLATE_KEY = "consultation_reengage_offer";
     static final String VISIT_KIND = "reengage";
+    static final String TEST_BOOKING_ID = "TEST-PROOF";
     private static final ZoneId PACIFIC = ZoneId.of("America/Los_Angeles");
     private static final int OFFER_DAYS = 7;
     private static final DateTimeFormatter OFFER_DATE = DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.US);
@@ -105,6 +106,7 @@ public class ConsultationReengageOneOffService {
     private final PreVisitNurtureContent content;
     private final PromoConfigService promoConfigService;
     private final SameDayRebookingGroupMembershipRepository membershipRepository;
+    private final ConsultationFollowUpLinks links;
     private final Clock clock;
 
     @Autowired
@@ -120,10 +122,11 @@ public class ConsultationReengageOneOffService {
                                              MailchimpEmailTemplateService templateService,
                                              PreVisitNurtureContent content,
                                              PromoConfigService promoConfigService,
-                                             SameDayRebookingGroupMembershipRepository membershipRepository) {
+                                             SameDayRebookingGroupMembershipRepository membershipRepository,
+                                             ConsultationFollowUpLinks links) {
         this(bookingMirrorRepository, paymentMirrorRepository, customerMirrorRepository, followUpRepository,
                 providerRepository, squareClientProvider, mailchimpConfigRepository, mailchimpClient,
-                mailchimpEmailService, templateService, content, promoConfigService, membershipRepository,
+                mailchimpEmailService, templateService, content, promoConfigService, membershipRepository, links,
                 Clock.system(PACIFIC));
     }
 
@@ -140,6 +143,7 @@ public class ConsultationReengageOneOffService {
                                       PreVisitNurtureContent content,
                                       PromoConfigService promoConfigService,
                                       SameDayRebookingGroupMembershipRepository membershipRepository,
+                                      ConsultationFollowUpLinks links,
                                       Clock clock) {
         this.bookingMirrorRepository = bookingMirrorRepository;
         this.paymentMirrorRepository = paymentMirrorRepository;
@@ -154,6 +158,7 @@ public class ConsultationReengageOneOffService {
         this.content = content;
         this.promoConfigService = promoConfigService;
         this.membershipRepository = membershipRepository;
+        this.links = links;
         this.clock = clock;
     }
 
@@ -179,7 +184,20 @@ public class ConsultationReengageOneOffService {
         MailchimpConfig config = requireConfig();
         String resolved = ownerWrites ? content.artistName(BUSINESS_ID, null) : artist;
         String expires = expiresText(offerExpires());
-        String html = render("Alex", resolved, ownerWrites, expires);
+        // The proof's button carries a live personal link, so the owner can see the discount in
+        // the booking popup: a stand-in offer row for a made-up customer, already "closed"
+        // (offer_extended_at set) so closeExpiredOffers never looks it up in Square. Bookings
+        // with a test phone number never claim an offer.
+        ConsultationFollowUp proof = followUpRepository.findByBusinessIdAndSquareBookingId(BUSINESS_ID, TEST_BOOKING_ID)
+                .orElseGet(() -> ConsultationFollowUp.builder().businessId(BUSINESS_ID).squareBookingId(TEST_BOOKING_ID)
+                        .squareCustomerId(TEST_BOOKING_ID).visitKind(VISIT_KIND + "_test").consultationStartAt(clock.instant())
+                        .stopReason(ConsultationFollowUp.STOP_REENGAGE).stoppedAt(clock.instant()).build());
+        proof.setCustomerName("Alex");
+        proof.setOfferState(ConsultationFollowUp.STATE_SENT);
+        proof.setOfferExpiresAt(offerExpires());
+        proof.setOfferExtendedAt(clock.instant());
+        proof = followUpRepository.save(proof);
+        String html = render("Alex", resolved, ownerWrites, expires, links.offerBookUrl(proof.getId()));
         mailchimpEmailService.sendWinbackEmail(config, toEmail, "[TEST] " + subject("Alex"), preview(resolved, expires),
                 TEMPLATE_KEY + " TEST", html);
     }
@@ -224,7 +242,7 @@ public class ConsultationReengageOneOffService {
                         .stopReason(ConsultationFollowUp.STOP_REENGAGE)
                         .stoppedAt(clock.instant())
                         .build());
-                String html = render(c.firstName(), c.artist(), c.ownerWrites(), expiresText);
+                String html = render(c.firstName(), c.artist(), c.ownerWrites(), expiresText, links.offerBookUrl(row.getId()));
                 try {
                     mailchimpEmailService.sendWinbackEmail(config, c.email(), subject(c.firstName()), preview(c.artist(), expiresText),
                             TEMPLATE_KEY + " wave " + wave + ": booking " + c.consultationBookingId(), html);
@@ -284,6 +302,7 @@ public class ConsultationReengageOneOffService {
         Set<String> alreadySentCustomers = new HashSet<>();
         for (ConsultationFollowUp row : followUpRepository.findAll()) {
             if (!BUSINESS_ID.equals(row.getBusinessId())) continue;
+            if (TEST_BOOKING_ID.equals(row.getSquareBookingId())) continue;
             if (VISIT_KIND.equals(row.getVisitKind())) alreadySentCustomers.add(row.getSquareCustomerId());
             else sequenceCustomers.add(row.getSquareCustomerId());
         }
@@ -358,7 +377,7 @@ public class ConsultationReengageOneOffService {
 
     // --- Email -------------------------------------------------------------------------------
 
-    String render(String firstName, String artist, boolean ownerWrites, String expiresText) {
+    String render(String firstName, String artist, boolean ownerWrites, String expiresText, String bookUrl) {
         String intro = ownerWrites ? "It's " + artist + ", owner of Anna Kara's PMU Studio."
                 : "It's " + artist + " from Anna Kara's PMU Studio.";
         String opener = ownerWrites ? "You had a consultation with us a while ago, and I wanted to check in personally."
@@ -370,6 +389,7 @@ public class ConsultationReengageOneOffService {
         v.put("EXPIRES", HtmlUtils.htmlEscape(expiresText));
         v.put("INTRO", HtmlUtils.htmlEscape(intro));
         v.put("OPENER", HtmlUtils.htmlEscape(opener));
+        v.put("BOOK_URL", HtmlUtils.htmlEscape(bookUrl));
         return templateService.render(BUSINESS_ID, TEMPLATE_KEY, v)
                 .orElseThrow(() -> new IllegalStateException("No " + TEMPLATE_KEY + " template"));
     }

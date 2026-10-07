@@ -15,7 +15,7 @@ class ConsultationFollowUpTemplatesTest {
     void emailTemplatesRenderCompletely() {
         MailchimpEmailTemplateService service = new MailchimpEmailTemplateService();
         Map<String, String> vars = Map.of("FNAME", "Sarah", "ARTIST", "Anastasiia", "ARTIST_PHOTO_URL", "https://x/p.jpg",
-                "EXPIRES", "Tuesday, October 13");
+                "EXPIRES", "Tuesday, October 13", "BOOK_URL", "https://pmu-annakara.com/?book=procedure&amp;offer=1.x");
         for (String key : new String[] {"consultation_follow_up_info", "consultation_follow_up_offer"}) {
             String html = service.render(2L, key, vars).orElseThrow();
             assertThat(html).as(key).doesNotContain("{{").contains("*|UNSUB|*").doesNotContain("—");
