@@ -125,6 +125,29 @@ public final class SmsMessageTemplateCatalog {
                     ),
                     List.of("link", "sender")
             )),
+            // A/B arm of checkout_review_positive (2026-10-08, growth plan AI.7): same ask plus a hint
+            // to mention the service. Reviews that name the procedure ("my Russian manicure", "lip
+            // blush") are what Google and AI assistants quote when someone searches for that
+            // service. Never asks for a staff name (Google policy). CheckoutReviewReplyService picks
+            // this key for half of all phones, stable per phone, so the two arms' click rates can
+            // be compared by template_key.
+            Map.entry("checkout_review_positive_detail", new TemplateDefault(
+                    "checkout_review_positive_detail", "checkout_review_request", SmsMessageClass.TRANSACTIONAL,
+                    "5-star reply: ask for a Google review, mention the service (A/B)",
+                    List.of(
+                            "Yay, so happy to hear that! 🎉 Mind leaving a quick Google review? Mentioning which "
+                                    + "service you had helps others looking for the same thing find us: {{link}} -{{sender}}",
+                            "Yay!! 🎉 So glad you loved it! Would you mind dropping a quick Google review? A few words "
+                                    + "about what you had done really helps people choosing a studio: {{link}} -{{sender}}",
+                            "That makes my day! 🎉 If you have a minute, a Google review would mean the world to us. "
+                                    + "Saying which service you got helps others find it: {{link}} -{{sender}}",
+                            "So happy to hear that!! 🎉 Would you leave us a quick Google review? Mention what you came "
+                                    + "in for, it helps the next client decide: {{link}} -{{sender}}",
+                            "Love that! 🎉 Could you share it in a quick Google review? Telling people which service "
+                                    + "you had makes it so much more helpful: {{link}} -{{sender}}"
+                    ),
+                    List.of("link", "sender")
+            )),
             Map.entry("checkout_review_positive_yelp", new TemplateDefault(
                     "checkout_review_positive_yelp", "checkout_review_request", SmsMessageClass.TRANSACTIONAL,
                     "5-star reply: already reviewed on Google, ask for a Yelp review",

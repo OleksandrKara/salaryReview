@@ -95,7 +95,7 @@ class CheckoutReviewReplyServiceTest {
         sendBranchReplyAndFireDelayedTask(flow(), true);
 
         var tokenCaptor = ArgumentCaptor.forClass(String.class);
-        verify(messageLogService).logOutboundWithLink(eq(BUSINESS_ID), eq("checkout_review_positive"), eq("checkout_review_request"),
+        verify(messageLogService).logOutboundWithLink(eq(BUSINESS_ID), eq("checkout_review_positive_detail"), eq("checkout_review_request"),
                 eq(PHONE), eq(""), eq(false), eq("pending"), eq(null), eq(CheckoutReviewLinks.GOOGLE_REVIEW_TARGET),
                 tokenCaptor.capture());
         String token = tokenCaptor.getValue();
@@ -163,7 +163,7 @@ class CheckoutReviewReplyServiceTest {
         sendBranchReplyAndFireDelayedTask(flow(), true);
 
         verify(messageLogService, never()).hasClickedLinkTarget(BUSINESS_ID, PHONE, CheckoutReviewLinks.YELP_REVIEW_TARGET);
-        verify(messageLogService).logOutboundWithLink(eq(BUSINESS_ID), eq("checkout_review_positive"), eq("checkout_review_request"),
+        verify(messageLogService).logOutboundWithLink(eq(BUSINESS_ID), eq("checkout_review_positive_detail"), eq("checkout_review_request"),
                 eq(PHONE), eq(""), eq(false), eq("pending"), eq(null), eq(CheckoutReviewLinks.GOOGLE_REVIEW_TARGET), anyString());
     }
 
@@ -227,5 +227,19 @@ class CheckoutReviewReplyServiceTest {
 
         verifyNoInteractions(client);
         verify(messageLogService, never()).save(any());
+    }
+
+    @Test
+    void googleAskSplitsPhonesIntoTwoStableArms() {
+        // PHONE lands in the "mention the service" arm, the next number in the control arm; the
+        // same phone always gets the same arm.
+        assertThat(CheckoutReviewReplyService.googleAskTemplateKey(PHONE)).isEqualTo("checkout_review_positive_detail");
+        assertThat(CheckoutReviewReplyService.googleAskTemplateKey("+15551234568")).isEqualTo("checkout_review_positive");
+        assertThat(CheckoutReviewReplyService.googleAskTemplateKey(PHONE))
+                .isEqualTo(CheckoutReviewReplyService.googleAskTemplateKey(PHONE));
+        long detail = java.util.stream.IntStream.range(0, 1000)
+                .mapToObj(i -> "+1619555" + String.format("%04d", i))
+                .filter(p -> CheckoutReviewReplyService.googleAskTemplateKey(p).endsWith("_detail")).count();
+        assertThat(detail).isBetween(400L, 600L);
     }
 }
