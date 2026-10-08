@@ -77,7 +77,7 @@ public class CheckoutReviewReplyService {
                 && messageLogService.hasClickedLinkTarget(flow.getBusinessId(), flow.getPhoneNumber(), CheckoutReviewLinks.YELP_REVIEW_TARGET);
 
         String templateKey = !positive ? "checkout_review_negative"
-                : !clickedGoogle ? "checkout_review_positive"
+                : !clickedGoogle ? googleAskTemplateKey(flow.getPhoneNumber())
                 : !clickedYelp ? "checkout_review_positive_yelp"
                 : "checkout_review_positive_repeat";
 
@@ -112,6 +112,16 @@ public class CheckoutReviewReplyService {
         }
 
         taskScheduler.schedule(() -> sendNow(flow, reserved, body), Instant.now().plus(REPLY_DELAY));
+    }
+
+    /** A/B test of the Google-review ask (growth plan AI.7, started 2026-10-08): half of all phones
+     * get {@code checkout_review_positive_detail}, which also asks to mention the service. Keyed
+     * on the phone number so a regular always stays in the same arm; String#hashCode is fixed by
+     * the Java spec, so the split survives restarts and deploys. Compare the arms by
+     * sms_message.template_key: sent vs. clicked_at. */
+    static String googleAskTemplateKey(String phoneNumber) {
+        return Math.floorMod(String.valueOf(phoneNumber).hashCode(), 2) == 1
+                ? "checkout_review_positive_detail" : "checkout_review_positive";
     }
 
     private void sendNow(SmsReplyFlow flow, SmsMessage reserved, String body) {
