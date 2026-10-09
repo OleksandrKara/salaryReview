@@ -14,23 +14,20 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        # pgvector image (official postgres:16 + the vector extension) so Flyway V22 can
-        # CREATE EXTENSION vector during the migration run. Matches docker-compose.yml.
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_DB: salonreview
-          POSTGRES_USER: salon
-          POSTGRES_PASSWORD: salon
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U salon -d salonreview"
-          --health-interval 5s --health-timeout 5s --health-retries 12
+    # PostgreSQL 16 is preinstalled on this runner. Install pgvector on the host instead of
+    # pulling the test image from Docker Hub, whose anonymous rate limit can block CI startup.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+
+      - name: Start PostgreSQL 16 with pgvector
+        run: |
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-16-pgvector
+          sudo systemctl start postgresql
+          sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE USER salon WITH PASSWORD 'salon'"
+          sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE salonreview OWNER salon"
+          PGPASSWORD=salon psql -h localhost -U salon -d salonreview -v ON_ERROR_STOP=1 -c 'SELECT 1'
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
