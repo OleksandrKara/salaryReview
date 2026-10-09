@@ -153,6 +153,7 @@ public class FunnelAnalyticsRepository {
                 """
                 SELECT variant_id, COUNT(*) AS completed FROM marketing.attribution a
                 WHERE a.landing_page_id = ? AND a.variant_id IS NOT NULL
+                  AND a.booking_id NOT LIKE 'four-hand-request-%'
                   AND (?::timestamptz IS NULL OR a.created_at >= ?)
                   AND (?::timestamptz IS NULL OR a.created_at < ?)
                   AND %s
