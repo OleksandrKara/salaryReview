@@ -25,7 +25,9 @@ jobs:
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y postgresql-16-pgvector
           sudo systemctl start postgresql
-          sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE USER salon WITH PASSWORD 'salon'"
+          # POSTGRES_USER in the former service image was a superuser; Flyway V22 needs
+          # the same privilege to CREATE EXTENSION vector in this isolated CI database.
+          sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE USER salon WITH SUPERUSER PASSWORD 'salon'"
           sudo -u postgres psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE salonreview OWNER salon"
           PGPASSWORD=salon psql -h localhost -U salon -d salonreview -v ON_ERROR_STOP=1 -c 'SELECT 1'
 
