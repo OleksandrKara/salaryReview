@@ -214,6 +214,7 @@ public class MarketingDashboardRepository {
                   SELECT a.variant_id, a.booking_id, a.created_at
                   FROM marketing.attribution a
                   WHERE a.landing_page_id = ?
+                    AND a.booking_id NOT LIKE 'four-hand-request-%'
                     AND (?::timestamptz IS NULL OR a.created_at >= ?)
                     AND (?::timestamptz IS NULL OR a.created_at < ?)
                   """
@@ -221,6 +222,7 @@ public class MarketingDashboardRepository {
                   SELECT a.variant_id, a.booking_id, a.created_at
                   FROM marketing.attribution a
                   WHERE a.landing_page_id = ?
+                    AND a.booking_id NOT LIKE 'four-hand-request-%'
                     AND (?::timestamptz IS NULL OR a.created_at >= ?)
                     AND (?::timestamptz IS NULL OR a.created_at < ?)
                     AND EXISTS (
