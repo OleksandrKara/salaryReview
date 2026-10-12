@@ -1157,6 +1157,34 @@ public class SquareClient {
         return result;
     }
 
+    /** Fresh segment ids for many customers in Square's own batch endpoint (100 per request), not
+     * one GET per customer. 2026-10-12: the Marketing Contacts list asked Square for each of ~275
+     * contacts' consent segment one by one, ~14s per cold load. Not served from {@code
+     * customerCache} on purpose: segment membership (SMS consent) can change, names can't.
+     * Missing for any id Square can't resolve; a failed chunk just leaves its ids missing. */
+    public Map<String, List<String>> customerSegmentIdsFresh(Collection<String> customerIds) {
+        List<String> ids = customerIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
+        Map<String, List<String>> result = new HashMap<>();
+        for (int i = 0; i < ids.size(); i += 100) {
+            List<String> chunk = ids.subList(i, Math.min(i + 100, ids.size()));
+            try {
+                BulkRetrieveCustomersResponse resp = throttled(() -> http.post().uri("/v2/customers/bulk-retrieve")
+                        .body(Map.of("customer_ids", chunk)).retrieve().body(BulkRetrieveCustomersResponse.class));
+                if (resp == null || resp.responses() == null) continue;
+                resp.responses().forEach((id, r) -> {
+                    if (r != null && r.customer() != null) {
+                        result.put(id, r.customer().segmentIds() == null ? List.of() : r.customer().segmentIds());
+                    }
+                });
+            } catch (RuntimeException ignored) {
+                // best-effort, same as every other read here
+            }
+        }
+        return result;
+    }
+
+    public record BulkRetrieveCustomersResponse(Map<String, CustomerResponse> responses) {}
+
     /** Adds a customer to a Square customer group — used to enroll a customer in the same-day-
      * rebooking auto-discount group (see design.md D7). Uncached, mutating; throws on failure so
      * the caller (the internal enroll endpoint) can decide how to report it, rather than silently
