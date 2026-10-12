@@ -79,4 +79,13 @@ class PageComponentExtractorTest {
         assertThat(r.components().get(Component.FAQ).evidence()).isEqualTo("3 question headings");
         assertThat(PageComponentExtractor.schemaTypes(p.jsonLd().get(0))).containsExactly("beautysalon", "localbusiness");
     }
+
+    @Test
+    void addressWithMapsLinkCountsWithoutPhone() {
+        var p = new PageSnapshot(List.of(), List.of(), List.of(), List.of(), List.of("Get directions|https://maps.app.goo.gl/abc"),
+                "Visit us at 1357 Seventh Ave, Ste C, San Diego, CA 92101");
+        assertThat(PageComponentExtractor.extract(p).components().get(Component.MAP_NAP).present()).isTrue();
+        var noLink = new PageSnapshot(List.of(), List.of(), List.of(), List.of(), List.of(), "Visit us at 1357 Seventh Ave, San Diego");
+        assertThat(PageComponentExtractor.extract(noLink).components().get(Component.MAP_NAP).present()).isFalse();
+    }
 }

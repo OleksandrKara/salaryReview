@@ -123,8 +123,11 @@ public final class PageComponentExtractor {
         Matcher am = ADDRESS.matcher(text);
         boolean address = am.find();
         boolean phone = PHONE.matcher(text).find();
+        // A Google/Apple Maps link next to the address counts too (akluxnails.com shows the address
+        // with a "Get directions" link and no phone number on the homepage).
+        boolean mapLink = p.links().stream().anyMatch(l -> l.matches("(?i).*(google\\.[a-z.]+/maps|maps\\.app\\.goo\\.gl|goo\\.gl/maps|maps\\.apple\\.com).*"));
         out.put(Component.MAP_NAP, map != null ? new Found(true, "Google Maps embed")
-                : address && phone ? new Found(true, "Address: " + snippet(text, am.start(), am.end())) : absent());
+                : address && (phone || mapLink) ? new Found(true, "Address: " + snippet(text, am.start(), am.end())) : absent());
 
         // BUSINESS_SCHEMA
         String bizType = types.stream().filter(BUSINESS_TYPES::contains).findFirst().orElse(null);
