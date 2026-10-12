@@ -49,6 +49,18 @@ that raises consistency.
   alerts, no daily messages (owner choice 2026-10-12).
 - **Budget guard**: a monthly spend cap per business (default $8, about 2.5x the expected spend);
   the run stops before a call that would exceed it and says so in the digest.
+- **Page comparison (what competitors' pages have and ours lack)**: each question gets a target
+  page on our site (seeded by Claude, editable). Once a month the system fetches our target pages
+  and the competitor pages the AI engines cited or named for the same questions, and detects a
+  fixed list of page components (before/after photos, FAQ, visible prices, reviews on the page,
+  stated rating, artist bio and years of experience, process steps, aftercare, video, booking
+  button, financing, map and address, schema types, press mentions, guarantee/touch-up policy,
+  update date, word count). A component that most competitor pages for a question have and our
+  target page lacks becomes a **page gap**, shown per question and in a summary panel, and the top
+  gaps go into the weekly digest. Fetching is done by our own server (free), with DataForSEO
+  On-Page as a cheap fallback for pages that block plain requests.
+- **Competitor shortcut**: a place AI names often can be added to the existing SEO competitor list
+  in one click (that list already tracks competitor PageSpeed).
 - **Internal read endpoint** (`X-Internal-Api-Key`) returning the same summary as JSON, so Claude
   can analyze the data from the server without the UI.
 - **Retire the VPS scripts' AI parts** once the backend run has 2 clean weeks: remove the
@@ -60,7 +72,8 @@ that raises consistency.
 Measured 2026-10-12 on real calls: ChatGPT (chatgpt.com scraper) $0.004, Google AI Mode $0.004,
 Perplexity (sonar) $0.004, Gemini (gemini-3.5-flash) $0.03, Claude (claude-haiku-4-5) $0.024 per
 question. 40 questions (20 × 2 businesses) × 5 engines weekly is about $2.64 per run, about
-$11.50 per month for both businesses.
+$11.50 per month for both businesses. Page comparison adds almost nothing: direct fetches are free,
+the On-Page fallback costs $0.00015-0.0015 per page (measured), capped at 40 pages per business per month.
 
 ## Non-goals
 
@@ -69,6 +82,10 @@ $11.50 per month for both businesses.
 - No automatic changes to either website. Tasks Claude picks from this data go through the normal
   PR flow, and pmu-annakara.com work stays under GROWTH_PLAN.md section 0 (no rewrites of
   protected pages, small batches, owner sees text first).
+- Page gaps are suggestions, never automatic edits. Filling a gap must use real material only
+  (real before/after photos with client consent, FAQ answers from facts the owner confirmed, real
+  reviews), and on pmu-annakara.com only as additions under GROWTH_PLAN.md section 0.
+- No copying of competitor text; only the presence of components is compared.
 - No LLM-based answer analysis (mention detection, competitor and citation extraction are
   deterministic parsing, so a check costs only the DataForSEO call).
 - No public sharing of the AI tab, no per-staff access (OWNER only).

@@ -44,6 +44,7 @@ CREATE TABLE ai_visibility_settings (
   location_hint TEXT NOT NULL,          -- 'San Diego,California,United States'
   monthly_budget_usd NUMERIC(8,2) NOT NULL DEFAULT 8.00,
   digest_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  -- (V167 also adds ai_visibility_page, see D10)
   next_actions TEXT,                    -- 1-3 lines Claude sets weekly via the internal API (D8)
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
 
@@ -52,6 +53,7 @@ CREATE TABLE ai_visibility_query (
   business_id BIGINT NOT NULL REFERENCES business(id),
   query_text TEXT NOT NULL,
   topic TEXT,                           -- 'brows','lips','russian manicure'... (grouping in UI + digest)
+  target_url TEXT,                      -- our page meant to win this question (D10)
   status TEXT NOT NULL CHECK (status IN ('PROPOSED','ACTIVE','PAUSED','REMOVED')),
   sort_order INT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -160,6 +162,11 @@ method is `...AndBusinessId`):
 - `POST /api/owner/marketing/ai/queries` (add, max 20 ACTIVE + PROPOSED combined per business),
   `PATCH /api/owner/marketing/ai/queries/{id}` (text, topic, status, sort), `POST
   .../queries/{id}/recheck`, `POST .../queries/approve-all` (PROPOSED → ACTIVE).
+- `GET /api/owner/marketing/ai/queries/{id}/pages` → page comparison for one question (D10);
+  `POST .../queries/{id}/pages/refresh` (once per question per day);
+  `GET /api/owner/marketing/ai/page-gaps` → rolled-up gaps; `POST
+  /api/owner/marketing/ai/competitors` → adds a named place to the existing `seo_competitor` list
+  (business-scoped, reuses `SeoCompetitorService.addCompetitor`).
 - `GET/PUT /api/owner/settings/ai-visibility` (aliases, domains, budget, digest on/off).
 Internal: `GET /api/internal/ai-visibility/{businessId}/summary` (`X-Internal-Api-Key`) returns
 the overview JSON + last 8 weeks of checks, for Claude's analysis from the server, and
@@ -222,6 +229,84 @@ V167 seeds `ai_visibility_settings` for businesses 1 and 2 (aliases, domains, bu
 `PROPOSED` questions each (see tasks.md 1.3), so the owner only approves. `ai-visibility.enabled`
 is seeded `false`; it is turned on per business after deploy.
 
+## D10. Page comparison (component gaps)
+
+Goal (owner, 2026-10-12, from the InWeb session): besides "which source cites the competitor",
+compare what the competitor's page contains that ours does not (a before/after block, an FAQ, ...)
+and add the missing parts to our pages.
+
+**Target page per question.** `ai_visibility_query.target_url` (nullable, our page meant to win the
+question). Seeded in V167 (for example russian manicure → `https://akluxnails.com/`, pedicure →
+`/russian-pedicure`, extensions → `/gel-nail-extensions`, PMU brows → `/microblading-san-diego/`,
+lips → `/permanent-makeup-lips/`, scar → `/scar-camouflage/`). The UI suggests the page with the
+most Search Console clicks for similar queries when it is empty.
+
+**Which competitor pages.** From the last 4 weeks of OK checks for that question: cited URLs whose
+domain is not ours and not a directory/list site (directories such as yelp.com, expertise.com,
+sayheysandiego.com are tracked as *source gaps*, D5), plus the website of a place named in the
+answer when it matches a `seo_competitor.website`. Up to 5 competitor pages per question, most
+frequently cited first. Gemini redirect URLs are resolved with a HEAD request.
+
+**Fetching** (`PageFetcher`): monthly, the first Monday of the month right after the AI run
+(ShedLock), and on demand from the UI (once per question per day). Plain GET with a normal
+browser User-Agent, 15s timeout, robots.txt respected, max 1 request per domain per 2 seconds,
+cached per URL for 28 days by content hash. If the fetch fails or returns an empty JS shell (less
+than 300 visible words), fall back to DataForSEO On-Page `instant_pages` with a `custom_js` that
+returns a compact JSON of exactly what the extractor needs (JSON-LD blocks, headings, image
+src/alt, iframe/video sources, link texts and hrefs, visible text). Measured 2026-10-12 on
+thebeaupmu.com, which answered our plain request with 429: $0.00015 per page without JS
+rendering, $0.0015 with it (used only when the first try returns an empty shell). The extractor
+works on either input (jsoup DOM or that JSON). Hard cap 40 fetched pages per business per month, counted toward the same budget guard.
+
+**Extraction** (`PageComponentExtractor`, jsoup, deterministic, unit-tested on saved HTML). Each
+component is `present / absent` plus a short evidence string (the heading or selector that matched):
+
+| Component | Detected when |
+|---|---|
+| BEFORE_AFTER | ≥ 2 images whose alt/filename/caption or nearest heading contains "before"/"after", or a comparison slider |
+| FAQ | `FAQPage` schema, or a heading with "FAQ"/"Questions" followed by ≥ 3 question-style items |
+| PRICES | ≥ 2 dollar amounts near service names, or `Offer`/`PriceSpecification` schema |
+| REVIEWS_ON_PAGE | `Review`/`AggregateRating` schema or a testimonials block with ≥ 2 quotes |
+| RATING_STATED | text like "4.9 stars", "5.0 (120 reviews)" |
+| ARTIST_BIO | `Person` schema or a section about the artist with years of experience/certifications |
+| PROCESS_STEPS | heading "process"/"how it works"/"what to expect" + ordered list or ≥ 3 step headings |
+| AFTERCARE | heading or section with "aftercare"/"healing" |
+| VIDEO | `<video>` or YouTube/Vimeo/Instagram embed |
+| BOOKING_CTA | link or button to a booking flow (book/schedule/consultation) in the first screen of HTML |
+| FINANCING | "financing", "payment plan", "Cherry", "Afterpay", "Klarna" |
+| MAP_NAP | map embed or full street address + phone on the page |
+| SCHEMA_TYPES | list of JSON-LD `@type`s (LocalBusiness/HealthAndBeautyBusiness, FAQPage, Review, Service, BreadcrumbList) |
+| PRESS | "as featured in"/"as seen on" block or press logos |
+| GUARANTEE | "guarantee", "touch-up included", "free correction" |
+| UPDATED_DATE | visible "updated" date or `dateModified` |
+| Metrics | word count, H2 count, image count, list of H2 texts (for the History view only) |
+
+Storage: `ai_visibility_page` (business_id, url, is_own, last_fetched_at, http_status,
+fetch_method DIRECT/ONPAGE, content_hash, components JSONB, metrics JSONB, error). One row per URL,
+overwritten on refetch, plus `components_history` JSONB keeping the last 6 snapshots (enough to
+see "competitor added an FAQ in March"). Added to V167.
+
+**Gap rule** (computed on read, no table): for a question, a component is a gap when our target
+page lacks it and at least 2 of the fetched competitor pages for that question have it (or 1 of 1
+when only one competitor page exists, shown as "weak"). Gaps across questions are rolled up per our
+target page: "`/russian-pedicure`: FAQ missing (4 of 5 competitor pages have it, affects 3
+questions)".
+
+**UI**: in the History sheet, a "Page comparison" tab: rows = components, columns = our page + up to
+5 competitor pages, ✓/✗ cells with evidence on tap, competitor URL headers linked. On the AI tab, a
+"Page gaps" panel ranked by (questions affected × competitor share), each with the target page and
+the "how to fill it honestly" hint (for example BEFORE_AFTER: "real photos with client consent";
+FAQ: "answers from confirmed facts").
+
+**Digest**: at most 2 lines, for example "Чего не хватает на наших страницах: FAQ на
+/russian-pedicure (есть у 4 из 5 конкурентов, 3 запроса)". Only on the first Monday of the month,
+after the refetch, so the line is not repeated weekly.
+
+**Guardrails**: only component presence is compared; competitor text is never stored beyond H2
+texts and the 1-line evidence. Filling a gap is a task for Claude through a normal PR; on
+pmu-annakara.com it follows GROWTH_PLAN.md section 0 (additive blocks, owner sees the text first,
+max 3-5 pages per week, real photos and facts only).
+
 ## Risks
 
 - **Answer variance**: LLM answers vary between runs. Weekly single samples make consistency
@@ -232,5 +317,11 @@ is seeded `false`; it is turned on per business after deploy.
   neighborhood.
 - **Parser drift**: DataForSEO response shape changes would show as many `places_named = []`.
   The digest flags a run where more than half of OK checks have no places named.
+- **Blocked fetches**: some competitor sites block bots (Cloudflare). The On-Page fallback covers
+  most; a page that still fails is shown as "not readable", never counted as missing components.
+- **Detection errors**: heuristics can miss a component (an FAQ built as an accordion with no
+  headings). Evidence strings make each ✓ checkable, and the gap rule needs 2 competitor pages, so
+  one misread page does not create a gap by itself. Extractor fixtures grow with each false
+  reading found.
 - **Cost drift**: per-engine cost is stored per check; the budget guard caps any surprise at $8 per
   business per month.

@@ -148,3 +148,38 @@ The system SHALL expose `GET /api/internal/ai-visibility/{businessId}/summary` a
 #### Scenario: Missing key
 - **WHEN** the summary endpoint is called without a valid internal API key
 - **THEN** the response is 401 and no data is returned
+
+### Requirement: Page component comparison against competitors
+For each active question with a target page, the system SHALL, monthly and on owner request (once
+per question per day), fetch our target page and up to 5 competitor pages that the engines cited or
+named for that question in the last 4 weeks, detect the fixed component list from design.md D10
+with an evidence string per detected component, and SHALL report a component as a gap when our
+target page lacks it and at least 2 fetched competitor pages for that question have it. Directory
+and list sites are not compared as pages; they stay in the cited-sources list. Fetching SHALL
+respect robots.txt and count toward the monthly budget and a cap of 40 fetched pages per business
+per month.
+
+#### Scenario: FAQ gap on a target page
+- **WHEN** our `/russian-pedicure` page has no FAQ and 4 of the 5 competitor pages fetched for
+  "best place for a Russian pedicure in San Diego" have one
+- **THEN** the question's page comparison shows FAQ ✗ for our page and ✓ for those 4 with their
+  evidence, and the Page gaps panel lists "FAQ missing on /russian-pedicure (4 of 5)"
+
+#### Scenario: One competitor page only
+- **WHEN** only one competitor page could be fetched for a question and it has a before/after block
+  that our page lacks
+- **THEN** the gap is shown marked "weak" and is not included in the digest
+
+#### Scenario: Page blocks requests
+- **WHEN** a competitor page returns 403/429 to a direct fetch and the On-Page fallback also fails
+- **THEN** that page is shown as "not readable" and none of its components count toward gaps
+
+#### Scenario: Monthly digest line
+- **WHEN** the first scheduled run of a calendar month finishes after the monthly page refresh
+- **THEN** the digest includes at most 2 lines with the largest page gaps; later weekly digests that
+  month do not repeat them
+
+#### Scenario: Competitor shortcut
+- **WHEN** the owner presses "Add to competitors" on a place from the "instead" list
+- **THEN** a `seo_competitor` row is created for the current business only, and the SEO tab starts
+  tracking its PageSpeed with the existing weekly sync

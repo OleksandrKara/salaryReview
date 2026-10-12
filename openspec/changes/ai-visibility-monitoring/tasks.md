@@ -79,12 +79,31 @@
 - [ ] 5.3 `InternalAiVisibilityController` (summary GET, next-actions PUT, `X-Internal-Api-Key`)
 - [ ] 5.4 SecurityConfig: `/api/owner/marketing/ai/**`, `/api/owner/settings/ai-visibility` → OWNER
 
+## 5b. Backend: page comparison (design.md D10)
+
+- [ ] 5b.1 V167 also: `ai_visibility_query.target_url`, table `ai_visibility_page`; seed target URLs
+      for the 40 seeded questions (Claude picks from GSC top pages per topic)
+- [ ] 5b.2 `PageFetcher`: direct GET (robots.txt, per-domain throttle, 28-day cache by content hash),
+      DataForSEO `on_page/instant_pages` fallback with the compact-JSON `custom_js`, JS rendering
+      only for empty shells; 40 pages/business/month cap + budget guard
+- [ ] 5b.3 `PageComponentExtractor` (jsoup DOM or fallback JSON → components + evidence + metrics);
+      fixtures: saved HTML of our own pages and 3-4 public competitor pages, edge cases (accordion
+      FAQ, slider before/after, JS shell)
+- [ ] 5b.4 Competitor page selection per question (cited non-directory URLs + named places matching
+      `seo_competitor.website`, Gemini redirects resolved by HEAD, directory domain list in config)
+- [ ] 5b.5 Monthly refresh in the first Monday run after the AI checks; on-demand refresh endpoint
+      (once per question per day)
+- [ ] 5b.6 Gap computation on read + roll-up per target page; endpoints `queries/{id}/pages`,
+      `queries/{id}/pages/refresh`, `page-gaps`, `competitors` (D6)
+
 ## 6. Backend: weekly digest
 
 - [ ] 6.1 `AiVisibilityDigestService`: builds the D8 message (Russian, no em-dashes) from the run
       just finished vs the previous run; sends through the business's Telegram config; skipped
       when `digest_enabled = false` or the run has 0 OK checks; flags "parser drift" when more than
       half of OK checks have no places named
+- [ ] 6.1b First-Monday digest: up to 2 page-gap lines (non-weak gaps, ranked by questions affected ×
+      competitor share)
 - [ ] 6.2 Called at the end of each SCHEDULED run (not for re-checks)
 
 ## 7. Frontend
@@ -99,12 +118,18 @@
       lazy-loaded
 - [ ] 7.5 Suggested-questions block (Approve / Edit / Remove / Approve all), add-question field with
       20-limit counter, Re-check button with pending state and the 409 message
+- [ ] 7.5b History sheet "Page comparison" tab (components × our page + up to 5 competitor pages,
+      ✓/✗ with evidence on tap, "not readable" state, Refresh button); target page field per question
+- [ ] 7.5c "Page gaps" panel on the AI tab with the honest-fill hint per component; "Add to
+      competitors" button in the "instead" list
 - [ ] 7.6 Settings card (aliases, domains, budget, digest on/off) on the existing owner settings page
 
 ## 8. Tests and verification
 
 - [ ] 8.1 Unit: parser per engine, mention detector edge cases, consistency math (n < 3 hides %),
       budget guard, engine-skip after 3 failures, digest text (snapshot, no em-dash)
+- [ ] 8.1b Unit: extractor per component on fixtures, gap rule (2-of-N, weak 1-of-1, unreadable pages
+      excluded), fetch cap, robots.txt disallow respected
 - [ ] 8.2 Integration (Testcontainers pgvector/pgvector:pg16): stubbed client run for 2 businesses,
       rows scoped per business; cross-tenant PATCH/recheck → 404; feature off → 404; internal
       endpoints without key → 401
@@ -127,5 +152,6 @@
       businesses, pick 1-3 tasks that target the biggest gaps (an engine where we are missing on many
       questions, a source cited often where we are absent, a competitor named often), set
       `next-actions`, record them in `~/business-growth/GROWTH_PLAN.md`; PMU site work only within
-      GROWTH_PLAN.md section 0. Claude has no durable scheduler of its own, so this runs in the Monday
+      GROWTH_PLAN.md section 0. Page gaps feed the same routine: a gap is filled only with real
+      material (consented before/after photos, owner-confirmed facts for FAQ, real reviews). Claude has no durable scheduler of its own, so this runs in the Monday
       session (or via the persistent claude-persist session if the owner wants it automatic)
