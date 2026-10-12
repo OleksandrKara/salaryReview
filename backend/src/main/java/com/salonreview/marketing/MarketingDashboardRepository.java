@@ -159,6 +159,7 @@ public class MarketingDashboardRepository {
                     WHERE e.event_type = 'page_view' AND (?::timestamptz IS NULL OR e.created_at >= ?)
                       AND (?::timestamptz IS NULL OR e.created_at < ?)
                       AND %1$s
+                      AND %3$s
                     GROUP BY e.variant_id
                 ) pv ON pv.variant_id = v.id
                 LEFT JOIN (
@@ -180,7 +181,7 @@ public class MarketingDashboardRepository {
                 ) bc ON bc.variant_id = v.id
                 WHERE v.landing_page_id = ?
                 ORDER BY v.created_at ASC
-                """.formatted(pageViewFilter, contactFilterC);
+                """.formatted(pageViewFilter, contactFilterC, TrafficSourceSql.notAutomated("e.session_id"));
         Timestamp cutoff = statsSince == null ? null : Timestamp.from(statsSince);
         Timestamp to = periodTo == null ? null : Timestamp.from(periodTo);
         return jdbcTemplate.query(sql, (rs, rowNum) -> new RawVariantStat(

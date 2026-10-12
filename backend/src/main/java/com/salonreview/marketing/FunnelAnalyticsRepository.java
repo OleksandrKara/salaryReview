@@ -126,8 +126,10 @@ public class FunnelAnalyticsRepository {
                   AND (?::timestamptz IS NULL OR e.created_at >= ?)
                   AND (?::timestamptz IS NULL OR e.created_at < ?)
                   AND %s
+                  AND %s
                 GROUP BY variant_id
-                """.formatted(all ? "TRUE" : TrafficSourceSql.visitInSources("e.session_id", sources)),
+                """.formatted(all ? "TRUE" : TrafficSourceSql.visitInSources("e.session_id", sources),
+                        TrafficSourceSql.notAutomated("e.session_id")),
                 rs -> { result.put((UUID) rs.getObject("variant_id"), rs.getLong("visits")); },
                 landingPageId, cutoff, cutoff, to, to);
         return result;
