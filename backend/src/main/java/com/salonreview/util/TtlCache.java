@@ -32,6 +32,14 @@ public final class TtlCache {
         return value;
     }
 
+    /** Recomputes and replaces one entry; readers keep getting the previous value until this
+     * finishes (no gap where the entry is missing). For background cache warmers. */
+    public <T> T refresh(String key, Duration ttl, Supplier<T> loader) {
+        T value = loader.get();
+        entries.put(key, new Entry<>(value, System.nanoTime() + ttl.toNanos()));
+        return value;
+    }
+
     /** Drops every cached response — for a mutation within the owning service that should be
      * visible immediately rather than after the TTL, where every cached entry (regardless of
      * which business it belongs to) is genuinely affected. */

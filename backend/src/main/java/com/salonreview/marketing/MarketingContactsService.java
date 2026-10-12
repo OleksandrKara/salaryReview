@@ -370,6 +370,12 @@ public class MarketingContactsService {
         return cache.get(CONTACTS_CACHE_KEY_PREFIX + currentBusinessContext.id(), CACHE_TTL, this::computeContacts);
     }
 
+    /** Recomputes the cached contacts list for the current business (see ContactsCacheWarmer),
+     * so the owner opening the Contacts tab gets a warm cache instead of a multi-second rebuild. */
+    public void warmContactsCache() {
+        cache.refresh(CONTACTS_CACHE_KEY_PREFIX + currentBusinessContext.id(), CACHE_TTL, this::computeContacts);
+    }
+
     private MarketingContactDto computeContacts() {
         try {
             // Computed once up front (a single query against our own DB, no Square round trip)
