@@ -259,7 +259,7 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
 
       <PageGapsPanel />
 
-      <section className="grid gap-4 md:grid-cols-2">
+      <section className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
         <RankedList title="Who AI recommends instead" hint="Places named on questions where we were missing (last 4 weeks)" items={data.placesInstead} canAddCompetitor={canEdit} />
         <RankedList title="Sources AI reads where we're missing" hint="Sites cited in those answers: get listed or mentioned there" items={data.sourcesInstead} />
       </section>
@@ -423,7 +423,7 @@ function PageGapsPanel() {
 
 function RankedList({ title, hint, items, canAddCompetitor = false }: { title: string; hint: string; items: AiRanked[]; canAddCompetitor?: boolean }) {
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-3 sm:p-4">
+    <div className="min-w-0 rounded-lg border border-zinc-200 bg-white p-3 sm:p-4">
       <h2 className="text-sm font-semibold text-zinc-900">{title}</h2>
       <p className="text-xs text-zinc-500">{hint}</p>
       {items.length === 0 ? (
@@ -593,8 +593,8 @@ function PageComparison({ queryId, canEdit }: { queryId: number; canEdit: boolea
                 <th className="sticky left-0 bg-white pr-2 text-left font-medium text-zinc-500" />
                 {cols.map((c) => (
                   <th key={c.url} className="px-1.5 pb-1 text-left align-bottom font-medium">
-                    <a href={c.url} target="_blank" rel="noreferrer" className={`block max-w-[7rem] truncate ${c.own ? 'text-emerald-800' : 'text-zinc-700'} hover:underline`} title={c.url}>
-                      {c.own ? 'Our page' : hostOf(c.url)}
+                    <a href={c.url} target="_blank" rel="noreferrer" className="block max-w-[7rem] truncate hover:underline" title={c.url}>
+                      <span className={c.own ? 'text-emerald-800' : 'text-zinc-700'}>{c.own ? 'Our page' : hostOf(c.url)}</span>
                     </a>
                     <span className="block text-[10px] font-normal text-zinc-400">
                       {!c.lastFetchedAt ? 'not fetched yet' : !c.readable ? 'not readable' : !c.own && !c.businessPage ? 'not a business page' : fmtDate(c.lastFetchedAt)}
