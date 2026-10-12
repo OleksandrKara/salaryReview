@@ -159,6 +159,21 @@ class LeadFollowUpSchedulerTest {
     }
 
     @Test
+    @DisplayName("lead already texted us in the last 24h → skipped, no nudge on top of the conversation")
+    void skipsWhenLeadAlreadyTextedUs() {
+        RawContact c = contact(UUID.randomUUID(), "Jane", "cust1");
+        givenPending(c);
+        when(contactsRepository.textedUsSince(eq(PHONE), eq(BUSINESS_ID), any())).thenReturn(true);
+
+        scheduler.sendDueFollowUps();
+
+        verifyNoInteractions(smsService);
+        ArgumentCaptor<LeadFollowUpSend> captor = ArgumentCaptor.forClass(LeadFollowUpSend.class);
+        verify(sendRepository).save(captor.capture());
+        assertThat(captor.getValue().getState()).isEqualTo(LeadFollowUpSend.STATE_SKIPPED_RECENTLY_SENT);
+    }
+
+    @Test
     @DisplayName("cancelled booking only → not treated as upcoming, still sends")
     void cancelledBookingDoesNotCountAsUpcoming() {
         RawContact c = contact(UUID.randomUUID(), "Jane", "cust1");
