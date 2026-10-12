@@ -19,7 +19,7 @@ class SquarePaymentWebhookHandlerTest {
         var money = new SquareClient.Money(10000L, "USD");
         var tip = new SquareClient.Money(1500L, "USD");
         var webhookPayment = new SquareWebhookEvent.Payment("pay1", "COMPLETED", "order1", "CUST1",
-                "2026-06-01T16:00:00Z", money, tip);
+                "2026-06-01T16:00:00Z", money, tip, null);
 
         handler.handlePaymentEvent(1L, webhookPayment);
 
@@ -49,7 +49,7 @@ class SquarePaymentWebhookHandlerTest {
     void ingestFailureIsSwallowedNotPropagated() {
         SquareBookingMirrorIngestService ingest = mock(SquareBookingMirrorIngestService.class);
         SquarePaymentWebhookHandler handler = new SquarePaymentWebhookHandler(ingest);
-        var webhookPayment = new SquareWebhookEvent.Payment("pay1", "COMPLETED", "order1", "CUST1", null, null, null);
+        var webhookPayment = new SquareWebhookEvent.Payment("pay1", "COMPLETED", "order1", "CUST1", null, null, null, null);
         org.mockito.Mockito.doThrow(new RuntimeException("DB down"))
                 .when(ingest).upsertPayment(eq(1L), org.mockito.ArgumentMatchers.any());
 
