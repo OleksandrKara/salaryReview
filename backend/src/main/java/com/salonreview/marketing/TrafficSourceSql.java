@@ -35,6 +35,26 @@ final class TrafficSourceSql {
     /** Every recognized bucket — the full "All traffic" set. */
     static final Set<String> ALL = Set.of(META_ADS, GOOGLE_ADS, INSTAGRAM_ORGANIC, GOOGLE_ORGANIC, DIRECT);
 
+    /**
+     * Page views to leave out of every dashboard denominator: visits from self-declared scanners
+     * and from three AWS EC2 hosts proven to be automated (2026-10-12: ~2,300 homepage "visits" in
+     * two weeks, Chrome/113, a new cookie every hit, zero funnel events). The site stops recording
+     * such traffic from 2026-10-12 (akluxnails-home lib/requestContext.ts, same UA list); this
+     * filter cleans the history without deleting rows. {@code sessionIdExpr} is the event's
+     * session_id, which on these sites is the visitor cookie (= marketing.visits.visitor_id).
+     */
+    static String notAutomated(String sessionIdExpr) {
+        return "NOT EXISTS (SELECT 1 FROM marketing.visits bv WHERE bv.visitor_id = " + sessionIdExpr
+                + " AND (bv.user_agent ~* '" + AUTOMATED_UA_REGEX + "' OR bv.ip_address IN (" + PROVEN_AUTOMATED_IPS + ")))";
+    }
+
+    static final String AUTOMATED_UA_REGEX =
+            "^wget|^curl/|headlesschrome|python-requests|go-http-client|flowiqlabsbot|software security research"
+                    + "|chatgpt-user|paloaltonetworks|palo alto networks|censysinspect|zgrab|facebookexternalhit"
+                    + "|^mozilla/5\\.0( \\(compatible\\))?$";
+
+    static final String PROVEN_AUTOMATED_IPS = "'3.139.178.29', '18.220.161.95', '18.220.214.226'";
+
     /** Default ("Ads only") selection — mani runs ads, so this is the more useful default view there. */
     static final Set<String> ADS_ONLY = Set.of(META_ADS, GOOGLE_ADS);
 
