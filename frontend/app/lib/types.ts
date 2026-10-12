@@ -1034,6 +1034,8 @@ export interface Features {
   // seo-monitoring-dashboard design.md D6: whether /owner/marketing/seo + /owner/settings/seo
   // should render at all for this business — purely business-gated, no deployment-level flag.
   seoMonitoringEnabled: boolean;
+  // ai-visibility-monitoring: whether the AI tab (/owner/marketing/ai) renders for this business.
+  aiVisibilityEnabled: boolean;
   // seo-intelligence-advisor Phase 6: whether the "Analyze SEO" advisor section renders within
   // the already-gated SEO tab — both deployment-level AND business-gated (unlike seoMonitoringEnabled
   // above, since this one calls Claude).
@@ -2443,3 +2445,44 @@ export interface StaffDocument {
   /** ISO-8601 instant. */
   createdAt: string;
 }
+
+// AI visibility (com.salonreview.web.AiVisibilityController, ai-visibility-monitoring design.md D5).
+export type AiEngine = 'CHATGPT' | 'GOOGLE_AI_MODE' | 'GEMINI' | 'PERPLEXITY' | 'CLAUDE';
+export type AiCellState = 'NAMED' | 'NOT_NAMED' | 'NO_ANSWER' | 'ERROR' | 'NONE';
+export type AiQueryStatus = 'PROPOSED' | 'ACTIVE' | 'PAUSED' | 'REMOVED';
+export interface AiConsistency { named: number; total: number; percent: number | null }
+export interface AiCell { latest: AiCellState; checkedAt: string | null; rank: number | null; recent: AiConsistency; allTime: AiConsistency }
+export interface AiQueryRow { id: number; query: string; topic: string | null; targetUrl: string | null; status: AiQueryStatus; cells: Record<AiEngine, AiCell> }
+export interface AiEngineTotal { engine: AiEngine; named: number; answered: number; previousNamed: number | null }
+export interface AiRanked { name: string; count: number; queries: string[] }
+export interface AiVisibilityOverview {
+  configured: boolean;
+  lastRunAt: string | null;
+  nextRunAt: string;
+  monthSpend: number;
+  monthlyBudget: number | null;
+  digestEnabled: boolean;
+  nextActions: string | null;
+  engineTotals: AiEngineTotal[];
+  rows: AiQueryRow[];
+  placesInstead: AiRanked[];
+  sourcesInstead: AiRanked[];
+  runningRunId: number | null;
+}
+export interface AiHistoryItem {
+  id: number;
+  engine: AiEngine;
+  model: string | null;
+  checkedAt: string;
+  status: 'OK' | 'NO_ANSWER' | 'ERROR';
+  mentioned: boolean | null;
+  rank: number | null;
+  ownSiteCited: boolean | null;
+  placesNamed: string[];
+  sourcesCited: { domain: string; title?: string; url?: string }[];
+  subQueries: string[];
+  excerpt: string | null;
+  error: string | null;
+}
+export interface AiRun { id: number; trigger: string; startedAt: string; finishedAt: string | null; checksOk: number; checksFailed: number; costUsd: number; stoppedReason: string | null }
+export interface AiVisibilitySettingsDto { brandAliases: string[]; ownDomains: string[]; monthlyBudgetUsd: number; digestEnabled: boolean }

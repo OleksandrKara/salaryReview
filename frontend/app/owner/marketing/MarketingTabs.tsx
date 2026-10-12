@@ -15,6 +15,9 @@ const BASE_TABS = [
   { href: '/owner/marketing/ltv', label: 'LTV' },
 ];
 const SEO_TAB = { href: '/owner/marketing/seo', label: 'SEO' };
+const AI_TAB = { href: '/owner/marketing/ai', label: 'AI' };
+// Business-wide tabs (one domain per business, not per landing page): no ?slug=, no page selector.
+const BUSINESS_WIDE = new Set([SEO_TAB.href, AI_TAB.href]);
 
 // Also the default landing page every marketing page.tsx server component should scope its own
 // data fetch to when ?slug= is absent — mani is the only page with real ad spend/history (see
@@ -66,6 +69,7 @@ export default function MarketingTabs() {
   // turned the feature on — defaults to hidden while this hasn't resolved yet, same "don't flash
   // something that might not apply" reasoning as lastSyncedAt's three-state handling below.
   const [seoMonitoringEnabled, setSeoMonitoringEnabled] = useState(false);
+  const [aiVisibilityEnabled, setAiVisibilityEnabled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,11 +79,15 @@ export default function MarketingTabs() {
 
   useEffect(() => {
     let cancelled = false;
-    api.getMe().then((me) => { if (!cancelled) setSeoMonitoringEnabled(me.features.seoMonitoringEnabled); }).catch(() => {});
+    api.getMe().then((me) => {
+      if (cancelled) return;
+      setSeoMonitoringEnabled(me.features.seoMonitoringEnabled);
+      setAiVisibilityEnabled(me.features.aiVisibilityEnabled);
+    }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
-  const TABS = seoMonitoringEnabled ? [...BASE_TABS, SEO_TAB] : BASE_TABS;
+  const TABS = [...BASE_TABS, ...(seoMonitoringEnabled ? [SEO_TAB] : []), ...(aiVisibilityEnabled ? [AI_TAB] : [])];
 
   // Independent of the pages fetch above — a failure here shouldn't block the page selector, and
   // vice versa. Cheap (a single DB row on the backend), safe to fetch on every mount.
@@ -139,16 +147,16 @@ export default function MarketingTabs() {
   return (
     <div className="mb-6 border-b border-zinc-200 pb-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        {/* overflow-x-auto (not flex-wrap): a horizontally-scrollable tab strip is the standard
-            mobile pattern here, rather than wrapping tabs onto a second line. */}
-        <div className="flex min-w-0 gap-1 overflow-x-auto border-b border-transparent">
+        {/* Owner request 2026-10-12: every tab visible on a phone without sideways scrolling. Below
+            sm the tabs form a 4-column grid (7 tabs = 2 rows); from sm up a single wrapping row. */}
+        <nav aria-label="Marketing sections" className="grid w-full grid-cols-4 gap-1 sm:flex sm:w-auto sm:flex-wrap">
           {TABS.map((tab) => {
             const active = pathname === tab.href;
             // design.md D6: SEO is scoped to the business's one primary domain, not a per-landing-
             // page dimension — its own link never carries ?slug=, unlike every other tab here.
             // Contacts always opens on "All sites" (owner request 2026-10-12); the Site selector
             // there narrows it afterwards.
-            const href = tab.href === SEO_TAB.href ? tab.href
+            const href = BUSINESS_WIDE.has(tab.href) ? tab.href
               : tab.href === '/owner/marketing/contacts' ? hrefWithSlug(tab.href, ALL_SITES)
               : hrefWithSlug(tab.href, currentSlug);
             return (
@@ -157,8 +165,10 @@ export default function MarketingTabs() {
                 href={href}
                 prefetch={false}
                 aria-current={active ? 'page' : undefined}
-                className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
-                  active ? 'border-zinc-900 text-zinc-900' : 'border-transparent text-zinc-500 hover:text-zinc-700'
+                className={`flex min-h-[44px] items-center justify-center gap-1.5 rounded-md px-2 py-2 text-[13px] font-medium transition-colors sm:min-h-0 sm:justify-start sm:rounded-none sm:border-b-2 sm:px-3 sm:text-sm ${
+                  active
+                    ? 'bg-zinc-900 text-white sm:border-zinc-900 sm:bg-transparent sm:text-zinc-900'
+                    : 'bg-zinc-100 text-zinc-600 hover:text-zinc-900 sm:border-transparent sm:bg-transparent sm:text-zinc-500 sm:hover:text-zinc-700'
                 }`}
               >
                 {tab.label}
@@ -166,11 +176,11 @@ export default function MarketingTabs() {
               </Link>
             );
           })}
-        </div>
+        </nav>
         {/* design.md D6: the landing-page selector is a different dimension from SEO (which
             tracks one domain via a single seo_connection per business, not per landing page) —
             hidden on the SEO tab so it never implies picking a page changes what's shown there. */}
-        {pages.length > 1 && pathname !== SEO_TAB.href && (
+        {pages.length > 1 && !BUSINESS_WIDE.has(pathname) && (
           <label className="flex items-center gap-2 text-xs text-zinc-500">
             {isContactsTab ? 'Site' : 'Page'}
             <select
