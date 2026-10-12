@@ -143,6 +143,22 @@ class LeadFollowUpSchedulerTest {
     }
 
     @Test
+    @DisplayName("booked on the site in the same visit (e.g. free consultation), later cancelled → skipped, no send")
+    void skipsWhenBookedOnSiteDuringTouchEvenIfCancelledSince() {
+        RawContact c = contact(UUID.randomUUID(), "Jane", "cust1");
+        givenPending(c);
+        when(contactsRepository.bookedOnSiteDuringTouch(eq(PHONE), eq(BUSINESS_ID), any())).thenReturn(true);
+
+        scheduler.sendDueFollowUps();
+
+        verifyNoInteractions(smsService);
+        verify(square, never()).bookingsForCustomer(any(), any());
+        ArgumentCaptor<LeadFollowUpSend> captor = ArgumentCaptor.forClass(LeadFollowUpSend.class);
+        verify(sendRepository).save(captor.capture());
+        assertThat(captor.getValue().getState()).isEqualTo(LeadFollowUpSend.STATE_SKIPPED_BOOKED);
+    }
+
+    @Test
     @DisplayName("cancelled booking only → not treated as upcoming, still sends")
     void cancelledBookingDoesNotCountAsUpcoming() {
         RawContact c = contact(UUID.randomUUID(), "Jane", "cust1");
