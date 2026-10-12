@@ -70,6 +70,37 @@ public class TelegramNotificationService {
         return businesses.findById(businessId).map(b -> "🏢 " + escapeHtml(b.getName()) + "\n").orElse("");
     }
 
+    /** Plain-text message to the business's chat (AI-visibility weekly digest,
+     * openspec/changes/ai-visibility-monitoring design.md D8). Same never-throws contract as the
+     * alerts below; link previews off so the dashboard link doesn't expand into a card. */
+    public boolean sendPlainText(Long businessId, String text) {
+        TelegramNotificationConfig cfg = configService.get(businessId);
+        String token = cfg.getBotToken();
+        String chatId = cfg.getChatId();
+        if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) {
+            log.info("Telegram message skipped: bot token or chat id not configured for business {}", businessId);
+            return false;
+        }
+        try {
+            Map<String, Object> body = Map.of("chat_id", chatId, "text", text, "disable_web_page_preview", true);
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
+                    .timeout(Duration.ofSeconds(10))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(body)))
+                    .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                log.warn("Telegram message send failed: HTTP {} {}", res.statusCode(), res.body());
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.warn("Telegram message send failed (caller unaffected): {}", e.getMessage());
+            return false;
+        }
+    }
+
     /** Returns {@code true} only on a confirmed successful send — never throws. */
     public boolean sendFourHandRequestAlert(Long businessId, FourHandRequestNotification n) {
         TelegramNotificationConfig cfg = configService.get(businessId);

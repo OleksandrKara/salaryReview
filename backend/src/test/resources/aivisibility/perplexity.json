@@ -1,0 +1,93 @@
+{
+ "model_name": "sonar",
+ "input_tokens": 14,
+ "output_tokens": 290,
+ "reasoning_tokens": 0,
+ "web_search": true,
+ "money_spent": 0.005304,
+ "datetime": "2026-10-12 18:58:10 +00:00",
+ "items": [
+  {
+   "type": "message",
+   "sections": [
+    {
+     "type": "text",
+     "text": "Top San Diego powder-brow artists/studios worth comparing:\n\n- **Skin by Sarah** \u2014 Offers soft, misty **ombr\u00e9/powder brows** designed to resemble subtle makeup; a strong option for a natural finish.[1]\n- **Browstify \u2014 Caitlin Nguyen** \u2014 Specializes in **powder ombr\u00e9 brows** in the Poway area, making it a focused choice for this technique.[5]\n- **Celine\u2019s Beauty Studio** \u2014 San Diego studio specializing in microblading and powder brows, located in 92126.[2]\n- **Henna Alshayeb** \u2014 Offers ombr\u00e9 powder brows and states the style is suitable for all skin types and ages.[6]\n- **AVO Brows & Beauty** \u2014 San Diego permanent-makeup studio with client testimonials available for review.[3]\n- **BINX INKS** \u2014 Provides machine-applied powder brows for a brow-pencil or makeup effect.[10]\n\n**Best starting shortlist:** Skin by Sarah for a soft natural look, Browstify for a dedicated powder-ombr\u00e9 specialist, and Celine\u2019s Beauty Studio for a North San Diego option.\n\nBefore booking, compare healed-result photos\u2014not just immediately-after photos\u2014confirm the artist\u2019s California licensing and sanitation practices, ask about touch-up pricing, and verify that the artist has experience with your skin type and desired brow shape.",
+     "annotations": [
+      {
+       "title": "Skin by Sarah: Expert Microblading & Brow Services in San Diego",
+       "url": "https://skinbysarah.com/",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      },
+      {
+       "title": "SAN DIEGO MICROBLADING, POWDER BROWS & FIBROLAST SKIN TIGHTENING SPECIALISTS",
+       "url": "https://celinesbeautystudio.com/",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      },
+      {
+       "title": "AVO Brows & Beauty - Permanent Makeup and Body Sculpting",
+       "url": "https://www.avobrowsandbeauty.com/",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      },
+      {
+       "title": "Brows By Carly: #1 Permanent Makeup Artist In The Bay Area",
+       "url": "https://www.browsbycarly.com/",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      },
+      {
+       "title": "Browstify | San Diego Permanent Cosmetics |12439 Poway ...",
+       "url": "https://www.browstify.com/",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      },
+      {
+       "title": "Permanent Makeup by Henna Alshayeb",
+       "url": "https://www.scalpmicrosd.com/pmu/",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      },
+      {
+       "title": "DASH\u00c8 PERMANENT MAKEUP - Updated February 2026 - Yelp",
+       "url": "https://www.yelp.com/biz/dash%C3%A8-permanent-makeup-san-diego-3",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      },
+      {
+       "title": "Arched Ink - San Diego, CA",
+       "url": "https://www.yelp.com/biz/arched-ink-san-diego",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      },
+      {
+       "title": "Permanent Makeup & Paramedical Tattooing San Diego, CA",
+       "url": "https://www.kassthetics.com/beauty-studio-services",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      },
+      {
+       "title": "BINX INKS",
+       "url": "https://www.binxinks.com/",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "fan_out_queries": null
+}
