@@ -165,13 +165,12 @@ export default function MarketingTabs() {
                 href={href}
                 prefetch={false}
                 aria-current={active ? 'page' : undefined}
-                className={`flex min-h-[44px] items-center justify-center gap-1.5 rounded-md px-2 py-2 text-[13px] font-medium transition-colors sm:min-h-0 sm:justify-start sm:rounded-none sm:border-b-2 sm:px-3 sm:text-sm ${
-                  active
-                    ? 'bg-zinc-900 text-white sm:border-zinc-900 sm:bg-transparent sm:text-zinc-900'
-                    : 'bg-zinc-100 text-zinc-600 hover:text-zinc-900 sm:border-transparent sm:bg-transparent sm:text-zinc-500 sm:hover:text-zinc-700'
+                className={`flex min-h-[44px] items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-1 py-2 text-[13px] font-medium transition-colors sm:min-h-0 sm:justify-start sm:rounded-none sm:border-b-2 sm:px-3 sm:text-sm ${
+                  active ? 'bg-zinc-900 sm:border-zinc-900 sm:bg-transparent' : 'bg-zinc-100 sm:border-transparent sm:bg-transparent'
                 }`}
               >
-                {tab.label}
+                {/* Color on a span: landing.css's unlayered `a { color: inherit }` beats utility classes on the <a>. */}
+                <span className={active ? 'text-white sm:text-zinc-900' : 'text-zinc-600 hover:text-zinc-900 sm:text-zinc-500 sm:hover:text-zinc-700'}>{tab.label}</span>
                 <TabPendingSpinner />
               </Link>
             );
