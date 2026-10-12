@@ -102,6 +102,7 @@ class AiVisibilityPersistenceTest {
         for (String rival : List.of("https://rival1.example/brows", "https://rival2.example/")) {
             checks.save(AiVisibilityCheck.builder().businessId(b).runId(run.getId()).queryId(q.getId()).engine(AiVisibilityCheck.Engine.GEMINI)
                     .status(AiVisibilityCheck.Status.OK).mentioned(false)
+                    .placesNamed(List.of("Rival1 Brow Studio", "Rival2 Beauty"))
                     .sourcesCited(List.of(Map.of("domain", rival.replaceAll("https://|/.*", ""), "url", rival), Map.of("domain", "yelp.com", "url", "https://yelp.com/x"))).build());
             pages.save(AiVisibilityPage.builder().businessId(b).url(rival).own(false).lastFetchedAt(java.time.Instant.now()).fetchMethod("DIRECT")
                     .components(new java.util.LinkedHashMap<>(Map.of("FAQ", Map.of("present", true, "evidence", "FAQPage schema"))))

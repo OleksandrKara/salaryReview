@@ -97,17 +97,26 @@ public class AiVisibilityPageService {
         this.currentBusinessContext = currentBusinessContext;
     }
 
-    /** Competitor page URLs for a question, most cited first (last 4 weeks of OK checks). */
+    /** Competitor page URLs for a question, most cited first (last 4 weeks of OK checks). A cited URL
+     * counts only when its domain matches a place the assistants named for this question (list and
+     * directory pages stay in "sources where we're missing" instead), and never when it belongs to
+     * any business on this platform (the owner's other business is not a competitor). */
     LinkedHashMap<String, Integer> competitorUrls(Long businessId, Long queryId, List<String> ownDomains) {
         Instant from = Instant.now().minus(SOURCE_WINDOW);
+        List<String> platformDomains = new ArrayList<>(ownDomains);
+        for (AiVisibilitySettings other : settingsRepo.findAll()) platformDomains.addAll(other.getOwnDomains());
+        List<AiVisibilityCheck> recent = checks.findByBusinessIdAndQueryIdOrderByCheckedAtDesc(businessId, queryId).stream()
+                .filter(c -> c.getStatus() == AiVisibilityCheck.Status.OK && !c.getCheckedAt().isBefore(from)).toList();
+        Set<String> places = new LinkedHashSet<>();
+        for (AiVisibilityCheck c : recent) places.addAll(c.getPlacesNamed());
         Map<String, Integer> counts = new HashMap<>();
         Map<String, Instant> latest = new HashMap<>();
-        for (AiVisibilityCheck c : checks.findByBusinessIdAndQueryIdOrderByCheckedAtDesc(businessId, queryId)) {
-            if (c.getStatus() != AiVisibilityCheck.Status.OK || c.getCheckedAt().isBefore(from)) continue;
+        for (AiVisibilityCheck c : recent) {
             for (Map<String, String> s : c.getSourcesCited()) {
                 String url = normalizeUrl(s.get("url"));
                 String domain = s.get("domain");
-                if (url == null || domain == null || MentionDetector.isOwnDomain(domain, ownDomains) || isDirectory(domain)) continue;
+                if (url == null || domain == null || MentionDetector.isOwnDomain(domain, platformDomains) || isDirectory(domain)) continue;
+                if (!domainMatchesPlace(domain, places)) continue;
                 counts.merge(url, 1, Integer::sum);
                 latest.merge(url, c.getCheckedAt(), (a, b) -> a.isAfter(b) ? a : b);
             }
@@ -118,6 +127,23 @@ public class AiVisibilityPageService {
                 .limit(MAX_COMPETITOR_PAGES)
                 .forEach(e -> out.put(e.getKey(), e.getValue()));
         return out;
+    }
+
+    /** "avobrowsandbeauty.com" ~ "AVO Brows & Beauty", "polinailssd.com" ~ "Polinails",
+     * "svitnail.com" ~ "Svitnail Studio". Letters/digits only, at least 5 shared characters. */
+    static boolean domainMatchesPlace(String domain, Set<String> places) {
+        String host = domain.toLowerCase(Locale.ROOT).replaceFirst("^www\\.", "");
+        String label = host.contains(".") ? host.substring(0, host.lastIndexOf('.')) : host;
+        label = label.replaceAll("[^a-z0-9]", "");
+        if (label.length() < 4) return false;
+        for (String p : places) {
+            String name = p.toLowerCase(Locale.ROOT).replaceAll("&", "and").replaceAll("[^a-z0-9]", "");
+            String firstWord = p.toLowerCase(Locale.ROOT).split("[^a-z0-9]+")[0];
+            if (name.length() < 4) continue;
+            if (label.contains(name) || (name.length() >= 5 && name.contains(label))) return true;
+            if (firstWord.length() >= 5 && label.startsWith(firstWord)) return true;
+        }
+        return false;
     }
 
     static boolean isDirectory(String domain) {

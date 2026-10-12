@@ -56,4 +56,10 @@ class MentionDetectorTest {
         MentionDetector.Result r = MentionDetector.detect(answer(text, List.of(), List.of()), List.of("AK.LUX.NAILS"), List.of());
         assertThat(r.excerpt()).contains("AK.LUX.NAILS");
     }
+
+    @Test
+    void serviceNamesAndRatingSummariesAreNotPlaces() {
+        var places = AiAnswerParser.boldPlaces("**Russian manicures** at **Svitnail Studio**, **One question**, **0/5**, **Highest Rated with Perfect Scores**, **Polinails**");
+        assertThat(places).containsExactly("Svitnail Studio", "Polinails");
+    }
 }
