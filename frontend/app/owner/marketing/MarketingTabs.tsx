@@ -22,6 +22,9 @@ const SEO_TAB = { href: '/owner/marketing/seo', label: 'SEO' };
 // it pre-selected in that case, so the fetched data has to actually match what's shown as selected.
 export const DEFAULT_SLUG = 'mani';
 
+/** Contacts tab's "every site" choice; never sent as ?slug= (absent slug means all there). */
+const ALL_SITES = '__all';
+
 // Rendered as a child of each tab's <Link> — useLinkStatus only works inside a Link's own subtree.
 // Needed specifically because these links set prefetch={false} (hovering a tab would otherwise
 // fire the same expensive Square-backed fetch the destination tab needs just to preview it): the
@@ -86,14 +89,19 @@ export default function MarketingTabs() {
     return () => { cancelled = true; };
   }, []);
 
-  const currentSlug = searchParams.get('slug') ?? DEFAULT_SLUG;
+  // Contacts pools every site's leads, so it defaults to (and offers) "All sites" (owner request
+  // 2026-10-12: the selector showed one site while the table listed every site's contacts). The
+  // other tabs need one page and keep DEFAULT_SLUG.
+  const isContactsTab = pathname === '/owner/marketing/contacts';
+  const currentSlug = searchParams.get('slug') ?? (isContactsTab ? ALL_SITES : DEFAULT_SLUG);
 
   // Preserves every other param already on the URL (period/from/to, most importantly — see
   // PeriodFilter) rather than rebuilding the query string from just slug, which would otherwise
   // silently reset the owner's currently-selected period every time they switch pages or tabs.
   function hrefWithSlug(pathnameOrTab: string, slug: string): string {
     const params = new URLSearchParams(searchParams.toString());
-    if (slug === DEFAULT_SLUG) params.delete('slug'); else params.set('slug', slug);
+    // Tab links: "All sites" only exists on Contacts, so leaving it drops back to each tab's default.
+    if (slug === DEFAULT_SLUG || slug === ALL_SITES) params.delete('slug'); else params.set('slug', slug);
     const qs = params.toString();
     return qs ? `${pathnameOrTab}?${qs}` : pathnameOrTab;
   }
@@ -138,7 +146,11 @@ export default function MarketingTabs() {
             const active = pathname === tab.href;
             // design.md D6: SEO is scoped to the business's one primary domain, not a per-landing-
             // page dimension — its own link never carries ?slug=, unlike every other tab here.
-            const href = tab.href === SEO_TAB.href ? tab.href : hrefWithSlug(tab.href, currentSlug);
+            // Contacts always opens on "All sites" (owner request 2026-10-12); the Site selector
+            // there narrows it afterwards.
+            const href = tab.href === SEO_TAB.href ? tab.href
+              : tab.href === '/owner/marketing/contacts' ? hrefWithSlug(tab.href, ALL_SITES)
+              : hrefWithSlug(tab.href, currentSlug);
             return (
               <Link
                 key={tab.href}
@@ -160,13 +172,14 @@ export default function MarketingTabs() {
             hidden on the SEO tab so it never implies picking a page changes what's shown there. */}
         {pages.length > 1 && pathname !== SEO_TAB.href && (
           <label className="flex items-center gap-2 text-xs text-zinc-500">
-            Page
+            {isContactsTab ? 'Site' : 'Page'}
             <select
               value={currentSlug}
               onChange={(e) => selectPage(e.target.value)}
               disabled={pageChangePending}
               className="rounded border border-zinc-300 px-2 py-1 text-sm text-zinc-700 disabled:opacity-60"
             >
+              {isContactsTab && <option value={ALL_SITES}>All sites ({pages.length})</option>}
               {pages.map((p) => (
                 <option key={p.slug} value={p.slug}>{p.name}</option>
               ))}
