@@ -184,7 +184,7 @@ public class MarketingContactsService {
         String givenName = square.customerGivenNames(List.of(customerId)).get(customerId);
         String familyName = square.customerFamilyNames(List.of(customerId)).get(customerId);
         String squareProfileUrl = String.format(SQUARE_CUSTOMER_PROFILE_URL, customerId);
-        boolean smsMarketingConsent = hasSquareConsentSegment(customerId);
+        boolean smsMarketingConsent = hasSquareConsentSegment(customerId, null);
 
         List<Submission> submissions = repository.findSubmissionHistory(phoneNumber)
                 .stream().map(MarketingContactsService::toSubmission).collect(Collectors.toList());
@@ -388,8 +388,12 @@ public class MarketingContactsService {
             // over there. Resolve it once here and re-establish it explicitly per element, same fix
             // as OwnerOverviewService/RevenuePulseService's identical async ThreadLocal loss.
             Long businessId = currentBusinessContext.id();
-            List<Contact> contacts = repository.listAllForBusiness(businessId).parallelStream()
-                    .map(r -> currentBusinessContext.runAsAndGet(businessId, () -> toContact(r, visitCounts, false)))
+            List<MarketingContactsRepository.RawContact> raws = repository.listAllForBusiness(businessId);
+            // One batched Square read for everyone's consent segment instead of one call per
+            // contact inside toContact (2026-10-12: ~14s cold load for ~275 contacts).
+            Map<String, List<String>> segments = consentSegmentsFor(raws, businessId);
+            List<Contact> contacts = raws.parallelStream()
+                    .map(r -> currentBusinessContext.runAsAndGet(businessId, () -> toContact(r, visitCounts, false, segments)))
                     .collect(Collectors.toList());
             return new MarketingContactDto(true, contacts);
         } catch (DataAccessException | RestClientException ex) {
@@ -659,14 +663,25 @@ public class MarketingContactsService {
      * {@link RebookingProperties#getConsentSegmentId()} — see #resolveDisplayNames and #toContact
      * for the two callers that fold this into a merged consent flag. False (not an error) for a
      * null customer id or an unconfigured segment. */
-    private boolean hasSquareConsentSegment(String squareCustomerId) {
+    private boolean hasSquareConsentSegment(String squareCustomerId, Map<String, List<String>> prefetched) {
         String consentSegmentId = rebookingProperties.getConsentSegmentId();
         if (squareCustomerId == null || consentSegmentId == null || consentSegmentId.isBlank()) {
             return false;
         }
-        List<String> segments = squareClientProvider.forBusiness(currentBusinessContext.id())
-                .customerSegmentIds(squareCustomerId);
+        List<String> segments = prefetched != null
+                ? prefetched.getOrDefault(squareCustomerId, List.of())
+                : squareClientProvider.forBusiness(currentBusinessContext.id()).customerSegmentIds(squareCustomerId);
         return segments != null && segments.contains(consentSegmentId);
+    }
+
+    /** Every listed contact's Square segment ids in one batched read (null = not prefetched, fall
+     * back to the per-contact call). Empty when no consent segment is configured. */
+    private Map<String, List<String>> consentSegmentsFor(List<MarketingContactsRepository.RawContact> raws, Long businessId) {
+        String consentSegmentId = rebookingProperties.getConsentSegmentId();
+        if (consentSegmentId == null || consentSegmentId.isBlank()) return Map.of();
+        List<String> ids = raws.stream().map(this::resolveSquareCustomerId).filter(java.util.Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) return Map.of();
+        return squareClientProvider.forBusiness(businessId).customerSegmentIdsFresh(ids);
     }
 
     private Contact toContact(MarketingContactsRepository.RawContact raw, Map<String, Long> visitCounts) {
@@ -689,6 +704,11 @@ public class MarketingContactsService {
      */
     private Contact toContact(MarketingContactsRepository.RawContact raw, Map<String, Long> visitCounts,
                                boolean includeFamilyName) {
+        return toContact(raw, visitCounts, includeFamilyName, null);
+    }
+
+    private Contact toContact(MarketingContactsRepository.RawContact raw, Map<String, Long> visitCounts,
+                               boolean includeFamilyName, Map<String, List<String>> prefetchedSegments) {
         SquareClient square = squareClientProvider.forBusiness(currentBusinessContext.id());
         String effectiveSquareCustomerId = resolveSquareCustomerId(raw);
 
@@ -717,7 +737,7 @@ public class MarketingContactsService {
         // SameDayRebookingScheduler#hasConsent already uses for sending, so this field never
         // shows "no consent" for someone the automations would in fact be allowed to text.
         boolean smsMarketingConsent = Boolean.TRUE.equals(raw.smsMarketingConsent())
-                || hasSquareConsentSegment(effectiveSquareCustomerId);
+                || hasSquareConsentSegment(effectiveSquareCustomerId, prefetchedSegments);
 
         ContactLinkEngagement engagement = linkEngagementFor(raw.phoneNumber());
 
