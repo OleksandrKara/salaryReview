@@ -13,7 +13,7 @@ import java.time.Instant;
 @NoArgsConstructor @AllArgsConstructor @Builder
 public class AiVisibilityRun {
 
-    public enum Trigger { SCHEDULED, MANUAL_QUERY }
+    public enum Trigger { SCHEDULED, MANUAL_QUERY, PAGE_FETCH }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

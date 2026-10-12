@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../../lib/api';
-import type { AiCell, AiEngine, AiHistoryItem, AiQueryRow, AiRanked, AiVisibilityOverview, AiVisibilitySettingsDto } from '../../../lib/types';
+import type { AiCell, AiEngine, AiHistoryItem, AiPageComparison, AiPageGap, AiQueryRow, AiRanked, AiVisibilityOverview, AiVisibilitySettingsDto } from '../../../lib/types';
 import { Spinner } from '../../../components/Spinner';
 
 // openspec/changes/ai-visibility-monitoring design.md D7.
@@ -257,14 +257,16 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
 
       {canEdit && <AddQuestion count={countedNow} disabled={busy !== null} onAdd={(q) => act('add', () => api.addAiQuery(q, null))} />}
 
+      <PageGapsPanel />
+
       <section className="grid gap-4 md:grid-cols-2">
-        <RankedList title="Who AI recommends instead" hint="Places named on questions where we were missing (last 4 weeks)" items={data.placesInstead} />
+        <RankedList title="Who AI recommends instead" hint="Places named on questions where we were missing (last 4 weeks)" items={data.placesInstead} canAddCompetitor={canEdit} />
         <RankedList title="Sources AI reads where we're missing" hint="Sites cited in those answers: get listed or mentioned there" items={data.sourcesInstead} />
       </section>
 
       {canEdit && <SettingsPanel />}
 
-      {historyFor && <HistorySheet row={historyFor} onClose={() => setHistoryFor(null)} />}
+      {historyFor && <HistorySheet row={historyFor} canEdit={canEdit} onClose={() => setHistoryFor(null)} />}
     </div>
   );
 }
@@ -350,7 +352,76 @@ function AddQuestion({ count, disabled, onAdd }: { count: number; disabled: bool
   );
 }
 
-function RankedList({ title, hint, items }: { title: string; hint: string; items: AiRanked[] }) {
+function AddCompetitor({ name }: { name: string }) {
+  const [open, setOpen] = useState(false);
+  const [site, setSite] = useState('');
+  const [state, setState] = useState<'idle' | 'saving' | 'done' | string>('idle');
+  if (state === 'done') return <span className="text-[11px] text-emerald-700">Added to SEO competitors</span>;
+  if (!open) return <button type="button" onClick={() => setOpen(true)} className="text-[11px] text-zinc-500 hover:text-zinc-900">Add to competitors</button>;
+  return (
+    <form className="mt-1 flex gap-1" onSubmit={async (e) => {
+      e.preventDefault();
+      setState('saving');
+      try { await api.addAiCompetitor(name, site); setState('done'); } catch (err) { setState(err instanceof Error ? err.message : 'Failed'); }
+    }}>
+      <input value={site} onChange={(e) => setSite(e.target.value)} placeholder="their website" className="min-w-0 flex-1 rounded border border-zinc-300 px-2 py-1 text-base sm:text-xs" />
+      <button type="submit" disabled={state === 'saving' || site.trim().length < 4} className="rounded bg-zinc-900 px-2 py-1 text-xs text-white disabled:opacity-40">Add</button>
+      {state !== 'idle' && state !== 'saving' && <span className="self-center text-[11px] text-red-600">{state}</span>}
+    </form>
+  );
+}
+
+const COMPONENT_HINTS: Record<string, string> = {
+  BEFORE_AFTER: 'Real photos only, with client consent',
+  FAQ: 'Answers from facts you have confirmed',
+  PRICES: 'Same prices as in Square',
+  REVIEWS_ON_PAGE: 'Real Google reviews, quoted verbatim',
+  RATING_STATED: 'Current Google rating and count',
+  ARTIST_BIO: 'Real experience, training and certificates',
+  PROCESS_STEPS: 'How a visit actually goes',
+  AFTERCARE: 'Your real aftercare instructions',
+  VIDEO: 'Your own video of real work',
+  BOOKING_CTA: 'A clear Book button near the top',
+  FINANCING: 'Only payment options you really offer',
+  MAP_NAP: 'Address, phone and map',
+  BUSINESS_SCHEMA: 'Technical markup, Claude can add it',
+  PRESS: 'Only real publications',
+  GUARANTEE: 'Only your actual policy',
+  UPDATED_DATE: 'Show when the page was last updated',
+};
+
+function pathOf(url: string): string {
+  const p = url.replace(/^https?:\/\/[^/]+/, '');
+  return p || '/';
+}
+
+function PageGapsPanel() {
+  const [gaps, setGaps] = useState<AiPageGap[] | null>(null);
+  useEffect(() => { api.getAiPageGaps().then(setGaps).catch(() => setGaps([])); }, []);
+  return (
+    <section className="rounded-lg border border-zinc-200 bg-white p-3 sm:p-4">
+      <h2 className="text-sm font-semibold text-zinc-900">What competitor pages have and ours don&rsquo;t</h2>
+      <p className="text-xs text-zinc-500">From the pages AI cites for each question. Refreshed monthly; open a question&rsquo;s History for the full comparison.</p>
+      {gaps === null && <div className="mt-3"><Spinner className="h-4 w-4" /></div>}
+      {gaps && gaps.length === 0 && <p className="mt-3 text-sm text-zinc-400">No gaps found yet. Pages are compared after the first checks.</p>}
+      {gaps && gaps.length > 0 && (
+        <ul className="mt-3 divide-y divide-zinc-100">
+          {gaps.slice(0, 10).map((g) => (
+            <li key={g.targetUrl + g.component} className="py-2 text-sm">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                <span className="font-medium text-zinc-900">{g.label} <span className="font-normal text-zinc-500">on {pathOf(g.targetUrl)}</span></span>
+                <span className="text-xs text-zinc-500">{g.competitorsWith} of {g.competitorsCompared} competitor pages · {g.queries.length} question{g.queries.length === 1 ? '' : 's'}</span>
+              </div>
+              {COMPONENT_HINTS[g.component] && <div className="text-[11px] text-zinc-400">{COMPONENT_HINTS[g.component]}</div>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function RankedList({ title, hint, items, canAddCompetitor = false }: { title: string; hint: string; items: AiRanked[]; canAddCompetitor?: boolean }) {
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-3 sm:p-4">
       <h2 className="text-sm font-semibold text-zinc-900">{title}</h2>
@@ -366,6 +437,7 @@ function RankedList({ title, hint, items }: { title: string; hint: string; items
                 <span className="shrink-0 text-xs text-zinc-500">{it.count}×</span>
               </div>
               {it.queries.length > 0 && <div className="truncate text-[11px] text-zinc-400">{it.queries.slice(0, 2).join(' · ')}{it.queries.length > 2 ? ` +${it.queries.length - 2}` : ''}</div>}
+              {canAddCompetitor && <AddCompetitor name={it.name} />}
             </li>
           ))}
         </ol>
@@ -374,7 +446,8 @@ function RankedList({ title, hint, items }: { title: string; hint: string; items
   );
 }
 
-function HistorySheet({ row, onClose }: { row: AiQueryRow; onClose: () => void }) {
+function HistorySheet({ row, canEdit, onClose }: { row: AiQueryRow; canEdit: boolean; onClose: () => void }) {
+  const [tab, setTab] = useState<'checks' | 'pages'>('checks');
   const [items, setItems] = useState<AiHistoryItem[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState<number | null>(null);
@@ -403,14 +476,23 @@ function HistorySheet({ row, onClose }: { row: AiQueryRow; onClose: () => void }
           <div>
             <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">History</div>
             <div className="text-sm font-semibold text-zinc-900">{row.query}</div>
+            <div className="mt-2 flex gap-1">
+              {(['checks', 'pages'] as const).map((t) => (
+                <button key={t} type="button" onClick={() => setTab(t)}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium ${tab === t ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-600'}`}>
+                  {t === 'checks' ? 'Checks' : 'Page comparison'}
+                </button>
+              ))}
+            </div>
           </div>
           <button type="button" onClick={onClose} className="rounded-md px-2 py-1 text-lg leading-none text-zinc-500 hover:bg-zinc-100" aria-label="Close">×</button>
         </div>
         <div className="flex-1 overflow-y-auto p-4" style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
-          {err && <p className="text-sm text-red-600">{err}</p>}
-          {!items && !err && <div className="flex items-center gap-2 text-sm text-zinc-500"><Spinner className="h-4 w-4" /> Loading…</div>}
-          {items && items.length === 0 && <p className="text-sm text-zinc-500">No checks yet. The first one runs on Monday.</p>}
-          {items && items.length > 0 && (
+          {tab === 'pages' && <PageComparison queryId={row.id} canEdit={canEdit} />}
+          {tab === 'checks' && err && <p className="text-sm text-red-600">{err}</p>}
+          {tab === 'checks' && !items && !err && <div className="flex items-center gap-2 text-sm text-zinc-500"><Spinner className="h-4 w-4" /> Loading…</div>}
+          {tab === 'checks' && items && items.length === 0 && <p className="text-sm text-zinc-500">No checks yet. The first one runs on Monday.</p>}
+          {tab === 'checks' && items && items.length > 0 && (
             <>
               <div className="overflow-x-auto">
                 <table className="text-[11px]">
@@ -468,6 +550,89 @@ function HistorySheet({ row, onClose }: { row: AiQueryRow; onClose: () => void }
             </>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+const COMPONENT_ORDER = ['BEFORE_AFTER', 'FAQ', 'PRICES', 'REVIEWS_ON_PAGE', 'RATING_STATED', 'ARTIST_BIO', 'PROCESS_STEPS', 'AFTERCARE',
+  'VIDEO', 'BOOKING_CTA', 'FINANCING', 'MAP_NAP', 'BUSINESS_SCHEMA', 'PRESS', 'GUARANTEE', 'UPDATED_DATE'];
+const COMPONENT_LABELS: Record<string, string> = {
+  BEFORE_AFTER: 'Before/after', FAQ: 'FAQ', PRICES: 'Prices', REVIEWS_ON_PAGE: 'Reviews', RATING_STATED: 'Rating', ARTIST_BIO: 'Artist bio',
+  PROCESS_STEPS: 'Process', AFTERCARE: 'Aftercare', VIDEO: 'Video', BOOKING_CTA: 'Book button', FINANCING: 'Financing', MAP_NAP: 'Map/address',
+  BUSINESS_SCHEMA: 'Schema', PRESS: 'Press', GUARANTEE: 'Guarantee', UPDATED_DATE: 'Updated date',
+};
+
+function hostOf(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
+}
+
+function PageComparison({ queryId, canEdit }: { queryId: number; canEdit: boolean }) {
+  const [data, setData] = useState<AiPageComparison | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [evidence, setEvidence] = useState<string | null>(null);
+  useEffect(() => { api.getAiPageComparison(queryId).then(setData).catch((e) => setErr(e instanceof Error ? e.message : 'Failed to load')); }, [queryId]);
+  if (err) return <p className="text-sm text-red-600">{err}</p>;
+  if (!data) return <div className="flex items-center gap-2 text-sm text-zinc-500"><Spinner className="h-4 w-4" /> Loading…</div>;
+  const cols = [...(data.ours ? [data.ours] : []), ...data.competitors];
+  return (
+    <div className="space-y-3">
+      {data.gaps.length > 0 && (
+        <div className="rounded-md bg-amber-50 p-2 text-xs text-amber-900">
+          Missing on our page: {data.gaps.map((g) => `${COMPONENT_LABELS[g.component] ?? g.label} (${g.competitorsWith}/${g.competitorsCompared}${g.weak ? ', weak' : ''})`).join(', ')}
+        </div>
+      )}
+      {!data.targetUrl && <p className="text-xs text-zinc-500">No target page set for this question.</p>}
+      {data.competitors.length === 0 && <p className="text-xs text-zinc-500">No competitor pages cited for this question in the last 4 weeks.</p>}
+      {cols.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="text-xs">
+            <thead>
+              <tr>
+                <th className="sticky left-0 bg-white pr-2 text-left font-medium text-zinc-500" />
+                {cols.map((c) => (
+                  <th key={c.url} className="px-1.5 pb-1 text-left align-bottom font-medium">
+                    <a href={c.url} target="_blank" rel="noreferrer" className={`block max-w-[7rem] truncate ${c.own ? 'text-emerald-800' : 'text-zinc-700'} hover:underline`} title={c.url}>
+                      {c.own ? 'Our page' : hostOf(c.url)}
+                    </a>
+                    <span className="block text-[10px] font-normal text-zinc-400">
+                      {!c.lastFetchedAt ? 'not fetched yet' : !c.readable ? 'not readable' : !c.own && !c.businessPage ? 'not a business page' : fmtDate(c.lastFetchedAt)}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {COMPONENT_ORDER.map((k) => (
+                <tr key={k} className="border-t border-zinc-100">
+                  <td className="sticky left-0 whitespace-nowrap bg-white py-1 pr-2 text-zinc-600">{COMPONENT_LABELS[k]}</td>
+                  {cols.map((c) => {
+                    const f = c.components[k];
+                    return (
+                      <td key={c.url} className="px-1.5 py-1 text-center">
+                        {!c.readable ? <span className="text-zinc-300">·</span> : f?.present ? (
+                          <button type="button" onClick={() => setEvidence(`${c.own ? 'Our page' : hostOf(c.url)}: ${f.evidence ?? ''}`)} className="text-emerald-600" aria-label="Present, show evidence">✓</button>
+                        ) : <span className={c.own ? 'text-red-500' : 'text-zinc-300'}>✗</span>}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {evidence && <p className="rounded bg-zinc-50 p-2 text-[11px] text-zinc-600">{evidence}</p>}
+      <div className="flex flex-wrap items-center gap-3 text-[11px] text-zinc-400">
+        <span>{data.lastRefreshedAt ? `Pages read ${fmtDate(data.lastRefreshedAt)}` : 'Pages not read yet'}</span>
+        {canEdit && (
+          <button type="button" className="text-zinc-600 hover:text-zinc-900" onClick={async () => {
+            setMsg(null);
+            try { await api.refreshAiPages(queryId); setMsg('Reading pages in the background, reopen in a minute.'); } catch (e) { setMsg(e instanceof Error ? e.message : 'Failed'); }
+          }}>Refresh pages</button>
+        )}
+        {msg && <span className="text-zinc-600">{msg}</span>}
       </div>
     </div>
   );

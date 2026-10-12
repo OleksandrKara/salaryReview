@@ -42,7 +42,7 @@ class AiVisibilityDigestServiceTest {
         when(checks.findByBusinessIdAndRunId(1L, 10L)).thenReturn(List.of(
                 ok(1L, Engine.CHATGPT, false, List.of("Twinkle Nails")), ok(2L, Engine.GEMINI, true, List.of("AK.LUX.NAILS"))));
         AiVisibilityDigestService svc = new AiVisibilityDigestService(mock(AiVisibilitySettingsRepository.class), queries,
-                mock(AiVisibilityRunRepository.class), checks, runService, businesses, mock(TelegramNotificationService.class), "https://salon.example");
+                mock(AiVisibilityRunRepository.class), checks, runService, businesses, mock(TelegramNotificationService.class), mock(AiVisibilityPageService.class), "https://salon.example");
         AiVisibilitySettings s = AiVisibilitySettings.builder().businessId(1L).brandAliases(List.of("AK.LUX.NAILS")).ownDomains(List.of("akluxnails.com"))
                 .locationHint("x").monthlyBudgetUsd(new BigDecimal("8")).digestEnabled(true).nextActions("FAQ на /russian-pedicure — пункт").build();
         AiVisibilityRun cur = AiVisibilityRun.builder().id(20L).businessId(1L).startedAt(Instant.parse("2026-10-19T13:00:00Z")).checksOk(2).build();
@@ -65,9 +65,26 @@ class AiVisibilityDigestServiceTest {
         when(settings.findById(1L)).thenReturn(Optional.of(AiVisibilitySettings.builder().businessId(1L).digestEnabled(true).build()));
         TelegramNotificationService telegram = mock(TelegramNotificationService.class);
         AiVisibilityDigestService svc = new AiVisibilityDigestService(settings, mock(AiVisibilityQueryRepository.class), mock(AiVisibilityRunRepository.class),
-                mock(AiVisibilityCheckRepository.class), mock(AiVisibilityRunService.class), mock(BusinessRepository.class), telegram, "x");
+                mock(AiVisibilityCheckRepository.class), mock(AiVisibilityRunService.class), mock(BusinessRepository.class), telegram, mock(AiVisibilityPageService.class), "x");
         assertThat(svc.sendFor(AiVisibilityRun.builder().id(1L).businessId(1L).checksOk(0).build())).isFalse();
         verify(telegram, never()).sendPlainText(any(), any());
+    }
+
+    @Test
+    void pageGapLinesGoBeforeSpend() {
+        AiVisibilityPageService pages = mock(AiVisibilityPageService.class);
+        when(pages.pageGaps(1L)).thenReturn(List.of(
+                new AiVisibilityPageService.PageGap("https://akluxnails.com/russian-pedicure", "FAQ", "FAQ", 4, 5, List.of("q1", "q2", "q3")),
+                new AiVisibilityPageService.PageGap("https://akluxnails.com/", "BEFORE_AFTER", "Before/after photos", 3, 4, List.of("q4")),
+                new AiVisibilityPageService.PageGap("https://akluxnails.com/", "VIDEO", "Video", 2, 4, List.of("q4"))));
+        AiVisibilityDigestService svc = new AiVisibilityDigestService(mock(AiVisibilitySettingsRepository.class), mock(AiVisibilityQueryRepository.class),
+                mock(AiVisibilityRunRepository.class), mock(AiVisibilityCheckRepository.class), mock(AiVisibilityRunService.class),
+                mock(BusinessRepository.class), mock(TelegramNotificationService.class), pages, "x");
+        String text = svc.withPageGaps("Head\nРасход за месяц: $1 из $8\nlink", 1L);
+        assertThat(text).contains("• FAQ на /russian-pedicure (есть у 4 из 5 конкурентов, запросов: 3)");
+        assertThat(text).contains("• фото до/после на / (есть у 3 из 4");
+        assertThat(text).doesNotContain("видео");
+        assertThat(text.indexOf("Чего не хватает")).isLessThan(text.indexOf("Расход за месяц"));
     }
 
     private static AiVisibilityCheck ok(Long q, Engine e, boolean named, List<String> places) {

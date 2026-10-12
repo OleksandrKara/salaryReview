@@ -40,11 +40,13 @@ public class AiVisibilityDigestService {
     private final AiVisibilityRunService runService;
     private final BusinessRepository businesses;
     private final TelegramNotificationService telegram;
+    private final AiVisibilityPageService pageService;
     private final String publicBaseUrl;
 
     public AiVisibilityDigestService(AiVisibilitySettingsRepository settingsRepo, AiVisibilityQueryRepository queries,
             AiVisibilityRunRepository runs, AiVisibilityCheckRepository checks, AiVisibilityRunService runService,
-            BusinessRepository businesses, TelegramNotificationService telegram, @Value("${app.public-base-url}") String publicBaseUrl) {
+            BusinessRepository businesses, TelegramNotificationService telegram, AiVisibilityPageService pageService,
+            @Value("${app.public-base-url}") String publicBaseUrl) {
         this.settingsRepo = settingsRepo;
         this.queries = queries;
         this.runs = runs;
@@ -52,16 +54,22 @@ public class AiVisibilityDigestService {
         this.runService = runService;
         this.businesses = businesses;
         this.telegram = telegram;
+        this.pageService = pageService;
         this.publicBaseUrl = publicBaseUrl;
     }
 
     /** Sends the digest for a just-finished scheduled run; returns false when nothing was sent. */
     public boolean sendFor(AiVisibilityRun run) {
+        return sendFor(run, false);
+    }
+
+    public boolean sendFor(AiVisibilityRun run, boolean includePageGaps) {
         AiVisibilitySettings settings = settingsRepo.findById(run.getBusinessId()).orElse(null);
         if (settings == null || !settings.isDigestEnabled() || run.getChecksOk() == 0) return false;
         List<AiVisibilityRun> lastTwo = runs.findTop2ByBusinessIdAndTriggerAndFinishedAtIsNotNullOrderByStartedAtDesc(run.getBusinessId(), AiVisibilityRun.Trigger.SCHEDULED);
         AiVisibilityRun previous = lastTwo.stream().filter(r -> !r.getId().equals(run.getId())).findFirst().orElse(null);
         String text = build(settings, run, previous);
+        if (includePageGaps) text = withPageGaps(text, run.getBusinessId());
         return telegram.sendPlainText(run.getBusinessId(), text);
     }
 
@@ -128,6 +136,53 @@ public class AiVisibilityDigestService {
         sb.append("Расход за месяц: $").append(spent.toPlainString()).append(" из $").append(settings.getMonthlyBudgetUsd().setScale(0, RoundingMode.HALF_UP).toPlainString()).append('\n');
         sb.append(publicBaseUrl).append("/owner/marketing/ai");
         return sb.toString().replace('—', '-');
+    }
+
+    /** First Monday of the month only (design.md D10): at most 2 page-gap lines, inserted before
+     * the spend line. */
+    String withPageGaps(String text, Long businessId) {
+        List<AiVisibilityPageService.PageGap> gaps;
+        try {
+            gaps = pageService.pageGaps(businessId);
+        } catch (RuntimeException e) {
+            return text;
+        }
+        if (gaps.isEmpty()) return text;
+        StringBuilder lines = new StringBuilder("Чего не хватает на наших страницах:\n");
+        for (AiVisibilityPageService.PageGap g : gaps.subList(0, Math.min(2, gaps.size()))) {
+            lines.append("• ").append(ruLabel(g.component())).append(" на ").append(path(g.targetUrl()))
+                    .append(" (есть у ").append(g.competitorsWith()).append(" из ").append(g.competitorsCompared())
+                    .append(" конкурентов, запросов: ").append(g.queries().size()).append(")\n");
+        }
+        int at = text.indexOf("Расход за месяц:");
+        return at < 0 ? text + "\n" + lines : text.substring(0, at) + lines + text.substring(at);
+    }
+
+    static String path(String url) {
+        String p = url.replaceFirst("^https?://[^/]+", "");
+        return p.isEmpty() ? "/" : p;
+    }
+
+    static String ruLabel(String component) {
+        return switch (component) {
+            case "BEFORE_AFTER" -> "фото до/после";
+            case "FAQ" -> "FAQ";
+            case "PRICES" -> "цены";
+            case "REVIEWS_ON_PAGE" -> "отзывы на странице";
+            case "RATING_STATED" -> "рейтинг";
+            case "ARTIST_BIO" -> "блок о мастере и опыте";
+            case "PROCESS_STEPS" -> "как проходит процедура";
+            case "AFTERCARE" -> "уход после процедуры";
+            case "VIDEO" -> "видео";
+            case "BOOKING_CTA" -> "кнопка записи";
+            case "FINANCING" -> "рассрочка";
+            case "MAP_NAP" -> "карта и адрес";
+            case "BUSINESS_SCHEMA" -> "разметка бизнеса";
+            case "PRESS" -> "публикации в прессе";
+            case "GUARANTEE" -> "гарантия/коррекция";
+            case "UPDATED_DATE" -> "дата обновления";
+            default -> component;
+        };
     }
 
     private static String joinCapped(List<String> items, int max) {

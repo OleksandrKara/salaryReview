@@ -1,6 +1,8 @@
 package com.salonreview.web;
 
 import com.salonreview.aivisibility.AiVisibilityAdminService;
+import com.salonreview.aivisibility.AiVisibilityPageService;
+import com.salonreview.seo.SeoCompetitorService;
 import com.salonreview.aivisibility.AiVisibilityQueryService;
 import com.salonreview.config.BusinessFeatureService;
 import com.salonreview.config.CurrentBusinessContext;
@@ -24,13 +26,17 @@ public class AiVisibilityController {
 
     private final AiVisibilityQueryService readModel;
     private final AiVisibilityAdminService admin;
+    private final AiVisibilityPageService pages;
+    private final SeoCompetitorService competitors;
     private final BusinessFeatureService businessFeatures;
     private final CurrentBusinessContext currentBusinessContext;
 
-    public AiVisibilityController(AiVisibilityQueryService readModel, AiVisibilityAdminService admin,
-            BusinessFeatureService businessFeatures, CurrentBusinessContext currentBusinessContext) {
+    public AiVisibilityController(AiVisibilityQueryService readModel, AiVisibilityAdminService admin, AiVisibilityPageService pages,
+            SeoCompetitorService competitors, BusinessFeatureService businessFeatures, CurrentBusinessContext currentBusinessContext) {
         this.readModel = readModel;
         this.admin = admin;
+        this.pages = pages;
+        this.competitors = competitors;
         this.businessFeatures = businessFeatures;
         this.currentBusinessContext = currentBusinessContext;
     }
@@ -78,6 +84,39 @@ public class AiVisibilityController {
     @GetMapping("/runs/{id}")
     public RunDto run(@PathVariable Long id) {
         return RunDto.of(admin.run(requireFeatureEnabled(), id));
+    }
+
+    @GetMapping("/queries/{id}/pages")
+    public AiVisibilityPageService.Comparison pages(@PathVariable Long id) {
+        return pages.comparison(requireFeatureEnabled(), id);
+    }
+
+    @PostMapping("/queries/{id}/pages/refresh")
+    public Map<String, Object> refreshPages(@PathVariable Long id) {
+        pages.startRefresh(requireFeatureEnabled(), id);
+        return Map.of("started", true);
+    }
+
+    @GetMapping("/page-gaps")
+    public List<AiVisibilityPageService.PageGap> pageGaps() {
+        return pages.pageGaps(requireFeatureEnabled());
+    }
+
+    /** "Add to competitors" from the who-AI-recommends-instead list: reuses the SEO tab's competitor
+     * list (which already tracks competitor PageSpeed), always for the current business only. */
+    @PostMapping("/competitors")
+    public Map<String, Object> addCompetitor(@RequestBody CompetitorRequest req) {
+        Long businessId = requireFeatureEnabled();
+        String name = req.name() == null ? "" : req.name().trim();
+        String website = req.website() == null ? "" : req.website().trim();
+        if (name.isEmpty() || !website.matches("(?i)^(https?://)?[a-z0-9.-]+\\.[a-z]{2,}(/.*)?$")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Name and a website are required");
+        }
+        competitors.addCompetitor(businessId, name, website.startsWith("http") ? website : "https://" + website, null, "Added from the AI tab");
+        return Map.of("added", true);
+    }
+
+    public record CompetitorRequest(String name, String website) {
     }
 
     @GetMapping("/settings")
