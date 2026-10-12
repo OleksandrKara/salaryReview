@@ -14,6 +14,7 @@ import type {
   SquareConnectionDto,
   SeoConnectionDto,
   SeoOverviewDto,
+  AiVisibilityOverview,
   TrackingSiteDto,
   BusinessSettingsDto,
   PlatformBusinessDto,
@@ -137,6 +138,8 @@ export const serverApi = {
 
   // null when seo-monitoring.enabled is off for this business (backend 404s) — the page redirects
   // in that case rather than throwing, same contract as any feature-gated page here.
+  getAiVisibilityOverview: () => serverFetchOrNull<AiVisibilityOverview>(`/api/owner/marketing/ai/overview`),
+
   getSeoOverview: (days?: number) =>
     serverFetchOrNull<SeoOverviewDto>(`/api/owner/marketing/seo/overview${days ? `?days=${days}` : ''}`),
 

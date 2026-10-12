@@ -97,6 +97,10 @@ import type {
   TrafficSourceKey,
   UserCreateRequest,
   UserUpdateRequest,
+  AiVisibilityOverview,
+  AiHistoryItem,
+  AiRun,
+  AiVisibilitySettingsDto,
 } from './types';
 import { sourcesParam } from '../owner/marketing/TrafficSourceFilter';
 
@@ -309,6 +313,20 @@ export const api = {
 
   removeSeoCompetitor: (id: number) =>
     proxyDeleteJson<SeoCompetitorRow[]>(`/api/owner/marketing/seo/competitors/${id}`),
+
+  // AI visibility tab (owner; ads_manager read-only) — ai-visibility-monitoring.
+  getAiVisibilityOverview: () => proxyGet<AiVisibilityOverview>(`/api/owner/marketing/ai/overview`),
+  getAiQueryHistory: (id: number) => proxyGet<AiHistoryItem[]>(`/api/owner/marketing/ai/queries/${id}/history`),
+  addAiQuery: (query: string, topic: string | null) =>
+    proxyJson<{ id: number }>(`/api/owner/marketing/ai/queries`, 'POST', { query, topic }),
+  updateAiQuery: (id: number, patch: { query?: string; topic?: string; targetUrl?: string; status?: string; sortOrder?: number }) =>
+    proxyJson<{ id: number; status: string }>(`/api/owner/marketing/ai/queries/${id}`, 'PATCH', patch),
+  approveAllAiQueries: () => proxyJson<{ approved: number }>(`/api/owner/marketing/ai/queries/approve-all`, 'POST', {}),
+  recheckAiQuery: (id: number) => proxyJson<AiRun>(`/api/owner/marketing/ai/queries/${id}/recheck`, 'POST', {}),
+  getAiRun: (id: number) => proxyGet<AiRun>(`/api/owner/marketing/ai/runs/${id}`),
+  getAiVisibilitySettings: () => proxyGet<AiVisibilitySettingsDto>(`/api/owner/marketing/ai/settings`),
+  updateAiVisibilitySettings: (body: Partial<AiVisibilitySettingsDto>) =>
+    proxyJson<AiVisibilitySettingsDto>(`/api/owner/marketing/ai/settings`, 'PUT', body),
 
   // Business name/timezone + financial config (owner).
   getBusinessSettings: () => proxyGet<BusinessSettingsDto>(`/api/owner/settings/business`),
