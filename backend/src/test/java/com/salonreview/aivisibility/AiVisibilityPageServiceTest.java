@@ -56,6 +56,18 @@ class AiVisibilityPageServiceTest {
     }
 
     @Test
+    void competitorDomainMustMatchANamedPlace() {
+        var places = java.util.Set.of("AVO Brows & Beauty", "Polinails", "Svitnail Studio", "The Beau");
+        assertThat(AiVisibilityPageService.domainMatchesPlace("www.avobrowsandbeauty.com", places)).isTrue();
+        assertThat(AiVisibilityPageService.domainMatchesPlace("polinailssd.com", places)).isTrue();
+        assertThat(AiVisibilityPageService.domainMatchesPlace("svitnail.com", places)).isTrue();
+        assertThat(AiVisibilityPageService.domainMatchesPlace("thebeaupmu.com", places)).isTrue();
+        assertThat(AiVisibilityPageService.domainMatchesPlace("www.atly.com", places)).isFalse();
+        assertThat(AiVisibilityPageService.domainMatchesPlace("findaloco.com", places)).isFalse();
+        assertThat(AiVisibilityPageService.domainMatchesPlace("totallysandiego.com", places)).isFalse();
+    }
+
+    @Test
     void robotsDisallowForStarGroupOnly() {
         String robots = """
                 User-agent: Googlebot

@@ -35,6 +35,12 @@ public final class AiAnswerParser {
                     + "really|great|good|best |san diego|downtown|open|closed|call|directions)",
             Pattern.CASE_INSENSITIVE);
 
+    // A bold service name or a rating summary, not a business ("Russian manicures", "Highest Rated with Perfect Scores").
+    private static final Pattern SERVICE_ONLY = Pattern.compile(
+            "(?i)^(the )?(russian |japanese |gel |dry |e-file |classic |men's |mens )?(manicures?|pedicures?|nails?|nail (extensions?|art|salons?)|"
+                    + "gel( nails| extensions| polish)?|extensions?|microblading|powder( brows)?|ombre brows|nano brows|lip blush(ing)?|"
+                    + "permanent (makeup|eyeliner)|eyeliner|brows?|scar camouflage)$|(?i)^(one|two|three|a|an) (question|thing|tip|note)s?$|(?i)^(highest|top|best|most) .*");
+
     private AiAnswerParser() {
     }
 
@@ -106,6 +112,7 @@ public final class AiAnswerParser {
         if (cleaned.length() < 3 || cleaned.length() > 60) return;
         if (cleaned.matches(".*[0-9]{3,}.*") || cleaned.contains("·")) return;
         if (GENERIC.matcher(cleaned).find()) return;
+        if (SERVICE_ONLY.matcher(cleaned).matches() || cleaned.matches(".*\\d+\\s*/\\s*\\d+.*")) return;
         // Business names start with a capital or a digit; bold lowercase text is a service ("powder brows").
         if (!Character.isUpperCase(cleaned.codePointAt(0)) && !Character.isDigit(cleaned.codePointAt(0))) return;
         // A whole sentence in bold is emphasis, not a name.
