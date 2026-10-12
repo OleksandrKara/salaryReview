@@ -62,12 +62,23 @@ class CheckoutReviewTriggerServiceTest {
     }
 
     private static SquareWebhookEvent.Payment payment(String status, String orderId, String customerId) {
-        return new SquareWebhookEvent.Payment("pay_1", status, orderId, customerId, null, null, null);
+        return new SquareWebhookEvent.Payment("pay_1", status, orderId, customerId, null, null, null, null);
     }
 
     private static SquareClient.Order order(String customerId, List<SquareClient.Fulfillment> fulfillments) {
         return new SquareClient.Order("order_1", "loc_1", customerId, "COMPLETED", "2026-07-01T00:00:00Z",
                 "2026-07-01T00:00:00Z", null, null, null, null, fulfillments, null);
+    }
+
+    @Test
+    @DisplayName("online booking deposit (note \"Deposit for ...\") → no review text, no rebooking, Square not even asked")
+    void siteDepositIsSkipped() {
+        var deposit = new SquareWebhookEvent.Payment("pay_dep", "COMPLETED", "order_dep", "CUST", null, null, null,
+                "Deposit for Color Booster (booking 83k4x9iswty9b6)");
+        service.handlePaymentUpdated(BUSINESS_ID, deposit);
+        verifyNoInteractions(square);
+        verify(repository, never()).save(any());
+        verifyNoInteractions(rebookingTrigger);
     }
 
     @Test

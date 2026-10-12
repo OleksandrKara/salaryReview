@@ -69,6 +69,15 @@ public class CheckoutReviewTriggerService {
                 return; // Square redelivered an event we already enqueued a flow for
             }
 
+            // 2026-10-12 owner report (business 2): a client who paid the $100 online deposit for a
+            // future Color Booster got "how did we do?" with no visit. The booking sites
+            // (salonLandings pmu_service) charge deposits as order-less payments noted
+            // "Deposit for <service> (booking <id>)"; Square then files them under source "Reporting",
+            // which the Invoices check below doesn't catch. 6 such texts went out 2026-09-21..10-12.
+            if (isSiteDeposit(payment)) {
+                log.info("Checkout-review/same-day-rebooking triggers skipped for payment {}: online booking deposit, not a visit", payment.id());
+                return;
+            }
             SquareClient square = squareClientProvider.forBusiness(businessId);
             Optional<SquareClient.Order> order = square.orderById(payment.orderId());
             if (order.isEmpty()) {
@@ -183,6 +192,10 @@ public class CheckoutReviewTriggerService {
         Instant startOfToday = ZonedDateTime.now(SALON_ZONE).toLocalDate().atStartOfDay(SALON_ZONE).toInstant();
         return repository.existsByBusinessIdAndPhoneNumberAndAutomationKeyAndCreatedAtAfter(
                 businessId, phoneNumber, AUTOMATION_KEY, startOfToday);
+    }
+
+    static boolean isSiteDeposit(SquareWebhookEvent.Payment payment) {
+        return payment.note() != null && payment.note().trim().startsWith("Deposit for ");
     }
 
     private static boolean isSet(String value) {
