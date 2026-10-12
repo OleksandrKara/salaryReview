@@ -31,6 +31,7 @@ import java.util.TreeMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -170,7 +171,7 @@ class TwilioInboundSmsControllerTest {
         verify(messageLogService).logInbound(BUSINESS_ID, PHONE, p.get("Body"), "checkout_review_request");
         verify(replyService).sendBranchReply(pending, true);
         verify(replyFlowRepository).save(pending);
-        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, null, p.get("Body"), "checkout_review_request", null);
+        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, null, p.get("Body"), "checkout_review_request", null, 0, java.util.List.of());
         org.assertj.core.api.Assertions.assertThat(pending.getState()).isEqualTo(SmsReplyFlow.STATE_COMPLETED);
     }
 
@@ -440,7 +441,7 @@ class TwilioInboundSmsControllerTest {
                 .andExpect(status().isOk());
 
         verify(messageLogService).logInbound(BUSINESS_ID, PHONE, p.get("Body"), null);
-        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, null, p.get("Body"), null, null);
+        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, null, p.get("Body"), null, null, 0, java.util.List.of());
         verifyNoInteractions(replyService);
         verify(replyFlowRepository, never()).save(any());
     }
@@ -461,7 +462,7 @@ class TwilioInboundSmsControllerTest {
                 .andExpect(status().isOk());
 
         verify(messageLogService).logInbound(BUSINESS_ID, PHONE, p.get("Body"), "repeat_customer_winback");
-        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, null, p.get("Body"), "repeat_customer_winback", null);
+        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, null, p.get("Body"), "repeat_customer_winback", null, 0, java.util.List.of());
         verifyNoInteractions(replyService);
     }
 
@@ -481,7 +482,7 @@ class TwilioInboundSmsControllerTest {
                         .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
                 .andExpect(status().isOk());
 
-        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, "Jane Doe", p.get("Body"), null, null);
+        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, "Jane Doe", p.get("Body"), null, null, 0, java.util.List.of());
     }
 
     @Test
@@ -509,7 +510,7 @@ class TwilioInboundSmsControllerTest {
                         .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
                 .andExpect(status().isOk());
 
-        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, "Jane Doe", p.get("Body"), null, null);
+        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, "Jane Doe", p.get("Body"), null, null, 0, java.util.List.of());
     }
 
     @Test
@@ -612,7 +613,7 @@ class TwilioInboundSmsControllerTest {
                 .andExpect(status().isOk());
 
         verify(blockedNumberRepository, never()).save(any());
-        verify(telegramService).sendInboundSmsAlert(eq(BUSINESS_ID), eq(PHONE), any(), eq(p.get("Body")), any(), any());
+        verify(telegramService).sendInboundSmsAlert(eq(BUSINESS_ID), eq(PHONE), any(), eq(p.get("Body")), any(), any(), anyInt(), any());
     }
 
     @Test

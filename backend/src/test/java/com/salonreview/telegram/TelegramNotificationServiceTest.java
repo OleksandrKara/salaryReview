@@ -560,4 +560,18 @@ class TelegramNotificationServiceTest {
         assertThat(halves[0]).contains("⚠️ Saved after 1 refused attempt(s) this hour").doesNotContain("Карта сохранена");
         assertThat(halves[1]).contains("⚠️ Карта сохранена не с первой попытки").doesNotContain("Saved after");
     }
+
+    @Test
+    void photoOnlyTextSaysPhotosInsteadOfEmptyQuote() {
+        var photo = new com.salonreview.domain.SmsMessageMedia();
+        photo.setContentType("image/jpeg");
+        photo.setFileData(new byte[]{1, 2, 3});
+        TelegramNotificationService service = service(mock(TelegramConfigService.class));
+        String text = service.formatInboundSmsAlert("+16195550100", "Jane", "", null, null, 2L, 2, java.util.List.of(photo, photo));
+        assertThat(text).contains("📷 2 photos (below)").doesNotContain("“”");
+        String withText = service.formatInboundSmsAlert("+16195550100", "Jane", "Here are my brows", null, null, 2L, 1, java.util.List.of(photo));
+        assertThat(withText).contains("“Here are my brows”").contains("📷 1 photo (below)");
+        assertThat(TelegramNotificationService.attachmentLine(1, java.util.List.of())).contains("1 attachment");
+        assertThat(TelegramNotificationService.attachmentLine(0, java.util.List.of())).isNull();
+    }
 }

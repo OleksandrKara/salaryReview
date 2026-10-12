@@ -1,5 +1,7 @@
 package com.salonreview.sms;
 
+import com.salonreview.domain.SmsMessageMedia;
+
 import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.config.TwilioInboundProperties;
 import com.salonreview.domain.BlockedNumber;
@@ -25,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
 import java.util.Locale;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -151,7 +154,8 @@ public class TwilioInboundSmsController {
 
         // MMS photos, if any — see SmsMediaService's own doc for why this is best-effort and
         // never blocks the rest of this handler (the text/thread above is already durable).
-        mediaService.ingestInboundMedia(businessId, logged.getId(), params);
+        List<SmsMessageMedia> media = mediaService.ingestInboundMedia(businessId, logged.getId(), params);
+        int attachmentCount = SmsMediaService.attachmentCount(params);
 
         // An Apple tapback-over-SMS reaction (e.g. `Loved "..."`) still lands here as an ordinary
         // text — it's logged above like any other inbound message either way — but if it parses and
@@ -183,7 +187,8 @@ public class TwilioInboundSmsController {
             // is already resolved above; populate the context explicitly for this one call, same
             // established pattern every other background/webhook caller in this codebase uses.
             String customerName = currentBusinessContext.runAsAndGet(businessId, () -> resolveCustomerName(from));
-            telegramService.sendInboundSmsAlert(businessId, from, customerName, body, logged.getAutomationKey(), websiteContext);
+            telegramService.sendInboundSmsAlert(businessId, from, customerName, body, logged.getAutomationKey(), websiteContext,
+                    attachmentCount, media == null ? List.of() : media);
         }
 
         // A STOP-style reply isn't a satisfaction-rating reply — the block above already stops

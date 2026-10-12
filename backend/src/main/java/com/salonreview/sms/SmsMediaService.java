@@ -89,23 +89,24 @@ public class SmsMediaService {
      * fetch doesn't lose the others, and nothing here ever throws back into the caller (see
      * {@code TwilioInboundSmsController}, which already logs the message row unconditionally
      * before this runs — a photo that fails to download still leaves the text/thread intact). */
-    public void ingestInboundMedia(long smsMessageId, Map<String, String> params) {
-        ingestInboundMedia(null, smsMessageId, params);
+    public List<SmsMessageMedia> ingestInboundMedia(long smsMessageId, Map<String, String> params) {
+        return ingestInboundMedia(null, smsMessageId, params);
     }
 
     /** Same, with the Twilio credentials of the business the text was sent to (2026-10-05: AK PMU
      * asks clients for photos in its consultation confirmation; its number may not always share
      * the legacy business's Twilio account). {@code businessId} null = legacy business. */
-    public void ingestInboundMedia(Long businessId, long smsMessageId, Map<String, String> params) {
+    public List<SmsMessageMedia> ingestInboundMedia(Long businessId, long smsMessageId, Map<String, String> params) {
+        List<SmsMessageMedia> stored = new java.util.ArrayList<>();
         int numMedia = parseNumMedia(params.get("NumMedia"));
         if (numMedia == 0) {
-            return;
+            return stored;
         }
         TwilioSmsConfig config = businessId != null ? configService.get(businessId) : configService.getForAutomation();
         if (!config.isConfigured()) {
             log.warn("Inbound MMS with {} attachment(s) on message {} skipped — Twilio credentials not configured",
                     numMedia, smsMessageId);
-            return;
+            return stored;
         }
         for (int i = 0; i < numMedia; i++) {
             String mediaUrl = params.get("MediaUrl" + i);
@@ -115,11 +116,18 @@ public class SmsMediaService {
             String contentType = params.get("MediaContentType" + i);
             try {
                 byte[] data = client.fetchMedia(config, mediaUrl);
-                store(smsMessageId, contentType, data);
+                stored.add(store(smsMessageId, contentType, data));
             } catch (Exception e) {
                 log.warn("Failed to fetch inbound MMS attachment {} for message {}: {}", i, smsMessageId, e.getMessage());
             }
         }
+        return stored;
+    }
+
+    /** NumMedia from Twilio's inbound webhook (0 when absent): how many attachments the customer
+     * sent, even when downloading one of them failed. */
+    public static int attachmentCount(Map<String, String> params) {
+        return parseNumMedia(params.get("NumMedia"));
     }
 
     private static int parseNumMedia(String raw) {
