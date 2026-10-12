@@ -62,6 +62,9 @@ public class LeadFollowUpScheduler {
      * short enough that a lead who comes back and leaves their info again days later still does. */
     private static final Duration RESEND_COOLDOWN = Duration.ofHours(24);
 
+    /** A lead who texted us within this window is in a conversation: no nudge at any step. */
+    private static final Duration TEXTED_US_WINDOW = Duration.ofHours(24);
+
     /** Funnel steps 2/3's own poll windows — generous (24h wide) so a scheduler outage of up to a
      * day doesn't skip a touch entirely, same reasoning as {@link #MAX_AGE} above. */
     private static final Duration EMAIL_FOLLOWUP_MIN_AGE = Duration.ofHours(24);
@@ -142,8 +145,8 @@ public class LeadFollowUpScheduler {
         }
         // Already texting with us (e.g. asked a question by SMS): a "started booking online, can I
         // help?" nudge on top of a live conversation reads as a bot.
-        if (contactsRepository.textedUsSince(contact.phoneNumber(), businessId, Instant.now().minus(Duration.ofHours(24)))) {
-            save(contact, businessId, LeadFollowUpSend.STATE_SKIPPED_RECENTLY_SENT);
+        if (contactsRepository.textedUsSince(contact.phoneNumber(), businessId, Instant.now().minus(TEXTED_US_WINDOW))) {
+            save(contact, businessId, LeadFollowUpSend.STATE_SKIPPED_TEXTED_US);
             return;
         }
         boolean upcoming;
@@ -211,8 +214,18 @@ public class LeadFollowUpScheduler {
         }
     }
 
+    /** From 24h before the touch onward: a text before the nudge, or any reply since. */
+    private static Instant textedSince(LeadFollowUpSend touch) {
+        Instant created = touch.getCreatedAt() != null ? touch.getCreatedAt() : Instant.now();
+        return created.minus(TEXTED_US_WINDOW);
+    }
+
     private void processEmailFollowUp(LeadFollowUpSend touch) {
         Long businessId = touch.getBusinessId();
+        if (contactsRepository.textedUsSince(touch.getPhoneNumber(), businessId, textedSince(touch))) {
+            saveEmailState(touch, LeadFollowUpSend.STATE_SKIPPED_TEXTED_US);
+            return;
+        }
         SquareClient square;
         try {
             square = squareClientProvider.forBusiness(businessId);
@@ -309,6 +322,10 @@ public class LeadFollowUpScheduler {
 
     private void processSmsFinalFollowUp(LeadFollowUpSend touch) {
         Long businessId = touch.getBusinessId();
+        if (contactsRepository.textedUsSince(touch.getPhoneNumber(), businessId, textedSince(touch))) {
+            saveSmsFollowupState(touch, LeadFollowUpSend.STATE_SKIPPED_TEXTED_US);
+            return;
+        }
         SquareClient square;
         try {
             square = squareClientProvider.forBusiness(businessId);

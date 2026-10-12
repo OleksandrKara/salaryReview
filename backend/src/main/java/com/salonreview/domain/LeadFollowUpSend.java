@@ -24,6 +24,9 @@ public class LeadFollowUpSend {
     public static final String STATE_SENT = "SENT";
     public static final String STATE_SKIPPED_BOOKED = "SKIPPED_BOOKED";
     public static final String STATE_SKIPPED_DISABLED = "SKIPPED_DISABLED";
+    /** The lead texted the studio in the last 24h: already in a conversation (2026-10-12). Used by
+     * all three steps' state columns. */
+    public static final String STATE_SKIPPED_TEXTED_US = "SKIPPED_TEXTED_US";
     /** A different {@code contactUpdatedAt} touch for the same phone number already got a SENT
      * nudge within {@code LeadFollowUpScheduler}'s own resend cooldown — see that scheduler and
      * {@code LeadFollowUpSendRepository#existsByPhoneNumberAndStateAndCreatedAtAfter}'s own doc for

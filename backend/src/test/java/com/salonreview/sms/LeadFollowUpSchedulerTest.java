@@ -170,7 +170,7 @@ class LeadFollowUpSchedulerTest {
         verifyNoInteractions(smsService);
         ArgumentCaptor<LeadFollowUpSend> captor = ArgumentCaptor.forClass(LeadFollowUpSend.class);
         verify(sendRepository).save(captor.capture());
-        assertThat(captor.getValue().getState()).isEqualTo(LeadFollowUpSend.STATE_SKIPPED_RECENTLY_SENT);
+        assertThat(captor.getValue().getState()).isEqualTo(LeadFollowUpSend.STATE_SKIPPED_TEXTED_US);
     }
 
     @Test
@@ -463,6 +463,21 @@ class LeadFollowUpSchedulerTest {
 
         verify(smsService).sendTemplated(BUSINESS_ID, "lead_follow_up_final_nudge", PHONE, Map.of("greeting", "Hi Jane!"));
         assertThat(row.getSmsFollowupState()).isEqualTo(LeadFollowUpSend.SMS_FOLLOWUP_STATE_SENT);
+    }
+
+    @Test
+    @DisplayName("final SMS step: lead texted us → SKIPPED_TEXTED_US, no text sent")
+    void finalSmsFollowUpSkipsWhenLeadTextedUs() {
+        UUID contactId = UUID.randomUUID();
+        LeadFollowUpSend row = touch(1L, contactId, LeadFollowUpSend.STATE_SENT);
+        when(sendRepository.findByStateAndSmsFollowupStateIsNullAndCreatedAtBetween(eq(LeadFollowUpSend.STATE_SENT), any(), any()))
+                .thenReturn(List.of(row));
+        when(contactsRepository.textedUsSince(eq(PHONE), eq(BUSINESS_ID), any())).thenReturn(true);
+
+        scheduler.sendDueSmsFinalFollowUps();
+
+        verifyNoInteractions(smsService);
+        assertThat(row.getSmsFollowupState()).isEqualTo(LeadFollowUpSend.STATE_SKIPPED_TEXTED_US);
     }
 
     @Test
