@@ -592,9 +592,11 @@ public class SquareClient {
 
     /** Catalog list price per service-variation id, for the price-cutoff counting. */
     public Map<String, BigDecimal> catalogPrices(Collection<String> variationIds) {
-        List<String> ids = variationIds.stream().filter(id -> id != null && !id.isBlank()).distinct().sorted().toList();
-        if (ids.isEmpty()) return new HashMap<>();
-        return cached("catalogPrices:" + ids, Duration.ofMinutes(10), () -> {
+        return perIdCached("catalogPrice:", variationIds, this::fetchCatalogPricesLive);
+    }
+
+    private Map<String, BigDecimal> fetchCatalogPricesLive(List<String> ids) {
+        {
             Map<String, BigDecimal> prices = new HashMap<>();
             CatalogBatchRetrieveResponse resp = throttled(() -> http.post()
                     .uri("/v2/catalog/batch-retrieve")
@@ -608,7 +610,41 @@ public class SquareClient {
                 }
             }
             return prices;
-        });
+        }
+    }
+
+    /** Cache per catalog id rather than per requested set (2026-10-12): Marketing Contacts asks for
+     * each contact's own mix of variation ids, so a whole-set cache key almost never hit and every
+     * contact cost two live batch-retrieves (~14s cold for ~275 contacts). Now only ids not cached
+     * in the last 10 minutes are fetched, in one call. An id Square returns nothing for is cached
+     * as "none" too, so it isn't re-requested every time. */
+    private <V> Map<String, V> perIdCached(String prefix, Collection<String> variationIds,
+                                           java.util.function.Function<List<String>, Map<String, V>> fetchLive) {
+        List<String> ids = variationIds.stream().filter(id -> id != null && !id.isBlank()).distinct().sorted().toList();
+        Map<String, V> out = new HashMap<>();
+        if (ids.isEmpty()) return out;
+        long now = System.nanoTime();
+        List<String> missing = new ArrayList<>();
+        for (String id : ids) {
+            Cached<?> c = cache.get(prefix + id);
+            if (c != null && c.expiresAtNanos() > now) {
+                @SuppressWarnings("unchecked") java.util.Optional<V> v = (java.util.Optional<V>) c.value();
+                v.ifPresent(value -> out.put(id, value));
+            } else {
+                missing.add(id);
+            }
+        }
+        if (!missing.isEmpty()) {
+            Map<String, V> fetched = fetchLive.apply(missing);
+            long expires = System.nanoTime() + Duration.ofMinutes(10).toNanos();
+            for (String id : missing) {
+                V v = fetched.get(id);
+                cache.put(prefix + id, new Cached<>(java.util.Optional.ofNullable(v), expires));
+                if (v != null) out.put(id, v);
+            }
+            lastFetchAt = Instant.now();
+        }
+        return out;
     }
 
     /**
@@ -618,9 +654,11 @@ public class SquareClient {
      * either side is missing or generic.
      */
     public Map<String, String> catalogNames(Collection<String> variationIds) {
-        List<String> ids = variationIds.stream().filter(id -> id != null && !id.isBlank()).distinct().sorted().toList();
-        if (ids.isEmpty()) return new HashMap<>();
-        return cached("catalogNames:" + ids, Duration.ofMinutes(10), () -> {
+        return perIdCached("catalogName:", variationIds, this::fetchCatalogNamesLive);
+    }
+
+    private Map<String, String> fetchCatalogNamesLive(List<String> ids) {
+        {
             Map<String, String> names = new HashMap<>();
             CatalogBatchRetrieveResponse resp = throttled(() -> http.post()
                     .uri("/v2/catalog/batch-retrieve")
@@ -651,7 +689,7 @@ public class SquareClient {
                 if (combined != null) names.put(obj.id(), combined);
             }
             return names;
-        });
+        }
     }
 
     /**
