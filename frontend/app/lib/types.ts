@@ -2486,3 +2486,19 @@ export interface AiHistoryItem {
 }
 export interface AiRun { id: number; trigger: string; startedAt: string; finishedAt: string | null; checksOk: number; checksFailed: number; costUsd: number; stoppedReason: string | null }
 export interface AiVisibilitySettingsDto { brandAliases: string[]; ownDomains: string[]; monthlyBudgetUsd: number; digestEnabled: boolean }
+export interface AiPageView {
+  url: string;
+  own: boolean;
+  lastFetchedAt: string | null;
+  httpStatus: number | null;
+  fetchMethod: string | null;
+  readable: boolean;
+  businessPage: boolean;
+  components: Record<string, { present: boolean; evidence?: string }>;
+  metrics: Record<string, unknown>;
+  error: string | null;
+  citedTimes: number;
+}
+export interface AiPageGapItem { component: string; label: string; competitorsWith: number; competitorsCompared: number; weak: boolean }
+export interface AiPageComparison { queryId: number; query: string; targetUrl: string | null; ours: AiPageView | null; competitors: AiPageView[]; gaps: AiPageGapItem[]; lastRefreshedAt: string | null }
+export interface AiPageGap { targetUrl: string; component: string; label: string; competitorsWith: number; competitorsCompared: number; queries: string[] }

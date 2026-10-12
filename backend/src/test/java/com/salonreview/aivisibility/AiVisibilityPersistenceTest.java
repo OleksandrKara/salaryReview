@@ -1,6 +1,8 @@
 package com.salonreview.aivisibility;
 
 import com.salonreview.domain.AiVisibilityCheck;
+import com.salonreview.domain.AiVisibilityPage;
+import com.salonreview.repo.AiVisibilityPageRepository;
 import com.salonreview.domain.AiVisibilityQuery;
 import com.salonreview.domain.AiVisibilityRun;
 import com.salonreview.domain.AiVisibilitySettings;
@@ -36,6 +38,8 @@ class AiVisibilityPersistenceTest {
     @Autowired private AiVisibilityCheckRepository checks;
     @Autowired private AiVisibilityAdminService admin;
     @Autowired private AiVisibilityQueryService readModel;
+    @Autowired private AiVisibilityPageRepository pages;
+    @Autowired private AiVisibilityPageService pageService;
 
     private Long a;
     private Long b;
@@ -89,5 +93,29 @@ class AiVisibilityPersistenceTest {
         assertThatThrownBy(() -> admin.add(a, "one more question about nails", null, null))
                 .isInstanceOf(ResponseStatusException.class).hasMessageContaining("409");
         assertThat(admin.approveAll(a)).isEqualTo(20);
+    }
+
+    @Test
+    void pageComparisonReadsStoredSnapshotsForThisBusinessOnly() {
+        AiVisibilityQuery q = admin.add(b, "best brow studio in San Diego", "brows", "https://testb.example/brows");
+        AiVisibilityRun run = runs.save(AiVisibilityRun.builder().businessId(b).trigger(AiVisibilityRun.Trigger.SCHEDULED).build());
+        for (String rival : List.of("https://rival1.example/brows", "https://rival2.example/")) {
+            checks.save(AiVisibilityCheck.builder().businessId(b).runId(run.getId()).queryId(q.getId()).engine(AiVisibilityCheck.Engine.GEMINI)
+                    .status(AiVisibilityCheck.Status.OK).mentioned(false)
+                    .sourcesCited(List.of(Map.of("domain", rival.replaceAll("https://|/.*", ""), "url", rival), Map.of("domain", "yelp.com", "url", "https://yelp.com/x"))).build());
+            pages.save(AiVisibilityPage.builder().businessId(b).url(rival).own(false).lastFetchedAt(java.time.Instant.now()).fetchMethod("DIRECT")
+                    .components(new java.util.LinkedHashMap<>(Map.of("FAQ", Map.of("present", true, "evidence", "FAQPage schema"))))
+                    .metrics(new java.util.LinkedHashMap<>(Map.of("businessPage", true))).build());
+        }
+        pages.save(AiVisibilityPage.builder().businessId(b).url("https://testb.example/brows").own(true).lastFetchedAt(java.time.Instant.now()).fetchMethod("DIRECT")
+                .components(new java.util.LinkedHashMap<>(Map.of("FAQ", Map.of("present", false))))
+                .metrics(new java.util.LinkedHashMap<>(Map.of("businessPage", true))).build());
+        pages.flush();
+
+        var cmp = pageService.comparison(b, q.getId());
+        assertThat(cmp.competitors()).extracting(AiVisibilityPageService.PageView::url).containsExactlyInAnyOrder("https://rival1.example/brows", "https://rival2.example/");
+        assertThat(cmp.gaps()).extracting(AiVisibilityPageService.Gap::component).containsExactly("FAQ");
+        assertThat(pageService.pageGaps(b)).hasSize(1);
+        assertThatThrownBy(() -> pageService.comparison(a, q.getId())).isInstanceOf(ResponseStatusException.class);
     }
 }

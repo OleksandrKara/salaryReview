@@ -12,7 +12,8 @@ import org.springframework.stereotype.Component;
 
 /** Weekly AI-visibility run (design.md D3): Monday 06:00 PT, one replica (ShedLock), every business
  * with {@code ai-visibility.enabled} and a settings row; a failure in one business never stops the
- * next. The digest goes out right after each business's run. */
+ * next. The digest goes out right after each business's run; on the first Monday of a month the
+ * page comparison is refreshed first and the digest adds the top page gaps. */
 @Component
 public class AiVisibilityScheduler {
 
@@ -23,14 +24,17 @@ public class AiVisibilityScheduler {
     private final CurrentBusinessContext currentBusinessContext;
     private final AiVisibilityRunService runService;
     private final AiVisibilityDigestService digest;
+    private final AiVisibilityPageService pages;
 
     public AiVisibilityScheduler(AiVisibilitySettingsRepository settings, BusinessFeatureService businessFeatures,
-            CurrentBusinessContext currentBusinessContext, AiVisibilityRunService runService, AiVisibilityDigestService digest) {
+            CurrentBusinessContext currentBusinessContext, AiVisibilityRunService runService, AiVisibilityDigestService digest,
+            AiVisibilityPageService pages) {
         this.settings = settings;
         this.businessFeatures = businessFeatures;
         this.currentBusinessContext = currentBusinessContext;
         this.runService = runService;
         this.digest = digest;
+        this.pages = pages;
     }
 
     @Scheduled(cron = "0 0 6 * * MON", zone = "America/Los_Angeles")
@@ -40,7 +44,19 @@ public class AiVisibilityScheduler {
             Long businessId = s.getBusinessId();
             if (!businessFeatures.isEnabled(businessId, BusinessFeatureService.AI_VISIBILITY_ENABLED)) continue;
             try {
-                currentBusinessContext.runAs(businessId, () -> runService.runScheduled(businessId).ifPresent(digest::sendFor));
+                boolean firstMondayOfMonth = java.time.LocalDate.now(AiVisibilityRunService.PT).getDayOfMonth() <= 7;
+                currentBusinessContext.runAs(businessId, () -> runService.runScheduled(businessId).ifPresent(run -> {
+                    // design.md D10: monthly page refresh right after the checks, so the digest can
+                    // report this month's page gaps.
+                    if (firstMondayOfMonth) {
+                        try {
+                            pages.refreshAll(businessId);
+                        } catch (RuntimeException e) {
+                            log.warn("Monthly page refresh failed for business {}: {}", businessId, e.toString());
+                        }
+                    }
+                    digest.sendFor(run, firstMondayOfMonth);
+                }));
             } catch (RuntimeException e) {
                 log.warn("AI visibility run failed for business {}: {}", businessId, e.toString());
             }

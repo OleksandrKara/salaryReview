@@ -101,6 +101,8 @@ import type {
   AiHistoryItem,
   AiRun,
   AiVisibilitySettingsDto,
+  AiPageComparison,
+  AiPageGap,
 } from './types';
 import { sourcesParam } from '../owner/marketing/TrafficSourceFilter';
 
@@ -324,6 +326,11 @@ export const api = {
   approveAllAiQueries: () => proxyJson<{ approved: number }>(`/api/owner/marketing/ai/queries/approve-all`, 'POST', {}),
   recheckAiQuery: (id: number) => proxyJson<AiRun>(`/api/owner/marketing/ai/queries/${id}/recheck`, 'POST', {}),
   getAiRun: (id: number) => proxyGet<AiRun>(`/api/owner/marketing/ai/runs/${id}`),
+  getAiPageComparison: (id: number) => proxyGet<AiPageComparison>(`/api/owner/marketing/ai/queries/${id}/pages`),
+  refreshAiPages: (id: number) => proxyJson<{ started: boolean }>(`/api/owner/marketing/ai/queries/${id}/pages/refresh`, 'POST', {}),
+  getAiPageGaps: () => proxyGet<AiPageGap[]>(`/api/owner/marketing/ai/page-gaps`),
+  addAiCompetitor: (name: string, website: string) =>
+    proxyJson<{ added: boolean }>(`/api/owner/marketing/ai/competitors`, 'POST', { name, website }),
   getAiVisibilitySettings: () => proxyGet<AiVisibilitySettingsDto>(`/api/owner/marketing/ai/settings`),
   updateAiVisibilitySettings: (body: Partial<AiVisibilitySettingsDto>) =>
     proxyJson<AiVisibilitySettingsDto>(`/api/owner/marketing/ai/settings`, 'PUT', body),
