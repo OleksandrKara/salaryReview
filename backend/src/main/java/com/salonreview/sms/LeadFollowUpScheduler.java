@@ -140,6 +140,12 @@ public class LeadFollowUpScheduler {
             save(contact, businessId, LeadFollowUpSend.STATE_SKIPPED_BOOKED);
             return;
         }
+        // Already texting with us (e.g. asked a question by SMS): a "started booking online, can I
+        // help?" nudge on top of a live conversation reads as a bot.
+        if (contactsRepository.textedUsSince(contact.phoneNumber(), businessId, Instant.now().minus(Duration.ofHours(24)))) {
+            save(contact, businessId, LeadFollowUpSend.STATE_SKIPPED_RECENTLY_SENT);
+            return;
+        }
         boolean upcoming;
         try {
             upcoming = upcomingAppointmentService.hasUpcomingAppointment(contact.phoneNumber(), square);

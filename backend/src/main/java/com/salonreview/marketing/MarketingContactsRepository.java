@@ -237,6 +237,17 @@ public class MarketingContactsRepository {
         return Boolean.TRUE.equals(found);
     }
 
+    /** True if this phone texted the business since {@code since}. Owner 2026-10-12: a client who
+     * texted a question, got a reply from staff, then a minute later got "I saw you started booking
+     * online. Can I help you pick a time?" — she's already in a conversation with us. */
+    public boolean textedUsSince(String phoneNumber, Long businessId, Instant since) {
+        Boolean found = jdbcTemplate.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM sms_message m WHERE m.business_id = ? AND m.phone_number = ?"
+                        + " AND m.direction = 'INBOUND' AND m.created_at >= ?)",
+                Boolean.class, businessId, phoneNumber, Timestamp.from(since));
+        return Boolean.TRUE.equals(found);
+    }
+
     /** One channel-attributed contact — phone_number is the stable match key within this business
      * (contacts is unique on (business_id, phone_number), and callers here always scope by
      * businessId), squareCustomerId the customer profile we happened to link at the time (nullable: none
