@@ -222,6 +222,21 @@ public class MarketingContactsRepository {
                 businessId, Timestamp.from(olderThan), Timestamp.from(newerThan));
     }
 
+    /** True if this phone completed a booking (or a four-hand request) on the site during the same
+     * visit that last saved the contact: a submission row within 10 minutes before the contact's
+     * {@code updated_at}, or any time after it. Owner 2026-10-12: a lead follow-up ("I saw you
+     * started booking online") only makes sense for someone who left their info and did NOT book.
+     * Someone who booked a free consultation, then had it cancelled, got all three follow-ups
+     * because by the time the poll ran Square showed no upcoming appointment. */
+    public boolean bookedOnSiteDuringTouch(String phoneNumber, Long businessId, Instant contactUpdatedAt) {
+        Boolean found = jdbcTemplate.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM marketing.submissions s WHERE s.business_id = ? AND s.customer_phone = ?"
+                        + " AND s.submission_type IN ('booking', 'four_hand_request')"
+                        + " AND s.occurred_at >= ?)",
+                Boolean.class, businessId, phoneNumber, Timestamp.from(contactUpdatedAt.minusSeconds(600)));
+        return Boolean.TRUE.equals(found);
+    }
+
     /** One channel-attributed contact — phone_number is the stable match key within this business
      * (contacts is unique on (business_id, phone_number), and callers here always scope by
      * businessId), squareCustomerId the customer profile we happened to link at the time (nullable: none

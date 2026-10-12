@@ -134,6 +134,12 @@ public class LeadFollowUpScheduler {
     }
 
     private void process(RawContact contact, SquareClient square, Long businessId) {
+        // Booked (or sent a four-hand request) on the site in this same visit: not an abandoned
+        // lead, even if that appointment was cancelled before this poll ran.
+        if (contactsRepository.bookedOnSiteDuringTouch(contact.phoneNumber(), businessId, contact.updatedAt())) {
+            save(contact, businessId, LeadFollowUpSend.STATE_SKIPPED_BOOKED);
+            return;
+        }
         boolean upcoming;
         try {
             upcoming = upcomingAppointmentService.hasUpcomingAppointment(contact.phoneNumber(), square);
