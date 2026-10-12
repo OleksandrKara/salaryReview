@@ -1,6 +1,7 @@
 package com.salonreview.telegram;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.salonreview.domain.SmsMessageMedia;
 import com.salonreview.domain.TelegramNotificationConfig;
 import com.salonreview.repo.BusinessRepository;
 import org.slf4j.Logger;
@@ -19,6 +20,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -149,6 +151,15 @@ public class TelegramNotificationService {
      * (page and traffic source, see SmsWebsiteLeadService); null for any other text. */
     public boolean sendInboundSmsAlert(Long businessId, String phoneNumber, String customerName, String body,
                                        String automationKey, String websiteContext) {
+        return sendInboundSmsAlert(businessId, phoneNumber, customerName, body, automationKey, websiteContext, 0, List.of());
+    }
+
+    /** With MMS attachments (owner request 2026-10-12: a photo-only text arrived as an empty alert).
+     * The alert says how many attachments came in, then each image follows as its own Telegram
+     * photo (uploaded from our stored bytes, so Telegram never has to reach our server). */
+    public boolean sendInboundSmsAlert(Long businessId, String phoneNumber, String customerName, String body,
+                                       String automationKey, String websiteContext, int attachmentCount,
+                                       List<SmsMessageMedia> media) {
         TelegramNotificationConfig cfg = configService.get(businessId);
         String token = cfg.getBotToken();
         String chatId = cfg.getChatId();
@@ -159,7 +170,8 @@ public class TelegramNotificationService {
 
         try {
             Map<String, Object> reqBody = Map.of("chat_id", chatId,
-                    "text", businessLabel(businessId) + formatInboundSmsAlert(phoneNumber, customerName, body, automationKey, websiteContext, businessId),
+                    "text", businessLabel(businessId) + formatInboundSmsAlert(phoneNumber, customerName, body, automationKey, websiteContext, businessId,
+                            attachmentCount, media),
                     "parse_mode", "HTML", "disable_web_page_preview", true);
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
@@ -172,6 +184,7 @@ public class TelegramNotificationService {
                 log.warn("Inbound-SMS Telegram alert send failed: HTTP {} {}", res.statusCode(), res.body());
                 return false;
             }
+            sendPhotos(token, chatId, media);
             return true;
         } catch (Exception e) {
             log.warn("Inbound-SMS Telegram alert send failed (caller unaffected): {}", e.getMessage());
@@ -195,6 +208,11 @@ public class TelegramNotificationService {
 
     String formatInboundSmsAlert(String phoneNumber, String customerName, String body, String automationKey,
                                  String websiteContext, Long businessId) {
+        return formatInboundSmsAlert(phoneNumber, customerName, body, automationKey, websiteContext, businessId, 0, List.of());
+    }
+
+    String formatInboundSmsAlert(String phoneNumber, String customerName, String body, String automationKey,
+                                 String websiteContext, Long businessId, int attachmentCount, List<SmsMessageMedia> media) {
         String displayPhone = formatPhoneDisplay(phoneNumber);
         StringBuilder sb = new StringBuilder("📩 <b>New message from ")
                 .append(escapeHtml(customerName != null && !customerName.isBlank() ? customerName : displayPhone))
@@ -208,7 +226,12 @@ public class TelegramNotificationService {
         if (websiteContext != null && !websiteContext.isBlank()) {
             sb.append(escapeHtml(websiteContext)).append('\n');
         }
-        sb.append("\n“").append(escapeHtml(body)).append("”\n\n");
+        if (body != null && !body.isBlank()) {
+            sb.append("\n“").append(escapeHtml(body)).append("”\n");
+        }
+        String attachments = attachmentLine(attachmentCount, media);
+        if (attachments != null) sb.append(body != null && !body.isBlank() ? "" : "\n").append(attachments).append('\n');
+        sb.append('\n');
         sb.append("<a href=\"").append(escapeHtml(chatLink(phoneNumber, businessId))).append("\">💬 Open chat</a>");
         return sb.toString();
     }
@@ -817,5 +840,91 @@ public class TelegramNotificationService {
                 + "Пожалуйста, проверьте, было ли это действительно согласовано заранее.";
 
         return en + "\n\n—\n\n" + ru;
+    }
+
+    /** "📷 2 photos (below)" / "📎 1 attachment (video/mp4)"; null when the text had none. */
+    static String attachmentLine(int attachmentCount, List<SmsMessageMedia> media) {
+        int count = Math.max(attachmentCount, media == null ? 0 : media.size());
+        if (count == 0) return null;
+        List<SmsMessageMedia> list = media == null ? List.of() : media;
+        long images = list.stream().filter(TelegramNotificationService::isImage).count();
+        if (images == count) return "📷 " + count + (count == 1 ? " photo" : " photos") + " (below)";
+        if (list.isEmpty()) return "📎 " + count + (count == 1 ? " attachment" : " attachments") + " (open the chat to see)";
+        String types = list.stream().map(m -> m.getContentType() == null ? "file" : m.getContentType()).distinct()
+                .reduce((a, b) -> a + ", " + b).orElse("file");
+        return "📎 " + count + (count == 1 ? " attachment" : " attachments") + " (" + escapeHtml(types) + ", below)";
+    }
+
+    private static String extension(String contentType) {
+        if (contentType == null || !contentType.contains("/")) return "bin";
+        String e = contentType.substring(contentType.indexOf('/') + 1).replaceAll("[^a-z0-9]", "");
+        return e.isEmpty() ? "bin" : e;
+    }
+
+    static boolean isImage(SmsMessageMedia m) {
+        String t = m.getContentType();
+        return t != null && t.toLowerCase().startsWith("image/") && m.getFileData() != null && m.getFileData().length > 0;
+    }
+
+    /** Telegram sendPhoto as multipart (our bytes, not a URL). At most 5 per text; never throws. */
+    private void sendPhotos(String token, String chatId, List<SmsMessageMedia> media) {
+        if (media == null) return;
+        int sent = 0;
+        for (SmsMessageMedia m : media) {
+            if (sent >= 5 || m.getFileData() == null || m.getFileData().length == 0) continue;
+            if (!isImage(m)) {
+                sendDocument(token, chatId, m); // short MMS videos (3gpp/mp4) arrive as files
+                sent++;
+                continue;
+            }
+            try {
+                String boundary = "----tg" + java.util.UUID.randomUUID();
+                String ext = m.getContentType().substring("image/".length()).replaceAll("[^a-z0-9]", "");
+                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                out.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n" + chatId + "\r\n").getBytes(StandardCharsets.UTF_8));
+                out.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"photo." + (ext.isEmpty() ? "jpg" : ext)
+                        + "\"\r\nContent-Type: " + m.getContentType() + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                out.write(m.getFileData());
+                out.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+                HttpRequest req = HttpRequest.newBuilder()
+                        .uri(URI.create("https://api.telegram.org/bot" + token + "/sendPhoto"))
+                        .timeout(Duration.ofSeconds(20))
+                        .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                        .POST(HttpRequest.BodyPublishers.ofByteArray(out.toByteArray()))
+                        .build();
+                HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                    // e.g. HEIC or an oversized image Telegram refuses as a photo: retry as a document.
+                    sendDocument(token, chatId, m);
+                }
+                sent++;
+            } catch (Exception e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                log.warn("Telegram photo send failed (alert already sent): {}", e.getMessage());
+            }
+        }
+    }
+
+    private void sendDocument(String token, String chatId, SmsMessageMedia m) {
+        try {
+            String boundary = "----tg" + java.util.UUID.randomUUID();
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            out.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n" + chatId + "\r\n").getBytes(StandardCharsets.UTF_8));
+            out.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"document\"; filename=\"attachment." + extension(m.getContentType()) + "\"\r\nContent-Type: "
+                    + m.getContentType() + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+            out.write(m.getFileData());
+            out.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.telegram.org/bot" + token + "/sendDocument"))
+                    .timeout(Duration.ofSeconds(30))
+                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(out.toByteArray()))
+                    .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (res.statusCode() < 200 || res.statusCode() >= 300) log.warn("Telegram document send failed: HTTP {} {}", res.statusCode(), res.body());
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            log.warn("Telegram document send failed: {}", e.getMessage());
+        }
     }
 }
