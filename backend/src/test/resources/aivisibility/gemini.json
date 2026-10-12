@@ -1,0 +1,122 @@
+{
+ "model_name": "gemini-3.6-flash",
+ "input_tokens": 16,
+ "output_tokens": 544,
+ "reasoning_tokens": 0,
+ "web_search": true,
+ "money_spent": 0.032104,
+ "datetime": "2026-10-12 18:58:06 +00:00",
+ "items": [
+  {
+   "type": "message",
+   "sections": [
+    {
+     "type": "text",
+     "text": "Several highly rated cosmetic tattoo artists and studios in San Diego specialize in **powder brows (ombr\u00e9 powder brows)**, which offer a soft, pixelated, makeup-like gradient effect that works especially well for all skin types (including oily skin).\n\n### Top Powder Brow Artists & Studios in San Diego\n\n1. **Brows Made Studio & Academy**\n   * **Location:** San Diego\n   * **Highlights:** Founded by a master PMU artist and educator who has completed thousands of procedures. Known for creating soft, natural-looking ombr\u00e9 powder brows and nano brows with very precise mapping and subtle pixelation.\n2. **BrowBoss (Brow & Beauty)**\n   * **Location:** La Jolla\n   * **Highlights:** Widely recommended for ombr\u00e9 powder brows. Their artists specialize in working with oily skin types to ensure long-lasting, beautifully healed powder brow results.\n3. **Beaut\u00e9 by Nancy (Nancy Tran)**\n   * **Location:** San Diego\n   * **Highlights:** A master PMU artist known for soft, airy ombr\u00e9 powder brows and color corrections. Ideal if you prefer a subtle transition from light in the front to denser coverage at the tail.\n4. **Anna Kara Permanent Makeup Studio**\n   * **Location:** San Diego\n   * **Highlights:** A popular studio featuring highly trained PMU artists who offer powder/ombr\u00e9 shading, nano brows, and combo techniques tailored to individual facial anatomy and skin undertones.\n5. **Mika Beauty And Brows**\n   * **Location:** San Diego / North County area\n   * **Highlights:** Focuses on customized, natural permanent makeup including ombr\u00e9 powder brows, combo brows, and nano stroke techniques.\n\n---\n\n### Tips Before You Book\n* **Check Healed Portfolio:** Always look for healed photos on the artist\u2019s Instagram or website rather than just fresh \"right after\" photos. Powder brows usually soften by 20\u201330% after healing.\n* **Consultation & Skin Type:** Powder brows are ideal for oily, combination, or mature skin where microblading strokes might blur over time.\n* **Licensing & Sanitation:** Ensure the studio is licensed by the County of San Diego Department of Environmental Health for body art/tattooing.",
+     "annotations": [
+      {
+       "title": "reddit.com",
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGAUVU7lTvxHbx44kDv_kkRh9bRj1SQO6hvgJL_H137unqggSX1CpxRh2db4EXjNjl_wbkXZaoKvTijrTI3zQkcT_rktGBF9FrwaJgWRhSdPWQlmtHAGJYAe1asuIJD5_4iviOBtapjavhhpQD0gvD76SCcSlU-hz5Mm_1FasQ7wefP_YwKWc5Cz-So",
+       "direct_url": "https://www.reddit.com/r/microblading/comments/1hurxfy/san_diego_ombre_powder_artists/",
+       "start_index": 0,
+       "end_index": 250,
+       "text": "Several highly rated cosmetic tattoo artists and studios in San Diego specialize in **powder brows (ombr\u00e9 powder brows)**, which offer a soft, pixelated, makeup-like gradient effect that works especially well for all skin types (including oily skin)"
+      },
+      {
+       "title": "browsmade.com",
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFSQZPxco0aydFTuZc_dV3TTj9w2fIfuxEIMSE9DABj7xfoGRBtH9zqA6SUgouQ6o_MPa7igrdt1pxhjn8pfPjfzHhPUj9g9qxMdSheToGH",
+       "direct_url": "https://www.browsmade.com/",
+       "start_index": 0,
+       "end_index": 250,
+       "text": "Several highly rated cosmetic tattoo artists and studios in San Diego specialize in **powder brows (ombr\u00e9 powder brows)**, which offer a soft, pixelated, makeup-like gradient effect that works especially well for all skin types (including oily skin)"
+      },
+      {
+       "title": "browsmade.com",
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFSQZPxco0aydFTuZc_dV3TTj9w2fIfuxEIMSE9DABj7xfoGRBtH9zqA6SUgouQ6o_MPa7igrdt1pxhjn8pfPjfzHhPUj9g9qxMdSheToGH",
+       "direct_url": "https://www.browsmade.com/",
+       "start_index": 308,
+       "end_index": 475,
+       "text": "**Brows Made Studio & Academy**\n   * **Location:** San Diego\n   * **Highlights:** Founded by a master PMU artist and educator who has completed thousands of procedures"
+      },
+      {
+       "title": "browsmade.com",
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFSQZPxco0aydFTuZc_dV3TTj9w2fIfuxEIMSE9DABj7xfoGRBtH9zqA6SUgouQ6o_MPa7igrdt1pxhjn8pfPjfzHhPUj9g9qxMdSheToGH",
+       "direct_url": "https://www.browsmade.com/",
+       "start_index": 477,
+       "end_index": 600,
+       "text": "Known for creating soft, natural-looking ombr\u00e9 powder brows and nano brows with very precise mapping and subtle pixelation"
+      },
+      {
+       "title": "browsmade.com",
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFSQZPxco0aydFTuZc_dV3TTj9w2fIfuxEIMSE9DABj7xfoGRBtH9zqA6SUgouQ6o_MPa7igrdt1pxhjn8pfPjfzHhPUj9g9qxMdSheToGH",
+       "direct_url": "https://www.browsmade.com/",
+       "start_index": 477,
+       "end_index": 600,
+       "text": "Known for creating soft, natural-looking ombr\u00e9 powder brows and nano brows with very precise mapping and subtle pixelation"
+      },
+      {
+       "title": "reddit.com",
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGAUVU7lTvxHbx44kDv_kkRh9bRj1SQO6hvgJL_H137unqggSX1CpxRh2db4EXjNjl_wbkXZaoKvTijrTI3zQkcT_rktGBF9FrwaJgWRhSdPWQlmtHAGJYAe1asuIJD5_4iviOBtapjavhhpQD0gvD76SCcSlU-hz5Mm_1FasQ7wefP_YwKWc5Cz-So",
+       "direct_url": "https://www.reddit.com/r/microblading/comments/1hurxfy/san_diego_ombre_powder_artists/",
+       "start_index": 605,
+       "end_index": 725,
+       "text": "**BrowBoss (Brow & Beauty)**\n   * **Location:** La Jolla\n   * **Highlights:** Widely recommended for ombr\u00e9 powder brows"
+      },
+      {
+       "title": "reddit.com",
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGAUVU7lTvxHbx44kDv_kkRh9bRj1SQO6hvgJL_H137unqggSX1CpxRh2db4EXjNjl_wbkXZaoKvTijrTI3zQkcT_rktGBF9FrwaJgWRhSdPWQlmtHAGJYAe1asuIJD5_4iviOBtapjavhhpQD0gvD76SCcSlU-hz5Mm_1FasQ7wefP_YwKWc5Cz-So",
+       "direct_url": "https://www.reddit.com/r/microblading/comments/1hurxfy/san_diego_ombre_powder_artists/",
+       "start_index": 727,
+       "end_index": 846,
+       "text": "Their artists specialize in working with oily skin types to ensure long-lasting, beautifully healed powder brow results"
+      },
+      {
+       "title": "instagram.com",
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEMPI4t_2_Z1WoZvzsmlnwvixNusnXVygVJsHGSOb04OU46DLHhV2N76mLpjtqZpmbjZlSDanpm8XMRdtNZzfF3HvArYOEIlNXkvYM8ofw3I8IP6Svf-YL-NwJlHnrsyisKTlE=",
+       "direct_url": "https://www.instagram.com/beautebynancy/?hl=en",
+       "start_index": 851,
+       "end_index": 1017,
+       "text": "**Beaut\u00e9 by Nancy (Nancy Tran)**\n   * **Location:** San Diego\n   * **Highlights:** A master PMU artist known for soft, airy ombr\u00e9 powder brows and color corrections"
+      },
+      {
+       "title": "instagram.com",
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEMPI4t_2_Z1WoZvzsmlnwvixNusnXVygVJsHGSOb04OU46DLHhV2N76mLpjtqZpmbjZlSDanpm8XMRdtNZzfF3HvArYOEIlNXkvYM8ofw3I8IP6Svf-YL-NwJlHnrsyisKTlE=",
+       "direct_url": "https://www.instagram.com/beautebynancy/?hl=en",
+       "start_index": 1019,
+       "end_index": 1113,
+       "text": "Ideal if you prefer a subtle transition from light in the front to denser coverage at the tail"
+      },
+      {
+       "title": "pmu-annakara.com",
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFvRS4ZjknmuPtz8qHc94rG_BRW-zTozyrCjZK95UNSXJFWIlEXbsFXQq_F3Z7l6dUhsfFYwx2r5eni88CysOPVdvntginl_1aeK_fMzww=",
+       "direct_url": "https://pmu-annakara.com/",
+       "start_index": 1118,
+       "end_index": 1383,
+       "text": "**Anna Kara Permanent Makeup Studio**\n   * **Location:** San Diego\n   * **Highlights:** A popular studio featuring highly trained PMU artists who offer powder/ombr\u00e9 shading, nano brows, and combo techniques tailored to individual facial anatomy and skin undertones"
+      },
+      {
+       "title": "mikabeautyandbrows.com",
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFaPZITchHpN6YD6F5_cxi0cwV6aWXXL288TRDHH1nPzEMzKOxqUXxA_Pzj_Jb79Qw3fiSC1iGMjHwlDfmQ7PHi1_jm9LBiQTct6hiElSe_P9LvE_4=",
+       "direct_url": "https://mikabeautyandbrows.com/",
+       "start_index": 1388,
+       "end_index": 1602,
+       "text": "**Mika Beauty And Brows**\n   * **Location:** San Diego / North County area\n   * **Highlights:** Focuses on customized, natural permanent makeup including ombr\u00e9 powder brows, combo brows, and nano stroke techniques"
+      },
+      {
+       "title": "mikabeautyandbrows.com",
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFaPZITchHpN6YD6F5_cxi0cwV6aWXXL288TRDHH1nPzEMzKOxqUXxA_Pzj_Jb79Qw3fiSC1iGMjHwlDfmQ7PHi1_jm9LBiQTct6hiElSe_P9LvE_4=",
+       "direct_url": "https://mikabeautyandbrows.com/",
+       "start_index": 1388,
+       "end_index": 1602,
+       "text": "**Mika Beauty And Brows**\n   * **Location:** San Diego / North County area\n   * **Highlights:** Focuses on customized, natural permanent makeup including ombr\u00e9 powder brows, combo brows, and nano stroke techniques"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "fan_out_queries": [
+  "best powder brows artist San Diego",
+  "top rated powder brows studio San Diego"
+ ]
+}

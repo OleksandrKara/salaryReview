@@ -1,0 +1,221 @@
+{
+ "model_name": "claude-haiku-4-5-20251001",
+ "input_tokens": 10981,
+ "output_tokens": 640,
+ "reasoning_tokens": 0,
+ "web_search": true,
+ "money_spent": 0.024181,
+ "datetime": "2026-10-12 20:19:55 +00:00",
+ "items": [
+  {
+   "type": "message",
+   "sections": [
+    {
+     "type": "text",
+     "text": "I'll search for the best places to get a Russian manicure in San Diego for you.",
+     "annotations": null
+    }
+   ]
+  },
+  {
+   "type": "message",
+   "sections": [
+    {
+     "type": "text",
+     "text": "Based on my search, here are some of the best places to get a Russian manicure in San Diego:\n\n## Top Recommended Salons:\n\n1. **",
+     "annotations": null
+    },
+    {
+     "type": "text",
+     "text": "Nailoscope",
+     "annotations": [
+      {
+       "title": "TOP 10 BEST Russian Manicure in San Diego, CA - Updated 2026 - Yelp",
+       "url": "https://www.yelp.com/search?find_desc=Russian+Manicure&find_loc=San+Diego%2C+CA",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": "** - Located in Clairemont with a 4.5-star rating and 211 reviews. ",
+     "annotations": null
+    },
+    {
+     "type": "text",
+     "text": "Their dry manicure technique focuses on meticulous cuticle work, smooth prep, and a polished result that looks refined from every angle.",
+     "annotations": [
+      {
+       "title": "Russian Nails San Diego",
+       "url": "https://www.tiktok.com/discover/russian-nails-san-diego?lang=en",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": "\n\n2. **",
+     "annotations": null
+    },
+    {
+     "type": "text",
+     "text": "Easy Beauty Space",
+     "annotations": [
+      {
+       "title": "TOP 10 BEST Russian Manicure in San Diego, CA - Updated 2026 - Yelp",
+       "url": "https://www.yelp.com/search?find_desc=Russian+Manicure&find_loc=San+Diego%2C+CA",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": "** - Located in Serra Mesa with a 4.6-star rating and 67 reviews. ",
+     "annotations": null
+    },
+    {
+     "type": "text",
+     "text": "Opening July 1st, 2024, Easy Beauty Space elevates nail care in San Diego with a focus on the meticulous Russian gel manicure and pedicure.",
+     "annotations": [
+      {
+       "title": "EASY BEAUTY SPACE - Updated August 2026 - 152 Photos & 71 Reviews - 3656 Ruffin Rd, San Diego, California - Nail Salons - Phone Number - Yelp",
+       "url": "https://www.yelp.com/biz/easy-beauty-space-san-diego-4",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": "\n\n3. **",
+     "annotations": null
+    },
+    {
+     "type": "text",
+     "text": "The Best Nails San Diego",
+     "annotations": [
+      {
+       "title": "TOP 10 BEST Russian Manicure in San Diego, CA - Updated 2026 - Yelp",
+       "url": "https://www.yelp.com/search?find_desc=Russian+Manicure&find_loc=San+Diego%2C+CA",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": "** - Located in Gaslamp with a 4.0-star rating and 109 reviews. ",
+     "annotations": null
+    },
+    {
+     "type": "text",
+     "text": "They perfect your cuticles using the Russian manicure technique and sculpt your nails to your desired length and shape, ensuring a flawless and NATURAL-looking result.",
+     "annotations": [
+      {
+       "title": "The Best Nails San Diego in San Diego, CA",
+       "url": "https://square.site/book/LQ713GHF3DC9D/the-best-nails-san-diego-san-diego-ca",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": "\n\n4. **",
+     "annotations": null
+    },
+    {
+     "type": "text",
+     "text": "Belle Nails San Diego",
+     "annotations": [
+      {
+       "title": "TOP 10 BEST Russian Manicure in San Diego, CA - Updated 2026 - Yelp",
+       "url": "https://www.yelp.com/search?find_desc=Russian+Manicure&find_loc=San+Diego%2C+CA",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      },
+      {
+       "title": "TOP 10 BEST Russian Manicure in San Diego, CA - Updated 2026 - Yelp",
+       "url": "https://www.yelp.com/search?find_desc=Russian+Manicure&find_loc=San+Diego%2C+CA",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": "** - Located in Mission Valley with a 5.0-star rating and 14 reviews, known for excellent Russian manicure services.\n\n5. **",
+     "annotations": null
+    },
+    {
+     "type": "text",
+     "text": "Svit Nail",
+     "annotations": [
+      {
+       "title": "TOP 10 BEST Russian Manicure in San Diego, CA - Updated 2026 - Yelp",
+       "url": "https://www.yelp.com/search?find_desc=Russian+Manicure&find_loc=San+Diego%2C+CA",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": "** - Located in La Jolla with a 4.3-star rating.\n\n6. **",
+     "annotations": null
+    },
+    {
+     "type": "text",
+     "text": "NAILS LOUNGE BY YANA UNOVA",
+     "annotations": [
+      {
+       "title": "NAILS LOUNGE BY YANA UNOVA",
+       "url": "https://yanaunova.glossgenius.com/",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": "** - ",
+     "annotations": null
+    },
+    {
+     "type": "text",
+     "text": "Experience the art of luxury nails with a Russian manicure expert in San Diego.",
+     "annotations": [
+      {
+       "title": "NAILS LOUNGE BY YANA UNOVA",
+       "url": "https://yanaunova.glossgenius.com/",
+       "start_index": null,
+       "end_index": null,
+       "text": null
+      }
+     ]
+    },
+    {
+     "type": "text",
+     "text": "\n\nI'd recommend checking out **Nailoscope** or **Easy Beauty Space** based on their high ratings and strong reputations for Russian manicures specifically. You can book appointments directly through their websites or call ahead to schedule!",
+     "annotations": null
+    }
+   ]
+  }
+ ],
+ "fan_out_queries": [
+  "best Russian manicure San Diego"
+ ]
+}

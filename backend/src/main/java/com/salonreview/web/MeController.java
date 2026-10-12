@@ -91,6 +91,7 @@ public class MeController {
                 // flag to layer on top of (unlike RAG/AI triage above) — the tab either exists for
                 // this business or it doesn't.
                 "seoMonitoringEnabled", businessFeatures.isEnabled(businessId, BusinessFeatureService.SEO_MONITORING_ENABLED),
+                "aiVisibilityEnabled", businessFeatures.isEnabled(businessId, BusinessFeatureService.AI_VISIBILITY_ENABLED),
                 "aiSeoAdvisorEnabled", aiSeoAdvisor.isEnabled()
                         && businessFeatures.isEnabled(businessId, BusinessFeatureService.AI_SEO_ADVISOR_ENABLED)));
         // Phase 6.1/6.2 (design.md D12): activeBusinessId reflects any session-level switch

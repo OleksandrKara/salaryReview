@@ -60,6 +60,9 @@ x-backend-env: &backend-env
   # AI triage (suspicious-booking explainer). Feature flag is off by default —
   # set AI_TRIAGE_ENABLED=true to expose the Explain button in the UI.
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  # Weekly AI-visibility checks (AI tab in Marketing). Blank = the weekly run does nothing.
+  DATAFORSEO_LOGIN: ${DATAFORSEO_LOGIN:-}
+  DATAFORSEO_PASSWORD: ${DATAFORSEO_PASSWORD:-}
   LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
   LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-salary-review-suspicious-triage}
   AI_TRIAGE_ENABLED: ${AI_TRIAGE_ENABLED:-false}

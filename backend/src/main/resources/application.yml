@@ -74,6 +74,12 @@ seo:
   credentials:
     master-key: ${SEO_CREDENTIALS_MASTER_KEY:}
 
+# ai-visibility-monitoring (openspec/changes/ai-visibility-monitoring design.md D1): DataForSEO
+# platform account for the weekly AI-assistant checks. Blank = the weekly run does nothing.
+ai-visibility:
+  dataforseo-login: ${DATAFORSEO_LOGIN:}
+  dataforseo-password: ${DATAFORSEO_PASSWORD:}
+
 # Base URL of each public landing page (all served by the separate salonLandings/akluxnails-home
 # services), keyed by marketing.landing_pages.slug — used to build ?v=<key> deep links to a
 # specific marketing variant on the owner marketing dashboard. Add an entry here whenever a new

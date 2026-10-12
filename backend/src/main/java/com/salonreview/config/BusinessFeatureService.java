@@ -28,6 +28,8 @@ public class BusinessFeatureService {
      * seo-monitoring-dashboard design.md D5. Hyphenated rather than dot-namespaced like the keys
      * above since that migration (and tasks.md) already fixed this exact string first. */
     public static final String SEO_MONITORING_ENABLED = "seo-monitoring.enabled";
+    /** openspec/changes/ai-visibility-monitoring, seeded false by V167. */
+    public static final String AI_VISIBILITY_ENABLED = "ai-visibility.enabled";
 
     private final BusinessFeatureRepository repository;
 
