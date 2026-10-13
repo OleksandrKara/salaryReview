@@ -70,4 +70,9 @@ class AiVisibilityQueryServiceTest {
         Instant mondayLate = ZonedDateTime.parse("2026-10-19T07:00:00-07:00[America/Los_Angeles]").toInstant();
         assertThat(AiVisibilityQueryService.nextScheduledRun(mondayLate)).isEqualTo(ZonedDateTime.parse("2026-10-26T06:00:00-07:00[America/Los_Angeles]").toInstant());
     }
+
+    @Test
+    void placeKeyNormalizesEntitiesAndCase() {
+        assertThat(AiVisibilityQueryService.placeKey("Nail Care &amp; Spa")).isEqualTo(AiVisibilityQueryService.placeKey("nail care & spa"));
+    }
 }

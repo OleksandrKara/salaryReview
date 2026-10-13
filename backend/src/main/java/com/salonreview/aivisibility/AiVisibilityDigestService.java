@@ -29,8 +29,8 @@ import java.util.Map;
 public class AiVisibilityDigestService {
 
     static final Map<Engine, String> LABEL = new EnumMap<>(Map.of(
-            Engine.CHATGPT, "ChatGPT", Engine.GOOGLE_AI_MODE, "Google AI", Engine.GEMINI, "Gemini",
-            Engine.PERPLEXITY, "Perplexity", Engine.CLAUDE, "Claude"));
+            Engine.CHATGPT, "ChatGPT", Engine.GOOGLE_AI_MODE, "Google AI Mode", Engine.GEMINI, "Gemini",
+            Engine.PERPLEXITY, "Perplexity", Engine.CLAUDE, "Claude", Engine.GOOGLE_AI_OVERVIEW, "AI Overview"));
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("dd.MM");
 
     private final AiVisibilitySettingsRepository settingsRepo;

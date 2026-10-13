@@ -2447,7 +2447,7 @@ export interface StaffDocument {
 }
 
 // AI visibility (com.salonreview.web.AiVisibilityController, ai-visibility-monitoring design.md D5).
-export type AiEngine = 'CHATGPT' | 'GOOGLE_AI_MODE' | 'GEMINI' | 'PERPLEXITY' | 'CLAUDE';
+export type AiEngine = 'CHATGPT' | 'GOOGLE_AI_MODE' | 'GEMINI' | 'PERPLEXITY' | 'CLAUDE' | 'GOOGLE_AI_OVERVIEW';
 export type AiCellState = 'NAMED' | 'NOT_NAMED' | 'NO_ANSWER' | 'ERROR' | 'NONE';
 export type AiQueryStatus = 'PROPOSED' | 'ACTIVE' | 'PAUSED' | 'REMOVED';
 export interface AiConsistency { named: number; total: number; percent: number | null }
@@ -2502,3 +2502,16 @@ export interface AiPageView {
 export interface AiPageGapItem { component: string; label: string; competitorsWith: number; competitorsCompared: number; weak: boolean }
 export interface AiPageComparison { queryId: number; query: string; targetUrl: string | null; ours: AiPageView | null; competitors: AiPageView[]; gaps: AiPageGapItem[]; lastRefreshedAt: string | null }
 export interface AiPageGap { targetUrl: string; component: string; label: string; competitorsWith: number; competitorsCompared: number; queries: string[] }
+export interface AiWeekPoint { weekStart: string; enginePercent: Partial<Record<AiEngine, number>>; usPercent: number; placePercent: Record<string, number>; answers: number }
+export interface AiTrends { weeks: AiWeekPoint[]; topPlaces: string[] }
+export interface AiTraffic {
+  days: number;
+  visitorsBySource: Record<string, number>;
+  visitors: number;
+  weekly: { weekStart: string; visitors: number }[];
+  leads: number;
+  booked: number;
+  paidClients: number;
+  newClients: number;
+  revenue: number;
+}

@@ -37,6 +37,10 @@ public class AiVisibilitySettings {
     @Column(name = "location_hint", nullable = false)
     private String locationHint;
 
+    /** "lat,lng,zoom" the Google engines search from (V169); null = city-level {@link #locationHint}. */
+    @Column(name = "search_coordinate")
+    private String searchCoordinate;
+
     @Column(name = "monthly_budget_usd", nullable = false)
     private BigDecimal monthlyBudgetUsd;
 

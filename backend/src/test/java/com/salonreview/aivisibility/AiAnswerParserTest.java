@@ -68,4 +68,19 @@ class AiAnswerParserTest {
     void nullResultIsEmpty() {
         assertThat(AiAnswerParser.parse(Engine.GEMINI, null).isEmpty()).isTrue();
     }
+
+    @Test
+    void googleAiOverviewParsesLikeAiModeAndFindsPmuCited() throws Exception {
+        ParsedAnswer a = AiAnswerParser.parse(Engine.GOOGLE_AI_OVERVIEW, fixture("google_ai_overview"));
+        assertThat(a.text()).contains("microblading");
+        assertThat(a.citations()).extracting(ParsedAnswer.Citation::domain).contains("pmu-annakara.com");
+        MentionDetector.Result m = MentionDetector.detect(a, PMU_ALIASES, PMU_DOMAINS);
+        assertThat(m.mentioned()).isTrue();
+        assertThat(m.ownSiteCited()).isTrue();
+    }
+
+    @Test
+    void htmlEntityInPlaceNameIsDecoded() {
+        assertThat(AiAnswerParser.boldPlaces("Try **Nail Care &amp; Spa** downtown")).containsExactly("Nail Care & Spa");
+    }
 }

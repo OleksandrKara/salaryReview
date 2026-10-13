@@ -31,6 +31,7 @@ public class AiVisibilityProperties {
     private BigDecimal geminiExpectedCost = new BigDecimal("0.035");
     private BigDecimal perplexityExpectedCost = new BigDecimal("0.006");
     private BigDecimal claudeExpectedCost = new BigDecimal("0.03");
+    private BigDecimal googleAiOverviewExpectedCost = new BigDecimal("0.003");
 
     public boolean hasCredentials() {
         return dataforseoLogin != null && !dataforseoLogin.isBlank() && dataforseoPassword != null && !dataforseoPassword.isBlank();

@@ -27,7 +27,7 @@ public class DataForSeoAnswerProvider implements AiAnswerProvider {
     }
 
     @Override
-    public RawAnswer ask(Engine engine, String question, String locationName) {
+    public RawAnswer ask(Engine engine, String question, String locationName, String coordinate) {
         Map<String, Object> payload = new LinkedHashMap<>();
         String endpoint;
         String model;
@@ -43,9 +43,22 @@ public class DataForSeoAnswerProvider implements AiAnswerProvider {
                 endpoint = "serp/google/ai_mode/live/advanced";
                 model = "google-ai-mode";
                 payload.put("keyword", question);
-                payload.put("location_name", locationName);
+                putLocation(payload, locationName, coordinate);
                 payload.put("language_code", "en");
                 payload.put("device", "mobile");
+            }
+            case GOOGLE_AI_OVERVIEW -> {
+                // The AI Overview block in the ordinary Google results (mobile, San Diego). Google
+                // shows it only for some questions; no block = NO_ANSWER, not "not named".
+                endpoint = "serp/google/organic/live/advanced";
+                model = "google-ai-overview";
+                payload.put("keyword", question);
+                putLocation(payload, locationName, coordinate);
+                payload.put("language_code", "en");
+                payload.put("device", "mobile");
+                payload.put("os", "android");
+                payload.put("depth", 10);
+                payload.put("load_async_ai_overview", true);
             }
             case GEMINI -> {
                 endpoint = "ai_optimization/gemini/llm_responses/live";
@@ -70,6 +83,11 @@ public class DataForSeoAnswerProvider implements AiAnswerProvider {
         String reportedModel = result != null && result.hasNonNull("model") ? result.get("model").asText()
                 : result != null && result.hasNonNull("model_name") ? result.get("model_name").asText() : model;
         return new RawAnswer(result, cost, reportedModel);
+    }
+
+    private static void putLocation(Map<String, Object> payload, String locationName, String coordinate) {
+        if (coordinate != null && !coordinate.isBlank()) payload.put("location_coordinate", coordinate);
+        else payload.put("location_name", locationName);
     }
 
     private static void llmPayload(Map<String, Object> payload, String question, String model) {

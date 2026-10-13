@@ -14,5 +14,7 @@ public interface AiAnswerProvider {
     record RawAnswer(JsonNode result, BigDecimal cost, String model) {
     }
 
-    RawAnswer ask(Engine engine, String question, String locationName);
+    /** {@code coordinate} ("lat,lng,zoom") is used by the Google engines when set, else
+     * {@code locationName}; the LLM engines take location from the question itself. */
+    RawAnswer ask(Engine engine, String question, String locationName, String coordinate);
 }

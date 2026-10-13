@@ -4,14 +4,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../../lib/api';
 import type { AiCell, AiEngine, AiHistoryItem, AiPageComparison, AiPageGap, AiQueryRow, AiRanked, AiVisibilityOverview, AiVisibilitySettingsDto } from '../../../lib/types';
 import { Spinner } from '../../../components/Spinner';
+import { AiTrafficPanel, AiTrendsPanel } from './AiInsights';
 
 // openspec/changes/ai-visibility-monitoring design.md D7.
 const ENGINES: { key: AiEngine; label: string; short: string }[] = [
   { key: 'CHATGPT', label: 'ChatGPT', short: 'ChatGPT' },
-  { key: 'GOOGLE_AI_MODE', label: 'Google AI', short: 'Google' },
+  { key: 'GOOGLE_AI_MODE', label: 'AI Mode', short: 'AI Mode' },
   { key: 'GEMINI', label: 'Gemini', short: 'Gemini' },
   { key: 'PERPLEXITY', label: 'Perplexity', short: 'Perplx' },
   { key: 'CLAUDE', label: 'Claude', short: 'Claude' },
+  { key: 'GOOGLE_AI_OVERVIEW', label: 'AI Overview', short: 'AIO' },
 ];
 const MAX_TRACKED = 20;
 
@@ -132,7 +134,7 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
     <div className="space-y-6">
       {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
-      <section className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+      <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {ENGINES.map((e) => {
           const t = data.engineTotals.find((x) => x.engine === e.key);
           const delta = t && t.previousNamed !== null ? t.named - t.previousNamed : null;
@@ -256,6 +258,10 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
       ))}
 
       {canEdit && <AddQuestion count={countedNow} disabled={busy !== null} onAdd={(q) => act('add', () => api.addAiQuery(q, null))} />}
+
+      <AiTrafficPanel />
+
+      <AiTrendsPanel />
 
       <PageGapsPanel />
 
