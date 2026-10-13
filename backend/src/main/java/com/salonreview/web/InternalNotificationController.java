@@ -372,7 +372,7 @@ public class InternalNotificationController {
 
     /** pmu-annakara.com/academy course request form (2026-10-13). Saved as an academy lead, staff
      * Telegram alert, HubSpot contact. Name plus a phone or an email are required. */
-    public record AcademyLeadRequest(String name, String phone, String email, String courseSlug, String courseName,
+    public record AcademyLeadRequest(String kind, String name, String phone, String email, String courseSlug, String courseName,
                                      String message, Boolean smsConsent, Boolean emailConsent, String sourcePageUrl,
                                      String utmSource, String utmMedium, String utmCampaign, String gclid,
                                      String businessShortCode, Long businessId) {
@@ -394,7 +394,7 @@ public class InternalNotificationController {
         }
         com.salonreview.marketing.AcademyLeadService.Outcome o = academyLeads.submit(business.getId(),
                 new com.salonreview.marketing.AcademyLeadService.AcademyLead(
-                        clip(body.name(), 200), clip(body.phone(), 40), clip(body.email(), 200),
+                        clip(body.kind(), 40), clip(body.name(), 200), clip(body.phone(), 40), clip(body.email(), 200),
                         clip(body.courseSlug(), 120), clip(body.courseName(), 200), clip(body.message(), 2000),
                         Boolean.TRUE.equals(body.smsConsent()), Boolean.TRUE.equals(body.emailConsent()),
                         clip(body.sourcePageUrl(), 500),

@@ -30,9 +30,14 @@ public class AcademyLeadService {
         this.hubspot = hubspot;
     }
 
-    public record AcademyLead(String name, String phone, String email, String courseSlug, String courseName,
+    /** {@code kind}: "subscribe" for the email-only "Subscribe now" band, anything else is a course
+     * request. Only used for the alert wording and hashtags. */
+    public record AcademyLead(String kind, String name, String phone, String email, String courseSlug, String courseName,
                               String message, boolean smsConsent, boolean emailConsent, String sourcePageUrl,
                               String utmSource, String utmMedium, String utmCampaign, String gclid) {
+        public boolean isSubscription() {
+            return "subscribe".equals(kind);
+        }
     }
 
     public record Outcome(long id, boolean telegramSent, boolean hubspotSubmitted, String hubspotError) {
@@ -59,10 +64,19 @@ public class AcademyLeadService {
         return new Outcome(id, sent, hs.submitted(), hs.error());
     }
 
+    /** Hashtags first, so staff can find every academy lead in Telegram search: #academy for all,
+     * #academy_lead or #academy_subscriber by type, #course_<slug> for the chosen course. */
     static String formatAlert(AcademyLead l) {
-        StringBuilder sb = new StringBuilder("🎓 Academy course request\n");
-        sb.append("Course: ").append(blankTo(l.courseName(), "not chosen")).append('\n');
-        sb.append("Name: ").append(l.name()).append('\n');
+        StringBuilder sb = new StringBuilder();
+        if (l.isSubscription()) {
+            sb.append("📩 Academy newsletter subscriber\n#academy #academy_subscriber\n");
+        } else {
+            sb.append("🎓 Academy course request\n#academy #academy_lead");
+            if (notBlank(l.courseSlug())) sb.append(" #course_").append(l.courseSlug().replaceAll("[^A-Za-z0-9]+", "_"));
+            sb.append('\n');
+            sb.append("Course: ").append(blankTo(l.courseName(), "not chosen")).append('\n');
+            sb.append("Name: ").append(l.name()).append('\n');
+        }
         if (notBlank(l.phone())) sb.append("Phone: ").append(l.phone()).append('\n');
         if (notBlank(l.email())) sb.append("Email: ").append(l.email()).append('\n');
         if (notBlank(l.message())) sb.append("Message: ").append(l.message()).append('\n');

@@ -11,7 +11,7 @@ import static org.mockito.Mockito.*;
 class AcademyLeadServiceTest {
 
     private static AcademyLeadService.AcademyLead lead(String name, String email, boolean sms) {
-        return new AcademyLeadService.AcademyLead(name, "+16195550100", email, "lips-permanent-makeup-basic",
+        return new AcademyLeadService.AcademyLead("course_request", name, "+16195550100", email, "lips-permanent-makeup-basic",
                 "Lips Basic Course", "Weekends only", sms, false, "https://pmu-annakara.com/academy/",
                 "google", "cpc", "Academy", null);
     }
@@ -19,10 +19,19 @@ class AcademyLeadServiceTest {
     @Test
     void alertNamesCourseContactsAndConsent() {
         String text = AcademyLeadService.formatAlert(lead("Jane Doe", "jane@example.com", true));
-        assertThat(text).startsWith("🎓 Academy course request")
+        assertThat(text).startsWith("🎓 Academy course request\n#academy #academy_lead #course_lips_permanent_makeup_basic\n")
                 .contains("Course: Lips Basic Course", "Name: Jane Doe", "Phone: +16195550100",
                         "Email: jane@example.com", "Message: Weekends only", "OK to text: yes, OK to email: no",
                         "📄 Page: https://pmu-annakara.com/academy/", "📣 Ad: Academy");
+    }
+
+    @Test
+    void subscriberAlertHasItsOwnHashtag() {
+        var sub = new AcademyLeadService.AcademyLead("subscribe", "Newsletter subscriber", null, "jane@example.com", null, null,
+                "Subscribed to academy news", false, true, "https://pmu-annakara.com/academy/", null, null, null, null);
+        String text = AcademyLeadService.formatAlert(sub);
+        assertThat(text).startsWith("📩 Academy newsletter subscriber\n#academy #academy_subscriber\n")
+                .contains("Email: jane@example.com").doesNotContain("Course:").doesNotContain("Name:");
     }
 
     @Test
