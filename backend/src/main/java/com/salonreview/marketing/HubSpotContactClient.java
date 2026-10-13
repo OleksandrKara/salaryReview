@@ -2,6 +2,7 @@ package com.salonreview.marketing;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -30,6 +31,7 @@ public class HubSpotContactClient {
     private final ObjectMapper json = new ObjectMapper();
     private final HttpClient http;
 
+    @Autowired
     public HubSpotContactClient(@Value("${hubspot.private-app-token:}") String token) {
         this(token, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build());
     }
