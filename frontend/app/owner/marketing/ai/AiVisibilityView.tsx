@@ -134,20 +134,11 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
     }
   }, []);
 
-  // A re-check runs in the background on the server; poll it until it finishes.
+  // A check runs on the server and survives leaving this page or a backend restart (it resumes
+  // where it stopped). While one is running, refresh the overview every 5s for progress.
   useEffect(() => {
     if (!runningRunId) return;
-    const t = setInterval(async () => {
-      try {
-        const run = await api.getAiRun(runningRunId);
-        if (run.finishedAt) {
-          setRunningRunId(null);
-          await refresh();
-        }
-      } catch {
-        setRunningRunId(null);
-      }
-    }, 5000);
+    const t = setInterval(() => { void refresh(); }, 5000);
     return () => clearInterval(t);
   }, [runningRunId, refresh]);
 
@@ -220,7 +211,7 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
         <span>Last check: {data.lastRunAt ? fmtDate(data.lastRunAt) : 'not yet'}</span>
         <span>Next: {fmtDate(data.nextRunAt, true)} PT</span>
         <span>Spend this month: ${Number(data.monthSpend).toFixed(2)}{data.monthlyBudget !== null ? ` of $${Number(data.monthlyBudget).toFixed(0)}` : ''}</span>
-        {runningRunId && <span className="inline-flex items-center gap-1 text-zinc-700"><Spinner className="h-3 w-3" /> Checking now…</span>}
+
       </div>
 
       <div className="flex flex-wrap gap-2 text-xs" aria-label="Questions by status">
@@ -232,6 +223,21 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
           </a>
         )}
       </div>
+
+      {runningRunId && (
+        <section role="status" aria-live="polite" className="rounded-lg border border-sky-200 bg-sky-50 p-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-sky-900">
+            <Spinner className="h-4 w-4" />
+            {data.runningTotal ? `Checking ${Math.min(data.runningDone ?? 0, data.runningTotal)} of ${data.runningTotal} question${data.runningTotal === 1 ? '' : 's'}…` : 'Checking…'}
+          </div>
+          {!!data.runningTotal && (
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sky-100">
+              <div className="h-full rounded-full bg-sky-600 transition-all" style={{ width: `${Math.round(100 * (data.runningDone ?? 0) / data.runningTotal)}%` }} />
+            </div>
+          )}
+          <p className="mt-1.5 text-xs text-sky-800">Runs on the server: you can leave this page, results will be here when you come back.</p>
+        </section>
+      )}
 
       {data.nextActions && (
         <section className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">

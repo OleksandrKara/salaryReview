@@ -47,7 +47,7 @@ class AiVisibilityRunServiceTest {
         when(runs.spentSince(eq(1L), any())).thenReturn(BigDecimal.ZERO);
         when(checks.save(any())).thenAnswer(inv -> { saved.add(inv.getArgument(0)); return inv.getArgument(0); });
         service = new AiVisibilityRunService(provider, props, mock(AiVisibilitySettingsRepository.class), mock(AiVisibilityQueryRepository.class),
-                runs, checks, mock(CurrentBusinessContext.class));
+                runs, checks, mock(CurrentBusinessContext.class), mock(org.springframework.beans.factory.ObjectProvider.class));
         settings = AiVisibilitySettings.builder().businessId(1L).brandAliases(List.of("AK.LUX.NAILS")).ownDomains(List.of("akluxnails.com"))
                 .locationHint("San Diego,California,United States").monthlyBudgetUsd(new BigDecimal("8.00")).digestEnabled(true).build();
         var json = new ObjectMapper().readTree("""
@@ -129,22 +129,23 @@ class AiVisibilityRunServiceTest {
     }
 
     @Test
-    void runWithoutRecentChecksIsNotActiveAndIsClosedOnStartup() {
+    void staleRunIsNotActiveAndARunResumesWithoutRepeatingPaidChecks() {
         java.time.Instant now = java.time.Instant.now();
-        AiVisibilityRun orphan = AiVisibilityRun.builder().id(27L).businessId(2L).trigger(AiVisibilityRun.Trigger.MANUAL_QUERY)
-                .startedAt(now.minus(java.time.Duration.ofMinutes(20))).build();
+        AiVisibilityRun orphan = AiVisibilityRun.builder().id(27L).businessId(1L).trigger(AiVisibilityRun.Trigger.MANUAL_QUERY)
+                .startedAt(now.minus(java.time.Duration.ofMinutes(20))).claimedAt(now.minus(java.time.Duration.ofMinutes(15))).build();
         AiVisibilityRun busy = AiVisibilityRun.builder().id(28L).businessId(1L).trigger(AiVisibilityRun.Trigger.SCHEDULED)
-                .startedAt(now.minus(java.time.Duration.ofMinutes(20))).build();
-        when(checks.findTop1ByRunIdOrderByCheckedAtDesc(27L)).thenReturn(java.util.Optional.empty());
-        when(checks.findTop1ByRunIdOrderByCheckedAtDesc(28L)).thenReturn(java.util.Optional.of(
-                AiVisibilityCheck.builder().checkedAt(now.minusSeconds(30)).build()));
+                .startedAt(now.minus(java.time.Duration.ofMinutes(20))).claimedAt(now.minusSeconds(20)).build();
+        when(checks.findTop1ByRunIdOrderByCheckedAtDesc(any())).thenReturn(java.util.Optional.empty());
         assertThat(service.isActive(orphan)).isFalse();
         assertThat(service.isActive(busy)).isTrue();
 
-        when(runs.findByFinishedAtIsNullAndStartedAtBefore(any())).thenReturn(List.of(orphan, busy));
-        service.closeInterruptedRuns();
-        assertThat(orphan.getStoppedReason()).isEqualTo("INTERRUPTED");
-        assertThat(orphan.getFinishedAt()).isNotNull();
-        assertThat(busy.getFinishedAt()).isNull();
+        // Already paid before the restart: question 1 on ChatGPT. Resuming must not ask it again.
+        AiVisibilityRun resumed = AiVisibilityRun.builder().id(30L).businessId(1L).trigger(AiVisibilityRun.Trigger.MANUAL_QUERY)
+                .startedAt(now.minus(java.time.Duration.ofMinutes(10))).build();
+        when(checks.findByRunId(30L)).thenReturn(List.of(AiVisibilityCheck.builder().runId(30L).queryId(1L).engine(Engine.CHATGPT).build()));
+        service.execute(settings, List.of(q(1)), resumed);
+        assertThat(saved).hasSize(Engine.values().length - 1).noneMatch(c -> c.getEngine() == Engine.CHATGPT);
+        assertThat(resumed.getFinishedAt()).isNotNull();
     }
+
 }

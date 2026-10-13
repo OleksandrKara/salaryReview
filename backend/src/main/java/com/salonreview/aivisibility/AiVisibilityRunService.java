@@ -43,6 +43,7 @@ public class AiVisibilityRunService {
     private final AiVisibilityRunRepository runs;
     private final AiVisibilityCheckRepository checks;
     private final CurrentBusinessContext currentBusinessContext;
+    private final org.springframework.beans.factory.ObjectProvider<AiVisibilityDigestService> digestProvider;
     private final ExecutorService manualExecutor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "ai-visibility-recheck");
         t.setDaemon(true);
@@ -51,7 +52,7 @@ public class AiVisibilityRunService {
 
     public AiVisibilityRunService(AiAnswerProvider provider, AiVisibilityProperties props, AiVisibilitySettingsRepository settingsRepo,
             AiVisibilityQueryRepository queries, AiVisibilityRunRepository runs, AiVisibilityCheckRepository checks,
-            CurrentBusinessContext currentBusinessContext) {
+            CurrentBusinessContext currentBusinessContext, org.springframework.beans.factory.ObjectProvider<AiVisibilityDigestService> digestProvider) {
         this.provider = provider;
         this.props = props;
         this.settingsRepo = settingsRepo;
@@ -59,6 +60,7 @@ public class AiVisibilityRunService {
         this.runs = runs;
         this.checks = checks;
         this.currentBusinessContext = currentBusinessContext;
+        this.digestProvider = digestProvider;
     }
 
     /** Weekly run over every ACTIVE question. Returns the finished run, or empty when the business has
@@ -80,7 +82,8 @@ public class AiVisibilityRunService {
     public AiVisibilityRun startManualRecheck(Long businessId, List<AiVisibilityQuery> selected) {
         AiVisibilitySettings settings = settingsRepo.findById(businessId)
                 .orElseThrow(() -> new IllegalStateException("AI visibility is not configured for this business"));
-        AiVisibilityRun run = runs.save(AiVisibilityRun.builder().businessId(businessId).trigger(AiVisibilityRun.Trigger.MANUAL_QUERY).build());
+        AiVisibilityRun run = runs.save(AiVisibilityRun.builder().businessId(businessId).trigger(AiVisibilityRun.Trigger.MANUAL_QUERY)
+                .queryIds(new java.util.ArrayList<>(selected.stream().map(AiVisibilityQuery::getId).toList())).claimedAt(Instant.now()).build());
         manualExecutor.submit(() -> currentBusinessContext.runAs(businessId, () -> {
             try {
                 execute(settings, selected, run);
@@ -92,11 +95,11 @@ public class AiVisibilityRunService {
     }
 
     AiVisibilityRun run(AiVisibilitySettings settings, List<AiVisibilityQuery> questions, AiVisibilityRun.Trigger trigger) {
-        AiVisibilityRun run = runs.save(AiVisibilityRun.builder().businessId(settings.getBusinessId()).trigger(trigger).build());
+        AiVisibilityRun run = runs.save(AiVisibilityRun.builder().businessId(settings.getBusinessId()).trigger(trigger).claimedAt(Instant.now()).build());
         return execute(settings, questions, run);
     }
 
-    private AiVisibilityRun execute(AiVisibilitySettings settings, List<AiVisibilityQuery> questions, AiVisibilityRun run) {
+    AiVisibilityRun execute(AiVisibilitySettings settings, List<AiVisibilityQuery> questions, AiVisibilityRun run) {
         Long businessId = settings.getBusinessId();
         if (!props.hasCredentials()) {
             log.info("AI visibility run skipped for business {}: DATAFORSEO_LOGIN/PASSWORD not set", businessId);
@@ -106,16 +109,22 @@ public class AiVisibilityRunService {
         }
         BigDecimal spent = monthSpend(businessId).subtract(run.getCostUsd());
         Map<Engine, Integer> consecutiveFailures = new EnumMap<>(Engine.class);
+        // A resumed run (see resumeStaleRuns) skips what it already paid for before the restart.
+        java.util.Set<String> done = new java.util.HashSet<>();
+        if (run.getId() != null) for (AiVisibilityCheck c : checks.findByRunId(run.getId())) done.add(c.getQueryId() + "|" + c.getEngine() + "|" + c.getSearchPoint());
         outer:
         for (AiVisibilityQuery q : questions) {
             for (Engine engine : enginesFor(q)) {
                 for (Map<String, Object> point : pointsFor(settings, q, engine)) {
+                    if (done.contains(q.getId() + "|" + engine + "|" + (point == null ? null : point.get("label")))) continue;
                     if (consecutiveFailures.getOrDefault(engine, 0) >= ENGINE_FAILURE_LIMIT) continue;
                     BigDecimal expected = expectedCost(engine);
                     if (spent.add(run.getCostUsd()).add(expected).compareTo(settings.getMonthlyBudgetUsd()) > 0) {
                         run.setStoppedReason("BUDGET");
                         break outer;
                     }
+                    run.setClaimedAt(Instant.now()); // heartbeat before a call that can take minutes with retries
+                    runs.save(run);
                     AiVisibilityCheck check = checkOne(settings, q, engine, run.getId(), point);
                     checks.save(check);
                     if (check.getCostUsd() != null) run.setCostUsd(run.getCostUsd().add(check.getCostUsd()));
@@ -126,6 +135,7 @@ public class AiVisibilityRunService {
                         consecutiveFailures.put(engine, 0);
                         if (check.getStatus() == AiVisibilityCheck.Status.OK) run.setChecksOk(run.getChecksOk() + 1);
                     }
+                    run.setClaimedAt(Instant.now()); // heartbeat
                     runs.save(run);
                 }
             }
@@ -187,23 +197,50 @@ public class AiVisibilityRunService {
 
     public boolean isActive(AiVisibilityRun run) {
         if (run.getFinishedAt() != null) return false;
-        Instant lastActivity = checks.findTop1ByRunIdOrderByCheckedAtDesc(run.getId()).map(AiVisibilityCheck::getCheckedAt).orElse(run.getStartedAt());
+        Instant lastCheck = checks.findTop1ByRunIdOrderByCheckedAtDesc(run.getId()).map(AiVisibilityCheck::getCheckedAt).orElse(run.getStartedAt());
+        Instant lastActivity = run.getClaimedAt() != null && run.getClaimedAt().isAfter(lastCheck) ? run.getClaimedAt() : lastCheck;
         return lastActivity.isAfter(Instant.now().minus(STALE_AFTER));
     }
 
-    /** On startup, close runs left unfinished by a replica that was stopped mid-run. */
-    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
-    public void closeInterruptedRuns() {
+    static final java.time.Duration GIVE_UP_AFTER = java.time.Duration.ofHours(24);
+
+    /** Picks up runs whose replica went away mid-run (a deploy, a crash) and finishes only what is
+     * left: every few minutes on every replica; the claim makes exactly one of them take it. Runs
+     * older than a day are closed as INTERRUPTED instead. */
+    @org.springframework.scheduling.annotation.Scheduled(initialDelay = 60_000, fixedDelay = 120_000)
+    public void resumeStaleRuns() {
         try {
-            for (AiVisibilityRun r : runs.findByFinishedAtIsNullAndStartedAtBefore(Instant.now().minus(STALE_AFTER))) {
+            for (AiVisibilityRun r : runs.findByFinishedAtIsNullAndStartedAtBefore(Instant.now().minus(java.time.Duration.ofMinutes(1)))) {
                 if (isActive(r)) continue;
-                r.setFinishedAt(Instant.now());
-                r.setStoppedReason("INTERRUPTED");
-                runs.save(r);
-                log.info("AI visibility run {} (business {}) closed as INTERRUPTED", r.getId(), r.getBusinessId());
+                if (runs.claim(r.getId(), Instant.now().minus(STALE_AFTER)) != 1) continue;
+                AiVisibilityRun run = runs.findById(r.getId()).orElse(null);
+                if (run == null) continue;
+                if (run.getStartedAt().isBefore(Instant.now().minus(GIVE_UP_AFTER)) || settingsRepo.findById(run.getBusinessId()).isEmpty()) {
+                    run.setFinishedAt(Instant.now());
+                    run.setStoppedReason("INTERRUPTED");
+                    runs.save(run);
+                    continue;
+                }
+                AiVisibilitySettings settings = settingsRepo.findById(run.getBusinessId()).get();
+                List<AiVisibilityQuery> qs = run.getQueryIds() == null
+                        ? queries.findByBusinessIdAndStatusInOrderBySortOrderAscIdAsc(run.getBusinessId(), List.of(AiVisibilityQuery.Status.ACTIVE))
+                        : queries.findAllById(run.getQueryIds()).stream().filter(q -> q.getBusinessId().equals(run.getBusinessId())
+                                && q.getStatus() == AiVisibilityQuery.Status.ACTIVE).sorted(java.util.Comparator.comparingInt(AiVisibilityQuery::getSortOrder)).toList();
+                log.info("Resuming AI visibility run {} (business {}, {} questions)", run.getId(), run.getBusinessId(), qs.size());
+                manualExecutor.submit(() -> currentBusinessContext.runAs(run.getBusinessId(), () -> {
+                    try {
+                        AiVisibilityRun finished = execute(settings, qs, run);
+                        if (finished.getTrigger() == AiVisibilityRun.Trigger.SCHEDULED) {
+                            AiVisibilityDigestService digest = digestProvider.getIfAvailable();
+                            if (digest != null) digest.sendFor(finished, java.time.LocalDate.now(PT).getDayOfMonth() <= 7);
+                        }
+                    } catch (RuntimeException e) {
+                        log.warn("Resumed AI visibility run {} failed: {}", run.getId(), e.toString());
+                    }
+                }));
             }
         } catch (RuntimeException e) {
-            log.warn("Closing interrupted AI visibility runs failed: {}", e.toString());
+            log.warn("Resuming AI visibility runs failed: {}", e.toString());
         }
     }
 

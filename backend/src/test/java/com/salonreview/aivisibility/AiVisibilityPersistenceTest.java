@@ -134,4 +134,15 @@ class AiVisibilityPersistenceTest {
         AiVisibilityQuery aQuestion = queries.findByBusinessIdAndStatusInOrderBySortOrderAscIdAsc(a, List.of(AiVisibilityQuery.Status.PROPOSED)).get(0);
         assertThatThrownBy(() -> admin.recheckMany(b, List.of(aQuestion.getId()))).isInstanceOf(ResponseStatusException.class).hasMessageContaining("404");
     }
+
+    @Test
+    void onlyOneReplicaCanClaimAStaleRun() {
+        AiVisibilityRun run = runs.save(AiVisibilityRun.builder().businessId(b).trigger(AiVisibilityRun.Trigger.MANUAL_QUERY)
+                .queryIds(new java.util.ArrayList<>(List.of(1L, 2L))).build());
+        runs.flush();
+        java.time.Instant staleBefore = java.time.Instant.now().minusSeconds(300);
+        assertThat(runs.claim(run.getId(), staleBefore)).isEqualTo(1);
+        assertThat(runs.claim(run.getId(), staleBefore)).isEqualTo(0);
+        assertThat(runs.findById(run.getId()).orElseThrow().getQueryIds()).containsExactly(1L, 2L);
+    }
 }
