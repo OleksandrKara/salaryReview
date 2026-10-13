@@ -11,6 +11,13 @@ import java.util.List;
 import java.util.Optional;
 
 public interface AiVisibilityRunRepository extends JpaRepository<AiVisibilityRun, Long> {
+    /** Atomically takes over a run whose heartbeat is older than {@code staleBefore}; 1 = this replica won. */
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
+    @Query(value = "UPDATE ai_visibility_run SET claimed_at = now() WHERE id = :id AND finished_at IS NULL"
+            + " AND (claimed_at IS NULL OR claimed_at < :staleBefore)", nativeQuery = true)
+    int claim(@Param("id") Long id, @Param("staleBefore") Instant staleBefore);
+
     Optional<AiVisibilityRun> findByIdAndBusinessId(Long id, Long businessId);
 
     List<AiVisibilityRun> findTop2ByBusinessIdAndTriggerAndFinishedAtIsNotNullOrderByStartedAtDesc(Long businessId, AiVisibilityRun.Trigger trigger);

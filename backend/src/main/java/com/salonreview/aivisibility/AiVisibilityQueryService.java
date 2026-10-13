@@ -78,7 +78,8 @@ public class AiVisibilityQueryService {
 
     public record Overview(boolean configured, Instant lastRunAt, Instant nextRunAt, BigDecimal monthSpend, BigDecimal monthlyBudget,
             boolean digestEnabled, String nextActions, List<EngineTotal> engineTotals, List<Row> rows,
-            List<Ranked> placesInstead, List<Ranked> sourcesInstead, Long runningRunId, List<Map<String, Object>> searchPoints) {
+            List<Ranked> placesInstead, List<Ranked> sourcesInstead, Long runningRunId, List<Map<String, Object>> searchPoints,
+            Integer runningDone, Integer runningTotal) {
     }
 
     public record HistoryItem(Long id, Engine engine, String model, String searchPoint, Instant checkedAt, String status, Boolean mentioned, Short rank,
@@ -110,9 +111,16 @@ public class AiVisibilityQueryService {
 
         List<AiVisibilityRun> lastTwo = runs.findTop2ByBusinessIdAndTriggerAndFinishedAtIsNotNullOrderByStartedAtDesc(businessId, AiVisibilityRun.Trigger.SCHEDULED);
         List<EngineTotal> totals = engineTotals(businessId, lastTwo);
-        Long running = runs.findTop1ByBusinessIdOrderByStartedAtDesc(businessId)
-                .filter(runService::isActive)
-                .map(AiVisibilityRun::getId).orElse(null);
+        AiVisibilityRun runningRun = runs.findTop1ByBusinessIdOrderByStartedAtDesc(businessId)
+                .filter(r -> r.getFinishedAt() == null && r.getStartedAt().isAfter(now.minus(Duration.ofHours(24)))).orElse(null);
+        // An unfinished run is shown as running even while a restart is being picked up (resumeStaleRuns).
+        Long running = runningRun == null ? null : runningRun.getId();
+        Integer runningDone = null, runningTotal = null;
+        if (runningRun != null) {
+            runningDone = (int) checks.findByRunId(runningRun.getId()).stream().map(AiVisibilityCheck::getQueryId).distinct().count();
+            runningTotal = runningRun.getQueryIds() != null ? runningRun.getQueryIds().size()
+                    : (int) qs.stream().filter(q -> q.getStatus() == AiVisibilityQuery.Status.ACTIVE).count();
+        }
 
         List<AiVisibilityCheck> recentMissing = all.stream()
                 .filter(c -> c.getStatus() == AiVisibilityCheck.Status.OK && Boolean.FALSE.equals(c.getMentioned())
@@ -127,7 +135,7 @@ public class AiVisibilityQueryService {
                 runService.monthSpend(businessId), settings.map(AiVisibilitySettings::getMonthlyBudgetUsd).orElse(null),
                 settings.map(AiVisibilitySettings::isDigestEnabled).orElse(false), settings.map(AiVisibilitySettings::getNextActions).orElse(null),
                 totals, rows, rankPlaces(recentMissing, queryText, 8), rankSources(recentMissing, queryText, ownDomains, 8), running,
-                settings.map(AiVisibilitySettings::getSearchPoints).orElse(List.of()));
+                settings.map(AiVisibilitySettings::getSearchPoints).orElse(List.of()), runningDone, runningTotal);
     }
 
     static Cell cell(List<AiVisibilityCheck> newestFirst, Instant now) {

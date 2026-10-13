@@ -2470,6 +2470,8 @@ export interface AiVisibilityOverview {
   sourcesInstead: AiRanked[];
   runningRunId: number | null;
   searchPoints: AiSearchPoint[];
+  runningDone: number | null;
+  runningTotal: number | null;
 }
 export interface AiHistoryItem {
   id: number;

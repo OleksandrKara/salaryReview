@@ -45,6 +45,15 @@ public class AiVisibilityRun {
     @Column(name = "stopped_reason")
     private String stoppedReason;
 
+    /** Questions a manual run covers, in order; null for the weekly run (every ACTIVE question). */
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(name = "query_ids", columnDefinition = "jsonb")
+    private java.util.List<Long> queryIds;
+
+    /** Heartbeat of the replica working on this run (see AiVisibilityRunService#resumeStaleRuns). */
+    @Column(name = "claimed_at")
+    private Instant claimedAt;
+
     @PrePersist
     void prePersist() {
         if (startedAt == null) startedAt = Instant.now();
