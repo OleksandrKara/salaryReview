@@ -326,6 +326,8 @@ export const api = {
   updateAiQuery: (id: number, patch: { query?: string; topic?: string; targetUrl?: string; status?: string; sortOrder?: number }) =>
     proxyJson<{ id: number; status: string }>(`/api/owner/marketing/ai/queries/${id}`, 'PATCH', patch),
   approveAllAiQueries: () => proxyJson<{ approved: number }>(`/api/owner/marketing/ai/queries/approve-all`, 'POST', {}),
+  recheckAiQueries: (ids: number[]) =>
+    proxyJson<{ run: AiRun; started: number[]; skippedToday: number[]; skippedNotActive: number[] }>(`/api/owner/marketing/ai/queries/recheck`, 'POST', { ids }),
   recheckAiQuery: (id: number) => proxyJson<AiRun>(`/api/owner/marketing/ai/queries/${id}/recheck`, 'POST', {}),
   getAiRun: (id: number) => proxyGet<AiRun>(`/api/owner/marketing/ai/runs/${id}`),
   getAiPageComparison: (id: number) => proxyGet<AiPageComparison>(`/api/owner/marketing/ai/queries/${id}/pages`),

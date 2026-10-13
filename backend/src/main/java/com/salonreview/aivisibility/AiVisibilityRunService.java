@@ -73,14 +73,19 @@ public class AiVisibilityRunService {
 
     /** One question × every engine, started in the background; the caller polls the run row. */
     public AiVisibilityRun startManualRecheck(Long businessId, AiVisibilityQuery query) {
+        return startManualRecheck(businessId, List.of(query));
+    }
+
+    /** Several questions in one background run (owner-selected re-check, 2026-10-13). */
+    public AiVisibilityRun startManualRecheck(Long businessId, List<AiVisibilityQuery> selected) {
         AiVisibilitySettings settings = settingsRepo.findById(businessId)
                 .orElseThrow(() -> new IllegalStateException("AI visibility is not configured for this business"));
         AiVisibilityRun run = runs.save(AiVisibilityRun.builder().businessId(businessId).trigger(AiVisibilityRun.Trigger.MANUAL_QUERY).build());
         manualExecutor.submit(() -> currentBusinessContext.runAs(businessId, () -> {
             try {
-                execute(settings, List.of(query), run);
+                execute(settings, selected, run);
             } catch (RuntimeException e) {
-                log.warn("AI visibility re-check failed for business {} query {}: {}", businessId, query.getId(), e.toString());
+                log.warn("AI visibility re-check failed for business {} ({} questions): {}", businessId, selected.size(), e.toString());
             }
         }));
         return run;

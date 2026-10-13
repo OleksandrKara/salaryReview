@@ -119,4 +119,19 @@ class AiVisibilityPersistenceTest {
         assertThat(pageService.pageGaps(b)).hasSize(1);
         assertThatThrownBy(() -> pageService.comparison(a, q.getId())).isInstanceOf(ResponseStatusException.class);
     }
+
+    @Test
+    void recheckManySkipsInactiveAndRejectsOtherBusinessIds() {
+        AiVisibilityQuery active = admin.add(b, "best brow studio near Hillcrest", "brows", null);
+        AiVisibilityQuery paused = admin.add(b, "best lip studio near Hillcrest", "lips", null);
+        admin.update(b, paused.getId(), null, null, null, "PAUSED", null);
+
+        var result = admin.recheckMany(b, List.of(active.getId(), paused.getId()));
+        assertThat(result.started()).containsExactly(active.getId());
+        assertThat(result.skippedNotActive()).containsExactly(paused.getId());
+        assertThat(result.run().getTrigger()).isEqualTo(AiVisibilityRun.Trigger.MANUAL_QUERY);
+
+        AiVisibilityQuery aQuestion = queries.findByBusinessIdAndStatusInOrderBySortOrderAscIdAsc(a, List.of(AiVisibilityQuery.Status.PROPOSED)).get(0);
+        assertThatThrownBy(() -> admin.recheckMany(b, List.of(aQuestion.getId()))).isInstanceOf(ResponseStatusException.class).hasMessageContaining("404");
+    }
 }
