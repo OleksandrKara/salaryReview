@@ -70,6 +70,9 @@ public final class PageComponentExtractor {
         if (types.contains("faqpage")) out.put(Component.FAQ, new Found(true, "FAQPage schema"));
         else if (faqHeading != null && (questionHeadings >= 2 || questionLines >= 3)) out.put(Component.FAQ, new Found(true, "Heading: " + faqHeading));
         else if (questionHeadings >= 3) out.put(Component.FAQ, new Found(true, questionHeadings + " question headings"));
+        // Accordion FAQs put each question in a <button> (akluxnails.com's FAQ section).
+        else if (p.links().stream().filter(l -> l.split("\\|", 2)[0].trim().endsWith("?")).count() >= 3)
+            out.put(Component.FAQ, new Found(true, p.links().stream().filter(l -> l.split("\\|", 2)[0].trim().endsWith("?")).count() + " question buttons"));
         else out.put(Component.FAQ, absent());
 
         // PRICES

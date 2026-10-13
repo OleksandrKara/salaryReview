@@ -88,4 +88,11 @@ class PageComponentExtractorTest {
         var noLink = new PageSnapshot(List.of(), List.of(), List.of(), List.of(), List.of(), "Visit us at 1357 Seventh Ave, San Diego");
         assertThat(PageComponentExtractor.extract(noLink).components().get(Component.MAP_NAP).present()).isFalse();
     }
+
+    @Test
+    void accordionQuestionButtonsCountAsFaq() {
+        var p = new PageSnapshot(List.of(), List.of("H2|Questions"), List.of(), List.of(),
+                List.of("Do I need an appointment?|", "What's your cancellation policy?|", "Is there parking nearby?|", "Book now|/book"), "text");
+        assertThat(PageComponentExtractor.extract(p).components().get(Component.FAQ).present()).isTrue();
+    }
 }
