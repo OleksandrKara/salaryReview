@@ -15,5 +15,7 @@ public interface AiVisibilityCheckRepository extends JpaRepository<AiVisibilityC
 
     List<AiVisibilityCheck> findByBusinessIdAndRunId(Long businessId, Long runId);
 
+    java.util.Optional<AiVisibilityCheck> findTop1ByRunIdOrderByCheckedAtDesc(Long runId);
+
     boolean existsByBusinessIdAndQueryIdAndRunIdIn(Long businessId, Long queryId, List<Long> runIds);
 }

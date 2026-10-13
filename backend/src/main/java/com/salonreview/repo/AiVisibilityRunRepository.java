@@ -17,6 +17,8 @@ public interface AiVisibilityRunRepository extends JpaRepository<AiVisibilityRun
 
     Optional<AiVisibilityRun> findTop1ByBusinessIdOrderByStartedAtDesc(Long businessId);
 
+    List<AiVisibilityRun> findByFinishedAtIsNullAndStartedAtBefore(Instant before);
+
     List<AiVisibilityRun> findByBusinessIdAndTriggerAndStartedAtAfter(Long businessId, AiVisibilityRun.Trigger trigger, Instant after);
 
     @Query("select coalesce(sum(r.costUsd), 0) from AiVisibilityRun r where r.businessId = :businessId and r.startedAt >= :since")

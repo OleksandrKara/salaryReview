@@ -107,7 +107,7 @@ public class AiVisibilityAdminService {
         AiVisibilityQuery q = find(businessId, id);
         if (q.getStatus() != AiVisibilityQuery.Status.ACTIVE) throw new ResponseStatusException(HttpStatus.CONFLICT, "Only active questions can be re-checked");
         runs.findTop1ByBusinessIdOrderByStartedAtDesc(businessId)
-                .filter(r -> r.getFinishedAt() == null && r.getStartedAt().isAfter(Instant.now().minusSeconds(3 * 3600)))
+                .filter(runService::isActive)
                 .ifPresent(r -> { throw new ResponseStatusException(HttpStatus.CONFLICT, "A check is already running"); });
         Instant todayPt = LocalDate.now(AiVisibilityRunService.PT).atStartOfDay(AiVisibilityRunService.PT).toInstant();
         List<Long> todaysManual = new ArrayList<>(runs.findByBusinessIdAndTriggerAndStartedAtAfter(businessId, AiVisibilityRun.Trigger.MANUAL_QUERY, todayPt)

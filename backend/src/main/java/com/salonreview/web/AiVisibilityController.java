@@ -165,4 +165,13 @@ public class AiVisibilityController {
             return new SettingsDto(s.getBrandAliases(), s.getOwnDomains(), s.getMonthlyBudgetUsd(), s.isDigestEnabled(), s.getSearchPoints());
         }
     }
+
+    /** Spring Boot hides exception reasons from error bodies (server.error.include-message=never);
+     * the AI tab shows the real reason ("already re-checked today") instead of a bare 409. Only
+     * ResponseStatusException reasons written in this controller's services reach the client. */
+    @ExceptionHandler(ResponseStatusException.class)
+    public org.springframework.http.ResponseEntity<Map<String, Object>> handle(ResponseStatusException e) {
+        return org.springframework.http.ResponseEntity.status(e.getStatusCode())
+                .body(Map.of("status", e.getStatusCode().value(), "message", e.getReason() == null ? "Request failed" : e.getReason()));
+    }
 }

@@ -175,6 +175,33 @@ public class AiVisibilityRunService {
         }
     }
 
+    /** A run is "in progress" only while it keeps writing checks: one call takes at most ~2.5 min,
+     * so 5 quiet minutes means its replica went away (2026-10-13: a re-check started during a
+     * blue/green deploy was killed with its container and blocked re-checks for 3 hours). */
+    static final java.time.Duration STALE_AFTER = java.time.Duration.ofMinutes(5);
+
+    public boolean isActive(AiVisibilityRun run) {
+        if (run.getFinishedAt() != null) return false;
+        Instant lastActivity = checks.findTop1ByRunIdOrderByCheckedAtDesc(run.getId()).map(AiVisibilityCheck::getCheckedAt).orElse(run.getStartedAt());
+        return lastActivity.isAfter(Instant.now().minus(STALE_AFTER));
+    }
+
+    /** On startup, close runs left unfinished by a replica that was stopped mid-run. */
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void closeInterruptedRuns() {
+        try {
+            for (AiVisibilityRun r : runs.findByFinishedAtIsNullAndStartedAtBefore(Instant.now().minus(STALE_AFTER))) {
+                if (isActive(r)) continue;
+                r.setFinishedAt(Instant.now());
+                r.setStoppedReason("INTERRUPTED");
+                runs.save(r);
+                log.info("AI visibility run {} (business {}) closed as INTERRUPTED", r.getId(), r.getBusinessId());
+            }
+        } catch (RuntimeException e) {
+            log.warn("Closing interrupted AI visibility runs failed: {}", e.toString());
+        }
+    }
+
     BigDecimal monthSpend(Long businessId) {
         Instant monthStart = LocalDate.now(PT).withDayOfMonth(1).atStartOfDay(PT).toInstant();
         return runs.spentSince(businessId, monthStart);
