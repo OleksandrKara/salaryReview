@@ -110,9 +110,11 @@ app:
 # Shared secret for service-to-service calls from mani/akluxnails-home (Telegram 4-hand-request
 # relay — see InternalApiProperties/InternalNotificationController). Blank means every internal
 # call is rejected; set INTERNAL_API_KEY to the same value on this app and both callers.
-# PMU Academy course requests are added to HubSpot as contacts (AcademyLeadService).
+# PMU Academy course requests go to HubSpot as submissions of the form "PMU Academy: course request"
+# in portal 40072325 (pmu-annakara.com). No token needed (HubSpotFormClient).
 hubspot:
-  private-app-token: ${HUBSPOT_PRIVATE_APP_TOKEN:}
+  portal-id: ${HUBSPOT_PORTAL_ID:40072325}
+  academy-form-guid: ${HUBSPOT_ACADEMY_FORM_GUID:d08f61dd-cb1a-4548-a9be-98bcad34220a}
 
 internal:
   api:

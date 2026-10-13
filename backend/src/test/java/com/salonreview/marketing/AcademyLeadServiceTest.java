@@ -37,23 +37,23 @@ class AcademyLeadServiceTest {
     void leadIsSavedEvenWhenHubSpotFails() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         TelegramNotificationService telegram = mock(TelegramNotificationService.class);
-        HubSpotContactClient hubspot = mock(HubSpotContactClient.class);
+        HubSpotFormClient hubspot = mock(HubSpotFormClient.class);
         when(jdbc.queryForObject(anyString(), eq(Long.class), any(Object[].class))).thenReturn(42L);
         when(telegram.sendPlainAlert(eq(2L), anyString())).thenReturn(true);
-        when(hubspot.upsertByEmail(eq("jane@example.com"), anyMap()))
-                .thenReturn(new HubSpotContactClient.Result(null, "HTTP 401: bad token"));
+        when(hubspot.submit(eq("jane@example.com"), anyMap(), anyString(), anyString()))
+                .thenReturn(new HubSpotFormClient.Result(false, "HTTP 400: bad form"));
 
         var out = new AcademyLeadService(jdbc, telegram, hubspot).submit(2L, lead("Jane", "jane@example.com", false));
 
         assertThat(out.id()).isEqualTo(42L);
         assertThat(out.telegramSent()).isTrue();
-        assertThat(out.hubspotError()).contains("401");
-        verify(jdbc).update(contains("UPDATE academy_lead"), eq(true), isNull(), eq("HTTP 401: bad token"), eq(42L));
+        assertThat(out.hubspotError()).contains("400");
+        verify(jdbc).update(contains("UPDATE academy_lead"), eq(true), eq(false), eq("HTTP 400: bad form"), eq(42L));
     }
 
     @Test
-    void hubspotClientWithoutTokenDoesNothing() {
-        var r = new HubSpotContactClient("").upsertByEmail("jane@example.com", java.util.Map.of());
+    void hubspotClientWithoutFormDoesNothing() {
+        var r = new HubSpotFormClient("40072325", "").submit("jane@example.com", java.util.Map.of(), null, null);
         assertThat(r.error()).isEqualTo("not_configured");
     }
 }

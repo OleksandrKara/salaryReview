@@ -22,9 +22,9 @@ public class AcademyLeadService {
 
     private final JdbcTemplate jdbc;
     private final TelegramNotificationService telegram;
-    private final HubSpotContactClient hubspot;
+    private final HubSpotFormClient hubspot;
 
-    public AcademyLeadService(JdbcTemplate jdbc, TelegramNotificationService telegram, HubSpotContactClient hubspot) {
+    public AcademyLeadService(JdbcTemplate jdbc, TelegramNotificationService telegram, HubSpotFormClient hubspot) {
         this.jdbc = jdbc;
         this.telegram = telegram;
         this.hubspot = hubspot;
@@ -35,7 +35,7 @@ public class AcademyLeadService {
                               String utmSource, String utmMedium, String utmCampaign, String gclid) {
     }
 
-    public record Outcome(long id, boolean telegramSent, String hubspotContactId, String hubspotError) {
+    public record Outcome(long id, boolean telegramSent, boolean hubspotSubmitted, String hubspotError) {
     }
 
     public Outcome submit(long businessId, AcademyLead l) {
@@ -49,13 +49,14 @@ public class AcademyLeadService {
 
         boolean sent = telegram.sendPlainAlert(businessId, formatAlert(l));
 
-        HubSpotContactClient.Result hs = hubspot.upsertByEmail(l.email(), hubspotProperties(l));
+        HubSpotFormClient.Result hs = hubspot.submit(l.email(), hubspotProperties(l), l.sourcePageUrl(),
+                "PMU Academy: " + (notBlank(l.courseName()) ? l.courseName() : "course request"));
         if (hs.error() != null && !"not_configured".equals(hs.error())) {
-            log.warn("Academy lead {}: HubSpot upsert failed: {}", id, hs.error());
+            log.warn("Academy lead {}: HubSpot form submission failed: {}", id, hs.error());
         }
-        jdbc.update("UPDATE academy_lead SET telegram_sent = ?, hubspot_contact_id = ?, hubspot_error = ? WHERE id = ?",
-                sent, hs.contactId(), hs.error(), id);
-        return new Outcome(id, sent, hs.contactId(), hs.error());
+        jdbc.update("UPDATE academy_lead SET telegram_sent = ?, hubspot_submitted = ?, hubspot_error = ? WHERE id = ?",
+                sent, hs.submitted(), hs.error(), id);
+        return new Outcome(id, sent, hs.submitted(), hs.error());
     }
 
     static String formatAlert(AcademyLead l) {
