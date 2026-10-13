@@ -226,9 +226,18 @@ public class AiVisibilityPageService {
     /** Owner "Refresh pages" for one question: once per PT day, in the background. */
     public void startRefresh(Long businessId, Long queryId) {
         AiVisibilityQuery q = queries.findByIdAndBusinessId(queryId, businessId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        // Once a day per question: refused only when every page of this question was already read
+        // today (many questions share one target page, e.g. the homepage, so a per-target-page
+        // limit blocked all of them after the first refresh).
         Instant todayPt = LocalDate.now(AiVisibilityRunService.PT).atStartOfDay(AiVisibilityRunService.PT).toInstant();
-        if (q.getTargetUrl() != null && pages.findByBusinessIdAndUrl(businessId, q.getTargetUrl())
-                .map(AiVisibilityPage::getLastFetchedAt).filter(t -> t != null && t.isAfter(todayPt)).isPresent()) {
+        List<String> ownDomains = settingsRepo.findById(businessId).map(AiVisibilitySettings::getOwnDomains).orElse(List.of());
+        List<String> urls = new ArrayList<>(competitorUrls(businessId, queryId, ownDomains).keySet());
+        if (q.getTargetUrl() != null) urls.add(q.getTargetUrl());
+        Map<String, AiVisibilityPage> stored = new HashMap<>();
+        for (AiVisibilityPage p : pages.findByBusinessIdAndUrlIn(businessId, urls)) stored.put(p.getUrl(), p);
+        boolean allReadToday = !urls.isEmpty() && urls.stream().allMatch(u -> stored.containsKey(u)
+                && stored.get(u).getLastFetchedAt() != null && stored.get(u).getLastFetchedAt().isAfter(todayPt));
+        if (allReadToday) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Pages for this question were already refreshed today");
         }
         executor.submit(() -> currentBusinessContext.runAs(businessId, () -> {
