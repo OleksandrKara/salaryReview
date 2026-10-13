@@ -111,7 +111,7 @@ public class AiVisibilityQueryService {
         List<AiVisibilityRun> lastTwo = runs.findTop2ByBusinessIdAndTriggerAndFinishedAtIsNotNullOrderByStartedAtDesc(businessId, AiVisibilityRun.Trigger.SCHEDULED);
         List<EngineTotal> totals = engineTotals(businessId, lastTwo);
         Long running = runs.findTop1ByBusinessIdOrderByStartedAtDesc(businessId)
-                .filter(r -> r.getFinishedAt() == null && r.getStartedAt().isAfter(now.minus(Duration.ofHours(3))))
+                .filter(runService::isActive)
                 .map(AiVisibilityRun::getId).orElse(null);
 
         List<AiVisibilityCheck> recentMissing = all.stream()

@@ -127,4 +127,24 @@ class AiVisibilityRunServiceTest {
         assertThat(ordinary).filteredOn(c -> !AiVisibilityRunService.isGoogle(c.getEngine())).extracting(AiVisibilityCheck::getSearchPoint).containsOnlyNulls();
         verify(provider, atLeastOnce()).ask(eq(Engine.GOOGLE_AI_MODE), eq("best nail salon 9"), anyString(), eq("32.87,-117.21,13"));
     }
+
+    @Test
+    void runWithoutRecentChecksIsNotActiveAndIsClosedOnStartup() {
+        java.time.Instant now = java.time.Instant.now();
+        AiVisibilityRun orphan = AiVisibilityRun.builder().id(27L).businessId(2L).trigger(AiVisibilityRun.Trigger.MANUAL_QUERY)
+                .startedAt(now.minus(java.time.Duration.ofMinutes(20))).build();
+        AiVisibilityRun busy = AiVisibilityRun.builder().id(28L).businessId(1L).trigger(AiVisibilityRun.Trigger.SCHEDULED)
+                .startedAt(now.minus(java.time.Duration.ofMinutes(20))).build();
+        when(checks.findTop1ByRunIdOrderByCheckedAtDesc(27L)).thenReturn(java.util.Optional.empty());
+        when(checks.findTop1ByRunIdOrderByCheckedAtDesc(28L)).thenReturn(java.util.Optional.of(
+                AiVisibilityCheck.builder().checkedAt(now.minusSeconds(30)).build()));
+        assertThat(service.isActive(orphan)).isFalse();
+        assertThat(service.isActive(busy)).isTrue();
+
+        when(runs.findByFinishedAtIsNullAndStartedAtBefore(any())).thenReturn(List.of(orphan, busy));
+        service.closeInterruptedRuns();
+        assertThat(orphan.getStoppedReason()).isEqualTo("INTERRUPTED");
+        assertThat(orphan.getFinishedAt()).isNotNull();
+        assertThat(busy.getFinishedAt()).isNull();
+    }
 }
