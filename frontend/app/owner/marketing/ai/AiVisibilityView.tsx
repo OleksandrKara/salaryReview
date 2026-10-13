@@ -82,6 +82,8 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [historyFor, setHistoryFor] = useState<AiQueryRow | null>(null);
+  // Category whose inline "add question" form is open (one at a time).
+  const [addingTo, setAddingTo] = useState<string | null>(null);
   const [runningRunId, setRunningRunId] = useState<number | null>(initialData.runningRunId);
 
   const refresh = useCallback(async () => {
@@ -134,7 +136,7 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
     }
     return [...m.entries()];
   }, [tracked]);
-  const countedNow = data.rows.filter((r) => r.status === 'PROPOSED' || r.status === 'ACTIVE').length;
+  const countedNow = data.rows.filter((r) => (r.status === 'PROPOSED' || r.status === 'ACTIVE') && !r.engines).length;
 
   if (!data.configured) {
     return <p className="rounded-lg border border-zinc-200 bg-white p-4 text-sm text-zinc-600">AI visibility is not set up for this business yet.</p>;
@@ -212,7 +214,23 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
 
       {groups.map(([topic, rows]) => (
         <section key={topic}>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">{topic}</h2>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{topic}</h2>
+            {canEdit && addingTo !== topic && (
+              <button type="button" onClick={() => setAddingTo(topic)} aria-label={`Add a question to ${topic}`}
+                className="inline-flex min-h-[36px] items-center gap-1 rounded-full px-3 text-xs font-medium text-sky-700 hover:bg-sky-50 sm:min-h-0 sm:py-1">
+                <span aria-hidden className="text-base leading-none">+</span> Add
+              </button>
+            )}
+          </div>
+          {canEdit && addingTo === topic && (
+            <div className="mb-2">
+              <AddQuestion count={countedNow} areas={data.searchPoints.length} disabled={busy !== null} autoFocus
+                topic={topic === 'other' ? undefined : topic} topics={topic === 'other' ? groups.map(([t]) => t).filter((t) => t !== 'other') : undefined}
+                onCancel={() => setAddingTo(null)}
+                onAdd={(q, nearMe, t) => act('add', () => api.addAiQuery(q, t, nearMe))} />
+            </div>
+          )}
           {/* Desktop table */}
           <div className="hidden overflow-x-auto rounded-lg border border-zinc-200 bg-white md:block">
             <table className="w-full text-sm">
@@ -276,7 +294,8 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
         </section>
       ))}
 
-      {canEdit && <AddQuestion count={countedNow} disabled={busy !== null} onAdd={(q) => act('add', () => api.addAiQuery(q, null))} />}
+      {canEdit && <AddQuestion count={countedNow} areas={data.searchPoints.length} disabled={busy !== null} topics={groups.map(([t]) => t).filter((t) => t !== 'other')}
+        onAdd={(q, nearMe, topic) => act('add', () => api.addAiQuery(q, topic, nearMe))} />}
 
       <AiTrafficPanel />
 
@@ -381,21 +400,64 @@ function RowActions({ row, canEdit, busy, running, onHistory, onRecheck, onToggl
   );
 }
 
-function AddQuestion({ count, disabled, onAdd }: { count: number; disabled: boolean; onAdd: (q: string) => void }) {
+function AddQuestion({ count, areas, disabled, onAdd, topic, topics, onCancel, autoFocus = false }: {
+  count: number; areas: number; disabled: boolean; onAdd: (q: string, nearMe: boolean, topic: string | null) => void;
+  /** Fixed category (the inline form under a group); omit to let the owner pick one. */
+  topic?: string; topics?: string[]; onCancel?: () => void; autoFocus?: boolean;
+}) {
   const [text, setText] = useState('');
-  const full = count >= MAX_TRACKED;
+  // null = follow the text ("near me" in it switches it on); true/false = the owner chose.
+  const [nearMeChoice, setNearMeChoice] = useState<boolean | null>(topic === 'near me' ? true : null);
+  const [pickedTopic, setPickedTopic] = useState<string>('');
+  const [newTopic, setNewTopic] = useState('');
+  const nearMe = nearMeChoice ?? /\bnear me\b/i.test(text);
+  const full = !nearMe && count >= MAX_TRACKED;
+  const chosenTopic = topic ?? (pickedTopic === '__new' ? newTopic.trim() || null : pickedTopic || null);
   return (
     <form
-      className="flex flex-col gap-2 rounded-lg border border-zinc-200 bg-white p-3 sm:flex-row sm:items-center"
-      onSubmit={(e) => { e.preventDefault(); if (text.trim().length >= 8) { onAdd(text.trim()); setText(''); } }}
+      className={`rounded-lg border bg-white p-3 ${topic ? 'border-sky-200 bg-sky-50/40' : 'border-zinc-200'}`}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (text.trim().length >= 8 && !full) {
+          onAdd(text.trim(), nearMe, chosenTopic);
+          setText(''); setNearMeChoice(topic === 'near me' ? true : null);
+          onCancel?.();
+        }
+      }}
     >
-      <input value={text} onChange={(e) => setText(e.target.value)} disabled={full}
-        placeholder={full ? 'Limit reached: pause or remove a question first' : 'Add a question, e.g. "best place for lip blush in San Diego"'}
-        className="min-w-0 flex-1 rounded-md border border-zinc-300 px-3 py-2 text-base sm:text-sm" />
-      <div className="flex items-center gap-3">
-        <span className="text-xs text-zinc-500">{count}/{MAX_TRACKED}</span>
-        <button type="submit" disabled={disabled || full || text.trim().length < 8} className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-40">Add</button>
+      {!topic && <div className="mb-2 text-sm font-medium text-zinc-900">Add a question</div>}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <input value={text} onChange={(e) => setText(e.target.value)} autoFocus={autoFocus}
+          placeholder={topic === 'near me' || nearMe ? 'e.g. "best russian manicure near me"' : topic ? `New question about ${topic}` : 'e.g. "best russian manicure in San Diego"'}
+          aria-label="New question"
+          className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2.5 text-base sm:py-2 sm:text-sm" />
+        {!topic && topics && (
+          <select value={pickedTopic} onChange={(e) => setPickedTopic(e.target.value)} aria-label="Category"
+            className="rounded-md border border-zinc-300 bg-white px-3 py-2.5 text-base sm:w-44 sm:py-2 sm:text-sm">
+            <option value="">No category</option>
+            {topics.map((t) => <option key={t} value={t}>{t}</option>)}
+            <option value="__new">+ New category…</option>
+          </select>
+        )}
+        {!topic && pickedTopic === '__new' && (
+          <input value={newTopic} onChange={(e) => setNewTopic(e.target.value)} placeholder="Category name" aria-label="New category"
+            className="rounded-md border border-zinc-300 bg-white px-3 py-2.5 text-base sm:w-40 sm:py-2 sm:text-sm" />
+        )}
+        <div className="flex items-center justify-end gap-2">
+          <span className="text-xs text-zinc-500" title="Questions asked to every assistant (near-me questions don't count)">{count}/{MAX_TRACKED}</span>
+          {onCancel && <button type="button" onClick={onCancel} className="min-h-[40px] px-3 text-sm text-zinc-600 sm:min-h-0">Cancel</button>}
+          <button type="submit" disabled={disabled || full || text.trim().length < 8}
+            className="min-h-[40px] rounded-md bg-zinc-900 px-4 text-sm font-medium text-white disabled:opacity-40 sm:min-h-0 sm:py-2">Add</button>
+        </div>
       </div>
+      <label className="mt-2 flex cursor-pointer items-start gap-2 text-xs text-zinc-600">
+        <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0" checked={nearMe} onChange={(e) => setNearMeChoice(e.target.checked)} />
+        <span>
+          <span className="font-medium text-zinc-800">&ldquo;Near me&rdquo; question</span>: asked only to Google AI Overview and AI Mode,
+          {areas > 1 ? ` from each of your ${areas} areas` : ' from your search area'}. Doesn&rsquo;t count toward the 20.
+        </span>
+      </label>
+      {full && <p className="mt-2 text-xs text-amber-700">20 questions are tracked. Pause or remove one, or make this a &ldquo;near me&rdquo; question.</p>}
     </form>
   );
 }

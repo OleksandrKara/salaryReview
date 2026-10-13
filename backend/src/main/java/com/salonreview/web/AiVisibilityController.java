@@ -76,7 +76,8 @@ public class AiVisibilityController {
 
     @PostMapping("/queries")
     public Map<String, Object> add(@RequestBody QueryRequest req) {
-        var q = admin.add(requireFeatureEnabled(), req.query(), req.topic(), req.targetUrl());
+        boolean nearMe = req.nearMe() != null ? req.nearMe() : req.query() != null && req.query().toLowerCase().contains("near me");
+        var q = admin.add(requireFeatureEnabled(), req.query(), req.topic(), req.targetUrl(), nearMe);
         return Map.of("id", q.getId());
     }
 
@@ -145,7 +146,7 @@ public class AiVisibilityController {
                 req.digestEnabled(), req.searchPoints()));
     }
 
-    public record QueryRequest(String query, String topic, String targetUrl) {
+    public record QueryRequest(String query, String topic, String targetUrl, Boolean nearMe) {
     }
 
     public record QueryPatch(String query, String topic, String targetUrl, String status, Integer sortOrder) {

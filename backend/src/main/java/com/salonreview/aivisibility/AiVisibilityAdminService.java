@@ -25,6 +25,8 @@ import java.util.Set;
 public class AiVisibilityAdminService {
 
     static final int MAX_TRACKED = 20;
+    /** Google-only "near me" questions: 2 engines x up to 6 areas each, so a separate small cap. */
+    static final int MAX_NEAR_ME = 10;
     static final Set<AiVisibilityQuery.Status> COUNTED = Set.of(AiVisibilityQuery.Status.ACTIVE, AiVisibilityQuery.Status.PROPOSED);
 
     private final AiVisibilityQueryRepository queries;
@@ -44,18 +46,31 @@ public class AiVisibilityAdminService {
 
     @Transactional
     public AiVisibilityQuery add(Long businessId, String text, String topic, String targetUrl) {
+        return add(businessId, text, topic, targetUrl, false);
+    }
+
+    /** {@code nearMe}: asked only to Google AI Overview and AI Mode, from every search area (the
+     * other assistants don't know where the person is). Outside the 20-question cap. */
+    @Transactional
+    public AiVisibilityQuery add(Long businessId, String text, String topic, String targetUrl, boolean nearMe) {
         String t = text == null ? "" : text.trim().replaceAll("\\s+", " ");
         if (t.length() < 8 || t.length() > 200) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Question must be 8-200 characters");
-        if (queries.countByBusinessIdAndStatusInAndEnginesIsNull(businessId, COUNTED) >= MAX_TRACKED) {
+        if (!nearMe && queries.countByBusinessIdAndStatusInAndEnginesIsNull(businessId, COUNTED) >= MAX_TRACKED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "20 questions are already tracked. Pause or remove one first.");
+        }
+        if (nearMe && queries.countByBusinessIdAndStatusIn(businessId, COUNTED) - queries.countByBusinessIdAndStatusInAndEnginesIsNull(businessId, COUNTED) >= MAX_NEAR_ME) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, MAX_NEAR_ME + " \"near me\" questions are already tracked. Pause or remove one first.");
         }
         if (queries.existsByBusinessIdAndQueryTextIgnoreCase(businessId, t)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "This question is already in the list");
         }
         int order = queries.findByBusinessIdAndStatusInOrderBySortOrderAscIdAsc(businessId, AiVisibilityQueryService.VISIBLE).stream()
                 .mapToInt(AiVisibilityQuery::getSortOrder).max().orElse(0) + 1;
-        return queries.save(AiVisibilityQuery.builder().businessId(businessId).queryText(t).topic(blankToNull(topic))
-                .targetUrl(blankToNull(targetUrl)).status(AiVisibilityQuery.Status.ACTIVE).activatedAt(Instant.now()).sortOrder(order).build());
+        return queries.save(AiVisibilityQuery.builder().businessId(businessId).queryText(t)
+                .topic(nearMe && (topic == null || topic.isBlank()) ? "near me" : blankToNull(topic))
+                .targetUrl(blankToNull(targetUrl)).status(AiVisibilityQuery.Status.ACTIVE).activatedAt(Instant.now()).sortOrder(order)
+                .engines(nearMe ? new ArrayList<>(List.of("GOOGLE_AI_OVERVIEW", "GOOGLE_AI_MODE")) : null).allPoints(nearMe)
+                .build());
     }
 
     @Transactional
