@@ -404,7 +404,7 @@ public class InternalNotificationController {
         out.put("saved", true);
         out.put("id", o.id());
         out.put("telegramSent", o.telegramSent());
-        out.put("hubspot", o.hubspotContactId() != null);
+        out.put("hubspot", o.hubspotSubmitted());
         return ResponseEntity.ok(out);
     }
 

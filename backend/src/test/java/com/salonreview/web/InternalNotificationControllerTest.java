@@ -674,7 +674,7 @@ class InternalNotificationControllerTest {
     void academyLeadSaved() throws Exception {
         when(props.getKey()).thenReturn("secret");
         when(academyLeads.submit(org.mockito.ArgumentMatchers.eq(1L), org.mockito.ArgumentMatchers.any()))
-                .thenReturn(new com.salonreview.marketing.AcademyLeadService.Outcome(7L, true, "123", null));
+                .thenReturn(new com.salonreview.marketing.AcademyLeadService.Outcome(7L, true, true, null));
         String body = "{\"name\":\" Jane Doe \",\"email\":\"jane@example.com\",\"courseSlug\":\"areola-tattoo\","
                 + "\"courseName\":\"Areola Tattoo\",\"smsConsent\":true,\"businessId\":1}";
 
