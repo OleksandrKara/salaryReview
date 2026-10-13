@@ -93,6 +93,8 @@ x-backend-env: &backend-env
   TASKS_OWNER_CHAT_ID: ${TASKS_OWNER_CHAT_ID:-}
   # GA4 Measurement Protocol for website SMS leads (SmsWebsiteLeadService): "2=G-XXXX:secret".
   GA4_MP_TARGETS: ${GA4_MP_TARGETS:-}
+  # PMU Academy course requests -> HubSpot contacts (AcademyLeadService). Private-app token.
+  HUBSPOT_PRIVATE_APP_TOKEN: ${HUBSPOT_PRIVATE_APP_TOKEN:-}
 
 x-backend-healthcheck: &backend-healthcheck
   test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
