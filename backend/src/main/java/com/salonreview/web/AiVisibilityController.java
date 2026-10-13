@@ -141,7 +141,8 @@ public class AiVisibilityController {
 
     @PutMapping("/settings")
     public SettingsDto updateSettings(@RequestBody SettingsDto req) {
-        return SettingsDto.of(admin.updateSettings(requireFeatureEnabled(), req.brandAliases(), req.ownDomains(), req.monthlyBudgetUsd(), req.digestEnabled()));
+        return SettingsDto.of(admin.updateSettings(requireFeatureEnabled(), req.brandAliases(), req.ownDomains(), req.monthlyBudgetUsd(),
+                req.digestEnabled(), req.searchPoints()));
     }
 
     public record QueryRequest(String query, String topic, String targetUrl) {
@@ -158,9 +159,10 @@ public class AiVisibilityController {
         }
     }
 
-    public record SettingsDto(List<String> brandAliases, List<String> ownDomains, BigDecimal monthlyBudgetUsd, Boolean digestEnabled) {
+    public record SettingsDto(List<String> brandAliases, List<String> ownDomains, BigDecimal monthlyBudgetUsd, Boolean digestEnabled,
+            List<Map<String, Object>> searchPoints) {
         static SettingsDto of(AiVisibilitySettings s) {
-            return new SettingsDto(s.getBrandAliases(), s.getOwnDomains(), s.getMonthlyBudgetUsd(), s.isDigestEnabled());
+            return new SettingsDto(s.getBrandAliases(), s.getOwnDomains(), s.getMonthlyBudgetUsd(), s.isDigestEnabled(), s.getSearchPoints());
         }
     }
 }

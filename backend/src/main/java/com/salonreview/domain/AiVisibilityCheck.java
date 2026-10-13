@@ -42,6 +42,10 @@ public class AiVisibilityCheck {
 
     private String model;
 
+    /** Label of the search point a Google engine searched from; null for the LLM engines. */
+    @Column(name = "search_point")
+    private String searchPoint;
+
     @Column(name = "checked_at", nullable = false)
     private Instant checkedAt;
 

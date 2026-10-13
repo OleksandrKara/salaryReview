@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../../lib/api';
-import type { AiCell, AiEngine, AiHistoryItem, AiPageComparison, AiPageGap, AiQueryRow, AiRanked, AiVisibilityOverview, AiVisibilitySettingsDto } from '../../../lib/types';
+import type { AiCell, AiEngine, AiSearchPoint, AiHistoryItem, AiPageComparison, AiPageGap, AiQueryRow, AiRanked, AiVisibilityOverview, AiVisibilitySettingsDto } from '../../../lib/types';
 import { Spinner } from '../../../components/Spinner';
 import { AiTrafficPanel, AiTrendsPanel } from './AiInsights';
 
@@ -36,12 +36,19 @@ const CHIP_STYLE: Record<AiCell['latest'], string> = {
   NO_ANSWER: 'bg-zinc-100 text-zinc-500 ring-zinc-200',
   ERROR: 'bg-zinc-100 text-zinc-500 ring-zinc-200',
   NONE: 'bg-zinc-50 text-zinc-400 ring-zinc-200',
+  NOT_ASKED: 'bg-transparent text-zinc-300 ring-zinc-100',
 };
+const GOOGLE_ENGINES: AiEngine[] = ['GOOGLE_AI_OVERVIEW', 'GOOGLE_AI_MODE'];
+
+function shortPoint(label: string): string {
+  return label.replace(/\s*\(.*\)\s*$/, '');
+}
 
 function chipLabel(cell: AiCell): string {
   switch (cell.latest) {
     case 'NAMED': return cell.rank ? `Named #${cell.rank}` : 'Named';
     case 'NOT_NAMED': return 'Not named';
+    case 'NOT_ASKED': return 'Not asked';
     case 'NO_ANSWER': return 'No answer';
     case 'ERROR': return 'Error';
     default: return 'Not checked';
@@ -49,7 +56,10 @@ function chipLabel(cell: AiCell): string {
 }
 
 function Chip({ cell, engineLabel }: { cell: AiCell; engineLabel?: string }) {
-  const c = consistencyText(cell.recent);
+  if (cell.latest === 'NOT_ASKED') {
+    return <span className="inline-block min-w-[5.5rem] px-2 py-1 text-xs text-zinc-300" title="This question is asked only to the Google engines">—</span>;
+  }
+  const c = cell.pointsTotal ? `named in ${cell.pointsNamed}/${cell.pointsTotal} areas` : consistencyText(cell.recent);
   return (
     <div
       className={`inline-flex min-w-[5.5rem] flex-col items-start rounded-md px-2 py-1 ring-1 ring-inset ${CHIP_STYLE[cell.latest]}`}
@@ -198,6 +208,8 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
         <p className="rounded-lg border border-zinc-200 bg-white p-4 text-sm text-zinc-500">No questions tracked yet.</p>
       )}
 
+      <SearchPointsNote points={data.searchPoints} hasAllPointsQuestions={data.rows.some((r) => r.allPoints)} />
+
       {groups.map(([topic, rows]) => (
         <section key={topic}>
           <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">{topic}</h2>
@@ -207,7 +219,14 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
               <thead className="bg-zinc-50 text-left text-xs text-zinc-500">
                 <tr>
                   <th className="px-3 py-2 font-medium">Question</th>
-                  {ENGINES.map((e) => <th key={e.key} className="px-2 py-2 font-medium">{e.label}</th>)}
+                  {ENGINES.map((e) => (
+                    <th key={e.key} className="px-2 py-2 font-medium">
+                      {e.label}
+                      {GOOGLE_ENGINES.includes(e.key) && data.searchPoints.length > 0 && (
+                        <span className="block text-[10px] font-normal text-zinc-400">from {shortPoint(data.searchPoints[0].label)}</span>
+                      )}
+                    </th>
+                  ))}
                   <th className="px-3 py-2" />
                 </tr>
               </thead>
@@ -215,7 +234,7 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
                 {rows.map((r) => (
                   <tr key={r.id} className={r.status === 'PAUSED' ? 'opacity-60' : ''}>
                     <td className="max-w-xs px-3 py-2 align-top">
-                      <div className="text-zinc-900">{r.query}</div>
+                      <div className="text-zinc-900">{r.query}{r.engines && <span className="ml-1.5 inline-block rounded bg-sky-50 px-1.5 py-0.5 align-middle text-[10px] font-medium text-sky-700">Google only{r.allPoints && data.searchPoints.length > 1 ? ` · ${data.searchPoints.length} areas` : ''}</span>}</div>
                       <div className="mt-0.5 text-[11px] text-zinc-400">
                         {r.status === 'PAUSED' ? 'Paused · ' : ''}{lastChecked(r) ? `checked ${fmtDate(lastChecked(r))}` : 'not checked yet'}
                       </div>
@@ -237,12 +256,12 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
           <ul className="space-y-2 md:hidden">
             {rows.map((r) => (
               <li key={r.id} className={`rounded-lg border border-zinc-200 bg-white p-3 ${r.status === 'PAUSED' ? 'opacity-60' : ''}`}>
-                <div className="text-sm text-zinc-900">{r.query}</div>
+                <div className="text-sm text-zinc-900">{r.query}{r.engines && <span className="ml-1.5 inline-block rounded bg-sky-50 px-1.5 py-0.5 align-middle text-[10px] font-medium text-sky-700">Google only{r.allPoints && data.searchPoints.length > 1 ? ` · ${data.searchPoints.length} areas` : ''}</span>}</div>
                 <div className="mt-0.5 text-[11px] text-zinc-400">
                   {r.status === 'PAUSED' ? 'Paused · ' : ''}{lastChecked(r) ? `checked ${fmtDate(lastChecked(r))}` : 'not checked yet'}
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {ENGINES.map((e) => <Chip key={e.key} cell={r.cells[e.key]} engineLabel={e.short} />)}
+                  {ENGINES.filter((e) => r.cells[e.key].latest !== 'NOT_ASKED').map((e) => <Chip key={e.key} cell={r.cells[e.key]} engineLabel={e.short} />)}
                 </div>
                 <div className="mt-2">
                   <RowActions row={r} canEdit={canEdit} busy={busy} running={!!runningRunId}
@@ -274,6 +293,29 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
 
       {historyFor && <HistorySheet row={historyFor} canEdit={canEdit} onClose={() => setHistoryFor(null)} />}
     </div>
+  );
+}
+
+function SearchPointsNote({ points, hasAllPointsQuestions }: { points: AiSearchPoint[]; hasAllPointsQuestions: boolean }) {
+  if (points.length === 0) return null;
+  return (
+    <section className="flex gap-2 rounded-lg border border-zinc-200 bg-white p-3 text-xs text-zinc-600">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="mt-0.5 shrink-0 text-zinc-400">
+        <path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z" /><circle cx="12" cy="10" r="2.5" />
+      </svg>
+      <div>
+        <span className="font-medium text-zinc-800">Google AI Overview and AI Mode search from </span>
+        <span className="font-medium text-zinc-800">{points[0].label}</span>.
+        {' '}ChatGPT, Gemini, Perplexity and Claude take the place from the question text.
+        {hasAllPointsQuestions && points.length > 1 && (
+          <span className="mt-1 block">
+            &ldquo;Near me&rdquo; questions are checked from {points.length} areas:{' '}
+            {points.map((p) => `${shortPoint(p.label)}${p.clientShare ? ` (${p.clientShare}% of clients)` : ''}`).join(', ')}.
+          </span>
+        )}
+        <span className="mt-1 block text-zinc-400">Change the areas in Settings below.</span>
+      </div>
+    </section>
   );
 }
 
@@ -521,7 +563,7 @@ function HistorySheet({ row, canEdit, onClose }: { row: AiQueryRow; canEdit: boo
                   <li key={i.id} className="py-3">
                     <button type="button" className="flex w-full items-center justify-between gap-2 text-left" onClick={() => setOpen(open === i.id ? null : i.id)}>
                       <span className="text-sm text-zinc-900">
-                        {ENGINES.find((e) => e.key === i.engine)?.label} · {fmtDate(i.checkedAt)}
+                        {ENGINES.find((e) => e.key === i.engine)?.label}{i.searchPoint ? ` · from ${shortPoint(i.searchPoint)}` : ''} · {fmtDate(i.checkedAt)}
                       </span>
                       <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${i.status !== 'OK' ? 'bg-zinc-100 text-zinc-500' : i.mentioned ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>
                         {i.status !== 'OK' ? (i.status === 'ERROR' ? 'Error' : 'No answer') : i.mentioned ? (i.rank ? `Named #${i.rank}` : 'Named') : 'Not named'}
@@ -651,6 +693,7 @@ function SettingsPanel() {
   const [aliases, setAliases] = useState('');
   const [domains, setDomains] = useState('');
   const [budget, setBudget] = useState('');
+  const [points, setPoints] = useState<AiSearchPoint[]>([]);
 
   useEffect(() => {
     if (!open || s) return;
@@ -659,6 +702,7 @@ function SettingsPanel() {
       setAliases(v.brandAliases.join(', '));
       setDomains(v.ownDomains.join(', '));
       setBudget(String(v.monthlyBudgetUsd));
+      setPoints(v.searchPoints ?? []);
     }).catch((e) => setMsg(e instanceof Error ? e.message : 'Failed to load'));
   }, [open, s]);
 
@@ -669,6 +713,7 @@ function SettingsPanel() {
         brandAliases: aliases.split(',').map((a) => a.trim()).filter(Boolean),
         ownDomains: domains.split(',').map((d) => d.trim()).filter(Boolean),
         monthlyBudgetUsd: Number(budget),
+        searchPoints: points,
         ...(digestEnabled !== undefined ? { digestEnabled } : {}),
       });
       setS(v);
@@ -700,6 +745,23 @@ function SettingsPanel() {
                 <span className="text-xs text-zinc-500">Monthly budget, USD</span>
                 <input inputMode="decimal" value={budget} onChange={(e) => setBudget(e.target.value)} className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-base sm:text-sm" />
               </label>
+              <div>
+                <div className="text-xs text-zinc-500">Where Google AI searches from (first = default; &ldquo;near me&rdquo; questions use all)</div>
+                <ul className="mt-1 space-y-2">
+                  {points.map((p, idx) => (
+                    <li key={idx} className="flex flex-col gap-1 sm:flex-row sm:items-center">
+                      <input value={p.label} onChange={(e) => setPoints(points.map((x, j) => (j === idx ? { ...x, label: e.target.value } : x)))}
+                        placeholder="Area name" className="min-w-0 flex-1 rounded-md border border-zinc-300 px-3 py-2 text-base sm:text-sm" />
+                      <input value={p.coordinate} onChange={(e) => setPoints(points.map((x, j) => (j === idx ? { ...x, coordinate: e.target.value } : x)))}
+                        placeholder="lat,lng (e.g. 32.748,-117.155)" inputMode="decimal" className="min-w-0 rounded-md border border-zinc-300 px-3 py-2 font-mono text-base sm:w-56 sm:text-xs" />
+                      <button type="button" onClick={() => setPoints(points.filter((_, j) => j !== idx))} className="self-start px-2 py-1 text-xs text-zinc-500 hover:text-red-600 sm:self-auto">Remove</button>
+                    </li>
+                  ))}
+                </ul>
+                {points.length < 6 && (
+                  <button type="button" onClick={() => setPoints([...points, { label: '', coordinate: '' }])} className="mt-2 text-xs font-medium text-zinc-700">+ Add area</button>
+                )}
+              </div>
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={s.digestEnabled} onChange={(e) => save(e.target.checked)} />
                 <span>Weekly Telegram summary</span>

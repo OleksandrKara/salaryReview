@@ -43,6 +43,15 @@ public class AiVisibilityQuery {
     @Column(name = "activated_at")
     private Instant activatedAt;
 
+    /** Engines this question is asked to; null = all. "near me" questions are Google-only (V170). */
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private java.util.List<String> engines;
+
+    /** Asked from every search point instead of only the first (Google engines only). */
+    @Column(name = "all_points", nullable = false)
+    private boolean allPoints;
+
     @PrePersist
     void prePersist() {
         if (createdAt == null) createdAt = Instant.now();

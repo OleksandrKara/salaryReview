@@ -103,35 +103,63 @@ public class AiVisibilityRunService {
         Map<Engine, Integer> consecutiveFailures = new EnumMap<>(Engine.class);
         outer:
         for (AiVisibilityQuery q : questions) {
-            for (Engine engine : Engine.values()) {
-                if (consecutiveFailures.getOrDefault(engine, 0) >= ENGINE_FAILURE_LIMIT) continue;
-                BigDecimal expected = expectedCost(engine);
-                if (spent.add(run.getCostUsd()).add(expected).compareTo(settings.getMonthlyBudgetUsd()) > 0) {
-                    run.setStoppedReason("BUDGET");
-                    break outer;
+            for (Engine engine : enginesFor(q)) {
+                for (Map<String, Object> point : pointsFor(settings, q, engine)) {
+                    if (consecutiveFailures.getOrDefault(engine, 0) >= ENGINE_FAILURE_LIMIT) continue;
+                    BigDecimal expected = expectedCost(engine);
+                    if (spent.add(run.getCostUsd()).add(expected).compareTo(settings.getMonthlyBudgetUsd()) > 0) {
+                        run.setStoppedReason("BUDGET");
+                        break outer;
+                    }
+                    AiVisibilityCheck check = checkOne(settings, q, engine, run.getId(), point);
+                    checks.save(check);
+                    if (check.getCostUsd() != null) run.setCostUsd(run.getCostUsd().add(check.getCostUsd()));
+                    if (check.getStatus() == AiVisibilityCheck.Status.ERROR) {
+                        run.setChecksFailed(run.getChecksFailed() + 1);
+                        consecutiveFailures.merge(engine, 1, Integer::sum);
+                    } else {
+                        consecutiveFailures.put(engine, 0);
+                        if (check.getStatus() == AiVisibilityCheck.Status.OK) run.setChecksOk(run.getChecksOk() + 1);
+                    }
+                    runs.save(run);
                 }
-                AiVisibilityCheck check = checkOne(settings, q, engine, run.getId());
-                checks.save(check);
-                if (check.getCostUsd() != null) run.setCostUsd(run.getCostUsd().add(check.getCostUsd()));
-                if (check.getStatus() == AiVisibilityCheck.Status.ERROR) {
-                    run.setChecksFailed(run.getChecksFailed() + 1);
-                    consecutiveFailures.merge(engine, 1, Integer::sum);
-                } else {
-                    consecutiveFailures.put(engine, 0);
-                    if (check.getStatus() == AiVisibilityCheck.Status.OK) run.setChecksOk(run.getChecksOk() + 1);
-                }
-                runs.save(run);
             }
         }
         run.setFinishedAt(Instant.now());
         return runs.save(run);
     }
 
+    static boolean isGoogle(Engine e) {
+        return e == Engine.GOOGLE_AI_OVERVIEW || e == Engine.GOOGLE_AI_MODE;
+    }
+
+    /** The question's own engine list (Google-only "near me" questions), else every engine. */
+    static List<Engine> enginesFor(AiVisibilityQuery q) {
+        if (q.getEngines() == null || q.getEngines().isEmpty()) return List.of(Engine.values());
+        return java.util.Arrays.stream(Engine.values()).filter(e -> q.getEngines().contains(e.name())).toList();
+    }
+
+    /** Google engines: the first search point, or every point for an "all points" question. Other
+     * engines (and a business with no points) get one call with no point. */
+    static List<Map<String, Object>> pointsFor(AiVisibilitySettings s, AiVisibilityQuery q, Engine e) {
+        java.util.ArrayList<Map<String, Object>> none = new java.util.ArrayList<>();
+        none.add(null);
+        if (!isGoogle(e) || s.getSearchPoints() == null || s.getSearchPoints().isEmpty()) return none;
+        return q.isAllPoints() ? s.getSearchPoints() : List.of(s.getSearchPoints().get(0));
+    }
+
     AiVisibilityCheck checkOne(AiVisibilitySettings settings, AiVisibilityQuery q, Engine engine, Long runId) {
+        return checkOne(settings, q, engine, runId, null);
+    }
+
+    AiVisibilityCheck checkOne(AiVisibilitySettings settings, AiVisibilityQuery q, Engine engine, Long runId, Map<String, Object> point) {
+        String coordinate = point != null && point.get("coordinate") != null ? point.get("coordinate").toString()
+                : isGoogle(engine) ? settings.getSearchCoordinate() : null;
         AiVisibilityCheck.AiVisibilityCheckBuilder b = AiVisibilityCheck.builder()
-                .businessId(settings.getBusinessId()).runId(runId).queryId(q.getId()).engine(engine);
+                .businessId(settings.getBusinessId()).runId(runId).queryId(q.getId()).engine(engine)
+                .searchPoint(point != null && point.get("label") != null ? point.get("label").toString() : null);
         try {
-            AiAnswerProvider.RawAnswer raw = provider.ask(engine, q.getQueryText(), settings.getLocationHint(), settings.getSearchCoordinate());
+            AiAnswerProvider.RawAnswer raw = provider.ask(engine, q.getQueryText(), settings.getLocationHint(), coordinate);
             b.model(raw.model()).costUsd(raw.cost());
             ParsedAnswer parsed = AiAnswerParser.parse(engine, raw.result());
             if (parsed.isEmpty()) return b.status(AiVisibilityCheck.Status.NO_ANSWER).build();
