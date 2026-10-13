@@ -40,15 +40,17 @@ import SetupRequiredNotice from '../../components/SetupRequiredNotice';
 export default async function MessagesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ phone?: string }>;
+  searchParams: Promise<{ phone?: string; filter?: string }>;
 }) {
   const me = await serverApi.getMe();
   if (me.role !== 'OWNER' && me.role !== 'MANAGER') redirect('/reports');
 
-  const { phone } = await searchParams;
+  const { phone, filter } = await searchParams;
+  // ?filter=unread (owner request 2026-10-13) — the list opens on unread conversations only.
+  const unreadOnly = filter === 'unread';
   let conversationsPage: SmsConversationPageDto;
   try {
-    conversationsPage = await serverApi.listSmsConversationsPage();
+    conversationsPage = await serverApi.listSmsConversationsPage(10, unreadOnly);
   } catch (err) {
     if (err instanceof ApiError && err.code === 'sms_not_available') {
       return (
@@ -101,6 +103,7 @@ export default async function MessagesPage({
           initialNextCursor={conversationsPage.nextCursor}
           initialHasMore={conversationsPage.hasMore}
           initialSelectedPhone={phone ?? null}
+          initialFilter={unreadOnly ? 'unread' : 'all'}
         />
       </div>
     </main>

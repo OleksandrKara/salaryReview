@@ -209,7 +209,7 @@ class SmsActivityControllerTest {
     @DisplayName("GET /conversations/paged returns items + nextCursor + hasMore=true when a full page comes back")
     void conversationsPagedReturnsFullPageWithHasMoreTrue() throws Exception {
         Instant t1 = Instant.parse("2026-08-01T10:00:00Z");
-        when(service.conversationsPage(BUSINESS_ID, null, 2)).thenReturn(List.of(
+        when(service.conversationsPage(BUSINESS_ID, null, 2, false)).thenReturn(List.of(
                 new FakeConversationSummary(PHONE, t1, "hi", "INBOUND", 1L),
                 new FakeConversationSummary("+15559998877", t1.minusSeconds(60), "yo", "OUTBOUND", 0L)));
         when(contactsService.resolveDisplayNames(any())).thenReturn(Map.of());
@@ -221,13 +221,13 @@ class SmsActivityControllerTest {
                 .andExpect(jsonPath("$.nextCursor").value(t1.minusSeconds(60).toString()))
                 .andExpect(jsonPath("$.hasMore").value(true));
 
-        verify(service).conversationsPage(BUSINESS_ID, null, 2);
+        verify(service).conversationsPage(BUSINESS_ID, null, 2, false);
     }
 
     @Test
     @DisplayName("GET /conversations/paged returns hasMore=false and null nextCursor for a short/empty final page")
     void conversationsPagedReturnsHasMoreFalseForShortPage() throws Exception {
-        when(service.conversationsPage(eq(BUSINESS_ID), any(), eq(10))).thenReturn(List.of());
+        when(service.conversationsPage(eq(BUSINESS_ID), any(), eq(10), eq(false))).thenReturn(List.of());
         when(contactsService.resolveDisplayNames(any())).thenReturn(Map.of());
 
         mvc.perform(get("/api/owner/automations/activity/conversations/paged")
@@ -241,13 +241,13 @@ class SmsActivityControllerTest {
     @Test
     @DisplayName("GET /conversations/paged clamps an out-of-range limit into [1, 50]")
     void conversationsPagedClampsLimit() throws Exception {
-        when(service.conversationsPage(BUSINESS_ID, null, 50)).thenReturn(List.of());
+        when(service.conversationsPage(BUSINESS_ID, null, 50, false)).thenReturn(List.of());
         when(contactsService.resolveDisplayNames(any())).thenReturn(Map.of());
 
         mvc.perform(get("/api/owner/automations/activity/conversations/paged").param("limit", "9999"))
                 .andExpect(status().isOk());
 
-        verify(service).conversationsPage(BUSINESS_ID, null, 50);
+        verify(service).conversationsPage(BUSINESS_ID, null, 50, false);
     }
 
     @Test

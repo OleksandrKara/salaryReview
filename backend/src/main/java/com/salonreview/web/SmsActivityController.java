@@ -208,9 +208,10 @@ public class SmsActivityController {
      * every conversation to sum a total unread count — only this new endpoint is size-limited. */
     @GetMapping("/conversations/paged")
     public ConversationPageDto conversationsPaged(@RequestParam(required = false) Instant cursor,
-                                                    @RequestParam(defaultValue = "" + DEFAULT_CONVERSATIONS_PAGE_SIZE) int limit) {
+                                                    @RequestParam(defaultValue = "" + DEFAULT_CONVERSATIONS_PAGE_SIZE) int limit,
+                                                    @RequestParam(defaultValue = "false") boolean unreadOnly) {
         int bounded = Math.min(Math.max(limit, 1), MAX_CONVERSATIONS_PAGE_SIZE);
-        List<ConversationSummaryProjection> summaries = service.conversationsPage(currentBusinessContext.id(), cursor, bounded);
+        List<ConversationSummaryProjection> summaries = service.conversationsPage(currentBusinessContext.id(), cursor, bounded, unreadOnly);
         List<ConversationDto> items = enrich(summaries);
         String nextCursor = items.isEmpty() ? null : items.get(items.size() - 1).lastMessageAt().toString();
         boolean hasMore = items.size() == bounded;

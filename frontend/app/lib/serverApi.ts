@@ -228,8 +228,8 @@ export const serverApi = {
   // First page of the cursor-paginated conversations list (default 10) — the manager conversation
   // view's initial server-side load, so opening the page doesn't pay for every conversation the
   // salon has ever had; MessagesView fetches subsequent pages client-side via api.ts.
-  listSmsConversationsPage: (limit = 10) =>
-    serverFetch<SmsConversationPageDto>(`/api/owner/automations/activity/conversations/paged?limit=${limit}`),
+  listSmsConversationsPage: (limit = 10, unreadOnly = false) =>
+    serverFetch<SmsConversationPageDto>(`/api/owner/automations/activity/conversations/paged?limit=${limit}${unreadOnly ? '&unreadOnly=true' : ''}`),
 
   // Flat, unbounded log of every email this business has ever sent (SMS-fallback automations plus
   // any pure-email campaign with no SMS leg) — backs /admin/messages/emails.

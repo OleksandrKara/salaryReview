@@ -121,12 +121,14 @@ public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
                 GROUP BY phone_number
             ) negative ON negative.phone_number = latest.phone_number
             WHERE (CAST(:cursor AS timestamptz) IS NULL OR latest.last_message_at < CAST(:cursor AS timestamptz))
+              AND (:unreadOnly = false OR COALESCE(unread.unread_count, 0) > 0)
             ORDER BY latest.last_message_at DESC
             LIMIT :limit
             """, nativeQuery = true)
     List<ConversationSummaryProjection> conversationSummariesPage(@Param("businessId") Long businessId,
                                                                     @Param("cursor") Instant cursor,
-                                                                    @Param("limit") int limit);
+                                                                    @Param("limit") int limit,
+                                                                    @Param("unreadOnly") boolean unreadOnly);
 
     /** Single-conversation form of {@link #conversationSummaries}, for one phone number. Empty
      * when this phone number has no messages at all for this business. */
