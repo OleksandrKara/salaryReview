@@ -55,7 +55,7 @@ class AiVisibilityRunServiceTest {
                  "items": [{"type": "ai_overview", "markdown": "Go to **AK.LUX.NAILS** or **Twinkle Nails**.",
                             "sections": [{"text": "Go to **AK.LUX.NAILS** or **Twinkle Nails**.", "annotations": []}]}]}
                 """);
-        when(provider.ask(any(), anyString(), anyString())).thenReturn(new AiAnswerProvider.RawAnswer(json, new BigDecimal("0.004"), "m"));
+        when(provider.ask(any(), anyString(), anyString(), any())).thenReturn(new AiAnswerProvider.RawAnswer(json, new BigDecimal("0.004"), "m"));
     }
 
     private static AiVisibilityQuery q(long id) {
@@ -68,8 +68,8 @@ class AiVisibilityRunServiceTest {
         assertThat(saved).hasSize(2 * Engine.values().length);
         assertThat(saved).allMatch(c -> c.getStatus() == AiVisibilityCheck.Status.OK && Boolean.TRUE.equals(c.getMentioned()));
         assertThat(saved.get(0).getPlacesNamed()).containsExactly("AK.LUX.NAILS", "Twinkle Nails");
-        assertThat(run.getChecksOk()).isEqualTo(10);
-        assertThat(run.getCostUsd()).isEqualByComparingTo("0.040");
+        assertThat(run.getChecksOk()).isEqualTo(2 * Engine.values().length);
+        assertThat(run.getCostUsd()).isEqualByComparingTo(new java.math.BigDecimal("0.004").multiply(java.math.BigDecimal.valueOf(2L * Engine.values().length)));
         assertThat(run.getFinishedAt()).isNotNull();
         assertThat(run.getStoppedReason()).isNull();
     }
@@ -84,7 +84,7 @@ class AiVisibilityRunServiceTest {
 
     @Test
     void engineSkippedAfterThreeConsecutiveFailures() {
-        when(provider.ask(eq(Engine.GEMINI), anyString(), anyString())).thenThrow(new IllegalStateException("HTTP 500"));
+        when(provider.ask(eq(Engine.GEMINI), anyString(), anyString(), any())).thenThrow(new IllegalStateException("HTTP 500"));
         service.run(settings, List.of(q(1), q(2), q(3), q(4), q(5)), AiVisibilityRun.Trigger.SCHEDULED);
         long geminiCalls = saved.stream().filter(c -> c.getEngine() == Engine.GEMINI).count();
         assertThat(geminiCalls).isEqualTo(AiVisibilityRunService.ENGINE_FAILURE_LIMIT);
@@ -102,7 +102,7 @@ class AiVisibilityRunServiceTest {
 
     @Test
     void emptyAnswerIsNoAnswer() {
-        when(provider.ask(eq(Engine.GOOGLE_AI_MODE), anyString(), anyString())).thenReturn(new AiAnswerProvider.RawAnswer(null, new BigDecimal("0.004"), "g"));
+        when(provider.ask(eq(Engine.GOOGLE_AI_MODE), anyString(), anyString(), any())).thenReturn(new AiAnswerProvider.RawAnswer(null, new BigDecimal("0.004"), "g"));
         service.run(settings, List.of(q(1)), AiVisibilityRun.Trigger.SCHEDULED);
         assertThat(saved).filteredOn(c -> c.getEngine() == Engine.GOOGLE_AI_MODE).allMatch(c -> c.getStatus() == AiVisibilityCheck.Status.NO_ANSWER);
     }

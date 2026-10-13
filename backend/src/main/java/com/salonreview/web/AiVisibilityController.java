@@ -3,6 +3,7 @@ package com.salonreview.web;
 import com.salonreview.aivisibility.AiVisibilityAdminService;
 import com.salonreview.aivisibility.AiVisibilityPageService;
 import com.salonreview.seo.SeoCompetitorService;
+import com.salonreview.marketing.AiReferralStatsRepository;
 import com.salonreview.aivisibility.AiVisibilityQueryService;
 import com.salonreview.config.BusinessFeatureService;
 import com.salonreview.config.CurrentBusinessContext;
@@ -28,15 +29,18 @@ public class AiVisibilityController {
     private final AiVisibilityAdminService admin;
     private final AiVisibilityPageService pages;
     private final SeoCompetitorService competitors;
+    private final AiReferralStatsRepository aiReferrals;
     private final BusinessFeatureService businessFeatures;
     private final CurrentBusinessContext currentBusinessContext;
 
     public AiVisibilityController(AiVisibilityQueryService readModel, AiVisibilityAdminService admin, AiVisibilityPageService pages,
-            SeoCompetitorService competitors, BusinessFeatureService businessFeatures, CurrentBusinessContext currentBusinessContext) {
+            SeoCompetitorService competitors, AiReferralStatsRepository aiReferrals, BusinessFeatureService businessFeatures,
+            CurrentBusinessContext currentBusinessContext) {
         this.readModel = readModel;
         this.admin = admin;
         this.pages = pages;
         this.competitors = competitors;
+        this.aiReferrals = aiReferrals;
         this.businessFeatures = businessFeatures;
         this.currentBusinessContext = currentBusinessContext;
     }
@@ -52,6 +56,17 @@ public class AiVisibilityController {
     @GetMapping("/overview")
     public AiVisibilityQueryService.Overview overview() {
         return readModel.overview(requireFeatureEnabled());
+    }
+
+    @GetMapping("/trends")
+    public AiVisibilityQueryService.Trends trends(@RequestParam(defaultValue = "12") int weeks) {
+        return readModel.trends(requireFeatureEnabled(), Math.max(2, Math.min(weeks, 52)));
+    }
+
+    /** "From AI to clients": AI-referred visitors, leads, bookings, paying clients and revenue. */
+    @GetMapping("/traffic")
+    public AiReferralStatsRepository.Stats traffic(@RequestParam(defaultValue = "90") int days) {
+        return aiReferrals.stats(requireFeatureEnabled(), Math.max(7, Math.min(days, 365)));
     }
 
     @GetMapping("/queries/{id}/history")

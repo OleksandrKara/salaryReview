@@ -19,7 +19,7 @@ import java.util.Map;
 @NoArgsConstructor @AllArgsConstructor @Builder
 public class AiVisibilityCheck {
 
-    public enum Engine { CHATGPT, GOOGLE_AI_MODE, GEMINI, PERPLEXITY, CLAUDE }
+    public enum Engine { CHATGPT, GOOGLE_AI_MODE, GEMINI, PERPLEXITY, CLAUDE, GOOGLE_AI_OVERVIEW }
 
     public enum Status { OK, NO_ANSWER, ERROR }
 

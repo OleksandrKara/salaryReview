@@ -131,7 +131,7 @@ public class AiVisibilityRunService {
         AiVisibilityCheck.AiVisibilityCheckBuilder b = AiVisibilityCheck.builder()
                 .businessId(settings.getBusinessId()).runId(runId).queryId(q.getId()).engine(engine);
         try {
-            AiAnswerProvider.RawAnswer raw = provider.ask(engine, q.getQueryText(), settings.getLocationHint());
+            AiAnswerProvider.RawAnswer raw = provider.ask(engine, q.getQueryText(), settings.getLocationHint(), settings.getSearchCoordinate());
             b.model(raw.model()).costUsd(raw.cost());
             ParsedAnswer parsed = AiAnswerParser.parse(engine, raw.result());
             if (parsed.isEmpty()) return b.status(AiVisibilityCheck.Status.NO_ANSWER).build();
@@ -159,6 +159,7 @@ public class AiVisibilityRunService {
             case GEMINI -> props.getGeminiExpectedCost();
             case PERPLEXITY -> props.getPerplexityExpectedCost();
             case CLAUDE -> props.getClaudeExpectedCost();
+            case GOOGLE_AI_OVERVIEW -> props.getGoogleAiOverviewExpectedCost();
         };
     }
 }

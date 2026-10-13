@@ -230,4 +230,62 @@ public class AiVisibilityQueryService {
         list.sort(Comparator.comparingInt(AiVisibilityQuery::getSortOrder));
         return list;
     }
+
+    public record WeekPoint(java.time.LocalDate weekStart, Map<Engine, Integer> enginePercent, Integer usPercent,
+            Map<String, Integer> placePercent, int answers) {
+    }
+
+    public record Trends(List<WeekPoint> weeks, List<String> topPlaces) {
+    }
+
+    /** Weekly visibility per engine and share of answers naming us vs the most-named competitors
+     * (design follow-up 2026-10-13: VYDAI shows these as charts). Weeks start Monday, PT. A week
+     * with no OK answers for an engine has a null point for it. */
+    public Trends trends(Long businessId, int weeks) {
+        Instant from = Instant.now().minus(Duration.ofDays(7L * weeks));
+        List<AiVisibilityCheck> ok = checks.findByBusinessIdAndCheckedAtAfterOrderByCheckedAtDesc(businessId, from).stream()
+                .filter(c -> c.getStatus() == AiVisibilityCheck.Status.OK).toList();
+        Map<String, Integer> placeCounts = new HashMap<>();
+        Map<String, String> display = new HashMap<>();
+        for (AiVisibilityCheck c : ok) {
+            for (String p : new java.util.LinkedHashSet<>(c.getPlacesNamed())) {
+                if (Boolean.TRUE.equals(c.getMentioned()) && placeIsUs(p, businessId)) continue;
+                String key = placeKey(p);
+                display.putIfAbsent(key, p);
+                placeCounts.merge(key, 1, Integer::sum);
+            }
+        }
+        List<String> topKeys = placeCounts.entrySet().stream().sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                .limit(5).map(Map.Entry::getKey).toList();
+        java.util.TreeMap<java.time.LocalDate, List<AiVisibilityCheck>> byWeek = new java.util.TreeMap<>();
+        for (AiVisibilityCheck c : ok) {
+            java.time.LocalDate wk = c.getCheckedAt().atZone(AiVisibilityRunService.PT).toLocalDate()
+                    .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+            byWeek.computeIfAbsent(wk, x -> new ArrayList<>()).add(c);
+        }
+        List<WeekPoint> points = new ArrayList<>();
+        byWeek.forEach((wk, list) -> {
+            Map<Engine, Integer> eng = new EnumMap<>(Engine.class);
+            for (Engine e : Engine.values()) {
+                List<AiVisibilityCheck> le = list.stream().filter(c -> c.getEngine() == e).toList();
+                if (!le.isEmpty()) eng.put(e, Math.round(100f * le.stream().filter(c -> Boolean.TRUE.equals(c.getMentioned())).count() / le.size()));
+            }
+            int us = Math.round(100f * list.stream().filter(c -> Boolean.TRUE.equals(c.getMentioned())).count() / list.size());
+            Map<String, Integer> places = new LinkedHashMap<>();
+            for (String key : topKeys) {
+                long n = list.stream().filter(c -> c.getPlacesNamed().stream().anyMatch(p -> placeKey(p).equals(key))).count();
+                places.put(display.get(key), Math.round(100f * n / list.size()));
+            }
+            points.add(new WeekPoint(wk, eng, us, places, list.size()));
+        });
+        return new Trends(points, topKeys.stream().map(display::get).toList());
+    }
+
+    static String placeKey(String p) {
+        return p.replace("&amp;", "&").toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9&]+", " ").trim();
+    }
+
+    private boolean placeIsUs(String place, Long businessId) {
+        return settingsRepo.findById(businessId).map(s -> MentionDetector.containsAlias(place, s.getBrandAliases())).orElse(false);
+    }
 }

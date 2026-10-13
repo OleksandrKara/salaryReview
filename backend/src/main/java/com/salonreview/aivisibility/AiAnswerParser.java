@@ -48,7 +48,7 @@ public final class AiAnswerParser {
         if (result == null || result.isNull()) return new ParsedAnswer("", List.of(), List.of(), List.of());
         return switch (engine) {
             case CHATGPT -> chatGpt(result);
-            case GOOGLE_AI_MODE -> googleAiMode(result);
+            case GOOGLE_AI_MODE, GOOGLE_AI_OVERVIEW -> googleAiMode(result); // same ai_overview item shape
             case GEMINI, PERPLEXITY, CLAUDE -> llmResponse(result);
         };
     }
@@ -107,7 +107,7 @@ public final class AiAnswerParser {
     }
 
     private static void addPlace(Set<String> places, String raw) {
-        String name = MD_LINK.matcher(raw).replaceAll("$1").replaceAll("\\\\", "").trim();
+        String name = MD_LINK.matcher(raw).replaceAll("$1").replaceAll("\\\\", "").replace("&amp;", "&").trim();
         String cleaned = name.replaceAll("[:\\-–,.]+$", "").replaceAll("^\\d+[.)]\\s*", "").trim();
         if (cleaned.length() < 3 || cleaned.length() > 60) return;
         if (cleaned.matches(".*[0-9]{3,}.*") || cleaned.contains("·")) return;
