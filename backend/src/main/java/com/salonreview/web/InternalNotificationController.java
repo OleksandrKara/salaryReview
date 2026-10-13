@@ -45,14 +45,17 @@ public class InternalNotificationController {
     private final SameDayRebookingGroupMembershipRepository groupMembershipRepository;
     private final SquareClientProvider squareClientProvider;
     private final BusinessRepository businesses;
+    private final com.salonreview.marketing.AcademyLeadService academyLeads;
 
     public InternalNotificationController(InternalApiProperties internalApi, TelegramNotificationService telegram,
                                           TwilioSmsService sms, RebookingPromoSigner promoSigner,
                                           PromoConfigService promoConfigService,
                                           SameDayRebookingGroupMembershipRepository groupMembershipRepository,
                                           SquareClientProvider squareClientProvider, BusinessRepository businesses,
-                                          com.salonreview.sms.VipRebookEligibilityService vipRebookEligibility) {
+                                          com.salonreview.sms.VipRebookEligibilityService vipRebookEligibility,
+                                          com.salonreview.marketing.AcademyLeadService academyLeads) {
         this.vipRebookEligibility = vipRebookEligibility;
+        this.academyLeads = academyLeads;
         this.internalApi = internalApi;
         this.telegram = telegram;
         this.sms = sms;
@@ -365,6 +368,55 @@ public class InternalNotificationController {
         out.put("teamMemberId", r.teamMemberId());
         out.put("newClient", r.newClient());
         return ResponseEntity.ok(out);
+    }
+
+    /** pmu-annakara.com/academy course request form (2026-10-13). Saved as an academy lead, staff
+     * Telegram alert, HubSpot contact. Name plus a phone or an email are required. */
+    public record AcademyLeadRequest(String name, String phone, String email, String courseSlug, String courseName,
+                                     String message, Boolean smsConsent, Boolean emailConsent, String sourcePageUrl,
+                                     String utmSource, String utmMedium, String utmCampaign, String gclid,
+                                     String businessShortCode, Long businessId) {
+    }
+
+    @PostMapping("/academy/leads")
+    public ResponseEntity<Map<String, Object>> submitAcademyLead(
+            @RequestHeader(value = "X-Internal-Api-Key", required = false) String key,
+            @RequestBody AcademyLeadRequest body) {
+        if (!keyMatches(key)) {
+            return ResponseEntity.status(401).build();
+        }
+        if (isBlank(body.name()) || (isBlank(body.phone()) && isBlank(body.email()))) {
+            return ResponseEntity.badRequest().body(Map.of("saved", false, "reason", "missing_contact"));
+        }
+        Business business = resolveBusiness(body.businessShortCode(), body.businessId());
+        if (business == null) {
+            return ResponseEntity.ok(Map.of("saved", false, "reason", "unknown_business"));
+        }
+        com.salonreview.marketing.AcademyLeadService.Outcome o = academyLeads.submit(business.getId(),
+                new com.salonreview.marketing.AcademyLeadService.AcademyLead(
+                        clip(body.name(), 200), clip(body.phone(), 40), clip(body.email(), 200),
+                        clip(body.courseSlug(), 120), clip(body.courseName(), 200), clip(body.message(), 2000),
+                        Boolean.TRUE.equals(body.smsConsent()), Boolean.TRUE.equals(body.emailConsent()),
+                        clip(body.sourcePageUrl(), 500),
+                        clip(body.utmSource(), 200), clip(body.utmMedium(), 200), clip(body.utmCampaign(), 200),
+                        clip(body.gclid(), 300)));
+        Map<String, Object> out = new HashMap<>();
+        out.put("saved", true);
+        out.put("id", o.id());
+        out.put("telegramSent", o.telegramSent());
+        out.put("hubspot", o.hubspotContactId() != null);
+        return ResponseEntity.ok(out);
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
+
+    private static String clip(String s, int max) {
+        if (s == null) return null;
+        String t = s.trim();
+        if (t.isEmpty()) return null;
+        return t.length() > max ? t.substring(0, max) : t;
     }
 
     private boolean keyMatches(String provided) {

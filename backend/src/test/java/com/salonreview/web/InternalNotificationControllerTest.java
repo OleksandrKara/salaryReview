@@ -35,6 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class InternalNotificationControllerTest {
     private com.salonreview.sms.VipRebookEligibilityService vipService;
+    private com.salonreview.marketing.AcademyLeadService academyLeads;
 
     private static final String BODY = "{\"source\":\"mani\",\"customerName\":\"Jane\",\"phoneNumber\":\"+15551234567\"," +
             "\"requestedServices\":\"manicure\",\"preferredStartAt\":\"2026-08-01T18:00:00Z\",\"note\":null}";
@@ -62,6 +63,7 @@ class InternalNotificationControllerTest {
         when(promoConfigService.get(1L, "WINBACK5"))
                 .thenReturn(java.util.Optional.of(new PromoConfigService.PromoTerms(500, 9900L, "grp2", true)));
         vipService = mock(com.salonreview.sms.VipRebookEligibilityService.class);
+        academyLeads = mock(com.salonreview.marketing.AcademyLeadService.class);
         groupMembershipRepository = mock(SameDayRebookingGroupMembershipRepository.class);
         square = mock(SquareClient.class);
         SquareClientProvider squareClientProvider = mock(SquareClientProvider.class);
@@ -75,7 +77,7 @@ class InternalNotificationControllerTest {
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         InternalNotificationController controller = new InternalNotificationController(
                 props, telegram, sms, promoSigner, promoConfigService, groupMembershipRepository,
-                squareClientProvider, businessesMock, vipService);
+                squareClientProvider, businessesMock, vipService, academyLeads);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -366,7 +368,7 @@ class InternalNotificationControllerTest {
                 .thenReturn(java.util.Optional.of(new PromoConfigService.PromoTerms(1500, null, "pmugrp", true)));
         InternalNotificationController controller = new InternalNotificationController(
                 props, telegram, sms, promoSigner, promoConfigService, groupMembershipRepository,
-                squareClientProvider, businesses, vipService);
+                squareClientProvider, businesses, vipService, academyLeads);
         MockMvc pmuMvc = MockMvcBuilders.standaloneSetup(controller).build();
         when(promoSigner.verify("REBOOK10", 9999999999L, "sig123")).thenReturn(true);
         String pmuBody = "{\"squareCustomerId\":\"cust1\",\"expEpochSeconds\":9999999999,"
@@ -398,7 +400,7 @@ class InternalNotificationControllerTest {
                 .thenReturn(java.util.Optional.of(new PromoConfigService.PromoTerms(1500, null, "pmugrp", true)));
         InternalNotificationController controller = new InternalNotificationController(
                 props, telegram, sms, promoSigner, promoConfigService, groupMembershipRepository,
-                squareClientProvider, businesses, vipService);
+                squareClientProvider, businesses, vipService, academyLeads);
         MockMvc pmuMvc = MockMvcBuilders.standaloneSetup(controller).build();
         when(promoSigner.verify("REBOOK10", 9999999999L, "sig123")).thenReturn(true);
         String pmuBody = "{\"squareCustomerId\":\"cust1\",\"expEpochSeconds\":9999999999,"
@@ -665,5 +667,55 @@ class InternalNotificationControllerTest {
                 .andExpect(jsonPath("$.eligible").value(false))
                 .andExpect(jsonPath("$.reason").value("no_visit_today"))
                 .andExpect(jsonPath("$.signature").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("academy/leads: saves the request for the given business and reports the legs")
+    void academyLeadSaved() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+        when(academyLeads.submit(org.mockito.ArgumentMatchers.eq(1L), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new com.salonreview.marketing.AcademyLeadService.Outcome(7L, true, "123", null));
+        String body = "{\"name\":\" Jane Doe \",\"email\":\"jane@example.com\",\"courseSlug\":\"areola-tattoo\","
+                + "\"courseName\":\"Areola Tattoo\",\"smsConsent\":true,\"businessId\":1}";
+
+        mvc.perform(post("/api/internal/academy/leads")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.saved").value(true))
+                .andExpect(jsonPath("$.id").value(7))
+                .andExpect(jsonPath("$.hubspot").value(true));
+
+        org.mockito.ArgumentCaptor<com.salonreview.marketing.AcademyLeadService.AcademyLead> lead =
+                org.mockito.ArgumentCaptor.forClass(com.salonreview.marketing.AcademyLeadService.AcademyLead.class);
+        verify(academyLeads).submit(org.mockito.ArgumentMatchers.eq(1L), lead.capture());
+        org.assertj.core.api.Assertions.assertThat(lead.getValue().name()).isEqualTo("Jane Doe");
+        org.assertj.core.api.Assertions.assertThat(lead.getValue().phone()).isNull();
+        org.assertj.core.api.Assertions.assertThat(lead.getValue().smsConsent()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(lead.getValue().emailConsent()).isFalse();
+    }
+
+    @Test
+    @DisplayName("academy/leads: no phone and no email -> 400, nothing saved")
+    void academyLeadNeedsContact() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+
+        mvc.perform(post("/api/internal/academy/leads")
+                        .header("X-Internal-Api-Key", "secret")
+                        .contentType("application/json").content("{\"name\":\"Jane\",\"businessId\":1}"))
+                .andExpect(status().isBadRequest());
+        org.mockito.Mockito.verifyNoInteractions(academyLeads);
+    }
+
+    @Test
+    @DisplayName("academy/leads: wrong key -> 401")
+    void academyLeadWrongKey() throws Exception {
+        when(props.getKey()).thenReturn("secret");
+
+        mvc.perform(post("/api/internal/academy/leads")
+                        .header("X-Internal-Api-Key", "nope")
+                        .contentType("application/json").content("{\"name\":\"Jane\",\"phone\":\"6195550100\"}"))
+                .andExpect(status().isUnauthorized());
+        org.mockito.Mockito.verifyNoInteractions(academyLeads);
     }
 }
