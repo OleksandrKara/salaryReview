@@ -2448,11 +2448,12 @@ export interface StaffDocument {
 
 // AI visibility (com.salonreview.web.AiVisibilityController, ai-visibility-monitoring design.md D5).
 export type AiEngine = 'CHATGPT' | 'GOOGLE_AI_MODE' | 'GEMINI' | 'PERPLEXITY' | 'CLAUDE' | 'GOOGLE_AI_OVERVIEW';
-export type AiCellState = 'NAMED' | 'NOT_NAMED' | 'NO_ANSWER' | 'ERROR' | 'NONE';
+export type AiCellState = 'NAMED' | 'NOT_NAMED' | 'NO_ANSWER' | 'ERROR' | 'NONE' | 'NOT_ASKED';
 export type AiQueryStatus = 'PROPOSED' | 'ACTIVE' | 'PAUSED' | 'REMOVED';
 export interface AiConsistency { named: number; total: number; percent: number | null }
-export interface AiCell { latest: AiCellState; checkedAt: string | null; rank: number | null; recent: AiConsistency; allTime: AiConsistency }
-export interface AiQueryRow { id: number; query: string; topic: string | null; targetUrl: string | null; status: AiQueryStatus; cells: Record<AiEngine, AiCell> }
+export interface AiCell { latest: AiCellState; checkedAt: string | null; rank: number | null; recent: AiConsistency; allTime: AiConsistency; pointsNamed: number | null; pointsTotal: number | null; asked: boolean }
+export interface AiQueryRow { id: number; query: string; topic: string | null; targetUrl: string | null; status: AiQueryStatus; cells: Record<AiEngine, AiCell>; engines: AiEngine[] | null; allPoints: boolean }
+export interface AiSearchPoint { label: string; coordinate: string; clientShare?: number }
 export interface AiEngineTotal { engine: AiEngine; named: number; answered: number; previousNamed: number | null }
 export interface AiRanked { name: string; count: number; queries: string[] }
 export interface AiVisibilityOverview {
@@ -2468,11 +2469,13 @@ export interface AiVisibilityOverview {
   placesInstead: AiRanked[];
   sourcesInstead: AiRanked[];
   runningRunId: number | null;
+  searchPoints: AiSearchPoint[];
 }
 export interface AiHistoryItem {
   id: number;
   engine: AiEngine;
   model: string | null;
+  searchPoint: string | null;
   checkedAt: string;
   status: 'OK' | 'NO_ANSWER' | 'ERROR';
   mentioned: boolean | null;
@@ -2485,7 +2488,7 @@ export interface AiHistoryItem {
   error: string | null;
 }
 export interface AiRun { id: number; trigger: string; startedAt: string; finishedAt: string | null; checksOk: number; checksFailed: number; costUsd: number; stoppedReason: string | null }
-export interface AiVisibilitySettingsDto { brandAliases: string[]; ownDomains: string[]; monthlyBudgetUsd: number; digestEnabled: boolean }
+export interface AiVisibilitySettingsDto { brandAliases: string[]; ownDomains: string[]; monthlyBudgetUsd: number; digestEnabled: boolean; searchPoints: AiSearchPoint[] }
 export interface AiPageView {
   url: string;
   own: boolean;

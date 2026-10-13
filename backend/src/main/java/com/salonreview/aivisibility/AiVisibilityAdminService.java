@@ -46,7 +46,7 @@ public class AiVisibilityAdminService {
     public AiVisibilityQuery add(Long businessId, String text, String topic, String targetUrl) {
         String t = text == null ? "" : text.trim().replaceAll("\\s+", " ");
         if (t.length() < 8 || t.length() > 200) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Question must be 8-200 characters");
-        if (queries.countByBusinessIdAndStatusIn(businessId, COUNTED) >= MAX_TRACKED) {
+        if (queries.countByBusinessIdAndStatusInAndEnginesIsNull(businessId, COUNTED) >= MAX_TRACKED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "20 questions are already tracked. Pause or remove one first.");
         }
         if (queries.existsByBusinessIdAndQueryTextIgnoreCase(businessId, t)) {
@@ -79,8 +79,8 @@ public class AiVisibilityAdminService {
             } catch (IllegalArgumentException e) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown status");
             }
-            if (COUNTED.contains(next) && !COUNTED.contains(q.getStatus())
-                    && queries.countByBusinessIdAndStatusIn(businessId, COUNTED) >= MAX_TRACKED) {
+            if (COUNTED.contains(next) && !COUNTED.contains(q.getStatus()) && q.getEngines() == null
+                    && queries.countByBusinessIdAndStatusInAndEnginesIsNull(businessId, COUNTED) >= MAX_TRACKED) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "20 questions are already tracked. Pause or remove one first.");
             }
             if (next == AiVisibilityQuery.Status.ACTIVE && q.getActivatedAt() == null) q.setActivatedAt(Instant.now());
@@ -124,6 +124,14 @@ public class AiVisibilityAdminService {
 
     @Transactional
     public AiVisibilitySettings updateSettings(Long businessId, List<String> aliases, List<String> domains, BigDecimal budget, Boolean digestEnabled) {
+        return updateSettings(businessId, aliases, domains, budget, digestEnabled, null);
+    }
+
+    static final java.util.regex.Pattern COORDINATE = java.util.regex.Pattern.compile("^-?\\d{1,2}\\.\\d+,-?\\d{1,3}\\.\\d+(,\\d{1,2})?$");
+
+    @Transactional
+    public AiVisibilitySettings updateSettings(Long businessId, List<String> aliases, List<String> domains, BigDecimal budget, Boolean digestEnabled,
+            List<java.util.Map<String, Object>> searchPoints) {
         AiVisibilitySettings s = settingsRepo.findById(businessId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Not configured"));
         if (aliases != null) {
             List<String> clean = aliases.stream().map(String::trim).filter(a -> a.length() >= 3).distinct().toList();
@@ -139,6 +147,23 @@ public class AiVisibilityAdminService {
             s.setMonthlyBudgetUsd(budget);
         }
         if (digestEnabled != null) s.setDigestEnabled(digestEnabled);
+        if (searchPoints != null) {
+            List<java.util.Map<String, Object>> clean = new ArrayList<>();
+            for (java.util.Map<String, Object> p : searchPoints) {
+                String label = p.get("label") == null ? "" : p.get("label").toString().trim();
+                String coord = p.get("coordinate") == null ? "" : p.get("coordinate").toString().replace(" ", "");
+                if (label.isEmpty() || !COORDINATE.matcher(coord).matches()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Each search point needs a name and \"lat,lng\" (optionally \",zoom\")");
+                }
+                if (coord.split(",").length == 2) coord = coord + ",13";
+                java.util.Map<String, Object> m = new java.util.LinkedHashMap<>(p);
+                m.put("label", label);
+                m.put("coordinate", coord);
+                clean.add(m);
+            }
+            if (clean.size() > 6) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At most 6 search points");
+            s.setSearchPoints(clean);
+        }
         return settingsRepo.save(s);
     }
 

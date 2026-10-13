@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /** Per-business AI-visibility config (openspec/changes/ai-visibility-monitoring design.md D2):
  * which names and domains count as "the assistant recommended us", the monthly DataForSEO budget,
@@ -37,9 +38,16 @@ public class AiVisibilitySettings {
     @Column(name = "location_hint", nullable = false)
     private String locationHint;
 
-    /** "lat,lng,zoom" the Google engines search from (V169); null = city-level {@link #locationHint}. */
+    /** Superseded by {@link #searchPoints} (V170); kept as a fallback when no points are set. */
     @Column(name = "search_coordinate")
     private String searchCoordinate;
+
+    /** Where the Google engines search from: [{"label", "coordinate" ("lat,lng,zoom"), "clientShare"?}].
+     * The first point is used for ordinary questions; "all points" questions run from each (V170). */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "search_points", nullable = false, columnDefinition = "jsonb")
+    @Builder.Default
+    private List<Map<String, Object>> searchPoints = new ArrayList<>();
 
     @Column(name = "monthly_budget_usd", nullable = false)
     private BigDecimal monthlyBudgetUsd;

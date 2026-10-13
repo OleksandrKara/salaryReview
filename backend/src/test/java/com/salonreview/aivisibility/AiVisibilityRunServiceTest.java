@@ -106,4 +106,25 @@ class AiVisibilityRunServiceTest {
         service.run(settings, List.of(q(1)), AiVisibilityRun.Trigger.SCHEDULED);
         assertThat(saved).filteredOn(c -> c.getEngine() == Engine.GOOGLE_AI_MODE).allMatch(c -> c.getStatus() == AiVisibilityCheck.Status.NO_ANSWER);
     }
+
+    @Test
+    void nearMeQuestionAsksOnlyGoogleFromEveryPointAndOrdinaryQuestionsUseTheFirstPoint() {
+        settings.setSearchPoints(new ArrayList<>(List.of(
+                new java.util.HashMap<>(java.util.Map.<String, Object>of("label", "Central", "coordinate", "32.748,-117.155,13")),
+                new java.util.HashMap<>(java.util.Map.<String, Object>of("label", "North", "coordinate", "32.87,-117.21,13")),
+                new java.util.HashMap<>(java.util.Map.<String, Object>of("label", "East", "coordinate", "32.77,-117.02,13")))));
+        AiVisibilityQuery nearMe = q(9);
+        nearMe.setEngines(List.of("GOOGLE_AI_OVERVIEW", "GOOGLE_AI_MODE"));
+        nearMe.setAllPoints(true);
+        service.run(settings, List.of(nearMe, q(1)), AiVisibilityRun.Trigger.SCHEDULED);
+
+        var nearMeChecks = saved.stream().filter(c -> c.getQueryId() == 9L).toList();
+        assertThat(nearMeChecks).hasSize(6).allMatch(c -> AiVisibilityRunService.isGoogle(c.getEngine()));
+        assertThat(nearMeChecks).extracting(AiVisibilityCheck::getSearchPoint).containsOnly("Central", "North", "East");
+        var ordinary = saved.stream().filter(c -> c.getQueryId() == 1L).toList();
+        assertThat(ordinary).hasSize(Engine.values().length);
+        assertThat(ordinary).filteredOn(c -> AiVisibilityRunService.isGoogle(c.getEngine())).extracting(AiVisibilityCheck::getSearchPoint).containsOnly("Central");
+        assertThat(ordinary).filteredOn(c -> !AiVisibilityRunService.isGoogle(c.getEngine())).extracting(AiVisibilityCheck::getSearchPoint).containsOnlyNulls();
+        verify(provider, atLeastOnce()).ask(eq(Engine.GOOGLE_AI_MODE), eq("best nail salon 9"), anyString(), eq("32.87,-117.21,13"));
+    }
 }

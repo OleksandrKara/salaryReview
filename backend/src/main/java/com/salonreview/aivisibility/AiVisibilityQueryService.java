@@ -60,10 +60,14 @@ public class AiVisibilityQueryService {
         }
     }
 
-    public record Cell(String latest, Instant checkedAt, Short rank, Consistency recent, Consistency allTime) {
+    /** pointsNamed/pointsTotal: for a question checked from several search points, how many of the
+     * latest run's points named us (null for a single check). latest = NAMED if any point did. */
+    public record Cell(String latest, Instant checkedAt, Short rank, Consistency recent, Consistency allTime, Integer pointsNamed,
+            Integer pointsTotal, boolean asked) {
     }
 
-    public record Row(Long id, String query, String topic, String targetUrl, String status, Map<Engine, Cell> cells) {
+    public record Row(Long id, String query, String topic, String targetUrl, String status, Map<Engine, Cell> cells,
+            List<String> engines, boolean allPoints) {
     }
 
     public record EngineTotal(Engine engine, int named, int answered, Integer previousNamed) {
@@ -74,10 +78,10 @@ public class AiVisibilityQueryService {
 
     public record Overview(boolean configured, Instant lastRunAt, Instant nextRunAt, BigDecimal monthSpend, BigDecimal monthlyBudget,
             boolean digestEnabled, String nextActions, List<EngineTotal> engineTotals, List<Row> rows,
-            List<Ranked> placesInstead, List<Ranked> sourcesInstead, Long runningRunId) {
+            List<Ranked> placesInstead, List<Ranked> sourcesInstead, Long runningRunId, List<Map<String, Object>> searchPoints) {
     }
 
-    public record HistoryItem(Long id, Engine engine, String model, Instant checkedAt, String status, Boolean mentioned, Short rank,
+    public record HistoryItem(Long id, Engine engine, String model, String searchPoint, Instant checkedAt, String status, Boolean mentioned, Short rank,
             Boolean ownSiteCited, List<String> placesNamed, List<Map<String, String>> sourcesCited, List<String> subQueries,
             String excerpt, String error) {
     }
@@ -96,8 +100,12 @@ public class AiVisibilityQueryService {
         for (AiVisibilityQuery q : qs) {
             Map<Engine, Cell> cells = new EnumMap<>(Engine.class);
             Map<Engine, List<AiVisibilityCheck>> perEngine = byQuery.getOrDefault(q.getId(), Map.of());
-            for (Engine e : Engine.values()) cells.put(e, cell(perEngine.getOrDefault(e, List.of()), now));
-            rows.add(new Row(q.getId(), q.getQueryText(), q.getTopic(), q.getTargetUrl(), q.getStatus().name(), cells));
+            List<Engine> asked = AiVisibilityRunService.enginesFor(q);
+            for (Engine e : Engine.values()) {
+                Cell c = cell(perEngine.getOrDefault(e, List.of()), now);
+                cells.put(e, asked.contains(e) ? c : new Cell("NOT_ASKED", null, null, c.recent(), c.allTime(), null, null, false));
+            }
+            rows.add(new Row(q.getId(), q.getQueryText(), q.getTopic(), q.getTargetUrl(), q.getStatus().name(), cells, q.getEngines(), q.isAllPoints()));
         }
 
         List<AiVisibilityRun> lastTwo = runs.findTop2ByBusinessIdAndTriggerAndFinishedAtIsNotNullOrderByStartedAtDesc(businessId, AiVisibilityRun.Trigger.SCHEDULED);
@@ -118,17 +126,32 @@ public class AiVisibilityQueryService {
                 lastTwo.isEmpty() ? null : lastTwo.get(0).getStartedAt(), nextScheduledRun(now),
                 runService.monthSpend(businessId), settings.map(AiVisibilitySettings::getMonthlyBudgetUsd).orElse(null),
                 settings.map(AiVisibilitySettings::isDigestEnabled).orElse(false), settings.map(AiVisibilitySettings::getNextActions).orElse(null),
-                totals, rows, rankPlaces(recentMissing, queryText, 8), rankSources(recentMissing, queryText, ownDomains, 8), running);
+                totals, rows, rankPlaces(recentMissing, queryText, 8), rankSources(recentMissing, queryText, ownDomains, 8), running,
+                settings.map(AiVisibilitySettings::getSearchPoints).orElse(List.of()));
     }
 
     static Cell cell(List<AiVisibilityCheck> newestFirst, Instant now) {
-        if (newestFirst.isEmpty()) return new Cell("NONE", null, null, Consistency.of(0, 0), Consistency.of(0, 0));
+        if (newestFirst.isEmpty()) return new Cell("NONE", null, null, Consistency.of(0, 0), Consistency.of(0, 0), null, null, true);
         AiVisibilityCheck latest = newestFirst.get(0);
-        String state = switch (latest.getStatus()) {
-            case OK -> Boolean.TRUE.equals(latest.getMentioned()) ? "NAMED" : "NOT_NAMED";
-            case NO_ANSWER -> "NO_ANSWER";
-            case ERROR -> "ERROR";
-        };
+        // A multi-point question has several checks in its latest run: summarize them together.
+        List<AiVisibilityCheck> latestRun = newestFirst.stream().filter(c -> c.getRunId() != null && c.getRunId().equals(latest.getRunId())).toList();
+        Integer pointsNamed = null, pointsTotal = null;
+        String state;
+        Short rank = latest.getMentionRank();
+        if (latestRun.size() > 1) {
+            List<AiVisibilityCheck> ok = latestRun.stream().filter(c -> c.getStatus() == AiVisibilityCheck.Status.OK).toList();
+            pointsTotal = latestRun.size();
+            pointsNamed = (int) ok.stream().filter(c -> Boolean.TRUE.equals(c.getMentioned())).count();
+            state = pointsNamed > 0 ? "NAMED" : !ok.isEmpty() ? "NOT_NAMED"
+                    : latestRun.stream().allMatch(c -> c.getStatus() == AiVisibilityCheck.Status.ERROR) ? "ERROR" : "NO_ANSWER";
+            rank = ok.stream().map(AiVisibilityCheck::getMentionRank).filter(java.util.Objects::nonNull).min(Short::compare).orElse(null);
+        } else {
+            state = switch (latest.getStatus()) {
+                case OK -> Boolean.TRUE.equals(latest.getMentioned()) ? "NAMED" : "NOT_NAMED";
+                case NO_ANSWER -> "NO_ANSWER";
+                case ERROR -> "ERROR";
+            };
+        }
         int named = 0, total = 0, rNamed = 0, rTotal = 0;
         Instant recentFrom = now.minus(RECENT_WINDOW);
         for (AiVisibilityCheck c : newestFirst) {
@@ -141,7 +164,7 @@ public class AiVisibilityQueryService {
                 if (n) rNamed++;
             }
         }
-        return new Cell(state, latest.getCheckedAt(), latest.getMentionRank(), Consistency.of(rNamed, rTotal), Consistency.of(named, total));
+        return new Cell(state, latest.getCheckedAt(), rank, Consistency.of(rNamed, rTotal), Consistency.of(named, total), pointsNamed, pointsTotal, true);
     }
 
     List<EngineTotal> engineTotals(Long businessId, List<AiVisibilityRun> lastTwo) {
@@ -210,7 +233,7 @@ public class AiVisibilityQueryService {
 
     public List<HistoryItem> history(Long businessId, Long queryId, int limit) {
         return checks.findByBusinessIdAndQueryIdOrderByCheckedAtDesc(businessId, queryId).stream().limit(limit)
-                .map(c -> new HistoryItem(c.getId(), c.getEngine(), c.getModel(), c.getCheckedAt(), c.getStatus().name(), c.getMentioned(),
+                .map(c -> new HistoryItem(c.getId(), c.getEngine(), c.getModel(), c.getSearchPoint(), c.getCheckedAt(), c.getStatus().name(), c.getMentioned(),
                         c.getMentionRank(), c.getOwnSiteCited(), c.getPlacesNamed(), c.getSourcesCited(), c.getSubQueries(),
                         c.getAnswerExcerpt(), c.getError()))
                 .toList();

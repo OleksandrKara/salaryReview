@@ -14,5 +14,8 @@ public interface AiVisibilityQueryRepository extends JpaRepository<AiVisibilityQ
 
     long countByBusinessIdAndStatusIn(Long businessId, Collection<AiVisibilityQuery.Status> statuses);
 
+    /** The 20-question cap counts questions asked to every engine; Google-only ones (cheap) don't count. */
+    long countByBusinessIdAndStatusInAndEnginesIsNull(Long businessId, Collection<AiVisibilityQuery.Status> statuses);
+
     boolean existsByBusinessIdAndQueryTextIgnoreCase(Long businessId, String queryText);
 }

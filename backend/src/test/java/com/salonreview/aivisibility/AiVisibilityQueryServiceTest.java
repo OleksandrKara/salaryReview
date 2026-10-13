@@ -75,4 +75,17 @@ class AiVisibilityQueryServiceTest {
     void placeKeyNormalizesEntitiesAndCase() {
         assertThat(AiVisibilityQueryService.placeKey("Nail Care &amp; Spa")).isEqualTo(AiVisibilityQueryService.placeKey("nail care & spa"));
     }
+
+    @Test
+    void multiPointLatestRunIsSummarized() {
+        Instant now = Instant.now();
+        var a = AiVisibilityCheck.builder().engine(Engine.GOOGLE_AI_MODE).runId(5L).checkedAt(now).status(AiVisibilityCheck.Status.OK).mentioned(true).mentionRank((short) 3).build();
+        var b = AiVisibilityCheck.builder().engine(Engine.GOOGLE_AI_MODE).runId(5L).checkedAt(now).status(AiVisibilityCheck.Status.OK).mentioned(false).build();
+        var c = AiVisibilityCheck.builder().engine(Engine.GOOGLE_AI_MODE).runId(5L).checkedAt(now).status(AiVisibilityCheck.Status.NO_ANSWER).build();
+        var cell = AiVisibilityQueryService.cell(List.of(a, b, c), now);
+        assertThat(cell.latest()).isEqualTo("NAMED");
+        assertThat(cell.pointsNamed()).isEqualTo(1);
+        assertThat(cell.pointsTotal()).isEqualTo(3);
+        assertThat(cell.rank()).isEqualTo((short) 3);
+    }
 }
