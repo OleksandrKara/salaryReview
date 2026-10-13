@@ -32,7 +32,7 @@ public final class AiAnswerParser {
                     + "pros|cons|note|tip|what|how|key|top|expert|style|technique|experience|results?\\b|aftercare|consult|"
                     + "book|summary|bottom line|considerations?|recommend|highlights?|the vibe|vibe|known for|booking|"
                     + "cherry|afterpay|financing|important|option|my (first|top)|first choice|also|if you|here|quick|"
-                    + "really|great|good|best |san diego|downtown|open|closed|call|directions)",
+                    + "really|great|good|best |san diego|downtown|open|closed|call|directions|details|website|menu)",
             Pattern.CASE_INSENSITIVE);
 
     // A bold service name or a rating summary, not a business ("Russian manicures", "Highest Rated with Perfect Scores").
