@@ -321,8 +321,8 @@ export const api = {
   // AI visibility tab (owner; ads_manager read-only) — ai-visibility-monitoring.
   getAiVisibilityOverview: () => proxyGet<AiVisibilityOverview>(`/api/owner/marketing/ai/overview`),
   getAiQueryHistory: (id: number) => proxyGet<AiHistoryItem[]>(`/api/owner/marketing/ai/queries/${id}/history`),
-  addAiQuery: (query: string, topic: string | null) =>
-    proxyJson<{ id: number }>(`/api/owner/marketing/ai/queries`, 'POST', { query, topic }),
+  addAiQuery: (query: string, topic: string | null, nearMe = false) =>
+    proxyJson<{ id: number }>(`/api/owner/marketing/ai/queries`, 'POST', { query, topic, nearMe }),
   updateAiQuery: (id: number, patch: { query?: string; topic?: string; targetUrl?: string; status?: string; sortOrder?: number }) =>
     proxyJson<{ id: number; status: string }>(`/api/owner/marketing/ai/queries/${id}`, 'PATCH', patch),
   approveAllAiQueries: () => proxyJson<{ approved: number }>(`/api/owner/marketing/ai/queries/approve-all`, 'POST', {}),
