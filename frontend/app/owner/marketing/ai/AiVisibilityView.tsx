@@ -402,14 +402,14 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
             className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-white/95 px-4 pt-3 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur sm:inset-x-auto sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:rounded-full sm:border sm:px-5 sm:py-2.5 sm:shadow-lg"
             style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}>
             <div className="mx-auto flex max-w-xl items-center justify-between gap-3 pr-16 sm:max-w-none sm:justify-start sm:pb-0 sm:pr-0">
-              <div className="text-sm">
+              <div className="whitespace-nowrap text-sm">
                 <span className="font-semibold text-zinc-900">{selected.size} selected</span>
                 <span className="ml-2 text-zinc-500">≈ ${estimateCost(data.rows.filter((r) => selected.has(r.id)), data.searchPoints.length).toFixed(2)}</span>
               </div>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setSelected(new Set())} className="min-h-[40px] px-3 text-sm text-zinc-600 sm:min-h-[32px]">Clear</button>
+              <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+                <button type="button" onClick={() => setSelected(new Set())} className="min-h-[40px] px-2 text-sm text-zinc-600 sm:min-h-[32px] sm:px-3">Clear</button>
                 <button type="button" onClick={recheckSelected} disabled={busy !== null || !!runningRunId}
-                  className="inline-flex min-h-[40px] items-center gap-1.5 rounded-full bg-zinc-900 px-4 text-sm font-medium text-white disabled:opacity-40 sm:min-h-[32px]">
+                  className="inline-flex min-h-[40px] items-center gap-1.5 whitespace-nowrap rounded-full bg-zinc-900 px-4 text-sm font-medium text-white disabled:opacity-40 sm:min-h-[32px]">
                   {busy === 'recheck-selected' && <Spinner className="h-3.5 w-3.5 text-white" />}
                   Re-check {selected.size}
                 </button>
