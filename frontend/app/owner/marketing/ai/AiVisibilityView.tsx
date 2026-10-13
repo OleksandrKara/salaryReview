@@ -401,7 +401,7 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
           <div role="region" aria-label="Selected questions"
             className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-white/95 px-4 pt-3 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur sm:inset-x-auto sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:rounded-full sm:border sm:px-5 sm:py-2.5 sm:shadow-lg"
             style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}>
-            <div className="mx-auto flex max-w-xl items-center justify-between gap-3 pr-16 sm:max-w-none sm:justify-start sm:pb-0 sm:pr-0">
+            <div className="mx-auto flex max-w-xl items-center justify-between gap-3 pr-20 sm:max-w-none sm:justify-start sm:pb-0 sm:pr-0">
               <div className="whitespace-nowrap text-sm">
                 <span className="font-semibold text-zinc-900">{selected.size} selected</span>
                 <span className="ml-2 text-zinc-500">≈ ${estimateCost(data.rows.filter((r) => selected.has(r.id)), data.searchPoints.length).toFixed(2)}</span>
