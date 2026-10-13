@@ -25,6 +25,12 @@ function fmtDate(iso: string | null, withTime = false): string {
   });
 }
 
+/** Rough cost of one re-check: about $0.08 for a question asked to every assistant, $0.004 per
+ * Google call for a near-me question (2 engines x each search area). */
+function estimateCost(rows: AiQueryRow[], areas: number): number {
+  return rows.reduce((sum, r) => sum + (r.engines ? 0.004 * 2 * (r.allPoints ? Math.max(1, areas) : 1) : 0.08), 0);
+}
+
 function consistencyText(c: AiCell['recent']): string {
   if (c.total === 0) return '';
   return c.percent === null ? `${c.named}/${c.total}` : `${c.percent}% · ${c.named}/${c.total}`;
@@ -84,6 +90,38 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
   const [historyFor, setHistoryFor] = useState<AiQueryRow | null>(null);
   // Category whose inline "add question" form is open (one at a time).
   const [addingTo, setAddingTo] = useState<string | null>(null);
+  // Owner-selected questions for "Re-check selected" (active ones only).
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [notice, setNotice] = useState<string | null>(null);
+  function toggleSelected(id: number) {
+    setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }
+  function toggleGroup(ids: number[]) {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      const all = ids.every((id) => n.has(id));
+      ids.forEach((id) => (all ? n.delete(id) : n.add(id)));
+      return n;
+    });
+  }
+  async function recheckSelected() {
+    const ids = [...selected];
+    setBusy('recheck-selected');
+    setError(null);
+    try {
+      const res = await api.recheckAiQueries(ids);
+      setRunningRunId(res.run.id);
+      setSelected(new Set());
+      const skipped = res.skippedToday.length + res.skippedNotActive.length;
+      setNotice(`Checking ${res.started.length} question${res.started.length === 1 ? '' : 's'} now` +
+        (res.skippedToday.length ? `. ${res.skippedToday.length} already re-checked today were skipped` : '') +
+        (res.skippedNotActive.length ? `. ${res.skippedNotActive.length} not active were skipped` : '') + (skipped ? '.' : '…'));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Re-check failed');
+    } finally {
+      setBusy(null);
+    }
+  }
   const [runningRunId, setRunningRunId] = useState<number | null>(initialData.runningRunId);
 
   const refresh = useCallback(async () => {
@@ -148,6 +186,12 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
   return (
     <div className="space-y-6">
       {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {notice && (
+        <p className="flex items-start justify-between gap-2 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-900">
+          <span>{notice}</span>
+          <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss" className="text-sky-700">×</button>
+        </p>
+      )}
 
       <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {ENGINES.map((e) => {
@@ -249,6 +293,13 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
             <table className="w-full text-sm">
               <thead className="bg-zinc-50 text-left text-xs text-zinc-500">
                 <tr>
+                  {canEdit && (
+                    <th className="w-10 px-3 py-2">
+                      <input type="checkbox" aria-label={`Select all in ${topic}`} className="h-4 w-4"
+                        checked={rows.length > 0 && rows.every((r) => selected.has(r.id))}
+                        onChange={() => toggleGroup(rows.map((r) => r.id))} />
+                    </th>
+                  )}
                   <th className="px-3 py-2 font-medium">Question</th>
                   {ENGINES.map((e) => (
                     <th key={e.key} className="px-2 py-2 font-medium">
@@ -263,7 +314,12 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {rows.map((r) => (
-                  <tr key={r.id} className={r.status === 'PAUSED' ? 'opacity-60' : ''}>
+                  <tr key={r.id} className={selected.has(r.id) ? 'bg-sky-50/60' : ''}>
+                    {canEdit && (
+                      <td className="w-10 px-3 py-2 align-top">
+                        <input type="checkbox" aria-label={`Select: ${r.query}`} className="mt-0.5 h-4 w-4" checked={selected.has(r.id)} onChange={() => toggleSelected(r.id)} />
+                      </td>
+                    )}
                     <td className="max-w-xs px-3 py-2 align-top">
                       <div className="text-zinc-900">{r.query}{r.engines && <span className="ml-1.5 inline-block rounded bg-sky-50 px-1.5 py-0.5 align-middle text-[10px] font-medium text-sky-700">Google only{r.allPoints && data.searchPoints.length > 1 ? ` · ${data.searchPoints.length} areas` : ''}</span>}</div>
                       <div className="mt-0.5 text-[11px] text-zinc-400">
@@ -286,7 +342,12 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
           {/* Mobile cards */}
           <ul className="space-y-2 md:hidden">
             {rows.map((r) => (
-              <li key={r.id} className={`rounded-lg border border-zinc-200 bg-white p-3 ${r.status === 'PAUSED' ? 'opacity-60' : ''}`}>
+              <li key={r.id} className={`rounded-lg border bg-white p-3 ${selected.has(r.id) ? 'border-sky-300 ring-1 ring-sky-200' : 'border-zinc-200'}`}>
+                <div className="flex items-start gap-3">
+                {canEdit && (
+                  <input type="checkbox" aria-label={`Select: ${r.query}`} className="mt-0.5 h-5 w-5 shrink-0" checked={selected.has(r.id)} onChange={() => toggleSelected(r.id)} />
+                )}
+                <div className="min-w-0 flex-1">
                 <div className="text-sm text-zinc-900">{r.query}{r.engines && <span className="ml-1.5 inline-block rounded bg-sky-50 px-1.5 py-0.5 align-middle text-[10px] font-medium text-sky-700">Google only{r.allPoints && data.searchPoints.length > 1 ? ` · ${data.searchPoints.length} areas` : ''}</span>}</div>
                 <div className="mt-0.5 text-[11px] text-zinc-400">
                   {r.status === 'PAUSED' ? 'Paused · ' : ''}{lastChecked(r) ? `checked ${fmtDate(lastChecked(r))}` : 'not checked yet'}
@@ -300,6 +361,8 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
                     onRecheck={() => act(`q${r.id}`, async () => { const run = await api.recheckAiQuery(r.id); setRunningRunId(run.id); })}
                     onToggle={() => act(`q${r.id}`, () => api.updateAiQuery(r.id, { status: r.status === 'PAUSED' ? 'ACTIVE' : 'PAUSED' }))}
                     onRemove={() => act(`q${r.id}`, () => api.updateAiQuery(r.id, { status: 'REMOVED' }))} />
+                </div>
+                </div>
                 </div>
               </li>
             ))}
@@ -328,6 +391,33 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
       </section>
 
       {canEdit && <SettingsPanel />}
+
+      {canEdit && selected.size > 0 && (
+        // Sticky action bar: full-width at the bottom on phones (above the safe area), a floating
+        // pill on desktop. Spacer below keeps the last rows reachable behind it.
+        <>
+          <div aria-hidden className="h-20" />
+          <div role="region" aria-label="Selected questions"
+            className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-white/95 px-4 pt-3 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] backdrop-blur sm:inset-x-auto sm:bottom-6 sm:left-1/2 sm:-translate-x-1/2 sm:rounded-full sm:border sm:px-5 sm:py-2.5 sm:shadow-lg"
+            style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}>
+            <div className="mx-auto flex max-w-xl items-center justify-between gap-3 sm:max-w-none sm:justify-start sm:pb-0" style={{ marginBottom: 0 }}>
+              <div className="text-sm">
+                <span className="font-semibold text-zinc-900">{selected.size} selected</span>
+                <span className="ml-2 text-zinc-500">≈ ${estimateCost(data.rows.filter((r) => selected.has(r.id)), data.searchPoints.length).toFixed(2)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setSelected(new Set())} className="min-h-[40px] px-3 text-sm text-zinc-600 sm:min-h-[32px]">Clear</button>
+                <button type="button" onClick={recheckSelected} disabled={busy !== null || !!runningRunId}
+                  className="inline-flex min-h-[40px] items-center gap-1.5 rounded-full bg-zinc-900 px-4 text-sm font-medium text-white disabled:opacity-40 sm:min-h-[32px]">
+                  {busy === 'recheck-selected' && <Spinner className="h-3.5 w-3.5 text-white" />}
+                  Re-check {selected.size}
+                </button>
+              </div>
+            </div>
+            {!!runningRunId && <p className="mt-1 text-center text-[11px] text-zinc-500 sm:hidden">Wait for the current check to finish.</p>}
+          </div>
+        </>
+      )}
 
       {historyFor && <HistorySheet row={historyFor} canEdit={canEdit} onClose={() => setHistoryFor(null)} />}
     </div>

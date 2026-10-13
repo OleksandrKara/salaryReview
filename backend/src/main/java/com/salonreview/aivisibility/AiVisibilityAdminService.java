@@ -133,6 +133,37 @@ public class AiVisibilityAdminService {
         return runService.startManualRecheck(businessId, q);
     }
 
+    public record BatchRecheck(AiVisibilityRun run, List<Long> started, List<Long> skippedToday, List<Long> skippedNotActive) {
+    }
+
+    /** Owner-selected questions re-checked in one run. Each question still at most once per PT day;
+     * questions that aren't ACTIVE or were already re-checked today are skipped and reported. */
+    public BatchRecheck recheckMany(Long businessId, List<Long> ids) {
+        if (ids == null || ids.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select at least one question");
+        if (ids.size() > 40) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select at most 40 questions");
+        runs.findTop1ByBusinessIdOrderByStartedAtDesc(businessId)
+                .filter(runService::isActive)
+                .ifPresent(r -> { throw new ResponseStatusException(HttpStatus.CONFLICT, "A check is already running. Try again when it finishes."); });
+        Instant todayPt = LocalDate.now(AiVisibilityRunService.PT).atStartOfDay(AiVisibilityRunService.PT).toInstant();
+        List<Long> todaysManual = runs.findByBusinessIdAndTriggerAndStartedAtAfter(businessId, AiVisibilityRun.Trigger.MANUAL_QUERY, todayPt)
+                .stream().map(AiVisibilityRun::getId).toList();
+        List<AiVisibilityQuery> selected = new ArrayList<>();
+        List<Long> started = new ArrayList<>(), today = new ArrayList<>(), notActive = new ArrayList<>();
+        for (Long id : new java.util.LinkedHashSet<>(ids)) {
+            AiVisibilityQuery q = find(businessId, id);
+            if (q.getStatus() != AiVisibilityQuery.Status.ACTIVE) { notActive.add(id); continue; }
+            if (!todaysManual.isEmpty() && checks.existsByBusinessIdAndQueryIdAndRunIdIn(businessId, id, todaysManual)) { today.add(id); continue; }
+            selected.add(q);
+            started.add(id);
+        }
+        if (selected.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, today.isEmpty()
+                    ? "None of the selected questions are active" : "The selected questions were already re-checked today");
+        }
+        selected.sort(java.util.Comparator.comparingInt(AiVisibilityQuery::getSortOrder));
+        return new BatchRecheck(runService.startManualRecheck(businessId, selected), started, today, notActive);
+    }
+
     public AiVisibilityRun run(Long businessId, Long runId) {
         return runs.findByIdAndBusinessId(runId, businessId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
     }

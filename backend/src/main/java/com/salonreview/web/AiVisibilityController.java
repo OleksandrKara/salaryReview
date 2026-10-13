@@ -97,6 +97,15 @@ public class AiVisibilityController {
         return RunDto.of(admin.recheck(requireFeatureEnabled(), id));
     }
 
+    @PostMapping("/queries/recheck")
+    public Map<String, Object> recheckMany(@RequestBody RecheckRequest req) {
+        var b = admin.recheckMany(requireFeatureEnabled(), req.ids());
+        return Map.of("run", RunDto.of(b.run()), "started", b.started(), "skippedToday", b.skippedToday(), "skippedNotActive", b.skippedNotActive());
+    }
+
+    public record RecheckRequest(List<Long> ids) {
+    }
+
     @GetMapping("/runs/{id}")
     public RunDto run(@PathVariable Long id) {
         return RunDto.of(admin.run(requireFeatureEnabled(), id));
