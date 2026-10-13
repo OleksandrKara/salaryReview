@@ -95,7 +95,7 @@ class SmsMessageRepositoryConversationTest {
         List<String> ours = List.of(phoneA, phoneB, phoneC);
 
         List<SmsMessageRepository.ConversationSummaryProjection> everything =
-                repository.conversationSummariesPage(BUSINESS_ID, null, 1000);
+                repository.conversationSummariesPage(BUSINESS_ID, null, 1000, false);
         List<String> ourOrder = everything.stream()
                 .map(SmsMessageRepository.ConversationSummaryProjection::getPhoneNumber)
                 .filter(ours::contains)
@@ -104,7 +104,7 @@ class SmsMessageRepositoryConversationTest {
 
         Instant cursor = repository.conversationSummaryForPhone(BUSINESS_ID, phoneB).orElseThrow().getLastMessageAt();
         List<SmsMessageRepository.ConversationSummaryProjection> afterB =
-                repository.conversationSummariesPage(BUSINESS_ID, cursor, 1000);
+                repository.conversationSummariesPage(BUSINESS_ID, cursor, 1000, false);
         List<String> afterBOurs = afterB.stream()
                 .map(SmsMessageRepository.ConversationSummaryProjection::getPhoneNumber)
                 .filter(ours::contains)
@@ -151,5 +151,26 @@ class SmsMessageRepositoryConversationTest {
         List<SmsMessage> thread = repository.findByBusinessIdAndPhoneNumberOrderByCreatedAtAsc(BUSINESS_ID, phone);
 
         assertThat(thread).extracting(SmsMessage::getBody).containsExactly("hello", "hi back");
+    }
+
+    @Test
+    void conversationSummariesPageUnreadOnlyKeepsOnlyThreadsWithUnreadInbound() {
+        String unreadPhone = "+15553330001";
+        String readPhone = "+15553330002";
+        String outboundOnlyPhone = "+15553330003";
+        Instant now = Instant.now();
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("INBOUND").phoneNumber(unreadPhone)
+                .body("hi").status("RECEIVED").createdAt(now.minusSeconds(5)).build());
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("INBOUND").phoneNumber(readPhone)
+                .body("read already").status("RECEIVED").readAt(now).createdAt(now.minusSeconds(6)).build());
+        repository.save(SmsMessage.builder().businessId(BUSINESS_ID).direction("OUTBOUND").phoneNumber(outboundOnlyPhone)
+                .body("reminder").status("SENT").createdAt(now.minusSeconds(7)).build());
+
+        List<String> unread = repository.conversationSummariesPage(BUSINESS_ID, null, 1000, true).stream()
+                .map(SmsMessageRepository.ConversationSummaryProjection::getPhoneNumber).toList();
+        assertThat(unread).contains(unreadPhone).doesNotContain(readPhone, outboundOnlyPhone);
+        List<String> all = repository.conversationSummariesPage(BUSINESS_ID, null, 1000, false).stream()
+                .map(SmsMessageRepository.ConversationSummaryProjection::getPhoneNumber).toList();
+        assertThat(all).contains(unreadPhone, readPhone, outboundOnlyPhone);
     }
 }

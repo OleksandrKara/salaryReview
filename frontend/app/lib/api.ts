@@ -428,10 +428,11 @@ export const api = {
   // Cursor-paginated conversations list (default 10/page) — the manager conversation view's
   // initial load + "load more" on scroll, so opening the page doesn't pay for every conversation
   // the salon has ever had. cursor is the previous page's nextCursor; omit for the first page.
-  listSmsConversationsPage: (cursor?: string | null, limit?: number) => {
+  listSmsConversationsPage: (cursor?: string | null, limit?: number, unreadOnly = false) => {
     const params = new URLSearchParams();
     if (cursor) params.set('cursor', cursor);
     if (limit !== undefined) params.set('limit', String(limit));
+    if (unreadOnly) params.set('unreadOnly', 'true');
     const qs = params.toString();
     return proxyGet<SmsConversationPageDto>(`/api/owner/automations/activity/conversations/paged${qs ? `?${qs}` : ''}`);
   },

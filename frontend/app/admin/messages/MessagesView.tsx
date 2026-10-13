@@ -123,6 +123,7 @@ export default function MessagesView({
   initialNextCursor,
   initialHasMore,
   initialSelectedPhone,
+  initialFilter = 'all',
 }: {
   /** First page only (default 10) — see page.tsx, which now fetches via
    * serverApi.listSmsConversationsPage instead of the old unbounded listSmsConversations, so
@@ -140,8 +141,18 @@ export default function MessagesView({
    * Seeded straight into `selectedPhone`'s initial state so the existing selectedPhone effect
    * below (fetch thread/contact, mark read) just runs on mount, no separate code path needed. */
   initialSelectedPhone?: string | null;
+  /** "All" vs "Unread" list filter (owner request 2026-10-13), from page.tsx's ?filter=unread. */
+  initialFilter?: 'all' | 'unread';
 }) {
   const [conversations, setConversations] = useState(initialConversations);
+  // "Unread" is filtered server-side (unreadOnly on the paged endpoint), so it covers every unread
+  // conversation, not just the loaded pages. A thread opened while filtered stays in the list (its
+  // badge just clears) until the filter is switched again, so the row never vanishes mid-click.
+  const [filter, setFilter] = useState<'all' | 'unread'>(initialFilter);
+  const filterRef = useRef(filter);
+  useEffect(() => { filterRef.current = filter; }, [filter]);
+  const [filterLoading, setFilterLoading] = useState(false);
+  const [unreadTotal, setUnreadTotal] = useState<number | null>(null);
   // Lets the search-hit-fetching effect below check what's already loaded without needing
   // `conversations` itself in its dependency array (which would re-run it, and its fetches, on
   // every single upsert — including the ones it just did).
@@ -459,6 +470,9 @@ export default function MessagesView({
   function upsertConversation(fresh: SmsConversationDto) {
     setConversations((prev) => {
       const idx = prev.findIndex((c) => c.phoneNumber === fresh.phoneNumber);
+      // In the Unread view a conversation that has nothing unread isn't added (e.g. an outbound
+      // reminder to someone else); one already in the list is still updated in place.
+      if (idx === -1 && filterRef.current === 'unread' && fresh.unreadCount === 0) return prev;
       const next = idx === -1 ? [...prev, fresh] : [...prev.slice(0, idx), fresh, ...prev.slice(idx + 1)];
       next.sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
       return next;
@@ -470,7 +484,39 @@ export default function MessagesView({
   // only ever holds the currently-loaded page(s) once pagination is in play and would otherwise
   // silently under-count once the salon has more conversations than fit on one page.
   function refreshUnreadBadge() {
-    api.getSmsUnreadCount().then(({ unreadCount }) => dispatchSmsUnreadCountChanged(unreadCount)).catch(() => {});
+    api.getSmsUnreadCount().then(({ unreadCount }) => {
+      dispatchSmsUnreadCountChanged(unreadCount);
+      setUnreadTotal(unreadCount);
+    }).catch(() => {});
+  }
+
+  // Seeds the Unread pill's count on mount; refreshUnreadBadge keeps it current afterwards.
+  useEffect(() => {
+    api.getSmsUnreadCount().then(({ unreadCount }) => setUnreadTotal(unreadCount)).catch(() => {});
+  }, []);
+
+  async function changeFilter(next: 'all' | 'unread') {
+    if (next === filterRef.current && !filterLoading) return;
+    setFilter(next);
+    filterRef.current = next;
+    // Keep ?phone= and anything else; only toggle ?filter=, so a reload opens the same view.
+    const url = new URL(window.location.href);
+    if (next === 'unread') url.searchParams.set('filter', 'unread');
+    else url.searchParams.delete('filter');
+    window.history.replaceState(window.history.state, '', url.toString());
+    setFilterLoading(true);
+    try {
+      const page = await api.listSmsConversationsPage(null, undefined, next === 'unread');
+      if (filterRef.current !== next) return; // switched again while this was loading
+      setConversations(page.items);
+      setNextCursor(page.nextCursor);
+      setHasMore(page.hasMore);
+      conversationListScrollRef.current?.scrollTo({ top: 0 });
+    } catch {
+      // Keep the previous list; the pill still shows the chosen filter and switching again retries.
+    } finally {
+      setFilterLoading(false);
+    }
   }
 
   // Fetches the next page and appends it — guarded via refs (not the state values directly) so the
@@ -481,7 +527,7 @@ export default function MessagesView({
     if (loadingMoreRef.current || !hasMoreRef.current) return;
     setLoadingMore(true);
     try {
-      const page = await api.listSmsConversationsPage(nextCursorRef.current);
+      const page = await api.listSmsConversationsPage(nextCursorRef.current, undefined, filterRef.current === 'unread');
       setConversations((prev) => {
         const seen = new Set(prev.map((c) => c.phoneNumber));
         return [...prev, ...page.items.filter((c) => !seen.has(c.phoneNumber))];
@@ -616,7 +662,7 @@ export default function MessagesView({
         } else {
           // No phone number to target (malformed payload) — can't upsert a single row, so refresh
           // just the first page instead of the old unbounded full-list fetch.
-          api.listSmsConversationsPage().then((page) => {
+          api.listSmsConversationsPage(null, undefined, filterRef.current === 'unread').then((page) => {
             setConversations(page.items);
             setNextCursor(page.nextCursor);
             setHasMore(page.hasMore);
@@ -837,7 +883,7 @@ export default function MessagesView({
         data-testid="conversation-list"
         className={`absolute inset-0 flex w-full shrink-0 flex-col overflow-hidden border-r border-zinc-200 transition-transform sm:static sm:flex sm:w-96 sm:translate-x-0 ${selectedPhone ? '-translate-x-full' : 'translate-x-0'}`}
       >
-        {conversations.length > 0 && (
+        {(conversations.length > 0 || filter === 'unread') && (
           // text-base (16px), not text-sm, on mobile — matches the composer input's own note
           // below: a smaller font on a focused input makes iOS Safari auto-zoom the whole page.
           <div className="shrink-0 border-b border-zinc-100 p-2">
@@ -870,10 +916,46 @@ export default function MessagesView({
                 </button>
               )}
             </div>
+            {/* All / Unread filter: full-width halves on phones (44px touch targets), a compact
+                segment on desktop. */}
+            <div role="radiogroup" aria-label="Show conversations" className="mt-2 grid grid-cols-2 gap-1 rounded-full bg-zinc-100 p-1 sm:inline-grid sm:w-auto">
+              {(['all', 'unread'] as const).map((f) => {
+                const active = filter === f;
+                return (
+                  <button
+                    key={f}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    data-testid={`conversation-filter-${f}`}
+                    onClick={() => changeFilter(f)}
+                    className={`flex min-h-[40px] items-center justify-center gap-1.5 rounded-full px-4 text-sm font-medium transition-colors sm:min-h-[32px] ${
+                      active ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-800'
+                    }`}
+                  >
+                    {f === 'all' ? 'All' : 'Unread'}
+                    {f === 'unread' && unreadTotal !== null && unreadTotal > 0 && (
+                      <span className={`min-w-[1.25rem] rounded-full px-1.5 text-center text-xs font-semibold leading-5 ${active ? 'bg-sky-600 text-white' : 'bg-sky-100 text-sky-700'}`}>
+                        {unreadTotal > 99 ? '99+' : unreadTotal}
+                      </span>
+                    )}
+                    {active && filterLoading && <Spinner className="h-3.5 w-3.5" />}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
         <div ref={conversationListScrollRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-        {conversations.length === 0 ? (
+        {conversations.length === 0 && filter === 'unread' && !filterLoading ? (
+          <div data-testid="conversation-unread-empty" className="flex flex-col items-center gap-3 p-8 text-center">
+            <div className="text-sm font-medium text-zinc-800">You&rsquo;re all caught up</div>
+            <div className="text-sm text-zinc-500">No unread messages right now.</div>
+            <button type="button" onClick={() => changeFilter('all')} className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white">
+              Show all conversations
+            </button>
+          </div>
+        ) : conversations.length === 0 ? (
           <div className="p-6 text-center text-sm text-zinc-500">No conversations yet.</div>
         ) : visibleConversations.length === 0 ? (
           <div data-testid="conversation-search-empty" className="p-6 text-center text-sm text-zinc-500">

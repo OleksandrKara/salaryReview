@@ -185,7 +185,14 @@ public class SmsMessageLogService {
      * {@link SmsMessageRepository#conversationSummariesPage} for why cursor, not offset. */
     public java.util.List<SmsMessageRepository.ConversationSummaryProjection> conversationsPage(
             Long businessId, Instant cursor, int limit) {
-        return repository.conversationSummariesPage(businessId, cursor, limit);
+        return conversationsPage(businessId, cursor, limit, false);
+    }
+
+    /** {@code unreadOnly}: only conversations with at least one unread inbound message (the
+     * Messages page's "Unread" filter, owner request 2026-10-13). */
+    public java.util.List<SmsMessageRepository.ConversationSummaryProjection> conversationsPage(
+            Long businessId, Instant cursor, int limit, boolean unreadOnly) {
+        return repository.conversationSummariesPage(businessId, cursor, limit, unreadOnly);
     }
 
     /** Single-conversation form of {@link #conversations}, for one phone number. */
