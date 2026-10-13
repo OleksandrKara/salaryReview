@@ -65,7 +65,11 @@ public class PageFetcher {
                 String html = new String(body, 0, Math.min(body.length, MAX_BYTES), StandardCharsets.UTF_8);
                 PageSnapshot snap = PageSnapshot.fromHtml(html, url);
                 if (snap.wordCount() >= MIN_WORDS || !allowPaidFallback) return new Fetched(snap, status, "DIRECT", BigDecimal.ZERO, null);
-                return onPage(url, true, status);
+                // Maybe a JS shell; but a genuinely short page (our /russian-pedicure, ~270 words) is
+                // fine as fetched, so keep the direct read unless rendering gives more.
+                Fetched rendered = onPage(url, true, status);
+                return rendered.readable() && rendered.snapshot().wordCount() > snap.wordCount() ? rendered
+                        : new Fetched(snap, status, "DIRECT", rendered.cost(), null);
             }
             if (status == 404 || status == 410) return new Fetched(null, status, "DIRECT", BigDecimal.ZERO, "Page not found");
         } catch (InterruptedException e) {
