@@ -3,7 +3,7 @@ import type { TrafficSourceKey } from '../../lib/types';
 export type { TrafficSourceKey };
 
 export const ALL_TRAFFIC_SOURCES: TrafficSourceKey[] = [
-  'meta_ads', 'google_ads', 'instagram_organic', 'google_organic', 'direct',
+  'meta_ads', 'google_ads', 'instagram_organic', 'google_organic', 'yelp', 'direct',
 ];
 
 /** "Ads only" — the default everywhere: mani runs paid ads, so counting only paid-click traffic
@@ -15,6 +15,7 @@ export const SOURCE_LABELS: Record<TrafficSourceKey, string> = {
   google_ads: 'Google Ads',
   instagram_organic: 'Instagram (organic)',
   google_organic: 'Google (organic)',
+  yelp: 'Yelp',
   direct: 'Direct',
 };
 

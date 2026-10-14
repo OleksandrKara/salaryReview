@@ -4,9 +4,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Shared classification of a visit/contact into one of five owner-facing traffic-source buckets —
+ * Shared classification of a visit/contact into one of six owner-facing traffic-source buckets —
  * {@code meta_ads}, {@code google_ads}, {@code instagram_organic}, {@code google_organic},
- * {@code direct} — used identically by {@link MarketingDashboardRepository},
+ * {@code yelp}, {@code direct} — used identically by {@link MarketingDashboardRepository},
  * {@link FunnelAnalyticsRepository}, and {@link MarketingContactsRepository} so every marketing
  * tab agrees on what counts as what. Replaces the old AdsTrafficSql's "any fbclid/gclid = ads"
  * rule.
@@ -30,10 +30,14 @@ final class TrafficSourceSql {
     static final String GOOGLE_ADS = "google_ads";
     static final String INSTAGRAM_ORGANIC = "instagram_organic";
     static final String GOOGLE_ORGANIC = "google_organic";
+    /** Clicks from Yelp (business page, Yelp ads, Yelp app): Yelp adds no UTM or click id, so the
+     * referrer (yelp.com, m.yelp.com) or an explicit utm_source=yelp is the signal (2026-10-14:
+     * the owner's Yelp-ad test booking existed but fit no bucket). */
+    static final String YELP = "yelp";
     static final String DIRECT = "direct";
 
     /** Every recognized bucket — the full "All traffic" set. */
-    static final Set<String> ALL = Set.of(META_ADS, GOOGLE_ADS, INSTAGRAM_ORGANIC, GOOGLE_ORGANIC, DIRECT);
+    static final Set<String> ALL = Set.of(META_ADS, GOOGLE_ADS, INSTAGRAM_ORGANIC, GOOGLE_ORGANIC, YELP, DIRECT);
 
     /**
      * Page views to leave out of every dashboard denominator: visits from self-declared scanners
@@ -68,6 +72,7 @@ final class TrafficSourceSql {
                 WHEN %1$s.fbclid IS NOT NULL AND COALESCE(%1$s.utm_medium, '') <> 'social' THEN 'meta_ads'
                 WHEN %1$s.utm_source ILIKE 'ig' AND COALESCE(%1$s.utm_medium, '') IN ('', 'social') THEN 'instagram_organic'
                 WHEN %1$s.referrer ILIKE '%%instagram.com%%' THEN 'instagram_organic'
+                WHEN %1$s.utm_source ILIKE 'yelp%%' OR %1$s.referrer ~* '^https?://([a-z0-9-]+\\.)*yelp\\.' THEN 'yelp'
                 WHEN %1$s.utm_source IS NULL AND %1$s.referrer ILIKE '%%google.%%' THEN 'google_organic'
                 WHEN %1$s.utm_source IS NULL AND %1$s.fbclid IS NULL AND %1$s.gclid IS NULL
                      AND (%1$s.referrer IS NULL OR %1$s.referrer = '') THEN 'direct'
@@ -88,6 +93,8 @@ final class TrafficSourceSql {
                      AND %1$s.utm_medium IS NOT NULL AND %1$s.utm_medium <> 'social' THEN 'meta_ads'
                 WHEN %1$s.utm_source ILIKE 'ig' AND COALESCE(%1$s.utm_medium, '') IN ('', 'social') THEN 'instagram_organic'
                 WHEN %1$s.referrer ILIKE '%%instagram.com%%' THEN 'instagram_organic'
+                WHEN %1$s.utm_source ILIKE 'yelp%%' OR %1$s.referrer ~* '^https?://([a-z0-9-]+\\.)*yelp\\.'
+                     OR %1$s.marketing_traffic_source ILIKE '%%yelp.%%' THEN 'yelp'
                 WHEN %1$s.utm_source IS NULL AND %1$s.referrer ILIKE '%%google.%%' THEN 'google_organic'
                 WHEN %1$s.utm_source IS NULL AND (%1$s.referrer IS NULL OR %1$s.referrer = '') THEN 'direct'
                 ELSE NULL

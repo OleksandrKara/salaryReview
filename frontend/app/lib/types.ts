@@ -2168,7 +2168,7 @@ export interface MerchantRule {
 }
 
 // Shared across the Overview, Contacts, Analytics, and Funnel tabs — see backend TrafficSourceSql.
-export type TrafficSourceKey = 'meta_ads' | 'google_ads' | 'instagram_organic' | 'google_organic' | 'direct';
+export type TrafficSourceKey = 'meta_ads' | 'google_ads' | 'instagram_organic' | 'google_organic' | 'yelp' | 'direct';
 
 // --- Abuse blocks (com.salonreview.web.AbuseBlocksController) ---
 
