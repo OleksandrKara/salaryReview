@@ -54,8 +54,12 @@ public class AiVisibilityController {
     }
 
     @GetMapping("/overview")
-    public AiVisibilityQueryService.Overview overview() {
-        return readModel.overview(requireFeatureEnabled());
+    public AiVisibilityQueryService.Overview overview(@RequestParam(required = false) String site) {
+        if (site != null && !site.isBlank() && !com.salonreview.seo.SeoSite.VALUES.contains(site)) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "site must be all, studio or academy");
+        }
+        return readModel.overview(requireFeatureEnabled(), site);
     }
 
     @GetMapping("/trends")

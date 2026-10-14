@@ -83,7 +83,16 @@ function lastChecked(row: AiQueryRow): string | null {
   return dates.length ? dates[dates.length - 1] : null;
 }
 
-export default function AiVisibilityView({ initialData, canEdit }: { initialData: AiVisibilityOverview; canEdit: boolean }) {
+export default function AiVisibilityView({
+  initialData,
+  canEdit,
+  site,
+}: {
+  initialData: AiVisibilityOverview;
+  canEdit: boolean;
+  /** 'studio' | 'academy' for a business with the academy as its own site; undefined = every question. */
+  site?: string;
+}) {
   const [data, setData] = useState(initialData);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -126,13 +135,13 @@ export default function AiVisibilityView({ initialData, canEdit }: { initialData
 
   const refresh = useCallback(async () => {
     try {
-      const fresh = await api.getAiVisibilityOverview();
+      const fresh = await api.getAiVisibilityOverview(site);
       setData(fresh);
       setRunningRunId(fresh.runningRunId);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not refresh');
     }
-  }, []);
+  }, [site]);
 
   // A check runs on the server and survives leaving this page or a backend restart (it resumes
   // where it stopped). While one is running, refresh the overview every 5s for progress.

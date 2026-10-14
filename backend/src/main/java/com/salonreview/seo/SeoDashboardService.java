@@ -119,17 +119,24 @@ public class SeoDashboardService {
     /** {@code null} means "no seo_connection row yet" — the caller (controller) decides how to
      * render that (empty-state card, per design.md D7), not this service. */
     public Overview overview(Long businessId, int days) {
+        return overview(businessId, days, null);
+    }
+
+    /** {@code site}: null/"all" for every page, "academy" for the PMU Academy's pages only
+     * (pmu-annakara.com/academy/ and the old edu.pmu-annakara.com, see {@link SeoSite}), "studio"
+     * for everything else. Scopes the Search Console numbers (trend, queries, pages, comparisons)
+     * and the tracked keyword list; GA4 users, Core Web Vitals and technical issues stay site-wide. */
+    public Overview overview(Long businessId, int days, String site) {
         SeoConnection connection = connectionRepository.findByBusinessId(businessId).orElse(null);
         if (connection == null) {
             return new Overview(false, null, null, List.of(), List.of(), List.of(), List.of(), null, null, List.of(),
                     null, null, null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                    trackedKeywords(businessId));
+                    trackedKeywords(businessId, site));
         }
 
         LocalDate end = LocalDate.now();
         LocalDate start = end.minusDays(days);
-        List<SeoSearchMetricsSnapshot> rows =
-                searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(businessId, start, end);
+        List<SeoSearchMetricsSnapshot> rows = metrics(businessId, start, end, site);
         List<SeoAnalyticsSnapshot> analyticsRows =
                 analyticsSnapshotRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(businessId, start, end);
 
@@ -139,9 +146,9 @@ public class SeoDashboardService {
                 latestVitals(businessId, SeoPageSnapshot.Strategy.MOBILE),
                 latestVitals(businessId, SeoPageSnapshot.Strategy.DESKTOP),
                 activeIssues(businessId),
-                last7DaysComparison(rows, businessId, end),
-                last28DaysComparison(rows, businessId, start, days),
-                yearOverYearComparison(rows, businessId, start, end),
+                last7DaysComparison(rows, businessId, end, site),
+                last28DaysComparison(rows, businessId, start, days, site),
+                yearOverYearComparison(rows, businessId, start, end, site),
                 changeDetectionService.gainers(rows, start, end),
                 changeDetectionService.losers(rows, start, end),
                 changeDetectionService.opportunities(rows, start, end),
@@ -150,19 +157,24 @@ public class SeoDashboardService {
                 pageAnalysisService.underperformingPages(rows, start, end),
                 pageAnalysisService.contentOpportunities(rows, start, end),
                 pageAnalysisService.cannibalizedQueries(rows),
-                trackedKeywords(businessId));
+                trackedKeywords(businessId, site));
+    }
+
+    private List<SeoSearchMetricsSnapshot> metrics(Long businessId, LocalDate start, LocalDate end, String site) {
+        List<SeoSearchMetricsSnapshot> rows =
+                searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(businessId, start, end);
+        return SeoSite.isAll(site) ? rows : rows.stream().filter(r -> SeoSite.matches(site, r.getPage())).toList();
     }
 
     /** Last 7 days vs. the 7 days immediately before that — both fully contained in the already-
      * fetched main window, so only the prior week needs its own repository call. */
     private PeriodComparison last7DaysComparison(List<SeoSearchMetricsSnapshot> mainWindowRows, Long businessId,
-            LocalDate mainEnd) {
+            LocalDate mainEnd, String site) {
         LocalDate currentStart = mainEnd.minusDays(6);
         List<SeoSearchMetricsSnapshot> currentRows = filterByDate(mainWindowRows, currentStart, mainEnd);
         LocalDate priorEnd = currentStart.minusDays(1);
         LocalDate priorStart = priorEnd.minusDays(6);
-        List<SeoSearchMetricsSnapshot> priorRows =
-                searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(businessId, priorStart, priorEnd);
+        List<SeoSearchMetricsSnapshot> priorRows = metrics(businessId, priorStart, priorEnd, site);
         if (priorRows.isEmpty()) return null;
         return new PeriodComparison(aggregate(null, currentRows), aggregate(null, priorRows));
     }
@@ -170,11 +182,10 @@ public class SeoDashboardService {
     /** The full main window vs. the same-length window immediately before it — the prior window
      * falls entirely outside what {@link #overview} already fetched, so it needs its own call. */
     private PeriodComparison last28DaysComparison(List<SeoSearchMetricsSnapshot> mainWindowRows, Long businessId,
-            LocalDate mainStart, int windowDays) {
+            LocalDate mainStart, int windowDays, String site) {
         LocalDate priorEnd = mainStart.minusDays(1);
         LocalDate priorStart = priorEnd.minusDays(windowDays - 1);
-        List<SeoSearchMetricsSnapshot> priorRows =
-                searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(businessId, priorStart, priorEnd);
+        List<SeoSearchMetricsSnapshot> priorRows = metrics(businessId, priorStart, priorEnd, site);
         if (priorRows.isEmpty()) return null;
         return new PeriodComparison(aggregate(null, mainWindowRows), aggregate(null, priorRows));
     }
@@ -183,11 +194,10 @@ public class SeoDashboardService {
      * null}) when that year-ago window has no data at all, rather than comparing against a
      * business that may not have existed/synced yet (design.md: no fabricated YoY baseline). */
     private PeriodComparison yearOverYearComparison(List<SeoSearchMetricsSnapshot> mainWindowRows, Long businessId,
-            LocalDate mainStart, LocalDate mainEnd) {
+            LocalDate mainStart, LocalDate mainEnd, String site) {
         LocalDate priorStart = mainStart.minusYears(1);
         LocalDate priorEnd = mainEnd.minusYears(1);
-        List<SeoSearchMetricsSnapshot> priorRows =
-                searchMetricsRepository.findByBusinessIdAndDateBetweenOrderByDateAsc(businessId, priorStart, priorEnd);
+        List<SeoSearchMetricsSnapshot> priorRows = metrics(businessId, priorStart, priorEnd, site);
         if (priorRows.isEmpty()) return null;
         return new PeriodComparison(aggregate(null, mainWindowRows), aggregate(null, priorRows));
     }
@@ -212,8 +222,11 @@ public class SeoDashboardService {
                 .ifPresent(trackedQueryRepository::delete);
     }
 
-    private List<TrackedKeywordRow> trackedKeywords(Long businessId) {
+    /** Per site by the keyword's target URL: an academy keyword is one whose target is an academy
+     * page; keywords without a target count as the studio's. */
+    private List<TrackedKeywordRow> trackedKeywords(Long businessId, String site) {
         return trackedKeywordRepository.findByBusinessIdOrderByCreatedAtAsc(businessId).stream()
+                .filter(k -> SeoSite.isAll(site) || SeoSite.matches(site, k.getTargetUrl()))
                 .map(k -> new TrackedKeywordRow(k.getId(), k.getKeyword(), k.getTargetUrl(), k.getLocation(),
                         k.getDevice().name(), k.isActive()))
                 .toList();

@@ -281,22 +281,22 @@ export const api = {
     proxyJson<TrackingSiteDto>(`/api/owner/settings/tracking/${encodeURIComponent(hostname)}`, 'PUT', { clarityProjectId }),
 
   // SEO monitoring dashboard (owner + ads_manager, read-only) — Phase 8.
-  getSeoOverview: (days?: number) =>
-    proxyGet<SeoOverviewDto>(`/api/owner/marketing/seo/overview${days ? `?days=${days}` : ''}`),
+  getSeoOverview: (days?: number, site?: string) =>
+    proxyGet<SeoOverviewDto>(`/api/owner/marketing/seo/overview?${new URLSearchParams({ ...(days ? { days: String(days) } : {}), ...(site ? { site } : {}) })}`),
 
-  syncSeoNow: () => proxyJson<SeoOverviewDto>(`/api/owner/marketing/seo/sync`, 'POST', {}),
+  syncSeoNow: (site?: string) => proxyJson<SeoOverviewDto>(`/api/owner/marketing/seo/sync${site ? `?site=${site}` : ''}`, 'POST', {}),
 
-  addSeoTrackedQuery: (query: string) =>
-    proxyJson<SeoOverviewDto>(`/api/owner/marketing/seo/tracked-queries`, 'POST', { query }),
+  addSeoTrackedQuery: (query: string, site?: string) =>
+    proxyJson<SeoOverviewDto>(`/api/owner/marketing/seo/tracked-queries${site ? `?site=${site}` : ''}`, 'POST', { query }),
 
-  removeSeoTrackedQuery: (query: string) =>
-    proxyDeleteJson<SeoOverviewDto>(`/api/owner/marketing/seo/tracked-queries?query=${encodeURIComponent(query)}`),
+  removeSeoTrackedQuery: (query: string, site?: string) =>
+    proxyDeleteJson<SeoOverviewDto>(`/api/owner/marketing/seo/tracked-queries?query=${encodeURIComponent(query)}${site ? `&site=${site}` : ''}`),
 
-  addSeoTrackedKeyword: (keyword: string, location: string, device: string, targetUrl: string | null) =>
-    proxyJson<SeoOverviewDto>(`/api/owner/marketing/seo/tracked-keywords`, 'POST', { keyword, location, device, targetUrl }),
+  addSeoTrackedKeyword: (keyword: string, location: string, device: string, targetUrl: string | null, site?: string) =>
+    proxyJson<SeoOverviewDto>(`/api/owner/marketing/seo/tracked-keywords${site ? `?site=${site}` : ''}`, 'POST', { keyword, location, device, targetUrl }),
 
-  removeSeoTrackedKeyword: (id: number) =>
-    proxyDeleteJson<SeoOverviewDto>(`/api/owner/marketing/seo/tracked-keywords/${id}`),
+  removeSeoTrackedKeyword: (id: number, site?: string) =>
+    proxyDeleteJson<SeoOverviewDto>(`/api/owner/marketing/seo/tracked-keywords/${id}${site ? `?site=${site}` : ''}`),
 
   // "Analyze SEO" button — force=true is the explicit "Analyze again" action, bypassing the cache.
   analyzeSeo: (force = false) =>
@@ -319,7 +319,8 @@ export const api = {
     proxyDeleteJson<SeoCompetitorRow[]>(`/api/owner/marketing/seo/competitors/${id}`),
 
   // AI visibility tab (owner; ads_manager read-only) — ai-visibility-monitoring.
-  getAiVisibilityOverview: () => proxyGet<AiVisibilityOverview>(`/api/owner/marketing/ai/overview`),
+  getAiVisibilityOverview: (site?: string) =>
+    proxyGet<AiVisibilityOverview>(`/api/owner/marketing/ai/overview${site ? `?site=${site}` : ''}`),
   getAiQueryHistory: (id: number) => proxyGet<AiHistoryItem[]>(`/api/owner/marketing/ai/queries/${id}/history`),
   addAiQuery: (query: string, topic: string | null, nearMe = false) =>
     proxyJson<{ id: number }>(`/api/owner/marketing/ai/queries`, 'POST', { query, topic, nearMe }),

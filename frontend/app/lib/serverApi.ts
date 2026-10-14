@@ -138,10 +138,12 @@ export const serverApi = {
 
   // null when seo-monitoring.enabled is off for this business (backend 404s) — the page redirects
   // in that case rather than throwing, same contract as any feature-gated page here.
-  getAiVisibilityOverview: () => serverFetchOrNull<AiVisibilityOverview>(`/api/owner/marketing/ai/overview`),
+  getAiVisibilityOverview: (site?: string) =>
+    serverFetchOrNull<AiVisibilityOverview>(`/api/owner/marketing/ai/overview${site ? `?site=${site}` : ''}`),
 
-  getSeoOverview: (days?: number) =>
-    serverFetchOrNull<SeoOverviewDto>(`/api/owner/marketing/seo/overview${days ? `?days=${days}` : ''}`),
+  // site: 'studio' | 'academy' (see SeoSite); omitted = every page.
+  getSeoOverview: (days?: number, site?: string) =>
+    serverFetchOrNull<SeoOverviewDto>(`/api/owner/marketing/seo/overview${seoQuery(days, site)}`),
 
   // Open (untriaged) knowledge-gap request count, for the owner's nav badge. Never throws — a
   // missing/disabled RAG feature or a hiccup here must not take down every page's header. A
@@ -377,3 +379,11 @@ export const serverApi = {
     return serverFetch<MarketingLtvData>(`/api/owner/marketing/ads-report/ltv${qs}`);
   },
 };
+
+function seoQuery(days?: number, site?: string): string {
+  const q = new URLSearchParams();
+  if (days) q.set('days', String(days));
+  if (site) q.set('site', site);
+  const str = q.toString();
+  return str ? `?${str}` : '';
+}
