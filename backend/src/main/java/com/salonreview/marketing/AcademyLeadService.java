@@ -43,10 +43,10 @@ public class AcademyLeadService {
         }
     }
 
-    static final String FUNNEL_NOTE = "Auto follow-ups are on: email + text now, emails on day 1, 3 and 7 "
-            + "(day 3 by text if OK to text). They stop if the person texts back. Talked to them? Tap the button.\n"
-            + "Автоворонка включена: письмо и SMS сейчас, письма на 1, 3 и 7 день (на 3 день SMS, если согласие "
-            + "на SMS). Остановится сама, если человек ответит SMS. Уже поговорили? Нажмите кнопку.";
+    static final String FUNNEL_NOTE = "Auto follow-ups are on: email + text now (asks when to call), emails on "
+            + "day 1, 3 and 7. They stop if the person texts back. Talked to them? Tap the button.\n"
+            + "Автоворонка включена: письмо и SMS сейчас (спрашиваем, когда удобно созвониться), письма на 1, 3 "
+            + "и 7 день. Остановится сама, если человек ответит SMS. Уже поговорили? Нажмите кнопку.";
 
     public record Outcome(long id, boolean telegramSent, boolean hubspotSubmitted, String hubspotError) {
     }

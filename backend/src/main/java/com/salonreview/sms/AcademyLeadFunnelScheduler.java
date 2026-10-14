@@ -31,10 +31,10 @@ import java.util.Set;
  * <ol>
  *   <li>{@code confirm_email} right away: the chosen course(s), what happens next, prices and payment plans.</li>
  *   <li>{@code confirm_sms} right away, to anyone who left a phone (it answers their own request, so
- *       transactional), held until 9:00 PT when the request comes in at night.</li>
+ *       transactional): when is a good time for a call with our admissions advisor. Held until 9:00 PT
+ *       when the request comes in at night.</li>
  *   <li>{@code reviews_email} after 1 day: real Google reviews of the academy.</li>
- *   <li>{@code checkin} after 3 days: a text when the person ticked "Text me exclusive offers"
- *       ({@code sms_consent}), an email otherwise.</li>
+ *   <li>{@code checkin} after 3 days: "any questions?" email (owner 2026-10-14: no second text).</li>
  *   <li>{@code payment_email} after 7 days: the $1,000 deposit and payment plans.</li>
  * </ol>
  * The funnel stops for good when staff tap "Stop follow-ups" in the Telegram alert (status
@@ -57,7 +57,7 @@ public class AcademyLeadFunnelScheduler {
     /** Oldest lead still in the funnel: the last step plus its window. */
     static final Duration MAX_LEAD_AGE = Duration.ofDays(10);
 
-    enum Channel { EMAIL, SMS, CHECKIN }
+    enum Channel { EMAIL, SMS }
 
     record Step(String key, Duration due, Duration window, Channel channel, String template, String subject, String preview) {
     }
@@ -68,7 +68,7 @@ public class AcademyLeadFunnelScheduler {
             new Step("confirm_sms", Duration.ZERO, Duration.ofDays(1), Channel.SMS, "academy_request_confirmation", null, null),
             new Step("reviews_email", Duration.ofDays(1), Duration.ofDays(2), Channel.EMAIL, "academy_reviews",
                     "What our students say", "Rated 4.9 on Google by our students."),
-            new Step("checkin", Duration.ofDays(3), Duration.ofDays(2), Channel.CHECKIN, "academy_checkin",
+            new Step("checkin", Duration.ofDays(3), Duration.ofDays(2), Channel.EMAIL, "academy_checkin",
                     "Any questions, {{FNAME}}?", "We're happy to help you pick dates or a payment plan."),
             new Step("payment_email", Duration.ofDays(7), Duration.ofDays(2), Channel.EMAIL, "academy_payment_plans",
                     "Secure your spot with $1,000", "Payment plans with Klarna, Affirm and PayPal.")
@@ -84,18 +84,21 @@ public class AcademyLeadFunnelScheduler {
     private final MailchimpEmailService mailchimp;
     private final MailchimpEmailTemplateService templates;
     private final MarketingContactsRepository contacts;
+    private final MailchimpClient mailchimpClient;
     private final Clock clock;
 
     @Autowired
     public AcademyLeadFunnelScheduler(JdbcTemplate jdbc, SmsAutomationService automationService, TwilioSmsService smsService,
                                       MailchimpConfigRepository mailchimpConfigs, MailchimpEmailService mailchimp,
-                                      MailchimpEmailTemplateService templates, MarketingContactsRepository contacts) {
-        this(jdbc, automationService, smsService, mailchimpConfigs, mailchimp, templates, contacts, Clock.systemUTC());
+                                      MailchimpEmailTemplateService templates, MarketingContactsRepository contacts,
+                                      MailchimpClient mailchimpClient) {
+        this(jdbc, automationService, smsService, mailchimpConfigs, mailchimp, templates, contacts, mailchimpClient, Clock.systemUTC());
     }
 
     AcademyLeadFunnelScheduler(JdbcTemplate jdbc, SmsAutomationService automationService, TwilioSmsService smsService,
                                MailchimpConfigRepository mailchimpConfigs, MailchimpEmailService mailchimp,
-                               MailchimpEmailTemplateService templates, MarketingContactsRepository contacts, Clock clock) {
+                               MailchimpEmailTemplateService templates, MarketingContactsRepository contacts,
+                               MailchimpClient mailchimpClient, Clock clock) {
         this.jdbc = jdbc;
         this.automationService = automationService;
         this.smsService = smsService;
@@ -103,6 +106,7 @@ public class AcademyLeadFunnelScheduler {
         this.mailchimp = mailchimp;
         this.templates = templates;
         this.contacts = contacts;
+        this.mailchimpClient = mailchimpClient;
         this.clock = clock;
     }
 
@@ -164,8 +168,7 @@ public class AcademyLeadFunnelScheduler {
                 jdbc.update("UPDATE academy_lead SET status = 'replied', stopped_at = now() WHERE id = ? AND status = 'new'", lead.id());
                 return;
             }
-            boolean bySms = step.channel() == Channel.SMS || (step.channel() == Channel.CHECKIN && lead.smsConsent() && lead.phone() != null);
-            if (bySms) {
+            if (step.channel() == Channel.SMS) {
                 if (lead.phone() == null) {
                     touch(lead, step, "sms", "skipped_no_phone", null);
                     continue;
@@ -179,6 +182,31 @@ public class AcademyLeadFunnelScheduler {
         }
     }
 
+    /** Opens and clicks for the automations page (AcademyLeadFunnelStats), same Mailchimp activity
+     * report and 14-day window as MailchimpActivitySyncScheduler uses for the win-back emails. */
+    @Scheduled(cron = "0 15/30 * * * *", zone = "America/Los_Angeles")
+    @SchedulerLock(name = "AcademyLeadFunnelScheduler_syncEmailActivity", lockAtLeastFor = "PT10S", lockAtMostFor = "PT10M")
+    public void syncEmailActivity() {
+        MailchimpConfig mc = mailchimpConfigs.findByBusinessId(BUSINESS_ID).filter(MailchimpConfig::isConfigured).orElse(null);
+        if (mc == null) return;
+        var rows = jdbc.queryForList("""
+                SELECT t.id, t.campaign_id, lower(l.email) AS email FROM academy_lead_touch t
+                JOIN academy_lead l ON l.id = t.lead_id
+                WHERE t.campaign_id IS NOT NULL AND t.clicked_at IS NULL AND t.created_at > ?
+                """, java.sql.Timestamp.from(clock.instant().minus(Duration.ofDays(14))));
+        for (var row : rows) {
+            try {
+                var activity = mailchimpClient.fetchAllEmailActivity(mc, (String) row.get("campaign_id")).get((String) row.get("email"));
+                if (activity == null) continue;
+                jdbc.update("UPDATE academy_lead_touch SET opened_at = coalesce(opened_at, ?), clicked_at = coalesce(clicked_at, ?) WHERE id = ?",
+                        activity.openedAt() == null ? null : java.sql.Timestamp.from(activity.openedAt()),
+                        activity.clickedAt() == null ? null : java.sql.Timestamp.from(activity.clickedAt()), row.get("id"));
+            } catch (Exception e) {
+                log.warn("Academy funnel: email activity sync failed for touch {} (retried next run): {}", row.get("id"), e.getMessage());
+            }
+        }
+    }
+
     static boolean inSmsHours(Instant now) {
         LocalTime t = now.atZone(PACIFIC).toLocalTime();
         return !t.isBefore(SMS_FROM) && t.isBefore(SMS_UNTIL);
@@ -186,9 +214,8 @@ public class AcademyLeadFunnelScheduler {
 
     private void sendSms(Lead lead, Step step) {
         if (!touch(lead, step, "sms", "sending", null)) return;
-        String key = step.channel() == Channel.SMS ? "academy_request_confirmation" : "academy_request_checkin";
-        var vars = Map.of("name", firstName(lead.name()), "courses", coursesText(lead.courseName()));
-        var result = smsService.sendTemplated(BUSINESS_ID, key, lead.phone(), vars);
+        var vars = Map.of("name", firstName(lead.name()));
+        var result = smsService.sendTemplated(BUSINESS_ID, step.template(), lead.phone(), vars);
         finish(lead, step, result.sent() ? "sent" : "not_sent", result.sent() ? null : result.reason());
     }
 
@@ -214,9 +241,11 @@ public class AcademyLeadFunnelScheduler {
         if (!touch(lead, step, "email", "sending", null)) return;
         String subject = subject(step, first);
         try {
-            mailchimp.sendWinbackEmail(mc, lead.email(), subject, step.preview(),
+            String campaignId = mailchimp.sendWinbackEmail(mc, lead.email(), subject, step.preview(),
                     "academy_lead_funnel " + step.key() + " lead " + lead.id(), html.get());
             finish(lead, step, "sent", null);
+            jdbc.update("UPDATE academy_lead_touch SET campaign_id = ? WHERE lead_id = ? AND step = ?",
+                    campaignId, lead.id(), step.key());
         } catch (Exception e) {
             log.warn("Academy funnel: {} email for lead {} failed (not retried): {}", step.key(), lead.id(), e.getMessage());
             finish(lead, step, "send_failed", e.getMessage());

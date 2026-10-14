@@ -571,6 +571,18 @@ export interface SmsAutomationSummary {
   // see AutomationReadinessService.
   ready: boolean;
   readinessReason: string | null;
+  // Multi-step sequences (currently academy_lead_funnel, see AcademyLeadFunnelStats): one row per
+  // step with its own 30-day numbers. null for every single-message automation.
+  steps?: AutomationStepStat[] | null;
+}
+
+export interface AutomationStepStat {
+  key: string;
+  label: string;
+  channel: 'sms' | 'email';
+  sent: number;
+  opened: number;
+  clicked: number;
 }
 
 export type SmsMessageDirection = 'OUTBOUND' | 'INBOUND';

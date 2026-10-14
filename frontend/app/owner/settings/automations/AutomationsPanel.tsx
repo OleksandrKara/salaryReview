@@ -41,16 +41,18 @@ const AUTOMATION_NOTICE_THRESHOLD: Set<string> = new Set(['provider_schedule_clo
 // the original nail-salon ones. "general" covers every automation whose mechanism was already
 // business-agnostic before PMU existed (checkout review, lead follow-up, both winbacks, same-day
 // rebooking) — none of them reference nails or PMU specifically in their own logic.
-type AutomationCategory = 'nails' | 'pmu' | 'general';
+type AutomationCategory = 'nails' | 'pmu' | 'academy' | 'general';
 const AUTOMATION_CATEGORY: Record<string, AutomationCategory> = {
   four_hand_request: 'nails',
   consultation_lead_sms: 'pmu',
   touchup_reminder: 'pmu',
   color_booster_reminder: 'pmu',
+  academy_lead_funnel: 'academy',
 };
 const CATEGORY_META: Record<AutomationCategory, { label: string; className: string }> = {
   nails: { label: 'Nails', className: 'bg-rose-50 text-rose-700' },
   pmu: { label: 'PMU', className: 'bg-violet-50 text-violet-700' },
+  academy: { label: 'Academy', className: 'bg-amber-50 text-amber-700' },
   general: { label: 'General', className: 'bg-zinc-100 text-zinc-600' },
 };
 
@@ -92,6 +94,9 @@ const AUTOMATION_CHANNELS: Record<string, Channel[]> = {
   // 2026-09-02: Telegram-only, no SMS leg at all — an internal ops alert to the staff Telegram
   // chat, never a customer-facing message (see ProviderScheduleClosureAlertScheduler).
   provider_schedule_closure_alert: ['telegram'],
+  // 2026-10-14: PMU Academy course requests: emails now and on days 1/3/7, one text asking when
+  // to call, and a staff Telegram alert with a "Stop follow-ups" button (AcademyLeadFunnelScheduler).
+  academy_lead_funnel: ['email', 'sms', 'telegram'],
 };
 const CHANNEL_META: Record<Channel, { label: string; dotClassName: string }> = {
   sms: { label: 'SMS', dotClassName: 'bg-sky-500' },
@@ -281,8 +286,8 @@ function AutomationCard({
   return (
     <div className="flex flex-col gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-1.5">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
             <span className="font-medium text-zinc-900">{automation.name}</span>
             <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${CATEGORY_META[category].className}`}>
               {CATEGORY_META[category].label}
@@ -293,7 +298,9 @@ function AutomationCard({
                 className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600"
                 title={
                   ch === 'email'
-                    ? automation.key === 'checkout_review_request'
+                    ? automation.key === 'academy_lead_funnel'
+                      ? 'Emails right away and on days 1, 3 and 7'
+                      : automation.key === 'checkout_review_request'
                       ? 'Email fallback for customers who never reply to the SMS rating request within 24 hours'
                       : 'Email fallback for customers who don’t click/reply to the SMS by evening'
                     : ch === 'telegram' ? 'Pings staff on Telegram'
@@ -386,7 +393,7 @@ function AutomationCard({
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
                 <path d="M20 6 9 17l-5-5" />
               </svg>
-              {conversionRate} returned
+              {conversionRate} {automation.key === 'academy_lead_funnel' ? 'talked to' : 'returned'}
               <span className="font-normal text-emerald-600/70 tabular-nums">
                 · {automation.convertedLast30Days}/{automation.sentLast30Days}
               </span>
@@ -426,7 +433,7 @@ function AutomationCard({
               </span>
             </span>
           )}
-          {emailConversionRate && (
+          {emailConversionRate && automation.key !== 'academy_lead_funnel' && (
             <span
               data-testid="automation-email-conversion-rate"
               className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700"
@@ -441,6 +448,30 @@ function AutomationCard({
             </span>
           )}
         </div>
+      )}
+
+      {/* Step-by-step numbers for a multi-step sequence: what went out at each step in the last 30
+          days, with opens/clicks for the email steps, so a drop at one step is visible at a glance. */}
+      {automation.steps && automation.steps.length > 0 && (
+        <ol data-testid="automation-steps" className="flex flex-col gap-1 border-t border-zinc-100 pt-2.5">
+          {automation.steps.map((s) => {
+            const open = s.channel === 'email' ? formatRate(s.opened, s.sent) : undefined;
+            const click = s.channel === 'email' ? formatRate(s.clicked, s.sent) : undefined;
+            return (
+              <li key={s.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 text-xs">
+                <span className="inline-flex min-w-0 items-center gap-1.5 text-zinc-600">
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${CHANNEL_META[s.channel].dotClassName}`} aria-hidden />
+                  <span className="truncate">{s.label}</span>
+                </span>
+                <span className="inline-flex items-center justify-end gap-1 text-[11px] tabular-nums">
+                  <span className="text-zinc-500">{s.sent} sent</span>
+                  {open && <span className="rounded-full bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700">{open} open</span>}
+                  {click && <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 font-medium text-indigo-700">{click} click</span>}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
       )}
 
       {hasSettings && (

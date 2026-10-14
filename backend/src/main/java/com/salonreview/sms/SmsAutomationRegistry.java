@@ -73,14 +73,15 @@ public final class SmsAutomationRegistry {
             )),
             Map.entry("academy_lead_funnel", AutomationMeta.sms(
                     "academy_lead_funnel",
-                    "PMU Academy course request follow-ups",
-                    "Everyone who requests a course on pmu-annakara.com/academy (2026-10-14): an email right "
-                            + "away with the request details and payment options, a text asking which dates work, "
-                            + "an email with student reviews after 1 day, a check-in after 3 days (text only with "
-                            + "SMS consent, else email) and a payment-plan email after 7 days. Stops when staff tap "
-                            + "\"stop follow-ups\" in the Telegram alert or the person texts back. See "
-                            + "AcademyLeadFunnelScheduler.",
-                    List.of("academy_request_confirmation", "academy_request_checkin"), false, true, false
+                    "PMU Academy request follow-up",
+                    "Everyone who requests a course on pmu-annakara.com/academy: right away an email with "
+                            + "the course(s), prices and payment plans plus a text asking when to call with "
+                            + "our admissions advisor; then emails on day 1 (student reviews), day 3 (any "
+                            + "questions?) and day 7 (secure your spot). Stops when the person texts back or "
+                            + "staff tap \"Stop follow-ups\" in Telegram (see AcademyLeadFunnelScheduler).",
+                    // replied = leads who texted back, "converted" = leads staff marked as talked to
+                    // (AcademyLeadFunnelStats), both over leads that got the text.
+                    List.of("academy_request_confirmation"), false, true, true
             )),
             Map.entry("consultation_lead_sms", AutomationMeta.sms(
                     "consultation_lead_sms",

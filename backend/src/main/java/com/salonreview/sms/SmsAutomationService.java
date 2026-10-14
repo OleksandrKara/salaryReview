@@ -44,7 +44,8 @@ public class SmsAutomationService {
                                      long emailOpenedLast30Days, long emailClickedLast30Days,
                                      long emailConvertedLast30Days,
                                      boolean ready, String readinessReason,
-                                     SmsAutomationRegistry.Channel channel) {}
+                                     SmsAutomationRegistry.Channel channel,
+                                     List<AcademyLeadFunnelStats.StepStat> steps) {}
 
     /** Automations with an email fallback leg (see {@code WinbackEmailFallbackScheduler}). Drives
      * whether {@link #list} bothers querying {@link WinbackEmailSendRepository} at all for a given
@@ -66,6 +67,14 @@ public class SmsAutomationService {
     private final WinbackEmailSendRepository winbackEmailSendRepository;
     private final AutomationReadinessService readinessService;
     private final ProviderScheduleClosureAlertRepository providerScheduleClosureAlertRepository;
+    private AcademyLeadFunnelStats academyStats;
+
+    /** Setter, not a constructor argument, so the many tests that build this service directly
+     * stay unchanged; without it the academy card simply shows no step numbers. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAcademyStats(AcademyLeadFunnelStats academyStats) {
+        this.academyStats = academyStats;
+    }
 
     public SmsAutomationService(SmsAutomationRepository repository, SmsMessageRepository messageRepository,
                                  LapsedCustomerWinbackSendRepository lapsedCustomerWinbackSendRepository,
@@ -192,12 +201,27 @@ public class SmsAutomationService {
                                 : winbackEmailSendRepository.countConvertedSince(businessId, meta.key(), WinbackEmailSend.STATE_SENT, since);
                     }
 
+                    // The academy request follow-up keeps its numbers in academy_lead/academy_lead_touch:
+                    // replied = leads who texted back, converted = leads staff marked as talked to,
+                    // both over the texts sent; the email row adds up its three email steps.
+                    List<AcademyLeadFunnelStats.StepStat> steps = null;
+                    if ("academy_lead_funnel".equals(meta.key()) && academyStats != null) {
+                        AcademyLeadFunnelStats.Totals t = academyStats.since(businessId, since);
+                        replies = t.replied();
+                        converted = t.contacted();
+                        tracksEmail = true;
+                        emailSent = t.emailSent();
+                        emailOpened = t.emailOpened();
+                        emailClicked = t.emailClicked();
+                        steps = t.steps();
+                    }
+
                     AutomationReadinessService.Readiness readiness = readinessService.readiness(businessId, meta.key());
 
                     return new AutomationSummary(meta.key(), meta.name(), meta.audienceDescription(), enabled, sent,
                             meta.tracksClicks(), linkSent, clicked, meta.tracksReplies(), replies,
                             meta.tracksConversion(), converted, tracksEmail, emailSent, emailOpened, emailClicked,
-                            emailConverted, readiness.ready(), readiness.reason(), meta.channel());
+                            emailConverted, readiness.ready(), readiness.reason(), meta.channel(), steps);
                 })
                 .toList();
     }
