@@ -49,7 +49,9 @@ final class TrafficSourceSql {
      */
     static String notAutomated(String sessionIdExpr) {
         return "NOT EXISTS (SELECT 1 FROM marketing.visits bv WHERE bv.visitor_id = " + sessionIdExpr
-                + " AND (bv.user_agent ~* '" + AUTOMATED_UA_REGEX + "' OR bv.ip_address IN (" + PROVEN_AUTOMATED_IPS + ")))";
+                + " AND (bv.user_agent ~* '" + AUTOMATED_UA_REGEX + "' OR bv.ip_address IN (" + PROVEN_AUTOMATED_IPS + ")"
+                // IPs with 5+ visitor ids and no action at all in 30 days (AutomatedIpScheduler, #51).
+                + " OR bv.ip_address IN (SELECT ip_address FROM marketing_automated_ip)))";
     }
 
     static final String AUTOMATED_UA_REGEX =
