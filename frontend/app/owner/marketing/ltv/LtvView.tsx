@@ -21,6 +21,7 @@ const CHANNEL_COLORS: Record<string, string> = {
   google_ads: '#0891b2', // cyan
   instagram_organic: '#db2777', // pink
   google_organic: '#16a34a', // green
+  yelp: '#d32323', // Yelp red
   direct: '#71717a', // zinc
   other: '#a1a1aa',
 };
