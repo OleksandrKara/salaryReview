@@ -588,6 +588,12 @@ public class TelegramNotificationService {
     /** Plain-text staff alert (online booking health checks, BookingHealthCheckScheduler). Same
      * staff chat and never-throws contract as every other send method here. */
     public boolean sendPlainAlert(Long businessId, String text) {
+        return sendPlainAlert(businessId, text, null, null);
+    }
+
+    /** {@link #sendPlainAlert(Long, String)} plus one URL button under the message (skipped when
+     * {@code buttonUrl} is null), e.g. the academy lead "Stop follow-ups" link. */
+    public boolean sendPlainAlert(Long businessId, String text, String buttonText, String buttonUrl) {
         TelegramNotificationConfig cfg = configService.get(businessId);
         String token = cfg.getBotToken();
         String chatId = cfg.getChatId();
@@ -596,8 +602,12 @@ public class TelegramNotificationService {
             return false;
         }
         try {
-            Map<String, Object> reqBody = Map.of("chat_id", chatId, "text", businessLabel(businessId) + text,
-                    "disable_web_page_preview", true);
+            Map<String, Object> reqBody = new java.util.HashMap<>(Map.of("chat_id", chatId, "text", businessLabel(businessId) + text,
+                    "disable_web_page_preview", true));
+            if (buttonUrl != null) {
+                Map<String, Object> button = Map.of("text", buttonText, "url", buttonUrl);
+                reqBody.put("reply_markup", Map.of("inline_keyboard", java.util.List.of(java.util.List.of(button))));
+            }
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
                     .timeout(Duration.ofSeconds(5))

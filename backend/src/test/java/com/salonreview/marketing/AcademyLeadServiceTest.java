@@ -58,11 +58,11 @@ class AcademyLeadServiceTest {
         TelegramNotificationService telegram = mock(TelegramNotificationService.class);
         HubSpotFormClient hubspot = mock(HubSpotFormClient.class);
         when(jdbc.queryForObject(anyString(), eq(Long.class), any(Object[].class))).thenReturn(42L);
-        when(telegram.sendPlainAlert(eq(2L), anyString())).thenReturn(true);
+        when(telegram.sendPlainAlert(eq(2L), anyString(), anyString(), any())).thenReturn(true);
         when(hubspot.submit(eq("jane@example.com"), anyMap(), anyString(), anyString()))
                 .thenReturn(new HubSpotFormClient.Result(false, "HTTP 400: bad form"));
 
-        var out = new AcademyLeadService(jdbc, telegram, hubspot).submit(2L, lead("Jane", "jane@example.com", false));
+        var out = new AcademyLeadService(jdbc, telegram, hubspot, mock(AcademyLeadLinks.class)).submit(2L, lead("Jane", "jane@example.com", false));
 
         assertThat(out.id()).isEqualTo(42L);
         assertThat(out.telegramSent()).isTrue();

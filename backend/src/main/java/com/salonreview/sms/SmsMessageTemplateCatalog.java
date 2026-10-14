@@ -56,6 +56,24 @@ public final class SmsMessageTemplateCatalog {
                             + "shortly to confirm timing & pricing! -{{businessName}}"),
                     List.of("name", "preferredTime", "businessName")
             )),
+            // PMU Academy follow-ups (AcademyLeadFunnelScheduler). The confirmation answers the
+            // person's own request (transactional). The 3-day check-in is only ever sent by the
+            // scheduler to leads who ticked "Text me exclusive offers" (academy_lead.sms_consent):
+            // academy leads are not in marketing.contacts, so that gate lives in the scheduler.
+            Map.entry("academy_request_confirmation", new TemplateDefault(
+                    "academy_request_confirmation", "academy_lead_funnel", SmsMessageClass.TRANSACTIONAL,
+                    "Academy request received",
+                    List.of("Hi {{name}}, it's Anastasia and Anna from Anna Kara's PMU Academy. We got your request "
+                            + "for {{courses}}! Which dates work best for you? Just reply here."),
+                    List.of("name", "courses")
+            )),
+            Map.entry("academy_request_checkin", new TemplateDefault(
+                    "academy_request_checkin", "academy_lead_funnel", SmsMessageClass.TRANSACTIONAL,
+                    "Academy check-in (3 days, SMS consent only)",
+                    List.of("Hi {{name}}, any questions about {{courses}}? We're happy to help you pick dates or a "
+                            + "payment plan. Reply here or call (619) 323-1185. Reply STOP to opt out."),
+                    List.of("name", "courses")
+            )),
             // Same shape as four_hand_request_received (a booking-confirmation text, not a reply-
             // ask) — added because Square's own confirmation text doesn't reliably fire for a PMU
             // consultation booking (Business 2 automation #1). Relayed through the same
