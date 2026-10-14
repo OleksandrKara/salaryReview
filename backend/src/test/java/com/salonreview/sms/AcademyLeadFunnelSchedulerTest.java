@@ -47,7 +47,7 @@ class AcademyLeadFunnelSchedulerTest {
 
     private AcademyLeadFunnelScheduler scheduler(Instant now) {
         return new AcademyLeadFunnelScheduler(jdbc, mock(SmsAutomationService.class), sms, mock(MailchimpConfigRepository.class),
-                mailchimp, templates, contacts, Clock.fixed(now, ZoneOffset.UTC));
+                mailchimp, templates, contacts, mock(MailchimpClient.class), Clock.fixed(now, ZoneOffset.UTC));
     }
 
     private void done(String... steps) {
@@ -69,11 +69,10 @@ class AcademyLeadFunnelSchedulerTest {
     }
 
     @Test
-    void confirmationTextNamesTheCourses() {
+    void confirmationTextAsksWhenToCall() {
         done("confirm_email");
         scheduler(DAY).advance(lead(DAY.minusSeconds(90), false), mc, DAY);
-        verify(sms).sendTemplated(2L, "academy_request_confirmation", "+16195550100",
-                Map.of("name", "Jane", "courses", "Brows Basic Course and Lips Basic Course"));
+        verify(sms).sendTemplated(2L, "academy_request_confirmation", "+16195550100", Map.of("name", "Jane"));
     }
 
     @Test
@@ -85,16 +84,13 @@ class AcademyLeadFunnelSchedulerTest {
     }
 
     @Test
-    void checkinIsATextOnlyWithSmsConsent() throws Exception {
+    void checkinIsAlwaysAnEmail() throws Exception {
         done("confirm_email", "confirm_sms", "reviews_email");
-        Instant created = DAY.minus(Duration.ofDays(3)).minusSeconds(60);
-        scheduler(DAY).advance(lead(created, true), mc, DAY);
-        verify(sms).sendTemplated(eq(2L), eq("academy_request_checkin"), anyString(), anyMap());
-
-        reset(sms);
-        scheduler(DAY).advance(lead(created, false), mc, DAY);
+        when(mailchimp.sendWinbackEmail(any(), anyString(), anyString(), anyString(), anyString(), anyString())).thenReturn("c1");
+        scheduler(DAY).advance(lead(DAY.minus(Duration.ofDays(3)).minusSeconds(60), true), mc, DAY);
         verifyNoInteractions(sms);
         verify(mailchimp).sendWinbackEmail(eq(mc), anyString(), eq("Any questions, Jane?"), anyString(), contains("checkin"), anyString());
+        verify(jdbc).update(contains("SET campaign_id"), eq("c1"), eq(7L), eq("checkin"));
     }
 
     @Test
