@@ -1156,9 +1156,12 @@ function CompetitorsCard() {
 export default function SeoDashboardView({
   initialData,
   canUseAiAdvisor,
+  site,
 }: {
   initialData: SeoOverviewDto;
   canUseAiAdvisor: boolean;
+  /** 'studio' | 'academy' when the business has the academy as its own site; undefined = all pages. */
+  site?: string;
 }) {
   const [data, setData] = useState(initialData);
   const [syncing, setSyncing] = useState(false);
@@ -1172,7 +1175,7 @@ export default function SeoDashboardView({
     setSyncing(true);
     setSyncError(null);
     try {
-      setData(await api.syncSeoNow());
+      setData(await api.syncSeoNow(site));
     } catch (e) {
       setSyncError(e instanceof Error ? e.message : 'Sync failed. Please try again.');
     } finally {
@@ -1184,7 +1187,7 @@ export default function SeoDashboardView({
     setTrackedQueryPending(query);
     setTrackedQueryError(null);
     try {
-      setData(await api.addSeoTrackedQuery(query));
+      setData(await api.addSeoTrackedQuery(query, site));
     } catch (e) {
       setTrackedQueryError(e instanceof Error ? e.message : 'Could not pin that query. Please try again.');
     } finally {
@@ -1196,7 +1199,7 @@ export default function SeoDashboardView({
     setTrackedQueryPending(query);
     setTrackedQueryError(null);
     try {
-      setData(await api.removeSeoTrackedQuery(query));
+      setData(await api.removeSeoTrackedQuery(query, site));
     } catch (e) {
       setTrackedQueryError(e instanceof Error ? e.message : 'Could not unpin that query. Please try again.');
     } finally {
@@ -1208,7 +1211,7 @@ export default function SeoDashboardView({
     setTrackedKeywordPending(0); // no id yet for a not-yet-created row — any non-null value disables the form
     setTrackedKeywordError(null);
     try {
-      setData(await api.addSeoTrackedKeyword(keyword, location, device, targetUrl));
+      setData(await api.addSeoTrackedKeyword(keyword, location, device, targetUrl, site));
     } catch (e) {
       setTrackedKeywordError(e instanceof Error ? e.message : 'Could not add that keyword. Please try again.');
     } finally {
@@ -1220,7 +1223,7 @@ export default function SeoDashboardView({
     setTrackedKeywordPending(id);
     setTrackedKeywordError(null);
     try {
-      setData(await api.removeSeoTrackedKeyword(id));
+      setData(await api.removeSeoTrackedKeyword(id, site));
     } catch (e) {
       setTrackedKeywordError(e instanceof Error ? e.message : 'Could not remove that keyword. Please try again.');
     } finally {

@@ -53,9 +53,10 @@ public class SeoDashboardController {
     }
 
     @GetMapping("/overview")
-    public SeoOverviewDto overview(@RequestParam(required = false, defaultValue = "" + DEFAULT_TREND_DAYS) int days) {
+    public SeoOverviewDto overview(@RequestParam(required = false, defaultValue = "" + DEFAULT_TREND_DAYS) int days,
+                                   @RequestParam(required = false) String site) {
         Long businessId = requireFeatureEnabled();
-        return toDto(dashboardService.overview(businessId, days));
+        return toDto(dashboardService.overview(businessId, days, site(site)));
     }
 
     /** Deliberately does NOT call {@code syncPageSpeed} here. PageSpeed/Lighthouse is the one
@@ -69,11 +70,11 @@ public class SeoDashboardController {
      * a couple seconds, so the button now stays fast and reliable for the data it can safely
      * refresh on demand. */
     @PostMapping("/sync")
-    public SeoOverviewDto sync() {
+    public SeoOverviewDto sync(@RequestParam(required = false) String site) {
         Long businessId = requireFeatureEnabled();
         syncService.syncSearchConsole(businessId);
         syncService.syncAnalytics(businessId);
-        return toDto(dashboardService.overview(businessId, DEFAULT_TREND_DAYS));
+        return toDto(dashboardService.overview(businessId, DEFAULT_TREND_DAYS, site(site)));
     }
 
     /** Falls through to the {@code /api/owner/**} OWNER-only catch-all, same as {@code /sync} —
@@ -81,28 +82,30 @@ public class SeoDashboardController {
      * grant covers. Blank/whitespace-only query is rejected here rather than in the service, so a
      * bad request never reaches the repository at all. */
     @PostMapping("/tracked-queries")
-    public SeoOverviewDto addTrackedQuery(@RequestBody TrackedQueryRequest request) {
+    public SeoOverviewDto addTrackedQuery(@RequestBody TrackedQueryRequest request,
+                                          @RequestParam(required = false) String site) {
         Long businessId = requireFeatureEnabled();
         String query = request.query() == null ? "" : request.query().trim();
         if (query.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "query must not be blank");
         }
         dashboardService.addTrackedQuery(businessId, query);
-        return toDto(dashboardService.overview(businessId, DEFAULT_TREND_DAYS));
+        return toDto(dashboardService.overview(businessId, DEFAULT_TREND_DAYS, site(site)));
     }
 
     @DeleteMapping("/tracked-queries")
-    public SeoOverviewDto removeTrackedQuery(@RequestParam String query) {
+    public SeoOverviewDto removeTrackedQuery(@RequestParam String query, @RequestParam(required = false) String site) {
         Long businessId = requireFeatureEnabled();
         dashboardService.removeTrackedQuery(businessId, query);
-        return toDto(dashboardService.overview(businessId, DEFAULT_TREND_DAYS));
+        return toDto(dashboardService.overview(businessId, DEFAULT_TREND_DAYS, site(site)));
     }
 
     /** Owner-curated keyword rank-tracking list (seo-intelligence-advisor Phase 4) — no real rank
      * check happens yet (Phase 5), this only lets the owner build the list. Same owner-only,
      * blank-rejected-here convention as {@code /tracked-queries}. */
     @PostMapping("/tracked-keywords")
-    public SeoOverviewDto addTrackedKeyword(@RequestBody TrackedKeywordRequest request) {
+    public SeoOverviewDto addTrackedKeyword(@RequestBody TrackedKeywordRequest request,
+                                            @RequestParam(required = false) String site) {
         Long businessId = requireFeatureEnabled();
         String keyword = request.keyword() == null ? "" : request.keyword().trim();
         String location = request.location() == null ? "" : request.location().trim();
@@ -118,14 +121,23 @@ public class SeoDashboardController {
         }
         String targetUrl = request.targetUrl() == null || request.targetUrl().isBlank() ? null : request.targetUrl().trim();
         dashboardService.addTrackedKeyword(businessId, keyword, location, device, targetUrl);
-        return toDto(dashboardService.overview(businessId, DEFAULT_TREND_DAYS));
+        return toDto(dashboardService.overview(businessId, DEFAULT_TREND_DAYS, site(site)));
     }
 
     @DeleteMapping("/tracked-keywords/{id}")
-    public SeoOverviewDto removeTrackedKeyword(@PathVariable Long id) {
+    public SeoOverviewDto removeTrackedKeyword(@PathVariable Long id, @RequestParam(required = false) String site) {
         Long businessId = requireFeatureEnabled();
         dashboardService.removeTrackedKeyword(businessId, id);
-        return toDto(dashboardService.overview(businessId, DEFAULT_TREND_DAYS));
+        return toDto(dashboardService.overview(businessId, DEFAULT_TREND_DAYS, site(site)));
+    }
+
+    /** "all" (default), "studio" or "academy", see SeoSite. */
+    private static String site(String site) {
+        if (site == null || site.isBlank()) return null;
+        if (!com.salonreview.seo.SeoSite.VALUES.contains(site)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "site must be all, studio or academy");
+        }
+        return site;
     }
 
     private Long requireFeatureEnabled() {

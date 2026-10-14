@@ -88,9 +88,20 @@ public class AiVisibilityQueryService {
     }
 
     public Overview overview(Long businessId) {
+        return overview(businessId, null);
+    }
+
+    /** {@code site} as in {@link com.salonreview.seo.SeoSite}: "academy" keeps the PMU Academy's
+     * questions (topic "academy" or an academy target page), "studio" the rest, null/"all" every
+     * question. Totals, "named instead" and "sources instead" are computed over the same subset. */
+    public Overview overview(Long businessId, String site) {
         Optional<AiVisibilitySettings> settings = settingsRepo.findById(businessId);
-        List<AiVisibilityQuery> qs = queries.findByBusinessIdAndStatusInOrderBySortOrderAscIdAsc(businessId, VISIBLE);
-        List<AiVisibilityCheck> all = checks.findByBusinessIdOrderByCheckedAtDesc(businessId);
+        List<AiVisibilityQuery> qs = queries.findByBusinessIdAndStatusInOrderBySortOrderAscIdAsc(businessId, VISIBLE).stream()
+                .filter(q -> inSite(site, q)).toList();
+        java.util.Set<Long> qIds = qs.stream().map(AiVisibilityQuery::getId).collect(java.util.stream.Collectors.toSet());
+        boolean scoped = !com.salonreview.seo.SeoSite.isAll(site);
+        List<AiVisibilityCheck> all = checks.findByBusinessIdOrderByCheckedAtDesc(businessId).stream()
+                .filter(c -> !scoped || qIds.contains(c.getQueryId())).toList();
         Instant now = Instant.now();
 
         Map<Long, Map<Engine, List<AiVisibilityCheck>>> byQuery = new HashMap<>();
@@ -110,7 +121,7 @@ public class AiVisibilityQueryService {
         }
 
         List<AiVisibilityRun> lastTwo = runs.findTop2ByBusinessIdAndTriggerAndFinishedAtIsNotNullOrderByStartedAtDesc(businessId, AiVisibilityRun.Trigger.SCHEDULED);
-        List<EngineTotal> totals = engineTotals(businessId, lastTwo);
+        List<EngineTotal> totals = engineTotals(businessId, lastTwo, scoped ? qIds : null);
         AiVisibilityRun runningRun = runs.findTop1ByBusinessIdOrderByStartedAtDesc(businessId)
                 .filter(r -> r.getFinishedAt() == null && r.getStartedAt().isAfter(now.minus(Duration.ofHours(24)))).orElse(null);
         // An unfinished run is shown as running even while a restart is being picked up (resumeStaleRuns).
@@ -136,6 +147,12 @@ public class AiVisibilityQueryService {
                 settings.map(AiVisibilitySettings::isDigestEnabled).orElse(false), settings.map(AiVisibilitySettings::getNextActions).orElse(null),
                 totals, rows, rankPlaces(recentMissing, queryText, 8), rankSources(recentMissing, queryText, ownDomains, 8), running,
                 settings.map(AiVisibilitySettings::getSearchPoints).orElse(List.of()), runningDone, runningTotal);
+    }
+
+    static boolean inSite(String site, AiVisibilityQuery q) {
+        if (com.salonreview.seo.SeoSite.isAll(site)) return true;
+        boolean academy = "academy".equalsIgnoreCase(q.getTopic()) || com.salonreview.seo.SeoSite.isAcademyUrl(q.getTargetUrl());
+        return com.salonreview.seo.SeoSite.ACADEMY.equals(site) ? academy : !academy;
     }
 
     static Cell cell(List<AiVisibilityCheck> newestFirst, Instant now) {
@@ -176,10 +193,17 @@ public class AiVisibilityQueryService {
     }
 
     List<EngineTotal> engineTotals(Long businessId, List<AiVisibilityRun> lastTwo) {
+        return engineTotals(businessId, lastTwo, null);
+    }
+
+    /** {@code onlyQueries}: count just these questions' checks (a site's subset); null = all. */
+    List<EngineTotal> engineTotals(Long businessId, List<AiVisibilityRun> lastTwo, java.util.Set<Long> onlyQueries) {
         List<EngineTotal> out = new ArrayList<>();
         if (lastTwo.isEmpty()) return out;
-        Map<Engine, int[]> cur = countByEngine(checks.findByBusinessIdAndRunId(businessId, lastTwo.get(0).getId()));
-        Map<Engine, int[]> prev = lastTwo.size() > 1 ? countByEngine(checks.findByBusinessIdAndRunId(businessId, lastTwo.get(1).getId())) : null;
+        java.util.function.Function<Long, List<AiVisibilityCheck>> runChecks = runId -> checks.findByBusinessIdAndRunId(businessId, runId)
+                .stream().filter(c -> onlyQueries == null || onlyQueries.contains(c.getQueryId())).toList();
+        Map<Engine, int[]> cur = countByEngine(runChecks.apply(lastTwo.get(0).getId()));
+        Map<Engine, int[]> prev = lastTwo.size() > 1 ? countByEngine(runChecks.apply(lastTwo.get(1).getId())) : null;
         for (Engine e : Engine.values()) {
             int[] c = cur.getOrDefault(e, new int[2]);
             Integer p = prev == null || !prev.containsKey(e) ? null : prev.get(e)[0];
