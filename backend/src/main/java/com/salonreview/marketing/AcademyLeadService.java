@@ -72,9 +72,15 @@ public class AcademyLeadService {
             sb.append("📩 Academy newsletter subscriber\n#academy #academy_subscriber\n");
         } else {
             sb.append("🎓 Academy course request\n#academy #academy_lead");
-            if (notBlank(l.courseSlug())) sb.append(" #course_").append(l.courseSlug().replaceAll("[^A-Za-z0-9]+", "_"));
+            // Several courses can be picked (comma-separated slugs, names joined with "; ").
+            if (notBlank(l.courseSlug())) {
+                for (String slug : l.courseSlug().split(",")) {
+                    if (!slug.isBlank()) sb.append(" #course_").append(slug.trim().replaceAll("[^A-Za-z0-9]+", "_"));
+                }
+            }
             sb.append('\n');
-            sb.append("Course: ").append(blankTo(l.courseName(), "not chosen")).append('\n');
+            boolean several = notBlank(l.courseName()) && l.courseName().contains("; ");
+            sb.append(several ? "Courses: " : "Course: ").append(blankTo(l.courseName(), "not chosen")).append('\n');
             sb.append("Name: ").append(l.name()).append('\n');
         }
         if (notBlank(l.phone())) sb.append("Phone: ").append(l.phone()).append('\n');

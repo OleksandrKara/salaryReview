@@ -26,6 +26,16 @@ class AcademyLeadServiceTest {
     }
 
     @Test
+    void severalCoursesGetOneHashtagEach() {
+        var l = new AcademyLeadService.AcademyLead("course_request", "Jane", "+16195550100", "jane@example.com",
+                "brows-permanent-makeup-basic,lips-permanent-makeup-basic", "Brows Basic Course; Lips Basic Course", null,
+                false, true, null, null, null, null, null);
+        assertThat(AcademyLeadService.formatAlert(l))
+                .contains("#academy_lead #course_brows_permanent_makeup_basic #course_lips_permanent_makeup_basic\n")
+                .contains("Courses: Brows Basic Course; Lips Basic Course");
+    }
+
+    @Test
     void subscriberAlertHasItsOwnHashtag() {
         var sub = new AcademyLeadService.AcademyLead("subscribe", "Newsletter subscriber", null, "jane@example.com", null, null,
                 "Subscribed to academy news", false, true, "https://pmu-annakara.com/academy/", null, null, null, null);
