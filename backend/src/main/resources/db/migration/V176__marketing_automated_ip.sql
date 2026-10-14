@@ -8,12 +8,5 @@ CREATE TABLE marketing_automated_ip (
     detected_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-INSERT INTO marketing_automated_ip (ip_address, visitors)
-WITH v AS (SELECT ip_address AS ip, visitor_id FROM marketing.visits
-           WHERE occurred_at > now() - interval '30 days' AND ip_address IS NOT NULL AND ip_address <> ''),
-act AS (SELECT session_id AS vid FROM marketing.events WHERE event_type <> 'page_view' AND created_at > now() - interval '30 days'
-        UNION SELECT session_id FROM marketing.funnel_events WHERE created_at > now() - interval '30 days'
-        UNION SELECT visitor_id FROM marketing.submissions WHERE occurred_at > now() - interval '30 days' AND visitor_id IS NOT NULL)
-SELECT ip, count(DISTINCT visitor_id) FROM v GROUP BY ip
-HAVING count(DISTINCT visitor_id) >= 5
-   AND count(DISTINCT visitor_id) FILTER (WHERE visitor_id IN (SELECT vid FROM act)) = 0;
+-- Filled by AutomatedIpScheduler (marketing.* lives in the salonLandings-managed schema, which
+-- this repo's test database does not have, so no initial INSERT here).
