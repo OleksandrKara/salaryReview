@@ -215,6 +215,10 @@ public class MarketingContactsRepository {
         String sql = "SELECT " + CONTACT_COLUMNS + ", " + TrafficSourceSql.contactChannelCase("c") + " AS channel"
                 + " FROM marketing.contacts c"
                 + " WHERE c.business_id = ? AND c.updated_at <= ? AND c.updated_at >= ?"
+                // PMU Academy course requests (landing page "academy", 2026-10-14) have their own
+                // follow-up (AcademyLeadFunnelScheduler); the studio's "started booking online" nudge
+                // would be wrong for them.
+                + " AND c.landing_page_slug IS DISTINCT FROM 'academy'"
                 + " AND NOT EXISTS (SELECT 1 FROM lead_followup_send lfs"
                 + "     WHERE lfs.contact_id = c.id AND lfs.contact_updated_at >= c.updated_at)"
                 + " ORDER BY c.updated_at ASC";
