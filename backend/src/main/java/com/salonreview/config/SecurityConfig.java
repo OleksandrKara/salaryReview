@@ -117,6 +117,9 @@ public class SecurityConfig {
                         // HMAC-signed per row (ConsultationFollowUpLinks), opened from staff phones with no
                         // session, and it can only ever stop messages, never send them.
                         .requestMatchers("/api/public/consultation-follow-up/stop").permitAll()
+                        // Academy lead "Stop follow-ups" link from the staff Telegram alert, same shape
+                        // (AcademyLeadLinks, AcademyLeadStopController).
+                        .requestMatchers("/api/public/academy-lead/stop").permitAll()
                         // Retention is read-only visibility for managers too (same data as owners, no
                         // other owner routes). Listed first so it wins over the owner-only catch-all.
                         .requestMatchers(HttpMethod.GET, "/api/owner/retention", "/api/owner/retention/**")

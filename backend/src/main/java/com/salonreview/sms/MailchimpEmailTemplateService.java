@@ -49,7 +49,12 @@ public class MailchimpEmailTemplateService {
                     Map.entry("consultation_follow_up_info", "email-templates/business-2/consultation_follow_up_info.html"),
                     Map.entry("consultation_follow_up_offer", "email-templates/business-2/consultation_follow_up_offer.html"),
                     Map.entry("consultation_reengage_offer", "email-templates/business-2/consultation_reengage_offer.html"),
-                    Map.entry("lead_follow_up", "email-templates/business-2/lead_follow_up.html")
+                    Map.entry("lead_follow_up", "email-templates/business-2/lead_follow_up.html"),
+                    // PMU Academy course requests (AcademyLeadFunnelScheduler).
+                    Map.entry("academy_request_confirmation", "email-templates/business-2/academy_request_confirmation.html"),
+                    Map.entry("academy_reviews", "email-templates/business-2/academy_reviews.html"),
+                    Map.entry("academy_checkin", "email-templates/business-2/academy_checkin.html"),
+                    Map.entry("academy_payment_plans", "email-templates/business-2/academy_payment_plans.html")
             )
     );
 

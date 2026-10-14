@@ -23,15 +23,18 @@ public class AcademyLeadService {
     private final JdbcTemplate jdbc;
     private final TelegramNotificationService telegram;
     private final HubSpotFormClient hubspot;
+    private final AcademyLeadLinks links;
 
-    public AcademyLeadService(JdbcTemplate jdbc, TelegramNotificationService telegram, HubSpotFormClient hubspot) {
+    public AcademyLeadService(JdbcTemplate jdbc, TelegramNotificationService telegram, HubSpotFormClient hubspot,
+                              AcademyLeadLinks links) {
         this.jdbc = jdbc;
         this.telegram = telegram;
         this.hubspot = hubspot;
+        this.links = links;
     }
 
     /** {@code kind}: "subscribe" for the email-only "Subscribe now" band, anything else is a course
-     * request. Only used for the alert wording and hashtags. */
+     * request. Sets the alert wording and hashtags, and only course requests get the follow-up funnel. */
     public record AcademyLead(String kind, String name, String phone, String email, String courseSlug, String courseName,
                               String message, boolean smsConsent, boolean emailConsent, String sourcePageUrl,
                               String utmSource, String utmMedium, String utmCampaign, String gclid) {
@@ -40,19 +43,29 @@ public class AcademyLeadService {
         }
     }
 
+    static final String FUNNEL_NOTE = "Auto follow-ups are on: email + text now, emails on day 1, 3 and 7 "
+            + "(day 3 by text if OK to text). They stop if the person texts back. Talked to them? Tap the button.\n"
+            + "Автоворонка включена: письмо и SMS сейчас, письма на 1, 3 и 7 день (на 3 день SMS, если согласие "
+            + "на SMS). Остановится сама, если человек ответит SMS. Уже поговорили? Нажмите кнопку.";
+
     public record Outcome(long id, boolean telegramSent, boolean hubspotSubmitted, String hubspotError) {
     }
 
     public Outcome submit(long businessId, AcademyLead l) {
         Long id = jdbc.queryForObject("""
-                INSERT INTO academy_lead (business_id, name, phone, email, course_slug, course_name, message,
+                INSERT INTO academy_lead (business_id, kind, name, phone, email, course_slug, course_name, message,
                     sms_consent, email_consent, source_page_url, utm_source, utm_medium, utm_campaign, gclid)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
-                """, Long.class, businessId, l.name(), l.phone(), l.email(), l.courseSlug(), l.courseName(),
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+                """, Long.class, businessId, l.isSubscription() ? "subscribe" : "course_request", l.name(), l.phone(), l.email(), l.courseSlug(), l.courseName(),
                 l.message(), l.smsConsent(), l.emailConsent(), l.sourcePageUrl(), l.utmSource(), l.utmMedium(),
                 l.utmCampaign(), l.gclid());
 
-        boolean sent = telegram.sendPlainAlert(businessId, formatAlert(l));
+        // Course requests get the automatic follow-up funnel (AcademyLeadFunnelScheduler); the button
+        // stops it once staff have talked to the person.
+        boolean sent = l.isSubscription()
+                ? telegram.sendPlainAlert(businessId, formatAlert(l))
+                : telegram.sendPlainAlert(businessId, formatAlert(l) + "\n\n" + FUNNEL_NOTE,
+                        "🛑 Stop follow-ups / Остановить рассылку", links.stopUrl(id));
 
         HubSpotFormClient.Result hs = hubspot.submit(l.email(), hubspotProperties(l), l.sourcePageUrl(),
                 "PMU Academy: " + (notBlank(l.courseName()) ? l.courseName() : "course request"));
