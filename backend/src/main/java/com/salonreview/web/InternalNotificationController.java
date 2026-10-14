@@ -395,7 +395,7 @@ public class InternalNotificationController {
         com.salonreview.marketing.AcademyLeadService.Outcome o = academyLeads.submit(business.getId(),
                 new com.salonreview.marketing.AcademyLeadService.AcademyLead(
                         clip(body.kind(), 40), clip(body.name(), 200), clip(body.phone(), 40), clip(body.email(), 200),
-                        clip(body.courseSlug(), 120), clip(body.courseName(), 200), clip(body.message(), 2000),
+                        clip(body.courseSlug(), 1000), clip(body.courseName(), 1000), clip(body.message(), 2000),
                         Boolean.TRUE.equals(body.smsConsent()), Boolean.TRUE.equals(body.emailConsent()),
                         clip(body.sourcePageUrl(), 500),
                         clip(body.utmSource(), 200), clip(body.utmMedium(), 200), clip(body.utmCampaign(), 200),
