@@ -38,6 +38,7 @@ import type {
   SeoOverviewDto,
   SeoAnalysisResult,
   SeoCompetitorRow,
+  AiQuestionSuggestion,
   BusinessSettingsDto,
   BusinessSettingsUpdateRequest,
   PlatformBusinessDto,
@@ -322,6 +323,8 @@ export const api = {
   getAiVisibilityOverview: (site?: string) =>
     proxyGet<AiVisibilityOverview>(`/api/owner/marketing/ai/overview${site ? `?site=${site}` : ''}`),
   getAiQueryHistory: (id: number) => proxyGet<AiHistoryItem[]>(`/api/owner/marketing/ai/queries/${id}/history`),
+  getAiQuestionSuggestions: (site?: string) =>
+    proxyGet<AiQuestionSuggestion[]>(`/api/owner/marketing/ai/suggestions${site ? `?site=${site}` : ''}`),
   addAiQuery: (query: string, topic: string | null, nearMe = false) =>
     proxyJson<{ id: number }>(`/api/owner/marketing/ai/queries`, 'POST', { query, topic, nearMe }),
   updateAiQuery: (id: number, patch: { query?: string; topic?: string; targetUrl?: string; status?: string; sortOrder?: number }) =>
