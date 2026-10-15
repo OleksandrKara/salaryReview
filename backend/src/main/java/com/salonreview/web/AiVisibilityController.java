@@ -32,10 +32,13 @@ public class AiVisibilityController {
     private final AiReferralStatsRepository aiReferrals;
     private final BusinessFeatureService businessFeatures;
     private final CurrentBusinessContext currentBusinessContext;
+    private final com.salonreview.aivisibility.AiQuestionSuggestionService suggestionService;
 
     public AiVisibilityController(AiVisibilityQueryService readModel, AiVisibilityAdminService admin, AiVisibilityPageService pages,
             SeoCompetitorService competitors, AiReferralStatsRepository aiReferrals, BusinessFeatureService businessFeatures,
-            CurrentBusinessContext currentBusinessContext) {
+            CurrentBusinessContext currentBusinessContext,
+            com.salonreview.aivisibility.AiQuestionSuggestionService suggestionService) {
+        this.suggestionService = suggestionService;
         this.readModel = readModel;
         this.admin = admin;
         this.pages = pages;
@@ -71,6 +74,16 @@ public class AiVisibilityController {
     @GetMapping("/traffic")
     public AiReferralStatsRepository.Stats traffic(@RequestParam(defaultValue = "90") int days) {
         return aiReferrals.stats(requireFeatureEnabled(), Math.max(7, Math.min(days, 365)));
+    }
+
+    /** Searches the assistants ran themselves that we don't track yet (AiQuestionSuggestionService). */
+    @GetMapping("/suggestions")
+    public List<com.salonreview.aivisibility.AiQuestionSuggestionService.Suggestion> suggestions(@RequestParam(required = false) String site) {
+        if (site != null && !site.isBlank() && !com.salonreview.seo.SeoSite.VALUES.contains(site)) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "site must be all, studio or academy");
+        }
+        return suggestionService.suggestions(requireFeatureEnabled(), site);
     }
 
     @GetMapping("/queries/{id}/history")

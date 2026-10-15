@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../../lib/api';
 import type { AiCell, AiEngine, AiSearchPoint, AiHistoryItem, AiPageComparison, AiPageGap, AiQueryRow, AiRanked, AiVisibilityOverview, AiVisibilitySettingsDto } from '../../../lib/types';
+import type { AiQuestionSuggestion } from '../../../lib/types';
 import { Spinner } from '../../../components/Spinner';
 import { AiTrafficPanel, AiTrendsPanel } from './AiInsights';
 
@@ -399,6 +400,8 @@ export default function AiVisibilityView({
       <AiTrendsPanel />
 
       <PageGapsPanel />
+
+      <SuggestionsPanel site={site} canEdit={canEdit} onAdded={refresh} />
 
       <section className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
         <RankedList title="Who AI recommends instead" hint="Places named on questions where we were missing (last 4 weeks)" items={data.placesInstead} canAddCompetitor={canEdit} />
@@ -1014,6 +1017,81 @@ function SettingsPanel() {
           {msg && <p className="text-xs text-zinc-600">{msg}</p>}
         </div>
       )}
+    </section>
+  );
+}
+
+/** Searches the assistants ran themselves while answering our questions, that we don't track yet
+ * (Notion #27). One click proposes it as a tracked question (same add flow and 20-question cap). */
+function SuggestionsPanel({
+  site,
+  canEdit,
+  onAdded,
+}: {
+  site?: string;
+  canEdit: boolean;
+  onAdded: () => Promise<void>;
+}) {
+  const [items, setItems] = useState<AiQuestionSuggestion[] | null>(null);
+  const [added, setAdded] = useState<Set<string>>(new Set());
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getAiQuestionSuggestions(site)
+      .then((r) => !cancelled && setItems(r))
+      .catch(() => !cancelled && setItems([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [site]);
+  if (!items || items.length === 0) return null;
+  return (
+    <section className="rounded-lg border border-zinc-200 bg-white p-3 sm:p-4">
+      <h3 className="text-sm font-semibold text-zinc-900">What AI searched for on its own</h3>
+      <p className="mt-0.5 text-xs text-zinc-500">
+        Searches the assistants ran while answering our questions (last 30 days) that we don&apos;t track yet. Good candidates for new questions.
+      </p>
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      <ul className="mt-3 flex flex-col divide-y divide-zinc-100">
+        {items.map((s) => (
+          <li key={s.text} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+            <span className="min-w-0">
+              <span className="block text-zinc-800">{s.text}</span>
+              <span className="block text-xs text-zinc-400">
+                {s.timesAsked}× · while answering &ldquo;{s.exampleQuestion}&rdquo;
+                {s.fromQuestions > 1 ? ` and ${s.fromQuestions - 1} more` : ''}
+              </span>
+            </span>
+            {canEdit &&
+              (added.has(s.text) ? (
+                <span className="text-xs font-medium text-emerald-700">Added</span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={pending !== null}
+                  onClick={async () => {
+                    setPending(s.text);
+                    setError(null);
+                    try {
+                      await api.addAiQuery(s.text, s.topic, false);
+                      setAdded((prev) => new Set(prev).add(s.text));
+                      await onAdded();
+                    } catch (e) {
+                      setError(e instanceof Error ? e.message : 'Could not add');
+                    } finally {
+                      setPending(null);
+                    }
+                  }}
+                  className="shrink-0 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                >
+                  + Track
+                </button>
+              ))}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

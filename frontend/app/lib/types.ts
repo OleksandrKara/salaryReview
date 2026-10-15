@@ -2532,3 +2532,14 @@ export interface AiTraffic {
   newClients: number;
   revenue: number;
 }
+
+/** A search an AI assistant ran itself while answering one of our tracked questions, that we
+ * don't track yet (AiQuestionSuggestionService). */
+export interface AiQuestionSuggestion {
+  text: string;
+  timesAsked: number;
+  fromQuestions: number;
+  exampleQuestion: string;
+  topic: string | null;
+  targetUrl: string | null;
+}
