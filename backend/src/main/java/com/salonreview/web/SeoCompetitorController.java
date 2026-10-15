@@ -44,13 +44,22 @@ public class SeoCompetitorController {
     }
 
     @GetMapping
-    public List<CompetitorRowDto> list() {
+    public List<CompetitorRowDto> list(@RequestParam(required = false) String site) {
         Long businessId = requireFeatureEnabled();
-        return service.competitors(businessId).stream().map(SeoCompetitorController::toDto).toList();
+        return service.competitors(businessId, site(site)).stream().map(SeoCompetitorController::toDto).toList();
+    }
+
+    /** "all" (default), "studio" or "academy", see SeoSite. */
+    private static String site(String site) {
+        if (site == null || site.isBlank()) return null;
+        if (!com.salonreview.seo.SeoSite.VALUES.contains(site)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "site must be all, studio or academy");
+        }
+        return site;
     }
 
     @PostMapping
-    public List<CompetitorRowDto> add(@RequestBody CompetitorRequest request) {
+    public List<CompetitorRowDto> add(@RequestBody CompetitorRequest request, @RequestParam(required = false) String site) {
         Long businessId = requireFeatureEnabled();
         String name = request.name() == null ? "" : request.name().trim();
         String website = request.website() == null ? "" : request.website().trim();
@@ -59,27 +68,28 @@ public class SeoCompetitorController {
         }
         String location = request.location() == null || request.location().isBlank() ? null : request.location().trim();
         String notes = request.notes() == null || request.notes().isBlank() ? null : request.notes().trim();
-        service.addCompetitor(businessId, name, website, location, notes);
-        return list();
+        service.addCompetitor(businessId, name, website, location, notes, site(site));
+        return list(site);
     }
 
     /** Updates only the owner-entered GBP rating/review count and the active flag — name/website
      * are set once at creation (delete + re-add for those, same as tracked keywords). */
     @PutMapping("/{id}")
-    public List<CompetitorRowDto> update(@PathVariable Long id, @RequestBody CompetitorUpdateRequest request) {
+    public List<CompetitorRowDto> update(@PathVariable Long id, @RequestBody CompetitorUpdateRequest request,
+                                         @RequestParam(required = false) String site) {
         Long businessId = requireFeatureEnabled();
         service.updateCompetitorGbp(businessId, id, request.gbpRating(), request.gbpReviewCount());
         if (request.active() != null) {
             service.setCompetitorActive(businessId, id, request.active());
         }
-        return list();
+        return list(site);
     }
 
     @DeleteMapping("/{id}")
-    public List<CompetitorRowDto> remove(@PathVariable Long id) {
+    public List<CompetitorRowDto> remove(@PathVariable Long id, @RequestParam(required = false) String site) {
         Long businessId = requireFeatureEnabled();
         service.removeCompetitor(businessId, id);
-        return list();
+        return list(site);
     }
 
     private static CompetitorRowDto toDto(CompetitorRow row) {

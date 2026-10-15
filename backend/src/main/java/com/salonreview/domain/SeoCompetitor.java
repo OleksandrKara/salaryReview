@@ -38,6 +38,9 @@ public class SeoCompetitor {
 
     private String notes;
 
+    /** NULL for the studio (or a business's only site), "academy" for the PMU Academy (SeoSite). */
+    private String site;
+
     @Column(nullable = false)
     private boolean active;
 
