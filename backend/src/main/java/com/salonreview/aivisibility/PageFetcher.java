@@ -88,7 +88,7 @@ public class PageFetcher {
         return plain;
     }
 
-    private Fetched onPage(String url, boolean javascript, int directStatus) {
+    Fetched onPage(String url, boolean javascript, int directStatus) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("url", url);
         payload.put("enable_javascript", javascript);

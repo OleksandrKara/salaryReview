@@ -39,6 +39,7 @@ import type {
   SeoAnalysisResult,
   SeoCompetitorRow,
   AiQuestionSuggestion,
+  AiReadinessReport,
   BusinessSettingsDto,
   BusinessSettingsUpdateRequest,
   PlatformBusinessDto,
@@ -323,6 +324,14 @@ export const api = {
   getAiVisibilityOverview: (site?: string) =>
     proxyGet<AiVisibilityOverview>(`/api/owner/marketing/ai/overview${site ? `?site=${site}` : ''}`),
   getAiQueryHistory: (id: number) => proxyGet<AiHistoryItem[]>(`/api/owner/marketing/ai/queries/${id}/history`),
+  /** null before the first weekly run (the backend answers 204). */
+  getAiReadiness: async (): Promise<AiReadinessReport | null> => {
+    const res = await fetch('/api/owner/marketing/ai/readiness', { cache: 'no-store' });
+    if (res.status === 204) return null;
+    if (!res.ok) throw new Error(await extractErrorMessage(res));
+    return (await res.json()) as AiReadinessReport;
+  },
+  runAiReadiness: () => proxyJson<AiReadinessReport>('/api/owner/marketing/ai/readiness/run', 'POST', {}),
   getAiQuestionSuggestions: (site?: string) =>
     proxyGet<AiQuestionSuggestion[]>(`/api/owner/marketing/ai/suggestions${site ? `?site=${site}` : ''}`),
   addAiQuery: (query: string, topic: string | null, nearMe = false) =>
