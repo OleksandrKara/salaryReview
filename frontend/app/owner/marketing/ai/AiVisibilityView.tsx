@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../../lib/api';
 import type { AiCell, AiEngine, AiSearchPoint, AiHistoryItem, AiPageComparison, AiPageGap, AiQueryRow, AiRanked, AiVisibilityOverview, AiVisibilitySettingsDto } from '../../../lib/types';
-import type { AiQuestionSuggestion } from '../../../lib/types';
+import type { AiQuestionSuggestion, AiReadinessReport } from '../../../lib/types';
 import { Spinner } from '../../../components/Spinner';
 import { AiTrafficPanel, AiTrendsPanel } from './AiInsights';
 
@@ -402,6 +402,8 @@ export default function AiVisibilityView({
       <PageGapsPanel />
 
       <SuggestionsPanel site={site} canEdit={canEdit} onAdded={refresh} />
+
+      <ReadinessPanel canEdit={canEdit} />
 
       <section className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
         <RankedList title="Who AI recommends instead" hint="Places named on questions where we were missing (last 4 weeks)" items={data.placesInstead} canAddCompetitor={canEdit} />
@@ -1092,6 +1094,96 @@ function SuggestionsPanel({
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+const READINESS_STYLE = {
+  ok: { dot: 'bg-emerald-500', text: 'text-zinc-500' },
+  warn: { dot: 'bg-amber-500', text: 'text-amber-700' },
+  fail: { dot: 'bg-red-500', text: 'text-red-700' },
+} as const;
+
+/** Weekly check that AI assistants can read our sites (Notion #26): robots.txt, llms.txt, and the
+ * tracked questions' target pages (text without JavaScript, H1, structured data). Problems first;
+ * passing pages collapsed into a count. */
+function ReadinessPanel({ canEdit }: { canEdit: boolean }) {
+  const [report, setReport] = useState<AiReadinessReport | null | undefined>(undefined);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showOk, setShowOk] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getAiReadiness()
+      .then((r) => !cancelled && setReport(r))
+      .catch(() => !cancelled && setReport(null));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (report === undefined) return null;
+  const problems = report?.checks.filter((c) => c.status !== 'ok') ?? [];
+  const ok = report?.checks.filter((c) => c.status === 'ok') ?? [];
+  return (
+    <section className="rounded-lg border border-zinc-200 bg-white p-3 sm:p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold text-zinc-900">AI readiness of our site</h3>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            Can AI assistants read what we want them to quote? Checked every Monday
+            {report ? ` · last check ${new Date(report.checkedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}.
+          </p>
+        </div>
+        {canEdit && (
+          <button
+            type="button"
+            disabled={running}
+            onClick={async () => {
+              setRunning(true);
+              setError(null);
+              try {
+                setReport(await api.runAiReadiness());
+              } catch (e) {
+                setError(e instanceof Error ? e.message : 'Check failed');
+              } finally {
+                setRunning(false);
+              }
+            }}
+            className="shrink-0 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          >
+            {running ? 'Checking…' : 'Check now'}
+          </button>
+        )}
+      </div>
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      {!report ? (
+        <p className="mt-3 text-sm text-zinc-500">No check yet. The first one runs on Monday.</p>
+      ) : (
+        <>
+          <p className="mt-3 text-sm text-zinc-700">
+            {problems.length === 0 ? 'Everything passes.' : `${problems.length} to fix`}
+            {ok.length > 0 && (
+              <button type="button" onClick={() => setShowOk((v) => !v)} className="ml-2 text-xs text-zinc-500 underline underline-offset-2">
+                {showOk ? 'hide' : 'show'} {ok.length} passing
+              </button>
+            )}
+          </p>
+          <ul className="mt-2 flex flex-col divide-y divide-zinc-100">
+            {[...problems, ...(showOk ? ok : [])].map((c) => (
+              <li key={c.key} className="flex items-start gap-2 py-2 text-sm">
+                <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${READINESS_STYLE[c.status].dot}`} aria-hidden />
+                <span className="min-w-0">
+                  <a href={c.url} target="_blank" rel="noreferrer" className="block truncate text-zinc-800 hover:underline">
+                    {c.label}
+                  </a>
+                  <span className={`block text-xs ${READINESS_STYLE[c.status].text}`}>{c.detail}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </section>
   );
 }

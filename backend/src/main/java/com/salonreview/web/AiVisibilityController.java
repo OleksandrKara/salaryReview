@@ -33,12 +33,15 @@ public class AiVisibilityController {
     private final BusinessFeatureService businessFeatures;
     private final CurrentBusinessContext currentBusinessContext;
     private final com.salonreview.aivisibility.AiQuestionSuggestionService suggestionService;
+    private final com.salonreview.aivisibility.AiReadinessService readiness;
 
     public AiVisibilityController(AiVisibilityQueryService readModel, AiVisibilityAdminService admin, AiVisibilityPageService pages,
             SeoCompetitorService competitors, AiReferralStatsRepository aiReferrals, BusinessFeatureService businessFeatures,
             CurrentBusinessContext currentBusinessContext,
-            com.salonreview.aivisibility.AiQuestionSuggestionService suggestionService) {
+            com.salonreview.aivisibility.AiQuestionSuggestionService suggestionService,
+            com.salonreview.aivisibility.AiReadinessService readiness) {
         this.suggestionService = suggestionService;
+        this.readiness = readiness;
         this.readModel = readModel;
         this.admin = admin;
         this.pages = pages;
@@ -84,6 +87,19 @@ public class AiVisibilityController {
                     "site must be all, studio or academy");
         }
         return suggestionService.suggestions(requireFeatureEnabled(), site);
+    }
+
+    /** Latest weekly AI-readiness report of our own sites (AiReadinessService); 204 before the first run. */
+    @GetMapping("/readiness")
+    public org.springframework.http.ResponseEntity<com.salonreview.aivisibility.AiReadinessService.Report> readiness() {
+        return readiness.latest(requireFeatureEnabled()).map(org.springframework.http.ResponseEntity::ok)
+                .orElse(org.springframework.http.ResponseEntity.noContent().build());
+    }
+
+    /** Runs the readiness check now (owner-only by the /api/owner catch-all; a few seconds per page). */
+    @PostMapping("/readiness/run")
+    public com.salonreview.aivisibility.AiReadinessService.Report runReadiness() {
+        return readiness.runAndStore(requireFeatureEnabled());
     }
 
     @GetMapping("/queries/{id}/history")

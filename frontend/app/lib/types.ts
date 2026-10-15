@@ -2543,3 +2543,17 @@ export interface AiQuestionSuggestion {
   topic: string | null;
   targetUrl: string | null;
 }
+
+/** Weekly AI-readiness report of our own sites (AiReadinessService). */
+export interface AiReadinessCheck {
+  key: string;
+  label: string;
+  status: 'ok' | 'warn' | 'fail';
+  detail: string;
+  url: string;
+}
+export interface AiReadinessReport {
+  checkedAt: string;
+  checks: AiReadinessCheck[];
+  costUsd: number;
+}

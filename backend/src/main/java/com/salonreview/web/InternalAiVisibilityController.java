@@ -19,11 +19,22 @@ public class InternalAiVisibilityController {
     private final InternalApiProperties internalApi;
     private final AiVisibilityQueryService readModel;
     private final AiVisibilityAdminService admin;
+    private final com.salonreview.aivisibility.AiReadinessService readiness;
 
-    public InternalAiVisibilityController(InternalApiProperties internalApi, AiVisibilityQueryService readModel, AiVisibilityAdminService admin) {
+    public InternalAiVisibilityController(InternalApiProperties internalApi, AiVisibilityQueryService readModel, AiVisibilityAdminService admin,
+                                          com.salonreview.aivisibility.AiReadinessService readiness) {
         this.internalApi = internalApi;
         this.readModel = readModel;
         this.admin = admin;
+        this.readiness = readiness;
+    }
+
+    /** Runs the AI-readiness check of our own sites now (for the weekly review and after a site change). */
+    @PostMapping("/readiness/run")
+    public ResponseEntity<?> runReadiness(@RequestHeader(value = "X-Internal-Api-Key", required = false) String key,
+                                          @PathVariable Long businessId) {
+        if (!keyMatches(key)) return ResponseEntity.status(401).build();
+        return ResponseEntity.ok(readiness.runAndStore(businessId));
     }
 
     @GetMapping("/summary")
