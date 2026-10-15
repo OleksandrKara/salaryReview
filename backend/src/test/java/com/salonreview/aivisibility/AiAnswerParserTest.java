@@ -83,4 +83,30 @@ class AiAnswerParserTest {
     void htmlEntityInPlaceNameIsDecoded() {
         assertThat(AiAnswerParser.boldPlaces("Try **Nail Care &amp; Spa** downtown")).containsExactly("Nail Care & Spa");
     }
+
+    @Test
+    void googleLocalResultLinesAreReadAsPlaces() {
+        String answer = """
+                Here are top-rated permanent makeup studios right in and around La Mesa, CA:
+
+                ---
+
+                Bespoke Brows 5.0 (124)Permanent make-up clinic
+                Open 8055 La Mesa Blvd Ste 103 0.3 mi
+                Call Directions Website Bespoke Brows (8055 La Mesa Blvd Ste 103, La Mesa) – A specialized PMU clinic.
+
+                ---
+
+                Wizard of Brows Microblading & Eyelash Lift San Diego 5.0 (189)Permanent make-up clinic
+                Open 3691 Via Mercado #11 4.1 mi
+
+                ---
+
+                Luxe Ink Aesthetics Beauty salon
+                Closed 3969 Fourth Ave Ste 302E 0.4 mi
+                Call Directions Website Luxe Ink Aesthetics — lip blushing, priced around $500.
+                """;
+        assertThat(AiAnswerParser.localResultPlaces(answer))
+                .containsExactly("Bespoke Brows", "Wizard of Brows Microblading & Eyelash Lift San Diego", "Luxe Ink Aesthetics");
+    }
 }

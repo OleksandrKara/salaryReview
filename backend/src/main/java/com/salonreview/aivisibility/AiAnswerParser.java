@@ -41,6 +41,16 @@ public final class AiAnswerParser {
                     + "gel( nails| extensions| polish)?|extensions?|microblading|powder( brows)?|ombre brows|nano brows|lip blush(ing)?|"
                     + "permanent (makeup|eyeliner)|eyeliner|brows?|scar camouflage)$|(?i)^(one|two|three|a|an) (question|thing|tip|note)s?$|(?i)^(highest|top|best|most) .*");
 
+    /** Google AI Mode / AI Overview local results come as plain lines, not bold: "Bespoke Brows 5.0
+     * (124)Permanent make-up clinic" or, without reviews, "Luxe Ink Aesthetics Beauty salon".
+     * The business type at the end marks the line as a place (2026-10-15: these answers had
+     * produced no names at all, or junk like "Link" / "Details"). */
+    private static final Pattern LOCAL_RESULT = Pattern.compile(
+            "(?m)^\\s*(?:\\d+[.)]\\s*)?([^\\n]{3,80}?)\\s+(?:\\d\\.\\d\\s*\\(\\d[\\d,.Kk]*\\)\\s*)?"
+                    + "(Permanent make-up clinic|Beauty salon|Nail salon|Tattoo shop|Tattoo and piercing shop|Eyebrow bar|Eyelash salon|"
+                    + "Medical spa|Day spa|Spa|Skin care clinic|Facial spa|Hair salon|Beautician|Beauty school|Cosmetics store|"
+                    + "Hair removal service|Waxing hair removal service|Threading service|Massage spa|Manicure service)\\s*$");
+
     private AiAnswerParser() {
     }
 
@@ -76,7 +86,9 @@ public final class AiAnswerParser {
             for (JsonNode ref : item.path("references")) addCitation(citations, ref.path("domain").asText(null), ref.path("title").asText(null), ref.path("url").asText(null));
         }
         String t = clean(text.toString());
-        return new ParsedAnswer(t, cap(citations, MAX_CITATIONS), cap(new ArrayList<>(boldPlaces(t)), MAX_PLACES), List.of());
+        LinkedHashSet<String> places = new LinkedHashSet<>(localResultPlaces(t));
+        for (String p : boldPlaces(t)) if (places.stream().noneMatch(x -> x.equalsIgnoreCase(p))) places.add(p);
+        return new ParsedAnswer(t, cap(citations, MAX_CITATIONS), cap(new ArrayList<>(places), MAX_PLACES), List.of());
     }
 
     private static ParsedAnswer llmResponse(JsonNode r) {
@@ -97,6 +109,20 @@ public final class AiAnswerParser {
         }
         String t = clean(text.toString());
         return new ParsedAnswer(t, cap(citations, MAX_CITATIONS), cap(new ArrayList<>(boldPlaces(t)), MAX_PLACES), subQueries(r));
+    }
+
+    static List<String> localResultPlaces(String text) {
+        LinkedHashSet<String> places = new LinkedHashSet<>();
+        Matcher m = LOCAL_RESULT.matcher(text);
+        while (m.find()) {
+            // The business-type suffix already marks these lines as places, so the bold-text
+            // heuristics (no long names, no generic words) don't apply: real names run long.
+            String name = MD_LINK.matcher(m.group(1)).replaceAll("$1").replaceAll("[*\\\\]", "").replace("&amp;", "&").trim();
+            if (name.length() < 3 || name.length() > 80 || name.split("\\s+").length > 12) continue;
+            if (!Character.isUpperCase(name.codePointAt(0)) && !Character.isDigit(name.codePointAt(0))) continue;
+            if (places.stream().noneMatch(p -> p.equalsIgnoreCase(name))) places.add(name);
+        }
+        return new ArrayList<>(places);
     }
 
     static List<String> boldPlaces(String text) {
