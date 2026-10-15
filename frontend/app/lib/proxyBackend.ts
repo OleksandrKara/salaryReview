@@ -47,3 +47,10 @@ export async function forwardToBackend(
   if (disposition) outHeaders['Content-Disposition'] = disposition;
   return new Response(bytes.byteLength ? bytes : null, { status: res.status, headers: outHeaders });
 }
+
+/** "?site=studio|academy" from the incoming request (Studio / Academy switch on the SEO and AI
+ * tabs), to pass on to the backend; "" when absent or not one of the known values. */
+export function siteParam(req: Request, joiner: '?' | '&' = '?'): string {
+  const site = new URL(req.url).searchParams.get('site');
+  return site === 'studio' || site === 'academy' || site === 'all' ? `${joiner}site=${site}` : '';
+}
