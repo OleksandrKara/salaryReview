@@ -307,16 +307,16 @@ export const api = {
 
   // Competitors — zero-cost scope (2026-09-02): PageSpeed comparison is automated, GBP
   // rating/review count is owner-entered only.
-  getSeoCompetitors: () => proxyGet<SeoCompetitorRow[]>(`/api/owner/marketing/seo/competitors`),
+  getSeoCompetitors: (site?: string) => proxyGet<SeoCompetitorRow[]>(`/api/owner/marketing/seo/competitors${site ? `?site=${site}` : ''}`),
 
-  addSeoCompetitor: (name: string, website: string, location: string | null, notes: string | null) =>
-    proxyJson<SeoCompetitorRow[]>(`/api/owner/marketing/seo/competitors`, 'POST', { name, website, location, notes }),
+  addSeoCompetitor: (name: string, website: string, location: string | null, notes: string | null, site?: string) =>
+    proxyJson<SeoCompetitorRow[]>(`/api/owner/marketing/seo/competitors${site ? `?site=${site}` : ''}`, 'POST', { name, website, location, notes }),
 
-  updateSeoCompetitor: (id: number, gbpRating: number | null, gbpReviewCount: number | null, active: boolean | null) =>
-    proxyJson<SeoCompetitorRow[]>(`/api/owner/marketing/seo/competitors/${id}`, 'PUT', { gbpRating, gbpReviewCount, active }),
+  updateSeoCompetitor: (id: number, gbpRating: number | null, gbpReviewCount: number | null, active: boolean | null, site?: string) =>
+    proxyJson<SeoCompetitorRow[]>(`/api/owner/marketing/seo/competitors/${id}${site ? `?site=${site}` : ''}`, 'PUT', { gbpRating, gbpReviewCount, active }),
 
-  removeSeoCompetitor: (id: number) =>
-    proxyDeleteJson<SeoCompetitorRow[]>(`/api/owner/marketing/seo/competitors/${id}`),
+  removeSeoCompetitor: (id: number, site?: string) =>
+    proxyDeleteJson<SeoCompetitorRow[]>(`/api/owner/marketing/seo/competitors/${id}${site ? `?site=${site}` : ''}`),
 
   // AI visibility tab (owner; ads_manager read-only) — ai-visibility-monitoring.
   getAiVisibilityOverview: (site?: string) =>

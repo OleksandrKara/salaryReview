@@ -37,7 +37,7 @@ class SeoCompetitorControllerTest {
         currentBusinessContext.runAs(1L, () -> {
             when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(false);
 
-            assertThatThrownBy(() -> controller.list())
+            assertThatThrownBy(() -> controller.list(null))
                     .isInstanceOf(ResponseStatusException.class)
                     .hasMessageContaining("404");
         });
@@ -50,10 +50,10 @@ class SeoCompetitorControllerTest {
         currentBusinessContext.runAs(1L, () -> {
             when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
 
-            assertThatThrownBy(() -> controller.add(new SeoCompetitorController.CompetitorRequest("  ", "https://x.example", null, null)))
+            assertThatThrownBy(() -> controller.add(new SeoCompetitorController.CompetitorRequest("  ", "https://x.example", null, null), null))
                     .isInstanceOf(ResponseStatusException.class)
                     .hasMessageContaining("400");
-            verify(service, never()).addCompetitor(any(), any(), any(), any(), any());
+            verify(service, never()).addCompetitor(any(), any(), any(), any(), any(), any());
         });
     }
 
@@ -63,9 +63,9 @@ class SeoCompetitorControllerTest {
         currentBusinessContext.runAs(1L, () -> {
             when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
 
-            controller.add(new SeoCompetitorController.CompetitorRequest("  Competitor A  ", "  https://a.example  ", "  Downtown  ", null));
+            controller.add(new SeoCompetitorController.CompetitorRequest("  Competitor A  ", "  https://a.example  ", "  Downtown  ", null), null);
 
-            verify(service).addCompetitor(1L, "Competitor A", "https://a.example", "Downtown", null);
+            verify(service).addCompetitor(1L, "Competitor A", "https://a.example", "Downtown", null, null);
         });
     }
 
@@ -76,7 +76,7 @@ class SeoCompetitorControllerTest {
             when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
 
             controller.update(5L, new SeoCompetitorController.CompetitorUpdateRequest(
-                    java.math.BigDecimal.valueOf(4.5), 100, false));
+                    java.math.BigDecimal.valueOf(4.5), 100, false), null);
 
             verify(service).updateCompetitorGbp(1L, 5L, java.math.BigDecimal.valueOf(4.5), 100);
             verify(service).setCompetitorActive(1L, 5L, false);
@@ -89,7 +89,7 @@ class SeoCompetitorControllerTest {
         currentBusinessContext.runAs(1L, () -> {
             when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
 
-            controller.update(5L, new SeoCompetitorController.CompetitorUpdateRequest(null, null, null));
+            controller.update(5L, new SeoCompetitorController.CompetitorUpdateRequest(null, null, null), null);
 
             verify(service, never()).setCompetitorActive(any(), any(), anyBoolean());
         });
@@ -101,7 +101,7 @@ class SeoCompetitorControllerTest {
         currentBusinessContext.runAs(1L, () -> {
             when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
 
-            controller.remove(5L);
+            controller.remove(5L, null);
 
             verify(service).removeCompetitor(1L, 5L);
         });
@@ -112,11 +112,11 @@ class SeoCompetitorControllerTest {
     void listReturnsMappedRows() {
         currentBusinessContext.runAs(1L, () -> {
             when(businessFeatures.isEnabled(1L, BusinessFeatureService.SEO_MONITORING_ENABLED)).thenReturn(true);
-            when(service.competitors(1L)).thenReturn(List.of(new SeoCompetitorService.CompetitorRow(
+            when(service.competitors(1L, null)).thenReturn(List.of(new SeoCompetitorService.CompetitorRow(
                     1L, "Competitor A", "https://a.example", "Downtown", null, true,
                     java.math.BigDecimal.valueOf(4.5), 100, java.time.Instant.now(), null, null)));
 
-            List<SeoCompetitorController.CompetitorRowDto> result = controller.list();
+            List<SeoCompetitorController.CompetitorRowDto> result = controller.list(null);
 
             assertThat(result).hasSize(1);
             assertThat(result.get(0).name()).isEqualTo("Competitor A");

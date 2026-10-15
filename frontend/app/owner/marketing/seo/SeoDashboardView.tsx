@@ -1018,7 +1018,7 @@ function CompetitorRowItem({
  * automated (weekly sync, same PageSpeed Insights integration used for our own business);
  * keyword-overlap/backlink comparison is intentionally absent, not silently omitted — that would
  * need a paid SEO tool the owner declined (design.md D2/D9). */
-function CompetitorsCard() {
+function CompetitorsCard({ site }: { site?: string }) {
   const [competitors, setCompetitors] = useState<SeoCompetitorRow[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<number | null>(null);
@@ -1030,7 +1030,7 @@ function CompetitorsCard() {
   useEffect(() => {
     let cancelled = false;
     api
-      .getSeoCompetitors()
+      .getSeoCompetitors(site)
       .then((c) => {
         if (!cancelled) setCompetitors(c);
       })
@@ -1043,7 +1043,7 @@ function CompetitorsCard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [site]);
 
   async function addCompetitor(e: FormEvent) {
     e.preventDefault();
@@ -1053,7 +1053,7 @@ function CompetitorsCard() {
     setPending(0);
     setError(null);
     try {
-      setCompetitors(await api.addSeoCompetitor(trimmedName, trimmedWebsite, location.trim() || null, null));
+      setCompetitors(await api.addSeoCompetitor(trimmedName, trimmedWebsite, location.trim() || null, null, site));
       setName('');
       setWebsite('');
       setLocation('');
@@ -1068,7 +1068,7 @@ function CompetitorsCard() {
     setPending(id);
     setError(null);
     try {
-      setCompetitors(await api.updateSeoCompetitor(id, rating, reviewCount, null));
+      setCompetitors(await api.updateSeoCompetitor(id, rating, reviewCount, null, site));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save that rating. Please try again.');
     } finally {
@@ -1080,7 +1080,7 @@ function CompetitorsCard() {
     setPending(id);
     setError(null);
     try {
-      setCompetitors(await api.removeSeoCompetitor(id));
+      setCompetitors(await api.removeSeoCompetitor(id, site));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not remove that competitor. Please try again.');
     } finally {
@@ -1253,7 +1253,7 @@ export default function SeoDashboardView({
           onRemove={removeTrackedKeyword}
           pending={trackedKeywordPending}
         />
-        <CompetitorsCard />
+        <CompetitorsCard site={site} />
       </div>
     );
   }
@@ -1315,7 +1315,7 @@ export default function SeoDashboardView({
 
       {canUseAiAdvisor && <SeoAdvisorCard />}
 
-      <CompetitorsCard />
+      <CompetitorsCard site={site} />
 
       {data.activeIssues.length > 0 && (
         <div className="rounded-lg ring-1 ring-zinc-200">

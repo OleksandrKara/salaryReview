@@ -37,7 +37,14 @@ public class SeoCompetitorService {
             SeoDashboardService.CoreWebVitals latestMobile, SeoDashboardService.CoreWebVitals latestDesktop) {}
 
     public List<CompetitorRow> competitors(Long businessId) {
+        return competitors(businessId, null);
+    }
+
+    /** {@code site} as in {@link SeoSite}: "academy" lists the academy's competitors (PMU schools),
+     * "studio" the rest, null/"all" every one. */
+    public List<CompetitorRow> competitors(Long businessId, String site) {
         return competitors.findByBusinessIdOrderByCreatedAtAsc(businessId).stream()
+                .filter(c -> SeoSite.isAll(site) || (SeoSite.ACADEMY.equals(site) == SeoSite.ACADEMY.equals(c.getSite())))
                 .map(c -> new CompetitorRow(c.getId(), c.getName(), c.getWebsite(), c.getLocation(), c.getNotes(),
                         c.isActive(), c.getGbpRating(), c.getGbpReviewCount(), c.getGbpUpdatedAt(),
                         latestVitals(c.getId(), SeoPageSnapshot.Strategy.MOBILE),
@@ -55,8 +62,14 @@ public class SeoCompetitorService {
     /** Blank/whitespace-only name or website is rejected by the controller before this is ever
      * called. */
     public void addCompetitor(Long businessId, String name, String website, String location, String notes) {
+        addCompetitor(businessId, name, website, location, notes, null);
+    }
+
+    /** Added from the Academy view of the SEO tab: belongs to the academy. */
+    public void addCompetitor(Long businessId, String name, String website, String location, String notes, String site) {
         competitors.save(SeoCompetitor.builder()
                 .businessId(businessId).name(name).website(website).location(location).notes(notes)
+                .site(SeoSite.ACADEMY.equals(site) ? SeoSite.ACADEMY : null)
                 .active(true).build());
     }
 
