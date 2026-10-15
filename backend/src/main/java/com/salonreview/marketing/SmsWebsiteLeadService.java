@@ -91,7 +91,9 @@ public class SmsWebsiteLeadService {
     /** The site's own prefilled openings ("Hi! I have a question about Lip Blush Tattoo.", "Hi! I
      * just read "…" on your site and have a question."): a text that still starts this way came
      * from the Text button even if the sender is an existing client. */
-    static final Pattern PREFILL = Pattern.compile("(?i)\\bi have a question about\\b|on your site and have a question");
+    static final Pattern PREFILL = Pattern.compile("(?i)\\bi have a question (about|for)\\b|on your site and have a question"
+            // akluxnails.com's own texting links (2026-10-15: all moved to the nails Twilio number).
+            + "|i'd like to (book for a group|request a gift card|prepay for)");
 
     private static final String CLICK_COLUMNS = """
             SELECT e.id::text AS event_id, e.session_id::text AS visitor_id, e.metadata::text AS metadata,
