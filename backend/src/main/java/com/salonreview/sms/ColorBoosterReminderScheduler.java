@@ -125,6 +125,9 @@ public class ColorBoosterReminderScheduler {
 
             Set<String> qualifyingIds = new HashSet<>(initialProcedureIds);
             qualifyingIds.addAll(colorBoosterIds);
+            // The year runs from the latest touch-up too, not only from the first procedure (owner,
+            // 2026-10-18): a touch-up refreshes the color, so the booster is due a year after it.
+            qualifyingIds.addAll(eligibleRoleIds(businessId, "TOUCH_UP"));
 
             SquareClient square;
             try {
