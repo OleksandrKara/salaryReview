@@ -145,6 +145,23 @@ class ColorBoosterReminderSchedulerTest {
     }
 
     @Test
+    @DisplayName("a touch-up after the first procedure restarts the year → not due yet, no row")
+    void touchUpRestartsTheYear() {
+        // Owner rule 2026-10-18: the booster is due a year after the latest touch-up, not after the
+        // first procedure (procedure 400 days ago, touch-up 300 days ago → not due).
+        when(roleRepository.findAllByBusinessIdAndRole(BUSINESS_ID, "TOUCH_UP"))
+                .thenReturn(List.of(role("TOUCH_UP", "VAR-TOUCHUP")));
+        when(square.bookings(any(), any())).thenReturn(List.of(qualifying(400)));
+        when(square.bookingsForCustomer(eq("cust1"), any())).thenReturn(List.of(
+                qualifying(400), booking("bk-touchup", -300, "VAR-TOUCHUP", "ACCEPTED")));
+
+        scheduler.sendDueReminders();
+
+        verifyNoInteractions(smsService);
+        verify(sendRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("candidate scan finds an old qualifying event, but the customer's TRUE most recent one is recent → not actually due, no row")
     void notDueWhenTrueMostRecentEventIsRecent() {
         // The wide scan only looks back to (today - maxLookbackDays .. today - eligibilityDays), so
