@@ -30,7 +30,9 @@ import java.util.Locale;
  * </ul>
  *
  * Matching: the gclid our site saved on the booking submission (marketing.submissions), plus the
- * client's email and phone SHA-256 hashed the way Google asks (enhanced conversions for leads).
+ * client's email SHA-256 hashed the way Google asks (enhanced conversions for leads). No phone
+ * numbers: the privacy policy promises mobile numbers aren't shared with third parties for
+ * marketing (SMS/A2P terms), so they stay out even hashed.
  * Only clicks from the last 89 days: Ads rejects conversions for older clicks.
  */
 @Service
@@ -49,11 +51,11 @@ public class AdsConversionFeedService {
     }
 
     record Click(String gclid, Instant clickedAt, String serviceName, String bookingStatus, Instant bookingStart,
-                 String customerId, String email, String phone) {}
+                 String customerId, String email) {}
 
     record Payment(Instant paidAt, BigDecimal amount) {}
 
-    record Row(String gclid, String name, Instant at, BigDecimal value, String email, String phone) {}
+    record Row(String gclid, String name, Instant at, BigDecimal value, String email) {}
 
     public String csv(long businessId) {
         List<Row> rows = new ArrayList<>();
@@ -66,7 +68,7 @@ public class AdsConversionFeedService {
 
     private List<Click> clicks(long businessId) {
         return jdbc.query("""
-                SELECT DISTINCT ON (s.gclid) s.gclid, s.occurred_at, s.service_name, s.customer_email, s.customer_phone,
+                SELECT DISTINCT ON (s.gclid) s.gclid, s.occurred_at, s.service_name, s.customer_email,
                        b.status, b.start_at, b.square_customer_id
                 FROM marketing.submissions s
                 LEFT JOIN square_booking b ON b.business_id = s.business_id AND b.square_booking_id = s.square_booking_id
@@ -80,8 +82,7 @@ public class AdsConversionFeedService {
                 rs.getString("status"),
                 rs.getTimestamp("start_at") == null ? null : rs.getTimestamp("start_at").toInstant(),
                 rs.getString("square_customer_id"),
-                rs.getString("customer_email"),
-                rs.getString("customer_phone")), businessId);
+                rs.getString("customer_email")), businessId);
     }
 
     /** Completed Square orders of the client within 90 days after the click: what was paid (tenders
@@ -102,16 +103,15 @@ public class AdsConversionFeedService {
     static List<Row> conversionsFor(Click c, List<Payment> payments, Instant now) {
         List<Row> out = new ArrayList<>();
         String email = hashEmail(c.email());
-        String phone = hashPhone(c.phone());
         boolean consultation = c.serviceName() != null && c.serviceName().toLowerCase(Locale.ROOT).contains("consult");
         if (consultation && "ACCEPTED".equals(c.bookingStatus()) && c.bookingStart() != null && c.bookingStart().isBefore(now)) {
-            out.add(new Row(c.gclid(), CONSULTATION, c.bookingStart(), null, email, phone));
+            out.add(new Row(c.gclid(), CONSULTATION, c.bookingStart(), null, email));
         }
         BigDecimal paid = BigDecimal.ZERO;
         for (Payment p : payments) {
             paid = paid.add(p.amount() == null ? BigDecimal.ZERO : p.amount());
             if (paid.compareTo(PROCEDURE_MIN_PAID) >= 0) {
-                out.add(new Row(c.gclid(), PROCEDURE, p.paidAt(), paid.setScale(2, RoundingMode.HALF_UP), email, phone));
+                out.add(new Row(c.gclid(), PROCEDURE, p.paidAt(), paid.setScale(2, RoundingMode.HALF_UP), email));
                 break;
             }
         }
@@ -120,13 +120,12 @@ public class AdsConversionFeedService {
 
     static String render(List<Row> rows) {
         StringBuilder sb = new StringBuilder("Parameters:TimeZone=America/Los_Angeles\n")
-                .append("Google Click ID,Conversion Name,Conversion Time,Conversion Value,Conversion Currency,Email,Phone Number\n");
+                .append("Google Click ID,Conversion Name,Conversion Time,Conversion Value,Conversion Currency,Email\n");
         for (Row r : rows) {
             sb.append(r.gclid()).append(',').append(r.name()).append(',').append(TIME.format(r.at())).append(',')
                     .append(r.value() == null ? "" : r.value().toPlainString()).append(',')
                     .append(r.value() == null ? "" : "USD").append(',')
-                    .append(r.email() == null ? "" : r.email()).append(',')
-                    .append(r.phone() == null ? "" : r.phone()).append('\n');
+                    .append(r.email() == null ? "" : r.email()).append('\n');
         }
         return sb.toString();
     }
@@ -146,14 +145,6 @@ public class AdsConversionFeedService {
         return sha256(name + "@" + domain);
     }
 
-    /** E.164 (US numbers without a country code get +1), then SHA-256. */
-    static String hashPhone(String phone) {
-        if (phone == null) return null;
-        String digits = phone.replaceAll("\\D", "");
-        if (digits.length() == 10) digits = "1" + digits;
-        if (digits.length() < 11) return null;
-        return sha256("+" + digits);
-    }
 
     private static String sha256(String s) {
         try {

@@ -15,7 +15,7 @@ class AdsConversionFeedServiceTest {
     private static final Instant CLICK = Instant.parse("2026-10-01T17:00:00Z");
 
     private static AdsConversionFeedService.Click click(String service, String status, Instant start) {
-        return new AdsConversionFeedService.Click("GCLID1", CLICK, service, status, start, "C1", "Jane.Doe+ads@Gmail.com", "(619) 555-0101");
+        return new AdsConversionFeedService.Click("GCLID1", CLICK, service, status, start, "C1", "Jane.Doe+ads@Gmail.com");
     }
 
     private static AdsConversionFeedService.Payment pay(String at, String amount) {
@@ -45,14 +45,11 @@ class AdsConversionFeedServiceTest {
     }
 
     @Test
-    @DisplayName("email and phone are normalized and SHA-256 hashed the way Google asks")
+    @DisplayName("email is normalized and SHA-256 hashed the way Google asks")
     void hashing() {
         assertThat(AdsConversionFeedService.hashEmail("Jane.Doe+ads@Gmail.com"))
                 .isEqualTo(AdsConversionFeedService.hashEmail("janedoe@gmail.com"))
                 .hasSize(64);
-        assertThat(AdsConversionFeedService.hashPhone("(619) 555-0101"))
-                .isEqualTo(AdsConversionFeedService.hashPhone("+1 619-555-0101"));
-        assertThat(AdsConversionFeedService.hashPhone("555")).isNull();
     }
 
     @Test
@@ -65,6 +62,6 @@ class AdsConversionFeedServiceTest {
         assertThat(csv).startsWith("Parameters:TimeZone=America/Los_Angeles\nGoogle Click ID,Conversion Name,Conversion Time,");
         assertThat(csv).contains("GCLID1,PMU Consultation Attended,2026-10-03 11:00:00,,,");
         assertThat(csv).contains("GCLID1,PMU Procedure Paid,2026-10-15 13:00:00,350.00,USD,");
-        assertThat(csv).doesNotContain("Jane").doesNotContain("555-0101");
+        assertThat(csv).doesNotContain("Jane").doesNotContain("Phone");
     }
 }
