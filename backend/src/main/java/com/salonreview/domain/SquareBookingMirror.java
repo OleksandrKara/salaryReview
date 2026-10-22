@@ -13,9 +13,7 @@ import java.util.List;
  * reconciliation (see {@code SquareBookingMirrorIngestService}), so marketing reads (which
  * previously called {@code SquareClient#bookingsForCustomer} live, once per contact) can query
  * this table instead. Deliberately unmatched, unmodified Square data — not a derived record like
- * {@link ProviderVisit}. Payroll was an explicit Phase 1 non-goal; since Phase 2f, {@code
- * SquareMonthAggregator#aggregateFromMirror} reads it too (the shadow-diff twin of the still-live
- * {@code aggregate()}, ahead of the eventual cutover).
+ * {@link ProviderVisit}. Payroll's SquareMonthAggregator reads it as its booking source.
  */
 @Entity
 @Table(name = "square_booking")

@@ -110,11 +110,9 @@ public class SquareBookingMirrorIngestService {
     /** Backfills the last {@code months} months, one {@link #ingestWindow} call per month — bounded,
      * idempotent (safe to re-run; every row upserts by its natural key regardless of how many times
      * a given month has already been ingested). Padded by the same ±1/2 days each side as {@code
-     * SquareMonthAggregator}'s own month window (see {@code computeAggregate}/{@code
-     * aggregateFromMirror}) — without this, the oldest backfilled month is missing the day before it
-     * (nothing older is ever ingested to supply that padding), so the aggregator's live path picks up
-     * a timezone-boundary order the mirror never has, a real gap the Milestone 2g shadow-diff caught
-     * on business 2's oldest month (2024-09: live saw 124 orders, mirror only 116). */
+     * SquareMonthAggregator}'s own month window (see {@code aggregateFromMirror}) — without this, the oldest backfilled month is missing the day before it
+     * (nothing older is ever ingested to supply that padding), so the aggregator misses a
+     * timezone-boundary order on the oldest month. */
     public void backfillHistory(int months) {
         ZoneId zone = salonZone();
         YearMonth cursor = YearMonth.now(zone);

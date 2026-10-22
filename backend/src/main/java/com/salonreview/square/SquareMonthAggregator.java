@@ -62,14 +62,10 @@ public class SquareMonthAggregator {
     private final com.salonreview.repo.OwnerCustomerRepository ownerCustomers;
     private final com.salonreview.config.CurrentBusinessContext currentBusinessContext;
     private final com.salonreview.repo.SalonConfigRepository salonConfig;
-    // Phase 2f: the local Square mirror — read only by #aggregateFromMirror, the shadow-diff
-    // twin of #aggregate (which still reads live Square). Never mixed within one computation.
+    // Local Square mirror: the raw bookings/orders/payments source for #aggregate.
     private final com.salonreview.repo.SquareBookingMirrorRepository bookingMirrorRepository;
     private final com.salonreview.repo.SquareOrderMirrorRepository orderMirrorRepository;
     private final com.salonreview.repo.SquarePaymentMirrorRepository paymentMirrorRepository;
-    // Phase 2i cutover switch — see the class doc on SquareMirrorProperties itself for why this is a
-    // live flag and not just a one-time code change.
-    private final com.salonreview.config.SquareMirrorProperties mirrorProperties;
 
     // 12 different callers (settlements, suspicious/cancelled-booking detection, owner overview,
     // revenue pulse, provider-visit ingest, marketing ads-report/analytics) each independently call
@@ -89,8 +85,7 @@ public class SquareMonthAggregator {
                                  com.salonreview.repo.SalonConfigRepository salonConfig,
                                  com.salonreview.repo.SquareBookingMirrorRepository bookingMirrorRepository,
                                  com.salonreview.repo.SquareOrderMirrorRepository orderMirrorRepository,
-                                 com.salonreview.repo.SquarePaymentMirrorRepository paymentMirrorRepository,
-                                 com.salonreview.config.SquareMirrorProperties mirrorProperties) {
+                                 com.salonreview.repo.SquarePaymentMirrorRepository paymentMirrorRepository) {
         this.squareClientProvider = squareClientProvider;
         this.cashNotes = cashNotes;
         this.ownerCustomers = ownerCustomers;
@@ -99,7 +94,6 @@ public class SquareMonthAggregator {
         this.bookingMirrorRepository = bookingMirrorRepository;
         this.orderMirrorRepository = orderMirrorRepository;
         this.paymentMirrorRepository = paymentMirrorRepository;
-        this.mirrorProperties = mirrorProperties;
     }
 
     /** Backs the global "Sync now" button (see SquareSyncController) and every mutation that can
@@ -117,24 +111,12 @@ public class SquareMonthAggregator {
         // "businessId:year:month:cutoff" key has no such leading colon and would silently never
         // match, leaving invalidateCache() a no-op (caught by this class's own cache tests).
         String key = "aggregate:" + currentBusinessContext.id() + ":" + year + ":" + month + ":" + priceCutoff;
-        // Phase 2i cutover: the mirror path is the default (see SquareMirrorProperties) now that
-        // Milestone 2g's shadow-diff came back clean across both businesses' full backfilled history.
-        // isAggregateEnabled()==false is the emergency fallback to live Square during burn-in.
-        return cache.get(key, CACHE_TTL, () -> mirrorProperties.isAggregateEnabled()
-                ? aggregateFromMirror(year, month, priceCutoff)
-                : computeAggregate(year, month, priceCutoff));
+        return cache.get(key, CACHE_TTL, () -> aggregateFromMirror(year, month, priceCutoff));
     }
 
-    /** Mirror-backed twin of {@link #computeAggregate} (Phase 2f) — reads the local Square
-     * booking/order/payment mirror (see the Phase 2 sync plan) instead of live Square for the three
-     * raw lists; every other Square read (team members, catalog, canonicalization, customer names,
-     * invoices) and every matching/cash-note/discount/comp/suspicious/cancellation rule is the exact
-     * same shared code as the live path via {@link #computeAggregateFrom} — only where
-     * bookings/orders/payments come from differs. Since Phase 2i this is {@link #aggregate}'s own
-     * default path (see {@link com.salonreview.config.SquareMirrorProperties}); it's also called
-     * directly, uncached, by the Milestone 2g shadow-diff comparator, which always wants a fresh
-     * computation to compare against a fresh live one, not a cached result from either side.
-     */
+    /** Reads the local Square booking/order/payment mirror for the three raw lists; every other
+     * Square read (team members, catalog, canonicalization, customer names, invoices) goes through
+     * {@link #computeAggregateFrom}. Uncached; {@link #aggregate} wraps it with the TTL cache. */
     public MonthAggregation aggregateFromMirror(int year, int month, BigDecimal priceCutoff) {
         long startedAtNanos = System.nanoTime();
         Long businessId = currentBusinessContext.id();
@@ -167,34 +149,7 @@ public class SquareMonthAggregator {
                 bookings, orders, payments, startedAtNanos, "mirror");
     }
 
-    private MonthAggregation computeAggregate(int year, int month, BigDecimal priceCutoff) {
-        long startedAtNanos = System.nanoTime();
-        Long businessId = currentBusinessContext.id();
-        SquareClient square = squareClientProvider.forBusiness(businessId);
-        ZoneId zone = resolveZone(square);
-        YearMonth ym = YearMonth.of(year, month);
-        // Pad the query window by a day each side so timezone-boundary events aren't missed.
-        Instant from = ym.atDay(1).minusDays(1).atStartOfDay(zone).toInstant();
-        Instant to = ym.atEndOfMonth().plusDays(2).atStartOfDay(zone).toInstant();
-
-        // Bookings, orders, and payments are independent Square reads; fetch them concurrently to
-        // halve cold latency. Payments (not just Orders) are needed to catch a charge taken directly
-        // against a customer's card on file, bypassing the booking checkout and so never producing an
-        // Order at all — see detectOrphanPayments().
-        var bookingsF = java.util.concurrent.CompletableFuture.supplyAsync(() -> square.bookings(from, to));
-        var ordersF = java.util.concurrent.CompletableFuture.supplyAsync(() -> square.completedOrders(from, to));
-        var paymentsF = java.util.concurrent.CompletableFuture.supplyAsync(() -> square.payments(from, to));
-        List<Booking> bookings = bookingsF.join();
-        List<Order> orders = ordersF.join();
-        List<Payment> payments = paymentsF.join();
-        return computeAggregateFrom(year, month, priceCutoff, businessId, square, zone,
-                bookings, orders, payments, startedAtNanos, "live");
-    }
-
-    /** Everything downstream of "here are this month's raw bookings/orders/payments" — shared,
-     * byte-for-byte identical logic for both {@link #computeAggregate} (live) and {@link
-     * #aggregateFromMirror} (local mirror, Phase 2f). Only the raw-fetch step above differs
-     * between the two callers; nothing in this method knows or cares which one supplied its data. */
+    /** Everything downstream of "here are this month's raw bookings/orders/payments". */
     private MonthAggregation computeAggregateFrom(int year, int month, BigDecimal priceCutoff, Long businessId,
             SquareClient square, ZoneId zone, List<Booking> bookings, List<Order> orders, List<Payment> payments,
             long startedAtNanos, String source) {

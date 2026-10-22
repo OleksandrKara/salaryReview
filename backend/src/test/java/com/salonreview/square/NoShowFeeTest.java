@@ -2,7 +2,6 @@ package com.salonreview.square;
 
 import com.salonreview.commission.CommissionConfig;
 import com.salonreview.commission.TierCommissionEngine;
-import com.salonreview.config.SquareMirrorProperties;
 import com.salonreview.domain.Provider;
 import com.salonreview.domain.SalonConfig;
 import com.salonreview.repo.*;
@@ -57,8 +56,6 @@ class NoShowFeeTest {
 
         SquareBookingMirrorRepository bookingMirrorRepository = mock(SquareBookingMirrorRepository.class);
         SquareOrderMirrorRepository orderMirrorRepository = mock(SquareOrderMirrorRepository.class);
-        SquareMirrorProperties mirrorProperties = mock(SquareMirrorProperties.class);
-        when(mirrorProperties.isAggregateEnabled()).thenReturn(true);
 
         // One NO_SHOW booking on May 10 with two providers (two segments), customer CUST1.
         var noShowBooking = com.salonreview.domain.SquareBookingMirror.builder()
@@ -88,7 +85,7 @@ class NoShowFeeTest {
         when(providers.findById(2L)).thenReturn(Optional.of(Provider.builder().id(2L).displayName("Bayan").build()));
 
         NoShowFeeService svc = new NoShowFeeService(squareClientProvider, directory, providers, overrides,
-                currentBusinessContext, salonConfigRepo, bookingMirrorRepository, orderMirrorRepository, mirrorProperties);
+                currentBusinessContext, salonConfigRepo, bookingMirrorRepository, orderMirrorRepository);
 
         // In the payment month (May): $25 split evenly → $12.50 each, both CREDITED.
         NoShowMonth may = svc.compute(2026, 5);
@@ -119,8 +116,7 @@ class NoShowFeeTest {
         NoShowFeeService svc = new NoShowFeeService(squareClientProvider, mock(ProviderDirectory.class),
                 mock(ProviderRepository.class), mock(NoShowFeeOverrideRepository.class),
                 currentBusinessContext, salonConfigRepo,
-                mock(SquareBookingMirrorRepository.class), mock(SquareOrderMirrorRepository.class),
-                mock(SquareMirrorProperties.class));
+                mock(SquareBookingMirrorRepository.class), mock(SquareOrderMirrorRepository.class));
 
         NoShowMonth result = svc.compute(2026, 5);
 
@@ -143,8 +139,7 @@ class NoShowFeeTest {
 
         NoShowFeeService svc = new NoShowFeeService(mock(SquareClientProvider.class), mock(ProviderDirectory.class),
                 providers, mock(NoShowFeeOverrideRepository.class), currentBusinessContext, salonConfigRepo,
-                mock(SquareBookingMirrorRepository.class), mock(SquareOrderMirrorRepository.class),
-                mock(SquareMirrorProperties.class));
+                mock(SquareBookingMirrorRepository.class), mock(SquareOrderMirrorRepository.class));
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> svc.confirm(
                 new NoShowFeeService.ConfirmRequest("BK1", 1L, null, null, "Julia B.", null, null), "manager"))
@@ -173,8 +168,7 @@ class NoShowFeeTest {
 
         NoShowFeeService svc = new NoShowFeeService(mock(SquareClientProvider.class), mock(ProviderDirectory.class),
                 providers, overrides, currentBusinessContext, salonConfigRepo,
-                mock(SquareBookingMirrorRepository.class), mock(SquareOrderMirrorRepository.class),
-                mock(SquareMirrorProperties.class));
+                mock(SquareBookingMirrorRepository.class), mock(SquareOrderMirrorRepository.class));
 
         svc.confirm(new NoShowFeeService.ConfirmRequest("BK1", 1L, null, null, "Julia B.", null, null), "manager");
 
@@ -196,8 +190,7 @@ class NoShowFeeTest {
 
         NoShowFeeService svc = new NoShowFeeService(mock(SquareClientProvider.class), mock(ProviderDirectory.class),
                 mock(ProviderRepository.class), overrides, currentBusinessContext, mock(SalonConfigRepository.class),
-                mock(SquareBookingMirrorRepository.class), mock(SquareOrderMirrorRepository.class),
-                mock(SquareMirrorProperties.class));
+                mock(SquareBookingMirrorRepository.class), mock(SquareOrderMirrorRepository.class));
 
         svc.clearOverride("BK1");
 

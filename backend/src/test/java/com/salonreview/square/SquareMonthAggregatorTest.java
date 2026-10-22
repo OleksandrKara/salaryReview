@@ -16,6 +16,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -35,7 +36,7 @@ class SquareMonthAggregatorTest {
     private CurrentBusinessContext currentBusinessContext;
     private com.salonreview.repo.SquareBookingMirrorRepository bookingMirrorRepository;
     private com.salonreview.repo.SquareOrderMirrorRepository orderMirrorRepository;
-    private com.salonreview.config.SquareMirrorProperties mirrorProperties;
+    private com.salonreview.repo.SquarePaymentMirrorRepository paymentMirrorRepository;
     private SquareMonthAggregator aggregator;
 
     @BeforeEach
@@ -67,35 +68,20 @@ class SquareMonthAggregatorTest {
         when(bookingMirrorRepository.findByBusinessIdAndStartAtBetween(any(), any(), any())).thenReturn(List.of());
         orderMirrorRepository = mock(com.salonreview.repo.SquareOrderMirrorRepository.class);
         when(orderMirrorRepository.findByBusinessIdAndClosedAtBetween(any(), any(), any())).thenReturn(List.of());
-        var paymentMirrorRepository = mock(com.salonreview.repo.SquarePaymentMirrorRepository.class);
+        paymentMirrorRepository = mock(com.salonreview.repo.SquarePaymentMirrorRepository.class);
         when(paymentMirrorRepository.findByBusinessIdAndCreatedAtBetween(any(), any(), any())).thenReturn(List.of());
-        mirrorProperties = mock(com.salonreview.config.SquareMirrorProperties.class);
 
         aggregator = new SquareMonthAggregator(squareClientProvider, cashNotes, ownerCustomers,
                 currentBusinessContext, salonConfig,
-                bookingMirrorRepository, orderMirrorRepository, paymentMirrorRepository, mirrorProperties);
+                bookingMirrorRepository, orderMirrorRepository, paymentMirrorRepository);
     }
 
     @Test
-    @DisplayName("Phase 2i cutover: when SquareMirrorProperties.aggregateEnabled is true, aggregate() reads the mirror instead of live Square")
-    void aggregateUsesMirrorWhenCutoverFlagEnabled() {
-        when(mirrorProperties.isAggregateEnabled()).thenReturn(true);
-
+    @DisplayName("aggregate() reads the local mirror")
+    void aggregateReadsMirror() {
         aggregator.aggregate(2026, 7, BigDecimal.ZERO);
 
         verify(bookingMirrorRepository).findByBusinessIdAndStartAtBetween(any(), any(), any());
-        verify(square, times(0)).bookings(any(), any());
-    }
-
-    @Test
-    @DisplayName("Phase 2i emergency fallback: when SquareMirrorProperties.aggregateEnabled is false, aggregate() still reads live Square")
-    void aggregateUsesLiveWhenCutoverFlagDisabled() {
-        when(mirrorProperties.isAggregateEnabled()).thenReturn(false);
-
-        aggregator.aggregate(2026, 7, BigDecimal.ZERO);
-
-        verify(square).bookings(any(), any());
-        verify(bookingMirrorRepository, times(0)).findByBusinessIdAndStartAtBetween(any(), any(), any());
     }
 
     @Test
@@ -149,9 +135,9 @@ class SquareMonthAggregatorTest {
         SquareMonthAggregator.MonthAggregation second = aggregator.aggregate(2026, 7, BigDecimal.ZERO);
 
         assertThat(second).isSameAs(first);
-        verify(square, times(1)).bookings(any(), any());
-        verify(square, times(1)).completedOrders(any(), any());
-        verify(square, times(1)).payments(any(), any());
+        verify(bookingMirrorRepository, times(1)).findByBusinessIdAndStartAtBetween(eq(1L), any(), any());
+        verify(orderMirrorRepository, times(1)).findByBusinessIdAndClosedAtBetween(eq(1L), any(), any());
+        verify(paymentMirrorRepository, times(1)).findByBusinessIdAndCreatedAtBetween(eq(1L), any(), any());
     }
 
     @Test
@@ -161,7 +147,7 @@ class SquareMonthAggregatorTest {
         aggregator.invalidateCache();
         aggregator.aggregate(2026, 7, BigDecimal.ZERO);
 
-        verify(square, times(2)).bookings(any(), any());
+        verify(bookingMirrorRepository, times(2)).findByBusinessIdAndStartAtBetween(eq(1L), any(), any());
     }
 
     @Test
@@ -170,7 +156,7 @@ class SquareMonthAggregatorTest {
         aggregator.aggregate(2026, 7, BigDecimal.ZERO);
         aggregator.aggregate(2026, 8, BigDecimal.ZERO);
 
-        verify(square, times(2)).bookings(any(), any());
+        verify(bookingMirrorRepository, times(2)).findByBusinessIdAndStartAtBetween(eq(1L), any(), any());
     }
 
     @Test
@@ -179,7 +165,7 @@ class SquareMonthAggregatorTest {
         aggregator.aggregate(2026, 7, BigDecimal.ZERO);
         aggregator.aggregate(2026, 7, new BigDecimal("60.00"));
 
-        verify(square, times(2)).bookings(any(), any());
+        verify(bookingMirrorRepository, times(2)).findByBusinessIdAndStartAtBetween(eq(1L), any(), any());
     }
 
     @Test
@@ -199,8 +185,8 @@ class SquareMonthAggregatorTest {
         aggregator.aggregate(2026, 7, BigDecimal.ZERO);
         when(currentBusinessContext.id()).thenReturn(2L);
         aggregator.aggregate(2026, 7, BigDecimal.ZERO);
-        verify(square, times(1)).bookings(any(), any());
-        verify(square2, times(1)).bookings(any(), any());
+        verify(bookingMirrorRepository, times(1)).findByBusinessIdAndStartAtBetween(eq(1L), any(), any());
+        verify(bookingMirrorRepository, times(1)).findByBusinessIdAndStartAtBetween(eq(2L), any(), any());
 
         when(currentBusinessContext.id()).thenReturn(1L);
         aggregator.invalidateCache(); // only business 1's entry should drop
@@ -209,7 +195,7 @@ class SquareMonthAggregatorTest {
         when(currentBusinessContext.id()).thenReturn(2L);
         aggregator.aggregate(2026, 7, BigDecimal.ZERO); // business 2: still cached -> must NOT recompute
 
-        verify(square, times(2)).bookings(any(), any());
-        verify(square2, times(1)).bookings(any(), any());
+        verify(bookingMirrorRepository, times(2)).findByBusinessIdAndStartAtBetween(eq(1L), any(), any());
+        verify(bookingMirrorRepository, times(1)).findByBusinessIdAndStartAtBetween(eq(2L), any(), any());
     }
 }

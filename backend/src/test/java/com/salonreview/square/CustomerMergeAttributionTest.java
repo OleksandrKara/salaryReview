@@ -45,8 +45,8 @@ class CustomerMergeAttributionTest {
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         OwnerCustomerRepository ownerRepo = mock(OwnerCustomerRepository.class);
         aggregator = new SquareMonthAggregator(squareClientProvider, new CashNoteParser(), ownerRepo, currentBusinessContext, mock(SalonConfigRepository.class),
-                mock(com.salonreview.repo.SquareBookingMirrorRepository.class), mock(com.salonreview.repo.SquareOrderMirrorRepository.class),
-                mock(com.salonreview.repo.SquarePaymentMirrorRepository.class), mock(com.salonreview.config.SquareMirrorProperties.class));
+                MirrorFeed.bookings(square), MirrorFeed.orders(square),
+                MirrorFeed.payments(square));
         when(square.locationTimeZone()).thenReturn("UTC");
         when(square.allTeamMembers())
                 .thenReturn(List.of(new TeamMember(PROVIDER, "Lesya", "Petrova", "ACTIVE", false, null, null)));
