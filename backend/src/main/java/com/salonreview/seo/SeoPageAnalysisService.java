@@ -76,6 +76,7 @@ public class SeoPageAnalysisService {
             SeoMetricsAggregate previous = entry.getValue().previous();
             SeoMetricsAggregate current = entry.getValue().current();
             if (previous == null || current == null) continue;
+            if (!winning && SeoPageUrls.isRetiredHost(entry.getKey())) continue;
             if (previous.impressions() < SIGNIFICANT_MOVE_MIN_IMPRESSIONS) continue;
 
             BigDecimal ratio = BigDecimal.valueOf(current.impressions() - previous.impressions())
@@ -139,7 +140,7 @@ public class SeoPageAnalysisService {
             if (row.getPage() == null) continue;
             byQueryThenPage
                     .computeIfAbsent(row.getQuery(), q -> new LinkedHashMap<>())
-                    .computeIfAbsent(row.getPage(), p -> new ArrayList<>())
+                    .computeIfAbsent(SeoPageUrls.withoutFragment(row.getPage()), p -> new ArrayList<>())
                     .add(row);
         }
 
@@ -174,6 +175,6 @@ public class SeoPageAnalysisService {
     private Map<String, SeoWindowSplit.HalfWindowPair> byPage(List<SeoSearchMetricsSnapshot> rows, LocalDate start,
             LocalDate end) {
         List<SeoSearchMetricsSnapshot> withPage = rows.stream().filter(r -> r.getPage() != null).toList();
-        return SeoWindowSplit.byKey(withPage, start, end, SeoSearchMetricsSnapshot::getPage);
+        return SeoWindowSplit.byKey(withPage, start, end, row -> SeoPageUrls.withoutFragment(row.getPage()));
     }
 }

@@ -29,17 +29,17 @@ public final class SeoWindowSplit {
         long midEpochDay = start.toEpochDay() + (end.toEpochDay() - start.toEpochDay()) / 2;
         LocalDate mid = LocalDate.ofEpochDay(midEpochDay);
 
-        List<K> orderedKeys = new ArrayList<>();
         Map<K, List<SeoSearchMetricsSnapshot>> previousByKey = new LinkedHashMap<>();
         Map<K, List<SeoSearchMetricsSnapshot>> currentByKey = new LinkedHashMap<>();
         for (SeoSearchMetricsSnapshot row : rows) {
             K key = keyFn.apply(row);
-            if (!orderedKeys.contains(key)) orderedKeys.add(key);
             Map<K, List<SeoSearchMetricsSnapshot>> target = row.getDate().isBefore(mid) ? previousByKey : currentByKey;
             target.computeIfAbsent(key, k -> new ArrayList<>()).add(row);
         }
 
         Map<K, HalfWindowPair> result = new LinkedHashMap<>();
+        java.util.Set<K> orderedKeys = new java.util.LinkedHashSet<>(previousByKey.keySet());
+        orderedKeys.addAll(currentByKey.keySet());
         for (K key : orderedKeys) {
             result.put(key, new HalfWindowPair(aggregateOrNull(previousByKey.get(key)), aggregateOrNull(currentByKey.get(key))));
         }
