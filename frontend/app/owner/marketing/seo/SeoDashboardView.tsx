@@ -168,6 +168,12 @@ const OPPORTUNITY_LABEL: Record<string, string> = {
   GROWING_IMPRESSIONS: 'Growing impressions',
 };
 
+// Mirrors the backend's MAX_RESULTS: a list that hits it was cut off, so the real count is higher.
+const LIST_CAP = 20;
+function listCount(n: number): string {
+  return n >= LIST_CAP ? `${LIST_CAP}+` : String(n);
+}
+
 /** Shared by both the "Biggest wins" and "Biggest losses" lists — same shape, different sign of
  * data and different empty-state copy. Only significant moves ever reach this list at all (the
  * backend's SeoChangeDetectionService already filters out day-to-day noise), so every row here is
@@ -1374,12 +1380,12 @@ export default function SeoDashboardView({
 
       <div className="flex flex-col gap-4 sm:flex-row">
         <QueryChangeList
-          title={`Biggest wins (${data.gainers.length})`}
+          title={`Biggest wins (${listCount(data.gainers.length)})`}
           changes={data.gainers}
           emptyText="No significant gains detected in this window."
         />
         <QueryChangeList
-          title={`Biggest losses (${data.losers.length})`}
+          title={`Biggest losses (${listCount(data.losers.length)})`}
           changes={data.losers}
           emptyText="No significant losses detected in this window."
         />
@@ -1430,12 +1436,12 @@ export default function SeoDashboardView({
 
       <div className="flex flex-col gap-4 sm:flex-row">
         <PageChangeList
-          title={`Winning pages (${data.winningPages.length})`}
+          title={`Winning pages (${listCount(data.winningPages.length)})`}
           changes={data.winningPages}
           emptyText="No pages gained significant impressions in this window."
         />
         <PageChangeList
-          title={`Losing pages (${data.losingPages.length})`}
+          title={`Losing pages (${listCount(data.losingPages.length)})`}
           changes={data.losingPages}
           emptyText="No pages lost significant impressions in this window."
         />

@@ -50,7 +50,6 @@ public class SeoSyncService {
     // rolling-window reconciliation idea SquareMirrorReconciliationScheduler already uses for the
     // same reason.
     private static final int SEARCH_CONSOLE_WINDOW_DAYS = 28;
-    private static final int SEARCH_CONSOLE_ROW_LIMIT = 200;
 
     // Same 28-day rolling window as Search Console (SEARCH_CONSOLE_WINDOW_DAYS) — one GA4 property
     // is cheap to query daily (design.md Risks singles out PageSpeed's quota as the tight one, not
@@ -103,25 +102,11 @@ public class SeoSyncService {
             LocalDate endDate = LocalDate.now(ZoneOffset.UTC);
             LocalDate startDate = endDate.minusDays(SEARCH_CONSOLE_WINDOW_DAYS - 1);
 
-            // One call for the whole window (rowLimit sized for every day to independently hit the
-            // per-day cap), not a call per day — see SearchConsoleClient.queryPerformance's own
-            // doc comment for why.
-            List<SeoSearchMetricsSnapshot> saved = new ArrayList<>();
-            for (SearchConsoleClient.QueryRow row : client.queryPerformance(siteUrl, startDate, endDate,
-                    SEARCH_CONSOLE_ROW_LIMIT * SEARCH_CONSOLE_WINDOW_DAYS)) {
-                SeoSearchMetricsSnapshot snapshot = searchMetricsRepository
-                        .findByBusinessIdAndDateAndQueryAndPage(businessId, row.date(), row.query(), row.page())
-                        .orElseGet(SeoSearchMetricsSnapshot::new);
-                snapshot.setBusinessId(businessId);
-                snapshot.setDate(row.date());
-                snapshot.setQuery(row.query());
-                snapshot.setPage(row.page());
-                snapshot.setClicks((int) row.clicks());
-                snapshot.setImpressions((int) row.impressions());
-                snapshot.setCtr(row.ctr());
-                snapshot.setPosition(row.position());
-                saved.add(searchMetricsRepository.save(snapshot));
-            }
+            // Whole window, paged by startRow inside the client — never truncated to the top-N
+            // rows by clicks, which used to wipe out the impressions of every later day.
+            List<SeoSearchMetricsSnapshot> saved = upsertSearchMetrics(businessId,
+                    mergeFragments(client.queryPerformance(siteUrl, startDate, endDate,
+                            SearchConsoleClient.MAX_PAGE_SIZE)));
             // Evaluated once across the whole window, not per-day — the CTR heuristic's trailing
             // average needs the full window to be a meaningful signal (see
             // SeoIssueFlaggingService#evaluateSearchMetrics's own doc comment).
@@ -131,6 +116,75 @@ public class SeoSyncService {
             markFailure(connection, "Search Console sync failed: " + e.getMessage());
             log.warn("Search Console sync failed for business {}: {}", businessId, e.toString());
         }
+    }
+
+    private record MetricKey(LocalDate date, String query, String page) {
+    }
+
+    /** Anchor URLs ({@code /page/#faq}) come back from Search Console as separate pages; fold them
+     * into the base URL, summing clicks/impressions and weighting position by impressions. */
+    static List<SearchConsoleClient.QueryRow> mergeFragments(List<SearchConsoleClient.QueryRow> rows) {
+        Map<MetricKey, SearchConsoleClient.QueryRow> merged = new java.util.LinkedHashMap<>();
+        for (SearchConsoleClient.QueryRow row : rows) {
+            MetricKey key = new MetricKey(row.date(), row.query(), SeoPageUrls.withoutFragment(row.page()));
+            SearchConsoleClient.QueryRow existing = merged.get(key);
+            if (existing == null) {
+                merged.put(key, new SearchConsoleClient.QueryRow(row.date(), row.query(), key.page(),
+                        row.clicks(), row.impressions(), row.ctr(), row.position()));
+                continue;
+            }
+            long clicks = existing.clicks() + row.clicks();
+            long impressions = existing.impressions() + row.impressions();
+            java.math.BigDecimal ctr = impressions == 0 ? java.math.BigDecimal.ZERO
+                    : java.math.BigDecimal.valueOf((double) clicks / impressions);
+            java.math.BigDecimal position = impressions == 0 ? existing.position()
+                    : existing.position().multiply(java.math.BigDecimal.valueOf(existing.impressions()))
+                            .add(row.position().multiply(java.math.BigDecimal.valueOf(row.impressions())))
+                            .divide(java.math.BigDecimal.valueOf(impressions), 6, java.math.RoundingMode.HALF_UP);
+            merged.put(key, new SearchConsoleClient.QueryRow(row.date(), row.query(), key.page(),
+                    clicks, impressions, ctr, position));
+        }
+        return new ArrayList<>(merged.values());
+    }
+
+    /** One preload of the window's existing rows instead of a lookup per row (tens of thousands of
+     * rows now); unchanged rows are not rewritten. */
+    private List<SeoSearchMetricsSnapshot> upsertSearchMetrics(Long businessId,
+            List<SearchConsoleClient.QueryRow> rows) {
+        if (rows.isEmpty()) return new ArrayList<>();
+        LocalDate min = rows.stream().map(SearchConsoleClient.QueryRow::date).min(LocalDate::compareTo).orElseThrow();
+        LocalDate max = rows.stream().map(SearchConsoleClient.QueryRow::date).max(LocalDate::compareTo).orElseThrow();
+        Map<MetricKey, SeoSearchMetricsSnapshot> existing = new java.util.HashMap<>();
+        for (SeoSearchMetricsSnapshot e : searchMetricsRepository
+                .findByBusinessIdAndDateBetweenOrderByDateAsc(businessId, min, max)) {
+            existing.put(new MetricKey(e.getDate(), e.getQuery(), e.getPage()), e);
+        }
+        List<SeoSearchMetricsSnapshot> result = new ArrayList<>(rows.size());
+        List<SeoSearchMetricsSnapshot> toSave = new ArrayList<>();
+        for (SearchConsoleClient.QueryRow row : rows) {
+            SeoSearchMetricsSnapshot snapshot = existing.get(new MetricKey(row.date(), row.query(), row.page()));
+            boolean changed = snapshot == null;
+            if (snapshot == null) {
+                snapshot = new SeoSearchMetricsSnapshot();
+                snapshot.setBusinessId(businessId);
+                snapshot.setDate(row.date());
+                snapshot.setQuery(row.query());
+                snapshot.setPage(row.page());
+            } else {
+                changed = snapshot.getClicks() != (int) row.clicks()
+                        || snapshot.getImpressions() != (int) row.impressions()
+                        || snapshot.getCtr() == null || snapshot.getCtr().compareTo(row.ctr()) != 0
+                        || snapshot.getPosition() == null || snapshot.getPosition().compareTo(row.position()) != 0;
+            }
+            snapshot.setClicks((int) row.clicks());
+            snapshot.setImpressions((int) row.impressions());
+            snapshot.setCtr(row.ctr());
+            snapshot.setPosition(row.position());
+            if (changed) toSave.add(snapshot);
+            result.add(snapshot);
+        }
+        searchMetricsRepository.saveAll(toSave);
+        return result;
     }
 
     /** No-op when the business hasn't connected credentials yet, same as {@link

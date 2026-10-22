@@ -55,6 +55,19 @@ class SeoPageAnalysisServiceTest {
     }
 
     @Test
+    @DisplayName("losingPages(): #fragment variants collapse into the base page and the retired edu host is not a loss")
+    void losingPagesCollapsesFragmentsAndIgnoresRetiredHost() {
+        List<SeoSearchMetricsSnapshot> rows = List.of(
+                row(start, "q1", "https://pmu.com/a/", 60, BigDecimal.valueOf(5)),
+                row(start, "q2", "https://pmu.com/a/#faq", 60, BigDecimal.valueOf(5)),
+                row(end, "q1", "https://pmu.com/a/", 100, BigDecimal.valueOf(5)),
+                row(start, "q3", "https://edu.pmu.com/x/", 100, BigDecimal.valueOf(5)),
+                row(end, "q3", "https://edu.pmu.com/x/", 5, BigDecimal.valueOf(5)));
+
+        assertThat(service.losingPages(rows, start, end)).isEmpty();
+    }
+
+    @Test
     @DisplayName("a small move below the 20% threshold is excluded")
     void insignificantMoveExcluded() {
         List<SeoSearchMetricsSnapshot> rows = List.of(

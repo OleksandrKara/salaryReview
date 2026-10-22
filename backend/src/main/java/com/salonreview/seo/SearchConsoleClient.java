@@ -66,15 +66,30 @@ public class SearchConsoleClient {
             BigDecimal ctr, BigDecimal position) {
     }
 
-    /** Per-query performance for a whole date range in one call, {@code dimensions} always {@code
-     * ["date", "query", "page"]} so every row carries all three, matching {@code
-     * seo_search_metrics_snapshot}'s shape. Previously called once per day in a loop — GA4's own
-     * {@code dailyTotals} had the same one-call-per-day shape until it was found to fire 56
-     * sequential requests in one "Sync now" request and trip the reverse proxy's 60s read timeout;
-     * Search Console's {@code searchAnalytics.query} supports a date range plus a "date" dimension
-     * exactly like GA4's report API does, so the whole sync window is now one call instead of one
-     * per day, closing the same latent-504 risk here before it has a chance to actually fire. */
+    /** Search Console's own per-request ceiling; asking for more is capped by the API anyway. */
+    public static final int MAX_PAGE_SIZE = 25_000;
+    private static final int MAX_PAGES = 40;
+
+    /** Per-query performance for a whole date range, {@code dimensions} always {@code ["date",
+     * "query", "page"]} so every row carries all three, matching {@code
+     * seo_search_metrics_snapshot}'s shape. One call per {@code rowLimit}-sized page of the result
+     * (not one call per day, which tripped the proxy's 60s timeout for GA4), walking {@code
+     * startRow} until a page comes back short. Without the walk the API returned only the first
+     * {@code rowLimit} rows sorted by clicks, and every later day of a busy window kept just its
+     * clicked rows (found 2026-10-22: PMU showed 7 impressions a day instead of ~2500). */
     public List<QueryRow> queryPerformance(String siteUrl, LocalDate startDate, LocalDate endDate, int rowLimit) {
+        int pageSize = Math.min(Math.max(rowLimit, 1), MAX_PAGE_SIZE);
+        List<QueryRow> rows = new ArrayList<>();
+        for (int page = 0; page < MAX_PAGES; page++) {
+            int fetched = fetchPage(siteUrl, startDate, endDate, pageSize, page * pageSize, rows);
+            if (fetched < pageSize) return rows;
+        }
+        throw new IllegalStateException("Search Console returned more than " + MAX_PAGES * pageSize
+                + " rows for " + startDate + ".." + endDate + "; refusing to save a truncated window");
+    }
+
+    private int fetchPage(String siteUrl, LocalDate startDate, LocalDate endDate, int pageSize, int startRow,
+            List<QueryRow> out) {
         // A real Map, not a hand-formatted JSON string — a raw String body handed to a
         // Jackson-message-converter-equipped RestClient gets serialized AS a JSON string
         // (quoted/escaped), not written through as-is, producing exactly the "root element must
@@ -84,7 +99,8 @@ public class SearchConsoleClient {
         body.put("startDate", startDate.toString());
         body.put("endDate", endDate.toString());
         body.put("dimensions", List.of("date", "query", "page"));
-        body.put("rowLimit", rowLimit);
+        body.put("rowLimit", pageSize);
+        body.put("startRow", startRow);
 
         // Pass the raw siteUrl (e.g. "sc-domain:akluxnails.com") as the URI template variable and
         // let RestClient's own UriComponentsBuilder encode it exactly once — pre-encoding it here
@@ -98,7 +114,7 @@ public class SearchConsoleClient {
                 .retrieve()
                 .body(JsonNode.class);
 
-        List<QueryRow> rows = new ArrayList<>();
+        int count = 0;
         JsonNode entries = response == null ? null : response.get("rows");
         if (entries != null) {
             for (JsonNode row : entries) {
@@ -106,13 +122,14 @@ public class SearchConsoleClient {
                 LocalDate date = keys != null && keys.size() > 0 ? LocalDate.parse(keys.get(0).asText()) : null;
                 String query = keys != null && keys.size() > 1 ? keys.get(1).asText() : null;
                 String page = keys != null && keys.size() > 2 ? keys.get(2).asText() : null;
-                rows.add(new QueryRow(date, query, page,
+                count++;
+                out.add(new QueryRow(date, query, page,
                         row.path("clicks").asLong(0),
                         row.path("impressions").asLong(0),
                         BigDecimal.valueOf(row.path("ctr").asDouble(0)),
                         BigDecimal.valueOf(row.path("position").asDouble(0))));
             }
         }
-        return rows;
+        return count;
     }
 }
