@@ -101,6 +101,12 @@ x-backend-healthcheck: &backend-healthcheck
   retries: 20
   start_period: 30s
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     # pgvector image is the official postgres:16 plus the `vector` extension — same PGDATA layout,
@@ -108,6 +114,7 @@ services:
     image: pgvector/pgvector:pg16
     container_name: salonreview-postgres
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_DB: salonreview
       POSTGRES_USER: salon
@@ -128,6 +135,7 @@ services:
     image: salaryreview-backend:latest
     container_name: salonreview-backend-blue
     restart: unless-stopped
+    logging: *default-logging
     ports:
       # Loopback only — never reachable from the public internet. Useful for host-side debugging
       # (`curl localhost:8080/...`); real traffic reaches this replica via backend-lb (frontend's
@@ -144,6 +152,7 @@ services:
     image: salaryreview-backend:latest
     container_name: salonreview-backend-green
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "127.0.0.1:8090:8080"
     environment: *backend-env
@@ -160,6 +169,7 @@ services:
     image: nginx:1.27-alpine
     container_name: salonreview-backend-lb
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - ./nginx/backend-lb.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
@@ -180,6 +190,7 @@ services:
     image: salaryreview-frontend:latest
     container_name: salonreview-frontend-blue
     restart: unless-stopped
+    logging: *default-logging
     environment:
       # Server-side fetches (Node in the container) go through backend-lb, not a single backend
       # replica directly — see that service's own comment above. The browser only ever talks to
@@ -200,6 +211,7 @@ services:
     image: salaryreview-frontend:latest
     container_name: salonreview-frontend-green
     restart: unless-stopped
+    logging: *default-logging
     environment:
       BACKEND_URL: http://backend-lb:8080
     ports:
@@ -214,6 +226,7 @@ services:
     image: adminer:latest
     container_name: salonreview-adminer
     restart: unless-stopped
+    logging: *default-logging
     environment:
       ADMINER_DEFAULT_SERVER: postgres
       ADMINER_DESIGN: pepa-linha
