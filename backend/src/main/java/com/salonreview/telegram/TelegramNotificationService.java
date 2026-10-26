@@ -47,16 +47,51 @@ public class TelegramNotificationService {
     private final TelegramConfigService configService;
     private final BusinessRepository businesses;
     private final String publicBaseUrl;
+    private final String ownerBotToken;
+    private final String ownerChatId;
     private final ObjectMapper json = new ObjectMapper();
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
     public TelegramNotificationService(TelegramConfigService configService, BusinessRepository businesses,
-                                        @Value("${app.public-base-url}") String publicBaseUrl) {
+                                        @Value("${app.public-base-url}") String publicBaseUrl,
+                                        @Value("${owner-alert.telegram.bot-token:}") String ownerBotToken,
+                                        @Value("${owner-alert.telegram.chat-id:}") String ownerChatId) {
         this.configService = configService;
         this.businesses = businesses;
         this.publicBaseUrl = publicBaseUrl;
+        this.ownerBotToken = ownerBotToken;
+        this.ownerChatId = ownerChatId;
+    }
+
+    /** Plain-text message to the owner-only chat (SEO/GEO/AI-visibility reports, not for staff).
+     * Never uses the business's staff chat, even when the owner chat is unset: then it only logs.
+     * Never throws. The business label prefix tells the owner which business it is about. */
+    public boolean sendOwnerAlert(Long businessId, String text) {
+        if (ownerBotToken == null || ownerBotToken.isBlank() || ownerChatId == null || ownerChatId.isBlank()) {
+            log.warn("Owner alert skipped: OWNER_ALERT_TELEGRAM_BOT_TOKEN / OWNER_ALERT_TELEGRAM_CHAT_ID not configured");
+            return false;
+        }
+        try {
+            Map<String, Object> body = Map.of("chat_id", ownerChatId, "text", businessLabel(businessId) + text,
+                    "disable_web_page_preview", true);
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.telegram.org/bot" + ownerBotToken + "/sendMessage"))
+                    .timeout(Duration.ofSeconds(10))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(body)))
+                    .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (res.statusCode() < 200 || res.statusCode() >= 300) {
+                log.warn("Owner alert send failed: HTTP {}", res.statusCode());
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.warn("Owner alert send failed (caller unaffected): {}", e.getClass().getSimpleName());
+            return false;
+        }
     }
 
     /** "🏢 &lt;business name&gt;\n" prefix — both businesses currently share one staff Telegram

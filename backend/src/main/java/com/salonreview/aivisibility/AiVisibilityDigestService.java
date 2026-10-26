@@ -70,7 +70,7 @@ public class AiVisibilityDigestService {
         AiVisibilityRun previous = lastTwo.stream().filter(r -> !r.getId().equals(run.getId())).findFirst().orElse(null);
         String text = build(settings, run, previous);
         if (includePageGaps) text = withPageGaps(text, run.getBusinessId());
-        return telegram.sendPlainText(run.getBusinessId(), text);
+        return telegram.sendOwnerAlert(run.getBusinessId(), text);
     }
 
     String build(AiVisibilitySettings settings, AiVisibilityRun run, AiVisibilityRun previous) {

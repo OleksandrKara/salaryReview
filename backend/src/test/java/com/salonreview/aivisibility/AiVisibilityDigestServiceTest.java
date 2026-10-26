@@ -67,7 +67,7 @@ class AiVisibilityDigestServiceTest {
         AiVisibilityDigestService svc = new AiVisibilityDigestService(settings, mock(AiVisibilityQueryRepository.class), mock(AiVisibilityRunRepository.class),
                 mock(AiVisibilityCheckRepository.class), mock(AiVisibilityRunService.class), mock(BusinessRepository.class), telegram, mock(AiVisibilityPageService.class), "x");
         assertThat(svc.sendFor(AiVisibilityRun.builder().id(1L).businessId(1L).checksOk(0).build())).isFalse();
-        verify(telegram, never()).sendPlainText(any(), any());
+        verify(telegram, never()).sendOwnerAlert(any(), any());
     }
 
     @Test

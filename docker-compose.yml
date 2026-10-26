@@ -40,6 +40,9 @@ x-backend-env: &backend-env
   # Twilio's inbound-SMS webhook (reply branching for checkout-review-request/lead_follow_up).
   # Blank auth-token means every inbound reply is rejected — same "referenced in
   # application.yml but never actually passed through" gap the Square webhook had.
+  # Owner-only Telegram chat for SEO/GEO/AI-visibility reports (blank means skipped).
+  OWNER_ALERT_TELEGRAM_BOT_TOKEN: ${OWNER_ALERT_TELEGRAM_BOT_TOKEN:-}
+  OWNER_ALERT_TELEGRAM_CHAT_ID: ${OWNER_ALERT_TELEGRAM_CHAT_ID:-}
   TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
   TWILIO_INBOUND_WEBHOOK_URL: ${TWILIO_INBOUND_WEBHOOK_URL:-https://salon.akluxnails.com/api/public/sms/inbound}
   # same_day_rebooking_discount automation (openspec/changes/same-day-rebooking-discount).
