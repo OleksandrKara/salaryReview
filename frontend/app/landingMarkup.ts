@@ -13,7 +13,6 @@ export const LANDING_MARKUP = `<!-- ============================ HEADER ========
         <li><a href="#advantages">Platform</a></li>
         <li><a href="#reporting">Reporting</a></li>
         <li><a href="#how">How it works</a></li>
-        <li><a href="#reviews">Reviews</a></li>
         <li><a href="#pricing">Pricing</a></li>
         <li class="mob-signin"><a href="#" data-signin><span class="btn sm">Sign In</span></a></li>
       </ul>
@@ -255,66 +254,6 @@ export const LANDING_MARKUP = `<!-- ============================ HEADER ========
   </div>
 </section>
 
-<!-- ============================ REVIEWS ============================ -->
-<section class="section-pad reviews" id="reviews" aria-label="Reviews" data-screen-label="Reviews">
-  <div class="wrap">
-    <div class="section-head center reveal">
-      <p class="eyebrow center">Loved by studios &amp; their teams</p>
-      <h2 class="h2">Rated where it counts.</h2>
-      <div class="ghead">
-        <img class="g-mark" style="width:24px;height:24px" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'><path fill='%234285F4' d='M45 24c0-1.6-.1-2.8-.4-4H24v7.6h12c-.2 2-1.6 5-4.6 7l-.04.3 6.7 5.2.5.04C42.9 36.3 45 30.7 45 24z'/><path fill='%2334A853' d='M24 46c6 0 11-2 14.6-5.4l-7-5.4c-1.9 1.3-4.4 2.2-7.6 2.2-5.8 0-10.7-3.9-12.5-9.2l-.3.02-7 5.4-.1.3C7.7 41.1 15.2 46 24 46z'/><path fill='%23FBBC05' d='M11.5 28.2c-.5-1.4-.7-2.9-.7-4.2s.3-2.9.7-4.2l-.02-.3-7.1-5.5-.2.1A22 22 0 0 0 2 24c0 3.5.8 6.9 2.3 9.9l7.2-5.7z'/><path fill='%23EA4335' d='M24 9.5c4.1 0 6.9 1.8 8.5 3.3l6.2-6C34.9 3.2 30 1 24 1 15.2 1 7.7 6 4.3 14.1l7.2 5.7C13.3 14.5 18.2 9.5 24 9.5z'/></svg>" alt="Google">
-        <span class="gscore">4.9</span>
-        <span class="gstars">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 6.3 6.9.9-5 4.8 1.2 6.9L12 17.7 5.9 20.9 7.1 14 2 9.2l6.9-.9z"/></svg>
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 6.3 6.9.9-5 4.8 1.2 6.9L12 17.7 5.9 20.9 7.1 14 2 9.2l6.9-.9z"/></svg>
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 6.3 6.9.9-5 4.8 1.2 6.9L12 17.7 5.9 20.9 7.1 14 2 9.2l6.9-.9z"/></svg>
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 6.3 6.9.9-5 4.8 1.2 6.9L12 17.7 5.9 20.9 7.1 14 2 9.2l6.9-.9z"/></svg>
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 6.3 6.9.9-5 4.8 1.2 6.9L12 17.7 5.9 20.9 7.1 14 2 9.2l6.9-.9z"/></svg>
-        </span>
-        <span class="greviews-meta">· 101 Google reviews</span>
-      </div>
-    </div>
-
-    <div class="rev-grid">
-      <article class="rev reveal">
-        <div class="r-top"><span class="r-stars">★★★★★</span><img class="g-mark" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'><path fill='%234285F4' d='M45 24c0-1.6-.1-2.8-.4-4H24v7.6h12c-.2 2-1.6 5-4.6 7l-.04.3 6.7 5.2.5.04C42.9 36.3 45 30.7 45 24z'/><path fill='%2334A853' d='M24 46c6 0 11-2 14.6-5.4l-7-5.4c-1.9 1.3-4.4 2.2-7.6 2.2-5.8 0-10.7-3.9-12.5-9.2l-.3.02-7 5.4-.1.3C7.7 41.1 15.2 46 24 46z'/><path fill='%23FBBC05' d='M11.5 28.2c-.5-1.4-.7-2.9-.7-4.2s.3-2.9.7-4.2l-.02-.3-7.1-5.5-.2.1A22 22 0 0 0 2 24c0 3.5.8 6.9 2.3 9.9l7.2-5.7z'/><path fill='%23EA4335' d='M24 9.5c4.1 0 6.9 1.8 8.5 3.3l6.2-6C34.9 3.2 30 1 24 1 15.2 1 7.7 6 4.3 14.1l7.2 5.7C13.3 14.5 18.2 9.5 24 9.5z'/></svg>" alt="Google"></div>
-        <p>"Payday used to be the most stressful hour of my week. Now my team sees their own numbers and the arguments are just… gone. Everything is out in the open."</p>
-        <div class="r-by"><span class="r-av">OK</span><span><span class="r-name">Olga K.</span><div class="r-date">Studio owner · 2 weeks ago</div></span></div>
-      </article>
-
-      <article class="rev reveal d1">
-        <div class="r-top"><span class="r-stars">★★★★★</span><img class="g-mark" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'><path fill='%234285F4' d='M45 24c0-1.6-.1-2.8-.4-4H24v7.6h12c-.2 2-1.6 5-4.6 7l-.04.3 6.7 5.2.5.04C42.9 36.3 45 30.7 45 24z'/><path fill='%2334A853' d='M24 46c6 0 11-2 14.6-5.4l-7-5.4c-1.9 1.3-4.4 2.2-7.6 2.2-5.8 0-10.7-3.9-12.5-9.2l-.3.02-7 5.4-.1.3C7.7 41.1 15.2 46 24 46z'/><path fill='%23FBBC05' d='M11.5 28.2c-.5-1.4-.7-2.9-.7-4.2s.3-2.9.7-4.2l-.02-.3-7.1-5.5-.2.1A22 22 0 0 0 2 24c0 3.5.8 6.9 2.3 9.9l7.2-5.7z'/><path fill='%23EA4335' d='M24 9.5c4.1 0 6.9 1.8 8.5 3.3l6.2-6C34.9 3.2 30 1 24 1 15.2 1 7.7 6 4.3 14.1l7.2 5.7C13.3 14.5 18.2 9.5 24 9.5z'/></svg>" alt="Google"></div>
-        <p>"As an artist I finally see my tips and splits in real time. Watching the tier bar move makes me want to take that extra client. It's honestly motivating."</p>
-        <div class="r-by"><span class="r-av">MS</span><span><span class="r-name">Mia S.</span><div class="r-date">Nail artist · 1 month ago</div></span></div>
-      </article>
-
-      <article class="rev reveal d2">
-        <div class="r-top"><span class="r-stars">★★★★★</span><img class="g-mark" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'><path fill='%234285F4' d='M45 24c0-1.6-.1-2.8-.4-4H24v7.6h12c-.2 2-1.6 5-4.6 7l-.04.3 6.7 5.2.5.04C42.9 36.3 45 30.7 45 24z'/><path fill='%2334A853' d='M24 46c6 0 11-2 14.6-5.4l-7-5.4c-1.9 1.3-4.4 2.2-7.6 2.2-5.8 0-10.7-3.9-12.5-9.2l-.3.02-7 5.4-.1.3C7.7 41.1 15.2 46 24 46z'/><path fill='%23FBBC05' d='M11.5 28.2c-.5-1.4-.7-2.9-.7-4.2s.3-2.9.7-4.2l-.02-.3-7.1-5.5-.2.1A22 22 0 0 0 2 24c0 3.5.8 6.9 2.3 9.9l7.2-5.7z'/><path fill='%23EA4335' d='M24 9.5c4.1 0 6.9 1.8 8.5 3.3l6.2-6C34.9 3.2 30 1 24 1 15.2 1 7.7 6 4.3 14.1l7.2 5.7C13.3 14.5 18.2 9.5 24 9.5z'/></svg>" alt="Google"></div>
-        <p>"The cash reporting alone paid for itself. Card and cash reconciled before I lock up, no late-night spreadsheet. My accountant actually thanked me."</p>
-        <div class="r-by"><span class="r-av">DV</span><span><span class="r-name">Daniel V.</span><div class="r-date">Owner, 3 locations · 3 weeks ago</div></span></div>
-      </article>
-
-      <article class="rev reveal">
-        <div class="r-top"><span class="r-stars">★★★★★</span><img class="g-mark" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'><path fill='%234285F4' d='M45 24c0-1.6-.1-2.8-.4-4H24v7.6h12c-.2 2-1.6 5-4.6 7l-.04.3 6.7 5.2.5.04C42.9 36.3 45 30.7 45 24z'/><path fill='%2334A853' d='M24 46c6 0 11-2 14.6-5.4l-7-5.4c-1.9 1.3-4.4 2.2-7.6 2.2-5.8 0-10.7-3.9-12.5-9.2l-.3.02-7 5.4-.1.3C7.7 41.1 15.2 46 24 46z'/><path fill='%23FBBC05' d='M11.5 28.2c-.5-1.4-.7-2.9-.7-4.2s.3-2.9.7-4.2l-.02-.3-7.1-5.5-.2.1A22 22 0 0 0 2 24c0 3.5.8 6.9 2.3 9.9l7.2-5.7z'/><path fill='%23EA4335' d='M24 9.5c4.1 0 6.9 1.8 8.5 3.3l6.2-6C34.9 3.2 30 1 24 1 15.2 1 7.7 6 4.3 14.1l7.2 5.7C13.3 14.5 18.2 9.5 24 9.5z'/></svg>" alt="Google"></div>
-        <p>"Set-up took an afternoon and they handle everything since. It connected to Square and just worked. No hidden fees — the price is the price."</p>
-        <div class="r-by"><span class="r-av">RP</span><span><span class="r-name">Renata P.</span><div class="r-date">Salon owner · 5 days ago</div></span></div>
-      </article>
-
-      <article class="rev reveal d1">
-        <div class="r-top"><span class="r-stars">★★★★★</span><img class="g-mark" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'><path fill='%234285F4' d='M45 24c0-1.6-.1-2.8-.4-4H24v7.6h12c-.2 2-1.6 5-4.6 7l-.04.3 6.7 5.2.5.04C42.9 36.3 45 30.7 45 24z'/><path fill='%2334A853' d='M24 46c6 0 11-2 14.6-5.4l-7-5.4c-1.9 1.3-4.4 2.2-7.6 2.2-5.8 0-10.7-3.9-12.5-9.2l-.3.02-7 5.4-.1.3C7.7 41.1 15.2 46 24 46z'/><path fill='%23FBBC05' d='M11.5 28.2c-.5-1.4-.7-2.9-.7-4.2s.3-2.9.7-4.2l-.02-.3-7.1-5.5-.2.1A22 22 0 0 0 2 24c0 3.5.8 6.9 2.3 9.9l7.2-5.7z'/><path fill='%23EA4335' d='M24 9.5c4.1 0 6.9 1.8 8.5 3.3l6.2-6C34.9 3.2 30 1 24 1 15.2 1 7.7 6 4.3 14.1l7.2 5.7C13.3 14.5 18.2 9.5 24 9.5z'/></svg>" alt="Google"></div>
-        <p>"What I love most is that my team trusts the numbers. They see the same screen I do. That trust changed the whole feeling of the studio."</p>
-        <div class="r-by"><span class="r-av">AK</span><span><span class="r-name">Anna K.</span><div class="r-date">Founder, AK.LUX.NAILS · 1 week ago</div></span></div>
-      </article>
-
-      <article class="rev reveal d2">
-        <div class="r-top"><span class="r-stars">★★★★★</span><img class="g-mark" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'><path fill='%234285F4' d='M45 24c0-1.6-.1-2.8-.4-4H24v7.6h12c-.2 2-1.6 5-4.6 7l-.04.3 6.7 5.2.5.04C42.9 36.3 45 30.7 45 24z'/><path fill='%2334A853' d='M24 46c6 0 11-2 14.6-5.4l-7-5.4c-1.9 1.3-4.4 2.2-7.6 2.2-5.8 0-10.7-3.9-12.5-9.2l-.3.02-7 5.4-.1.3C7.7 41.1 15.2 46 24 46z'/><path fill='%23FBBC05' d='M11.5 28.2c-.5-1.4-.7-2.9-.7-4.2s.3-2.9.7-4.2l-.02-.3-7.1-5.5-.2.1A22 22 0 0 0 2 24c0 3.5.8 6.9 2.3 9.9l7.2-5.7z'/><path fill='%23EA4335' d='M24 9.5c4.1 0 6.9 1.8 8.5 3.3l6.2-6C34.9 3.2 30 1 24 1 15.2 1 7.7 6 4.3 14.1l7.2 5.7C13.3 14.5 18.2 9.5 24 9.5z'/></svg>" alt="Google"></div>
-        <p>"I switched from juggling three spreadsheets. Now it's one clean dashboard and the payouts are done for me. Wish I'd found it two years ago."</p>
-        <div class="r-by"><span class="r-av">TN</span><span><span class="r-name">Thuy N.</span><div class="r-date">Spa owner · 1 month ago</div></span></div>
-      </article>
-    </div>
-  </div>
-</section>
-
 <!-- ============================ ORIGIN ============================ -->
 <section class="section-pad origin" aria-label="AK.LUX.NAILS story" data-screen-label="Origin story">
   <div class="wrap">
@@ -380,7 +319,7 @@ export const LANDING_MARKUP = `<!-- ============================ HEADER ========
       </div>
       <div class="foot-col">
         <h4>Company</h4>
-        <ul><li><a href="#reviews">Reviews</a></li><li><a href="#" data-signin>Sign in</a></li><li><a href="#">Contact</a></li><li><a href="#">Careers</a></li></ul>
+        <ul><li><a href="#" data-signin>Sign in</a></li><li><a href="#">Contact</a></li><li><a href="#">Careers</a></li></ul>
       </div>
       <div class="foot-col">
         <h4>Legal</h4>
