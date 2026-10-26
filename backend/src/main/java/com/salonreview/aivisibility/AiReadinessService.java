@@ -42,7 +42,7 @@ import java.util.Set;
  *   <li>the homepage and every tracked question's target page on our domain: answers 200, the text
  *       is in the HTML (readable without JavaScript), has an H1 and JSON-LD structured data.</li>
  * </ul>
- * Results go to {@code ai_readiness_report} (shown on the AI tab); the staff Telegram chat hears
+ * Results go to {@code ai_readiness_report} (shown on the AI tab); the owner-only Telegram chat hears
  * about it only when a check newly fails. Pages this server can't fetch itself (our own nails site
  * answers this VPS with 403) are read through DataForSEO without JavaScript, which is what a
  * crawler sees too.
@@ -113,7 +113,7 @@ public class AiReadinessService {
             StringBuilder sb = new StringBuilder("🤖 AI readiness: new problems on our site\n");
             for (Check c : newlyFailed) sb.append("• ").append(c.label()).append(": ").append(c.detail()).append('\n');
             sb.append("Marketing → AI → AI readiness");
-            telegram.sendPlainAlert(businessId, sb.toString().trim());
+            telegram.sendOwnerAlert(businessId, sb.toString().trim());
         }
         return report;
     }

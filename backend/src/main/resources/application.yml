@@ -117,6 +117,13 @@ internal:
   api:
     key: ${INTERNAL_API_KEY:}
 
+# Owner-only Telegram chat for SEO/GEO/AI-visibility reports (never the staff chat). Blank means
+# those messages are skipped, not redirected.
+owner-alert:
+  telegram:
+    bot-token: ${OWNER_ALERT_TELEGRAM_BOT_TOKEN:}
+    chat-id: ${OWNER_ALERT_TELEGRAM_CHAT_ID:}
+
 # Twilio's inbound-SMS webhook (reply branching for the checkout-review-request automation — see
 # openspec/changes/sms-automations-hub). Blank auth-token means every inbound request is rejected.
 twilio:

@@ -39,7 +39,17 @@ class TelegramNotificationServiceTest {
     }
 
     private static TelegramNotificationService service(TelegramConfigService configService, BusinessRepository businesses) {
-        return new TelegramNotificationService(configService, businesses, BASE_URL);
+        return new TelegramNotificationService(configService, businesses, BASE_URL, "", "");
+    }
+
+    @Test
+    @DisplayName("owner alert unset → false and the business chat is never read")
+    void ownerAlertUnsetNeverFallsBackToBusinessChat() {
+        TelegramConfigService configService = mock(TelegramConfigService.class);
+        when(configService.get(BUSINESS_ID)).thenReturn(
+                TelegramNotificationConfig.builder().botToken("tok").chatId("999888777").build());
+        assertThat(service(configService).sendOwnerAlert(BUSINESS_ID, "hi")).isFalse();
+        org.mockito.Mockito.verifyNoInteractions(configService);
     }
 
     @Test
