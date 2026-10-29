@@ -48,6 +48,7 @@ public class SquareWebhookController {
     private final CheckoutReviewTriggerService triggerService;
     private final SquareBookingWebhookHandler bookingWebhookHandler;
     private final SameDayBookingAlertService sameDayBookingAlertService;
+    private final PmuBookingOwnerAlertService pmuBookingOwnerAlertService;
     private final SquareOrderWebhookHandler orderWebhookHandler;
     private final SquarePaymentWebhookHandler paymentWebhookHandler;
     private final SquareCustomerWebhookHandler customerWebhookHandler;
@@ -61,6 +62,7 @@ public class SquareWebhookController {
     public SquareWebhookController(SquareWebhookProperties properties, CheckoutReviewTriggerService triggerService,
                                     SquareBookingWebhookHandler bookingWebhookHandler,
                                     SameDayBookingAlertService sameDayBookingAlertService,
+                                    PmuBookingOwnerAlertService pmuBookingOwnerAlertService,
                                     SquareOrderWebhookHandler orderWebhookHandler,
                                     SquarePaymentWebhookHandler paymentWebhookHandler,
                                     SquareCustomerWebhookHandler customerWebhookHandler,
@@ -70,6 +72,7 @@ public class SquareWebhookController {
         this.triggerService = triggerService;
         this.bookingWebhookHandler = bookingWebhookHandler;
         this.sameDayBookingAlertService = sameDayBookingAlertService;
+        this.pmuBookingOwnerAlertService = pmuBookingOwnerAlertService;
         this.orderWebhookHandler = orderWebhookHandler;
         this.paymentWebhookHandler = paymentWebhookHandler;
         this.customerWebhookHandler = customerWebhookHandler;
@@ -133,6 +136,7 @@ public class SquareWebhookController {
             // much notice staff originally got — see SameDayBookingAlertService's own doc).
             if ("booking.created".equals(event.type())) {
                 sameDayBookingAlertService.handleBookingCreated(businessId, object.booking());
+                pmuBookingOwnerAlertService.handleBookingCreated(businessId, object.booking());
             }
         }
         // order.updated/order.created/order.fulfillment.updated all carry the same minimal summary
