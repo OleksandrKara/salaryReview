@@ -59,7 +59,7 @@ public record SquareWebhookEvent(String type, String eventId, Data data) {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Booking(String id, String status, String customerId, String startAt, String createdAt,
                           String updatedAt, String locationId, String sellerNote, String customerNote,
-                          List<SquareClient.AppointmentSegment> appointmentSegments) {}
+                          List<SquareClient.AppointmentSegment> appointmentSegments, String source) {}
 
     /** {@code order.updated}'s payload is a summary only (id/state/version/timestamps, no line
      * items or tenders) — mirroring an order event means fetching the full order via {@link

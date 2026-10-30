@@ -48,6 +48,7 @@ const AUTOMATION_CATEGORY: Record<string, AutomationCategory> = {
   touchup_reminder: 'pmu',
   color_booster_reminder: 'pmu',
   academy_lead_funnel: 'academy',
+  pmu_booking_staff_alert: 'pmu',
 };
 const CATEGORY_META: Record<AutomationCategory, { label: string; className: string }> = {
   nails: { label: 'Nails', className: 'bg-rose-50 text-rose-700' },
@@ -71,6 +72,8 @@ const AUTOMATION_CHANNELS: Record<string, Channel[]> = {
   repeat_customer_winback: ['sms', 'email'],
   same_day_rebooking_discount: ['sms', 'email'],
   four_hand_request: ['sms', 'telegram'],
+  // 2026-10-30: staff-chat heads-up for PMU procedures booked on the website; Telegram only.
+  pmu_booking_staff_alert: ['telegram'],
   // 2026-09-25: consultation_lead_sms grew a Telegram leg too — same "staff heads-up, not a
   // customer-facing message" role as four_hand_request's own Telegram leg above (see
   // InternalNotificationController#notifyConsultationRequest / ConsultationRequestNotification).
