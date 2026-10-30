@@ -34,7 +34,8 @@ public class SecurityConfig {
     private final ObjectMapper json = new ObjectMapper();
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http, CurrentBusinessContext currentBusinessContext)
+    SecurityFilterChain filterChain(HttpSecurity http, CurrentBusinessContext currentBusinessContext,
+                                    com.salonreview.service.UserPermissionService userPermissions)
             throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
@@ -149,7 +150,19 @@ public class SecurityConfig {
                         // (PUT /api/owner/automations/{key}) is still an OWNER-only business
                         // decision — that request falls through to the catch-all below, unaffected
                         // by this matcher. Listed first so it wins.
-                        .requestMatchers("/api/owner/automations/activity/**").hasAnyRole("OWNER", "MANAGER")
+                        // Providers get in only with an owner-granted SMS_INBOX permission for the active business
+                        // (Staff > Permissions); the check re-reads the grant on every request.
+                        .requestMatchers("/api/owner/automations/activity/**").access((authentication, ctx) -> {
+                            var caller = authentication.get();
+                            if (caller == null || !(caller.getPrincipal() instanceof AppUserPrincipal p)) {
+                                return new org.springframework.security.authorization.AuthorizationDecision(false);
+                            }
+                            Long businessId = currentBusinessContext.isPopulated()
+                                    ? currentBusinessContext.id() : p.getActiveBusinessId();
+                            return new org.springframework.security.authorization.AuthorizationDecision(
+                                    userPermissions.has(p.getUserId(), p.getRole(), businessId,
+                                            com.salonreview.domain.Permission.SMS_INBOX));
+                        })
                         // Business creation (Phase 5.1) — pragmatically OWNER-gated like everything
                         // else here rather than a separate platform_admin role, since there is
                         // exactly one owner account in practice today; see design.md D4/5.2 for the

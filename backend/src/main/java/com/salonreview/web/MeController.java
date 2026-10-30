@@ -48,11 +48,13 @@ public class MeController {
     private final BusinessMembershipRepository memberships;
     private final BusinessRepository businesses;
     private final BusinessFeatureService businessFeatures;
+    private final com.salonreview.service.UserPermissionService userPermissions;
 
     public MeController(AiTriageProperties aiTriage, AiSeoAdvisorProperties aiSeoAdvisor, RagProperties rag,
                         AppUserRepository users, CurrentBusinessContext currentBusinessContext,
                         PlatformAdminRepository platformAdmins, BusinessMembershipRepository memberships,
-                        BusinessRepository businesses, BusinessFeatureService businessFeatures) {
+                        BusinessRepository businesses, BusinessFeatureService businessFeatures,
+                        com.salonreview.service.UserPermissionService userPermissions) {
         this.aiTriage = aiTriage;
         this.aiSeoAdvisor = aiSeoAdvisor;
         this.rag = rag;
@@ -62,6 +64,7 @@ public class MeController {
         this.memberships = memberships;
         this.businesses = businesses;
         this.businessFeatures = businessFeatures;
+        this.userPermissions = userPermissions;
     }
 
     @GetMapping("/api/me")
@@ -105,6 +108,8 @@ public class MeController {
         // Explicit, so the frontend no longer infers "platform admin" from having >1 business (a
         // manager working for both studios has 2 too, 2026-10-07).
         body.put("platformAdmin", platformAdmins.existsById(principal.getUserId()));
+        body.put("permissions", userPermissions.effective(principal.getUserId(), principal.getRole(), businessId)
+                .stream().map(Enum::name).sorted().toList());
         return body;
     }
 

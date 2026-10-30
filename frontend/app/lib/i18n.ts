@@ -118,6 +118,7 @@ const STRINGS = {
   navPrepaid: { EN: 'Prepaid', RU: 'Предоплата' },
   navOwnerComps: { EN: 'Owner comps', RU: 'Услуги владельцу' },
   navManualAdjustments: { EN: 'Manual adjustments', RU: 'Ручные корректировки' },
+  navPermissions: { EN: 'Permissions', RU: 'Права доступа' },
   navUsers: { EN: 'Users', RU: 'Пользователи' },
   navStaffDocuments: { EN: 'Staff Documents', RU: 'Документы сотрудников' },
   navReviews: { EN: 'Reviews', RU: 'Отзывы' },

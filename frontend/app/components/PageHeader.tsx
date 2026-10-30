@@ -24,6 +24,7 @@ export default async function PageHeader({
   let abid = activeBusinessId;
   let biz = businesses;
   let platformAdmin: boolean | undefined;
+  let smsInbox = r === 'OWNER' || r === 'MANAGER';
   if (r === undefined) {
     const me = await serverApi.getMe();
     r = me.role;
@@ -31,16 +32,21 @@ export default async function PageHeader({
     abid = me.activeBusinessId;
     biz = me.businesses;
     platformAdmin = me.platformAdmin;
+    smsInbox = r === 'OWNER' || r === 'MANAGER' || !!me.permissions?.includes('SMS_INBOX');
   } else if (biz && biz.length > 1) {
     // Only needed to tell a platform admin from a manager of two studios (both have >1 option).
     platformAdmin = (await serverApi.getMe()).platformAdmin;
+  }
+  if (r === 'PROVIDER' && role !== undefined) {
+    // A provider can be granted SMS_INBOX by the owner (Staff > Permissions).
+    smsInbox = !!(await serverApi.getMe()).permissions?.includes('SMS_INBOX');
   }
   // KB requests stay OWNER-only; the SMS unread badge is now also relevant to MANAGER (see
   // openspec/changes/lead-followup-and-manager-inbox — MANAGER gets read/reply access to the
   // same activity log via /admin/messages).
   const [kbRequestOpenCount, smsUnreadCount] = await Promise.all([
     r === 'OWNER' ? serverApi.getKbRequestOpenCount() : Promise.resolve(0),
-    r === 'OWNER' || r === 'MANAGER' ? serverApi.getSmsUnreadCount() : Promise.resolve(0),
+    smsInbox ? serverApi.getSmsUnreadCount() : Promise.resolve(0),
   ]);
 
   return (
@@ -56,6 +62,7 @@ export default async function PageHeader({
         activeBusinessId={abid}
         businesses={biz}
         platformAdmin={platformAdmin}
+        smsInbox={smsInbox}
       />
     </div>
   );

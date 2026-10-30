@@ -28,7 +28,7 @@ const STAFF_ONLY = ['/manager', '/admin/redos', '/owner/retention', '/admin/manu
 // redos and manual-adjustments are intentionally absent (gated by STAFF_ONLY instead). Retention is
 // carved out of /owner into STAFF_ONLY above, so only /owner/overview stays owner-only here.
 const OWNER_ONLY = [
-  '/reports', '/owner/overview', '/admin/users', '/admin/prepaid', '/admin/owner-customers',
+  '/reports', '/owner/overview', '/admin/users', '/admin/permissions', '/admin/prepaid', '/admin/owner-customers',
   '/admin/manager-time', '/admin/documents', '/rag/admin', '/sops/admin',
 ];
 const PROVIDER_AREAS = ['/me']; // /me and /me/* belong to providers
