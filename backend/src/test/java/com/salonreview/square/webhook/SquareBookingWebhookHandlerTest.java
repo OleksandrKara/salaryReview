@@ -22,7 +22,7 @@ class SquareBookingWebhookHandlerTest {
         var segments = List.of(new SquareClient.AppointmentSegment("TM1", "VAR1", 60));
         var webhookBooking = new SquareWebhookEvent.Booking("bk1", "ACCEPTED", "CUST1",
                 "2026-06-01T15:00:00Z", "2026-05-01T00:00:00Z", "2026-05-01T00:00:00Z", "LOC1",
-                "cashew $80", null, segments);
+                "cashew $80", null, segments, null);
 
         handler.handleBookingEvent(1L, webhookBooking);
 
@@ -51,7 +51,7 @@ class SquareBookingWebhookHandlerTest {
         SquareBookingMirrorIngestService ingest = mock(SquareBookingMirrorIngestService.class);
         SquareBookingWebhookHandler handler = new SquareBookingWebhookHandler(ingest);
         var webhookBooking = new SquareWebhookEvent.Booking("bk1", "ACCEPTED", "CUST1",
-                "2026-06-01T15:00:00Z", null, null, "LOC1", null, null, null);
+                "2026-06-01T15:00:00Z", null, null, "LOC1", null, null, null, null);
         org.mockito.Mockito.doThrow(new RuntimeException("DB down"))
                 .when(ingest).upsertBooking(eq(1L), org.mockito.ArgumentMatchers.any());
 

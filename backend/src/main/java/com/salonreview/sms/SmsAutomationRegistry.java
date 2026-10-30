@@ -218,6 +218,14 @@ public final class SmsAutomationRegistry {
                             + "message per provider and affected date. Starts in observation mode; calendar "
                             + "changes are recorded without claiming who changed the schedule.",
                     List.of(), false, false, false, Channel.TELEGRAM
+            )),
+            Map.entry("pmu_booking_staff_alert", new AutomationMeta(
+                    "pmu_booking_staff_alert",
+                    "PMU new procedure booking alert",
+                    "Heads-up in the PMU team Telegram chat when a client books a procedure on the website "
+                            + "(Square source API). Bookings made by staff in the Square dashboard or Square's own "
+                            + "booking page are ignored. Consultations have their own team alert.",
+                    List.of(), false, false, false, Channel.TELEGRAM
             ))
     );
 

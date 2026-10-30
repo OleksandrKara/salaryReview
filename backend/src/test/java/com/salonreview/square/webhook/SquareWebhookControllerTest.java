@@ -49,7 +49,7 @@ class SquareWebhookControllerTest {
     private CheckoutReviewTriggerService triggerService;
     private SquareBookingWebhookHandler bookingWebhookHandler;
     private SameDayBookingAlertService sameDayBookingAlertService;
-    private PmuBookingOwnerAlertService pmuBookingOwnerAlertService;
+    private PmuBookingStaffAlertService pmuBookingStaffAlertService;
     private SquareOrderWebhookHandler orderWebhookHandler;
     private SquarePaymentWebhookHandler paymentWebhookHandler;
     private SquareCustomerWebhookHandler customerWebhookHandler;
@@ -65,7 +65,7 @@ class SquareWebhookControllerTest {
         triggerService = mock(CheckoutReviewTriggerService.class);
         bookingWebhookHandler = mock(SquareBookingWebhookHandler.class);
         sameDayBookingAlertService = mock(SameDayBookingAlertService.class);
-        pmuBookingOwnerAlertService = mock(PmuBookingOwnerAlertService.class);
+        pmuBookingStaffAlertService = mock(PmuBookingStaffAlertService.class);
         orderWebhookHandler = mock(SquareOrderWebhookHandler.class);
         paymentWebhookHandler = mock(SquarePaymentWebhookHandler.class);
         customerWebhookHandler = mock(SquareCustomerWebhookHandler.class);
@@ -74,7 +74,7 @@ class SquareWebhookControllerTest {
                 .shortCode("test").timezone("UTC").active(true).build());
         connectionService = mock(SquareConnectionService.class);
         SquareWebhookController controller = new SquareWebhookController(properties, triggerService,
-                bookingWebhookHandler, sameDayBookingAlertService, pmuBookingOwnerAlertService, orderWebhookHandler, paymentWebhookHandler,
+                bookingWebhookHandler, sameDayBookingAlertService, pmuBookingStaffAlertService, orderWebhookHandler, paymentWebhookHandler,
                 customerWebhookHandler, businesses, connectionService, PUBLIC_BASE_URL);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
@@ -251,7 +251,7 @@ class SquareWebhookControllerTest {
 
         verify(bookingWebhookHandler).handleBookingEvent(eq(BUSINESS_A_ID), any());
         verify(sameDayBookingAlertService).handleBookingCreated(eq(BUSINESS_A_ID), any());
-        verify(pmuBookingOwnerAlertService).handleBookingCreated(eq(BUSINESS_A_ID), any());
+        verify(pmuBookingStaffAlertService).handleBookingCreated(eq(BUSINESS_A_ID), any());
         verifyNoInteractions(triggerService);
         verifyNoInteractions(orderWebhookHandler);
     }

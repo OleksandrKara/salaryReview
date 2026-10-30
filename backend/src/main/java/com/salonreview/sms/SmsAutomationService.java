@@ -3,6 +3,7 @@ package com.salonreview.sms;
 import com.salonreview.domain.SmsAutomation;
 import com.salonreview.domain.WinbackEmailSend;
 import com.salonreview.repo.LapsedCustomerWinbackSendRepository;
+import com.salonreview.repo.PmuBookingStaffAlertRepository;
 import com.salonreview.repo.ProviderScheduleClosureAlertRepository;
 import com.salonreview.repo.RepeatCustomerWinbackSendRepository;
 import com.salonreview.repo.SameDayRebookingSendRepository;
@@ -67,6 +68,7 @@ public class SmsAutomationService {
     private final WinbackEmailSendRepository winbackEmailSendRepository;
     private final AutomationReadinessService readinessService;
     private final ProviderScheduleClosureAlertRepository providerScheduleClosureAlertRepository;
+    private final PmuBookingStaffAlertRepository pmuBookingStaffAlertRepository;
     private AcademyLeadFunnelStats academyStats;
 
     /** Setter, not a constructor argument, so the many tests that build this service directly
@@ -83,7 +85,8 @@ public class SmsAutomationService {
                                  ServiceLifecycleReminderSendRepository serviceLifecycleReminderSendRepository,
                                  WinbackEmailSendRepository winbackEmailSendRepository,
                                  AutomationReadinessService readinessService,
-                                 ProviderScheduleClosureAlertRepository providerScheduleClosureAlertRepository) {
+                                 ProviderScheduleClosureAlertRepository providerScheduleClosureAlertRepository,
+                                 PmuBookingStaffAlertRepository pmuBookingStaffAlertRepository) {
         this.repository = repository;
         this.messageRepository = messageRepository;
         this.lapsedCustomerWinbackSendRepository = lapsedCustomerWinbackSendRepository;
@@ -93,6 +96,7 @@ public class SmsAutomationService {
         this.winbackEmailSendRepository = winbackEmailSendRepository;
         this.readinessService = readinessService;
         this.providerScheduleClosureAlertRepository = providerScheduleClosureAlertRepository;
+        this.pmuBookingStaffAlertRepository = pmuBookingStaffAlertRepository;
     }
 
     /** {@code true} for a template with no {@code automationKey} (nothing to gate) — but a real
@@ -120,7 +124,9 @@ public class SmsAutomationService {
 
                     // Telegram-channel automations have no sms_message rows at all — their "sent"
                     // count uses confirmed delivery_status=SENT and delivered_at in the outbox.
-                    long sent = meta.channel() == SmsAutomationRegistry.Channel.TELEGRAM
+                    long sent = "pmu_booking_staff_alert".equals(meta.key())
+                            ? pmuBookingStaffAlertRepository.countByBusinessIdAndDeliveryStatusAndDeliveredAtAfter(businessId, "SENT", since)
+                            : meta.channel() == SmsAutomationRegistry.Channel.TELEGRAM
                             ? providerScheduleClosureAlertRepository.countByBusinessIdAndDeliveryStatusAndDeliveredAtAfter(businessId, "SENT", since)
                             : !meta.primaryTemplateKeys().isEmpty()
                                     ? messageRepository.countByBusinessIdAndAutomationKeyAndTemplateKeyInAndDirectionAndStatusAndCreatedAtAfter(

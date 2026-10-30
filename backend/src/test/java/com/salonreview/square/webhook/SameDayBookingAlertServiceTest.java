@@ -43,7 +43,7 @@ class SameDayBookingAlertServiceTest {
     private static SquareWebhookEvent.Booking booking(String startAt, String createdAt, String customerId,
                                                         List<SquareClient.AppointmentSegment> segments) {
         return new SquareWebhookEvent.Booking("bk_1", "ACCEPTED", customerId, startAt, createdAt, createdAt,
-                null, null, null, segments);
+                null, null, null, segments, null);
     }
 
     @Test
