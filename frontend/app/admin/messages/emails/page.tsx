@@ -10,7 +10,7 @@ import EmailSendsView from './EmailSendsView';
 // SMS thread at all to attach an inline card to.
 export default async function EmailSendsPage() {
   const me = await serverApi.getMe();
-  if (me.role !== 'OWNER' && me.role !== 'MANAGER') redirect('/reports');
+  if (me.role !== 'OWNER' && me.role !== 'MANAGER' && !me.permissions?.includes('SMS_INBOX')) redirect('/reports');
 
   const sends = await serverApi.listEmailSends();
 

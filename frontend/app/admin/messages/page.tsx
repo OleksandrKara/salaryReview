@@ -43,7 +43,7 @@ export default async function MessagesPage({
   searchParams: Promise<{ phone?: string; filter?: string }>;
 }) {
   const me = await serverApi.getMe();
-  if (me.role !== 'OWNER' && me.role !== 'MANAGER') redirect('/reports');
+  if (me.role !== 'OWNER' && me.role !== 'MANAGER' && !me.permissions?.includes('SMS_INBOX')) redirect('/reports');
 
   const { phone, filter } = await searchParams;
   // ?filter=unread (owner request 2026-10-13) — the list opens on unread conversations only.

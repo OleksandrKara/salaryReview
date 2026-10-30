@@ -1034,6 +1034,8 @@ export interface Me {
   // Explicit since 2026-10-07: a manager working for both studios also has 2 businesses, so the
   // switcher's option count no longer says who is a platform admin.
   platformAdmin?: boolean;
+  // Effective per-user permissions in the active business (role-implied plus explicit grants), e.g. SMS_INBOX.
+  permissions?: string[];
 }
 
 export interface Features {
@@ -2556,4 +2558,18 @@ export interface AiReadinessReport {
   checkedAt: string;
   checks: AiReadinessCheck[];
   costUsd: number;
+}
+
+export interface UserPermissionsRow {
+  userId: number;
+  username: string;
+  displayName: string | null;
+  role: Role;
+  granted: string[];
+  implied: string[];
+}
+
+export interface PermissionsOverview {
+  permissions: string[];
+  users: UserPermissionsRow[];
 }

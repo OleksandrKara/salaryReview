@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import type {
   AbuseBlocksData,
   AppUser,
+  PermissionsOverview,
   KbArticle,
   ManualAdjustment,
   Me,
@@ -194,6 +195,7 @@ export const serverApi = {
     serverFetch<ProviderDetail>(`/api/settlements/me/detail?year=${year}&month=${month}`),
 
   listUsers: () => serverFetch<AppUser[]>(`/api/users`),
+  getPermissionsOverview: () => serverFetch<PermissionsOverview>(`/api/users/permissions`),
 
   getTelegramSettings: () => serverFetch<TelegramSettingsDto>(`/api/owner/settings/telegram`),
 

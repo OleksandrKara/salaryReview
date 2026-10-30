@@ -130,6 +130,8 @@ export const api = {
     proxyVoid(`/api/grants?providerId=${providerId}&year=${year}&month=${month}`, 'DELETE'),
 
   // User management (owner).
+  setUserPermission: (body: { userId: number; permission: string; granted: boolean }) =>
+    proxyVoid(`/api/users/permissions`, 'PUT', body),
   createUser: (body: UserCreateRequest) => proxyJson<AppUser>(`/api/users`, 'POST', body),
 
   updateUser: (id: number, body: UserUpdateRequest) =>

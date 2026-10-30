@@ -61,7 +61,7 @@ class MeControllerTest {
         BusinessFeatureService businessFeatures = mock(BusinessFeatureService.class);
         mvc = MockMvcBuilders.standaloneSetup(new MeController(new AiTriageProperties(), new AiSeoAdvisorProperties(),
                         new RagProperties(), users, currentBusinessContext, platformAdmins, memberships, businesses,
-                        businessFeatures))
+                        businessFeatures, mock(com.salonreview.service.UserPermissionService.class)))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
 
@@ -166,7 +166,7 @@ class MeControllerTest {
         when(businessFeatures.isEnabled(2L, BusinessFeatureService.AI_TRIAGE_ENABLED)).thenReturn(false);
         when(users.findById(1L)).thenReturn(Optional.of(user(null)));
         MockMvc scopedMvc = MockMvcBuilders.standaloneSetup(new MeController(aiTriage, new AiSeoAdvisorProperties(), rag,
-                        users, ctx, platformAdmins, memberships, businesses, businessFeatures))
+                        users, ctx, platformAdmins, memberships, businesses, businessFeatures, mock(com.salonreview.service.UserPermissionService.class)))
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
                 .build();
 

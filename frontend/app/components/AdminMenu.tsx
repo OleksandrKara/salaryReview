@@ -69,6 +69,7 @@ function linksFor(role: Role): NavSections {
           labelKey: 'navGroupStaff',
           links: [
             { href: '/admin/users', key: 'navUsers' },
+            { href: '/admin/permissions', key: 'navPermissions' },
             { href: '/admin/documents', key: 'navStaffDocuments' },
             { href: '/sops/admin', key: 'sopAdminTitle' },
             { href: '/owner/reviews', key: 'navReviews' },
@@ -139,6 +140,7 @@ export default function AdminMenu({
   activeBusinessId,
   businesses,
   platformAdmin,
+  smsInbox = false,
 }: {
   role: Role;
   language: Language | null;
@@ -149,6 +151,7 @@ export default function AdminMenu({
   activeBusinessId?: number;
   businesses?: MeBusinessOption[];
   platformAdmin?: boolean;
+  smsInbox?: boolean;
 }) {
   const pathname = usePathname();
 
@@ -300,7 +303,7 @@ export default function AdminMenu({
         </Link>
       ) : null}
 
-      {role === 'OWNER' || role === 'MANAGER' ? (
+      {role === 'OWNER' || role === 'MANAGER' || smsInbox ? (
         <MessagesNotifierIcon initialUnreadCount={smsUnreadCount} />
       ) : null}
 
