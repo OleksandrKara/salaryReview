@@ -88,4 +88,36 @@ class AiVisibilityQueryServiceTest {
         assertThat(cell.pointsTotal()).isEqualTo(3);
         assertThat(cell.rank()).isEqualTo((short) 3);
     }
+
+    private static AiVisibilityCheck at(String iso, long q, Engine e, boolean named, boolean cited) {
+        return AiVisibilityCheck.builder().engine(e).queryId(q).checkedAt(ZonedDateTime.parse(iso + "[America/Los_Angeles]").toInstant())
+                .status(AiVisibilityCheck.Status.OK).mentioned(named).ownSiteCited(cited).mentionRank(named ? (short) 2 : null).build();
+    }
+
+    @Test
+    void progressDeltaIsLikeForLikeAndPerWeek() {
+        String w1 = "2026-10-19T06:30:00-07:00", w2 = "2026-10-26T06:30:00-07:00";
+        List<AiVisibilityCheck> ok = List.of(
+                at(w1, 1, Engine.GEMINI, false, false), at(w1, 2, Engine.GEMINI, true, true), at(w1, 3, Engine.CHATGPT, true, false),
+                at(w2, 1, Engine.GEMINI, true, true), at(w2, 2, Engine.GEMINI, true, true));
+        var p = AiVisibilityQueryService.buildProgress(Map.of(1L, "a", 2L, "b", 3L, "c"), ok);
+        assertThat(p.weeksAvailable()).isEqualTo(2);
+        assertThat(p.weeks().get(0).mentionedPercent()).isEqualTo(67);
+        assertThat(p.weeks().get(1).mentionedPercent()).isEqualTo(100);
+        assertThat(p.weeks().get(1).avgRank()).isEqualTo(2.0);
+        // only pairs (1,GEMINI) and (2,GEMINI) exist in both weeks: 0->1 and 1->1 = +50 points
+        assertThat(p.delta().comparedPairs()).isEqualTo(2);
+        assertThat(p.delta().mentionedPoints()).isEqualTo(50);
+        assertThat(p.delta().direction()).isEqualTo("up");
+        assertThat(p.queries().stream().filter(q -> q.queryId() == 1L).findFirst().orElseThrow().mentionedPercent()).containsExactly(0, 100);
+    }
+
+    @Test
+    void progressFlatWithinThresholdAndSingleWeekHasNoDelta() {
+        var one = AiVisibilityQueryService.buildProgress(Map.of(1L, "a"), List.of(at("2026-10-26T06:30:00-07:00", 1, Engine.GEMINI, true, false)));
+        assertThat(one.delta()).isNull();
+        var flat = AiVisibilityQueryService.buildProgress(Map.of(1L, "a"), List.of(
+                at("2026-10-19T06:30:00-07:00", 1, Engine.GEMINI, true, false), at("2026-10-26T06:30:00-07:00", 1, Engine.GEMINI, true, false)));
+        assertThat(flat.delta().direction()).isEqualTo("flat");
+    }
 }

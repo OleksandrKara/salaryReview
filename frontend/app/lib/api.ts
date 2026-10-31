@@ -106,6 +106,7 @@ import type {
   AiPageComparison,
   AiPageGap,
   AiTrends,
+  AiProgress,
   AiTraffic,
 } from './types';
 import { sourcesParam } from '../owner/marketing/TrafficSourceFilter';
@@ -348,6 +349,8 @@ export const api = {
   getAiPageComparison: (id: number) => proxyGet<AiPageComparison>(`/api/owner/marketing/ai/queries/${id}/pages`),
   refreshAiPages: (id: number) => proxyJson<{ started: boolean }>(`/api/owner/marketing/ai/queries/${id}/pages/refresh`, 'POST', {}),
   getAiTrends: (weeks = 12) => proxyGet<AiTrends>(`/api/owner/marketing/ai/trends?weeks=${weeks}`),
+  getAiProgress: (site?: string, engine?: string, weeks = 12) =>
+    proxyGet<AiProgress>(`/api/owner/marketing/ai/progress?weeks=${weeks}${site ? `&site=${site}` : ''}${engine ? `&engine=${engine}` : ''}`),
   getAiTraffic: (days = 90) => proxyGet<AiTraffic>(`/api/owner/marketing/ai/traffic?days=${days}`),
   getAiPageGaps: () => proxyGet<AiPageGap[]>(`/api/owner/marketing/ai/page-gaps`),
   addAiCompetitor: (name: string, website: string) =>
