@@ -5,7 +5,7 @@ import { api } from '../../../lib/api';
 import type { AiCell, AiEngine, AiSearchPoint, AiHistoryItem, AiPageComparison, AiPageGap, AiQueryRow, AiRanked, AiVisibilityOverview, AiVisibilitySettingsDto } from '../../../lib/types';
 import type { AiQuestionSuggestion, AiReadinessReport } from '../../../lib/types';
 import { Spinner } from '../../../components/Spinner';
-import { AiTrafficPanel, AiTrendsPanel } from './AiInsights';
+import { AiProgressPanel, AiTrafficPanel, AiTrendsPanel } from './AiInsights';
 
 // openspec/changes/ai-visibility-monitoring design.md D7.
 const ENGINES: { key: AiEngine; label: string; short: string }[] = [
@@ -193,6 +193,8 @@ export default function AiVisibilityView({
           <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss" className="text-sky-700">×</button>
         </p>
       )}
+
+      <AiProgressPanel site={site} />
 
       <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {ENGINES.map((e) => {

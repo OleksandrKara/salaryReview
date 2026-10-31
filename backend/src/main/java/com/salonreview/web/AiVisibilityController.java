@@ -73,6 +73,24 @@ public class AiVisibilityController {
         return readModel.trends(requireFeatureEnabled(), Math.max(2, Math.min(weeks, 52)));
     }
 
+    @GetMapping("/progress")
+    public AiVisibilityQueryService.Progress progress(@RequestParam(defaultValue = "12") int weeks,
+            @RequestParam(required = false) String site, @RequestParam(required = false) String engine) {
+        if (site != null && !site.isBlank() && !com.salonreview.seo.SeoSite.VALUES.contains(site)) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "site must be all, studio or academy");
+        }
+        com.salonreview.domain.AiVisibilityCheck.Engine e = null;
+        if (engine != null && !engine.isBlank() && !"all".equalsIgnoreCase(engine)) {
+            try {
+                e = com.salonreview.domain.AiVisibilityCheck.Engine.valueOf(engine.toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException ex) {
+                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "unknown engine");
+            }
+        }
+        return readModel.progress(requireFeatureEnabled(), site, e, Math.max(2, Math.min(weeks, 52)));
+    }
+
     /** "From AI to clients": AI-referred visitors, leads, bookings, paying clients and revenue. */
     @GetMapping("/traffic")
     public AiReferralStatsRepository.Stats traffic(@RequestParam(defaultValue = "90") int days) {

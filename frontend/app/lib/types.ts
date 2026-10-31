@@ -2522,6 +2522,10 @@ export interface AiPageGapItem { component: string; label: string; competitorsWi
 export interface AiPageComparison { queryId: number; query: string; targetUrl: string | null; ours: AiPageView | null; competitors: AiPageView[]; gaps: AiPageGapItem[]; lastRefreshedAt: string | null }
 export interface AiPageGap { targetUrl: string; component: string; label: string; competitorsWith: number; competitorsCompared: number; queries: string[] }
 export interface AiWeekPoint { weekStart: string; enginePercent: Partial<Record<AiEngine, number>>; usPercent: number; placePercent: Record<string, number>; answers: number }
+export interface AiProgressWeek { weekStart: string; mentionedPercent: number | null; citedPercent: number | null; avgRank: number | null; answers: number }
+export interface AiProgressDelta { direction: 'up' | 'down' | 'flat'; mentionedPoints: number; citedPoints: number; comparedPairs: number; from: string; to: string }
+export interface AiQueryProgress { queryId: number; text: string; mentionedPercent: (number | null)[] }
+export interface AiProgress { weeks: AiProgressWeek[]; delta: AiProgressDelta | null; queries: AiQueryProgress[]; weeksAvailable: number }
 export interface AiTrends { weeks: AiWeekPoint[]; topPlaces: string[] }
 export interface AiTraffic {
   days: number;

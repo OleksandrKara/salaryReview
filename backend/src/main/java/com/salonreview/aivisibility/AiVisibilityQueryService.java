@@ -336,6 +336,106 @@ public class AiVisibilityQueryService {
         return new Trends(points, topKeys.stream().map(display::get).toList());
     }
 
+    public record ProgressWeek(LocalDate weekStart, Integer mentionedPercent, Integer citedPercent, Double avgRank, int answers) {
+    }
+
+    public record ProgressDelta(String direction, Integer mentionedPoints, Integer citedPoints, int comparedPairs,
+            LocalDate from, LocalDate to) {
+    }
+
+    /** {@code mentionedPercent}: per week, share of this question's OK answers that name us (null = no answers). */
+    public record QueryProgress(Long queryId, String text, List<Integer> mentionedPercent) {
+    }
+
+    public record Progress(List<ProgressWeek> weeks, ProgressDelta delta, List<QueryProgress> queries, int weeksAvailable) {
+    }
+
+    static final int FLAT_THRESHOLD_POINTS = 2;
+
+    /** Weekly progress for one site and optionally one engine. Headline metric: share of OK answers that
+     * name us, plus share that cite our own site and the average position when named. The week-over-week
+     * delta compares the same (question, engine) pairs in the last two weeks, because the number of
+     * checks differs between weeks. Weeks start Monday, PT. */
+    public Progress progress(Long businessId, String site, Engine engine, int weeks) {
+        List<AiVisibilityQuery> qs = queries.findByBusinessIdAndStatusInOrderBySortOrderAscIdAsc(businessId, VISIBLE).stream()
+                .filter(q -> inSite(site, q)).toList();
+        Map<Long, String> text = new LinkedHashMap<>();
+        for (AiVisibilityQuery q : qs) text.put(q.getId(), q.getQueryText());
+        Instant from = Instant.now().minus(Duration.ofDays(7L * weeks));
+        List<AiVisibilityCheck> ok = checks.findByBusinessIdAndCheckedAtAfterOrderByCheckedAtDesc(businessId, from).stream()
+                .filter(c -> c.getStatus() == AiVisibilityCheck.Status.OK && text.containsKey(c.getQueryId())
+                        && (engine == null || c.getEngine() == engine)).toList();
+        return buildProgress(text, ok);
+    }
+
+    static Progress buildProgress(Map<Long, String> text, List<AiVisibilityCheck> ok) {
+        java.util.TreeMap<LocalDate, List<AiVisibilityCheck>> byWeek = new java.util.TreeMap<>();
+        for (AiVisibilityCheck c : ok) byWeek.computeIfAbsent(weekStart(c), x -> new ArrayList<>()).add(c);
+        List<LocalDate> weekKeys = new ArrayList<>(byWeek.keySet());
+
+        List<ProgressWeek> points = new ArrayList<>();
+        byWeek.forEach((wk, list) -> {
+            long named = list.stream().filter(c -> Boolean.TRUE.equals(c.getMentioned())).count();
+            long cited = list.stream().filter(c -> Boolean.TRUE.equals(c.getOwnSiteCited())).count();
+            Double rank = list.stream().filter(c -> Boolean.TRUE.equals(c.getMentioned()) && c.getMentionRank() != null)
+                    .mapToInt(c -> c.getMentionRank()).average().stream().boxed().findFirst()
+                    .map(r -> Math.round(r * 10) / 10.0).orElse(null);
+            points.add(new ProgressWeek(wk, pct(named, list.size()), pct(cited, list.size()), rank, list.size()));
+        });
+
+        ProgressDelta delta = null;
+        if (weekKeys.size() >= 2) {
+            LocalDate prev = weekKeys.get(weekKeys.size() - 2), cur = weekKeys.get(weekKeys.size() - 1);
+            Map<String, double[]> a = pairShares(byWeek.get(prev)), b = pairShares(byWeek.get(cur));
+            double sn1 = 0, sc1 = 0, sn2 = 0, sc2 = 0;
+            int n = 0;
+            for (var e : a.entrySet()) {
+                double[] y = b.get(e.getKey());
+                if (y == null) continue;
+                n++;
+                sn1 += e.getValue()[0]; sc1 += e.getValue()[1]; sn2 += y[0]; sc2 += y[1];
+            }
+            if (n > 0) {
+                int dn = (int) Math.round(100 * (sn2 - sn1) / n), dc = (int) Math.round(100 * (sc2 - sc1) / n);
+                String dir = Math.abs(dn) < FLAT_THRESHOLD_POINTS ? "flat" : dn > 0 ? "up" : "down";
+                delta = new ProgressDelta(dir, dn, dc, n, prev, cur);
+            }
+        }
+
+        List<QueryProgress> rows = new ArrayList<>();
+        for (var e : text.entrySet()) {
+            List<Integer> series = new ArrayList<>();
+            boolean any = false;
+            for (LocalDate wk : weekKeys) {
+                List<AiVisibilityCheck> l = byWeek.get(wk).stream().filter(c -> c.getQueryId().equals(e.getKey())).toList();
+                Integer p = l.isEmpty() ? null : pct(l.stream().filter(c -> Boolean.TRUE.equals(c.getMentioned())).count(), l.size());
+                any |= p != null;
+                series.add(p);
+            }
+            if (any) rows.add(new QueryProgress(e.getKey(), e.getValue(), series));
+        }
+        return new Progress(points, delta, rows, points.size());
+    }
+
+    private static LocalDate weekStart(AiVisibilityCheck c) {
+        return c.getCheckedAt().atZone(AiVisibilityRunService.PT).toLocalDate().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+    }
+
+    private static Integer pct(long n, int total) {
+        return total == 0 ? null : (int) Math.round(100.0 * n / total);
+    }
+
+    /** (query, engine) -> {mentioned share, cited share} over that pair's checks in the week. */
+    private static Map<String, double[]> pairShares(List<AiVisibilityCheck> list) {
+        Map<String, List<AiVisibilityCheck>> g = new HashMap<>();
+        for (AiVisibilityCheck c : list) g.computeIfAbsent(c.getQueryId() + ":" + c.getEngine(), k -> new ArrayList<>()).add(c);
+        Map<String, double[]> out = new HashMap<>();
+        g.forEach((k, l) -> out.put(k, new double[] {
+                l.stream().filter(c -> Boolean.TRUE.equals(c.getMentioned())).count() / (double) l.size(),
+                l.stream().filter(c -> Boolean.TRUE.equals(c.getOwnSiteCited())).count() / (double) l.size()}));
+        return out;
+    }
+
     static String placeKey(String p) {
         return p.replace("&amp;", "&").toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9&]+", " ").trim();
     }
