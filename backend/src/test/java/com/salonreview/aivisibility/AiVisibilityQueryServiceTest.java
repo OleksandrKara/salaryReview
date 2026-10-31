@@ -120,4 +120,34 @@ class AiVisibilityQueryServiceTest {
                 at("2026-10-19T06:30:00-07:00", 1, Engine.GEMINI, true, false), at("2026-10-26T06:30:00-07:00", 1, Engine.GEMINI, true, false)));
         assertThat(flat.delta().direction()).isEqualTo("flat");
     }
+
+    @Test
+    void progressUsesAllHistoryWithDifferentQuestionSetsAndManualRechecks() {
+        // week of Oct 12: manual re-checks on Sunday and Tuesday for questions 1-2 (partial, repeated);
+        // week of Oct 19: scheduled run on questions 3-4 only; week of Oct 26: questions 3-4 again.
+        List<AiVisibilityCheck> ok = List.of(
+                at("2026-10-12T13:55:00-07:00", 1, Engine.CHATGPT, true, false), at("2026-10-13T09:00:00-07:00", 1, Engine.CHATGPT, false, false),
+                at("2026-10-13T09:05:00-07:00", 2, Engine.CHATGPT, false, false), at("2026-10-13T09:10:00-07:00", 2, Engine.CHATGPT, false, false),
+                at("2026-10-19T06:30:00-07:00", 3, Engine.CHATGPT, false, false), at("2026-10-19T06:31:00-07:00", 4, Engine.CHATGPT, true, true),
+                at("2026-10-26T06:30:00-07:00", 3, Engine.CHATGPT, true, false), at("2026-10-26T06:31:00-07:00", 4, Engine.CHATGPT, true, true));
+        var p = AiVisibilityQueryService.buildProgress(Map.of(1L, "a", 2L, "b", 3L, "c", 4L, "d"), ok);
+        assertThat(p.weeks()).hasSize(3);
+        assertThat(p.weeks().get(0).weekStart()).hasToString("2026-10-12");
+        assertThat(p.weeks().get(0).answers()).isEqualTo(4);
+        assertThat(p.weeks().get(0).questions()).isEqualTo(2);
+        assertThat(p.weeks().get(0).mentionedPercent()).isEqualTo(25);
+        assertThat(p.weeks().get(1).mentionedPercent()).isEqualTo(50);
+        assertThat(p.weeks().get(2).mentionedPercent()).isEqualTo(100);
+        assertThat(p.delta().basis()).isEqualTo("pairs");
+        assertThat(p.delta().mentionedPoints()).isEqualTo(50);
+    }
+
+    @Test
+    void progressDeltaFallsBackToRatesWhenNoSharedPairs() {
+        var p = AiVisibilityQueryService.buildProgress(Map.of(1L, "a", 2L, "b"), List.of(
+                at("2026-10-19T06:30:00-07:00", 1, Engine.GEMINI, false, false), at("2026-10-26T06:30:00-07:00", 2, Engine.GEMINI, true, false)));
+        assertThat(p.delta().basis()).isEqualTo("rates");
+        assertThat(p.delta().mentionedPoints()).isEqualTo(100);
+        assertThat(p.delta().direction()).isEqualTo("up");
+    }
 }
