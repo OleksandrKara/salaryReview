@@ -46,6 +46,7 @@ public class InternalNotificationController {
     private final SquareClientProvider squareClientProvider;
     private final BusinessRepository businesses;
     private final com.salonreview.marketing.AcademyLeadService academyLeads;
+    private final GeoIpService geoIp;
 
     public InternalNotificationController(InternalApiProperties internalApi, TelegramNotificationService telegram,
                                           TwilioSmsService sms, RebookingPromoSigner promoSigner,
@@ -53,7 +54,9 @@ public class InternalNotificationController {
                                           SameDayRebookingGroupMembershipRepository groupMembershipRepository,
                                           SquareClientProvider squareClientProvider, BusinessRepository businesses,
                                           com.salonreview.sms.VipRebookEligibilityService vipRebookEligibility,
-                                          com.salonreview.marketing.AcademyLeadService academyLeads) {
+                                          com.salonreview.marketing.AcademyLeadService academyLeads,
+                                          GeoIpService geoIp) {
+        this.geoIp = geoIp;
         this.vipRebookEligibility = vipRebookEligibility;
         this.academyLeads = academyLeads;
         this.internalApi = internalApi;
@@ -169,7 +172,7 @@ public class InternalNotificationController {
                                               boolean online, String locationAddress, String artistName,
                                               String businessShortCode, Long businessId,
                                               String sourcePageUrl, String sourcePageTitle, String adCampaign,
-                                              String note) {
+                                              String note, String clientIp, String clientCountryCode) {
     }
 
     @PostMapping("/notifications/consultation-request")
@@ -186,7 +189,8 @@ public class InternalNotificationController {
         ConsultationRequestNotification notification = new ConsultationRequestNotification(
                 business.getId(), body.businessShortCode(), body.customerName(), body.phoneNumber(),
                 body.startAt(), body.online(), body.locationAddress(), body.artistName(),
-                body.sourcePageUrl(), body.sourcePageTitle(), body.adCampaign(), body.note());
+                body.sourcePageUrl(), body.sourcePageTitle(), body.adCampaign(), body.note(),
+                geoIp.describe(body.clientIp(), body.clientCountryCode()));
         return ResponseEntity.ok(Map.of("sent", telegram.sendConsultationRequestAlert(business.getId(), notification)));
     }
 
@@ -257,8 +261,37 @@ public class InternalNotificationController {
                 .build());
         // Best-effort, doesn't affect the "enrolled" outcome above — matches how every other
         // notification in this codebase is decoupled from the primary action it accompanies.
-        telegram.sendRebookingPromoAlert(businessId, body.customerName(), body.phoneNumber(), body.appointmentStartAt());
+        telegram.sendRebookingPromoAlert(businessId, body.customerName(), body.phoneNumber(), body.appointmentStartAt(),
+                resolveTechnicianName(businessId, body.squareCustomerId(), body.appointmentStartAt()));
         return ResponseEntity.ok(Map.of("enrolled", true));
+    }
+
+    /** Best-effort display name of the technician on the just-created booking (matched by customer
+     * and start time); {@code null} when it can't be resolved, never throws. */
+    private String resolveTechnicianName(Long businessId, String squareCustomerId, String appointmentStartAt) {
+        if (squareCustomerId == null || appointmentStartAt == null) return null;
+        try {
+            Instant start = Instant.parse(appointmentStartAt);
+            var client = squareClientProvider.forBusiness(businessId);
+            for (var b : client.bookingsForCustomer(squareCustomerId, start.minus(java.time.Duration.ofDays(1)))) {
+                if (b.startAt() == null || !Instant.parse(b.startAt()).equals(start) || b.appointmentSegments() == null) continue;
+                var names = new java.util.LinkedHashSet<String>();
+                for (var seg : b.appointmentSegments()) {
+                    if (seg.teamMemberId() == null) continue;
+                    for (var tm : client.allTeamMembers()) {
+                        if (seg.teamMemberId().equals(tm.id())) {
+                            String n = ((tm.givenName() == null ? "" : tm.givenName()) + " "
+                                    + (tm.familyName() == null ? "" : tm.familyName())).trim();
+                            if (!n.isBlank()) names.add(n);
+                        }
+                    }
+                }
+                if (!names.isEmpty()) return String.join(", ", names);
+            }
+        } catch (RuntimeException e) {
+            log.warn("Could not resolve technician for rebooking-promo alert: {}", e.toString());
+        }
+        return null;
     }
 
     /** For a landing page's promo banner: verifies the promo/exp/sig query params it loaded with
@@ -375,7 +408,8 @@ public class InternalNotificationController {
     public record AcademyLeadRequest(String kind, String name, String phone, String email, String courseSlug, String courseName,
                                      String message, Boolean smsConsent, Boolean emailConsent, String sourcePageUrl,
                                      String utmSource, String utmMedium, String utmCampaign, String gclid,
-                                     String businessShortCode, Long businessId) {
+                                     String businessShortCode, Long businessId, String clientIp,
+                                     String clientCountryCode) {
     }
 
     @PostMapping("/academy/leads")
@@ -399,7 +433,8 @@ public class InternalNotificationController {
                         Boolean.TRUE.equals(body.smsConsent()), Boolean.TRUE.equals(body.emailConsent()),
                         clip(body.sourcePageUrl(), 500),
                         clip(body.utmSource(), 200), clip(body.utmMedium(), 200), clip(body.utmCampaign(), 200),
-                        clip(body.gclid(), 300)));
+                        clip(body.gclid(), 300),
+                        geoIp.describe(clip(body.clientIp(), 64), clip(body.clientCountryCode(), 8))));
         Map<String, Object> out = new HashMap<>();
         out.put("saved", true);
         out.put("id", o.id());

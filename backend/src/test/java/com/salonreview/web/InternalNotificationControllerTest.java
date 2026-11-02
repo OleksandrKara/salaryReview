@@ -77,7 +77,8 @@ class InternalNotificationControllerTest {
         when(squareClientProvider.forBusiness(1L)).thenReturn(square);
         InternalNotificationController controller = new InternalNotificationController(
                 props, telegram, sms, promoSigner, promoConfigService, groupMembershipRepository,
-                squareClientProvider, businessesMock, vipService, academyLeads);
+                squareClientProvider, businessesMock, vipService, academyLeads,
+                org.mockito.Mockito.mock(GeoIpService.class));
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -286,7 +287,7 @@ class InternalNotificationControllerTest {
         // enrolled into (see V71) to remove it from the right one later — this was previously
         // never set at all, silently defaulting to null on every row.
         assertThat(captor.getValue().getGroupId()).isEqualTo("grp1");
-        verify(telegram).sendRebookingPromoAlert(any(), any(), any(), any());
+        verify(telegram).sendRebookingPromoAlert(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -368,7 +369,8 @@ class InternalNotificationControllerTest {
                 .thenReturn(java.util.Optional.of(new PromoConfigService.PromoTerms(1500, null, "pmugrp", true)));
         InternalNotificationController controller = new InternalNotificationController(
                 props, telegram, sms, promoSigner, promoConfigService, groupMembershipRepository,
-                squareClientProvider, businesses, vipService, academyLeads);
+                squareClientProvider, businesses, vipService, academyLeads,
+                org.mockito.Mockito.mock(GeoIpService.class));
         MockMvc pmuMvc = MockMvcBuilders.standaloneSetup(controller).build();
         when(promoSigner.verify("REBOOK10", 9999999999L, "sig123")).thenReturn(true);
         String pmuBody = "{\"squareCustomerId\":\"cust1\",\"expEpochSeconds\":9999999999,"
@@ -400,7 +402,8 @@ class InternalNotificationControllerTest {
                 .thenReturn(java.util.Optional.of(new PromoConfigService.PromoTerms(1500, null, "pmugrp", true)));
         InternalNotificationController controller = new InternalNotificationController(
                 props, telegram, sms, promoSigner, promoConfigService, groupMembershipRepository,
-                squareClientProvider, businesses, vipService, academyLeads);
+                squareClientProvider, businesses, vipService, academyLeads,
+                org.mockito.Mockito.mock(GeoIpService.class));
         MockMvc pmuMvc = MockMvcBuilders.standaloneSetup(controller).build();
         when(promoSigner.verify("REBOOK10", 9999999999L, "sig123")).thenReturn(true);
         String pmuBody = "{\"squareCustomerId\":\"cust1\",\"expEpochSeconds\":9999999999,"

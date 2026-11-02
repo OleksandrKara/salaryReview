@@ -37,7 +37,8 @@ public class AcademyLeadService {
      * request. Sets the alert wording and hashtags, and only course requests get the follow-up funnel. */
     public record AcademyLead(String kind, String name, String phone, String email, String courseSlug, String courseName,
                               String message, boolean smsConsent, boolean emailConsent, String sourcePageUrl,
-                              String utmSource, String utmMedium, String utmCampaign, String gclid) {
+                              String utmSource, String utmMedium, String utmCampaign, String gclid,
+                              String location) {
         public boolean isSubscription() {
             return "subscribe".equals(kind);
         }
@@ -101,6 +102,7 @@ public class AcademyLeadService {
         if (notBlank(l.message())) sb.append("Message: ").append(l.message()).append('\n');
         sb.append("OK to text: ").append(l.smsConsent() ? "yes" : "no")
                 .append(", OK to email: ").append(l.emailConsent() ? "yes" : "no").append('\n');
+        if (notBlank(l.location())) sb.append("🌍 From: ").append(l.location()).append('\n');
         if (notBlank(l.sourcePageUrl())) sb.append("📄 Page: ").append(l.sourcePageUrl()).append('\n');
         if (notBlank(l.utmCampaign())) sb.append("📣 Ad: ").append(l.utmCampaign()).append('\n');
         else if (notBlank(l.utmSource())) sb.append("Source: ").append(l.utmSource()).append('\n');
