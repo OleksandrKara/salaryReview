@@ -19,6 +19,7 @@ public record ConsultationRequestNotification(
         String sourcePageUrl,    // nullable — page the booking was made from; salonLandings only forwards our own domains
         String sourcePageTitle,  // nullable — that page's title, a readable hint of what the client was looking at
         String adCampaign,       // nullable — utm_campaign from the visit's first-touch tracking, if it came from an ad
-        String note              // nullable — what the client wrote in "Anything you would like us to know?" (2026-10-04)
+        String note,             // nullable — what the client wrote in "Anything you would like us to know?" (2026-10-04)
+        String location          // nullable — pre-rendered visitor country/city/IP line (2026-11-02)
 ) {
 }

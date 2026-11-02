@@ -308,7 +308,8 @@ public class TelegramNotificationService {
      * auto-enrolled in the Square discount group, but staff still need to know NOT to also apply
      * the old manual "Same day rebooking discount" (would stack to $20 off). Never throws, same
      * contract as {@link #sendFourHandRequestAlert}. */
-    public boolean sendRebookingPromoAlert(Long businessId, String customerName, String phoneNumber, String appointmentStartAt) {
+    public boolean sendRebookingPromoAlert(Long businessId, String customerName, String phoneNumber, String appointmentStartAt,
+                                              String technicianName) {
         TelegramNotificationConfig cfg = configService.get(businessId);
         String token = cfg.getBotToken();
         String chatId = cfg.getChatId();
@@ -320,6 +321,7 @@ public class TelegramNotificationService {
         String text = businessLabel(businessId) + "🎁 Same-day rebooking discount booked\n"
                 + "Name: " + (customerName == null ? "—" : customerName) + '\n'
                 + "Phone: " + (phoneNumber == null ? "—" : phoneNumber) + '\n'
+                + "Technician: " + (technicianName == null || technicianName.isBlank() ? "—" : technicianName) + '\n'
                 + "Appointment: " + formatPreferredTime(appointmentStartAt) + '\n'
                 + "⚠️ Auto-discount ($10) already applies at checkout — do NOT also apply the "
                 + "manual 'Same day rebooking discount' or they'll get $20 off, not $10.";
@@ -740,6 +742,7 @@ public class TelegramNotificationService {
 
         String page = formatSourcePage(n.sourcePageTitle(), n.sourcePageUrl());
         boolean hasAd = n.adCampaign() != null && !n.adCampaign().isBlank();
+        boolean hasLocation = n.location() != null && !n.location().isBlank();
         // The client's own words from the booking form (2026-10-04 owner request: the note was
         // never shown, so staff called without knowing what the client had already told them).
         boolean hasNote = n.note() != null && !n.note().isBlank();
@@ -753,6 +756,7 @@ public class TelegramNotificationService {
                 + "🕐 Appointment: " + when + "\n"
                 + "📍 Format: " + typeEn + "\n"
                 + "📄 Page: " + page
+                + (hasLocation ? "\n🌍 From: " + n.location().strip() : "")
                 + (hasAd ? "\n📣 Ad: " + n.adCampaign().strip() : "")
                 + (hasNote ? "\n💬 Client's note: " + n.note().strip() : "");
 
@@ -763,6 +767,7 @@ public class TelegramNotificationService {
                 + "🕐 Запись: " + when + "\n"
                 + "📍 Формат: " + typeRu + "\n"
                 + "📄 Страница: " + page
+                + (hasLocation ? "\n🌍 Откуда: " + n.location().strip() : "")
                 + (hasAd ? "\n📣 Реклама: " + n.adCampaign().strip() : "")
                 + (hasNote ? "\n💬 Комментарий клиента: " + n.note().strip() : "");
 
