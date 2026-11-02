@@ -36,7 +36,6 @@ import type {
   SeoConnectionUpdateRequest,
   TrackingSiteDto,
   SeoOverviewDto,
-  SeoAnalysisResult,
   SeoCompetitorRow,
   AiQuestionSuggestion,
   AiReadinessReport,
@@ -302,13 +301,6 @@ export const api = {
 
   removeSeoTrackedKeyword: (id: number, site?: string) =>
     proxyDeleteJson<SeoOverviewDto>(`/api/owner/marketing/seo/tracked-keywords/${id}${site ? `?site=${site}` : ''}`),
-
-  // "Analyze SEO" button — force=true is the explicit "Analyze again" action, bypassing the cache.
-  analyzeSeo: (force = false) =>
-    proxyJson<SeoAnalysisResult>(`/api/owner/marketing/seo/advisor/analyze${force ? '?force=true' : ''}`, 'POST', {}),
-
-  // Past analyses, newest first — powers the Advisor's history list.
-  getSeoAnalysisHistory: () => proxyGet<SeoAnalysisResult[]>(`/api/owner/marketing/seo/advisor/history`),
 
   // Competitors — zero-cost scope (2026-09-02): PageSpeed comparison is automated, GBP
   // rating/review count is owner-entered only.
