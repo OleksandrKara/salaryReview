@@ -46,7 +46,6 @@ export default async function SeoMonitoringPage({ searchParams }: { searchParams
           key={site ?? 'all'}
           initialData={overview}
           site={site === 'all' ? undefined : site}
-          canUseAiAdvisor={me.features.aiSeoAdvisorEnabled && me.role === 'OWNER'}
         />
       </div>
     </main>
