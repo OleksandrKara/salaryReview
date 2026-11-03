@@ -1,7 +1,9 @@
 package com.salonreview.web;
 
 import com.salonreview.marketing.MarketingDashboardRepository.LandingPageSummary;
+import com.salonreview.marketing.MarketingConversionsService;
 import com.salonreview.marketing.MarketingDashboardService;
+import com.salonreview.web.dto.MarketingConversionsDto;
 import com.salonreview.marketing.TrafficSourceParam;
 import com.salonreview.web.dto.MarketingDashboardDto;
 import org.springframework.http.HttpStatus;
@@ -19,9 +21,21 @@ import java.util.UUID;
 public class MarketingDashboardController {
 
     private final MarketingDashboardService service;
+    private final MarketingConversionsService conversionsService;
 
-    public MarketingDashboardController(MarketingDashboardService service) {
+    public MarketingDashboardController(MarketingDashboardService service, MarketingConversionsService conversionsService) {
         this.service = service;
+        this.conversionsService = conversionsService;
+    }
+
+    /** Weighted conversions (text/call taps, consultations, deposits, full payments) and Square
+     * revenue for one landing page and the shared period filter. */
+    @GetMapping("/marketing/conversions")
+    public MarketingConversionsDto conversions(@RequestParam(required = false) String slug,
+                                               @RequestParam(required = false) String from,
+                                               @RequestParam(required = false) String to) {
+        return conversionsService.conversions(slug,
+                from == null ? null : LocalDate.parse(from), to == null ? null : LocalDate.parse(to));
     }
 
     /** sources is a comma-separated list of traffic-source buckets (meta_ads, google_ads,
