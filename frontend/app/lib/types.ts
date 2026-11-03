@@ -2542,3 +2542,22 @@ export interface PermissionsOverview {
   permissions: string[];
   users: UserPermissionsRow[];
 }
+
+export interface MarketingConversionRow {
+  key: string;
+  label: string;
+  hint: string;
+  weight: number;
+  count: number;
+  points: number;
+}
+
+export interface MarketingConversionsData {
+  available: boolean;
+  landingPageSlug: string;
+  pageViews: number;
+  rows: MarketingConversionRow[];
+  totalPoints: number;
+  payingCustomers: number;
+  revenue: number;
+}
