@@ -78,13 +78,13 @@ public class LeadIntakeService {
             java.util.List<String> deleted = new java.util.ArrayList<>();
             try {
                 for (SquareClient.Customer c : sq.findCustomersExact(validPhone(phone), null)) {
-                    if ("ZZ Test Lead".equals(c.fullName())) {
+                    if ("ZZ Test Lead".equals(c.fullName()) || validPhone(phone).startsWith("+1619555")) {
                         sq.deleteCustomer(c.id());
                         deleted.add(c.id());
                     }
                 }
-                jdbc.update("DELETE FROM lead_intake WHERE business_id = ? AND phone_number = ? AND name = 'ZZ Test Lead'", businessId, validPhone(phone));
-                jdbc.update("DELETE FROM marketing.contacts WHERE business_id = ? AND phone_number = ? AND given_name = 'ZZ'", businessId, validPhone(phone));
+                jdbc.update("DELETE FROM lead_intake WHERE business_id = ? AND phone_number = ? AND (name = 'ZZ Test Lead' OR phone_number LIKE '+1619555%')", businessId, validPhone(phone));
+                jdbc.update("DELETE FROM marketing.contacts WHERE business_id = ? AND phone_number = ? AND (given_name = 'ZZ' OR phone_number LIKE '+1619555%')", businessId, validPhone(phone));
             } catch (Exception e) { out.put("deleteError", e.toString()); }
             out.put("deleted", deleted);
         }
