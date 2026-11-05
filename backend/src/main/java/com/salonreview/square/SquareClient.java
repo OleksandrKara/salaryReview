@@ -1750,7 +1750,7 @@ public class SquareClient {
                 .retrieve()
                 .body(CustomAttrDefsResponse.class));
         if (resp != null && resp.customAttributeDefinitions() != null
-                && resp.customAttributeDefinitions().stream().anyMatch(d -> key.equals(d.key()))) return;
+                && resp.customAttributeDefinitions().stream().anyMatch(d -> d.key() != null && (key.equals(d.key()) || d.key().endsWith(":" + key)))) return;
         Map<String, Object> body = Map.of(
                 "idempotency_key", "attr-" + key,
                 "custom_attribute_definition", Map.of(
@@ -1788,6 +1788,17 @@ public class SquareClient {
                 .body(body)
                 .retrieve()
                 .toBodilessEntity());
+    }
+
+    /** Raw keys of customer attribute definitions as the pinned API version sees them (diagnostics). */
+    public List<String> customerAttributeKeys() {
+        CustomAttrDefsResponse resp = throttled(() -> http.get()
+                .uri("/v2/customers/custom-attribute-definitions")
+                .header("Square-Version", "2025-10-16")
+                .retrieve()
+                .body(CustomAttrDefsResponse.class));
+        return resp == null || resp.customAttributeDefinitions() == null ? List.of()
+                : resp.customAttributeDefinitions().stream().map(CustomAttrDef::key).toList();
     }
 
     /** Deletes a customer; used to clean up verification data. */
