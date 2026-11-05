@@ -2562,20 +2562,24 @@ export interface MarketingConversionsData {
   revenue: number;
 }
 
-// --- Leads (owner/manager) — captured by backend LeadIntakeService, followed up via /admin/leads.
+// --- Leads CRM (owner/manager) — captured by backend LeadIntakeService, followed up via /admin/leads.
+export type LeadStatus = 'NEW' | 'CONTACTED' | 'BOOKED' | 'LOST';
 export interface Lead {
   id: number;
   channel: string;
   source: string;
-  trafficSource: string | null;
   phoneNumber: string | null;
   email: string | null;
   name: string | null;
   detail: string | null;
-  outcome: string;
-  status: 'NEW' | 'CONTACTED' | 'BOOKED' | 'LOST';
+  status: LeadStatus;
   callbackAt: string | null;
-  notes: string | null;
-  updatedBy: string | null;
   createdAt: string;
+  lastTouchAt: string;
+  touches: number;
+  squareCustomerId: string | null;
+  squareUrl: string | null;
 }
+export interface LeadTouch { id: number; channel: string; source: string; detail: string | null; createdAt: string }
+export interface LeadEvent { id: number; type: string; text: string | null; createdBy: string | null; createdAt: string }
+export interface LeadDetail { lead: Lead; touches: LeadTouch[]; events: LeadEvent[] }

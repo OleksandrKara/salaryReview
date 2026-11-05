@@ -85,6 +85,7 @@ marketing:
   lead-intake:
     # Business ids whose leads are pushed into Square with a source (blank = off).
     businesses: ${LEAD_INTAKE_BUSINESSES:}
+    webhook-token: ${LEAD_WEBHOOK_TOKEN:}
   # Secret for the Google Ads offline-conversion feed (AdsConversionFeedController), read by Ads'
   # scheduled upload. Blank = the feed answers 404.
   ads-conversion-feed-key: ${ADS_CONVERSION_FEED_KEY:}

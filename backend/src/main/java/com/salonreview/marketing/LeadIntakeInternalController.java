@@ -28,6 +28,11 @@ public class LeadIntakeInternalController {
                                     @RequestParam(defaultValue = "2") long businessId,
                                     @RequestBody Map<String, Object> body) {
         auth(headerKey != null ? headerKey : queryKey);
+        return captureCall(businessId, body);
+    }
+
+    /** Shared by the internal and the public (token) webhook. */
+    public Map<String, Object> captureCall(long businessId, Map<String, Object> body) {
         String direction = str(body, "direction", "call_type", "type");
         if (direction != null && direction.toLowerCase().startsWith("out")) return Map.of("outcome", "IGNORED_OUTBOUND");
         String phone = str(body, "caller_number", "caller", "src", "caller_id", "phone");

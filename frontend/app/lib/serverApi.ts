@@ -49,6 +49,7 @@ import type {
   ReviewsOverview,
   MissedBooking,
   Lead,
+  LeadDetail,
   Redo,
   RevenueDayDetail,
   RevenuePulse,
@@ -274,6 +275,10 @@ export const serverApi = {
   listRedos: () => serverFetch<Redo[]>(`/api/redos`),
 
   listLeads: () => serverFetch<Lead[]>(`/api/leads`),
+
+  getLead: (id: number) => serverFetch<LeadDetail>(`/api/leads/${id}`),
+
+  lookupLead: (phone: string) => serverFetch<{ id?: number }>(`/api/leads/lookup?phone=${encodeURIComponent(phone)}`),
 
   listMissedBookings: () => serverFetch<MissedBooking[]>(`/api/missed-bookings`),
 
