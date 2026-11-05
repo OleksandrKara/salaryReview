@@ -69,6 +69,21 @@ public class TwilioInboundSmsController {
     private final SmsWebsiteLeadService websiteLeadService;
     private final LeadIntakeService leadIntake;
 
+    /** Carrier-supplied sender location, kept on the lead touch. */
+    private static String smsPayload(Map<String, String> params) {
+        Map<String, String> out = new java.util.LinkedHashMap<>();
+        for (String k : new String[]{"FromCity", "FromState", "FromZip", "FromCountry", "To"}) {
+            String v = params.get(k);
+            if (v != null && !v.isBlank()) out.put(k, v);
+        }
+        if (out.isEmpty()) return null;
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(out);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     public TwilioInboundSmsController(TwilioInboundProperties properties, SmsMessageLogService messageLogService,
                                        SmsReplyFlowRepository replyFlowRepository, CheckoutReviewReplyService replyService,
                                        TelegramNotificationService telegramService, MarketingContactsService contactsService,
@@ -175,7 +190,7 @@ public class TwilioInboundSmsController {
 
         // Every inbound text is a lead: tie it to a Square profile with its source (never duplicates; see LeadIntakeService).
         if (!isOptOut) {
-            leadIntake.capture(new LeadIntakeService.Lead(businessId, "SMS", null, from, null, null, null, "sms:" + params.get("MessageSid")));
+            leadIntake.capture(new LeadIntakeService.Lead(businessId, "SMS", null, from, null, null, null, "sms:" + params.get("MessageSid"), smsPayload(params)));
         }
 
         // A customer reply always needs a human's attention right away, not just a dashboard entry

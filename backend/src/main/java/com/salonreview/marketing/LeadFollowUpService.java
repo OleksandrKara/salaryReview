@@ -1,6 +1,7 @@
 package com.salonreview.marketing;
 
 import com.salonreview.config.CurrentBusinessContext;
+import com.salonreview.web.GeoIpService;
 import com.salonreview.telegram.TelegramNotificationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,24 +37,33 @@ public class LeadFollowUpService {
     private final CurrentBusinessContext business;
     private final TelegramNotificationService telegram;
     private final String publicBaseUrl;
+    private final GeoIpService geo;
+    private final com.fasterxml.jackson.databind.ObjectMapper json = new com.fasterxml.jackson.databind.ObjectMapper();
 
-    public LeadFollowUpService(JdbcTemplate jdbc, CurrentBusinessContext business, TelegramNotificationService telegram,
+    public LeadFollowUpService(JdbcTemplate jdbc, CurrentBusinessContext business, TelegramNotificationService telegram, GeoIpService geo,
                                @org.springframework.beans.factory.annotation.Value("${app.public-base-url}") String publicBaseUrl) {
         this.jdbc = jdbc;
         this.business = business;
         this.telegram = telegram;
         this.publicBaseUrl = publicBaseUrl;
+        this.geo = geo;
     }
 
     public record LeadView(long id, String channel, String source, String phoneNumber, String email, String name,
                            String detail, String status, String callbackAt, String createdAt, String lastTouchAt,
                            int touches, String squareCustomerId, String squareUrl) {}
 
-    public record Touch(long id, String channel, String source, String detail, String createdAt) {}
+    public record Touch(long id, String channel, String source, String detail, String createdAt,
+                        java.util.Map<String, String> payload) {}
+
+    public record Origin(String type, String at, String landingPage, String variant, String trafficSource,
+                         String utmSource, String utmMedium, String utmCampaign, String utmTerm, String utmContent,
+                         boolean googleClick, boolean facebookClick, String referrer, String device, String os,
+                         String browser, String ip, String location, String service) {}
 
     public record Event(long id, String type, String text, String createdBy, String createdAt) {}
 
-    public record LeadDetail(LeadView lead, List<Touch> touches, List<Event> events) {}
+    public record LeadDetail(LeadView lead, List<Touch> touches, List<Event> events, List<Origin> origins) {}
 
     public record UpdateRequest(String status, String callbackAt, Boolean clearCallback) {}
 
@@ -93,15 +103,61 @@ public class LeadFollowUpService {
     public LeadDetail detail(long id) {
         LeadView lead = find(id);
         String key = leadKey(id);
-        List<Touch> touches = jdbc.query("SELECT id, channel, source, detail, created_at FROM (SELECT l.*, " + KEY
+        List<Touch> touches = jdbc.query("SELECT id, channel, source, detail, created_at, payload FROM (SELECT l.*, " + KEY
                         + " AS k FROM lead_intake l WHERE business_id = ? AND outcome <> 'DUPLICATE') t WHERE k = ? ORDER BY created_at DESC",
                 (rs, i) -> new Touch(rs.getLong("id"), rs.getString("channel"), rs.getString("source"),
-                        rs.getString("detail"), iso(rs.getTimestamp("created_at"))), business.id(), key);
+                        rs.getString("detail"), iso(rs.getTimestamp("created_at")), parsePayload(rs.getString("payload"))),
+                business.id(), key);
         List<Event> events = jdbc.query("SELECT id, type, text, created_by, created_at FROM lead_events "
                         + "WHERE lead_id = ? AND business_id = ? ORDER BY created_at DESC",
                 (rs, i) -> new Event(rs.getLong("id"), rs.getString("type"), rs.getString("text"),
                         rs.getString("created_by"), iso(rs.getTimestamp("created_at"))), id, business.id());
-        return new LeadDetail(lead, touches, events);
+        return new LeadDetail(lead, touches, events, origins(lead));
+    }
+
+    private java.util.Map<String, String> parsePayload(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return json.readValue(raw, new com.fasterxml.jackson.core.type.TypeReference<java.util.LinkedHashMap<String, String>>() {});
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Website visits behind this person: every form step and booking with its traffic and device data. */
+    private List<Origin> origins(LeadView lead) {
+        String phone = lead.phoneNumber();
+        String email = lead.email() == null ? null : lead.email().toLowerCase();
+        if (phone == null && email == null) return List.of();
+        java.util.Map<String, String> places = new java.util.HashMap<>();
+        return jdbc.query("""
+                SELECT submission_type, occurred_at, landing_page_slug, landing_path, variant_name, traffic_source,
+                       utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, fbclid, referrer,
+                       device_type, os_name, os_version, browser_name, browser_version, ip_address, service_name
+                FROM marketing.submissions
+                WHERE business_id = ? AND (customer_phone = ? OR (?::text IS NOT NULL AND lower(customer_email) = ?))
+                ORDER BY occurred_at DESC LIMIT 12
+                """, (rs, i) -> {
+            String ip = rs.getString("ip_address");
+            String where = ip == null ? null : places.computeIfAbsent(ip, k -> {
+                String d = places.size() < 6 ? geo.describe(k, null) : null;
+                return d == null ? "" : d;
+            });
+            String slug = rs.getString("landing_page_slug");
+            return new Origin(rs.getString("submission_type"), iso(rs.getTimestamp("occurred_at")),
+                    slug != null ? slug : rs.getString("landing_path"), rs.getString("variant_name"),
+                    rs.getString("traffic_source"), rs.getString("utm_source"), rs.getString("utm_medium"),
+                    rs.getString("utm_campaign"), rs.getString("utm_term"), rs.getString("utm_content"),
+                    rs.getString("gclid") != null, rs.getString("fbclid") != null, rs.getString("referrer"),
+                    rs.getString("device_type"), join(rs.getString("os_name"), rs.getString("os_version")),
+                    join(rs.getString("browser_name"), rs.getString("browser_version")), ip,
+                    where == null || where.isEmpty() ? null : where, rs.getString("service_name"));
+        }, business.id(), phone, email, email);
+    }
+
+    private static String join(String a, String b) {
+        if (a == null) return null;
+        return b == null ? a : a + " " + b;
     }
 
     /** Lead id for a phone number, used by the Telegram "Open lead" link. */

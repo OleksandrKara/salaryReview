@@ -2580,6 +2580,12 @@ export interface Lead {
   squareCustomerId: string | null;
   squareUrl: string | null;
 }
-export interface LeadTouch { id: number; channel: string; source: string; detail: string | null; createdAt: string }
+export interface LeadTouch { id: number; channel: string; source: string; detail: string | null; createdAt: string; payload: Record<string, string> | null }
+export interface LeadOrigin {
+  type: string; at: string; landingPage: string | null; variant: string | null; trafficSource: string | null;
+  utmSource: string | null; utmMedium: string | null; utmCampaign: string | null; utmTerm: string | null; utmContent: string | null;
+  googleClick: boolean; facebookClick: boolean; referrer: string | null; device: string | null; os: string | null;
+  browser: string | null; ip: string | null; location: string | null; service: string | null;
+}
 export interface LeadEvent { id: number; type: string; text: string | null; createdBy: string | null; createdAt: string }
-export interface LeadDetail { lead: Lead; touches: LeadTouch[]; events: LeadEvent[] }
+export interface LeadDetail { lead: Lead; touches: LeadTouch[]; events: LeadEvent[]; origins: LeadOrigin[] }
