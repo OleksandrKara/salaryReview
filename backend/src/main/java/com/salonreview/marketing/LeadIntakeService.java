@@ -165,12 +165,6 @@ public class LeadIntakeService {
     /** Marks the profile with its source unless it already has one or is an old client. */
     boolean markIfFirstTouch(SquareClient square, long businessId, SquareClient.Customer customer, String label,
                              String channel, boolean justCreated) {
-        if (!justCreated) {
-            if (customer.createdAt() == null || Instant.parse(customer.createdAt()).isBefore(Instant.now().minus(Duration.ofDays(FRESH_DAYS)))) {
-                return false;
-            }
-            if (square.customerAttribute(customer.id(), ATTR_SOURCE) != null) return false;
-        }
         if (definitionsReady.add(businessId)) {
             try {
                 square.ensureCustomerStringAttribute(ATTR_SOURCE, "Lead source", "Where the lead first came from (set automatically)");
@@ -179,6 +173,12 @@ public class LeadIntakeService {
                 definitionsReady.remove(businessId);
                 throw e;
             }
+        }
+        if (!justCreated) {
+            if (customer.createdAt() == null || Instant.parse(customer.createdAt()).isBefore(Instant.now().minus(Duration.ofDays(FRESH_DAYS)))) {
+                return false;
+            }
+            if (square.customerAttribute(customer.id(), ATTR_SOURCE) != null) return false;
         }
         square.setCustomerAttribute(customer.id(), ATTR_SOURCE, label);
         square.setCustomerAttribute(customer.id(), ATTR_CHANNEL, channel);
