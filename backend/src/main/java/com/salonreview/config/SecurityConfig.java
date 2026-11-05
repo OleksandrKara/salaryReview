@@ -209,7 +209,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/manual-adjustments", "/api/manual-adjustments/**")
                                 .hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers("/api/manual-adjustments", "/api/manual-adjustments/**").hasRole("OWNER")
-                        .requestMatchers("/api/redos/**", "/api/providers/**", "/api/missed-bookings/**")
+                        .requestMatchers("/api/redos/**", "/api/providers/**", "/api/missed-bookings/**", "/api/leads/**")
                                 .hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers("/api/settlements/**", "/api/square/**", "/api/pay-periods/**",
                                 "/api/prepaid/**", "/api/owner-customers/**",

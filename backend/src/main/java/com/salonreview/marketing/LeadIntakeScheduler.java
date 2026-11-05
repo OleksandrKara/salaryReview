@@ -8,9 +8,17 @@ import org.springframework.stereotype.Component;
 public class LeadIntakeScheduler {
 
     private final LeadIntakeService service;
+    private final LeadFollowUpService followUp;
 
-    public LeadIntakeScheduler(LeadIntakeService service) {
+    public LeadIntakeScheduler(LeadIntakeService service, LeadFollowUpService followUp) {
         this.service = service;
+        this.followUp = followUp;
+    }
+
+    @Scheduled(cron = "0 */5 * * * *", zone = "America/Los_Angeles")
+    @SchedulerLock(name = "leadCallbackReminders", lockAtMostFor = "PT4M", lockAtLeastFor = "PT30S")
+    public void callbackReminders() {
+        followUp.sendDueReminders();
     }
 
     @Scheduled(cron = "0 */10 * * * *", zone = "America/Los_Angeles")
