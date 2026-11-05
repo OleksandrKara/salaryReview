@@ -66,13 +66,27 @@ public class LeadIntakeService {
         return out;
     }
 
-    public java.util.Map<String, Object> diag(long businessId, String phone, String setOn) {
+    public java.util.Map<String, Object> diag(long businessId, String phone, String setOn, boolean deleteTest) {
         java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
         SquareClient sq = squares.forBusiness(businessId);
         try { out.put("keys", sq.customerAttributeKeys().stream().filter(k -> k != null && k.contains("lead_")).toList()); } catch (Exception e) { out.put("keysError", e.toString()); }
         try { out.put("customers", sq.findCustomersExact(validPhone(phone), null).stream().map(SquareClient.Customer::id).toList()); } catch (Exception e) { out.put("findError", e.toString()); }
         if (setOn != null) {
             try { sq.setCustomerAttribute(setOn, ATTR_SOURCE, "diag"); out.put("set", "ok"); } catch (Exception e) { out.put("setError", e.toString()); }
+        }
+        if (deleteTest) {
+            java.util.List<String> deleted = new java.util.ArrayList<>();
+            try {
+                for (SquareClient.Customer c : sq.findCustomersExact(validPhone(phone), null)) {
+                    if ("ZZ Test Lead".equals(c.fullName())) {
+                        sq.deleteCustomer(c.id());
+                        deleted.add(c.id());
+                    }
+                }
+                jdbc.update("DELETE FROM lead_intake WHERE business_id = ? AND phone_number = ? AND name = 'ZZ Test Lead'", businessId, validPhone(phone));
+                jdbc.update("DELETE FROM marketing.contacts WHERE business_id = ? AND phone_number = ? AND given_name = 'ZZ'", businessId, validPhone(phone));
+            } catch (Exception e) { out.put("deleteError", e.toString()); }
+            out.put("deleted", deleted);
         }
         return out;
     }
