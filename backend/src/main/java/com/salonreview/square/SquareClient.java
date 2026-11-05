@@ -1756,7 +1756,7 @@ public class SquareClient {
                 "custom_attribute_definition", Map.of(
                         "key", key, "name", label, "description", description,
                         "visibility", "VISIBILITY_READ_WRITE_VALUES",
-                        "schema", Map.of("$ref", "https://developer-production-s3.squarecdn.com/schemas/v1/common.json#squareup.common.String")));
+                        "schema", Map.of("$ref", "https://developer-production-s.squarecdn.com/schemas/v1/common.json#squareup.common.String")));
         throttled(() -> http.post()
                 .uri("/v2/customers/custom-attribute-definitions")
                 .header("Square-Version", "2025-10-16")
