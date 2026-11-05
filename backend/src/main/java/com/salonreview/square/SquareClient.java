@@ -1770,6 +1770,7 @@ public class SquareClient {
         try {
             CustomAttrResponse resp = throttled(() -> http.get()
                     .uri("/v2/customers/{id}/custom-attributes/{key}", customerId, key)
+                    .header("Square-Version", "2025-10-16")
                     .retrieve()
                     .body(CustomAttrResponse.class));
             return resp == null || resp.customAttribute() == null || resp.customAttribute().value() == null
@@ -1783,6 +1784,7 @@ public class SquareClient {
         Map<String, Object> body = Map.of("custom_attribute", Map.of("value", value));
         throttled(() -> http.post()
                 .uri("/v2/customers/{id}/custom-attributes/{key}", customerId, key)
+                .header("Square-Version", "2025-10-16")
                 .body(body)
                 .retrieve()
                 .toBodilessEntity());
