@@ -1759,6 +1759,7 @@ public class SquareClient {
                         "schema", Map.of("$ref", "https://developer-production-s3.squarecdn.com/schemas/v1/common.json#squareup.common.String")));
         throttled(() -> http.post()
                 .uri("/v2/customers/custom-attribute-definitions")
+                .header("Square-Version", "2025-10-16")
                 .body(body)
                 .retrieve()
                 .toBodilessEntity());
