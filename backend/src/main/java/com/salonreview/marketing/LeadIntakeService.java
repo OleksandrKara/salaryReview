@@ -37,7 +37,12 @@ public class LeadIntakeService {
     static final int FRESH_DAYS = 30;
 
     public record Lead(long businessId, String channel, String trafficSource, String phone, String email,
-                       String name, String detail, String externalId) {}
+                       String name, String detail, String externalId, String payload) {
+        public Lead(long businessId, String channel, String trafficSource, String phone, String email,
+                    String name, String detail, String externalId) {
+            this(businessId, channel, trafficSource, phone, email, name, detail, externalId, null);
+        }
+    }
 
     public record Result(String outcome, String squareCustomerId, boolean marked) {}
 
@@ -133,7 +138,7 @@ public class LeadIntakeService {
                 List<String> ts = jdbc.queryForList("SELECT COALESCE(original_traffic_source, marketing_traffic_source) FROM marketing.contacts WHERE business_id = ? AND phone_number = ?",
                         String.class, lead.businessId(), phone);
                 if (!ts.isEmpty() && ts.get(0) != null) {
-                    lead = new Lead(lead.businessId(), lead.channel(), ts.get(0), lead.phone(), lead.email(), lead.name(), lead.detail(), lead.externalId());
+                    lead = new Lead(lead.businessId(), lead.channel(), ts.get(0), lead.phone(), lead.email(), lead.name(), lead.detail(), lead.externalId(), lead.payload());
                     label = sourceLabel(lead.trafficSource());
                 }
             }
@@ -248,10 +253,10 @@ public class LeadIntakeService {
                         boolean marked, String error) {
         jdbc.update("""
                 INSERT INTO lead_intake (business_id, channel, source, traffic_source, phone_number, email, name, detail,
-                    external_id, square_customer_id, outcome, marked, error)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    external_id, square_customer_id, outcome, marked, error, payload)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT DO NOTHING
                 """, lead.businessId(), lead.channel(), label, lead.trafficSource(), phone, email, lead.name(), lead.detail(),
-                lead.externalId(), customerId, outcome, marked, error);
+                lead.externalId(), customerId, outcome, marked, error, lead.payload());
     }
 }

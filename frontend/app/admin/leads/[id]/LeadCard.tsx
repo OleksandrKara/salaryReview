@@ -24,7 +24,28 @@ function toLocalInput(iso: string | null): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-type Row = { key: string; at: string; label: string; text: string | null; by: string | null; tone: 'touch' | 'system' | 'manual' };
+function recordingUrl(payload: Record<string, string> | null): string | null {
+  if (!payload) return null;
+  for (const [k, v] of Object.entries(payload)) {
+    if (/record|audio|mp3/i.test(k) && /^https:\/\//i.test(v)) return v;
+  }
+  return null;
+}
+
+function Details({ payload, language }: { payload: Record<string, string>; language: Language | null }) {
+  const entries = Object.entries(payload).filter(([, v]) => !/^https:\/\//i.test(v) || !/record|audio|mp3/i.test(v));
+  if (entries.length === 0) return null;
+  return (
+    <details className="mt-1 text-xs text-zinc-600">
+      <summary className="cursor-pointer">{t(language, 'leadDetails')}</summary>
+      <dl className="mt-1 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5">
+        {entries.map(([k, v]) => (<div key={k} className="contents"><dt className="text-zinc-500">{k}</dt><dd className="break-all">{v}</dd></div>))}
+      </dl>
+    </details>
+  );
+}
+
+type Row = { key: string; at: string; label: string; text: string | null; by: string | null; tone: 'touch' | 'system' | 'manual'; payload?: Record<string, string> | null };
 
 export default function LeadCard({ initial, language = null }: { initial: LeadDetail; language?: Language | null }) {
   const [data, setData] = useState(initial);
@@ -62,7 +83,7 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
   const rows: Row[] = [
     ...data.touches.map((x) => ({
       key: `t${x.id}`, at: x.createdAt, label: `${t(language, 'leadEventTouch')}: ${x.channel}`,
-      text: [x.source, x.detail].filter(Boolean).join(' · '), by: null, tone: 'touch' as const,
+      text: [x.source, x.detail].filter(Boolean).join(' · '), by: null, tone: 'touch' as const, payload: x.payload,
     })),
     ...data.events.map((x) => {
       const manual = x.type === 'NOTE' || x.type === 'CALL' || x.type === 'AGREEMENT';
@@ -124,6 +145,37 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
       </section>
 
       <section className="flex flex-col gap-3">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">{t(language, 'leadOrigins')}</h3>
+        {data.origins.length === 0 && <p className="text-sm text-zinc-500">{t(language, 'leadOriginsEmpty')}</p>}
+        <ul className="flex flex-col gap-2">
+          {data.origins.map((o, i) => {
+            const utm = [o.utmSource, o.utmMedium, o.utmCampaign, o.utmTerm, o.utmContent].filter(Boolean).join(' / ');
+            const typeKey = o.type === 'step1' || o.type === 'booking' ? o.type : 'other';
+            const rows: [string, string | null][] = [
+              [t(language, 'leadTraffic'), [o.trafficSource, utm].filter(Boolean).join(' · ') || null],
+              [t(language, 'leadAdClick'), o.googleClick ? 'gclid (Google Ads)' : o.facebookClick ? 'fbclid (Meta)' : null],
+              [t(language, 'leadLanding'), [o.landingPage, o.variant && `${t(language, 'leadVariant')} ${o.variant}`].filter(Boolean).join(' · ') || null],
+              [t(language, 'leadService'), o.service],
+              [t(language, 'leadReferrer'), o.referrer],
+              [t(language, 'leadDevice'), [o.device, o.os, o.browser].filter(Boolean).join(' · ') || null],
+              [t(language, 'leadLocation'), o.location ?? o.ip],
+            ];
+            return (
+              <li key={i} className="rounded-lg p-3 text-sm ring-1 ring-zinc-200">
+                <div className="mb-1 flex flex-wrap gap-x-2 text-xs text-zinc-500">
+                  <span className="font-semibold text-zinc-800">{t(language, `leadOriginType_${typeKey}` as 'leadOriginType_other')}</span>
+                  <span>{fmt(o.at, language)}</span>
+                </div>
+                <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5">
+                  {rows.filter(([, v]) => v).map(([k, v]) => (<div key={k} className="contents"><dt className="text-zinc-500">{k}</dt><dd className="break-all text-zinc-800">{v}</dd></div>))}
+                </dl>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+
+      <section className="flex flex-col gap-3">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">{t(language, 'leadHistory')}</h3>
         <form onSubmit={addEntry} className="flex flex-col gap-2 sm:flex-row">
           <select value={entryType} onChange={(e) => setEntryType(e.target.value as (typeof ENTRY_TYPES)[number])} className={field} aria-label="type">
@@ -142,6 +194,13 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
                 {r.by && <span>{r.by}</span>}
               </div>
               {r.text && <p className="text-sm text-zinc-800">{r.text}</p>}
+              {recordingUrl(r.payload ?? null) && (
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <audio controls preload="none" src={recordingUrl(r.payload ?? null) ?? undefined} className="h-9 max-w-full" />
+                  <a href={recordingUrl(r.payload ?? null) ?? undefined} target="_blank" rel="noreferrer" className="text-xs text-zinc-600 underline">{t(language, 'leadRecordingOpen')}</a>
+                </div>
+              )}
+              {r.payload && <Details payload={r.payload} language={language} />}
             </li>
           ))}
         </ol>

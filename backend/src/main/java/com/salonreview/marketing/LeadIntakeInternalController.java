@@ -51,7 +51,7 @@ public class LeadIntakeInternalController {
             else ts = utmSource;
         }
         LeadIntakeService.Result r = service.capture(new LeadIntakeService.Lead(businessId, "Call", ts, phone, null,
-                str(body, "caller_name", "name"), campaign, callId));
+                str(body, "caller_name", "name"), campaign, callId, payloadJson(body)));
         return Map.of("outcome", r.outcome(), "marked", r.marked());
     }
 
@@ -68,6 +68,25 @@ public class LeadIntakeInternalController {
     public Map<String, Object> reconcile(@RequestHeader(value = "X-Internal-Api-Key", required = false) String key) {
         auth(key);
         return Map.of("processed", service.reconcile());
+    }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
+
+    /** Raw webhook fields (without secrets) kept on the touch so staff can trace the call. */
+    private static String payloadJson(Map<String, Object> body) {
+        Map<String, Object> clean = new java.util.LinkedHashMap<>();
+        body.forEach((k, v) -> {
+            if (v == null || v.toString().isBlank()) return;
+            String key = k.toLowerCase();
+            if (key.equals("token") || key.equals("key") || key.contains("secret")) return;
+            clean.put(k, v.toString().length() > 500 ? v.toString().substring(0, 500) : v.toString());
+        });
+        try {
+            String out = JSON.writeValueAsString(clean);
+            return out.length() > 8000 ? null : out;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private static String str(Map<String, Object> m, String... keys) {
