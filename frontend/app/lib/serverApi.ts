@@ -48,6 +48,7 @@ import type {
   RetentionSeries,
   ReviewsOverview,
   MissedBooking,
+  Lead,
   Redo,
   RevenueDayDetail,
   RevenuePulse,
@@ -271,6 +272,8 @@ export const serverApi = {
   listOwnerCustomers: () => serverFetch<OwnerCustomer[]>(`/api/owner-customers`),
 
   listRedos: () => serverFetch<Redo[]>(`/api/redos`),
+
+  listLeads: () => serverFetch<Lead[]>(`/api/leads`),
 
   listMissedBookings: () => serverFetch<MissedBooking[]>(`/api/missed-bookings`),
 

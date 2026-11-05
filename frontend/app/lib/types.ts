@@ -2561,3 +2561,21 @@ export interface MarketingConversionsData {
   payingCustomers: number;
   revenue: number;
 }
+
+// --- Leads (owner/manager) — captured by backend LeadIntakeService, followed up via /admin/leads.
+export interface Lead {
+  id: number;
+  channel: string;
+  source: string;
+  trafficSource: string | null;
+  phoneNumber: string | null;
+  email: string | null;
+  name: string | null;
+  detail: string | null;
+  outcome: string;
+  status: 'NEW' | 'CONTACTED' | 'BOOKED' | 'LOST';
+  callbackAt: string | null;
+  notes: string | null;
+  updatedBy: string | null;
+  createdAt: string;
+}

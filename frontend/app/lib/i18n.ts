@@ -371,6 +371,29 @@ const STRINGS = {
   redoCancel: { EN: 'Cancel', RU: 'Отмена' },
   redoErrUpdate: { EN: 'Could not save the changes.', RU: 'Не удалось сохранить изменения.' },
 
+  // Leads (/admin/leads)
+  leadsTitle: { EN: 'Leads', RU: 'Лиды' },
+  leadsDesc: {
+    EN: 'Every call, text, form and booking request, with its source. Search Square before creating a customer by hand.',
+    RU: 'Все звонки, SMS, заявки и записи с источником. Перед ручным созданием клиента сначала ищите его в Square.',
+  },
+  leadsEmpty: { EN: 'No leads yet.', RU: 'Лидов пока нет.' },
+  leadsFilterAll: { EN: 'All', RU: 'Все' },
+  leadStatusNEW: { EN: 'New', RU: 'Новый' },
+  leadStatusCONTACTED: { EN: 'Contacted', RU: 'Связались' },
+  leadStatusBOOKED: { EN: 'Booked', RU: 'Записан' },
+  leadStatusLOST: { EN: 'Lost', RU: 'Потерян' },
+  leadCallback: { EN: 'Call back at', RU: 'Перезвонить' },
+  leadCallbackSet: { EN: 'Set reminder', RU: 'Поставить напоминание' },
+  leadCallbackClear: { EN: 'Clear reminder', RU: 'Убрать напоминание' },
+  leadNotes: { EN: 'Notes', RU: 'Заметки' },
+  leadNotesSave: { EN: 'Save note', RU: 'Сохранить заметку' },
+  leadSmsPlaceholder: { EN: 'Text message to this lead', RU: 'SMS этому лиду' },
+  leadSmsSend: { EN: 'Send SMS', RU: 'Отправить SMS' },
+  leadSmsSent: { EN: 'SMS sent.', RU: 'SMS отправлено.' },
+  leadErr: { EN: 'Something went wrong. Try again.', RU: 'Что-то пошло не так. Попробуйте ещё раз.' },
+  leadReminderDue: { EN: 'Callback due', RU: 'Пора перезвонить' },
+
   // Missed bookings (/admin/missed-bookings) — manager task
   missedBookingsTitle: { EN: 'Missed bookings', RU: 'Упущенные записи' },
   missedBookingsDesc: {
