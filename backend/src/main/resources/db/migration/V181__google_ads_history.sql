@@ -1,7 +1,7 @@
 -- History of the Google Ads account(s) (PMU + Academy share one account), pulled nightly through the
 -- Google Ads API (read-only service account). Lets the weekly Telegram report and later analysis look
 -- back beyond what Ads itself keeps readable, and keeps who-changed-what after Ads' 30-day window.
-CREATE TABLE marketing.google_ads_daily (
+CREATE TABLE google_ads_daily (
     customer_id    TEXT        NOT NULL,
     business_id    BIGINT      NOT NULL,
     campaign_id    BIGINT      NOT NULL,
@@ -17,9 +17,9 @@ CREATE TABLE marketing.google_ads_daily (
     synced_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (customer_id, campaign_id, day)
 );
-CREATE INDEX google_ads_daily_business_day_idx ON marketing.google_ads_daily (business_id, day);
+CREATE INDEX google_ads_daily_business_day_idx ON google_ads_daily (business_id, day);
 
-CREATE TABLE marketing.google_ads_conversions_daily (
+CREATE TABLE google_ads_conversions_daily (
     customer_id      TEXT        NOT NULL,
     business_id      BIGINT      NOT NULL,
     campaign_id      BIGINT      NOT NULL,
@@ -30,9 +30,9 @@ CREATE TABLE marketing.google_ads_conversions_daily (
     synced_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (customer_id, campaign_id, day, action_name)
 );
-CREATE INDEX google_ads_conv_business_day_idx ON marketing.google_ads_conversions_daily (business_id, day);
+CREATE INDEX google_ads_conv_business_day_idx ON google_ads_conversions_daily (business_id, day);
 
-CREATE TABLE marketing.google_ads_changes (
+CREATE TABLE google_ads_changes (
     id              BIGSERIAL PRIMARY KEY,
     customer_id     TEXT        NOT NULL,
     business_id     BIGINT      NOT NULL,
@@ -46,4 +46,4 @@ CREATE TABLE marketing.google_ads_changes (
     changed_fields  TEXT,
     UNIQUE (customer_id, changed_at, resource_name, operation)
 );
-CREATE INDEX google_ads_changes_business_at_idx ON marketing.google_ads_changes (business_id, changed_at DESC);
+CREATE INDEX google_ads_changes_business_at_idx ON google_ads_changes (business_id, changed_at DESC);

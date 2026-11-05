@@ -24,7 +24,7 @@ import java.util.regex.Pattern;
 
 /**
  * Pulls the Google Ads account's campaign results, conversions by action and change history into
- * {@code marketing.google_ads_*}, read-only through the service account. One Ads account serves
+ * {@code google_ads_*}, read-only through the service account. One Ads account serves
  * PMU studio and Academy together (campaigns told apart by name), so it is stored under the PMU
  * business. Idempotent: every pull upserts, and recent days are re-pulled because Ads restates
  * conversions for a few days after the click.
@@ -84,7 +84,7 @@ public class GoogleAdsSyncService {
 
     /** True when no daily rows exist yet for the business, so the scheduler should backfill. */
     public boolean isEmpty(long businessId) {
-        Integer n = jdbc.queryForObject("SELECT count(*) FROM marketing.google_ads_daily WHERE business_id = ?", Integer.class, businessId);
+        Integer n = jdbc.queryForObject("SELECT count(*) FROM google_ads_daily WHERE business_id = ?", Integer.class, businessId);
         return n == null || n == 0;
     }
 
@@ -112,7 +112,7 @@ public class GoogleAdsSyncService {
                 """.formatted(from, to));
         for (JsonNode r : rows) {
             jdbc.update("""
-                    INSERT INTO marketing.google_ads_daily (customer_id, business_id, campaign_id, day, campaign_name, campaign_status,
+                    INSERT INTO google_ads_daily (customer_id, business_id, campaign_id, day, campaign_name, campaign_status,
                         channel_type, cost_micros, impressions, clicks, conversions, all_conversions, synced_at)
                     VALUES (?, ?, ?, ?::date, ?, ?, ?, ?, ?, ?, ?, ?, now())
                     ON CONFLICT (customer_id, campaign_id, day) DO UPDATE SET campaign_name = EXCLUDED.campaign_name,
@@ -138,7 +138,7 @@ public class GoogleAdsSyncService {
                 """.formatted(from, to));
         for (JsonNode r : rows) {
             jdbc.update("""
-                    INSERT INTO marketing.google_ads_conversions_daily (customer_id, business_id, campaign_id, day, action_name,
+                    INSERT INTO google_ads_conversions_daily (customer_id, business_id, campaign_id, day, action_name,
                         all_conversions, all_conv_value, synced_at)
                     VALUES (?, ?, ?, ?::date, ?, ?, ?, now())
                     ON CONFLICT (customer_id, campaign_id, day, action_name) DO UPDATE SET
@@ -168,7 +168,7 @@ public class GoogleAdsSyncService {
             Matcher m = CAMPAIGN_ID.matcher(e.path("campaign").asText(""));
             Long campaignId = m.find() ? Long.parseLong(m.group(1)) : null;
             written += jdbc.update("""
-                    INSERT INTO marketing.google_ads_changes (customer_id, business_id, changed_at, user_email, client_type,
+                    INSERT INTO google_ads_changes (customer_id, business_id, changed_at, user_email, client_type,
                         resource_type, resource_name, operation, campaign_id, changed_fields)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT (customer_id, changed_at, resource_name, operation) DO NOTHING

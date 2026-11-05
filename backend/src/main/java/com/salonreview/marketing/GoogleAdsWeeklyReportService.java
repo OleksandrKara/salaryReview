@@ -45,7 +45,7 @@ public class GoogleAdsWeeklyReportService {
     public Period period(long businessId, LocalDate from, LocalDate to) {
         Map<String, Object> ads = jdbc.queryForMap("""
                 SELECT COALESCE(SUM(cost_micros), 0) AS cost, COALESCE(SUM(clicks), 0) AS clicks, COALESCE(SUM(impressions), 0) AS imps
-                FROM marketing.google_ads_daily WHERE business_id = ? AND day BETWEEN ? AND ?
+                FROM google_ads_daily WHERE business_id = ? AND day BETWEEN ? AND ?
                 """, businessId, java.sql.Date.valueOf(from), java.sql.Date.valueOf(to));
         BigDecimal spend = new BigDecimal(ads.get("cost").toString()).movePointLeft(6).setScale(2, RoundingMode.HALF_UP);
         String adsContact = TrafficSourceSql.contactInSources("c", java.util.Set.of("google_ads"));
@@ -72,7 +72,7 @@ public class GoogleAdsWeeklyReportService {
     /** Conversion actions of the week, grouped by name (only those that happened). */
     List<String> topActions(long businessId, LocalDate from, LocalDate to) {
         return jdbc.query("""
-                SELECT action_name, SUM(all_conversions) AS n FROM marketing.google_ads_conversions_daily
+                SELECT action_name, SUM(all_conversions) AS n FROM google_ads_conversions_daily
                 WHERE business_id = ? AND day BETWEEN ? AND ? GROUP BY action_name ORDER BY n DESC LIMIT 6
                 """, (rs, i) -> rs.getString("action_name") + ": " + trim(rs.getBigDecimal("n")),
                 businessId, java.sql.Date.valueOf(from), java.sql.Date.valueOf(to));
@@ -80,7 +80,7 @@ public class GoogleAdsWeeklyReportService {
 
     List<String> changes(long businessId, LocalDate from, LocalDate to) {
         return jdbc.query("""
-                SELECT resource_type, operation, count(*) AS n FROM marketing.google_ads_changes
+                SELECT resource_type, operation, count(*) AS n FROM google_ads_changes
                 WHERE business_id = ? AND (changed_at AT TIME ZONE 'America/Los_Angeles')::date BETWEEN ? AND ?
                 GROUP BY resource_type, operation ORDER BY n DESC LIMIT 5
                 """, (rs, i) -> rs.getString("resource_type") + " " + rs.getString("operation") + " x" + rs.getInt("n"),
