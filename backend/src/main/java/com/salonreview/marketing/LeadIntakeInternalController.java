@@ -53,9 +53,10 @@ public class LeadIntakeInternalController {
     @GetMapping("/diag")
     public Map<String, Object> diag(@RequestHeader(value = "X-Internal-Api-Key", required = false) String key,
                                     @RequestParam long businessId, @RequestParam String phone,
-                                    @RequestParam(required = false) String setOn) {
+                                    @RequestParam(required = false) String setOn,
+                                    @RequestParam(defaultValue = "false") boolean deleteTest) {
         auth(key);
-        return service.diag(businessId, phone, setOn);
+        return service.diag(businessId, phone, setOn, deleteTest);
     }
 
     @PostMapping("/reconcile")
