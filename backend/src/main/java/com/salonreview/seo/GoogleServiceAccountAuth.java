@@ -29,7 +29,7 @@ import java.util.Base64;
  * hour; refreshed 60s before expiry) so a scheduled job making several calls in the same run
  * doesn't re-sign a JWT for every request.
  */
-class GoogleServiceAccountAuth {
+public class GoogleServiceAccountAuth {
 
     private static final String TOKEN_URI = "https://oauth2.googleapis.com/token";
     private static final long REFRESH_SKEW_SECONDS = 60;
@@ -46,7 +46,7 @@ class GoogleServiceAccountAuth {
     /** @param serviceAccountJson the full JSON key file content (decrypted plaintext — caller's
      *                            responsibility to never log it)
      * @param scope space-separated OAuth scopes, e.g. {@code "https://www.googleapis.com/auth/webmasters.readonly"} */
-    GoogleServiceAccountAuth(String serviceAccountJson, String scope) {
+    public GoogleServiceAccountAuth(String serviceAccountJson, String scope) {
         this(serviceAccountJson, scope, GoogleRestClients.builder("https://oauth2.googleapis.com").build());
     }
 
@@ -67,7 +67,7 @@ class GoogleServiceAccountAuth {
     }
 
     /** Returns a currently-valid access token, refreshing it first if it's expired or about to. */
-    synchronized String accessToken() {
+    public synchronized String accessToken() {
         if (cachedToken != null && Instant.now().isBefore(cachedTokenExpiresAt.minusSeconds(REFRESH_SKEW_SECONDS))) {
             return cachedToken;
         }
