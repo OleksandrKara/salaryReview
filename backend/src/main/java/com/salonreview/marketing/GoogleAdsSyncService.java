@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.salonreview.seo.GoogleAdsClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -41,6 +42,7 @@ public class GoogleAdsSyncService {
     private final Map<Long, String> accounts;
     private final GoogleAdsClient client;
 
+    @Autowired
     public GoogleAdsSyncService(JdbcTemplate jdbc,
                                 @Value("${marketing.google-ads.accounts:}") String accounts,
                                 @Value("${marketing.google-ads.service-account-json-b64:}") String saJsonB64,
