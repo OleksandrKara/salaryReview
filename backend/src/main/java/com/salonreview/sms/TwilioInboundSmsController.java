@@ -9,6 +9,7 @@ import com.salonreview.domain.SmsMessage;
 import com.salonreview.domain.SmsReplyFlow;
 import com.salonreview.domain.TwilioSmsConfig;
 import com.salonreview.marketing.MarketingContactsService;
+import com.salonreview.marketing.LeadIntakeService;
 import com.salonreview.marketing.SmsWebsiteLeadService;
 import com.salonreview.repo.BlockedNumberRepository;
 import com.salonreview.repo.BusinessRepository;
@@ -66,6 +67,7 @@ public class TwilioInboundSmsController {
     private final TwilioSmsConfigRepository twilioConfigs;
     private final CurrentBusinessContext currentBusinessContext;
     private final SmsWebsiteLeadService websiteLeadService;
+    private final LeadIntakeService leadIntake;
 
     public TwilioInboundSmsController(TwilioInboundProperties properties, SmsMessageLogService messageLogService,
                                        SmsReplyFlowRepository replyFlowRepository, CheckoutReviewReplyService replyService,
@@ -73,7 +75,8 @@ public class TwilioInboundSmsController {
                                        BlockedNumberRepository blockedNumberRepository, SmsMediaService mediaService,
                                        SmsReactionService reactionService, BusinessRepository businesses,
                                        TwilioSmsConfigRepository twilioConfigs, CurrentBusinessContext currentBusinessContext,
-                                       SmsWebsiteLeadService websiteLeadService) {
+                                       SmsWebsiteLeadService websiteLeadService,
+                                       LeadIntakeService leadIntake) {
         this.properties = properties;
         this.messageLogService = messageLogService;
         this.replyFlowRepository = replyFlowRepository;
@@ -87,6 +90,7 @@ public class TwilioInboundSmsController {
         this.twilioConfigs = twilioConfigs;
         this.currentBusinessContext = currentBusinessContext;
         this.websiteLeadService = websiteLeadService;
+        this.leadIntake = leadIntake;
     }
 
     @PostMapping(value = "/api/public/sms/inbound", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
@@ -168,6 +172,11 @@ public class TwilioInboundSmsController {
         // visit: creates the lead's contact with the visit's traffic source and tells staff where
         // it came from (see SmsWebsiteLeadService). Never throws; empty for any other text.
         String websiteContext = websiteLeadService.capture(businessId, from, body).orElse(null);
+
+        // Every inbound text is a lead: tie it to a Square profile with its source (never duplicates; see LeadIntakeService).
+        if (!isOptOut) {
+            leadIntake.capture(new LeadIntakeService.Lead(businessId, "SMS", null, from, null, null, null, "sms:" + params.get("MessageSid")));
+        }
 
         // A customer reply always needs a human's attention right away, not just a dashboard entry
         // nobody's actively watching — see openspec/changes/sms-automations-hub proposal.md. Name
