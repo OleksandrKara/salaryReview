@@ -66,6 +66,17 @@ public class LeadIntakeService {
         return out;
     }
 
+    public java.util.Map<String, Object> diag(long businessId, String phone, String setOn) {
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        SquareClient sq = squares.forBusiness(businessId);
+        try { out.put("keys", sq.customerAttributeKeys().stream().filter(k -> k != null && k.contains("lead_")).toList()); } catch (Exception e) { out.put("keysError", e.toString()); }
+        try { out.put("customers", sq.findCustomersExact(validPhone(phone), null).stream().map(SquareClient.Customer::id).toList()); } catch (Exception e) { out.put("findError", e.toString()); }
+        if (setOn != null) {
+            try { sq.setCustomerAttribute(setOn, ATTR_SOURCE, "diag"); out.put("set", "ok"); } catch (Exception e) { out.put("setError", e.toString()); }
+        }
+        return out;
+    }
+
     public boolean enabled(long businessId) {
         return enabled.contains(businessId);
     }
