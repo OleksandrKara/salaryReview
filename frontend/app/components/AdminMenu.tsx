@@ -49,6 +49,7 @@ function linksFor(role: Role): NavSections {
         { href: '/reports', key: 'navSalaryReport' },
         { href: '/owner/overview', key: 'navRevenue' },
         { href: '/owner/marketing', key: 'navMarketing' },
+        { href: '/admin/leads', key: 'navLeads' },
         { href: '/owner/retention', key: 'navRetention' },
         ...COMMON,
       ],
@@ -73,7 +74,6 @@ function linksFor(role: Role): NavSections {
             { href: '/admin/documents', key: 'navStaffDocuments' },
             { href: '/sops/admin', key: 'sopAdminTitle' },
             { href: '/owner/reviews', key: 'navReviews' },
-            { href: '/admin/leads', key: 'leadsTitle' },
             { href: '/admin/missed-bookings', key: 'missedBookingsTitle' },
           ],
         },
@@ -112,9 +112,9 @@ function linksFor(role: Role): NavSections {
     return {
       flat: [
         { href: '/manager', key: 'navDashboard' },
+        { href: '/admin/leads', key: 'navLeads' },
         { href: '/manager/time', key: 'navMyTime' },
         { href: '/admin/redos', key: 'mgrRedos' },
-        { href: '/admin/leads', key: 'leadsTitle' },
         { href: '/admin/missed-bookings', key: 'missedBookingsTitle' },
         { href: '/admin/manual-adjustments', key: 'navManualAdjustments' },
         { href: '/my-documents', key: 'navMyDocuments' },

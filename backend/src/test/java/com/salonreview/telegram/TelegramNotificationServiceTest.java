@@ -168,6 +168,7 @@ class TelegramNotificationServiceTest {
         String text = service.formatInboundSmsAlert("+18585550100", "Jane Doe", "Thanks!", null);
 
         assertThat(text).contains("<a href=\"https://salon.akluxnails.com/admin/messages?phone=%2B18585550100\">💬 Open chat</a>");
+        assertThat(text).contains("<a href=\"https://salon.akluxnails.com/admin/leads/open?phone=%2B18585550100\">🧲 Open lead</a>");
     }
 
     @Test

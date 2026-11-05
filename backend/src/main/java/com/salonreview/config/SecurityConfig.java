@@ -97,7 +97,7 @@ public class SecurityConfig {
                         // /confirm gap below — a later route added without updating this list.
                         .requestMatchers("/api/public/webhooks/square", "/api/public/webhooks/square/*",
                                 "/api/public/sms/inbound", "/api/public/sms/status",
-                                "/api/public/voice/inbound", "/r/**")
+                                "/api/public/voice/inbound", "/api/public/leads/call", "/r/**")
                                 .permitAll()
                         // The checkout-review-request satisfaction email's rating links — same "harmless
                         // public redirect, own signature check" shape as /r/** above (see

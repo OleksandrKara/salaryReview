@@ -1,5 +1,10 @@
 import { forwardToBackend } from '../../../lib/proxyBackend';
 
+export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
+  const { id } = await ctx.params;
+  return forwardToBackend(`/api/leads/${encodeURIComponent(id)}`, 'GET');
+}
+
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   const { id } = await ctx.params;
   return forwardToBackend(`/api/leads/${encodeURIComponent(id)}`, 'PATCH', await req.text());
