@@ -2588,4 +2588,5 @@ export interface LeadOrigin {
   browser: string | null; ip: string | null; location: string | null; service: string | null;
 }
 export interface LeadEvent { id: number; type: string; text: string | null; createdBy: string | null; createdAt: string }
-export interface LeadDetail { lead: Lead; touches: LeadTouch[]; events: LeadEvent[]; origins: LeadOrigin[] }
+export interface LeadDetail { lead: Lead; touches: LeadTouch[]; events: LeadEvent[]; origins: LeadOrigin[]; appointments: LeadAppointment[] }
+export interface LeadAppointment { id: string; status: string; startAt: string | null; services: string | null }
