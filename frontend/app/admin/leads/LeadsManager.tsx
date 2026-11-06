@@ -268,7 +268,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
               const reason: { text: string; cls: string } | null =
                 !isActive(l) ? null
                 : l.closeReady ? { text: t(language, 'crmReasonClose'), cls: 'text-red-700' }
-                : overdue ? { text: `${l.consultState === 'DONE' || l.consultState === 'NO_SHOW' ? t(language, 'crmReasonConsult') + '. ' : ''}${t(language, 'crmReasonOverdue')} ${late}`, cls: 'text-red-700' }
+                : overdue ? { text: `${l.consultState === 'DONE' || l.consultState === 'NO_SHOW' ? t(language, 'crmReasonConsult') + '. ' : isLapsed(l, now) ? t(language, 'crmReasonLapsed') + '. ' : ''}${t(language, 'crmReasonOverdue')} ${late}`, cls: 'text-red-700' }
                 : l.status === 'NEW' ? { text: `${t(language, 'crmReasonNew')} ${waiting}`, cls: 'text-blue-700' }
                 : null;
               const upcoming = !overdue && isActive(l) && l.callbackAt != null;

@@ -659,6 +659,8 @@ const STRINGS = {
   leadLostReportCount: { EN: 'Leads', RU: 'Лидов' },
   leadEventSTATUS: { EN: 'Status changed to', RU: 'Статус изменён на' },
   leadEventCALLBACK: { EN: 'Callback reminder set for', RU: 'Напоминание о перезвоне на' },
+  crmReasonLapsed: { EN: 'Has not rebooked in 30+ days', RU: 'Не перезаписался 30+ дней' },
+  leadEventLAPSED: { EN: 'No rebooking for 30+ days, last visit', RU: 'Не перезаписался 30+ дней, последний визит' },
   leadEventATTEMPT: { EN: 'Tried to reach, no answer', RU: 'Попытка связаться, без ответа' },
   leadEventCALLBACK_CLEARED: { EN: 'Callback reminder cleared', RU: 'Напоминание о перезвоне убрано' },
   leadErr: { EN: 'Something went wrong. Try again.', RU: 'Что-то пошло не так. Попробуйте ещё раз.' },
