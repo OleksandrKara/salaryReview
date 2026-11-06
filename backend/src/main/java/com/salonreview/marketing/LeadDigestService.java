@@ -158,14 +158,18 @@ public class LeadDigestService {
 
     // ---- evening ----
 
-    record Handled(Map<String, Integer> byStatus, int auto, int callbacks, Map<String, Integer> byPerson) {
+    record Handled(Map<String, Integer> byStatus, int auto, int callbacks, Map<String, Map<String, Integer>> byPerson,
+                   Map<String, Integer> callbacksByPerson) {
+        Handled(Map<String, Integer> byStatus, int auto, int callbacks, Map<String, Map<String, Integer>> byPerson) {
+            this(byStatus, auto, callbacks, byPerson, Map.of());
+        }
         int staffTotal() { return byStatus.values().stream().mapToInt(Integer::intValue).sum(); }
     }
 
     /** Each lead counts once, under the last status it was moved to during the day. */
     Handled handled(long businessId, LocalDate day) {
         Map<String, Integer> byStatus = new LinkedHashMap<>();
-        Map<String, Integer> byPerson = new TreeMap<>();
+        Map<String, Map<String, Integer>> byPerson = new TreeMap<>();
         int[] auto = {0};
         jdbc.query("""
                 SELECT text, created_by, count(*) AS n FROM (
@@ -182,14 +186,22 @@ public class LeadDigestService {
                 return;
             }
             byStatus.merge(status, n, Integer::sum);
-            byPerson.merge(personName(businessId, by), n, Integer::sum);
+            byPerson.computeIfAbsent(personName(businessId, by), k -> new LinkedHashMap<>()).merge(status, n, Integer::sum);
         }, businessId, java.sql.Date.valueOf(day));
         Integer callbacks = jdbc.queryForObject("""
                 SELECT count(DISTINCT lead_id) FROM lead_events WHERE business_id = ? AND type = 'CALLBACK'
                   AND (created_at AT TIME ZONE 'America/Los_Angeles')::date = ?
                   AND COALESCE(created_by, '') NOT IN ('System', 'Square')
                 """, Integer.class, businessId, java.sql.Date.valueOf(day));
-        return new Handled(byStatus, auto[0], callbacks == null ? 0 : callbacks, byPerson);
+        Map<String, Integer> cbPerson = new TreeMap<>();
+        jdbc.query("""
+                SELECT created_by, count(DISTINCT lead_id) AS n FROM lead_events WHERE business_id = ? AND type = 'CALLBACK'
+                  AND (created_at AT TIME ZONE 'America/Los_Angeles')::date = ?
+                  AND COALESCE(created_by, '') NOT IN ('System', 'Square') GROUP BY created_by
+                """, rs -> {
+            cbPerson.merge(personName(businessId, rs.getString("created_by")), rs.getInt("n"), Integer::sum);
+        }, businessId, java.sql.Date.valueOf(day));
+        return new Handled(byStatus, auto[0], callbacks == null ? 0 : callbacks, byPerson, cbPerson);
     }
 
     /** Real name for a login: provider name, else the Square team member name, else the login itself. */
@@ -247,16 +259,36 @@ public class LeadDigestService {
         if (overdue > 0) sb.append(" (просрочено перезвонов: ").append(overdue).append(')');
         sb.append('\n');
         if (tomorrow > 0) sb.append("Перезвонить завтра: ").append(tomorrow).append('\n');
-        if (!h.byPerson().isEmpty()) {
-            List<String> people = h.byPerson().entrySet().stream()
-                    .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
-                    .map(e -> e.getKey() + ": " + e.getValue()).toList();
-            sb.append(people.size() == 1 ? "Работал: " : "Работали: ").append(String.join(", ", people)).append('\n');
+        Set<String> names = new java.util.TreeSet<>(h.byPerson().keySet());
+        names.addAll(h.callbacksByPerson().keySet());
+        if (names.size() > 1) {
+            sb.append("\nКто что сделал:\n");
+            names.stream().sorted(Comparator.comparingInt((String n) -> -personTotal(h, n)).thenComparing(n -> n)).forEach(n -> {
+                Map<String, Integer> st = h.byPerson().getOrDefault(n, Map.of());
+                List<String> parts = new ArrayList<>();
+                addPart(parts, "связались", st.get("CONTACTED"));
+                addPart(parts, "записались", st.get("BOOKED"));
+                addPart(parts, "потеряно", st.get("LOST"));
+                addPart(parts, "спам или тест", st.get("SPAM"));
+                addPart(parts, "перезвонов назначено", h.callbacksByPerson().get(n));
+                sb.append("• ").append(n).append(": ").append(String.join(", ", parts)).append('\n');
+            });
+        } else if (names.size() == 1) {
+            sb.append("Работал: ").append(names.iterator().next()).append('\n');
         }
         return sb.toString().stripTrailing();
     }
 
     // ---- helpers ----
+
+    private static int personTotal(Handled h, String name) {
+        return h.byPerson().getOrDefault(name, Map.of()).values().stream().mapToInt(Integer::intValue).sum()
+                + h.callbacksByPerson().getOrDefault(name, 0);
+    }
+
+    private static void addPart(List<String> parts, String label, Integer n) {
+        if (n != null && n > 0) parts.add(label + " " + n);
+    }
 
     private static void line(StringBuilder sb, String label, Integer n) {
         if (n != null && n > 0) sb.append("• ").append(label).append(": ").append(n).append('\n');
