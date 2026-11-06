@@ -38,8 +38,17 @@ public class LeadFollowUpService {
     private static final String SQUARE_CUSTOMER_URL = "https://app.squareup.com/dashboard/customers/directory/customer/";
 
     /** Identity of a person across touches. */
-    private static final String KEY = "COALESCE(NULLIF(regexp_replace(COALESCE(phone_number, ''), '\\D', '', 'g'), ''), "
-            + "lower(NULLIF(email, '')), 'id' || id::text)";
+    private static final String KEY = key("l");
+
+    /** Phone digits, else the phone of the same email's earliest phone-bearing row, else the email. */
+    private static String key(String a) {
+        return "COALESCE(NULLIF(regexp_replace(COALESCE(" + a + ".phone_number, ''), '\\D', '', 'g'), ''), "
+                + "(SELECT NULLIF(regexp_replace(x.phone_number, '\\D', '', 'g'), '') FROM lead_intake x "
+                + "WHERE x.business_id = " + a + ".business_id AND " + a + ".email <> '' AND lower(x.email) = lower(" + a + ".email) "
+                + "AND x.outcome <> 'DUPLICATE' AND NULLIF(regexp_replace(COALESCE(x.phone_number, ''), '\\D', '', 'g'), '') IS NOT NULL "
+                + "ORDER BY x.created_at, x.id LIMIT 1), "
+                + "lower(NULLIF(" + a + ".email, '')), 'id' || " + a + ".id::text)";
+    }
 
     private final JdbcTemplate jdbc;
     private final CurrentBusinessContext business;
@@ -1000,7 +1009,7 @@ public class LeadFollowUpService {
     }
 
     private String leadKey(long id) {
-        return jdbc.queryForObject("SELECT " + KEY + " FROM lead_intake WHERE id = ?", String.class, id);
+        return jdbc.queryForObject("SELECT " + KEY + " FROM lead_intake l WHERE l.id = ?", String.class, id);
     }
 
     private static final int[] CONSULT_STEPS_DAYS = {1, 3, 7};
