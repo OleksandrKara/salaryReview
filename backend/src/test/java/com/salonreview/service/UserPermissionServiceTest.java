@@ -44,6 +44,16 @@ class UserPermissionServiceTest {
     }
 
     @Test
+    void leadsScopeFollowsRoleAndGrants() {
+        assertEquals(UserPermissionService.LeadsScope.ALL, service.leadsScope(2L, Role.MANAGER, 2L));
+        assertEquals(UserPermissionService.LeadsScope.NONE, service.leadsScope(42L, Role.PROVIDER, 2L));
+        when(repo.existsByBusinessIdAndUserIdAndPermission(2L, 42L, "LEADS_ACADEMY")).thenReturn(true);
+        assertEquals(UserPermissionService.LeadsScope.ACADEMY, service.leadsScope(42L, Role.PROVIDER, 2L));
+        when(repo.existsByBusinessIdAndUserIdAndPermission(2L, 42L, "LEADS_ALL")).thenReturn(true);
+        assertEquals(UserPermissionService.LeadsScope.ALL, service.leadsScope(42L, Role.PROVIDER, 2L));
+    }
+
+    @Test
     void adsManagerNeverGetsSmsInboxImplicitly() {
         assertFalse(service.has(5L, Role.ADS_MANAGER, 2L, Permission.SMS_INBOX));
     }

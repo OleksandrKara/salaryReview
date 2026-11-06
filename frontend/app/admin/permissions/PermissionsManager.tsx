@@ -9,6 +9,14 @@ const LABELS: Record<string, { title: string; hint: string }> = {
     title: 'SMS inbox',
     hint: 'See and send client text messages for this business (all clients, same as a manager).',
   },
+  LEADS_ALL: {
+    title: 'CRM: all leads',
+    hint: 'Open the Leads CRM and manage every lead of this business (statuses, notes, callbacks).',
+  },
+  LEADS_ACADEMY: {
+    title: 'CRM: academy leads only',
+    hint: 'Open the Leads CRM and see and manage only academy leads. Other leads stay hidden.',
+  },
 };
 
 export default function PermissionsManager({ initial }: { initial: PermissionsOverview }) {
@@ -16,18 +24,25 @@ export default function PermissionsManager({ initial }: { initial: PermissionsOv
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState('');
 
+  const LEADS_PAIR: Record<string, string> = { LEADS_ALL: 'LEADS_ACADEMY', LEADS_ACADEMY: 'LEADS_ALL' };
+
   async function toggle(userId: number, permission: string, granted: boolean) {
     const key = `${userId}:${permission}`;
     setBusy(key);
     setError('');
     try {
+      // "all leads" and "academy only" exclude each other, so granting one drops the other.
+      const other = LEADS_PAIR[permission];
+      const dropOther = granted && other && users.find((u) => u.userId === userId)?.granted.includes(other);
+      if (dropOther) await api.setUserPermission({ userId, permission: other, granted: false });
       await api.setUserPermission({ userId, permission, granted });
       setUsers((prev) =>
-        prev.map((u) =>
-          u.userId !== userId
-            ? u
-            : { ...u, granted: granted ? [...u.granted, permission] : u.granted.filter((p) => p !== permission) },
-        ),
+        prev.map((u) => {
+          if (u.userId !== userId) return u;
+          let next = u.granted.filter((p) => p !== permission && !(dropOther && p === other));
+          if (granted) next = [...next, permission];
+          return { ...u, granted: next };
+        }),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save');
@@ -50,7 +65,7 @@ export default function PermissionsManager({ initial }: { initial: PermissionsOv
               <span className="font-medium">{u.displayName || u.username}</span>
               <span className="text-xs text-zinc-500">{u.role}</span>
             </div>
-            {initial.permissions.map((perm) => {
+            {initial.permissions.filter((perm) => !(perm === 'LEADS_ACADEMY' && u.implied.includes('LEADS_ALL'))).map((perm) => {
               const implied = u.implied.includes(perm);
               const checked = implied || u.granted.includes(perm);
               const info = LABELS[perm] ?? { title: perm, hint: '' };

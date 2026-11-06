@@ -59,6 +59,6 @@ class LeadDigestServiceTest {
         assertTrue(text.contains("Записались сами (Square): 1"), text);
         assertTrue(text.contains("Сегодняшние без реакции: 1"), text);
         assertTrue(text.contains("Остаётся к обработке: 1"), text);
-        assertTrue(text.contains("Lena 3"), text);
+        assertTrue(text.contains("Lena: 3"), text);
     }
 }

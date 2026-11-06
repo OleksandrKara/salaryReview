@@ -42,7 +42,7 @@ const COMMON: NavLink[] = [
  * 6 links an owner actually opens often (flat, always visible) and 4 named, collapsed-by-default
  * groups for everything else — same total reachability, far shorter at rest. Every other role's
  * list is short enough already to stay flat. */
-function linksFor(role: Role): NavSections {
+function linksFor(role: Role, leadsAccess = false): NavSections {
   if (role === 'OWNER') {
     return {
       flat: [
@@ -129,7 +129,7 @@ function linksFor(role: Role): NavSections {
   }
   // PROVIDER
   return {
-    flat: [{ href: '/me', key: 'navMyPay' }, { href: '/my-documents', key: 'navMyDocuments' }, ...COMMON],
+    flat: [{ href: '/me', key: 'navMyPay' }, { href: '/my-documents', key: 'navMyDocuments' }, ...(leadsAccess ? [{ href: '/admin/leads', key: 'navLeads' as const }] : []), ...COMMON],
     groups: [],
   };
 }
@@ -143,6 +143,7 @@ export default function AdminMenu({
   businesses,
   platformAdmin,
   smsInbox = false,
+  leadsAccess = false,
 }: {
   role: Role;
   language: Language | null;
@@ -154,6 +155,7 @@ export default function AdminMenu({
   businesses?: MeBusinessOption[];
   platformAdmin?: boolean;
   smsInbox?: boolean;
+  leadsAccess?: boolean;
 }) {
   const pathname = usePathname();
 
@@ -197,7 +199,7 @@ export default function AdminMenu({
     api.getMe().then((me) => { if (!cancelled) setSeoMonitoringEnabled(me.features.seoMonitoringEnabled); }).catch(() => {});
     return () => { cancelled = true; };
   }, [role]);
-  const sections = linksFor(role);
+  const sections = linksFor(role, leadsAccess);
   const groups = sections.groups
     .map((g) => ({
       ...g,
@@ -302,6 +304,19 @@ export default function AdminMenu({
               {kbRequestOpenCount > 99 ? '99+' : kbRequestOpenCount}
             </span>
           ) : null}
+        </Link>
+      ) : null}
+
+      {role === 'OWNER' || role === 'MANAGER' || leadsAccess ? (
+        <Link
+          href="/admin/leads"
+          aria-label="Leads (CRM)"
+          title="Leads (CRM)"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-zinc-500 shadow-sm ring-1 ring-zinc-200 hover:bg-zinc-50 hover:text-zinc-700"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+          </svg>
         </Link>
       ) : null}
 

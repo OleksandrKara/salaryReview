@@ -497,6 +497,16 @@ public class LeadFollowUpService {
                 leadId, business.id(), type, text, by);
     }
 
+    public boolean isAcademy(long id) {
+        return find(id).academy();
+    }
+
+    /** True when the business has at least one academy lead, i.e. the Academy sub-section exists. */
+    public boolean hasAcademyLeads(long businessId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM lead_intake WHERE business_id = ? AND channel = 'Academy')", Boolean.class, businessId));
+    }
+
     private LeadView find(long id) {
         try {
             return jdbc.queryForObject("SELECT * FROM (" + leadsSql(business.id()) + ") y WHERE id = ?", leadMapper, business.id(), business.id(), id);
