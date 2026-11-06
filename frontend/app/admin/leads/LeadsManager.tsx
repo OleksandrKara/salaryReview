@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { FUNNEL_TONE } from './FunnelPanel';
+import LeadIcons from './LeadIcons';
 import OutdatedPanel, { LockIcon } from './OutdatedPanel';
 import { t } from '../../lib/i18n';
-import type { Language, Lead, LeadFunnel } from '../../lib/types';
+import type { Language, Lead, LeadFunnel, LeadListBadge } from '../../lib/types';
 
 type Tab = 'ACTION' | 'CONSULT' | 'CONTACTED' | 'BOOKED' | 'LOST' | 'SPAM' | 'ALL';
 const OUTDATED = 'OUTDATED' as const;
@@ -98,9 +99,14 @@ export default function LeadsManager({ initialLeads, language = null, restricted
   const [busyId, setBusyId] = useState<number | null>(null);
   const [now] = useState(() => Date.now());
   const [funnels, setFunnels] = useState<Record<number, LeadFunnel[]>>({});
+  const [badges, setBadges] = useState<Record<number, LeadListBadge>>({});
 
   useEffect(() => {
     fetch('/api/leads/funnels', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : {})).then(setFunnels).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/leads/badges', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : {})).then(setBadges).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -254,6 +260,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                   <Link href={`/admin/leads/${l.id}`} className="min-w-0 flex-1 hover:underline">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="truncate font-medium">{l.name ?? l.phoneNumber ?? l.email}</span>
+                      <LeadIcons b={badges[l.id]} language={language} />
                       <span className={`rounded px-1.5 py-0.5 text-xs ${STATUS_STYLE[l.status]}`}>{t(language, `leadStatus${l.status}` as 'leadStatusNEW')}</span>
                       {overdue && l.callbackAt && (
                         <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-800">{t(language, 'crmCallbackAt')} {fmt(l.callbackAt, language)}</span>

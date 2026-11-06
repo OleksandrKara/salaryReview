@@ -82,6 +82,10 @@ public class LeadFollowUpService {
     public record Badges(boolean vip, Integer visitCount, boolean smsConsent, boolean negativeFeedback, boolean blocked,
                          boolean optedOut, boolean spamFlag, boolean clickedGoogle, boolean clickedYelp, boolean clickedFeedback) {}
 
+    public record ListBadge(boolean vip, Integer visitCount, boolean smsConsent, boolean negativeFeedback, boolean blocked,
+                            boolean optedOut, boolean spamFlag, boolean clickedGoogle, boolean clickedYelp, boolean clickedFeedback,
+                            String flag, String place, String scope) {}
+
     public record LeadView(long id, String channel, String source, String phoneNumber, String email, String name,
                            String detail, String status, String callbackAt, String createdAt, String lastTouchAt,
                            int touches, String squareCustomerId, String squareUrl,
@@ -308,6 +312,78 @@ public class LeadFollowUpService {
         } catch (RuntimeException e) {
             log.warn("Lead badges lookup failed: {}", e.toString());
             return null;
+        }
+    }
+
+    private static final int PLACE_LOOKUPS = 40;
+
+    /** Icons for the whole lead list in a handful of queries: only people who have at least one signal are returned. */
+    public java.util.Map<Long, ListBadge> listBadges(List<LeadView> leads) {
+        java.util.Map<Long, ListBadge> out = new java.util.HashMap<>();
+        List<String> phones = leads.stream().map(LeadView::phoneNumber).filter(java.util.Objects::nonNull).distinct().toList();
+        if (phones.isEmpty()) return out;
+        try {
+            Long biz = business.id();
+            var names = contactsService.resolveDisplayNames(phones);
+            java.util.Set<String> blockedAll = new java.util.HashSet<>();
+            java.util.Set<String> optedOut = new java.util.HashSet<>();
+            for (com.salonreview.domain.BlockedNumber b : blockedNumbers.findByPhoneNumberIn(phones)) {
+                blockedAll.add(b.getPhoneNumber());
+                if (com.salonreview.domain.BlockedNumber.SOURCE_STOP_REQUEST.equals(b.getSource())) optedOut.add(b.getPhoneNumber());
+            }
+            java.util.Set<String> negative = new java.util.HashSet<>();
+            for (int i = 0; i < phones.size(); i += 500) {
+                List<String> chunk = phones.subList(i, Math.min(phones.size(), i + 500));
+                negative.addAll(jdbc.queryForList("SELECT DISTINCT phone_number FROM sms_message WHERE business_id = ? AND negative_feedback_at IS NOT NULL AND phone_number IN ("
+                        + String.join(",", java.util.Collections.nCopies(chunk.size(), "?")) + ")", String.class,
+                        java.util.stream.Stream.concat(java.util.stream.Stream.of((Object) biz), chunk.stream()).toArray()));
+            }
+            var spam = smsLog.phoneNumbersFlaggedAsSpam(biz, phones);
+            var google = smsLog.phoneNumbersWithClickedLinkTarget(biz, phones, com.salonreview.sms.CheckoutReviewLinks.GOOGLE_REVIEW_TARGET);
+            var yelp = smsLog.phoneNumbersWithClickedLinkTarget(biz, phones, com.salonreview.sms.CheckoutReviewLinks.YELP_REVIEW_TARGET);
+            var form = smsLog.phoneNumbersWithClickedLinkTarget(biz, phones, com.salonreview.sms.CheckoutReviewLinks.FEEDBACK_FORM_TARGET);
+            java.util.Map<String, GeoIpService.Place> places = listPlaces(leads, biz);
+            for (LeadView l : leads) {
+                String ph = l.phoneNumber();
+                if (ph == null) continue;
+                var info = names.get(ph);
+                GeoIpService.Place pl = places.get(ph);
+                String scope = pl == null ? null : !"US".equals(pl.countryCode()) ? "INTERNATIONAL" : "CA".equals(pl.region()) ? "LOCAL" : "OUT_OF_STATE";
+                ListBadge b = new ListBadge(info != null && info.vip(), info == null ? null : info.visitCount(), info != null && info.smsConsent(),
+                        negative.contains(ph), blockedAll.contains(ph), optedOut.contains(ph), spam.contains(ph),
+                        google.contains(ph), yelp.contains(ph), form.contains(ph),
+                        pl == null ? null : pl.flag(), pl == null ? null : (pl.city() != null ? pl.city() : pl.country()), scope);
+                if (b.vip() || b.smsConsent() || b.negativeFeedback() || b.blocked() || b.spamFlag() || b.clickedGoogle() || b.clickedYelp()
+                        || b.clickedFeedback() || b.flag() != null) {
+                    out.put(l.id(), b);
+                }
+            }
+        } catch (RuntimeException e) {
+            log.warn("Lead list badges lookup failed: {}", e.toString());
+        }
+        return out;
+    }
+
+    /** Location of the latest website visit, only for people still being worked (NEW/CONTACTED) and capped so a cold cache stays fast. */
+    private java.util.Map<String, GeoIpService.Place> listPlaces(List<LeadView> leads, Long biz) {
+        List<String> active = leads.stream().filter(l -> l.phoneNumber() != null && ("NEW".equals(l.status()) || "CONTACTED".equals(l.status())))
+                .map(LeadView::phoneNumber).distinct().limit(PLACE_LOOKUPS).toList();
+        if (active.isEmpty()) return java.util.Map.of();
+        try {
+            java.util.Map<String, String> ipByPhone = new java.util.HashMap<>();
+            jdbc.query("SELECT DISTINCT ON (customer_phone) customer_phone, ip_address FROM marketing.submissions WHERE business_id = ? AND ip_address IS NOT NULL AND customer_phone IN ("
+                            + String.join(",", java.util.Collections.nCopies(active.size(), "?")) + ") ORDER BY customer_phone, occurred_at DESC",
+                    rs -> { ipByPhone.put(rs.getString(1), rs.getString(2)); },
+                    java.util.stream.Stream.concat(java.util.stream.Stream.of((Object) biz), active.stream()).toArray());
+            java.util.Map<String, GeoIpService.Place> out = new java.util.concurrent.ConcurrentHashMap<>();
+            ipByPhone.entrySet().parallelStream().forEach(e -> {
+                GeoIpService.Place p = geo.locate(e.getValue());
+                if (p != null) out.put(e.getKey(), p);
+            });
+            return out;
+        } catch (RuntimeException e) {
+            log.warn("Lead list places lookup failed: {}", e.toString());
+            return java.util.Map.of();
         }
     }
 
@@ -790,34 +866,44 @@ public class LeadFollowUpService {
      */
     public int autoBook() {
         int total = 0;
-        for (long businessId : intake.enabledBusinesses()) {
-            var rows = jdbc.queryForList("""
-                    WITH keyed AS (
-                      SELECT l.*, %s AS k FROM lead_intake l WHERE outcome <> 'DUPLICATE' AND business_id = ?
-                    ), agg AS (
-                      SELECT k, (array_agg(square_customer_id ORDER BY (square_customer_id IS NULL), created_at))[1] AS customer,
-                             max(created_at) AS last_touch
-                      FROM keyed GROUP BY k
-                    ), f AS (
-                      SELECT DISTINCT ON (k) * FROM keyed ORDER BY k, created_at, id
-                    )
-                    UPDATE lead_intake li SET status = 'BOOKED', callback_at = NULL, lost_reason = NULL, lost_comment = NULL,
-                           lost_at = NULL, updated_by = 'Square', updated_at = now()
-                    FROM f JOIN agg ON agg.k = f.k
-                    WHERE li.id = f.id AND f.status IN ('NEW', 'CONTACTED', 'LOST') AND agg.customer IS NOT NULL
-                      AND EXISTS (SELECT 1 FROM square_booking b WHERE b.business_id = f.business_id
-                                  AND b.square_customer_id = agg.customer AND b.status = 'ACCEPTED' AND NOT %s
-                                  AND (b.created_at >= agg.last_touch - interval '2 hours'
-                                       OR (f.status <> 'LOST' AND b.start_at > now())))
-                    RETURNING li.id, li.business_id
-                    """.formatted(KEY, ConsultationCatalog.isConsultationSql("b", consultations.ids(businessId))), businessId);
-            for (var r : rows) {
-                jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'STATUS', 'BOOKED', 'Square')",
-                        ((Number) r.get("id")).longValue(), ((Number) r.get("business_id")).longValue());
-            }
-            total += rows.size();
-        }
+        for (long businessId : intake.enabledBusinesses()) total += autoBook(businessId, null);
         return total;
+    }
+
+    /** Immediate variant for one Square customer, called when a booking webhook lands so the lead never sits in NEW. */
+    public int autoBookCustomer(long businessId, String squareCustomerId) {
+        if (squareCustomerId == null || squareCustomerId.isBlank() || !intake.enabledBusinesses().contains(businessId)) return 0;
+        return autoBook(businessId, squareCustomerId);
+    }
+
+    private int autoBook(long businessId, String onlyCustomer) {
+        var rows = jdbc.queryForList("""
+                WITH keyed AS (
+                  SELECT l.*, %s AS k FROM lead_intake l WHERE outcome <> 'DUPLICATE' AND business_id = ?
+                ), agg AS (
+                  SELECT k, (array_agg(square_customer_id ORDER BY (square_customer_id IS NULL), created_at))[1] AS customer,
+                         max(created_at) AS last_touch
+                  FROM keyed GROUP BY k
+                ), f AS (
+                  SELECT DISTINCT ON (k) * FROM keyed ORDER BY k, created_at, id
+                )
+                UPDATE lead_intake li SET status = 'BOOKED', callback_at = NULL, lost_reason = NULL, lost_comment = NULL,
+                       lost_at = NULL, updated_by = 'Square', updated_at = now()
+                FROM f JOIN agg ON agg.k = f.k
+                WHERE li.id = f.id AND f.status IN ('NEW', 'CONTACTED', 'LOST', 'OUTDATED') AND agg.customer IS NOT NULL
+                  AND (?::text IS NULL OR agg.customer = ?)
+                  AND EXISTS (SELECT 1 FROM square_booking b WHERE b.business_id = f.business_id
+                              AND b.square_customer_id = agg.customer AND b.status = 'ACCEPTED' AND NOT %s
+                              AND (CASE WHEN f.status = 'OUTDATED' THEN b.created_at >= now() - interval '3 days'
+                                        ELSE b.created_at >= agg.last_touch - interval '2 hours'
+                                             OR (f.status <> 'LOST' AND b.start_at > now()) END))
+                RETURNING li.id, li.business_id
+                """.formatted(KEY, ConsultationCatalog.isConsultationSql("b", consultations.ids(businessId))), businessId, onlyCustomer, onlyCustomer);
+        for (var r : rows) {
+            jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'STATUS', 'BOOKED', 'Square')",
+                    ((Number) r.get("id")).longValue(), ((Number) r.get("business_id")).longValue());
+        }
+        return rows.size();
     }
 
     private List<Sms> sms(LeadView lead) {
