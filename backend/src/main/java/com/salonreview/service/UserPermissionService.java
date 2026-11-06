@@ -21,7 +21,7 @@ public class UserPermissionService {
 
     /** True when the role already includes the permission, so no grant row is needed or shown. */
     public static boolean impliedByRole(Role role, Permission permission) {
-        return permission == Permission.SMS_INBOX && (role == Role.OWNER || role == Role.MANAGER);
+        return role == Role.OWNER || role == Role.MANAGER;
     }
 
     public boolean has(Long userId, Role role, Long businessId, Permission permission) {
@@ -68,5 +68,14 @@ public class UserPermissionService {
         } else if (!granted && exists) {
             repository.deleteByBusinessIdAndUserIdAndPermission(businessId, userId, permission.name());
         }
+    }
+
+    /** Which part of the Leads CRM the caller may use: ALL, ACADEMY (academy leads only) or NONE. */
+    public enum LeadsScope { ALL, ACADEMY, NONE }
+
+    public LeadsScope leadsScope(Long userId, Role role, Long businessId) {
+        if (has(userId, role, businessId, Permission.LEADS_ALL)) return LeadsScope.ALL;
+        if (has(userId, role, businessId, Permission.LEADS_ACADEMY)) return LeadsScope.ACADEMY;
+        return LeadsScope.NONE;
     }
 }

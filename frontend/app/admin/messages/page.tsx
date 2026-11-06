@@ -104,6 +104,7 @@ export default async function MessagesPage({
           initialHasMore={conversationsPage.hasMore}
           initialSelectedPhone={phone ?? null}
           initialFilter={unreadOnly ? 'unread' : 'all'}
+          canOpenLead={me.role === 'OWNER' || me.role === 'MANAGER' || !!me.permissions?.includes('LEADS_ALL') || !!me.permissions?.includes('LEADS_ACADEMY')}
         />
       </div>
     </main>

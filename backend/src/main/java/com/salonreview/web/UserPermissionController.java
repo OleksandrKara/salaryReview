@@ -7,6 +7,7 @@ import com.salonreview.domain.Permission;
 import com.salonreview.domain.Role;
 import com.salonreview.repo.AppUserRepository;
 import com.salonreview.repo.ProviderRepository;
+import com.salonreview.marketing.LeadFollowUpService;
 import com.salonreview.service.UserPermissionService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -24,13 +25,16 @@ public class UserPermissionController {
     private final ProviderRepository providers;
     private final UserPermissionService permissions;
     private final CurrentBusinessContext currentBusinessContext;
+    private final LeadFollowUpService leads;
 
     public UserPermissionController(AppUserRepository users, ProviderRepository providers,
-                                    UserPermissionService permissions, CurrentBusinessContext currentBusinessContext) {
+                                    UserPermissionService permissions, CurrentBusinessContext currentBusinessContext,
+                                    LeadFollowUpService leads) {
         this.users = users;
         this.providers = providers;
         this.permissions = permissions;
         this.currentBusinessContext = currentBusinessContext;
+        this.leads = leads;
     }
 
     public record UserPermissionsDto(long userId, String username, String displayName, String role,
@@ -57,7 +61,11 @@ public class UserPermissionController {
                     return new UserPermissionsDto(u.getId(), u.getUsername(), name, u.getRole().name(), granted, implied);
                 })
                 .toList();
-        return new PermissionsOverview(java.util.Arrays.stream(Permission.values()).map(Permission::name).toList(), rows);
+        boolean academy = leads.hasAcademyLeads(businessId);
+        List<String> offered = java.util.Arrays.stream(Permission.values())
+                .filter(p -> p != Permission.LEADS_ACADEMY || academy)
+                .map(Permission::name).toList();
+        return new PermissionsOverview(offered, rows);
     }
 
     @PutMapping

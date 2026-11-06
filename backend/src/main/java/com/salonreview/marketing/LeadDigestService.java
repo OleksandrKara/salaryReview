@@ -52,17 +52,19 @@ public class LeadDigestService {
     private final LeadFollowUpService leads;
     private final LeadIntakeService intake;
     private final LeadDigestLog digestLog;
+    private final com.salonreview.square.SquareClientProvider squares;
     private final SmsAutomationService automations;
     private final TelegramNotificationService telegram;
     private final String publicBaseUrl;
 
     public LeadDigestService(JdbcTemplate jdbc, LeadFollowUpService leads, LeadIntakeService intake, LeadDigestLog digestLog,
-                             SmsAutomationService automations, TelegramNotificationService telegram,
+                             com.salonreview.square.SquareClientProvider squares, SmsAutomationService automations, TelegramNotificationService telegram,
                              @Value("${app.public-base-url}") String publicBaseUrl) {
         this.jdbc = jdbc;
         this.leads = leads;
         this.intake = intake;
         this.digestLog = digestLog;
+        this.squares = squares;
         this.automations = automations;
         this.telegram = telegram;
         this.publicBaseUrl = publicBaseUrl;
@@ -180,7 +182,7 @@ public class LeadDigestService {
                 return;
             }
             byStatus.merge(status, n, Integer::sum);
-            byPerson.merge(by, n, Integer::sum);
+            byPerson.merge(personName(businessId, by), n, Integer::sum);
         }, businessId, java.sql.Date.valueOf(day));
         Integer callbacks = jdbc.queryForObject("""
                 SELECT count(DISTINCT lead_id) FROM lead_events WHERE business_id = ? AND type = 'CALLBACK'
@@ -188,6 +190,29 @@ public class LeadDigestService {
                   AND COALESCE(created_by, '') NOT IN ('System', 'Square')
                 """, Integer.class, businessId, java.sql.Date.valueOf(day));
         return new Handled(byStatus, auto[0], callbacks == null ? 0 : callbacks, byPerson);
+    }
+
+    /** Real name for a login: provider name, else the Square team member name, else the login itself. */
+    String personName(long businessId, String username) {
+        try {
+            var row = jdbc.queryForList("""
+                    SELECT a.role, p.display_name, a.square_team_member_id FROM app_user a
+                    LEFT JOIN providers p ON p.id = a.provider_id
+                    WHERE a.username = ? AND a.business_id = ?""", username, businessId);
+            if (row.isEmpty()) return username;
+            String display = (String) row.get(0).get("display_name");
+            if (display != null && !display.isBlank()) return display.trim();
+            String teamMember = (String) row.get(0).get("square_team_member_id");
+            if (teamMember != null) {
+                for (var m : squares.forBusiness(businessId).allTeamMembers()) {
+                    if (teamMember.equals(m.id()) && !m.fullName().isBlank()) return m.fullName();
+                }
+            }
+            return "OWNER".equals(row.get(0).get("role")) ? "Владелец (" + username + ")" : username;
+        } catch (RuntimeException e) {
+            log.warn("Could not resolve name for {}: {}", username, e.toString());
+            return username;
+        }
     }
 
     /** Returns null when nothing happened and nothing is waiting, so no message is sent. */
@@ -224,9 +249,9 @@ public class LeadDigestService {
         if (tomorrow > 0) sb.append("Перезвонить завтра: ").append(tomorrow).append('\n');
         if (!h.byPerson().isEmpty()) {
             List<String> people = h.byPerson().entrySet().stream()
-                    .sorted(Map.Entry.<String, Integer>comparingByValue().reversed()).limit(4)
-                    .map(e -> e.getKey() + " " + e.getValue()).toList();
-            sb.append("Кто работал: ").append(String.join(", ", people)).append('\n');
+                    .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
+                    .map(e -> e.getKey() + ": " + e.getValue()).toList();
+            sb.append(people.size() == 1 ? "Работал: " : "Работали: ").append(String.join(", ", people)).append('\n');
         }
         return sb.toString().stripTrailing();
     }
