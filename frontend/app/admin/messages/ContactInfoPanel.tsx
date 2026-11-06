@@ -303,7 +303,7 @@ export default function ContactInfoPanel({
               {canOpenLead && <a
                 href={`/admin/leads/open?phone=${encodeURIComponent(phoneNumber)}`}
                 data-testid="contact-info-lead-link"
-                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-700"
+                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold !text-white hover:bg-zinc-700"
               >
                 Open lead card
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
