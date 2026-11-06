@@ -69,6 +69,7 @@ public class SmsAutomationService {
     private final AutomationReadinessService readinessService;
     private final ProviderScheduleClosureAlertRepository providerScheduleClosureAlertRepository;
     private final PmuBookingStaffAlertRepository pmuBookingStaffAlertRepository;
+    private final com.salonreview.marketing.LeadDigestLog leadDigestLog;
     private AcademyLeadFunnelStats academyStats;
 
     /** Setter, not a constructor argument, so the many tests that build this service directly
@@ -86,7 +87,9 @@ public class SmsAutomationService {
                                  WinbackEmailSendRepository winbackEmailSendRepository,
                                  AutomationReadinessService readinessService,
                                  ProviderScheduleClosureAlertRepository providerScheduleClosureAlertRepository,
-                                 PmuBookingStaffAlertRepository pmuBookingStaffAlertRepository) {
+                                 PmuBookingStaffAlertRepository pmuBookingStaffAlertRepository,
+                                 com.salonreview.marketing.LeadDigestLog leadDigestLog) {
+        this.leadDigestLog = leadDigestLog;
         this.repository = repository;
         this.messageRepository = messageRepository;
         this.lapsedCustomerWinbackSendRepository = lapsedCustomerWinbackSendRepository;
@@ -124,7 +127,9 @@ public class SmsAutomationService {
 
                     // Telegram-channel automations have no sms_message rows at all — their "sent"
                     // count uses confirmed delivery_status=SENT and delivered_at in the outbox.
-                    long sent = "pmu_booking_staff_alert".equals(meta.key())
+                    long sent = "lead_daily_digest".equals(meta.key())
+                            ? leadDigestLog.countSent(businessId, since)
+                            : "pmu_booking_staff_alert".equals(meta.key())
                             ? pmuBookingStaffAlertRepository.countByBusinessIdAndDeliveryStatusAndDeliveredAtAfter(businessId, "SENT", since)
                             : meta.channel() == SmsAutomationRegistry.Channel.TELEGRAM
                             ? providerScheduleClosureAlertRepository.countByBusinessIdAndDeliveryStatusAndDeliveredAtAfter(businessId, "SENT", since)
