@@ -118,6 +118,7 @@ public class LeadIntakeService {
         if (t.contains("google")) return "Google organic";
         if (t.contains("bing") || t.contains("yahoo")) return "Search organic";
         if (t.startsWith("direct")) return "Direct";
+        if (t.matches(".*(chatgpt|openai|perplexity|gemini|copilot|claude).*")) return "AI search";
         return "Other";
     }
 
@@ -146,16 +147,29 @@ public class LeadIntakeService {
         return n != null && n > 0;
     }
 
+    static final String ACADEMY = "Academy";
+
+    private String contactTraffic(long businessId, String phone, String email) {
+        if (phone == null && email == null) return null;
+        List<String> ts = jdbc.queryForList("""
+                SELECT COALESCE(original_traffic_source, marketing_traffic_source) FROM marketing.contacts
+                WHERE business_id = ? AND (phone_number = ? OR (?::text IS NOT NULL AND lower(email_address) = ?::text))
+                  AND COALESCE(original_traffic_source, marketing_traffic_source, '') <> ''
+                ORDER BY created_at LIMIT 1
+                """, String.class, businessId, phone, email, email);
+        return ts.isEmpty() ? null : ts.get(0);
+    }
+
     public Result capture(Lead lead) {
         String phone = validPhone(lead.phone());
         String email = lead.email() == null || lead.email().isBlank() ? null : lead.email().trim().toLowerCase(Locale.ROOT);
         String label = sourceLabel(lead.trafficSource());
         try {
-            if (lead.trafficSource() == null && phone != null) {
-                List<String> ts = jdbc.queryForList("SELECT COALESCE(original_traffic_source, marketing_traffic_source) FROM marketing.contacts WHERE business_id = ? AND phone_number = ?",
-                        String.class, lead.businessId(), phone);
-                if (!ts.isEmpty() && ts.get(0) != null) {
-                    lead = new Lead(lead.businessId(), lead.channel(), ts.get(0), lead.phone(), lead.email(), lead.name(), lead.detail(), lead.externalId(), lead.payload());
+            if (lead.trafficSource() == null || lead.trafficSource().isBlank()) {
+                String ts = contactTraffic(lead.businessId(), phone, email);
+                if (ts == null && ACADEMY.equals(lead.channel())) ts = "Direct";
+                if (ts != null) {
+                    lead = new Lead(lead.businessId(), lead.channel(), ts, lead.phone(), lead.email(), lead.name(), lead.detail(), lead.externalId(), lead.payload());
                     label = sourceLabel(lead.trafficSource());
                 }
             }
