@@ -6,6 +6,7 @@ import { t } from '../../../lib/i18n';
 import type { Language, LeadDetail, LeadStatus } from '../../../lib/types';
 
 const STATUSES: LeadStatus[] = ['NEW', 'CONTACTED', 'BOOKED', 'LOST'];
+const APPT_STATUSES = ['ACCEPTED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SELLER', 'NO_SHOW', 'DECLINED'];
 const ENTRY_TYPES = ['NOTE', 'CALL', 'AGREEMENT'] as const;
 const field = 'rounded border border-zinc-300 px-2 py-1.5 text-sm focus:border-zinc-500 focus:outline-none';
 const primary = 'rounded bg-zinc-900 px-3 py-1.5 text-sm text-white disabled:opacity-40';
@@ -143,6 +144,22 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
           </button>
         )}
       </section>
+
+      {lead.squareCustomerId && (
+        <section className="flex flex-col gap-2">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">{t(language, 'leadAppointments')}</h3>
+          {data.appointments.length === 0 && <p className="text-sm text-zinc-500">{t(language, 'leadAppointmentsEmpty')}</p>}
+          <ul className="flex flex-col gap-1">
+            {data.appointments.map((a) => (
+              <li key={a.id} className="flex flex-wrap items-baseline gap-x-3 text-sm ring-1 ring-zinc-200 rounded-lg px-3 py-2">
+                <span className="font-medium text-zinc-800">{a.startAt ? fmt(a.startAt, language) : ''}</span>
+                <span className="text-zinc-600">{APPT_STATUSES.includes(a.status) ? t(language, `leadAppt_${a.status}` as 'leadAppt_ACCEPTED') : a.status}</span>
+                {a.services && <span className="text-zinc-500">{a.services}</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="flex flex-col gap-3">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">{t(language, 'leadOrigins')}</h3>

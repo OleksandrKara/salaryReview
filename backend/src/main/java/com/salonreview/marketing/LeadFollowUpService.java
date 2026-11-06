@@ -1,6 +1,7 @@
 package com.salonreview.marketing;
 
 import com.salonreview.config.CurrentBusinessContext;
+import com.salonreview.square.SquareClientProvider;
 import com.salonreview.web.GeoIpService;
 import com.salonreview.telegram.TelegramNotificationService;
 import org.slf4j.Logger;
@@ -38,15 +39,18 @@ public class LeadFollowUpService {
     private final TelegramNotificationService telegram;
     private final String publicBaseUrl;
     private final GeoIpService geo;
+    private final SquareClientProvider squares;
     private final com.fasterxml.jackson.databind.ObjectMapper json = new com.fasterxml.jackson.databind.ObjectMapper();
 
     public LeadFollowUpService(JdbcTemplate jdbc, CurrentBusinessContext business, TelegramNotificationService telegram, GeoIpService geo,
+                               SquareClientProvider squares,
                                @org.springframework.beans.factory.annotation.Value("${app.public-base-url}") String publicBaseUrl) {
         this.jdbc = jdbc;
         this.business = business;
         this.telegram = telegram;
         this.publicBaseUrl = publicBaseUrl;
         this.geo = geo;
+        this.squares = squares;
     }
 
     public record LeadView(long id, String channel, String source, String phoneNumber, String email, String name,
@@ -63,7 +67,10 @@ public class LeadFollowUpService {
 
     public record Event(long id, String type, String text, String createdBy, String createdAt) {}
 
-    public record LeadDetail(LeadView lead, List<Touch> touches, List<Event> events, List<Origin> origins) {}
+    public record Appointment(String id, String status, String startAt, String services) {}
+
+    public record LeadDetail(LeadView lead, List<Touch> touches, List<Event> events, List<Origin> origins,
+                             List<Appointment> appointments) {}
 
     public record UpdateRequest(String status, String callbackAt, Boolean clearCallback) {}
 
@@ -88,10 +95,13 @@ public class LeadFollowUpService {
                      (array_agg(name ORDER BY (name IS NULL), created_at))[1] AS any_name
               FROM keyed GROUP BY k
             )
-            SELECT f.id, f.channel, f.source, f.phone_number, f.email, COALESCE(f.name, agg.any_name) AS name,
+            SELECT f.id, f.channel, f.source, COALESCE(sc.phone_number, f.phone_number) AS phone_number,
+                   COALESCE(sc.email_address, f.email) AS email,
+                   COALESCE(NULLIF(trim(concat_ws(' ', sc.given_name, sc.family_name)), ''), f.name, agg.any_name) AS name,
                    f.detail, f.status, f.callback_at, f.created_at, agg.last_touch_at, agg.touches::int AS touches,
                    agg.customer AS square_customer_id
             FROM (SELECT DISTINCT ON (k) * FROM keyed ORDER BY k, created_at, id) f JOIN agg ON agg.k = f.k
+              LEFT JOIN square_customer sc ON sc.business_id = f.business_id AND sc.square_customer_id = agg.customer
             """.formatted(KEY);
 
     public List<LeadView> list(String status) {
@@ -112,7 +122,7 @@ public class LeadFollowUpService {
                         + "WHERE lead_id = ? AND business_id = ? ORDER BY created_at DESC",
                 (rs, i) -> new Event(rs.getLong("id"), rs.getString("type"), rs.getString("text"),
                         rs.getString("created_by"), iso(rs.getTimestamp("created_at"))), id, business.id());
-        return new LeadDetail(lead, touches, events, origins(lead));
+        return new LeadDetail(lead, touches, events, origins(lead), appointments(lead));
     }
 
     private java.util.Map<String, String> parsePayload(String raw) {
@@ -153,6 +163,52 @@ public class LeadFollowUpService {
                     join(rs.getString("browser_name"), rs.getString("browser_version")), ip,
                     where == null || where.isEmpty() ? null : where, rs.getString("service_name"));
         }, business.id(), phone, email, email);
+    }
+
+    /** Appointments of the linked Square customer, read from the webhook-fed mirror (no Square call
+     * except cached catalog names for the service labels). */
+    private List<Appointment> appointments(LeadView lead) {
+        if (lead.squareCustomerId() == null) return List.of();
+        List<Object[]> rows = new java.util.ArrayList<>();
+        jdbc.query("""
+                SELECT square_booking_id, status, start_at, appointment_segments_json::text AS segments
+                FROM square_booking WHERE business_id = ? AND square_customer_id = ?
+                ORDER BY start_at DESC NULLS LAST LIMIT 10
+                """, rs -> {
+            rows.add(new Object[]{rs.getString(1), rs.getString(2), iso(rs.getTimestamp(3)), rs.getString(4)});
+        }, business.id(), lead.squareCustomerId());
+        java.util.Set<String> variationIds = new java.util.LinkedHashSet<>();
+        List<List<String>> perRow = new java.util.ArrayList<>();
+        for (Object[] r : rows) {
+            List<String> ids = new java.util.ArrayList<>();
+            try {
+                if (r[3] != null) json.readTree((String) r[3]).forEach(n -> {
+                    String v = n.path("serviceVariationId").asText(null);
+                    if (v != null) ids.add(v);
+                });
+            } catch (Exception ignored) {
+                // unreadable segments: show the appointment without service names
+            }
+            variationIds.addAll(ids);
+            perRow.add(ids);
+        }
+        java.util.Map<String, String> names = java.util.Map.of();
+        if (!variationIds.isEmpty()) {
+            try {
+                names = squares.forBusiness(business.id()).catalogNames(variationIds);
+            } catch (Exception e) {
+                log.warn("Lead appointment service names unavailable: {}", e.toString());
+            }
+        }
+        List<Appointment> out = new java.util.ArrayList<>();
+        for (int i = 0; i < rows.size(); i++) {
+            Object[] r = rows.get(i);
+            java.util.Map<String, String> n = names;
+            String services = perRow.get(i).stream().map(n::get).filter(java.util.Objects::nonNull).distinct()
+                    .collect(java.util.stream.Collectors.joining(", "));
+            out.add(new Appointment((String) r[0], (String) r[1], (String) r[2], services.isEmpty() ? null : services));
+        }
+        return out;
     }
 
     private static String join(String a, String b) {
