@@ -217,6 +217,7 @@ public class LeadFunnelService {
         switch (row.status()) {
             case "contacted" -> { state = "STOPPED"; reason = "STAFF"; }
             case "replied" -> { state = "STOPPED"; reason = "REPLIED"; }
+            case "converted" -> { state = "STOPPED"; reason = "BOOKED"; }
             case "duplicate" -> { state = "STOPPED"; reason = "DUPLICATE"; }
             default -> {
                 if (decided >= AcademyLeadFunnelScheduler.STEP_KEYS.size()
@@ -233,6 +234,7 @@ public class LeadFunnelService {
         if (via == null) via = switch (row.status()) {
             case "contacted" -> "unknown";
             case "replied" -> "client_reply";
+            case "converted" -> "booked";
             case "duplicate" -> "duplicate";
             default -> null;
         };

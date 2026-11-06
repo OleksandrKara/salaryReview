@@ -194,15 +194,14 @@ class ConsultationFollowUpSchedulerTest {
     }
 
     @Test
-    @DisplayName("replied to a text: the sequence stops")
-    void repliedStops() {
+    @DisplayName("replied to a text: the sequence keeps going")
+    void repliedDoesNotStop() {
         ConsultationFollowUp r = row(NOW.minus(Duration.ofDays(5)).minus(Duration.ofHours(1)));
         r.setThanksSmsState(ConsultationFollowUp.STATE_SENT);
         when(smsMessages.existsByBusinessIdAndPhoneNumberAndDirectionAndCreatedAtAfter(eq(BIZ), eq(PHONE), eq("INBOUND"), any()))
                 .thenReturn(true);
         at(NOW).advance(r, square, mcConfig, NOW);
-        assertThat(r.getStopReason()).isEqualTo(ConsultationFollowUp.STOP_REPLIED);
-        verifyNoInteractions(mailchimp);
+        assertThat(r.getStopReason()).isNull();
     }
 
     @Test

@@ -47,7 +47,7 @@ class AcademyLeadFunnelSchedulerTest {
 
     private AcademyLeadFunnelScheduler scheduler(Instant now) {
         return new AcademyLeadFunnelScheduler(jdbc, mock(SmsAutomationService.class), sms, mock(MailchimpConfigRepository.class),
-                mailchimp, templates, contacts, mock(MailchimpClient.class), Clock.fixed(now, ZoneOffset.UTC));
+                mailchimp, templates, contacts, mock(MailchimpClient.class), mock(com.salonreview.marketing.ConsultationCatalog.class), Clock.fixed(now, ZoneOffset.UTC));
     }
 
     private void done(String... steps) {
@@ -94,12 +94,22 @@ class AcademyLeadFunnelSchedulerTest {
     }
 
     @Test
-    void replyStopsTheFunnel() throws Exception {
+    void replyDoesNotStopTheFunnel() throws Exception {
         done("confirm_email", "confirm_sms");
         Instant created = DAY.minus(Duration.ofDays(1)).minusSeconds(60);
         when(contacts.textedUsSince("+16195550100", 2L, created)).thenReturn(true);
         scheduler(DAY).advance(lead(created, false), mc, DAY);
-        verify(jdbc).update(contains("status = 'replied'"), eq(7L));
+        verify(jdbc, never()).update(contains("status = 'replied'"), eq(7L));
+        verify(mailchimp).sendWinbackEmail(eq(mc), anyString(), anyString(), anyString(), contains("reviews_email"), anyString());
+    }
+
+    @Test
+    void purchaseStopsTheFunnel() throws Exception {
+        done("confirm_email", "confirm_sms");
+        Instant created = DAY.minus(Duration.ofDays(1)).minusSeconds(60);
+        when(jdbc.queryForObject(contains("FROM square_booking"), eq(Boolean.class), any(Object[].class))).thenReturn(true);
+        scheduler(DAY).advance(lead(created, false), mc, DAY);
+        verify(jdbc).update(contains("status = 'converted'"), eq(7L));
         verifyNoInteractions(mailchimp);
     }
 

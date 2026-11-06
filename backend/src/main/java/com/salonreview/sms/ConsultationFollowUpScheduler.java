@@ -318,13 +318,8 @@ public class ConsultationFollowUpScheduler {
         return null;
     }
 
-    /** Booked anything (asked of Square itself) or replied by text: the sequence ends for good. */
+    /** Booked anything (asked of Square itself): the sequence ends for good. A text reply does not stop it. */
     private boolean stopIfDone(ConsultationFollowUp row, SquareClient square, Instant now) {
-        if (row.getPhoneNumber() != null && smsMessageRepository.existsByBusinessIdAndPhoneNumberAndDirectionAndCreatedAtAfter(
-                row.getBusinessId(), row.getPhoneNumber(), "INBOUND", row.getCreatedAt())) {
-            stop(row, ConsultationFollowUp.STOP_REPLIED, now);
-            return true;
-        }
         List<SquareClient.Booking> bookings = square.bookingsForCustomer(row.getSquareCustomerId(),
                 row.getConsultationStartAt().minus(Duration.ofDays(1)));
         Set<String> consultationIds = consultationVariationIdsLive(square, bookings);
