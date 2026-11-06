@@ -29,6 +29,8 @@ function span(ms: number, lang: Language | null): string {
   return `${Math.floor(h / 24)} ${ru ? 'дн' : 'd'}`;
 }
 
+const activity = (l: Lead) => new Date(l.activityAt ?? l.lastTouchAt).getTime();
+
 function isActive(l: Lead): boolean {
   return l.status === 'NEW' || l.status === 'CONTACTED';
 }
@@ -40,25 +42,32 @@ function isOverdue(l: Lead, now: number): boolean {
 type Section = { key: string; title: string; tone: string; leads: Lead[] };
 
 function buildSections(leads: Lead[], tab: Tab, now: number, lang: Language | null): Section[] {
-  const created = (l: Lead) => new Date(l.createdAt).getTime();
   const cb = (l: Lead) => (l.callbackAt ? new Date(l.callbackAt).getTime() : Infinity);
+  const recent = (a: Lead, b: Lead) => activity(b) - activity(a);
   if (tab === 'ACTION') {
     const overdue = leads.filter((l) => isOverdue(l, now)).sort((a, b) => cb(a) - cb(b));
     const rest = leads.filter((l) => !isOverdue(l, now) && l.status === 'NEW');
-    const fresh = rest.filter((l) => now - created(l) <= COLD_AFTER_DAYS * DAY).sort((a, b) => created(a) - created(b));
-    const cold = rest.filter((l) => now - created(l) > COLD_AFTER_DAYS * DAY).sort((a, b) => created(b) - created(a));
+    const fresh = rest.filter((l) => now - activity(l) <= COLD_AFTER_DAYS * DAY).sort(recent);
+    const cold = rest.filter((l) => now - activity(l) > COLD_AFTER_DAYS * DAY).sort(recent);
     return [
       { key: 'overdue', title: t(lang, 'crmSecOverdue'), tone: 'text-red-700', leads: overdue },
       { key: 'new', title: t(lang, 'crmSecNew'), tone: 'text-blue-700', leads: fresh },
       { key: 'cold', title: t(lang, 'crmSecCold'), tone: 'text-zinc-500', leads: cold },
     ].filter((s) => s.leads.length > 0);
   }
-  const sorted = [...leads];
-  if (tab === 'CONTACTED') {
-    sorted.sort((a, b) => cb(a) - cb(b) || new Date(b.lastTouchAt).getTime() - new Date(a.lastTouchAt).getTime());
-  } else {
-    sorted.sort((a, b) => new Date(b.lastTouchAt).getTime() - new Date(a.lastTouchAt).getTime());
+  if (tab === 'ALL') {
+    return (['NEW', 'CONTACTED', 'BOOKED', 'LOST'] as const)
+      .map((st) => ({
+        key: st,
+        title: st === 'CONTACTED' ? t(lang, 'crmSecProgress') : t(lang, `leadStatus${st}` as 'leadStatusNEW'),
+        tone: st === 'NEW' ? 'text-blue-700' : 'text-zinc-500',
+        leads: leads.filter((l) => l.status === st).sort(recent),
+      }))
+      .filter((s) => s.leads.length > 0);
   }
+  const sorted = [...leads];
+  if (tab === 'CONTACTED') sorted.sort((a, b) => cb(a) - cb(b) || recent(a, b));
+  else sorted.sort(recent);
   return sorted.length ? [{ key: 'all', title: '', tone: '', leads: sorted }] : [];
 }
 
@@ -150,7 +159,7 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
           <ul className="flex flex-col divide-y divide-zinc-200 rounded-lg ring-1 ring-zinc-200">
             {s.leads.map((l) => {
               const overdue = isOverdue(l, now);
-              const waiting = l.status === 'NEW' ? span(now - new Date(l.createdAt).getTime(), language) : null;
+              const waiting = l.status === 'NEW' ? span(now - activity(l), language) : null;
               const upcoming = !overdue && isActive(l) && l.callbackAt != null;
               return (
                 <li key={l.id} className={`flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:gap-4 ${overdue ? 'bg-red-50/60' : ''}`}>
@@ -168,7 +177,7 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
                     </div>
                     <div className="truncate text-xs text-zinc-500">
                       {l.name && l.phoneNumber ? `${l.phoneNumber} · ` : ''}{l.source} · {l.channel}
-                      {l.touches > 1 ? ` · ${l.touches} ${t(language, 'leadTouches')}` : ''} · {fmt(l.lastTouchAt, language)}
+                      {l.touches > 1 ? ` · ${l.touches} ${t(language, 'leadTouches')}` : ''} · {fmt(new Date(activity(l)).toISOString(), language)}
                     </div>
                     {l.lastNote && (
                       <div className="mt-0.5 truncate text-xs text-zinc-700">

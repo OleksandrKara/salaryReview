@@ -2585,6 +2585,7 @@ export interface Lead {
   lastNote: string | null;
   lastNoteBy: string | null;
   lastNoteAt: string | null;
+  activityAt: string;
 }
 export interface LostRow { reason: string; source: string | null; count: number }
 export interface LostReport { days: number; total: number; byReason: LostRow[]; bySource: LostRow[] }

@@ -63,7 +63,7 @@ public class LeadFollowUpService {
                            String detail, String status, String callbackAt, String createdAt, String lastTouchAt,
                            int touches, String squareCustomerId, String squareUrl,
                            String lostReason, String lostComment, boolean sourceEditable,
-                           String lastNote, String lastNoteBy, String lastNoteAt) {}
+                           String lastNote, String lastNoteBy, String lastNoteAt, String activityAt) {}
 
     public record Touch(long id, String channel, String source, String detail, String createdAt,
                         java.util.Map<String, String> payload) {}
@@ -103,7 +103,7 @@ public class LeadFollowUpService {
                 iso(rs.getTimestamp("last_touch_at")), rs.getInt("touches"), customer,
                 customer == null ? null : SQUARE_CUSTOMER_URL + customer,
                 rs.getString("lost_reason"), rs.getString("lost_comment"), rs.getBoolean("source_editable"),
-                rs.getString("last_note"), rs.getString("last_note_by"), iso(rs.getTimestamp("last_note_at")));
+                rs.getString("last_note"), rs.getString("last_note_by"), iso(rs.getTimestamp("last_note_at")), iso(rs.getTimestamp("activity_at")));
     };
 
     private static final String LEADS_SELECT = """
@@ -122,7 +122,8 @@ public class LeadFollowUpService {
                    f.detail, f.status, f.callback_at, f.created_at, agg.last_touch_at, agg.touches::int AS touches,
                    agg.customer AS square_customer_id, f.lost_reason, f.lost_comment,
                    (f.channel = 'Square' OR f.source = 'Unknown') AS source_editable,
-                   n.text AS last_note, n.created_by AS last_note_by, n.created_at AS last_note_at
+                   n.text AS last_note, n.created_by AS last_note_by, n.created_at AS last_note_at,
+                   GREATEST(agg.last_touch_at, f.updated_at, n.created_at) AS activity_at
             FROM (SELECT DISTINCT ON (k) * FROM keyed ORDER BY k, created_at, id) f JOIN agg ON agg.k = f.k
               LEFT JOIN square_customer sc ON sc.business_id = f.business_id AND sc.square_customer_id = agg.customer
               LEFT JOIN LATERAL (SELECT e.text, e.created_by, e.created_at FROM lead_events e WHERE e.lead_id = f.id
@@ -132,7 +133,7 @@ public class LeadFollowUpService {
     public List<LeadView> list(String status) {
         String filter = status == null || status.isBlank() ? null : status.trim().toUpperCase();
         return jdbc.query("SELECT * FROM (" + LEADS_SELECT + ") x WHERE (?::text IS NULL OR status = ?) "
-                + "ORDER BY (status = 'NEW') DESC, last_touch_at DESC LIMIT 1000", leadMapper, business.id(), filter, filter);
+                + "ORDER BY (status = 'NEW') DESC, activity_at DESC LIMIT 1000", leadMapper, business.id(), filter, filter);
     }
 
     public LeadDetail detail(long id) {
