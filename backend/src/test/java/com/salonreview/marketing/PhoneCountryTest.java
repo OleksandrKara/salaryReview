@@ -24,4 +24,12 @@ class PhoneCountryTest {
         assertNull(PhoneCountry.iso(null));
         assertEquals("🇮🇷", PhoneCountry.place("+989118522298").flag());
     }
+
+    @Test
+    void northAmericanNumbersGetUsOrCanada() {
+        assertEquals("US", PhoneCountry.northAmerica("+16193222953"));
+        assertEquals("US", PhoneCountry.place("+16193222953").countryCode());
+        assertEquals("CA", PhoneCountry.northAmerica("+14165551234"));
+        assertNull(PhoneCountry.northAmerica("+18765551234"));
+    }
 }

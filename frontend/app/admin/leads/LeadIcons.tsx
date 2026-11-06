@@ -34,8 +34,8 @@ export default function LeadIcons({ b, language }: { b: LeadListBadge | undefine
       {b.clickedFeedback && <FeedbackFormClickedIcon size={size} />}
       {b.flag && (
         <span
-          className={`inline-flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white text-[11px] leading-none ring-1 ${SCOPE_RING[b.scope ?? 'LOCAL']}`}
-          title={`${b.place ?? ''} · ${t(language, b.scope === 'LOCAL' ? 'crmPlaceLocal' : b.scope === 'OUT_OF_STATE' ? 'crmPlaceOut' : 'crmPlaceIntl')}`}
+          className={`inline-flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white text-[11px] leading-none ring-1 ${(b.scope ? SCOPE_RING[b.scope] : 'ring-zinc-300')}`}
+          title={b.scope ? `${b.place ?? ''} · ${t(language, b.scope === 'LOCAL' ? 'crmPlaceLocal' : b.scope === 'OUT_OF_STATE' ? 'crmPlaceOut' : 'crmPlaceIntl')}` : (b.place ?? '')}
         >
           <FlagIcon flag={b.flag} className="h-[14px] w-[14px] rounded-full object-cover" />
           <span className="sr-only">{b.place}</span>
