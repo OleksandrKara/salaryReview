@@ -108,6 +108,26 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
   const activeTab: Tab = tab ?? (counts.ACTION > 0 ? 'ACTION' : 'ALL');
   const sections = buildSections(base.filter((l) => inTab(l, activeTab)), activeTab, now, language);
 
+  async function noAnswer(l: Lead) {
+    setBusyId(l.id);
+    const res = await fetch(`/api/leads/${l.id}/attempts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    setBusyId(null);
+    if (res.ok) {
+      const next = new Date(Date.now() + 2 * DAY).toISOString();
+      setLeads((prev) => prev.map((x) => (x.id === l.id ? { ...x, status: 'CONTACTED', callbackAt: next, attempts: x.attempts + 1, closeReady: x.attempts + 1 >= 3 } : x)));
+    }
+  }
+
+  async function closeLost(l: Lead) {
+    setBusyId(l.id);
+    const res = await fetch(`/api/leads/${l.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'LOST', lostReason: 'NO_ANSWER', lostComment: `${l.attempts} ${t(language, 'crmAttempts')}` }),
+    });
+    setBusyId(null);
+    if (res.ok) setLeads((prev) => prev.map((x) => (x.id === l.id ? { ...x, status: 'LOST', closeReady: false } : x)));
+  }
+
   async function setStatus(l: Lead, status: 'CONTACTED' | 'SPAM') {
     setBusyId(l.id);
     const res = await fetch(`/api/leads/${l.id}`, {
@@ -194,6 +214,9 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
                       {upcoming && l.callbackAt && (
                         <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">{t(language, 'crmCallbackAt')} {fmt(l.callbackAt, language)}</span>
                       )}
+                      {l.attempts > 0 && isActive(l) && (
+                        <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-700">{l.attempts}/3 {t(language, 'crmAttempts')}</span>
+                      )}
                       {l.academy && <span className="rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-800">{t(language, 'crmAcademy')}</span>}
                       {l.consultState === 'UPCOMING' && l.consultAt && (
                         <span className="rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-800">{t(language, 'crmConsultUpcoming')} {fmt(l.consultAt, language)}</span>
@@ -217,6 +240,11 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
                     <div className="flex shrink-0 flex-wrap gap-2">
                       {l.phoneNumber && <a href={`tel:${l.phoneNumber}`} className={quick}>{t(language, 'crmCall')}</a>}
                       {l.phoneNumber && <Link href={`/admin/messages?phone=${encodeURIComponent(l.phoneNumber)}`} className={quick}>{t(language, 'crmText')}</Link>}
+                      {l.closeReady ? (
+                        <button className="rounded bg-red-600 px-2.5 py-1 text-xs text-white disabled:opacity-40" disabled={busyId === l.id} onClick={() => closeLost(l)}>{t(language, 'crmCloseNoAnswer')}</button>
+                      ) : (
+                        <button className={quick} disabled={busyId === l.id} onClick={() => noAnswer(l)}>{t(language, 'crmNoAnswer')}</button>
+                      )}
                       <button className={quick} disabled={busyId === l.id} onClick={() => setStatus(l, 'SPAM')}>{t(language, 'crmMarkSpam')}</button>
                       {l.status === 'NEW' && (
                         <button className={quick} disabled={busyId === l.id} onClick={() => setStatus(l, 'CONTACTED')}>{t(language, 'crmMarkContacted')}</button>

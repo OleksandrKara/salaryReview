@@ -66,7 +66,8 @@ public class LeadFollowUpService {
                            int touches, String squareCustomerId, String squareUrl,
                            String lostReason, String lostComment, boolean sourceEditable,
                            String lastNote, String lastNoteBy, String lastNoteAt, String activityAt,
-                           boolean academy, String consultState, String consultAt) {}
+                           boolean academy, String consultState, String consultAt,
+                           int attempts, boolean closeReady) {}
 
     public record Touch(long id, String channel, String source, String detail, String createdAt,
                         java.util.Map<String, String> payload) {}
@@ -110,8 +111,21 @@ public class LeadFollowUpService {
                 customer == null ? null : SQUARE_CUSTOMER_URL + customer,
                 rs.getString("lost_reason"), rs.getString("lost_comment"), rs.getBoolean("source_editable"),
                 rs.getString("last_note"), rs.getString("last_note_by"), iso(rs.getTimestamp("last_note_at")), iso(rs.getTimestamp("activity_at")),
-                rs.getBoolean("academy"), rs.getString("consult_state"), iso(rs.getTimestamp("consult_at")));
+                rs.getBoolean("academy"), rs.getString("consult_state"), iso(rs.getTimestamp("consult_at")),
+                rs.getInt("attempts"), closeReady(rs.getString("status"), rs.getInt("attempts"), rs.getTimestamp("first_attempt_at")));
     };
+
+    static final int ATTEMPT_LIMIT = 3;
+    static final int ATTEMPT_WINDOW_DAYS = 7;
+    static final int FOLLOW_UP_DAYS = 2;
+
+    /** Suggest closing as LOST: 3 unanswered attempts, or 2 when the first one is a week old. */
+    static boolean closeReady(String status, int attempts, Timestamp firstAttempt) {
+        if (!"NEW".equals(status) && !"CONTACTED".equals(status)) return false;
+        if (attempts >= ATTEMPT_LIMIT) return true;
+        return attempts >= 2 && firstAttempt != null
+                && firstAttempt.toInstant().isBefore(Instant.now().minus(java.time.Duration.ofDays(ATTEMPT_WINDOW_DAYS)));
+    }
 
     private static final String LEADS_SELECT = """
             WITH keyed AS (
@@ -131,11 +145,14 @@ public class LeadFollowUpService {
                    agg.customer AS square_customer_id, agg.academy, f.lost_reason, f.lost_comment,
                    (f.channel = 'Square' OR f.source = 'Unknown') AS source_editable,
                    n.text AS last_note, n.created_by AS last_note_by, n.created_at AS last_note_at,
-                   GREATEST(agg.last_touch_at, f.updated_at, n.created_at) AS activity_at
+                   GREATEST(agg.last_touch_at, f.updated_at, n.created_at) AS activity_at,
+                   COALESCE(att.attempts, 0) AS attempts, att.first_attempt_at
             FROM (SELECT DISTINCT ON (k) * FROM keyed ORDER BY k, created_at, id) f JOIN agg ON agg.k = f.k
               LEFT JOIN square_customer sc ON sc.business_id = f.business_id AND sc.square_customer_id = agg.customer
               LEFT JOIN LATERAL (SELECT e.text, e.created_by, e.created_at FROM lead_events e WHERE e.lead_id = f.id
                                  AND e.type IN ('NOTE', 'CALL', 'AGREEMENT') ORDER BY e.created_at DESC LIMIT 1) n ON TRUE
+              LEFT JOIN LATERAL (SELECT count(*)::int AS attempts, min(e.created_at) AS first_attempt_at FROM lead_events e
+                                 WHERE e.lead_id = f.id AND e.type = 'ATTEMPT' AND e.created_at > agg.last_touch_at) att ON TRUE
             """.formatted(KEY);
 
     /** Leads plus the person's latest consultation: UPCOMING, or DONE when no real procedure was booked after it. */
@@ -385,7 +402,11 @@ public class LeadFollowUpService {
             }
         }
         boolean clear = Boolean.TRUE.equals(req.clearCallback());
-        find(id);
+        LeadView current = find(id);
+        if ("CONTACTED".equals(req.status()) && callback == null && !clear
+                && (current.callbackAt() == null || Instant.parse(current.callbackAt()).isBefore(Instant.now()))) {
+            callback = Timestamp.from(Instant.now().plus(java.time.Duration.ofDays(FOLLOW_UP_DAYS)));
+        }
         jdbc.update("""
                 UPDATE lead_intake SET
                   status = COALESCE(?, status),
@@ -408,6 +429,25 @@ public class LeadFollowUpService {
         if ("LOST".equals(req.status())) addEvent(id, "LOST_REASON", comment == null ? reason : reason + ": " + comment, by);
         if (callback != null) addEvent(id, "CALLBACK", callback.toInstant().toString(), by);
         if (clear) addEvent(id, "CALLBACK_CLEARED", null, by);
+    }
+
+    static final Set<String> ATTEMPT_CHANNELS = Set.of("CALL", "SMS", "MESSAGE");
+
+    /** One unanswered attempt: logs it, makes sure the lead is CONTACTED and schedules the next try in 2 days. */
+    public void recordAttempt(long id, String channel, String by) {
+        String ch = channel == null || channel.isBlank() ? null : channel.trim().toUpperCase();
+        if (ch != null && !ATTEMPT_CHANNELS.contains(ch)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unknown channel");
+        LeadView lead = find(id);
+        if (!"NEW".equals(lead.status()) && !"CONTACTED".equals(lead.status())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "lead is closed");
+        }
+        jdbc.update("""
+                UPDATE lead_intake SET status = 'CONTACTED',
+                  callback_at = now() + make_interval(days => ?), callback_reminded = FALSE, updated_by = ?, updated_at = now()
+                WHERE id = ? AND business_id = ?
+                """, FOLLOW_UP_DAYS, by, id, business.id());
+        if ("NEW".equals(lead.status())) addEvent(id, "STATUS", "CONTACTED", by);
+        addEvent(id, "ATTEMPT", ch, by);
     }
 
     /**
