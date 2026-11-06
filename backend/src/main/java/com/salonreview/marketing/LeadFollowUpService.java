@@ -559,6 +559,58 @@ public class LeadFollowUpService {
         return jdbc.queryForObject("SELECT " + KEY + " FROM lead_intake WHERE id = ?", String.class, id);
     }
 
+    private static final int[] CONSULT_STEPS_DAYS = {1, 3, 7};
+    private static final int UNANSWERED_HOURS = 2;
+
+    /**
+     * Schedules the next touch for leads nobody scheduled: one day after a consultation without a procedure
+     * (then 3 and 7 days), and two hours after a client text that stayed unanswered.
+     */
+    public void scheduleFollowUps() {
+        for (long businessId : intake.enabledBusinesses()) {
+            try {
+                scheduleFollowUps(businessId);
+            } catch (RuntimeException e) {
+                log.warn("Follow-up scheduling failed for business {}: {}", businessId, e.toString());
+            }
+        }
+    }
+
+    private void scheduleFollowUps(long businessId) {
+        java.util.Map<String, Instant> unanswered = new java.util.HashMap<>();
+        jdbc.query("""
+                SELECT p, created_at FROM (
+                  SELECT DISTINCT ON (p) right(regexp_replace(phone_number, '\\D', '', 'g'), 10) AS p, direction, created_at
+                  FROM (SELECT * FROM sms_message WHERE business_id = ? AND created_at > now() - interval '14 days') m
+                  ORDER BY p, created_at DESC, id DESC) x
+                WHERE direction = 'INBOUND' AND created_at < now() - make_interval(hours => ?)
+                """, rs -> {
+            unanswered.put(rs.getString("p"), rs.getTimestamp("created_at").toInstant());
+        }, businessId, UNANSWERED_HOURS);
+        Instant now = Instant.now();
+        for (LeadView l : listFor(businessId, null)) {
+            if (!"NEW".equals(l.status()) && !"CONTACTED".equals(l.status())) continue;
+            Instant current = l.callbackAt() == null ? null : Instant.parse(l.callbackAt());
+            Instant activity = Instant.parse(l.activityAt() != null ? l.activityAt() : l.createdAt());
+            String digits = l.phoneNumber() == null ? "" : l.phoneNumber().replaceAll("\\D", "");
+            Instant inbound = digits.length() >= 10 ? unanswered.get(digits.substring(digits.length() - 10)) : null;
+            Instant target = null;
+            if (inbound != null && !inbound.isBefore(activity)) {
+                Instant t = inbound.plus(java.time.Duration.ofHours(UNANSWERED_HOURS));
+                if (current == null || current.isAfter(t)) target = t;
+            }
+            if (target == null && current == null && "DONE".equals(l.consultState()) && l.consultAt() != null) {
+                target = Instant.parse(l.consultAt()).plus(java.time.Duration.ofDays(CONSULT_STEPS_DAYS[Math.min(l.attempts(), CONSULT_STEPS_DAYS.length - 1)]));
+            }
+            if (target == null) continue;
+            boolean stale = target.isBefore(now.minus(java.time.Duration.ofDays(1)));
+            jdbc.update("UPDATE lead_intake SET callback_at = ?, callback_reminded = ?, updated_by = 'System' WHERE id = ? AND business_id = ?",
+                    Timestamp.from(target), stale, l.id(), businessId);
+            jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'CALLBACK', ?, 'System')",
+                    l.id(), businessId, target.toString());
+        }
+    }
+
     /** Pings the business Telegram chat about callbacks that came due; each reminder fires once. */
     public void sendDueReminders() {
         var due = jdbc.queryForList("""

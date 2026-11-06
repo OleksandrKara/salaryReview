@@ -130,7 +130,8 @@ public class LeadDigestService {
         long stalled = all.stream().filter(l -> active(l) && "DONE".equals(l.consultState())
                 && !"NEW".equals(l.status()) && !overdue(l, now)).count();
         int todo = overdue.size() + fresh.size() + cold.size();
-        if (todo == 0 && stalled == 0) return null;
+        long closable = all.stream().filter(LeadView::closeReady).count();
+        if (todo == 0 && stalled == 0 && closable == 0) return null;
 
         StringBuilder sb = new StringBuilder("Лиды на сегодня, ").append(dateLabel(day)).append('\n');
         sb.append("К обработке: ").append(todo).append('\n');
@@ -144,6 +145,7 @@ public class LeadDigestService {
         }
         if (!cold.isEmpty()) sb.append("• из них старше ").append(COLD_DAYS).append(" дн.: ").append(cold.size()).append('\n');
         if (stalled > 0) sb.append("После консультации не записались: ").append(stalled).append('\n');
+        if (closable > 0) sb.append("Можно закрыть как Lost (нет ответа после попыток): ").append(closable).append('\n');
         List<String> top = new ArrayList<>();
         for (LeadView l : overdue) {
             if (top.size() < 5) top.add("• " + who(l) + ", " + channel(l) + ", перезвон просрочен на " + age(Instant.parse(l.callbackAt()), now));
@@ -259,6 +261,8 @@ public class LeadDigestService {
         if (overdue > 0) sb.append(" (просрочено перезвонов: ").append(overdue).append(')');
         sb.append('\n');
         if (tomorrow > 0) sb.append("Перезвонить завтра: ").append(tomorrow).append('\n');
+        long closable = all.stream().filter(LeadView::closeReady).count();
+        if (closable > 0) sb.append("Готовы к закрытию как Lost (нет ответа): ").append(closable).append('\n');
         Set<String> names = new java.util.TreeSet<>(h.byPerson().keySet());
         names.addAll(h.callbacksByPerson().keySet());
         if (names.size() > 1) {
