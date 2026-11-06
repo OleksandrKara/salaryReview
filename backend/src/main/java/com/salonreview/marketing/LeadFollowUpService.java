@@ -29,6 +29,8 @@ public class LeadFollowUpService {
     static final Set<String> STATUSES = Set.of("NEW", "CONTACTED", "BOOKED", "LOST");
     static final Set<String> LOST_REASONS = Set.of("PRICE", "NO_ANSWER", "NOT_INTERESTED", "BOUGHT_ELSEWHERE",
             "NOT_ELIGIBLE", "TOO_FAR", "WRONG_NUMBER_SPAM", "TIMING", "OTHER");
+    static final Set<String> SOURCES = Set.of("Instagram", "Yelp", "Google", "Facebook", "TikTok", "Referral",
+            "Walk-in", "Phone", "Other", "Unknown");
     static final Set<String> MANUAL_EVENT_TYPES = Set.of("NOTE", "CALL", "AGREEMENT");
     private static final String SQUARE_CUSTOMER_URL = "https://app.squareup.com/dashboard/customers/directory/customer/";
 
@@ -42,10 +44,11 @@ public class LeadFollowUpService {
     private final String publicBaseUrl;
     private final GeoIpService geo;
     private final SquareClientProvider squares;
+    private final LeadIntakeService intake;
     private final com.fasterxml.jackson.databind.ObjectMapper json = new com.fasterxml.jackson.databind.ObjectMapper();
 
     public LeadFollowUpService(JdbcTemplate jdbc, CurrentBusinessContext business, TelegramNotificationService telegram, GeoIpService geo,
-                               SquareClientProvider squares,
+                               SquareClientProvider squares, LeadIntakeService intake,
                                @org.springframework.beans.factory.annotation.Value("${app.public-base-url}") String publicBaseUrl) {
         this.jdbc = jdbc;
         this.business = business;
@@ -53,12 +56,13 @@ public class LeadFollowUpService {
         this.publicBaseUrl = publicBaseUrl;
         this.geo = geo;
         this.squares = squares;
+        this.intake = intake;
     }
 
     public record LeadView(long id, String channel, String source, String phoneNumber, String email, String name,
                            String detail, String status, String callbackAt, String createdAt, String lastTouchAt,
                            int touches, String squareCustomerId, String squareUrl,
-                           String lostReason, String lostComment) {}
+                           String lostReason, String lostComment, boolean sourceEditable) {}
 
     public record Touch(long id, String channel, String source, String detail, String createdAt,
                         java.util.Map<String, String> payload) {}
@@ -76,7 +80,7 @@ public class LeadFollowUpService {
                              List<Appointment> appointments) {}
 
     public record UpdateRequest(String status, String callbackAt, Boolean clearCallback, String lostReason,
-                                String lostComment) {}
+                                String lostComment, String source) {}
 
     public record LostRow(String reason, String source, int count) {}
 
@@ -91,7 +95,7 @@ public class LeadFollowUpService {
                 rs.getString("status"), iso(rs.getTimestamp("callback_at")), iso(rs.getTimestamp("created_at")),
                 iso(rs.getTimestamp("last_touch_at")), rs.getInt("touches"), customer,
                 customer == null ? null : SQUARE_CUSTOMER_URL + customer,
-                rs.getString("lost_reason"), rs.getString("lost_comment"));
+                rs.getString("lost_reason"), rs.getString("lost_comment"), rs.getBoolean("source_editable"));
     };
 
     private static final String LEADS_SELECT = """
@@ -108,7 +112,8 @@ public class LeadFollowUpService {
                    COALESCE(sc.email_address, f.email) AS email,
                    COALESCE(NULLIF(trim(concat_ws(' ', sc.given_name, sc.family_name)), ''), f.name, agg.any_name) AS name,
                    f.detail, f.status, f.callback_at, f.created_at, agg.last_touch_at, agg.touches::int AS touches,
-                   agg.customer AS square_customer_id, f.lost_reason, f.lost_comment
+                   agg.customer AS square_customer_id, f.lost_reason, f.lost_comment,
+                   (f.channel = 'Square' OR f.source = 'Unknown') AS source_editable
             FROM (SELECT DISTINCT ON (k) * FROM keyed ORDER BY k, created_at, id) f JOIN agg ON agg.k = f.k
               LEFT JOIN square_customer sc ON sc.business_id = f.business_id AND sc.square_customer_id = agg.customer
             """.formatted(KEY);
@@ -249,6 +254,11 @@ public class LeadFollowUpService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "comment required for reason OTHER");
             }
         }
+        String source = req.source() == null || req.source().isBlank() ? null : req.source().trim();
+        if (source != null) {
+            if (!SOURCES.contains(source)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unknown source");
+            if (!find(id).sourceEditable()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "source is known and locked");
+        }
         Timestamp callback = null;
         if (req.callbackAt() != null && !req.callbackAt().isBlank()) {
             try {
@@ -271,6 +281,12 @@ public class LeadFollowUpService {
                 WHERE id = ? AND business_id = ?
                 """, req.status(), req.status(), reason, req.status(), req.status(), comment, req.status(),
                 req.status(), req.status(), clear, callback, callback, clear, callback, by, id, business.id());
+        if (source != null) {
+            jdbc.update("UPDATE lead_intake SET source = ?, source_manual = TRUE WHERE id = ? AND business_id = ?", source, id, business.id());
+            addEvent(id, "SOURCE", source, by);
+            String customer = find(id).squareCustomerId();
+            if (customer != null) intake.tagSource(business.id(), customer, source);
+        }
         if (req.status() != null) addEvent(id, "STATUS", req.status(), by);
         if ("LOST".equals(req.status())) addEvent(id, "LOST_REASON", comment == null ? reason : reason + ": " + comment, by);
         if (callback != null) addEvent(id, "CALLBACK", callback.toInstant().toString(), by);

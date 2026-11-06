@@ -372,8 +372,8 @@ const STRINGS = {
   redoErrUpdate: { EN: 'Could not save the changes.', RU: 'Не удалось сохранить изменения.' },
 
   // Leads CRM (/admin/leads)
-  navLeads: { EN: 'Leads CRM', RU: 'Лиды (CRM)' },
-  leadsTitle: { EN: 'Leads CRM', RU: 'Лиды (CRM)' },
+  navLeads: { EN: 'CRM', RU: 'CRM' },
+  leadsTitle: { EN: 'CRM', RU: 'CRM' },
   leadsDesc: {
     EN: 'Every call, text, form and booking request, with its source. One row per person. Search Square before creating a customer by hand.',
     RU: 'Все звонки, SMS, заявки и записи с источником. Одна строка на человека. Перед ручным созданием клиента сначала ищите его в Square.',
@@ -401,6 +401,15 @@ const STRINGS = {
   leadEntryNOTE: { EN: 'Note', RU: 'Заметка' },
   leadEntryCALL: { EN: 'Call', RU: 'Звонок' },
   leadEntryAGREEMENT: { EN: 'Agreement', RU: 'Договорённость' },
+  leadSourcePick: { EN: 'Set source', RU: 'Указать источник' },
+  leadSourceHint: { EN: 'Source is unknown. Pick where this person came from.', RU: 'Источник неизвестен. Укажите, откуда пришёл человек.' },
+  leadSourceLocked: { EN: 'Source recorded automatically', RU: 'Источник определён автоматически' },
+  leadEventSOURCE: { EN: 'Source set to', RU: 'Источник указан' },
+  leadSrc_Unknown: { EN: 'Unknown', RU: 'Неизвестно' },
+  leadSrc_Referral: { EN: 'Referral', RU: 'Рекомендация' },
+  leadSrc_Walk_in: { EN: 'Walk-in', RU: 'Зашёл с улицы' },
+  leadSrc_Phone: { EN: 'Phone', RU: 'Телефон' },
+  leadSrc_Other: { EN: 'Other', RU: 'Другое' },
   leadEventTouch: { EN: 'Contact', RU: 'Обращение' },
   leadOrigins: { EN: 'Traffic source and form data', RU: 'Источник трафика и данные формы' },
   leadOriginsEmpty: { EN: 'No website visits linked to this lead.', RU: 'С этим лидом не связано визитов на сайте.' },
