@@ -183,7 +183,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
         const [code, ...rest] = x.text.split(': ');
         text = LOST_REASONS.includes(code) ? [t(language, `leadLost_${code}` as 'leadLost_PRICE'), ...rest].join(': ') : x.text;
       }
-      if (x.type === 'CALLBACK' && x.text) text = fmt(x.text, language);
+      if ((x.type === 'CALLBACK' || x.type === 'LAPSED') && x.text) text = fmt(x.text, language);
       return { key: `e${x.id}`, at: x.createdAt, kind: manual ? 'note' : 'system', label, text, by: x.createdBy };
     }),
     ...data.sms.map((m): Item => ({

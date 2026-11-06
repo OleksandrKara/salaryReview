@@ -16,7 +16,7 @@ class LeadFollowUpTargetTest {
 
     private static LeadView lead(String status, String callbackAt, String activityAt, String consultState, String consultAt, int attempts) {
         return new LeadView(1, "Call", "Google", "+15550001", null, "L", null, status, callbackAt, activityAt, activityAt,
-                1, null, null, null, null, false, null, null, null, activityAt, false, consultState, consultAt, attempts, false);
+                1, null, null, null, null, false, null, null, null, activityAt, false, consultState, consultAt, attempts, false, null);
     }
 
     @Test
