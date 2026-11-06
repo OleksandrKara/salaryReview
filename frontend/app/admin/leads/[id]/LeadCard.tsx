@@ -6,6 +6,18 @@ import { t } from '../../../lib/i18n';
 import type { Language, LeadDetail, LeadStatus } from '../../../lib/types';
 
 const STATUSES: LeadStatus[] = ['NEW', 'CONTACTED', 'BOOKED', 'LOST', 'SPAM'];
+function apptTone(status: string): 'ok' | 'us' | 'bad' | 'off' {
+  if (status === 'ACCEPTED') return 'ok';
+  if (status === 'CANCELLED_BY_SELLER') return 'us';
+  if (status === 'CANCELLED_BY_CUSTOMER' || status === 'DECLINED' || status === 'NO_SHOW') return 'bad';
+  return 'off';
+}
+const APPT_PILL = {
+  ok: 'text-green-700',
+  us: 'rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white',
+  bad: 'rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800',
+  off: 'text-zinc-500',
+};
 const APPT_STATUSES = ['ACCEPTED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SELLER', 'NO_SHOW', 'DECLINED'];
 const LOST_REASONS = ['PRICE', 'NO_ANSWER', 'NOT_INTERESTED', 'BOUGHT_ELSEWHERE', 'NOT_ELIGIBLE', 'TOO_FAR', 'WRONG_NUMBER_SPAM', 'TIMING', 'OTHER'];
 const SOURCES = ['Instagram', 'Yelp', 'Google', 'Facebook', 'TikTok', 'Referral', 'Walk-in', 'Phone', 'Other', 'Unknown'];
@@ -165,7 +177,7 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
     ...data.appointments.flatMap((a) => (a.startAt ? [{ ...a, startAt: a.startAt }] : [])).map((a): Item => ({
       key: `a${a.id}`, at: a.startAt, kind: 'visit', label: `${t(language, 'crmApptEvent')}: ${APPT_STATUSES.includes(a.status) ? t(language, `leadAppt_${a.status}` as 'leadAppt_ACCEPTED') : a.status}`,
       text: [a.services, a.technician ? `${t(language, 'crmWith')} ${a.technician}` : null, a.paid != null && a.paid > 0 ? `${t(language, 'crmPaid')} ${money(a.paid)}` : null].filter(Boolean).join(' · '),
-      future: new Date(a.startAt).getTime() > now, tone: a.status === 'ACCEPTED' ? 'ok' : 'off',
+      future: new Date(a.startAt).getTime() > now, tone: apptTone(a.status),
     })),
   ].sort((a, b) => (a.at < b.at ? 1 : -1));
 
@@ -324,12 +336,12 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
                   {newDay && <div className="sticky top-12 z-[1] bg-white/95 py-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">{dayTitle(r.at, language, now)}</div>}
                   <div className="flex gap-3">
                     <div className="flex flex-col items-center">
-                      <span className={`mt-2 h-2.5 w-2.5 shrink-0 rounded-full ${DOT[r.kind]}`} />
+                      <span className={`mt-2 h-2.5 w-2.5 shrink-0 rounded-full ${r.tone === 'us' || r.tone === 'bad' ? 'bg-red-600 ring-2 ring-red-200' : DOT[r.kind]}`} />
                       <span className="w-px flex-1 bg-zinc-200" />
                     </div>
                     <div className="min-w-0 flex-1 pb-4">
                       <div className="flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
-                        <span className={r.kind === 'note' ? 'font-semibold text-zinc-800' : 'text-zinc-700'}>{r.label}</span>
+                        <span className={r.kind === 'note' ? 'font-semibold text-zinc-800' : r.tone === 'us' ? 'rounded bg-red-600 px-1.5 py-0.5 font-semibold text-white' : r.tone === 'bad' ? 'rounded bg-red-100 px-1.5 py-0.5 font-semibold text-red-800' : 'text-zinc-700'}>{r.label}</span>
                         <span className="tabular-nums">{timeOnly(r.at, language)}</span>
                         {r.by && <span>{r.by}</span>}
                         {r.future && <span className="rounded bg-teal-100 px-1.5 text-teal-800">{t(language, 'crmNextVisit')}</span>}
@@ -340,7 +352,7 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
                       {r.kind === 'note' && r.text && (
                         <p className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-amber-50 px-3 py-2 text-sm text-zinc-900 ring-1 ring-amber-200">{r.text}</p>
                       )}
-                      {r.kind !== 'sms' && r.kind !== 'note' && r.text && <p className={`break-words text-sm ${r.tone === 'off' ? 'text-zinc-500' : 'text-zinc-800'}`}>{r.text}</p>}
+                      {r.kind !== 'sms' && r.kind !== 'note' && r.text && <p className={`break-words text-sm ${r.tone === 'off' ? 'text-zinc-500' : r.tone === 'us' || r.tone === 'bad' ? 'text-red-800' : 'text-zinc-800'}`}>{r.text}</p>}
                       {r.kind === 'email' && (
                         <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs">
                           {r.opened && <span className="rounded bg-green-100 px-1.5 text-green-800">{t(language, 'crmEmailOpened')}</span>}
@@ -416,10 +428,10 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
           {data.appointments.length === 0 && <p className="text-sm text-zinc-500">{t(language, 'leadAppointmentsEmpty')}</p>}
           <ul className="flex flex-col gap-1">
             {data.appointments.map((a) => (
-              <li key={a.id} className="flex flex-col gap-0.5 rounded-lg px-3 py-2 text-sm ring-1 ring-zinc-200">
+              <li key={a.id} className={`flex flex-col gap-0.5 rounded-lg px-3 py-2 text-sm ring-1 ${apptTone(a.status) === 'us' ? 'bg-red-50 ring-red-400' : apptTone(a.status) === 'bad' ? 'bg-red-50/50 ring-red-200' : 'ring-zinc-200'}`}>
                 <div className="flex flex-wrap items-baseline gap-x-3">
                   <span className="font-medium text-zinc-800">{a.startAt ? fmt(a.startAt, language) : ''}</span>
-                  <span className={a.status === 'ACCEPTED' ? 'text-green-700' : 'text-zinc-500'}>{APPT_STATUSES.includes(a.status) ? t(language, `leadAppt_${a.status}` as 'leadAppt_ACCEPTED') : a.status}</span>
+                  <span className={APPT_PILL[apptTone(a.status)]}>{apptTone(a.status) === 'us' || apptTone(a.status) === 'bad' ? '\u2715 ' : ''}{APPT_STATUSES.includes(a.status) ? t(language, `leadAppt_${a.status}` as 'leadAppt_ACCEPTED') : a.status}</span>
                   {a.paid != null && a.paid > 0 && <span className="ml-auto font-medium tabular-nums">{t(language, 'crmPaid')} {money(a.paid)}</span>}
                 </div>
                 {a.services && <div className="text-zinc-700">{a.services}</div>}
