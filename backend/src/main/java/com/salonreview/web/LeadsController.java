@@ -24,12 +24,14 @@ import java.util.Map;
 public class LeadsController {
 
     private final LeadFollowUpService leads;
+    private final com.salonreview.marketing.LeadFunnelService funnels;
 
     private final UserPermissionService permissions;
     private final CurrentBusinessContext business;
 
-    public LeadsController(LeadFollowUpService leads, UserPermissionService permissions, CurrentBusinessContext business) {
+    public LeadsController(LeadFollowUpService leads, com.salonreview.marketing.LeadFunnelService funnels, UserPermissionService permissions, CurrentBusinessContext business) {
         this.leads = leads;
+        this.funnels = funnels;
         this.permissions = permissions;
         this.business = business;
     }
@@ -129,6 +131,35 @@ public class LeadsController {
                                          @AuthenticationPrincipal AppUserPrincipal me) {
         guard(id, me);
         leads.addManualEvent(id, req, me == null ? null : me.getUsername());
+        return ResponseEntity.noContent().build();
+    }
+
+    public record FunnelApplyRequest(boolean consent) {}
+
+    /** Funnel status for every lead the caller can see (list chips). */
+    @GetMapping("/funnels")
+    public Map<Long, List<com.salonreview.marketing.LeadFunnelService.Funnel>> allFunnels(@AuthenticationPrincipal AppUserPrincipal me) {
+        return funnels.forLeads(business.id(), list(null, me));
+    }
+
+    @GetMapping("/{id}/funnels")
+    public List<com.salonreview.marketing.LeadFunnelService.Funnel> leadFunnels(@PathVariable long id, @AuthenticationPrincipal AppUserPrincipal me) {
+        guard(id, me);
+        return funnels.forLead(business.id(), leads.detail(id).lead());
+    }
+
+    @PostMapping("/{id}/funnels/academy/apply")
+    public ResponseEntity<Void> applyAcademy(@PathVariable long id, @RequestBody FunnelApplyRequest req,
+                                             @AuthenticationPrincipal AppUserPrincipal me) {
+        guard(id, me);
+        funnels.applyAcademy(business.id(), id, req.consent(), me == null ? null : me.getUsername());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/funnels/{key}/stop")
+    public ResponseEntity<Void> stopFunnel(@PathVariable long id, @PathVariable String key, @AuthenticationPrincipal AppUserPrincipal me) {
+        guard(id, me);
+        funnels.stop(business.id(), id, key, me == null ? null : me.getUsername());
         return ResponseEntity.noContent().build();
     }
 }

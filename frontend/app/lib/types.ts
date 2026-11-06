@@ -2607,3 +2607,15 @@ export interface LeadSms { id: number; direction: 'INBOUND' | 'OUTBOUND'; body: 
 export interface LeadAppointment { id: string; status: string; startAt: string | null; services: string | null; technician: string | null; minutes: number | null; paid: number | null }
 export interface LeadSpend { total: number; tips: number; visits: number; firstVisit: string | null; lastVisit: string | null; nextAppointment: string | null }
 export interface LeadEmail { id: number; kind: string; sentAt: string; openedAt: string | null; clickedAt: string | null; hasContent: boolean }
+
+export type FunnelState = 'ACTIVE' | 'PAUSED' | 'STOPPED' | 'FINISHED' | 'NOT_APPLIED';
+export type FunnelStep = { key: string; state: 'DONE' | 'SKIPPED' | 'FAILED' | 'PENDING'; at: string | null };
+export type LeadFunnel = {
+  key: 'academy' | 'consult' | 'site';
+  state: FunnelState;
+  reason: string | null;
+  steps: FunnelStep[];
+  canApply: boolean;
+  canStop: boolean;
+  startedAt: string | null;
+};

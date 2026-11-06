@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { t } from '../../../lib/i18n';
+import FunnelPanel from '../FunnelPanel';
 import type { Language, LeadDetail, LeadStatus } from '../../../lib/types';
 
 const STATUSES: LeadStatus[] = ['NEW', 'CONTACTED', 'BOOKED', 'LOST', 'SPAM'];
@@ -314,6 +315,8 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
         )}
         {error && <p className="w-full text-sm text-red-600">{error}</p>}
       </section>
+
+      <FunnelPanel leadId={lead.id} language={language} onChanged={reload} />
 
       <nav aria-label="sections" className="sticky top-0 z-10 -mx-1 overflow-x-auto bg-white/95 px-1 py-1 backdrop-blur">
         <div className="flex gap-1">

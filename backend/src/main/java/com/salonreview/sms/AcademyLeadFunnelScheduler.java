@@ -55,12 +55,14 @@ public class AcademyLeadFunnelScheduler {
     static final LocalTime SMS_FROM = LocalTime.of(9, 0);
     static final LocalTime SMS_UNTIL = LocalTime.of(20, 0);
     /** Oldest lead still in the funnel: the last step plus its window. */
-    static final Duration MAX_LEAD_AGE = Duration.ofDays(10);
+    public static final Duration MAX_LEAD_AGE = Duration.ofDays(10);
 
     enum Channel { EMAIL, SMS }
 
     record Step(String key, Duration due, Duration window, Channel channel, String template, String subject, String preview) {
     }
+
+    public static final List<String> STEP_KEYS = List.of("confirm_email", "confirm_sms", "reviews_email", "checkin", "payment_email");
 
     static final List<Step> STEPS = List.of(
             new Step("confirm_email", Duration.ZERO, Duration.ofDays(1), Channel.EMAIL, "academy_request_confirmation",
