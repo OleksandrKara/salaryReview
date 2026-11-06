@@ -385,6 +385,8 @@ const STRINGS = {
   leadStatusNEW: { EN: 'New', RU: 'Новый' },
   leadStatusCONTACTED: { EN: 'Contacted', RU: 'Связались' },
   leadStatusBOOKED: { EN: 'Booked', RU: 'Записан' },
+  leadStatusSPAM: { EN: 'Spam / test', RU: 'Спам / тест' },
+  crmMarkSpam: { EN: 'Spam / test', RU: 'Спам / тест' },
   leadStatusLOST: { EN: 'Lost', RU: 'Потерян' },
   leadTouches: { EN: 'touches', RU: 'касаний' },
   leadLastTouch: { EN: 'Last touch', RU: 'Последнее касание' },
