@@ -49,6 +49,15 @@ public class LeadsController {
         return academyOnly(me) ? all.stream().filter(LeadView::academy).toList() : all;
     }
 
+    /** Leads that need a human now: new ones plus open ones whose callback is due. */
+    @GetMapping("/action-count")
+    public Map<String, Integer> actionCount(@AuthenticationPrincipal AppUserPrincipal me) {
+        java.time.Instant now = java.time.Instant.now();
+        int n = (int) list(null, me).stream().filter(l -> "NEW".equals(l.status())
+                || ("CONTACTED".equals(l.status()) && l.callbackAt() != null && !java.time.Instant.parse(l.callbackAt()).isAfter(now))).count();
+        return Map.of("count", n);
+    }
+
     @GetMapping("/lost-report")
     public LeadFollowUpService.LostReport lostReport(@RequestParam(defaultValue = "90") int days, @AuthenticationPrincipal AppUserPrincipal me) {
         if (academyOnly(me)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not available");
