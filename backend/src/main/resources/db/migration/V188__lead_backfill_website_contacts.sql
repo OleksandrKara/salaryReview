@@ -1,5 +1,10 @@
 -- One-time: website contacts that never booked become NEW leads so managers can follow up.
 -- Businesses 1 and 2 only (the ones with lead intake enabled). Idempotent through external_id.
+-- marketing.contacts is created outside Flyway, so fresh databases (CI) skip the backfill.
+DO $do$
+BEGIN
+  IF to_regclass('marketing.contacts') IS NOT NULL THEN
+    EXECUTE $q$
 INSERT INTO lead_intake (business_id, channel, source, traffic_source, phone_number, email, name, detail,
                          external_id, square_customer_id, outcome, marked, created_at)
 SELECT c.business_id, 'Form',
@@ -29,4 +34,8 @@ WHERE c.business_id IN (1, 2)
   AND NOT EXISTS (
         SELECT 1 FROM lead_intake l WHERE l.business_id = c.business_id AND l.phone_number IS NOT NULL
           AND right(regexp_replace(l.phone_number, '\D', '', 'g'), 10) = right(regexp_replace(c.phone_number, '\D', '', 'g'), 10))
-ON CONFLICT DO NOTHING;
+ON CONFLICT DO NOTHING
+    $q$;
+  END IF;
+END
+$do$;
