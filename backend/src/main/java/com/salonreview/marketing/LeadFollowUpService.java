@@ -128,7 +128,7 @@ public class LeadFollowUpService {
                    COALESCE(sc.email_address, f.email) AS email,
                    COALESCE(NULLIF(trim(concat_ws(' ', sc.given_name, sc.family_name)), ''), f.name, agg.any_name) AS name,
                    f.detail, f.status, f.callback_at, f.created_at, agg.last_touch_at, agg.touches::int AS touches,
-                   agg.customer AS square_customer_id, f.lost_reason, f.lost_comment,
+                   agg.customer AS square_customer_id, agg.academy, f.lost_reason, f.lost_comment,
                    (f.channel = 'Square' OR f.source = 'Unknown') AS source_editable,
                    n.text AS last_note, n.created_by AS last_note_by, n.created_at AS last_note_at,
                    GREATEST(agg.last_touch_at, f.updated_at, n.created_at) AS activity_at
