@@ -55,7 +55,7 @@ public class LeadsController {
 
     private final java.util.concurrent.ConcurrentHashMap<String, CachedCount> counts = new java.util.concurrent.ConcurrentHashMap<>();
 
-    /** Leads that need a human now: new ones from the last 7 days plus open ones whose callback is due. */
+    /** Leads that need a human now: every new lead plus open ones whose callback is due. */
     @GetMapping("/action-count")
     public Map<String, Integer> actionCount(@AuthenticationPrincipal AppUserPrincipal me) {
         String key = business.id() + ":" + academyOnly(me);
@@ -71,9 +71,7 @@ public class LeadsController {
     public static boolean needsAction(LeadView l, java.time.Instant now) {
         boolean overdue = ("NEW".equals(l.status()) || "CONTACTED".equals(l.status())) && l.callbackAt() != null
                 && !java.time.Instant.parse(l.callbackAt()).isAfter(now);
-        boolean fresh = "NEW".equals(l.status())
-                && java.time.Instant.parse(l.activityAt() != null ? l.activityAt() : l.createdAt()).isAfter(now.minus(java.time.Duration.ofDays(7)));
-        return overdue || fresh;
+        return overdue || "NEW".equals(l.status());
     }
 
     @GetMapping("/lost-report")

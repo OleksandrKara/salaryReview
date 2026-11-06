@@ -2602,7 +2602,8 @@ export interface LeadOrigin {
   browser: string | null; ip: string | null; location: string | null; service: string | null;
 }
 export interface LeadEvent { id: number; type: string; text: string | null; createdBy: string | null; createdAt: string }
-export interface LeadDetail { lead: Lead; touches: LeadTouch[]; events: LeadEvent[]; origins: LeadOrigin[]; appointments: LeadAppointment[]; spend: LeadSpend; emails: LeadEmail[]; sms: LeadSms[]; squareNote: string | null }
+export interface LeadDetail { lead: Lead; touches: LeadTouch[]; events: LeadEvent[]; origins: LeadOrigin[]; appointments: LeadAppointment[]; spend: LeadSpend; emails: LeadEmail[]; sms: LeadSms[]; squareNote: string | null; payments: LeadPayment[] }
+export interface LeadPayment { id: string; at: string; amount: number; tip: number; description: string | null }
 export interface LeadSms { id: number; direction: 'INBOUND' | 'OUTBOUND'; body: string; at: string; status: string | null }
 export interface LeadAppointment { id: string; status: string; startAt: string | null; services: string | null; technician: string | null; minutes: number | null; paid: number | null }
 export interface LeadSpend { total: number; tips: number; visits: number; firstVisit: string | null; lastVisit: string | null; nextAppointment: string | null }

@@ -91,7 +91,10 @@ public class LeadFollowUpService {
 
     public record LeadDetail(LeadView lead, List<Touch> touches, List<Event> events, List<Origin> origins,
                              List<Appointment> appointments, Spend spend, List<EmailSent> emails,
-                             List<Sms> sms, String squareNote) {}
+                             List<Sms> sms, String squareNote, List<Payment> payments) {}
+
+    /** A completed Square payment that is not part of a booked visit day (invoice, deposit, course payment). */
+    public record Payment(String id, String at, java.math.BigDecimal amount, java.math.BigDecimal tip, String description) {}
 
     public record UpdateRequest(String status, String callbackAt, Boolean clearCallback, String lostReason,
                                 String lostComment, String source) {}
@@ -192,7 +195,7 @@ public class LeadFollowUpService {
                 (rs, i) -> new Event(rs.getLong("id"), rs.getString("type"), rs.getString("text"),
                         rs.getString("created_by"), iso(rs.getTimestamp("created_at"))), id, business.id());
         return new LeadDetail(lead, touches, events, origins(lead), appointments(lead), spend(lead), emails(lead),
-                sms(lead), squareNote(lead));
+                sms(lead), squareNote(lead), payments(lead));
     }
 
     private java.util.Map<String, String> parsePayload(String raw) {
@@ -337,6 +340,30 @@ public class LeadFollowUpService {
             }
             out.add(new Appointment((String) r[0], (String) r[1], (String) r[2], services.isEmpty() ? null : services, tech, minutes, paid));
         }
+        return out;
+    }
+
+    private List<Payment> payments(LeadView lead) {
+        List<String> customers = customerIds(lead);
+        if (customers.isEmpty()) return List.of();
+        java.time.ZoneId la = java.time.ZoneId.of("America/Los_Angeles");
+        java.util.Set<java.time.LocalDate> visitDays = new java.util.HashSet<>();
+        jdbc.query("SELECT start_at FROM square_booking WHERE business_id = ? AND status = 'ACCEPTED' AND start_at IS NOT NULL "
+                + "AND square_customer_id IN (" + marks(customers.size()) + ")",
+                rs -> { visitDays.add(rs.getTimestamp(1).toInstant().atZone(la).toLocalDate()); }, args(business.id(), customers));
+        List<Payment> out = new java.util.ArrayList<>();
+        jdbc.query("""
+                SELECT p.square_payment_id, p.created_at, p.total_money, p.tip_money,
+                       (SELECT string_agg(DISTINCT e->>'name', ', ') FROM jsonb_array_elements(COALESCE(o.line_items_json, '[]'::jsonb)) e) AS items
+                FROM square_payment p LEFT JOIN square_order o ON o.business_id = p.business_id AND o.square_order_id = p.square_order_id
+                WHERE p.business_id = ? AND p.status = 'COMPLETED' AND p.created_at IS NOT NULL
+                  AND p.square_customer_id IN (%s) ORDER BY p.created_at DESC LIMIT 50
+                """.formatted(marks(customers.size())), rs -> {
+            var at = rs.getTimestamp(2).toInstant();
+            if (visitDays.contains(at.atZone(la).toLocalDate())) return;
+            java.math.BigDecimal tip = rs.getBigDecimal(4) == null ? java.math.BigDecimal.ZERO : rs.getBigDecimal(4);
+            out.add(new Payment(rs.getString(1), at.toString(), rs.getBigDecimal(3).subtract(tip), tip, rs.getString(5)));
+        }, args(business.id(), customers));
         return out;
     }
 

@@ -42,7 +42,7 @@ function isOverdue(l: Lead, now: number): boolean {
 }
 
 function needsAction(l: Lead, now: number): boolean {
-  return isOverdue(l, now) || (l.status === 'NEW' && now - activity(l) <= COLD_AFTER_DAYS * DAY);
+  return isOverdue(l, now) || l.status === 'NEW';
 }
 
 type Section = { key: string; title: string; tone: string; leads: Lead[] };
