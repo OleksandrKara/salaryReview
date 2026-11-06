@@ -122,6 +122,15 @@ public class LeadsController {
         return ResponseEntity.noContent().build();
     }
 
+    public record AcademyRequest(Boolean value) {}
+
+    @PutMapping("/{id}/academy")
+    public ResponseEntity<Void> setAcademy(@PathVariable long id, @RequestBody AcademyRequest req, @AuthenticationPrincipal AppUserPrincipal me) {
+        if (academyOnly(me)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not available");
+        leads.setAcademy(id, req.value());
+        return ResponseEntity.noContent().build();
+    }
+
     public record AttemptRequest(String channel) {}
 
     @PostMapping("/{id}/attempts")

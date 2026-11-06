@@ -31,11 +31,29 @@ final class PhoneCountry {
 
     private PhoneCountry() {}
 
+    private static final java.util.Set<String> CANADA = java.util.Set.of("204", "226", "236", "249", "250", "263", "289", "306", "343", "354",
+            "365", "367", "368", "382", "403", "416", "418", "431", "437", "438", "450", "468", "474", "506", "514", "519", "548", "579", "581",
+            "584", "587", "604", "613", "639", "647", "672", "683", "705", "709", "742", "753", "778", "780", "782", "807", "819", "825", "867",
+            "873", "902", "905");
+    private static final java.util.Set<String> NANP_OTHER = java.util.Set.of("242", "246", "264", "268", "284", "340", "345", "441", "473",
+            "649", "658", "664", "670", "671", "684", "721", "758", "767", "784", "787", "809", "829", "849", "868", "869", "876", "939");
+
     static GeoIpService.Place place(String phone) {
         String iso = iso(phone);
+        if (iso == null) iso = northAmerica(phone);
         if (iso == null) return null;
         return new GeoIpService.Place(iso, new java.util.Locale("", iso).getDisplayCountry(java.util.Locale.ENGLISH), null, null,
                 GeoIpService.flag(iso));
+    }
+
+    /** +1 numbers: Canada by area code, US otherwise, null for the Caribbean and unknown shapes. */
+    static String northAmerica(String phone) {
+        if (phone == null) return null;
+        String d = phone.replaceAll("\\D", "");
+        if (d.length() == 11 && d.startsWith("1")) d = d.substring(1);
+        if (d.length() != 10) return null;
+        String area = d.substring(0, 3);
+        return CANADA.contains(area) ? "CA" : NANP_OTHER.contains(area) ? null : "US";
     }
 
     static String iso(String phone) {

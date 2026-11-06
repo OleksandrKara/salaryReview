@@ -107,7 +107,7 @@ function timeOnly(iso: string, lang: Language | null): string {
   return new Date(iso).toLocaleTimeString(lang === 'RU' ? 'ru-RU' : 'en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
-export default function LeadCard({ initial, language = null, stopFunnel = null }: { initial: LeadDetail; language?: Language | null; stopFunnel?: string | null }) {
+export default function LeadCard({ initial, language = null, stopFunnel = null, canTagAcademy = false }: { initial: LeadDetail; language?: Language | null; stopFunnel?: string | null; canTagAcademy?: boolean }) {
   const [data, setData] = useState(initial);
   const [losing, setLosing] = useState(false);
   const [lostReason, setLostReason] = useState('');
@@ -272,9 +272,9 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
                   {place.city && <div className="text-xs font-normal text-zinc-500">{[place.region && place.countryCode === 'US' ? place.region : null, place.country].filter(Boolean).join(', ')}</div>}
                 </div>
               </div>
-              <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${place.scope === 'LOCAL' ? 'bg-emerald-100 text-emerald-800' : place.scope === 'OUT_OF_STATE' ? 'bg-amber-100 text-amber-800' : 'bg-violet-100 text-violet-800'}`}>
+              {place.scope && <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${place.scope === 'LOCAL' ? 'bg-emerald-100 text-emerald-800' : place.scope === 'OUT_OF_STATE' ? 'bg-amber-100 text-amber-800' : 'bg-violet-100 text-violet-800'}`}>
                 {t(language, place.scope === 'LOCAL' ? 'crmPlaceLocal' : place.scope === 'OUT_OF_STATE' ? 'crmPlaceOut' : 'crmPlaceIntl')}
-              </span>
+              </span>}
             </div>
           )}
         </div>
@@ -295,6 +295,12 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
             <span className="rounded bg-zinc-100 px-2 py-1 text-xs text-zinc-700" title={t(language, 'leadSourceLocked')}>{lead.source}</span>
           )}
           {lead.academy && <span className="rounded bg-violet-100 px-2 py-1 text-xs text-violet-800">{t(language, 'crmAcademy')}</span>}
+          {canTagAcademy && (
+            <button type="button" disabled={busy} onClick={() => send(`/api/leads/${lead.id}/academy`, 'PUT', { value: !lead.academy })}
+              className="rounded px-2 py-1 text-xs text-violet-800 ring-1 ring-violet-300 hover:bg-violet-50">
+              {t(language, lead.academy ? 'crmAcademyRemove' : 'crmAcademyAdd')}
+            </button>
+          )}
           {lead.consultState === 'UPCOMING' && lead.consultAt && <span className="rounded bg-sky-100 px-2 py-1 text-xs text-sky-800">{t(language, 'crmConsultUpcoming')} {fmt(lead.consultAt, language)}</span>}
           {lead.consultState === 'NO_SHOW' && lead.consultAt && <span className="rounded bg-red-100 px-2 py-1 text-xs text-red-800">{t(language, 'crmConsultNoShow')} {fmt(lead.consultAt, language)}</span>}
           {lead.consultState === 'DONE' && lead.consultAt && <span className="rounded bg-orange-100 px-2 py-1 text-xs text-orange-800">{t(language, 'crmConsultDone')} {fmt(lead.consultAt, language)}</span>}

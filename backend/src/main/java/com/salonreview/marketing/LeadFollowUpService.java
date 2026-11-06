@@ -182,7 +182,7 @@ public class LeadFollowUpService {
               SELECT k, count(*) AS touches, max(created_at) AS last_touch_at,
                      (array_agg(square_customer_id ORDER BY (square_customer_id IS NULL), created_at))[1] AS customer,
                      (array_agg(name ORDER BY (name IS NULL), created_at))[1] AS any_name,
-                     bool_or(channel = 'Academy') AS academy
+                     COALESCE((array_agg(academy_override ORDER BY created_at DESC) FILTER (WHERE academy_override IS NOT NULL))[1], bool_or(channel = 'Academy')) AS academy
               FROM keyed GROUP BY k
             )
             SELECT f.id, f.channel, f.source, COALESCE(sc.phone_number, f.phone_number) AS phone_number,
@@ -308,7 +308,7 @@ public class LeadFollowUpService {
                 return new Place(p.countryCode(), p.country(), p.city(), p.region(), p.flag(), scope);
             }
             GeoIpService.Place byPhone = PhoneCountry.place(phone);
-            if (byPhone != null) return new Place(byPhone.countryCode(), byPhone.country(), null, null, byPhone.flag(), "INTERNATIONAL");
+            if (byPhone != null) return new Place(byPhone.countryCode(), byPhone.country(), null, null, byPhone.flag(), "US".equals(byPhone.countryCode()) ? null : "INTERNATIONAL");
         } catch (RuntimeException e) {
             log.warn("Lead place lookup failed: {}", e.toString());
         }
@@ -378,7 +378,7 @@ public class LeadFollowUpService {
                 var info = names.get(ph);
                 GeoIpService.Place pl = places.get(ph);
                 if (pl == null) pl = PhoneCountry.place(ph);
-                String scope = pl == null ? null : !"US".equals(pl.countryCode()) ? "INTERNATIONAL" : "CA".equals(pl.region()) ? "LOCAL" : "OUT_OF_STATE";
+                String scope = pl == null ? null : !"US".equals(pl.countryCode()) ? "INTERNATIONAL" : pl.region() == null ? null : "CA".equals(pl.region()) ? "LOCAL" : "OUT_OF_STATE";
                 ListBadge b = new ListBadge(info != null && info.vip(), info == null ? null : info.visitCount(), info != null && info.smsConsent(),
                         negative.contains(ph), blockedAll.contains(ph), optedOut.contains(ph), spam.contains(ph),
                         google.contains(ph), yelp.contains(ph), form.contains(ph),
@@ -1032,6 +1032,14 @@ public class LeadFollowUpService {
         } catch (EmptyResultDataAccessException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such lead");
         }
+    }
+
+    /** Manual Academy tag for the whole person (PMU business only): true/false forces it, null returns to the automatic rule. */
+    public void setAcademy(long id, Boolean value) {
+        if (business.id() != 2L) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Academy tag exists only for the PMU business");
+        String key = leadKey(id);
+        jdbc.update("UPDATE lead_intake l SET academy_override = ? WHERE l.business_id = ? AND l.outcome <> 'DUPLICATE' AND " + KEY + " = ?",
+                value, business.id(), key);
     }
 
     private String leadKey(long id) {

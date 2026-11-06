@@ -437,6 +437,8 @@ const STRINGS = {
   crmSecLapsed3: { EN: 'Last visit over 180 days ago', RU: 'Последний визит больше 180 дней назад' },
   crmSecStalled: { EN: 'Had a consultation, no procedure booked', RU: 'Были на консультации, процедуру не записали' },
   crmSecConsultUpcoming: { EN: 'Consultation scheduled', RU: 'Консультация запланирована' },
+  crmAcademyAdd: { EN: 'Add Academy tag', RU: 'Поставить тег Academy' },
+  crmAcademyRemove: { EN: 'Remove Academy tag', RU: 'Убрать тег Academy' },
   crmAcademy: { EN: 'Academy', RU: 'Академия' },
   crmAcademyFilter: { EN: 'Academy only', RU: 'Только академия' },
   crmConsultUpcoming: { EN: 'Consultation', RU: 'Консультация' },
