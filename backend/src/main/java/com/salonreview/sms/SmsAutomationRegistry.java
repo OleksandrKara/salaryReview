@@ -226,6 +226,16 @@ public final class SmsAutomationRegistry {
                             + "(Square source API). Bookings made by staff in the Square dashboard or Square's own "
                             + "booking page are ignored. Consultations have their own team alert.",
                     List.of(), false, false, false, Channel.TELEGRAM
+            )),
+            Map.entry("lead_daily_digest", new AutomationMeta(
+                    "lead_daily_digest",
+                    "Daily leads digest",
+                    "Two Telegram messages a day per business in its own chat. 8:05am PT: how many leads "
+                            + "need processing (overdue callbacks, new leads, PMU: stuck after consultation), "
+                            + "the oldest few and a button to open the Leads CRM. 7:50pm PT: the day's results "
+                            + "(new, contacted, booked, lost, spam, who worked) and what is left for tomorrow. "
+                            + "Nothing is sent on a day with nothing to report, and each message is sent once.",
+                    List.of(), false, false, false, Channel.TELEGRAM
             ))
     );
 

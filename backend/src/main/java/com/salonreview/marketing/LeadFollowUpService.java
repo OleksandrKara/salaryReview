@@ -139,21 +139,25 @@ public class LeadFollowUpService {
             """.formatted(KEY);
 
     /** Leads plus the person's latest consultation: UPCOMING, or DONE when no real procedure was booked after it. */
-    private String leadsSql() {
+    private String leadsSql(long businessId) {
         return "SELECT x.*, c.consult_at, c.consult_state FROM (" + LEADS_SELECT + ") x LEFT JOIN LATERAL ("
                 + "SELECT b.start_at AS consult_at, CASE WHEN b.start_at > now() THEN 'UPCOMING' ELSE 'DONE' END AS consult_state "
                 + "FROM square_booking b WHERE b.business_id = ? AND b.square_customer_id = x.square_customer_id AND b.status = 'ACCEPTED' "
-                + "AND " + ConsultationCatalog.isConsultationSql("b", consultations.ids(business.id()))
+                + "AND " + ConsultationCatalog.isConsultationSql("b", consultations.ids(businessId))
                 + " AND NOT EXISTS (SELECT 1 FROM square_booking p WHERE p.business_id = b.business_id AND p.square_customer_id = b.square_customer_id "
                 + "AND p.status = 'ACCEPTED' AND p.start_at >= b.start_at AND NOT "
-                + ConsultationCatalog.isConsultationSql("p", consultations.ids(business.id())) + ") "
+                + ConsultationCatalog.isConsultationSql("p", consultations.ids(businessId)) + ") "
                 + "ORDER BY b.start_at DESC LIMIT 1) c ON TRUE";
     }
 
     public List<LeadView> list(String status) {
+        return listFor(business.id(), status);
+    }
+
+    public List<LeadView> listFor(long businessId, String status) {
         String filter = status == null || status.isBlank() ? null : status.trim().toUpperCase();
-        return jdbc.query("SELECT * FROM (" + leadsSql() + ") y WHERE (?::text IS NULL OR status = ?) "
-                + "ORDER BY (status = 'NEW') DESC, activity_at DESC LIMIT 1000", leadMapper, business.id(), business.id(), filter, filter);
+        return jdbc.query("SELECT * FROM (" + leadsSql(businessId) + ") y WHERE (?::text IS NULL OR status = ?) "
+                + "ORDER BY (status = 'NEW') DESC, activity_at DESC LIMIT 1000", leadMapper, businessId, businessId, filter, filter);
     }
 
     public LeadDetail detail(long id) {
@@ -495,7 +499,7 @@ public class LeadFollowUpService {
 
     private LeadView find(long id) {
         try {
-            return jdbc.queryForObject("SELECT * FROM (" + leadsSql() + ") y WHERE id = ?", leadMapper, business.id(), business.id(), id);
+            return jdbc.queryForObject("SELECT * FROM (" + leadsSql(business.id()) + ") y WHERE id = ?", leadMapper, business.id(), business.id(), id);
         } catch (EmptyResultDataAccessException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such lead");
         }

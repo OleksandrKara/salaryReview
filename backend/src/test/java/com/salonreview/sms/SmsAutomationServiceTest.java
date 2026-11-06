@@ -63,7 +63,8 @@ class SmsAutomationServiceTest {
         when(readinessService.readiness(eq(BUSINESS_ID), anyString())).thenReturn(AutomationReadinessService.Readiness.READY);
         service = new SmsAutomationService(repository, messageRepository, lapsedCustomerWinbackSendRepository,
                 repeatCustomerWinbackSendRepository, sameDayRebookingSendRepository, serviceLifecycleReminderSendRepository,
-                winbackEmailSendRepository, readinessService, providerScheduleClosureAlertRepository, pmuBookingStaffAlertRepository);
+                winbackEmailSendRepository, readinessService, providerScheduleClosureAlertRepository, pmuBookingStaffAlertRepository,
+                mock(com.salonreview.marketing.LeadDigestLog.class));
         when(repository.findByBusinessIdAndAutomationKey(eq(BUSINESS_ID), anyString())).thenReturn(Optional.empty());
     }
 
