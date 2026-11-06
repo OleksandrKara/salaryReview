@@ -155,7 +155,7 @@ public class LeadsController {
     @GetMapping("/{id}/funnels")
     public List<com.salonreview.marketing.LeadFunnelService.Funnel> leadFunnels(@PathVariable long id, @AuthenticationPrincipal AppUserPrincipal me) {
         guard(id, me);
-        return funnels.forLead(business.id(), leads.detail(id).lead());
+        return funnels.forLead(business.id(), leads.lead(id));
     }
 
     @PostMapping("/{id}/funnels/academy/apply")

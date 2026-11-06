@@ -206,6 +206,10 @@ public class LeadFollowUpService {
 
     /** Leads plus the person's latest consultation: UPCOMING, NO_SHOW (client did not come), or DONE when no real procedure was booked after it. */
     private String leadsSql(long businessId, boolean includeOutdated) {
+        return leadsSql(businessId, includeOutdated, LEADS_SELECT);
+    }
+
+    private String leadsSql(long businessId, boolean includeOutdated, String leadsSelect) {
         String ids = ConsultationCatalog.isConsultationSql("p", consultations.ids(businessId));
         String visit = tracksLastVisit(businessId)
                 ? " LEFT JOIN LATERAL (SELECT max(b.start_at) AS last_visit_at FROM square_booking b WHERE b.business_id = " + businessId
@@ -214,7 +218,7 @@ public class LeadFollowUpService {
                   + " AND NOT EXISTS (SELECT 1 FROM square_booking p WHERE p.business_id = b.business_id AND p.square_customer_id = b.square_customer_id "
                   + "AND p.status = 'ACCEPTED' AND p.start_at > now() AND NOT " + ids + ")) v ON TRUE"
                 : " LEFT JOIN LATERAL (SELECT NULL::timestamptz AS last_visit_at) v ON TRUE";
-        return "SELECT x.*, c.consult_at, c.consult_state, v.last_visit_at FROM (" + LEADS_SELECT
+        return "SELECT x.*, c.consult_at, c.consult_state, v.last_visit_at FROM (" + leadsSelect
                 + (includeOutdated ? "" : " WHERE f.status <> 'OUTDATED' ") + ") x LEFT JOIN LATERAL ("
                 + "SELECT b.start_at AS consult_at, CASE WHEN b.status = 'NO_SHOW' THEN 'NO_SHOW' WHEN b.start_at > now() THEN 'UPCOMING' ELSE 'DONE' END AS consult_state "
                 + "FROM square_booking b WHERE b.business_id = ? AND b.square_customer_id = x.square_customer_id AND b.status IN ('ACCEPTED', 'NO_SHOW') "
@@ -1015,9 +1019,16 @@ public class LeadFollowUpService {
                 "SELECT EXISTS (SELECT 1 FROM lead_intake WHERE business_id = ? AND channel = 'Academy')", Boolean.class, businessId));
     }
 
+    public LeadView lead(long id) {
+        return find(id);
+    }
+
     LeadView find(long id) {
         try {
-            return jdbc.queryForObject("SELECT * FROM (" + leadsSql(business.id(), true) + ") y WHERE id = ?", leadMapper, business.id(), business.id(), id);
+            String onePerson = LEADS_SELECT.replace("WHERE business_id = ? AND outcome <> 'DUPLICATE'",
+                    "WHERE business_id = ? AND outcome <> 'DUPLICATE' AND " + KEY + " = ?");
+            return jdbc.queryForObject("SELECT * FROM (" + leadsSql(business.id(), true, onePerson) + ") y WHERE id = ?", leadMapper,
+                    business.id(), leadKey(id), business.id(), id);
         } catch (EmptyResultDataAccessException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such lead");
         }
