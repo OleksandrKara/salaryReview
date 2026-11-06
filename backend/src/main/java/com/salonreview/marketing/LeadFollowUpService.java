@@ -31,7 +31,7 @@ public class LeadFollowUpService {
             "NOT_ELIGIBLE", "TOO_FAR", "WRONG_NUMBER_SPAM", "TIMING", "OTHER");
     static final Set<String> SOURCES = Set.of("Instagram", "Yelp", "Google", "Facebook", "TikTok", "Referral",
             "Walk-in", "Phone", "Other", "Unknown");
-    static final Set<String> MANUAL_EVENT_TYPES = Set.of("NOTE", "CALL", "AGREEMENT");
+    static final Set<String> MANUAL_EVENT_TYPES = Set.of("NOTE");
     private static final String SQUARE_CUSTOMER_URL = "https://app.squareup.com/dashboard/customers/directory/customer/";
 
     /** Identity of a person across touches. */
@@ -45,10 +45,11 @@ public class LeadFollowUpService {
     private final GeoIpService geo;
     private final SquareClientProvider squares;
     private final LeadIntakeService intake;
+    private final ConsultationCatalog consultations;
     private final com.fasterxml.jackson.databind.ObjectMapper json = new com.fasterxml.jackson.databind.ObjectMapper();
 
     public LeadFollowUpService(JdbcTemplate jdbc, CurrentBusinessContext business, TelegramNotificationService telegram, GeoIpService geo,
-                               SquareClientProvider squares, LeadIntakeService intake,
+                               SquareClientProvider squares, LeadIntakeService intake, ConsultationCatalog consultations,
                                @org.springframework.beans.factory.annotation.Value("${app.public-base-url}") String publicBaseUrl) {
         this.jdbc = jdbc;
         this.business = business;
@@ -57,13 +58,15 @@ public class LeadFollowUpService {
         this.geo = geo;
         this.squares = squares;
         this.intake = intake;
+        this.consultations = consultations;
     }
 
     public record LeadView(long id, String channel, String source, String phoneNumber, String email, String name,
                            String detail, String status, String callbackAt, String createdAt, String lastTouchAt,
                            int touches, String squareCustomerId, String squareUrl,
                            String lostReason, String lostComment, boolean sourceEditable,
-                           String lastNote, String lastNoteBy, String lastNoteAt, String activityAt) {}
+                           String lastNote, String lastNoteBy, String lastNoteAt, String activityAt,
+                           boolean academy, String consultState, String consultAt) {}
 
     public record Touch(long id, String channel, String source, String detail, String createdAt,
                         java.util.Map<String, String> payload) {}
@@ -81,10 +84,13 @@ public class LeadFollowUpService {
     public record Spend(java.math.BigDecimal total, java.math.BigDecimal tips, int visits, String firstVisit,
                         String lastVisit, String nextAppointment) {}
 
+    public record Sms(long id, String direction, String body, String at, String status) {}
+
     public record EmailSent(long id, String kind, String sentAt, String openedAt, String clickedAt, boolean hasContent) {}
 
     public record LeadDetail(LeadView lead, List<Touch> touches, List<Event> events, List<Origin> origins,
-                             List<Appointment> appointments, Spend spend, List<EmailSent> emails) {}
+                             List<Appointment> appointments, Spend spend, List<EmailSent> emails,
+                             List<Sms> sms, String squareNote) {}
 
     public record UpdateRequest(String status, String callbackAt, Boolean clearCallback, String lostReason,
                                 String lostComment, String source) {}
@@ -103,7 +109,8 @@ public class LeadFollowUpService {
                 iso(rs.getTimestamp("last_touch_at")), rs.getInt("touches"), customer,
                 customer == null ? null : SQUARE_CUSTOMER_URL + customer,
                 rs.getString("lost_reason"), rs.getString("lost_comment"), rs.getBoolean("source_editable"),
-                rs.getString("last_note"), rs.getString("last_note_by"), iso(rs.getTimestamp("last_note_at")), iso(rs.getTimestamp("activity_at")));
+                rs.getString("last_note"), rs.getString("last_note_by"), iso(rs.getTimestamp("last_note_at")), iso(rs.getTimestamp("activity_at")),
+                rs.getBoolean("academy"), rs.getString("consult_state"), iso(rs.getTimestamp("consult_at")));
     };
 
     private static final String LEADS_SELECT = """
@@ -113,7 +120,8 @@ public class LeadFollowUpService {
             ), agg AS (
               SELECT k, count(*) AS touches, max(created_at) AS last_touch_at,
                      (array_agg(square_customer_id ORDER BY (square_customer_id IS NULL), created_at))[1] AS customer,
-                     (array_agg(name ORDER BY (name IS NULL), created_at))[1] AS any_name
+                     (array_agg(name ORDER BY (name IS NULL), created_at))[1] AS any_name,
+                     bool_or(channel = 'Academy') AS academy
               FROM keyed GROUP BY k
             )
             SELECT f.id, f.channel, f.source, COALESCE(sc.phone_number, f.phone_number) AS phone_number,
@@ -130,10 +138,22 @@ public class LeadFollowUpService {
                                  AND e.type IN ('NOTE', 'CALL', 'AGREEMENT') ORDER BY e.created_at DESC LIMIT 1) n ON TRUE
             """.formatted(KEY);
 
+    /** Leads plus the person's latest consultation: UPCOMING, or DONE when no real procedure was booked after it. */
+    private String leadsSql() {
+        return "SELECT x.*, c.consult_at, c.consult_state FROM (" + LEADS_SELECT + ") x LEFT JOIN LATERAL ("
+                + "SELECT b.start_at AS consult_at, CASE WHEN b.start_at > now() THEN 'UPCOMING' ELSE 'DONE' END AS consult_state "
+                + "FROM square_booking b WHERE b.business_id = ? AND b.square_customer_id = x.square_customer_id AND b.status = 'ACCEPTED' "
+                + "AND " + ConsultationCatalog.isConsultationSql("b", consultations.ids(business.id()))
+                + " AND NOT EXISTS (SELECT 1 FROM square_booking p WHERE p.business_id = b.business_id AND p.square_customer_id = b.square_customer_id "
+                + "AND p.status = 'ACCEPTED' AND p.start_at >= b.start_at AND NOT "
+                + ConsultationCatalog.isConsultationSql("p", consultations.ids(business.id())) + ") "
+                + "ORDER BY b.start_at DESC LIMIT 1) c ON TRUE";
+    }
+
     public List<LeadView> list(String status) {
         String filter = status == null || status.isBlank() ? null : status.trim().toUpperCase();
-        return jdbc.query("SELECT * FROM (" + LEADS_SELECT + ") x WHERE (?::text IS NULL OR status = ?) "
-                + "ORDER BY (status = 'NEW') DESC, activity_at DESC LIMIT 1000", leadMapper, business.id(), filter, filter);
+        return jdbc.query("SELECT * FROM (" + leadsSql() + ") y WHERE (?::text IS NULL OR status = ?) "
+                + "ORDER BY (status = 'NEW') DESC, activity_at DESC LIMIT 1000", leadMapper, business.id(), business.id(), filter, filter);
     }
 
     public LeadDetail detail(long id) {
@@ -148,7 +168,8 @@ public class LeadFollowUpService {
                         + "WHERE lead_id = ? AND business_id = ? ORDER BY created_at DESC",
                 (rs, i) -> new Event(rs.getLong("id"), rs.getString("type"), rs.getString("text"),
                         rs.getString("created_by"), iso(rs.getTimestamp("created_at"))), id, business.id());
-        return new LeadDetail(lead, touches, events, origins(lead), appointments(lead), spend(lead), emails(lead));
+        return new LeadDetail(lead, touches, events, origins(lead), appointments(lead), spend(lead), emails(lead),
+                sms(lead), squareNote(lead));
     }
 
     private java.util.Map<String, String> parsePayload(String raw) {
@@ -385,32 +406,60 @@ public class LeadFollowUpService {
         if (clear) addEvent(id, "CALLBACK_CLEARED", null, by);
     }
 
-    /** Moves leads whose Square customer has an accepted appointment made after the lead appeared to BOOKED. */
+    /**
+     * Moves leads to BOOKED when their Square customer has an accepted procedure (consultations do not count):
+     * made after the lead's last touch, or still upcoming for a lead that is not LOST.
+     */
     public int autoBook() {
-        var rows = jdbc.queryForList("""
-                WITH keyed AS (
-                  SELECT l.*, %s AS k FROM lead_intake l WHERE outcome <> 'DUPLICATE'
-                ), agg AS (
-                  SELECT k, (array_agg(square_customer_id ORDER BY (square_customer_id IS NULL), created_at))[1] AS customer,
-                         max(created_at) AS last_touch
-                  FROM keyed GROUP BY k
-                ), f AS (
-                  SELECT DISTINCT ON (k) * FROM keyed ORDER BY k, created_at, id
-                )
-                UPDATE lead_intake li SET status = 'BOOKED', callback_at = NULL, lost_reason = NULL, lost_comment = NULL,
-                       lost_at = NULL, updated_by = 'Square', updated_at = now()
-                FROM f JOIN agg ON agg.k = f.k
-                WHERE li.id = f.id AND f.status IN ('NEW', 'CONTACTED', 'LOST') AND agg.customer IS NOT NULL
-                  AND EXISTS (SELECT 1 FROM square_booking b WHERE b.business_id = f.business_id
-                              AND b.square_customer_id = agg.customer AND b.status = 'ACCEPTED'
-                              AND b.created_at >= agg.last_touch - interval '2 hours')
-                RETURNING li.id, li.business_id
-                """.formatted(KEY));
-        for (var r : rows) {
-            jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'STATUS', 'BOOKED', 'Square')",
-                    ((Number) r.get("id")).longValue(), ((Number) r.get("business_id")).longValue());
+        int total = 0;
+        for (long businessId : intake.enabledBusinesses()) {
+            var rows = jdbc.queryForList("""
+                    WITH keyed AS (
+                      SELECT l.*, %s AS k FROM lead_intake l WHERE outcome <> 'DUPLICATE' AND business_id = ?
+                    ), agg AS (
+                      SELECT k, (array_agg(square_customer_id ORDER BY (square_customer_id IS NULL), created_at))[1] AS customer,
+                             max(created_at) AS last_touch
+                      FROM keyed GROUP BY k
+                    ), f AS (
+                      SELECT DISTINCT ON (k) * FROM keyed ORDER BY k, created_at, id
+                    )
+                    UPDATE lead_intake li SET status = 'BOOKED', callback_at = NULL, lost_reason = NULL, lost_comment = NULL,
+                           lost_at = NULL, updated_by = 'Square', updated_at = now()
+                    FROM f JOIN agg ON agg.k = f.k
+                    WHERE li.id = f.id AND f.status IN ('NEW', 'CONTACTED', 'LOST') AND agg.customer IS NOT NULL
+                      AND EXISTS (SELECT 1 FROM square_booking b WHERE b.business_id = f.business_id
+                                  AND b.square_customer_id = agg.customer AND b.status = 'ACCEPTED' AND NOT %s
+                                  AND (b.created_at >= agg.last_touch - interval '2 hours'
+                                       OR (f.status <> 'LOST' AND b.start_at > now())))
+                    RETURNING li.id, li.business_id
+                    """.formatted(KEY, ConsultationCatalog.isConsultationSql("b", consultations.ids(businessId))), businessId);
+            for (var r : rows) {
+                jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'STATUS', 'BOOKED', 'Square')",
+                        ((Number) r.get("id")).longValue(), ((Number) r.get("business_id")).longValue());
+            }
+            total += rows.size();
         }
-        return rows.size();
+        return total;
+    }
+
+    private List<Sms> sms(LeadView lead) {
+        String digits = lead.phoneNumber() == null ? "" : lead.phoneNumber().replaceAll("\\D", "");
+        if (digits.length() < 10) return List.of();
+        return jdbc.query("""
+                SELECT id, direction, body, created_at, COALESCE(delivery_status, status) AS st FROM sms_message
+                WHERE business_id = ? AND right(regexp_replace(phone_number, '\\D', '', 'g'), 10) = ?
+                ORDER BY created_at DESC LIMIT 100
+                """, (rs, i) -> new Sms(rs.getLong("id"), rs.getString("direction"), rs.getString("body"),
+                iso(rs.getTimestamp("created_at")), rs.getString("st")), business.id(), digits.substring(digits.length() - 10));
+    }
+
+    private String squareNote(LeadView lead) {
+        if (lead.squareCustomerId() == null) return null;
+        try {
+            return squares.forBusiness(business.id()).customerNote(lead.squareCustomerId());
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     public LostReport lostReport(int days) {
@@ -446,7 +495,7 @@ public class LeadFollowUpService {
 
     private LeadView find(long id) {
         try {
-            return jdbc.queryForObject("SELECT * FROM (" + LEADS_SELECT + ") x WHERE id = ?", leadMapper, business.id(), id);
+            return jdbc.queryForObject("SELECT * FROM (" + leadsSql() + ") y WHERE id = ?", leadMapper, business.id(), business.id(), id);
         } catch (EmptyResultDataAccessException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such lead");
         }

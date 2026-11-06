@@ -190,7 +190,7 @@ public class TwilioInboundSmsController {
 
         // Every inbound text is a lead: tie it to a Square profile with its source (never duplicates; see LeadIntakeService).
         if (!isOptOut) {
-            leadIntake.capture(new LeadIntakeService.Lead(businessId, "SMS", null, from, null, null, null, "sms:" + params.get("MessageSid"), smsPayload(params)));
+            leadIntake.capture(new LeadIntakeService.Lead(businessId, websiteContext != null ? "SMS" : "Text", null, from, null, null, null, "sms:" + params.get("MessageSid"), smsPayload(params)));
         }
 
         // A customer reply always needs a human's attention right away, not just a dashboard entry
