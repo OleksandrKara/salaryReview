@@ -26,6 +26,7 @@ public class ConsultationFollowUp {
     public static final String STOP_STAFF = "STAFF";
     public static final String STOP_NOT_ELIGIBLE = "NOT_ELIGIBLE";
     public static final String STOP_CANCELLED = "CANCELLED";
+    public static final String STOP_NO_SHOW = "NO_SHOW";
     /** A one-off re-engagement offer row (ConsultationReengageOneOffService), never part of the
      * regular sequence. */
     public static final String STOP_REENGAGE = "REENGAGE";

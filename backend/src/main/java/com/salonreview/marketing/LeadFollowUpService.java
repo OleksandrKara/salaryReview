@@ -38,8 +38,17 @@ public class LeadFollowUpService {
     private static final String SQUARE_CUSTOMER_URL = "https://app.squareup.com/dashboard/customers/directory/customer/";
 
     /** Identity of a person across touches. */
-    private static final String KEY = "COALESCE(NULLIF(regexp_replace(COALESCE(phone_number, ''), '\\D', '', 'g'), ''), "
-            + "lower(NULLIF(email, '')), 'id' || id::text)";
+    private static final String KEY = key("l");
+
+    /** Phone digits, else the phone of the same email's earliest phone-bearing row, else the email. */
+    private static String key(String a) {
+        return "COALESCE(NULLIF(regexp_replace(COALESCE(" + a + ".phone_number, ''), '\\D', '', 'g'), ''), "
+                + "(SELECT NULLIF(regexp_replace(x.phone_number, '\\D', '', 'g'), '') FROM lead_intake x "
+                + "WHERE x.business_id = " + a + ".business_id AND " + a + ".email <> '' AND lower(x.email) = lower(" + a + ".email) "
+                + "AND x.outcome <> 'DUPLICATE' AND NULLIF(regexp_replace(COALESCE(x.phone_number, ''), '\\D', '', 'g'), '') IS NOT NULL "
+                + "ORDER BY x.created_at, x.id LIMIT 1), "
+                + "lower(NULLIF(" + a + ".email, '')), 'id' || " + a + ".id::text)";
+    }
 
     private final JdbcTemplate jdbc;
     private final CurrentBusinessContext business;
@@ -105,7 +114,7 @@ public class LeadFollowUpService {
     public record Event(long id, String type, String text, String createdBy, String createdAt) {}
 
     public record Appointment(String id, String status, String startAt, String services, String technician,
-                              Integer minutes, java.math.BigDecimal paid) {}
+                              Integer minutes, java.math.BigDecimal paid, String consultKind) {}
 
     public record Spend(java.math.BigDecimal total, java.math.BigDecimal tips, int visits, String firstVisit,
                         String lastVisit, String nextAppointment) {}
@@ -189,12 +198,12 @@ public class LeadFollowUpService {
                                              AND c.text IN ('LOST', 'BOOKED', 'SPAM')), 'epoch'))) att ON TRUE
             """.formatted(KEY);
 
-    /** Leads plus the person's latest consultation: UPCOMING, or DONE when no real procedure was booked after it. */
+    /** Leads plus the person's latest consultation: UPCOMING, NO_SHOW (client did not come), or DONE when no real procedure was booked after it. */
     private String leadsSql(long businessId, boolean includeOutdated) {
         return "SELECT x.*, c.consult_at, c.consult_state FROM (" + LEADS_SELECT
                 + (includeOutdated ? "" : " WHERE f.status <> 'OUTDATED' ") + ") x LEFT JOIN LATERAL ("
-                + "SELECT b.start_at AS consult_at, CASE WHEN b.start_at > now() THEN 'UPCOMING' ELSE 'DONE' END AS consult_state "
-                + "FROM square_booking b WHERE b.business_id = ? AND b.square_customer_id = x.square_customer_id AND b.status = 'ACCEPTED' "
+                + "SELECT b.start_at AS consult_at, CASE WHEN b.status = 'NO_SHOW' THEN 'NO_SHOW' WHEN b.start_at > now() THEN 'UPCOMING' ELSE 'DONE' END AS consult_state "
+                + "FROM square_booking b WHERE b.business_id = ? AND b.square_customer_id = x.square_customer_id AND b.status IN ('ACCEPTED', 'NO_SHOW') "
                 + "AND " + ConsultationCatalog.isConsultationSql("b", consultations.ids(businessId))
                 + " AND NOT EXISTS (SELECT 1 FROM square_booking p WHERE p.business_id = b.business_id AND p.square_customer_id = b.square_customer_id "
                 + "AND p.status = 'ACCEPTED' AND p.start_at >= b.start_at AND NOT "
@@ -280,6 +289,8 @@ public class LeadFollowUpService {
                 String scope = !"US".equals(p.countryCode()) ? "INTERNATIONAL" : "CA".equals(p.region()) ? "LOCAL" : "OUT_OF_STATE";
                 return new Place(p.countryCode(), p.country(), p.city(), p.region(), p.flag(), scope);
             }
+            GeoIpService.Place byPhone = PhoneCountry.place(phone);
+            if (byPhone != null) return new Place(byPhone.countryCode(), byPhone.country(), null, null, byPhone.flag(), "INTERNATIONAL");
         } catch (RuntimeException e) {
             log.warn("Lead place lookup failed: {}", e.toString());
         }
@@ -348,6 +359,7 @@ public class LeadFollowUpService {
                 if (ph == null) continue;
                 var info = names.get(ph);
                 GeoIpService.Place pl = places.get(ph);
+                if (pl == null) pl = PhoneCountry.place(ph);
                 String scope = pl == null ? null : !"US".equals(pl.countryCode()) ? "INTERNATIONAL" : "CA".equals(pl.region()) ? "LOCAL" : "OUT_OF_STATE";
                 ListBadge b = new ListBadge(info != null && info.vip(), info == null ? null : info.visitCount(), info != null && info.smsConsent(),
                         negative.contains(ph), blockedAll.contains(ph), optedOut.contains(ph), spam.contains(ph),
@@ -366,17 +378,33 @@ public class LeadFollowUpService {
 
     /** Location of the latest website visit, only for people still being worked (NEW/CONTACTED) and capped so a cold cache stays fast. */
     private java.util.Map<String, GeoIpService.Place> listPlaces(List<LeadView> leads, Long biz) {
-        List<String> active = leads.stream().filter(l -> l.phoneNumber() != null && ("NEW".equals(l.status()) || "CONTACTED".equals(l.status())))
-                .map(LeadView::phoneNumber).distinct().limit(PLACE_LOOKUPS).toList();
+        List<LeadView> active = leads.stream().filter(l -> l.phoneNumber() != null && ("NEW".equals(l.status()) || "CONTACTED".equals(l.status())))
+                .collect(java.util.stream.Collectors.toMap(LeadView::phoneNumber, l -> l, (x, y) -> x, java.util.LinkedHashMap::new))
+                .values().stream().limit(PLACE_LOOKUPS).toList();
         if (active.isEmpty()) return java.util.Map.of();
         try {
+            List<String> phones = active.stream().map(LeadView::phoneNumber).toList();
+            List<String> emails = active.stream().map(LeadView::email).filter(java.util.Objects::nonNull).map(String::toLowerCase).distinct().toList();
             java.util.Map<String, String> ipByPhone = new java.util.HashMap<>();
             jdbc.query("SELECT DISTINCT ON (customer_phone) customer_phone, ip_address FROM marketing.submissions WHERE business_id = ? AND ip_address IS NOT NULL AND customer_phone IN ("
-                            + String.join(",", java.util.Collections.nCopies(active.size(), "?")) + ") ORDER BY customer_phone, occurred_at DESC",
+                            + String.join(",", java.util.Collections.nCopies(phones.size(), "?")) + ") ORDER BY customer_phone, occurred_at DESC",
                     rs -> { ipByPhone.put(rs.getString(1), rs.getString(2)); },
-                    java.util.stream.Stream.concat(java.util.stream.Stream.of((Object) biz), active.stream()).toArray());
+                    java.util.stream.Stream.concat(java.util.stream.Stream.of((Object) biz), phones.stream()).toArray());
+            java.util.Map<String, String> ipByEmail = new java.util.HashMap<>();
+            if (!emails.isEmpty()) {
+                jdbc.query("SELECT DISTINCT ON (lower(customer_email)) lower(customer_email), ip_address FROM marketing.submissions WHERE business_id = ? AND ip_address IS NOT NULL AND lower(customer_email) IN ("
+                                + String.join(",", java.util.Collections.nCopies(emails.size(), "?")) + ") ORDER BY lower(customer_email), occurred_at DESC",
+                        rs -> { ipByEmail.put(rs.getString(1), rs.getString(2)); },
+                        java.util.stream.Stream.concat(java.util.stream.Stream.of((Object) biz), emails.stream()).toArray());
+            }
+            java.util.Map<String, String> ipFor = new java.util.HashMap<>();
+            for (LeadView l : active) {
+                String ip = ipByPhone.get(l.phoneNumber());
+                if (ip == null && l.email() != null) ip = ipByEmail.get(l.email().toLowerCase());
+                if (ip != null) ipFor.put(l.phoneNumber(), ip);
+            }
             java.util.Map<String, GeoIpService.Place> out = new java.util.concurrent.ConcurrentHashMap<>();
-            ipByPhone.entrySet().parallelStream().forEach(e -> {
+            ipFor.entrySet().parallelStream().forEach(e -> {
                 GeoIpService.Place p = geo.locate(e.getValue());
                 if (p != null) out.put(e.getKey(), p);
             });
@@ -527,7 +555,11 @@ public class LeadFollowUpService {
             if (r[2] != null && "ACCEPTED".equals(r[1])) {
                 paid = paidByDay.get(java.time.OffsetDateTime.parse((String) r[2]).atZoneSameInstant(la).toLocalDate());
             }
-            out.add(new Appointment((String) r[0], (String) r[1], (String) r[2], services.isEmpty() ? null : services, tech, minutes, paid));
+            String kind = null;
+            if (!services.isEmpty() && services.toLowerCase().contains("consultation")) {
+                kind = services.toLowerCase().contains("online") ? "ONLINE" : "OFFLINE";
+            }
+            out.add(new Appointment((String) r[0], (String) r[1], (String) r[2], services.isEmpty() ? null : services, tech, minutes, paid, kind));
         }
         return out;
     }
@@ -977,7 +1009,7 @@ public class LeadFollowUpService {
     }
 
     private String leadKey(long id) {
-        return jdbc.queryForObject("SELECT " + KEY + " FROM lead_intake WHERE id = ?", String.class, id);
+        return jdbc.queryForObject("SELECT " + KEY + " FROM lead_intake l WHERE l.id = ?", String.class, id);
     }
 
     private static final int[] CONSULT_STEPS_DAYS = {1, 3, 7};
@@ -1025,7 +1057,7 @@ public class LeadFollowUpService {
             Instant t = workingTime(inbound.plus(java.time.Duration.ofHours(UNANSWERED_HOURS)));
             if (current == null || current.isAfter(t)) return t;
         }
-        if (current == null && "DONE".equals(l.consultState()) && l.consultAt() != null) {
+        if (current == null && ("DONE".equals(l.consultState()) || "NO_SHOW".equals(l.consultState())) && l.consultAt() != null) {
             Instant consult = Instant.parse(l.consultAt());
             if (consult.isBefore(now.minus(java.time.Duration.ofDays(CONSULT_MAX_AGE_DAYS)))) return null;
             if (clearedAt != null && clearedAt.isAfter(consult)) return null;

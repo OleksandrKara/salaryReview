@@ -268,6 +268,10 @@ public class ConsultationFollowUpScheduler {
 
     void advance(ConsultationFollowUp row, SquareClient square, MailchimpConfig mailchimp, Instant now) {
         Long businessId = row.getBusinessId();
+        if (noShow(row)) {
+            stop(row, ConsultationFollowUp.STOP_NO_SHOW, now);
+            return;
+        }
         if (row.getStaffAlertSentAt() == null) {
             String stopUrl = links.stopUrl(row.getId());
             String who = row.getCustomerName() == null ? "Client" : row.getCustomerName();
@@ -302,6 +306,12 @@ public class ConsultationFollowUpScheduler {
         };
         step.setState.accept(row, state);
         repository.save(row);
+    }
+
+    /** The client did not come to the consultation (Square marked the booking NO_SHOW): no thank-you or offer texts. */
+    private boolean noShow(ConsultationFollowUp row) {
+        return bookingMirrorRepository.findByBusinessIdAndSquareCustomerId(row.getBusinessId(), row.getSquareCustomerId()).stream()
+                .anyMatch(b -> row.getSquareBookingId().equals(b.getSquareBookingId()) && "NO_SHOW".equals(b.getStatus()));
     }
 
     private Step nextDueStep(ConsultationFollowUp row, Instant now) {
