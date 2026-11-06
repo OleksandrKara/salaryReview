@@ -233,7 +233,51 @@ public class LeadIntakeService {
                 }
             }
         }
+        n += importSquareCreated();
         return n;
+    }
+
+    /** Staff-created Square customers (Instagram/Yelp requests, texts from the Square number) that never
+     * booked become NEW leads with an unknown source, so they get a follow-up. Reads the webhook-fed mirror only. */
+    public int importSquareCreated() {
+        int n = 0;
+        for (long b : enabled) {
+            n += jdbc.update("""
+                    INSERT INTO lead_intake (business_id, channel, source, phone_number, email, name, detail,
+                        external_id, square_customer_id, outcome, marked, created_at)
+                    SELECT sc.business_id, 'Square', 'Unknown', NULLIF(sc.phone_number, ''), NULLIF(sc.email_address, ''),
+                           NULLIF(trim(concat_ws(' ', sc.given_name, sc.family_name)), ''), 'Created in Square by staff',
+                           sc.square_customer_id, sc.square_customer_id, 'MATCHED', FALSE, sc.square_created_at
+                    FROM square_customer sc
+                    WHERE sc.business_id = ? AND sc.square_created_at BETWEEN now() - interval '7 days' AND now() - interval '30 minutes'
+                      AND (COALESCE(sc.phone_number, '') <> '' OR COALESCE(sc.email_address, '') <> '')
+                      AND NOT EXISTS (SELECT 1 FROM square_booking b WHERE b.business_id = sc.business_id AND b.square_customer_id = sc.square_customer_id)
+                      AND NOT EXISTS (SELECT 1 FROM lead_intake l WHERE l.business_id = sc.business_id AND l.square_customer_id = sc.square_customer_id)
+                      AND NOT EXISTS (SELECT 1 FROM lead_intake l WHERE l.business_id = sc.business_id AND COALESCE(sc.phone_number, '') <> ''
+                                      AND right(regexp_replace(COALESCE(l.phone_number, ''), '\\D', '', 'g'), 10) = right(regexp_replace(sc.phone_number, '\\D', '', 'g'), 10)
+                                      AND length(regexp_replace(COALESCE(l.phone_number, ''), '\\D', '', 'g')) >= 10)
+                      AND NOT EXISTS (SELECT 1 FROM lead_intake l WHERE l.business_id = sc.business_id AND COALESCE(sc.email_address, '') <> ''
+                                      AND lower(l.email) = lower(sc.email_address))
+                    ON CONFLICT DO NOTHING
+                    """, b);
+        }
+        return n;
+    }
+
+    /** Writes a hand-picked source to the Square profile (best effort; the CRM value stays authoritative). */
+    public void tagSource(long businessId, String customerId, String label) {
+        try {
+            SquareClient sq = squares.forBusiness(businessId);
+            if (definitionsReady.add(businessId)) {
+                sq.ensureCustomerStringAttribute(ATTR_SOURCE, "Lead source", "Where the lead first came from (set automatically)");
+                sq.ensureCustomerStringAttribute(ATTR_CHANNEL, "Lead channel", "How the lead first reached us: Call, SMS, Form, Booking (set automatically)");
+            }
+            sq.setCustomerAttribute(customerId, ATTR_SOURCE, label);
+            sq.addCustomerToGroup(customerId, sq.ensureCustomerGroup("Source: " + label));
+        } catch (RuntimeException e) {
+            definitionsReady.remove(businessId);
+            log.warn("Square source tag failed for {}: {}", customerId, e.toString());
+        }
     }
 
     private void upsertContact(Lead lead, String phone, String email, String customerId, String label) {

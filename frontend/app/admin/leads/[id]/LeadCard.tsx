@@ -8,6 +8,7 @@ import type { Language, LeadDetail, LeadStatus } from '../../../lib/types';
 const STATUSES: LeadStatus[] = ['NEW', 'CONTACTED', 'BOOKED', 'LOST'];
 const APPT_STATUSES = ['ACCEPTED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SELLER', 'NO_SHOW', 'DECLINED'];
 const LOST_REASONS = ['PRICE', 'NO_ANSWER', 'NOT_INTERESTED', 'BOUGHT_ELSEWHERE', 'NOT_ELIGIBLE', 'TOO_FAR', 'WRONG_NUMBER_SPAM', 'TIMING', 'OTHER'];
+const SOURCES = ['Instagram', 'Yelp', 'Google', 'Facebook', 'TikTok', 'Referral', 'Walk-in', 'Phone', 'Other', 'Unknown'];
 const ENTRY_TYPES = ['NOTE', 'CALL', 'AGREEMENT'] as const;
 const field = 'rounded border border-zinc-300 px-2 py-1.5 text-sm focus:border-zinc-500 focus:outline-none';
 const primary = 'rounded bg-zinc-900 px-3 py-1.5 text-sm text-white disabled:opacity-40';
@@ -81,6 +82,11 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
     if (await send(`/api/leads/${lead.id}/events`, 'POST', { type: entryType, text: entry })) setEntry('');
   }
 
+  const sourceLabel = (s: string) =>
+    ['Unknown', 'Referral', 'Walk-in', 'Phone', 'Other'].includes(s)
+      ? t(language, `leadSrc_${s.replace('-', '_')}` as 'leadSrc_Other')
+      : s;
+
   const title = lead.name ?? lead.phoneNumber ?? lead.email ?? '';
   const chat = lead.phoneNumber ? `/admin/messages?phone=${encodeURIComponent(lead.phoneNumber)}` : null;
   const overdue = lead.callbackAt != null && new Date(lead.callbackAt) <= new Date() && (lead.status === 'NEW' || lead.status === 'CONTACTED');
@@ -113,7 +119,21 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
       <section className="rounded-lg p-4 ring-1 ring-zinc-200">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="text-lg font-semibold">{title}</h2>
-          <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700">{lead.source}</span>
+          {lead.sourceEditable ? (
+            <select
+              aria-label={t(language, 'leadSourcePick')}
+              title={t(language, 'leadSourceHint')}
+              value={lead.source}
+              disabled={busy}
+              onChange={(e) => send(`/api/leads/${lead.id}`, 'PATCH', { source: e.target.value })}
+              className={`rounded px-2 py-0.5 text-xs ${lead.source === 'Unknown' ? 'bg-amber-100 text-amber-900' : 'bg-zinc-100 text-zinc-700'}`}
+            >
+              {!SOURCES.includes(lead.source) && <option value={lead.source}>{lead.source}</option>}
+              {SOURCES.map((s) => <option key={s} value={s}>{sourceLabel(s)}</option>)}
+            </select>
+          ) : (
+            <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700" title={t(language, 'leadSourceLocked')}>{lead.source}</span>
+          )}
           {overdue && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">{t(language, 'leadReminderDue')}</span>}
         </div>
         <dl className="mt-2 grid gap-x-6 gap-y-1 text-sm text-zinc-700 sm:grid-cols-2">

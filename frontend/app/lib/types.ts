@@ -2581,6 +2581,7 @@ export interface Lead {
   squareUrl: string | null;
   lostReason: string | null;
   lostComment: string | null;
+  sourceEditable: boolean;
 }
 export interface LostRow { reason: string; source: string | null; count: number }
 export interface LostReport { days: number; total: number; byReason: LostRow[]; bySource: LostRow[] }
