@@ -5,8 +5,8 @@ import { useMemo, useState } from 'react';
 import { t } from '../../lib/i18n';
 import type { Language, Lead } from '../../lib/types';
 
-type Tab = 'ACTION' | 'CONSULT' | 'CONTACTED' | 'BOOKED' | 'LOST' | 'ALL';
-const TABS: Tab[] = ['ACTION', 'CONSULT', 'CONTACTED', 'BOOKED', 'LOST', 'ALL'];
+type Tab = 'ACTION' | 'CONSULT' | 'CONTACTED' | 'BOOKED' | 'LOST' | 'SPAM' | 'ALL';
+const TABS: Tab[] = ['ACTION', 'CONSULT', 'CONTACTED', 'BOOKED', 'LOST', 'SPAM', 'ALL'];
 const DAY = 86_400_000;
 const COLD_AFTER_DAYS = 7;
 const STATUS_STYLE: Record<string, string> = {
@@ -14,6 +14,7 @@ const STATUS_STYLE: Record<string, string> = {
   CONTACTED: 'bg-zinc-100 text-zinc-700',
   BOOKED: 'bg-green-100 text-green-800',
   LOST: 'bg-zinc-100 text-zinc-500',
+  SPAM: 'bg-zinc-100 text-zinc-400',
 };
 
 function fmt(iso: string, lang: Language | null): string {
@@ -98,7 +99,7 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
   const hasConsult = useMemo(() => leads.some((l) => l.consultState), [leads]);
 
   const inTab = (l: Lead, x: Tab): boolean =>
-    x === 'ALL' ? true : x === 'CONSULT' ? isActive(l) && l.consultState != null : x === 'ACTION' ? (l.status === 'NEW' || isOverdue(l, now)) : l.status === x;
+    x === 'ALL' ? l.status !== 'SPAM' : x === 'CONSULT' ? isActive(l) && l.consultState != null : x === 'ACTION' ? (l.status === 'NEW' || isOverdue(l, now)) : l.status === x;
   const counts = useMemo(
     () => Object.fromEntries(TABS.map((x) => [x, base.filter((l) => inTab(l, x)).length])) as Record<Tab, number>,
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -107,13 +108,13 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
   const activeTab: Tab = tab ?? (counts.ACTION > 0 ? 'ACTION' : 'ALL');
   const sections = buildSections(base.filter((l) => inTab(l, activeTab)), activeTab, now, language);
 
-  async function markContacted(l: Lead) {
+  async function setStatus(l: Lead, status: 'CONTACTED' | 'SPAM') {
     setBusyId(l.id);
     const res = await fetch(`/api/leads/${l.id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'CONTACTED' }),
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }),
     });
     setBusyId(null);
-    if (res.ok) setLeads((prev) => prev.map((x) => (x.id === l.id ? { ...x, status: 'CONTACTED' } : x)));
+    if (res.ok) setLeads((prev) => prev.map((x) => (x.id === l.id ? { ...x, status } : x)));
   }
 
   const tabLabel = (x: Tab) =>
@@ -216,8 +217,9 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
                     <div className="flex shrink-0 flex-wrap gap-2">
                       {l.phoneNumber && <a href={`tel:${l.phoneNumber}`} className={quick}>{t(language, 'crmCall')}</a>}
                       {l.phoneNumber && <Link href={`/admin/messages?phone=${encodeURIComponent(l.phoneNumber)}`} className={quick}>{t(language, 'crmText')}</Link>}
+                      <button className={quick} disabled={busyId === l.id} onClick={() => setStatus(l, 'SPAM')}>{t(language, 'crmMarkSpam')}</button>
                       {l.status === 'NEW' && (
-                        <button className={quick} disabled={busyId === l.id} onClick={() => markContacted(l)}>{t(language, 'crmMarkContacted')}</button>
+                        <button className={quick} disabled={busyId === l.id} onClick={() => setStatus(l, 'CONTACTED')}>{t(language, 'crmMarkContacted')}</button>
                       )}
                     </div>
                   )}

@@ -26,7 +26,7 @@ import java.util.Set;
 public class LeadFollowUpService {
 
     private static final Logger log = LoggerFactory.getLogger(LeadFollowUpService.class);
-    static final Set<String> STATUSES = Set.of("NEW", "CONTACTED", "BOOKED", "LOST");
+    static final Set<String> STATUSES = Set.of("NEW", "CONTACTED", "BOOKED", "LOST", "SPAM");
     static final Set<String> LOST_REASONS = Set.of("PRICE", "NO_ANSWER", "NOT_INTERESTED", "BOUGHT_ELSEWHERE",
             "NOT_ELIGIBLE", "TOO_FAR", "WRONG_NUMBER_SPAM", "TIMING", "OTHER");
     static final Set<String> SOURCES = Set.of("Instagram", "Yelp", "Google", "Facebook", "TikTok", "Referral",

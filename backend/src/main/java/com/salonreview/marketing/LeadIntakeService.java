@@ -340,7 +340,7 @@ public class LeadIntakeService {
                               AND COALESCE(NULLIF(regexp_replace(COALESCE(phone_number, ''), '\\D', '', 'g'), ''),
                                            lower(NULLIF(email, ''))) = ?
                               ORDER BY created_at, id LIMIT 1)
-                  AND f.status <> 'NEW'
+                  AND f.status NOT IN ('NEW', 'SPAM')
                   AND NOT EXISTS (SELECT 1 FROM square_booking b WHERE b.business_id = f.business_id AND b.status = 'ACCEPTED'
                                   AND b.start_at > now() AND NOT %s
                                   AND b.square_customer_id IN (SELECT square_customer_id FROM lead_intake t

@@ -5,7 +5,7 @@ import { useRef, useState } from 'react';
 import { t } from '../../../lib/i18n';
 import type { Language, LeadDetail, LeadStatus } from '../../../lib/types';
 
-const STATUSES: LeadStatus[] = ['NEW', 'CONTACTED', 'BOOKED', 'LOST'];
+const STATUSES: LeadStatus[] = ['NEW', 'CONTACTED', 'BOOKED', 'LOST', 'SPAM'];
 const APPT_STATUSES = ['ACCEPTED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SELLER', 'NO_SHOW', 'DECLINED'];
 const LOST_REASONS = ['PRICE', 'NO_ANSWER', 'NOT_INTERESTED', 'BOUGHT_ELSEWHERE', 'NOT_ELIGIBLE', 'TOO_FAR', 'WRONG_NUMBER_SPAM', 'TIMING', 'OTHER'];
 const SOURCES = ['Instagram', 'Yelp', 'Google', 'Facebook', 'TikTok', 'Referral', 'Walk-in', 'Phone', 'Other', 'Unknown'];
