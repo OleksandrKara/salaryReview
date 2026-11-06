@@ -25,4 +25,13 @@ class LeadIntakeServiceTest {
         assertArrayEquals(new String[] {null, null}, LeadIntakeService.splitName(" "));
         assertEquals(2, LeadIntakeService.parseIds("1, 2,x").size());
     }
+
+    @Test
+    void foreignPhonesAreKeptSoRowsOfOnePersonMerge() {
+        assertEquals("+989118522298", LeadIntakeService.foreignPhone("+98 911 852 2298"));
+        assertNull(LeadIntakeService.foreignPhone("(619) 555-1234"));
+        assertNull(LeadIntakeService.foreignPhone("+16195551234"));
+        assertNull(LeadIntakeService.foreignPhone("12345"));
+        assertNull(LeadIntakeService.foreignPhone(null));
+    }
 }

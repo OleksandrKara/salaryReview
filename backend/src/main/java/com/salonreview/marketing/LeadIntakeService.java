@@ -324,8 +324,16 @@ public class LeadIntakeService {
                 lead.trafficSource() == null ? label : lead.trafficSource(), lead.trafficSource() == null ? label : lead.trafficSource(), customerId);
     }
 
+    /** Non-US numbers cannot go to Square, but the lead keeps them so one person's Academy and site rows share a key. */
+    static String foreignPhone(String raw) {
+        if (raw == null || !raw.trim().startsWith("+")) return null;
+        String digits = raw.replaceAll("\\D", "");
+        return digits.length() >= 8 && digits.length() <= 15 && !digits.startsWith("1") ? "+" + digits : null;
+    }
+
     private void record(Lead lead, String label, String phone, String email, String outcome, String customerId,
                         boolean marked, String error) {
+        if (phone == null) phone = foreignPhone(lead.phone());
         int inserted = jdbc.update("""
                 INSERT INTO lead_intake (business_id, channel, source, traffic_source, phone_number, email, name, detail,
                     external_id, square_customer_id, outcome, marked, error, payload)
