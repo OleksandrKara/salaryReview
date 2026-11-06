@@ -207,6 +207,33 @@ public class MailchimpClient {
         return node == null || node.isNull() ? null : node.asText();
     }
 
+    public record SentCampaign(String id, String title, String subject, String email, Instant sentAt) {}
+
+    /** Single-recipient campaigns sent since the given time (id, title, subject, recipient email). */
+    public List<SentCampaign> listSentCampaigns(MailchimpConfig config, String sinceIso) throws IOException, InterruptedException {
+        List<SentCampaign> out = new java.util.ArrayList<>();
+        int count = 500;
+        for (int offset = 0; ; offset += count) {
+            String fields = "campaigns.id,campaigns.send_time,campaigns.settings.title,campaigns.settings.subject_line,"
+                    + "campaigns.recipients.segment_opts.conditions.value";
+            HttpRequest req = baseRequest(config, "/campaigns?status=sent&count=" + count + "&offset=" + offset + "&since_send_time="
+                    + java.net.URLEncoder.encode(sinceIso, StandardCharsets.UTF_8) + "&fields=" + fields, BULK_TIMEOUT).GET().build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            requireSuccess(res, "list sent campaigns");
+            var arr = mapper.readTree(res.body()).path("campaigns");
+            for (var c : arr) {
+                var cond = c.path("recipients").path("segment_opts").path("conditions");
+                if (!cond.isArray() || cond.size() != 1 || !cond.get(0).path("value").isTextual()) continue;
+                String sent = c.path("send_time").asText(null);
+                out.add(new SentCampaign(c.path("id").asText(null), c.path("settings").path("title").asText(null),
+                        c.path("settings").path("subject_line").asText(null), cond.get(0).path("value").asText().toLowerCase(Locale.ROOT),
+                        sent == null || sent.isBlank() ? null : parseTimestamp(sent)));
+            }
+            if (arr.size() < count) break;
+        }
+        return out;
+    }
+
     /** Actually sends the campaign — irreversible, unlike a test send. */
     public void send(MailchimpConfig config, String campaignId) throws IOException, InterruptedException {
         HttpRequest req = baseRequest(config, "/campaigns/" + campaignId + "/actions/send")

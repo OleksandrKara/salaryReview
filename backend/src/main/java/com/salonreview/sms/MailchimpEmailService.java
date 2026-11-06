@@ -40,6 +40,12 @@ public class MailchimpEmailService {
 
     private final MailchimpClient client;
     private final MailchimpDeferredSendRepository deferredSends;
+    private SentEmailLog sentLog;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setSentLog(SentEmailLog sentLog) {
+        this.sentLog = sentLog;
+    }
 
     public MailchimpEmailService(MailchimpClient client, MailchimpDeferredSendRepository deferredSends) {
         this.client = client;
@@ -70,6 +76,7 @@ public class MailchimpEmailService {
                     .lastError(e.getMessage())
                     .build());
         }
+        if (sentLog != null) sentLog.record(config.getBusinessId(), toEmail.toLowerCase(java.util.Locale.ROOT), subjectLine, campaignTitle, campaignId, Instant.now());
         return campaignId;
     }
 

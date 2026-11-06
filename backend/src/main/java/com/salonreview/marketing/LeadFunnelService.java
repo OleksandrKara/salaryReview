@@ -174,10 +174,14 @@ public class LeadFunnelService {
         boolean open = "NEW".equals(l.status()) || "CONTACTED".equals(l.status());
 
         if (businessId == ACADEMY_BUSINESS && (l.academy() || has(d.academy(), pk, ek))) {
+            // The request that actually ran the funnel; repeat requests marked duplicate only count when there is nothing else.
             AcademyRow row = null;
             for (String k : new String[] {pk, ek}) {
-                AcademyRow r = last(d.academy().get(k));
-                if (r != null && (row == null || r.id() > row.id())) row = r;
+                for (AcademyRow r : d.academy().getOrDefault(k, List.of())) {
+                    boolean better = row == null || ("duplicate".equals(row.status()) && !"duplicate".equals(r.status()))
+                            || ("duplicate".equals(row.status()) == "duplicate".equals(r.status()) && r.id() > row.id());
+                    if (better) row = r;
+                }
             }
             out.add(academy(row, l, d, now, open));
         }

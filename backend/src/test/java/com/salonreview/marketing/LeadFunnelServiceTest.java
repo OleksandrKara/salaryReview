@@ -65,6 +65,15 @@ class LeadFunnelServiceTest {
     }
 
     @Test
+    void repeatRequestMarkedDuplicateDoesNotHideTheFunnelThatRan() {
+        Instant t = NOW.minusSeconds(3600);
+        List<AcademyRow> rows = List.of(new AcademyRow(10, "+15550001111", null, "replied", t),
+                new AcademyRow(11, "+15550001111", null, "duplicate", t), new AcademyRow(12, "+15550001111", null, "duplicate", t));
+        Funnel f = one(svc.evaluate(2, lead("NEW", true, null), data(rows, Map.of(), List.of(), List.of()), NOW), "academy");
+        assertEquals("REPLIED", f.reason());
+    }
+
+    @Test
     void nonAcademyLeadHasNoAcademyFunnel() {
         List<Funnel> fs = svc.evaluate(2, lead("NEW", false, null), data(List.of(), Map.of(), List.of(), List.of()), NOW);
         assertTrue(fs.stream().noneMatch(f -> f.key().equals("academy")));
