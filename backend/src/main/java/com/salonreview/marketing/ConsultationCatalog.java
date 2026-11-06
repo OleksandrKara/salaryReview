@@ -16,7 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /** Square service variations whose catalog name contains "consultation", per business (cached). */
 @Component
-final class ConsultationCatalog {
+public final class ConsultationCatalog {
 
     private static final Logger log = LoggerFactory.getLogger(ConsultationCatalog.class);
     private static final Duration TTL = Duration.ofMinutes(10);
@@ -32,7 +32,7 @@ final class ConsultationCatalog {
         this.squares = squares;
     }
 
-    Set<String> ids(long businessId) {
+    public Set<String> ids(long businessId) {
         Entry e = cache.get(businessId);
         if (e != null && e.at().plus(TTL).isAfter(Instant.now())) return e.ids();
         Set<String> out = new LinkedHashSet<>();
@@ -56,7 +56,7 @@ final class ConsultationCatalog {
     }
 
     /** SQL boolean: every segment of booking alias {@code b} is a consultation. Ids come from ids(), already restricted to [A-Za-z0-9_-]. */
-    static String isConsultationSql(String b, Set<String> ids) {
+    public static String isConsultationSql(String b, Set<String> ids) {
         String list = ids.isEmpty() ? "ARRAY[]::text[]"
                 : "ARRAY[" + String.join(",", ids.stream().map(i -> "'" + i + "'").toList()) + "]::text[]";
         return "(jsonb_array_length(COALESCE(" + b + ".appointment_segments_json, '[]'::jsonb)) > 0 AND NOT EXISTS ("
