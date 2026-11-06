@@ -198,6 +198,15 @@ public class MailchimpClient {
         requireSuccess(res, "set campaign content");
     }
 
+    /** Rendered HTML of a campaign (used to show a sent funnel email in the CRM). */
+    public String fetchCampaignHtml(MailchimpConfig config, String campaignId) throws IOException, InterruptedException {
+        HttpRequest req = baseRequest(config, "/campaigns/" + campaignId + "/content").GET().build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        requireSuccess(res, "fetch campaign content");
+        var node = mapper.readTree(res.body()).get("html");
+        return node == null || node.isNull() ? null : node.asText();
+    }
+
     /** Actually sends the campaign — irreversible, unlike a test send. */
     public void send(MailchimpConfig config, String campaignId) throws IOException, InterruptedException {
         HttpRequest req = baseRequest(config, "/campaigns/" + campaignId + "/actions/send")

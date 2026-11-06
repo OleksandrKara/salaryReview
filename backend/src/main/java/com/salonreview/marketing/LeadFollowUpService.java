@@ -46,10 +46,13 @@ public class LeadFollowUpService {
     private final SquareClientProvider squares;
     private final LeadIntakeService intake;
     private final ConsultationCatalog consultations;
+    private final com.salonreview.repo.MailchimpConfigRepository mailchimpConfigs;
+    private final com.salonreview.sms.MailchimpClient mailchimpClient;
     private final com.fasterxml.jackson.databind.ObjectMapper json = new com.fasterxml.jackson.databind.ObjectMapper();
 
     public LeadFollowUpService(JdbcTemplate jdbc, CurrentBusinessContext business, TelegramNotificationService telegram, GeoIpService geo,
                                SquareClientProvider squares, LeadIntakeService intake, ConsultationCatalog consultations,
+                               com.salonreview.repo.MailchimpConfigRepository mailchimpConfigs, com.salonreview.sms.MailchimpClient mailchimpClient,
                                @org.springframework.beans.factory.annotation.Value("${app.public-base-url}") String publicBaseUrl) {
         this.jdbc = jdbc;
         this.business = business;
@@ -59,6 +62,8 @@ public class LeadFollowUpService {
         this.squares = squares;
         this.intake = intake;
         this.consultations = consultations;
+        this.mailchimpConfigs = mailchimpConfigs;
+        this.mailchimpClient = mailchimpClient;
     }
 
     public record LeadView(long id, String channel, String source, String phoneNumber, String email, String name,
@@ -398,20 +403,38 @@ public class LeadFollowUpService {
                 sorted.isEmpty() ? null : sorted.get(sorted.size() - 1).toString(), next);
     }
 
+    private static final java.util.Map<String, String> FUNNEL_EMAIL = java.util.Map.of(
+            "confirm_email", "Academy auto funnel: request confirmation",
+            "reviews_email", "Academy auto funnel: student reviews (day 1)",
+            "checkin", "Academy auto funnel: check-in (day 3)",
+            "payment_email", "Academy auto funnel: payment plans (day 7)");
+
     private List<EmailSent> emails(LeadView lead) {
-        return jdbc.query("""
+        List<EmailSent> out = new java.util.ArrayList<>(jdbc.query("""
                 SELECT id, automation_key, created_at, opened_at, email_clicked_at, content_html IS NOT NULL AS has_content
                 FROM winback_email_send WHERE business_id = ? AND state = 'SENT'
                   AND (square_customer_id = ? OR (?::text IS NOT NULL AND lower(email_address) = lower(?::text)))
                 ORDER BY created_at DESC LIMIT 100
                 """, (rs, i) -> new EmailSent(rs.getLong("id"), rs.getString("automation_key"), iso(rs.getTimestamp("created_at")),
                 iso(rs.getTimestamp("opened_at")), iso(rs.getTimestamp("email_clicked_at")), rs.getBoolean("has_content")),
-                business.id(), lead.squareCustomerId() == null ? "" : lead.squareCustomerId(), lead.email(), lead.email());
+                business.id(), lead.squareCustomerId() == null ? "" : lead.squareCustomerId(), lead.email(), lead.email()));
+        // Academy funnel emails go out as Mailchimp campaigns; they are listed with a negative id (minus the touch id).
+        out.addAll(jdbc.query("""
+                SELECT t.id, t.step, t.created_at, t.opened_at, t.clicked_at FROM academy_lead_touch t
+                WHERE t.channel = 'email' AND t.state = 'sent' AND t.campaign_id IS NOT NULL
+                  AND t.lead_id = (SELECT substring(external_id from 9)::bigint FROM lead_intake
+                                   WHERE id = ? AND business_id = ? AND external_id ~ '^academy:[0-9]+$')
+                """, (rs, i) -> new EmailSent(-rs.getLong("id"), FUNNEL_EMAIL.getOrDefault(rs.getString("step"), "Academy auto funnel: " + rs.getString("step")),
+                iso(rs.getTimestamp("created_at")), iso(rs.getTimestamp("opened_at")), iso(rs.getTimestamp("clicked_at")), true),
+                lead.id(), business.id()));
+        out.sort(java.util.Comparator.comparing(EmailSent::sentAt, java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())));
+        return out;
     }
 
     /** Stored HTML of one email sent to this lead (checked against the lead's customer id or email). */
     public String emailHtml(long leadId, long emailId) {
         LeadView lead = find(leadId);
+        if (emailId < 0) return funnelEmailHtml(lead, -emailId);
         List<String> html = jdbc.queryForList("""
                 SELECT content_html FROM winback_email_send WHERE id = ? AND business_id = ? AND content_html IS NOT NULL
                   AND (square_customer_id = ? OR (?::text IS NOT NULL AND lower(email_address) = lower(?::text)))
@@ -419,6 +442,27 @@ public class LeadFollowUpService {
                 lead.email(), lead.email());
         if (html.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such email");
         return html.get(0);
+    }
+
+    private String funnelEmailHtml(LeadView lead, long touchId) {
+        List<String> campaigns = jdbc.queryForList("""
+                SELECT t.campaign_id FROM academy_lead_touch t
+                WHERE t.id = ? AND t.campaign_id IS NOT NULL
+                  AND t.lead_id = (SELECT substring(external_id from 9)::bigint FROM lead_intake
+                                   WHERE id = ? AND business_id = ? AND external_id ~ '^academy:[0-9]+$')
+                """, String.class, touchId, lead.id(), business.id());
+        var config = mailchimpConfigs.findByBusinessId(business.id()).filter(com.salonreview.domain.MailchimpConfig::isConfigured).orElse(null);
+        if (campaigns.isEmpty() || config == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such email");
+        try {
+            String html = mailchimpClient.fetchCampaignHtml(config, campaigns.get(0));
+            if (html == null || html.isBlank()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such email");
+            return html;
+        } catch (java.io.IOException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Mailchimp is unavailable");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Mailchimp is unavailable");
+        }
     }
 
     private static String join(String a, String b) {
