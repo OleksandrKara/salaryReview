@@ -147,8 +147,6 @@ public class LeadIntakeService {
         return n != null && n > 0;
     }
 
-    static final String ACADEMY = "Academy";
-
     private String contactTraffic(long businessId, String phone, String email) {
         if (phone == null && email == null) return null;
         List<String> ts = jdbc.queryForList("""
@@ -167,7 +165,6 @@ public class LeadIntakeService {
         try {
             if (lead.trafficSource() == null || lead.trafficSource().isBlank()) {
                 String ts = contactTraffic(lead.businessId(), phone, email);
-                if (ts == null && ACADEMY.equals(lead.channel())) ts = "Direct";
                 if (ts != null) {
                     lead = new Lead(lead.businessId(), lead.channel(), ts, lead.phone(), lead.email(), lead.name(), lead.detail(), lead.externalId(), lead.payload());
                     label = sourceLabel(lead.trafficSource());
