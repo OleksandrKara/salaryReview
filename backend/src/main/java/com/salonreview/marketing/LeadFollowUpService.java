@@ -44,7 +44,7 @@ public class LeadFollowUpService {
     private static String key(String a) {
         return "COALESCE(NULLIF(regexp_replace(COALESCE(" + a + ".phone_number, ''), '\\D', '', 'g'), ''), "
                 + "(SELECT NULLIF(regexp_replace(x.phone_number, '\\D', '', 'g'), '') FROM lead_intake x "
-                + "WHERE x.business_id = " + a + ".business_id AND " + a + ".email <> '' AND lower(x.email) = lower(" + a + ".email) "
+                + "WHERE x.business_id = " + a + ".business_id AND x.email IS NOT NULL AND x.email <> '' AND lower(x.email) = lower(" + a + ".email) "
                 + "AND x.outcome <> 'DUPLICATE' AND NULLIF(regexp_replace(COALESCE(x.phone_number, ''), '\\D', '', 'g'), '') IS NOT NULL "
                 + "ORDER BY x.created_at, x.id LIMIT 1), "
                 + "lower(NULLIF(" + a + ".email, '')), 'id' || " + a + ".id::text)";

@@ -8,6 +8,7 @@ import SpamFlagIcon from '../messages/SpamFlagIcon';
 import GoogleReviewClickedIcon from '../messages/GoogleReviewClickedIcon';
 import YelpReviewClickedIcon from '../messages/YelpReviewClickedIcon';
 import FeedbackFormClickedIcon from '../messages/FeedbackFormClickedIcon';
+import FlagIcon from './FlagIcon';
 import { t } from '../../lib/i18n';
 import type { Language, LeadListBadge } from '../../lib/types';
 
@@ -36,7 +37,7 @@ export default function LeadIcons({ b, language }: { b: LeadListBadge | undefine
           className={`inline-flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white text-[11px] leading-none ring-1 ${SCOPE_RING[b.scope ?? 'LOCAL']}`}
           title={`${b.place ?? ''} · ${t(language, b.scope === 'LOCAL' ? 'crmPlaceLocal' : b.scope === 'OUT_OF_STATE' ? 'crmPlaceOut' : 'crmPlaceIntl')}`}
         >
-          <span aria-hidden>{b.flag}</span>
+          <FlagIcon flag={b.flag} className="h-[14px] w-[14px] rounded-full object-cover" />
           <span className="sr-only">{b.place}</span>
         </span>
       )}

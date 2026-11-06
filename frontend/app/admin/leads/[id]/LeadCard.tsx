@@ -1,5 +1,6 @@
 'use client';
 
+import FlagIcon from '../FlagIcon';
 import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { t } from '../../../lib/i18n';
@@ -265,7 +266,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
           {place && (
             <div className="shrink-0 text-right" data-testid="lead-place">
               <div className="flex items-center justify-end gap-2">
-                <span className="text-2xl leading-none" aria-hidden>{place.flag}</span>
+                <FlagIcon flag={place.flag} className="h-6 w-8 rounded-sm object-cover" />
                 <div className="text-sm font-medium leading-tight">
                   <div>{place.city ?? place.country}</div>
                   {place.city && <div className="text-xs font-normal text-zinc-500">{[place.region && place.countryCode === 'US' ? place.region : null, place.country].filter(Boolean).join(', ')}</div>}
