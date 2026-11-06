@@ -241,14 +241,19 @@ public class MarketingContactsRepository {
         return Boolean.TRUE.equals(found);
     }
 
-    /** True if this phone texted the business since {@code since}. Owner 2026-10-12: a client who
-     * texted a question, got a reply from staff, then a minute later got "I saw you started booking
-     * online. Can I help you pick a time?" — she's already in a conversation with us. */
+    /** True if this phone is already in touch with us since {@code since}: it texted us, it called us
+     * (lead_intake, channel Call), or staff texted it by hand (outbound without an automation key).
+     * Owner 2026-10-12: a client who texted a question got "I saw you started booking online" a
+     * minute after staff replied. Owner 2026-11-06: same for someone who just phoned in. */
     public boolean textedUsSince(String phoneNumber, Long businessId, Instant since) {
+        Timestamp ts = Timestamp.from(since);
         Boolean found = jdbcTemplate.queryForObject(
                 "SELECT EXISTS (SELECT 1 FROM sms_message m WHERE m.business_id = ? AND m.phone_number = ?"
-                        + " AND m.direction = 'INBOUND' AND m.created_at >= ?)",
-                Boolean.class, businessId, phoneNumber, Timestamp.from(since));
+                        + " AND (m.direction = 'INBOUND' OR (m.direction = 'OUTBOUND' AND m.automation_key IS NULL))"
+                        + " AND m.created_at >= ?)"
+                        + " OR EXISTS (SELECT 1 FROM lead_intake l WHERE l.business_id = ? AND l.phone_number = ?"
+                        + " AND l.channel = 'Call' AND l.created_at >= ?)",
+                Boolean.class, businessId, phoneNumber, ts, businessId, phoneNumber, ts);
         return Boolean.TRUE.equals(found);
     }
 
