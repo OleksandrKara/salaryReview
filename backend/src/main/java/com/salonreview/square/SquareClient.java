@@ -1046,6 +1046,18 @@ public class SquareClient {
         return resp == null || resp.invoices() == null ? List.of() : resp.invoices();
     }
 
+    /** The free-text note staff keep on the Square customer profile, or null (also when the lookup fails). */
+    public String customerNote(String id) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode n = throttled(() ->
+                    http.get().uri("/v2/customers/{id}", id).retrieve().body(com.fasterxml.jackson.databind.JsonNode.class));
+            String note = n == null ? null : n.path("customer").path("note").asText(null);
+            return note == null || note.isBlank() ? null : note.trim();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     private java.util.Optional<Customer> fetchCustomer(String id) {
         try {
             CustomerResponse resp = throttled(() ->

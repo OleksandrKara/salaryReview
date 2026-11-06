@@ -5,8 +5,8 @@ import { useMemo, useState } from 'react';
 import { t } from '../../lib/i18n';
 import type { Language, Lead } from '../../lib/types';
 
-type Tab = 'ACTION' | 'CONTACTED' | 'BOOKED' | 'LOST' | 'ALL';
-const TABS: Tab[] = ['ACTION', 'CONTACTED', 'BOOKED', 'LOST', 'ALL'];
+type Tab = 'ACTION' | 'CONSULT' | 'CONTACTED' | 'BOOKED' | 'LOST' | 'ALL';
+const TABS: Tab[] = ['ACTION', 'CONSULT', 'CONTACTED', 'BOOKED', 'LOST', 'ALL'];
 const DAY = 86_400_000;
 const COLD_AFTER_DAYS = 7;
 const STATUS_STYLE: Record<string, string> = {
@@ -55,6 +55,13 @@ function buildSections(leads: Lead[], tab: Tab, now: number, lang: Language | nu
       { key: 'cold', title: t(lang, 'crmSecCold'), tone: 'text-zinc-500', leads: cold },
     ].filter((s) => s.leads.length > 0);
   }
+  if (tab === 'CONSULT') {
+    const consultAt = (l: Lead) => (l.consultAt ? new Date(l.consultAt).getTime() : 0);
+    return [
+      { key: 'stalled', title: t(lang, 'crmSecStalled'), tone: 'text-red-700', leads: leads.filter((l) => l.consultState === 'DONE').sort((a, b) => consultAt(b) - consultAt(a)) },
+      { key: 'upcoming', title: t(lang, 'crmSecConsultUpcoming'), tone: 'text-blue-700', leads: leads.filter((l) => l.consultState === 'UPCOMING').sort((a, b) => consultAt(a) - consultAt(b)) },
+    ].filter((s) => s.leads.length > 0);
+  }
   if (tab === 'ALL') {
     return (['NEW', 'CONTACTED', 'BOOKED', 'LOST'] as const)
       .map((st) => ({
@@ -76,6 +83,7 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
   const [tab, setTab] = useState<Tab | null>(null);
   const [q, setQ] = useState('');
   const [source, setSource] = useState('');
+  const [academyOnly, setAcademyOnly] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [now] = useState(() => Date.now());
 
@@ -83,12 +91,14 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
   const base = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return leads.filter((l) =>
-      (!source || l.source === source) &&
+      (!source || l.source === source) && (!academyOnly || l.academy) &&
       (!needle || [l.name, l.phoneNumber, l.email, l.source, l.lastNote].some((v) => v?.toLowerCase().includes(needle))));
-  }, [leads, q, source]);
+  }, [leads, q, source, academyOnly]);
+  const hasAcademy = useMemo(() => leads.some((l) => l.academy), [leads]);
+  const hasConsult = useMemo(() => leads.some((l) => l.consultState), [leads]);
 
   const inTab = (l: Lead, x: Tab): boolean =>
-    x === 'ALL' ? true : x === 'ACTION' ? (l.status === 'NEW' || isOverdue(l, now)) : l.status === x;
+    x === 'ALL' ? true : x === 'CONSULT' ? isActive(l) && l.consultState != null : x === 'ACTION' ? (l.status === 'NEW' || isOverdue(l, now)) : l.status === x;
   const counts = useMemo(
     () => Object.fromEntries(TABS.map((x) => [x, base.filter((l) => inTab(l, x)).length])) as Record<Tab, number>,
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -108,6 +118,7 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
 
   const tabLabel = (x: Tab) =>
     x === 'ACTION' ? t(language, 'crmTabAction')
+      : x === 'CONSULT' ? t(language, 'crmTabConsult')
       : x === 'CONTACTED' ? t(language, 'crmSecProgress')
         : x === 'ALL' ? t(language, 'leadsFilterAll')
           : t(language, `leadStatus${x}` as 'leadStatusNEW');
@@ -135,7 +146,7 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {TABS.map((x) => (
+        {TABS.filter((x) => x !== 'CONSULT' || hasConsult).map((x) => (
           <button
             key={x}
             onClick={() => setTab(x)}
@@ -145,6 +156,15 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
             <span className={`rounded-full px-1.5 text-xs tabular-nums ${activeTab === x ? 'bg-white/20' : x === 'ACTION' && counts[x] > 0 ? 'bg-red-100 text-red-700' : 'bg-zinc-100 text-zinc-600'}`}>{counts[x]}</span>
           </button>
         ))}
+        {hasAcademy && (
+          <button
+            onClick={() => setAcademyOnly(!academyOnly)}
+            aria-pressed={academyOnly}
+            className={`rounded-full px-3 py-1 text-sm ring-1 ${academyOnly ? 'bg-violet-700 text-white ring-violet-700' : 'text-violet-800 ring-violet-300 hover:bg-violet-50'}`}
+          >
+            {t(language, 'crmAcademyFilter')}
+          </button>
+        )}
       </div>
 
       {sections.length === 0 && <p className="text-sm text-zinc-500">{t(language, 'leadsEmpty')}</p>}
@@ -172,6 +192,13 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
                       )}
                       {upcoming && l.callbackAt && (
                         <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">{t(language, 'crmCallbackAt')} {fmt(l.callbackAt, language)}</span>
+                      )}
+                      {l.academy && <span className="rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-800">{t(language, 'crmAcademy')}</span>}
+                      {l.consultState === 'UPCOMING' && l.consultAt && (
+                        <span className="rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-800">{t(language, 'crmConsultUpcoming')} {fmt(l.consultAt, language)}</span>
+                      )}
+                      {l.consultState === 'DONE' && l.consultAt && isActive(l) && (
+                        <span className="rounded bg-orange-100 px-1.5 py-0.5 text-xs text-orange-800">{t(language, 'crmConsultDone')} {span(now - new Date(l.consultAt).getTime(), language)} {t(language, 'crmAgo')}</span>
                       )}
                       {waiting && <span className="text-xs text-zinc-500">{t(language, 'crmWaiting')} {waiting}</span>}
                     </div>

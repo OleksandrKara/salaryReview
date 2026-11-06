@@ -51,9 +51,10 @@ public class LeadIntakeService {
     private final Set<Long> enabled;
     private final Set<Long> definitionsReady = ConcurrentHashMap.newKeySet();
 
-    public LeadIntakeService(JdbcTemplate jdbc, SquareClientProvider squares,
+    public LeadIntakeService(JdbcTemplate jdbc, SquareClientProvider squares, ConsultationCatalog consultations,
                              @Value("${marketing.lead-intake.businesses:}") String businesses) {
         this.jdbc = jdbc;
+        this.consultations = consultations;
         this.squares = squares;
         this.enabled = parseIds(businesses);
     }
@@ -100,6 +101,8 @@ public class LeadIntakeService {
         return enabled.contains(businessId);
     }
 
+    private final ConsultationCatalog consultations;
+
     public Set<Long> enabledBusinesses() {
         return enabled;
     }
@@ -129,6 +132,20 @@ public class LeadIntakeService {
         return p != null && p.matches("\\+1\\d{10}") ? p : null;
     }
 
+    /** A text sent straight to the salon number (not from the website) is not a conversion: it never creates a touch for a known person. */
+    static final String TEXT = "Text";
+
+    private boolean knownPerson(long businessId, String phone, String email) {
+        String digits = phone == null ? "" : phone.replaceAll("\\D", "");
+        String key = !digits.isEmpty() ? digits : email;
+        if (key == null) return false;
+        Integer n = jdbc.queryForObject("""
+                SELECT count(*) FROM lead_intake WHERE business_id = ? AND outcome <> 'DUPLICATE'
+                  AND COALESCE(NULLIF(regexp_replace(COALESCE(phone_number, ''), '\\D', '', 'g'), ''), lower(NULLIF(email, ''))) = ?
+                """, Integer.class, businessId, key.toLowerCase());
+        return n != null && n > 0;
+    }
+
     public Result capture(Lead lead) {
         String phone = validPhone(lead.phone());
         String email = lead.email() == null || lead.email().isBlank() ? null : lead.email().trim().toLowerCase(Locale.ROOT);
@@ -152,6 +169,9 @@ public class LeadIntakeService {
                 record(lead, label, phone, email, "SKIPPED_NO_CONTACT", null, false, null);
                 return new Result("SKIPPED_NO_CONTACT", null, false);
             }
+            if (TEXT.equals(lead.channel()) && knownPerson(lead.businessId(), phone, email)) {
+                return new Result("SKIPPED_PLAIN_TEXT", null, false);
+            }
             SquareClient square = squares.forBusiness(lead.businessId());
             List<SquareClient.Customer> found = square.findCustomersExact(phone, email);
             SquareClient.Customer customer;
@@ -159,6 +179,7 @@ public class LeadIntakeService {
             if (!found.isEmpty()) {
                 customer = found.stream().min(Comparator.comparing(c -> c.createdAt() == null ? "9" : c.createdAt())).get();
                 outcome = "MATCHED";
+                if (TEXT.equals(lead.channel())) return new Result("SKIPPED_PLAIN_TEXT", customer.id(), false);
             } else {
                 String[] n = splitName(lead.name());
                 String key = UUID.nameUUIDFromBytes((lead.businessId() + "|" + phone + "|" + email).getBytes(StandardCharsets.UTF_8)).toString();
@@ -320,8 +341,14 @@ public class LeadIntakeService {
                                            lower(NULLIF(email, ''))) = ?
                               ORDER BY created_at, id LIMIT 1)
                   AND f.status <> 'NEW'
+                  AND NOT EXISTS (SELECT 1 FROM square_booking b WHERE b.business_id = f.business_id AND b.status = 'ACCEPTED'
+                                  AND b.start_at > now() AND NOT %s
+                                  AND b.square_customer_id IN (SELECT square_customer_id FROM lead_intake t
+                                      WHERE t.business_id = f.business_id AND t.square_customer_id IS NOT NULL
+                                      AND COALESCE(NULLIF(regexp_replace(COALESCE(t.phone_number, ''), '\\D', '', 'g'), ''),
+                                                   lower(NULLIF(t.email, ''))) = ?))
                 RETURNING f.id
-                """, Long.class, businessId, key);
+                """.formatted(ConsultationCatalog.isConsultationSql("b", consultations.ids(businessId))), Long.class, businessId, key, key);
         for (Long id : ids) {
             jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'STATUS', 'NEW', 'System')",
                     id, businessId);
