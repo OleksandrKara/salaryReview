@@ -129,4 +129,13 @@ class LeadAutoBookTest {
         assertThat(status(never)).isEqualTo("NEW");
         assertThat(status(touched)).isEqualTo("NEW");
     }
+
+    @Test
+    void statusChangesNeverMakeALeadLookFresher() {
+        long old = lead("+16195550021", "NEW", "C21", "30 days", false);
+        long recent = lead("+16195550022", "CONTACTED", "C22", "2 days", false);
+        jdbc.update("UPDATE lead_intake SET status = 'CONTACTED', updated_by = 'x', updated_at = now() WHERE id = ?", old);
+        var rows = service.listFor(b, "CONTACTED");
+        assertThat(rows).extracting(LeadFollowUpService.LeadView::id).containsExactly(recent, old);
+    }
 }
