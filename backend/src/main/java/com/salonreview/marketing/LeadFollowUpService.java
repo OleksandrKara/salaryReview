@@ -94,9 +94,12 @@ public class LeadFollowUpService {
 
     public record EmailSent(long id, String kind, String sentAt, String openedAt, String clickedAt, boolean hasContent) {}
 
+    /** One website form the person filled in: what they typed and where they came from. */
+    public record Form(String key, String kind, String at, java.util.Map<String, String> fields) {}
+
     public record LeadDetail(LeadView lead, List<Touch> touches, List<Event> events, List<Origin> origins,
                              List<Appointment> appointments, Spend spend, List<EmailSent> emails,
-                             List<Sms> sms, String squareNote, List<Payment> payments) {}
+                             List<Sms> sms, String squareNote, List<Payment> payments, List<Form> forms) {}
 
     /** A completed Square payment that is not part of a booked visit day (invoice, deposit, course payment). */
     public record Payment(String id, String at, java.math.BigDecimal amount, java.math.BigDecimal tip, String description) {}
@@ -200,7 +203,7 @@ public class LeadFollowUpService {
                 (rs, i) -> new Event(rs.getLong("id"), rs.getString("type"), rs.getString("text"),
                         rs.getString("created_by"), iso(rs.getTimestamp("created_at"))), id, business.id());
         return new LeadDetail(lead, touches, events, origins(lead), appointments(lead), spend(lead), emails(lead),
-                sms(lead), squareNote(lead), payments(lead));
+                sms(lead), squareNote(lead), payments(lead), forms(lead, touches));
     }
 
     private java.util.Map<String, String> parsePayload(String raw) {
@@ -403,13 +406,116 @@ public class LeadFollowUpService {
                 sorted.isEmpty() ? null : sorted.get(sorted.size() - 1).toString(), next);
     }
 
+    private static void put(java.util.Map<String, String> m, String k, String v) {
+        if (v != null && !v.isBlank()) m.put(k, v.trim());
+    }
+
+    private static String yesNo(boolean b) {
+        return b ? "yes" : "no";
+    }
+
+    private List<Form> forms(LeadView lead, List<Touch> touches) {
+        List<Form> out = new java.util.ArrayList<>();
+        String[] mailArr = emailsOf(lead).toArray(new String[0]);
+        String tail = phoneTail(lead);
+        out.addAll(jdbc.query("""
+                SELECT id, kind, created_at, name, phone, email, course_name, message, source_page_url, utm_source, utm_medium,
+                       utm_campaign, gclid, sms_consent, email_consent, status
+                FROM academy_lead WHERE id IN (""" + ACADEMY_OF_LEAD + ") ORDER BY created_at",
+                (rs, i) -> {
+                    java.util.Map<String, String> f = new java.util.LinkedHashMap<>();
+                    boolean course = "course_request".equals(rs.getString("kind"));
+                    put(f, "Form", course ? "Academy course request" : "Academy newsletter signup");
+                    put(f, "Name", rs.getString("name"));
+                    put(f, "Phone", rs.getString("phone"));
+                    put(f, "Email", rs.getString("email"));
+                    put(f, "Course", rs.getString("course_name"));
+                    put(f, "Message", rs.getString("message"));
+                    put(f, "Page", rs.getString("source_page_url"));
+                    put(f, "Source", rs.getString("gclid") != null && !rs.getString("gclid").isBlank() ? "Google Ads" : rs.getString("utm_source"));
+                    put(f, "UTM medium", rs.getString("utm_medium"));
+                    put(f, "UTM campaign", rs.getString("utm_campaign"));
+                    put(f, "OK to text", yesNo(rs.getBoolean("sms_consent")));
+                    put(f, "OK to email", yesNo(rs.getBoolean("email_consent")));
+                    if ("duplicate".equals(rs.getString("status"))) put(f, "Funnel", "not restarted: repeat request within 14 days");
+                    return new Form("a" + rs.getLong("id"), "academy", iso(rs.getTimestamp("created_at")), f);
+                }, business.id(), tail, tail, mailArr, mailArr));
+        if (touches.stream().anyMatch(t -> "Form".equals(t.channel()))) {
+            out.addAll(jdbc.query("""
+                    SELECT id, created_at, phone_number, given_name, email_address, original_traffic_source, marketing_traffic_source,
+                           utm_source, utm_medium, utm_campaign, referrer, landing_page_slug, variant_name, device_type, os_name,
+                           browser_name, sms_marketing_consent, email_marketing_consent, booking_service_name
+                    FROM marketing.contacts WHERE business_id = ?
+                      AND ((?::text IS NOT NULL AND right(regexp_replace(coalesce(phone_number, ''), '\\D', '', 'g'), 10) = ?)
+                           OR (cardinality(?::text[]) > 0 AND lower(email_address) = ANY(?::text[])))
+                    ORDER BY created_at
+                    """, (rs, i) -> {
+                        java.util.Map<String, String> f = new java.util.LinkedHashMap<>();
+                        put(f, "Form", "Website contact form");
+                        put(f, "Name", rs.getString("given_name"));
+                        put(f, "Phone", rs.getString("phone_number"));
+                        put(f, "Email", rs.getString("email_address"));
+                        put(f, "Service", rs.getString("booking_service_name"));
+                        put(f, "Landing page", rs.getString("landing_page_slug"));
+                        put(f, "Variant", rs.getString("variant_name"));
+                        put(f, "Source", rs.getString("original_traffic_source") != null ? rs.getString("original_traffic_source") : rs.getString("marketing_traffic_source"));
+                        put(f, "UTM source", rs.getString("utm_source"));
+                        put(f, "UTM medium", rs.getString("utm_medium"));
+                        put(f, "UTM campaign", rs.getString("utm_campaign"));
+                        put(f, "Referrer", rs.getString("referrer"));
+                        put(f, "Device", join(join(rs.getString("device_type"), rs.getString("os_name")), rs.getString("browser_name")));
+                        if (rs.getObject("sms_marketing_consent") != null) put(f, "OK to text", yesNo(rs.getBoolean("sms_marketing_consent")));
+                        if (rs.getObject("email_marketing_consent") != null) put(f, "OK to email", yesNo(rs.getBoolean("email_marketing_consent")));
+                        return new Form("c" + rs.getString("id"), "contact", iso(rs.getTimestamp("created_at")), f);
+                    }, business.id(), tail, tail, mailArr, mailArr));
+        }
+        return out;
+    }
+
     private static final java.util.Map<String, String> FUNNEL_EMAIL = java.util.Map.of(
             "confirm_email", "Academy auto funnel: request confirmation",
             "reviews_email", "Academy auto funnel: student reviews (day 1)",
             "checkin", "Academy auto funnel: check-in (day 3)",
             "payment_email", "Academy auto funnel: payment plans (day 7)");
 
+    /** Ids at or below this are rows of mailchimp_sent_email; ids between it and 0 are Academy funnel touches. */
+    private static final long LOG_ID_BASE = 1_000_000_000L;
+
+    private static String phoneTail(LeadView lead) {
+        String d = lead.phoneNumber() == null ? "" : lead.phoneNumber().replaceAll("\\D", "");
+        return d.length() < 10 ? null : d.substring(d.length() - 10);
+    }
+
+    /** The lead's own email plus the emails of its Square customer profiles. */
+    private List<String> emailsOf(LeadView lead) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        if (lead.email() != null && !lead.email().isBlank()) out.add(lead.email().trim().toLowerCase());
+        List<String> ids = customerIds(lead);
+        if (!ids.isEmpty()) {
+            out.addAll(jdbc.queryForList("SELECT lower(email_address) FROM square_customer WHERE business_id = ? AND square_customer_id IN ("
+                    + marks(ids.size()) + ") AND coalesce(email_address, '') <> ''", String.class, args(business.id(), ids)));
+        }
+        return List.copyOf(out);
+    }
+
+    private static String logKind(String title, String subject) {
+        String t = title == null ? "" : title;
+        if (t.startsWith("consultation_follow_up info")) return "Consultation follow-up: info email";
+        if (t.startsWith("consultation_follow_up offer")) return "Consultation follow-up: last-chance offer";
+        if (t.startsWith("lead_follow_up")) return "Website lead nudge: email";
+        return subject != null && !subject.isBlank() ? subject : t;
+    }
+
+    private static final String ACADEMY_OF_LEAD = """
+            SELECT id FROM academy_lead WHERE business_id = ?
+              AND ((?::text IS NOT NULL AND right(regexp_replace(coalesce(phone, ''), '\\D', '', 'g'), 10) = ?)
+                   OR (cardinality(?::text[]) > 0 AND lower(email) = ANY(?::text[])))
+            """;
+
     private List<EmailSent> emails(LeadView lead) {
+        List<String> mails = emailsOf(lead);
+        String[] mailArr = mails.toArray(new String[0]);
+        String tail = phoneTail(lead);
         List<EmailSent> out = new java.util.ArrayList<>(jdbc.query("""
                 SELECT id, automation_key, created_at, opened_at, email_clicked_at, content_html IS NOT NULL AS has_content
                 FROM winback_email_send WHERE business_id = ? AND state = 'SENT'
@@ -418,15 +524,25 @@ public class LeadFollowUpService {
                 """, (rs, i) -> new EmailSent(rs.getLong("id"), rs.getString("automation_key"), iso(rs.getTimestamp("created_at")),
                 iso(rs.getTimestamp("opened_at")), iso(rs.getTimestamp("email_clicked_at")), rs.getBoolean("has_content")),
                 business.id(), lead.squareCustomerId() == null ? "" : lead.squareCustomerId(), lead.email(), lead.email()));
-        // Academy funnel emails go out as Mailchimp campaigns; they are listed with a negative id (minus the touch id).
+        // Academy funnel emails: Mailchimp campaigns tracked per touch, listed with the negative touch id.
         out.addAll(jdbc.query("""
                 SELECT t.id, t.step, t.created_at, t.opened_at, t.clicked_at FROM academy_lead_touch t
                 WHERE t.channel = 'email' AND t.state = 'sent' AND t.campaign_id IS NOT NULL
-                  AND t.lead_id = (SELECT substring(external_id from 9)::bigint FROM lead_intake
-                                   WHERE id = ? AND business_id = ? AND external_id ~ '^academy:[0-9]+$')
-                """, (rs, i) -> new EmailSent(-rs.getLong("id"), FUNNEL_EMAIL.getOrDefault(rs.getString("step"), "Academy auto funnel: " + rs.getString("step")),
+                  AND t.lead_id IN (""" + ACADEMY_OF_LEAD + ")",
+                (rs, i) -> new EmailSent(-rs.getLong("id"), FUNNEL_EMAIL.getOrDefault(rs.getString("step"), "Academy auto funnel: " + rs.getString("step")),
                 iso(rs.getTimestamp("created_at")), iso(rs.getTimestamp("opened_at")), iso(rs.getTimestamp("clicked_at")), true),
-                lead.id(), business.id()));
+                business.id(), tail, tail, mailArr, mailArr));
+        // Every other single-recipient Mailchimp email (consultation follow-up, website nudge, ...).
+        if (!mails.isEmpty()) {
+            out.addAll(jdbc.query("""
+                    SELECT e.id, e.campaign_title, e.subject, e.sent_at FROM mailchimp_sent_email e
+                    WHERE e.business_id = ? AND lower(e.email) = ANY(?::text[])
+                      AND NOT EXISTS (SELECT 1 FROM winback_email_send w WHERE w.mailchimp_campaign_id = e.campaign_id)
+                      AND NOT EXISTS (SELECT 1 FROM academy_lead_touch t WHERE t.campaign_id = e.campaign_id)
+                    ORDER BY e.sent_at DESC LIMIT 100
+                    """, (rs, i) -> new EmailSent(-(LOG_ID_BASE + rs.getLong("id")), logKind(rs.getString("campaign_title"), rs.getString("subject")),
+                    iso(rs.getTimestamp("sent_at")), null, null, true), business.id(), (Object) mailArr));
+        }
         out.sort(java.util.Comparator.comparing(EmailSent::sentAt, java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())));
         return out;
     }
@@ -434,7 +550,7 @@ public class LeadFollowUpService {
     /** Stored HTML of one email sent to this lead (checked against the lead's customer id or email). */
     public String emailHtml(long leadId, long emailId) {
         LeadView lead = find(leadId);
-        if (emailId < 0) return funnelEmailHtml(lead, -emailId);
+        if (emailId < 0) return campaignEmailHtml(lead, -emailId);
         List<String> html = jdbc.queryForList("""
                 SELECT content_html FROM winback_email_send WHERE id = ? AND business_id = ? AND content_html IS NOT NULL
                   AND (square_customer_id = ? OR (?::text IS NOT NULL AND lower(email_address) = lower(?::text)))
@@ -444,13 +560,17 @@ public class LeadFollowUpService {
         return html.get(0);
     }
 
-    private String funnelEmailHtml(LeadView lead, long touchId) {
-        List<String> campaigns = jdbc.queryForList("""
-                SELECT t.campaign_id FROM academy_lead_touch t
-                WHERE t.id = ? AND t.campaign_id IS NOT NULL
-                  AND t.lead_id = (SELECT substring(external_id from 9)::bigint FROM lead_intake
-                                   WHERE id = ? AND business_id = ? AND external_id ~ '^academy:[0-9]+$')
-                """, String.class, touchId, lead.id(), business.id());
+    private String campaignEmailHtml(LeadView lead, long code) {
+        String[] mailArr = emailsOf(lead).toArray(new String[0]);
+        String tail = phoneTail(lead);
+        List<String> campaigns;
+        if (code > LOG_ID_BASE) {
+            campaigns = jdbc.queryForList("SELECT campaign_id FROM mailchimp_sent_email WHERE id = ? AND business_id = ? AND lower(email) = ANY(?::text[])",
+                    String.class, code - LOG_ID_BASE, business.id(), (Object) mailArr);
+        } else {
+            campaigns = jdbc.queryForList("SELECT t.campaign_id FROM academy_lead_touch t WHERE t.id = ? AND t.campaign_id IS NOT NULL AND t.lead_id IN ("
+                    + ACADEMY_OF_LEAD + ")", String.class, code, business.id(), tail, tail, mailArr, mailArr);
+        }
         var config = mailchimpConfigs.findByBusinessId(business.id()).filter(com.salonreview.domain.MailchimpConfig::isConfigured).orElse(null);
         if (campaigns.isEmpty() || config == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such email");
         try {

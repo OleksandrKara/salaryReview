@@ -47,11 +47,11 @@ function recordingUrl(payload: Record<string, string> | null): string | null {
   return null;
 }
 
-function Details({ payload, language }: { payload: Record<string, string>; language: Language | null }) {
+function Details({ payload, language, open }: { payload: Record<string, string>; language: Language | null; open?: boolean }) {
   const entries = Object.entries(payload).filter(([, v]) => !/^https:\/\//i.test(v) || !/record|audio|mp3/i.test(v));
   if (entries.length === 0) return null;
   return (
-    <details className="mt-1 text-xs text-zinc-600">
+    <details open={open} className="mt-1 text-xs text-zinc-600">
       <summary className="cursor-pointer">{t(language, 'leadDetails')}</summary>
       <dl className="mt-1 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5">
         {entries.map(([k, v]) => (<div key={k} className="contents"><dt className="text-zinc-500">{k}</dt><dd className="break-all">{v}</dd></div>))}
@@ -64,7 +64,7 @@ type Kind = 'contact' | 'sms' | 'email' | 'visit' | 'note' | 'system';
 type Item = {
   key: string; at: string; kind: Kind; label: string; text?: string | null; by?: string | null;
   touchId?: number; payload?: Record<string, string> | null; inbound?: boolean; emailId?: number;
-  opened?: boolean; clicked?: boolean; hasContent?: boolean; tone?: string; future?: boolean;
+  opened?: boolean; clicked?: boolean; hasContent?: boolean; tone?: string; future?: boolean; openDetails?: boolean;
 };
 type PanelTab = 'timeline' | 'notes' | 'visits' | 'emails' | 'web';
 type Filter = 'all' | Kind;
@@ -153,7 +153,11 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
   const overdue = lead.callbackAt != null && new Date(lead.callbackAt).getTime() <= now && (lead.status === 'NEW' || lead.status === 'CONTACTED');
 
   const items: Item[] = [
-    ...data.touches.map((x): Item => ({
+    ...data.forms.map((f): Item => {
+      const { Form: kindName, ...fields } = f.fields;
+      return { key: `f${f.key}`, at: f.at, kind: 'contact', label: `${t(language, 'crmFormEvent')}: ${kindName ?? ''}`, payload: fields, openDetails: true };
+    }),
+    ...data.touches.filter((x) => !(x.channel === 'Academy' && data.forms.some((f) => f.kind === 'academy' && Math.abs(new Date(f.at).getTime() - new Date(x.createdAt).getTime()) < 10 * 60000))).map((x): Item => ({
       key: `t${x.id}`, touchId: x.id, at: x.createdAt, kind: 'contact', label: `${t(language, 'leadEventTouch')}: ${x.channel}`,
       text: [x.source, x.detail].filter(Boolean).join(' · '), payload: x.payload,
     })),
@@ -407,7 +411,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
                       {r.touchId != null && recordingUrl(r.payload ?? null) && (
                         <audio controls preload="none" src={`/api/leads/recording/${r.touchId}`} className="mt-1 h-9 max-w-full" />
                       )}
-                      {r.payload && <Details payload={r.payload} language={language} />}
+                      {r.payload && <Details payload={r.payload} language={language} open={r.openDetails} />}
                     </div>
                   </div>
                 </li>

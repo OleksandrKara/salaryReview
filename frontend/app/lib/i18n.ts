@@ -556,6 +556,7 @@ const STRINGS = {
   crmLastVisit: { EN: 'Last visit', RU: 'Последний визит' },
   crmNextVisit: { EN: 'Next appointment', RU: 'Ближайшая запись' },
   crmTips: { EN: 'tips', RU: 'чаевые' },
+  crmFormEvent: { EN: 'Form submitted', RU: 'Отправлена форма' },
   crmPaymentEvent: { EN: 'Payment received', RU: 'Оплата получена' },
   crmPaid: { EN: 'Paid', RU: 'Оплачено' },
   crmWith: { EN: 'with', RU: 'мастер' },
