@@ -1,5 +1,6 @@
 'use client';
 
+import FlagIcon from '../FlagIcon';
 import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { t } from '../../../lib/i18n';
@@ -183,7 +184,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
         const [code, ...rest] = x.text.split(': ');
         text = LOST_REASONS.includes(code) ? [t(language, `leadLost_${code}` as 'leadLost_PRICE'), ...rest].join(': ') : x.text;
       }
-      if (x.type === 'CALLBACK' && x.text) text = fmt(x.text, language);
+      if ((x.type === 'CALLBACK' || x.type === 'LAPSED') && x.text) text = fmt(x.text, language);
       return { key: `e${x.id}`, at: x.createdAt, kind: manual ? 'note' : 'system', label, text, by: x.createdBy };
     }),
     ...data.sms.map((m): Item => ({
@@ -195,7 +196,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
     })),
     ...data.appointments.flatMap((a) => (a.startAt ? [{ ...a, startAt: a.startAt }] : [])).map((a): Item => ({
       key: `a${a.id}`, at: a.startAt, kind: 'visit', label: `${t(language, 'crmApptEvent')}: ${APPT_STATUSES.includes(a.status) ? t(language, `leadAppt_${a.status}` as 'leadAppt_ACCEPTED') : a.status}`,
-      text: [a.services, a.technician ? `${t(language, 'crmWith')} ${a.technician}` : null, a.paid != null && a.paid > 0 ? `${t(language, 'crmPaid')} ${money(a.paid)}` : null].filter(Boolean).join(' · '),
+      text: [a.services, a.consultKind ? t(language, a.consultKind === 'ONLINE' ? 'crmConsultOnline' : 'crmConsultOffline') : null, a.technician ? `${t(language, 'crmWith')} ${a.technician}` : null, a.paid != null && a.paid > 0 ? `${t(language, 'crmPaid')} ${money(a.paid)}` : null].filter(Boolean).join(' · '),
       future: new Date(a.startAt).getTime() > now, tone: apptTone(a.status),
     })),
     ...(data.payments ?? []).map((p): Item => ({
@@ -265,7 +266,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
           {place && (
             <div className="shrink-0 text-right" data-testid="lead-place">
               <div className="flex items-center justify-end gap-2">
-                <span className="text-2xl leading-none" aria-hidden>{place.flag}</span>
+                <FlagIcon flag={place.flag} className="h-6 w-8 rounded-sm object-cover" />
                 <div className="text-sm font-medium leading-tight">
                   <div>{place.city ?? place.country}</div>
                   {place.city && <div className="text-xs font-normal text-zinc-500">{[place.region && place.countryCode === 'US' ? place.region : null, place.country].filter(Boolean).join(', ')}</div>}
@@ -295,6 +296,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
           )}
           {lead.academy && <span className="rounded bg-violet-100 px-2 py-1 text-xs text-violet-800">{t(language, 'crmAcademy')}</span>}
           {lead.consultState === 'UPCOMING' && lead.consultAt && <span className="rounded bg-sky-100 px-2 py-1 text-xs text-sky-800">{t(language, 'crmConsultUpcoming')} {fmt(lead.consultAt, language)}</span>}
+          {lead.consultState === 'NO_SHOW' && lead.consultAt && <span className="rounded bg-red-100 px-2 py-1 text-xs text-red-800">{t(language, 'crmConsultNoShow')} {fmt(lead.consultAt, language)}</span>}
           {lead.consultState === 'DONE' && lead.consultAt && <span className="rounded bg-orange-100 px-2 py-1 text-xs text-orange-800">{t(language, 'crmConsultDone')} {fmt(lead.consultAt, language)}</span>}
           {overdue && <span className="rounded bg-amber-100 px-2 py-1 text-xs text-amber-800">{t(language, 'leadReminderDue')}</span>}
         </div>
@@ -543,7 +545,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
                   <span className={APPT_PILL[apptTone(a.status)]}>{apptTone(a.status) === 'us' || apptTone(a.status) === 'bad' ? '\u2715 ' : ''}{APPT_STATUSES.includes(a.status) ? t(language, `leadAppt_${a.status}` as 'leadAppt_ACCEPTED') : a.status}</span>
                   {a.paid != null && a.paid > 0 && <span className="ml-auto font-medium tabular-nums">{t(language, 'crmPaid')} {money(a.paid)}</span>}
                 </div>
-                {a.services && <div className="text-zinc-700">{a.services}</div>}
+                {a.services && <div className="text-zinc-700">{a.services}{a.consultKind ? ` (${t(language, a.consultKind === 'ONLINE' ? 'crmConsultOnline' : 'crmConsultOffline')})` : ''}</div>}
                 {(a.technician || a.minutes) && (
                   <div className="text-xs text-zinc-500">
                     {a.technician ? `${t(language, 'crmWith')} ${a.technician}` : ''}{a.technician && a.minutes ? ' · ' : ''}{a.minutes ? `${a.minutes} ${language === 'RU' ? 'мин' : 'min'}` : ''}

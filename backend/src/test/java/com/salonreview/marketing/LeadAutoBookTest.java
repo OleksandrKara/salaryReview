@@ -129,4 +129,69 @@ class LeadAutoBookTest {
         assertThat(status(never)).isEqualTo("NEW");
         assertThat(status(touched)).isEqualTo("NEW");
     }
+
+    @Test
+    void lastVisitIsTrackedOnlyForNailsAndSkipsClientsWithAnUpcomingVisit() {
+        long old = lead("+16195550031", "NEW", "C31", "100 days", false);
+        long upcoming = lead("+16195550032", "NEW", "C32", "100 days", false);
+        long consultOnly = lead("+16195550033", "NEW", "C33", "100 days", false);
+        booking("C31", "ACCEPTED", "PROC", "100 days", "-90 days");
+        booking("C32", "ACCEPTED", "PROC", "100 days", "-90 days");
+        booking("C32", "ACCEPTED", "PROC", "1 day", "5 days");
+        booking("C33", "ACCEPTED", CONSULT, "100 days", "-90 days");
+        assertThat(service.listFor(b, null)).extracting(LeadFollowUpService.LeadView::lastVisitAt).containsOnlyNulls();
+        LeadFollowUpService nails = org.mockito.Mockito.spy(service);
+        org.mockito.Mockito.doReturn(true).when(nails).tracksLastVisit(b);
+        var rows = nails.listFor(b, null).stream().collect(java.util.stream.Collectors.toMap(LeadFollowUpService.LeadView::id, v -> java.util.Optional.ofNullable(v.lastVisitAt())));
+        assertThat(rows.get(old)).isPresent();
+        assertThat(rows.get(upcoming)).isEmpty();
+        assertThat(rows.get(consultOnly)).isEmpty();
+    }
+
+    @Test
+    void lapsedClientsComeBackAsCallbacksOnceAndOnlyANewBookingBooksThemAgain() {
+        long lapsed = lead("+16195550041", "BOOKED", "C41", "100 days", false);
+        long recent = lead("+16195550042", "BOOKED", "C42", "100 days", false);
+        long upcoming = lead("+16195550043", "BOOKED", "C43", "100 days", false);
+        booking("C41", "ACCEPTED", "PROC", "99 days", "-40 days");
+        booking("C42", "ACCEPTED", "PROC", "99 days", "-10 days");
+        booking("C43", "ACCEPTED", "PROC", "99 days", "-40 days");
+        booking("C43", "ACCEPTED", "PROC", "1 day", "5 days");
+        LeadFollowUpService nails = org.mockito.Mockito.spy(service);
+        org.mockito.Mockito.doReturn(true).when(nails).tracksLastVisit(b);
+
+        assertThat(nails.reopenLapsed(b, java.time.Instant.now())).isEqualTo(1);
+        assertThat(status(lapsed)).isEqualTo("CONTACTED");
+        assertThat(status(recent)).isEqualTo("BOOKED");
+        assertThat(status(upcoming)).isEqualTo("BOOKED");
+        assertThat(jdbc.queryForObject("SELECT callback_at IS NOT NULL AND callback_reminded FROM lead_intake WHERE id = ?", Boolean.class, lapsed)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM lead_events WHERE lead_id = ? AND type = 'LAPSED'", Integer.class, lapsed)).isEqualTo(1);
+
+        nails.autoBook();
+        assertThat(status(lapsed)).isEqualTo("CONTACTED");
+        assertThat(nails.reopenLapsed(b, java.time.Instant.now())).isZero();
+
+        booking("C41", "ACCEPTED", "PROC", "0 seconds", "3 days");
+        nails.autoBook();
+        assertThat(status(lapsed)).isEqualTo("BOOKED");
+    }
+
+    @Test
+    void statusChangesNeverMakeALeadLookFresher() {
+        long old = lead("+16195550021", "NEW", "C21", "30 days", false);
+        long recent = lead("+16195550022", "CONTACTED", "C22", "2 days", false);
+        jdbc.update("UPDATE lead_intake SET status = 'CONTACTED', updated_by = 'x', updated_at = now() WHERE id = ?", old);
+        var rows = service.listFor(b, "CONTACTED");
+        assertThat(rows).extracting(LeadFollowUpService.LeadView::id).containsExactly(recent, old);
+    }
+
+    @Test
+    void sameEmailWithoutPhoneJoinsTheRowThatHasOne() {
+        jdbc.update("INSERT INTO lead_intake (business_id, channel, source, phone_number, email, outcome, created_at) VALUES (?, 'Form', 'Other', '+995591418548', 'N@Example.com', 'MATCHED', now() - interval '2 days')", b);
+        jdbc.update("INSERT INTO lead_intake (business_id, channel, source, email, outcome, created_at) VALUES (?, 'Academy', 'AI search', 'n@example.com', 'MATCHED', now() - interval '1 day')", b);
+        jdbc.update("INSERT INTO lead_intake (business_id, channel, source, email, outcome) VALUES (?, 'Form', 'Other', 'other@example.com', 'MATCHED')", b);
+        var leads = service.listFor(b, "NEW");
+        assertThat(leads).hasSize(2);
+        assertThat(leads).filteredOn(l -> l.touches() == 2).hasSize(1).allMatch(LeadFollowUpService.LeadView::academy);
+    }
 }

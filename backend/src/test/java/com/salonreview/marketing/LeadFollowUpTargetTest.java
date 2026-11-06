@@ -16,7 +16,7 @@ class LeadFollowUpTargetTest {
 
     private static LeadView lead(String status, String callbackAt, String activityAt, String consultState, String consultAt, int attempts) {
         return new LeadView(1, "Call", "Google", "+15550001", null, "L", null, status, callbackAt, activityAt, activityAt,
-                1, null, null, null, null, false, null, null, null, activityAt, false, consultState, consultAt, attempts, false);
+                1, null, null, null, null, false, null, null, null, activityAt, false, consultState, consultAt, attempts, false, null);
     }
 
     @Test
@@ -71,6 +71,12 @@ class LeadFollowUpTargetTest {
         assertNull(LeadFollowUpService.followUpTarget(first, null, Instant.parse("2026-11-05T19:00:00Z"), NOW));
         LeadView withCallback = lead("CONTACTED", "2026-11-09T18:00:00Z", "2026-11-05T10:00:00Z", "DONE", "2026-11-05T18:00:00Z", 0);
         assertNull(LeadFollowUpService.followUpTarget(withCallback, null, null, NOW));
+    }
+
+    @Test
+    void missedConsultationGetsTheSameFollowUp() {
+        LeadView missed = lead("NEW", null, "2026-11-05T10:00:00Z", "NO_SHOW", "2026-11-05T18:00:00Z", 0);
+        assertEquals(Instant.parse("2026-11-06T18:00:00Z"), LeadFollowUpService.followUpTarget(missed, null, null, NOW));
     }
 
     @Test

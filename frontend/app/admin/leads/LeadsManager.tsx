@@ -8,12 +8,13 @@ import OutdatedPanel, { LockIcon } from './OutdatedPanel';
 import { t } from '../../lib/i18n';
 import type { Language, Lead, LeadFunnel, LeadListBadge } from '../../lib/types';
 
-type Tab = 'ACTION' | 'CONSULT' | 'CONTACTED' | 'BOOKED' | 'LOST' | 'SPAM' | 'ALL';
+type Tab = 'ACTION' | 'CONSULT' | 'LAPSED' | 'CONTACTED' | 'BOOKED' | 'LOST' | 'SPAM' | 'ALL';
 const OUTDATED = 'OUTDATED' as const;
 type AnyTab = Tab | typeof OUTDATED;
-const TABS: Tab[] = ['ACTION', 'CONSULT', 'CONTACTED', 'BOOKED', 'LOST', 'SPAM', 'ALL'];
+const TABS: Tab[] = ['ACTION', 'CONSULT', 'LAPSED', 'CONTACTED', 'BOOKED', 'LOST', 'SPAM', 'ALL'];
 const DAY = 86_400_000;
 const COLD_AFTER_DAYS = 7;
+const LAPSED_AFTER_DAYS = 30;
 const STATUS_STYLE: Record<string, string> = {
   NEW: 'bg-blue-100 text-blue-800',
   CONTACTED: 'bg-zinc-100 text-zinc-700',
@@ -46,6 +47,10 @@ function isOverdue(l: Lead, now: number): boolean {
   return isActive(l) && l.callbackAt != null && new Date(l.callbackAt).getTime() <= now;
 }
 
+function isLapsed(l: Lead, now: number): boolean {
+  return isActive(l) && l.lastVisitAt != null && now - new Date(l.lastVisitAt).getTime() > LAPSED_AFTER_DAYS * DAY;
+}
+
 function needsAction(l: Lead, now: number): boolean {
   return isOverdue(l, now) || l.status === 'NEW';
 }
@@ -69,8 +74,18 @@ function buildSections(leads: Lead[], tab: Tab, now: number, lang: Language | nu
   if (tab === 'CONSULT') {
     const consultAt = (l: Lead) => (l.consultAt ? new Date(l.consultAt).getTime() : 0);
     return [
-      { key: 'stalled', title: t(lang, 'crmSecStalled'), tone: 'text-red-700', leads: leads.filter((l) => l.consultState === 'DONE').sort((a, b) => consultAt(b) - consultAt(a)) },
+      { key: 'stalled', title: t(lang, 'crmSecStalled'), tone: 'text-red-700', leads: leads.filter((l) => l.consultState === 'DONE' || l.consultState === 'NO_SHOW').sort((a, b) => consultAt(b) - consultAt(a)) },
       { key: 'upcoming', title: t(lang, 'crmSecConsultUpcoming'), tone: 'text-blue-700', leads: leads.filter((l) => l.consultState === 'UPCOMING').sort((a, b) => consultAt(a) - consultAt(b)) },
+    ].filter((s) => s.leads.length > 0);
+  }
+  if (tab === 'LAPSED') {
+    const visit = (l: Lead) => new Date(l.lastVisitAt ?? 0).getTime();
+    const ago = (l: Lead) => (now - visit(l)) / DAY;
+    const by = (lo: number, hi: number) => leads.filter((l) => ago(l) > lo && ago(l) <= hi).sort((a, b) => visit(b) - visit(a));
+    return [
+      { key: 'l1', title: t(lang, 'crmSecLapsed1'), tone: 'text-orange-700', leads: by(LAPSED_AFTER_DAYS, 60) },
+      { key: 'l2', title: t(lang, 'crmSecLapsed2'), tone: 'text-zinc-600', leads: by(60, 180) },
+      { key: 'l3', title: t(lang, 'crmSecLapsed3'), tone: 'text-zinc-500', leads: by(180, Infinity) },
     ].filter((s) => s.leads.length > 0);
   }
   if (tab === 'ALL') {
@@ -123,9 +138,10 @@ export default function LeadsManager({ initialLeads, language = null, restricted
   }, [leads, q, source, academyOnly]);
   const hasAcademy = useMemo(() => leads.some((l) => l.academy), [leads]);
   const hasConsult = useMemo(() => leads.some((l) => l.consultState), [leads]);
+  const hasLapsed = useMemo(() => leads.some((l) => isLapsed(l, now)), [leads, now]);
 
   const inTab = (l: Lead, x: Tab): boolean =>
-    x === 'ALL' ? l.status !== 'SPAM' : x === 'CONSULT' ? isActive(l) && l.consultState != null : x === 'ACTION' ? (l.status === 'NEW' || isOverdue(l, now)) : l.status === x;
+    x === 'ALL' ? l.status !== 'SPAM' : x === 'CONSULT' ? isActive(l) && l.consultState != null : x === 'LAPSED' ? isLapsed(l, now) : x === 'ACTION' ? (l.status === 'NEW' || isOverdue(l, now)) : l.status === x;
   const counts = useMemo(
     () => Object.fromEntries(TABS.map((x) => [x, base.filter((l) => inTab(l, x) && (x !== 'ACTION' || needsAction(l, now))).length])) as Record<Tab, number>,
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -167,6 +183,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
   const tabLabel = (x: Tab) =>
     x === 'ACTION' ? t(language, 'crmTabAction')
       : x === 'CONSULT' ? t(language, 'crmTabConsult')
+      : x === 'LAPSED' ? t(language, 'crmTabLapsed')
       : x === 'CONTACTED' ? t(language, 'crmSecProgress')
         : x === 'ALL' ? t(language, 'leadsFilterAll')
           : t(language, `leadStatus${x}` as 'leadStatusNEW');
@@ -194,7 +211,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {TABS.filter((x) => x !== 'CONSULT' || hasConsult).map((x) => (
+        {TABS.filter((x) => (x !== 'CONSULT' || hasConsult) && (x !== 'LAPSED' || hasLapsed)).map((x) => (
           <button
             key={x}
             onClick={() => setTab(x)}
@@ -251,7 +268,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
               const reason: { text: string; cls: string } | null =
                 !isActive(l) ? null
                 : l.closeReady ? { text: t(language, 'crmReasonClose'), cls: 'text-red-700' }
-                : overdue ? { text: `${l.consultState === 'DONE' ? t(language, 'crmReasonConsult') + '. ' : ''}${t(language, 'crmReasonOverdue')} ${late}`, cls: 'text-red-700' }
+                : overdue ? { text: `${l.consultState === 'DONE' || l.consultState === 'NO_SHOW' ? t(language, 'crmReasonConsult') + '. ' : isLapsed(l, now) ? t(language, 'crmReasonLapsed') + '. ' : ''}${t(language, 'crmReasonOverdue')} ${late}`, cls: 'text-red-700' }
                 : l.status === 'NEW' ? { text: `${t(language, 'crmReasonNew')} ${waiting}`, cls: 'text-blue-700' }
                 : null;
               const upcoming = !overdue && isActive(l) && l.callbackAt != null;
@@ -275,8 +292,14 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                       {l.consultState === 'UPCOMING' && l.consultAt && (
                         <span className="rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-800">{t(language, 'crmConsultUpcoming')} {fmt(l.consultAt, language)}</span>
                       )}
+                      {l.consultState === 'NO_SHOW' && l.consultAt && isActive(l) && (
+                        <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-800">{t(language, 'crmConsultNoShow')} {span(now - new Date(l.consultAt).getTime(), language)} {t(language, 'crmAgo')}</span>
+                      )}
                       {l.consultState === 'DONE' && l.consultAt && isActive(l) && (
                         <span className="rounded bg-orange-100 px-1.5 py-0.5 text-xs text-orange-800">{t(language, 'crmConsultDone')} {span(now - new Date(l.consultAt).getTime(), language)} {t(language, 'crmAgo')}</span>
+                      )}
+                      {l.lastVisitAt && isLapsed(l, now) && (
+                        <span className="rounded bg-orange-100 px-1.5 py-0.5 text-xs text-orange-800">{t(language, 'crmLastVisit')} {span(now - new Date(l.lastVisitAt).getTime(), language)} {t(language, 'crmAgo')}</span>
                       )}
                       {(funnels[l.id] ?? []).filter((f) => f.state !== 'NOT_APPLIED' || f.canApply).map((f) => (
                         <span key={f.key} className={`rounded-full px-1.5 py-0.5 text-xs ${FUNNEL_TONE[f.state]}`} title={t(language, `funnelName_${f.key}` as 'funnelName_academy')}>
