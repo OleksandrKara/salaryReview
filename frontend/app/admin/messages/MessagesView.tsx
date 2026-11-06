@@ -1154,6 +1154,17 @@ export default function MessagesView({
               {/* Visible on both mobile and desktop — unlike the info-panel toggle below (which
                   only matters on mobile, since desktop always shows that panel inline), unread/
                   copy/block have no other entry point on desktop. */}
+              <a
+                href={`/admin/leads/open?phone=${encodeURIComponent(selectedPhone)}`}
+                data-testid="thread-header-lead-link"
+                aria-label="Open lead card"
+                className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-zinc-900 px-3 text-xs font-semibold text-white hover:bg-zinc-700"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+                Lead
+              </a>
               <ConversationMenu
                 phoneNumber={selectedPhone}
                 blocked={selectedConversation?.blocked ?? false}
