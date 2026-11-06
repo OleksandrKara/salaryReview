@@ -22,6 +22,12 @@ public class LeadIntakeScheduler {
         followUp.autoBook();
     }
 
+    @Scheduled(cron = "0 7,22,37,52 * * * *", zone = "America/Los_Angeles")
+    @SchedulerLock(name = "leadFollowUpSchedule", lockAtMostFor = "PT9M", lockAtLeastFor = "PT1M")
+    public void scheduleFollowUps() {
+        followUp.scheduleFollowUps();
+    }
+
     @Scheduled(cron = "0 */10 * * * *", zone = "America/Los_Angeles")
     @SchedulerLock(name = "leadIntakeReconcile", lockAtMostFor = "PT9M", lockAtLeastFor = "PT1M")
     public void reconcile() {

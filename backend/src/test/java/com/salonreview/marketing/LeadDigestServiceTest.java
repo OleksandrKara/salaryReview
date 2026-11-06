@@ -30,6 +30,15 @@ class LeadDigestServiceTest {
     }
 
     @Test
+    void morningMentionsLeadsReadyToClose() {
+        LeadView l = lead(7, "Call", "CONTACTED", "2026-11-01T14:00:00Z", "2026-11-10T14:00:00Z", null);
+        LeadView ready = new LeadView(l.id(), l.channel(), l.source(), l.phoneNumber(), null, l.name(), null, l.status(), l.callbackAt(),
+                l.createdAt(), l.lastTouchAt(), 1, null, null, null, null, false, null, null, null, l.createdAt(), false, null, null, 3, true);
+        String text = LeadDigestService.morning(List.of(ready), DAY, NOW);
+        assertTrue(text.contains("Можно закрыть как Lost (нет ответа после попыток): 1"), text);
+    }
+
+    @Test
     void morningCountsOverdueNewAndStalledConsultations() {
         List<LeadView> all = List.of(
                 lead(1, "Call", "NEW", "2026-11-06T14:00:00Z", null, null),

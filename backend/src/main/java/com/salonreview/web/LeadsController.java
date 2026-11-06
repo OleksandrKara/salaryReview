@@ -49,13 +49,29 @@ public class LeadsController {
         return academyOnly(me) ? all.stream().filter(LeadView::academy).toList() : all;
     }
 
-    /** Leads that need a human now: new ones plus open ones whose callback is due. */
+    private record CachedCount(long at, int count) {}
+
+    private final java.util.concurrent.ConcurrentHashMap<String, CachedCount> counts = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Leads that need a human now: new ones from the last 7 days plus open ones whose callback is due. */
     @GetMapping("/action-count")
     public Map<String, Integer> actionCount(@AuthenticationPrincipal AppUserPrincipal me) {
-        java.time.Instant now = java.time.Instant.now();
-        int n = (int) list(null, me).stream().filter(l -> "NEW".equals(l.status())
-                || ("CONTACTED".equals(l.status()) && l.callbackAt() != null && !java.time.Instant.parse(l.callbackAt()).isAfter(now))).count();
+        String key = business.id() + ":" + academyOnly(me);
+        long nowMs = System.currentTimeMillis();
+        CachedCount hit = counts.get(key);
+        if (hit != null && nowMs - hit.at() < 30_000) return Map.of("count", hit.count());
+        java.time.Instant now = java.time.Instant.ofEpochMilli(nowMs);
+        int n = (int) list(null, me).stream().filter(l -> needsAction(l, now)).count();
+        counts.put(key, new CachedCount(nowMs, n));
         return Map.of("count", n);
+    }
+
+    public static boolean needsAction(LeadView l, java.time.Instant now) {
+        boolean overdue = ("NEW".equals(l.status()) || "CONTACTED".equals(l.status())) && l.callbackAt() != null
+                && !java.time.Instant.parse(l.callbackAt()).isAfter(now);
+        boolean fresh = "NEW".equals(l.status())
+                && java.time.Instant.parse(l.activityAt() != null ? l.activityAt() : l.createdAt()).isAfter(now.minus(java.time.Duration.ofDays(7)));
+        return overdue || fresh;
     }
 
     @GetMapping("/lost-report")
