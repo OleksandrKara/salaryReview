@@ -40,13 +40,17 @@ function isOverdue(l: Lead, now: number): boolean {
   return isActive(l) && l.callbackAt != null && new Date(l.callbackAt).getTime() <= now;
 }
 
+function needsAction(l: Lead, now: number): boolean {
+  return isOverdue(l, now) || (l.status === 'NEW' && now - activity(l) <= COLD_AFTER_DAYS * DAY);
+}
+
 type Section = { key: string; title: string; tone: string; leads: Lead[] };
 
 function buildSections(leads: Lead[], tab: Tab, now: number, lang: Language | null): Section[] {
   const cb = (l: Lead) => (l.callbackAt ? new Date(l.callbackAt).getTime() : Infinity);
   const recent = (a: Lead, b: Lead) => activity(b) - activity(a);
   if (tab === 'ACTION') {
-    const overdue = leads.filter((l) => isOverdue(l, now)).sort((a, b) => cb(a) - cb(b));
+    const overdue = leads.filter((l) => isOverdue(l, now)).sort((a, b) => Number(b.closeReady) - Number(a.closeReady) || cb(a) - cb(b));
     const rest = leads.filter((l) => !isOverdue(l, now) && l.status === 'NEW');
     const fresh = rest.filter((l) => now - activity(l) <= COLD_AFTER_DAYS * DAY).sort(recent);
     const cold = rest.filter((l) => now - activity(l) > COLD_AFTER_DAYS * DAY).sort(recent);
@@ -101,7 +105,7 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
   const inTab = (l: Lead, x: Tab): boolean =>
     x === 'ALL' ? l.status !== 'SPAM' : x === 'CONSULT' ? isActive(l) && l.consultState != null : x === 'ACTION' ? (l.status === 'NEW' || isOverdue(l, now)) : l.status === x;
   const counts = useMemo(
-    () => Object.fromEntries(TABS.map((x) => [x, base.filter((l) => inTab(l, x)).length])) as Record<Tab, number>,
+    () => Object.fromEntries(TABS.map((x) => [x, base.filter((l) => inTab(l, x) && (x !== 'ACTION' || needsAction(l, now))).length])) as Record<Tab, number>,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [base],
   );
@@ -188,7 +192,13 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
         )}
       </div>
 
-      {sections.length === 0 && <p className="text-sm text-zinc-500">{t(language, 'leadsEmpty')}</p>}
+      {activeTab === 'ACTION' && (
+        <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-600 ring-1 ring-zinc-200">{t(language, 'crmActionHint')}</p>
+      )}
+      {activeTab === 'ACTION' && counts.ACTION === 0 && (
+        <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{t(language, 'crmAllDone')}</p>
+      )}
+      {sections.length === 0 && activeTab !== 'ACTION' && <p className="text-sm text-zinc-500">{t(language, 'leadsEmpty')}</p>}
 
       {sections.map((s) => (
         <section key={s.key} className="flex flex-col gap-2">
@@ -201,6 +211,13 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
             {s.leads.map((l) => {
               const overdue = isOverdue(l, now);
               const waiting = l.status === 'NEW' ? span(now - activity(l), language) : null;
+              const late = overdue && l.callbackAt ? span(now - new Date(l.callbackAt).getTime(), language) : null;
+              const reason: { text: string; cls: string } | null =
+                !isActive(l) ? null
+                : l.closeReady ? { text: t(language, 'crmReasonClose'), cls: 'text-red-700' }
+                : overdue ? { text: `${l.consultState === 'DONE' ? t(language, 'crmReasonConsult') + '. ' : ''}${t(language, 'crmReasonOverdue')} ${late}`, cls: 'text-red-700' }
+                : l.status === 'NEW' ? { text: `${t(language, 'crmReasonNew')} ${waiting}`, cls: 'text-blue-700' }
+                : null;
               const upcoming = !overdue && isActive(l) && l.callbackAt != null;
               return (
                 <li key={l.id} className={`flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:gap-4 ${overdue ? 'bg-red-50/60' : ''}`}>
@@ -226,6 +243,11 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
                       )}
                       {waiting && <span className="text-xs text-zinc-500">{t(language, 'crmWaiting')} {waiting}</span>}
                     </div>
+                    {reason && (
+                      <div className={`mt-0.5 flex items-start gap-1.5 text-xs font-medium ${reason.cls}`}>
+                        <span aria-hidden className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-current" />{reason.text}
+                      </div>
+                    )}
                     <div className="truncate text-xs text-zinc-500">
                       {l.name && l.phoneNumber ? `${l.phoneNumber} · ` : ''}{l.source} · {l.channel}
                       {l.touches > 1 ? ` · ${l.touches} ${t(language, 'leadTouches')}` : ''} · {fmt(new Date(activity(l)).toISOString(), language)}
