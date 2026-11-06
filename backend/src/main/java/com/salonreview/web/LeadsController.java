@@ -45,6 +45,17 @@ public class LeadsController {
         return leads.detail(id);
     }
 
+    @GetMapping(value = "/{id}/emails/{emailId}", produces = "text/html")
+    public String emailHtml(@PathVariable long id, @PathVariable long emailId) {
+        return leads.emailHtml(id, emailId);
+    }
+
+    @GetMapping("/recording/{touchId}")
+    public ResponseEntity<org.springframework.core.io.Resource> recording(@PathVariable long touchId) {
+        return ResponseEntity.ok().contentType(org.springframework.http.MediaType.parseMediaType("audio/ogg"))
+                .body(new org.springframework.core.io.ByteArrayResource(leads.recordingBytes(touchId)));
+    }
+
     @PatchMapping("/{id}")
     public ResponseEntity<Void> update(@PathVariable long id, @RequestBody UpdateRequest req,
                                        @AuthenticationPrincipal AppUserPrincipal me) {

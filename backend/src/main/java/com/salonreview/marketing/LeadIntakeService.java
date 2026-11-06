@@ -295,12 +295,36 @@ public class LeadIntakeService {
 
     private void record(Lead lead, String label, String phone, String email, String outcome, String customerId,
                         boolean marked, String error) {
-        jdbc.update("""
+        int inserted = jdbc.update("""
                 INSERT INTO lead_intake (business_id, channel, source, traffic_source, phone_number, email, name, detail,
                     external_id, square_customer_id, outcome, marked, error, payload)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT DO NOTHING
                 """, lead.businessId(), lead.channel(), label, lead.trafficSource(), phone, email, lead.name(), lead.detail(),
                 lead.externalId(), customerId, outcome, marked, error, lead.payload());
+        if (inserted > 0 && !"Square".equals(lead.channel()) && !"SKIPPED_NO_CONTACT".equals(outcome)) {
+            reopen(lead.businessId(), phone, email);
+        }
+    }
+
+    /** A fresh action by the person (form, call, consultation, SMS) puts their lead back into NEW, wherever it was. */
+    private void reopen(long businessId, String phone, String email) {
+        String digits = phone == null ? "" : phone.replaceAll("\\D", "");
+        String key = !digits.isEmpty() ? digits : email == null || email.isBlank() ? null : email.toLowerCase();
+        if (key == null) return;
+        var ids = jdbc.queryForList("""
+                UPDATE lead_intake f SET status = 'NEW', callback_at = NULL, lost_reason = NULL, lost_comment = NULL,
+                       lost_at = NULL, updated_by = 'System', updated_at = now()
+                WHERE f.id = (SELECT id FROM lead_intake WHERE business_id = ? AND outcome <> 'DUPLICATE'
+                              AND COALESCE(NULLIF(regexp_replace(COALESCE(phone_number, ''), '\\D', '', 'g'), ''),
+                                           lower(NULLIF(email, ''))) = ?
+                              ORDER BY created_at, id LIMIT 1)
+                  AND f.status <> 'NEW'
+                RETURNING f.id
+                """, Long.class, businessId, key);
+        for (Long id : ids) {
+            jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'STATUS', 'NEW', 'System')",
+                    id, businessId);
+        }
     }
 }
