@@ -105,7 +105,7 @@ public class LeadFollowUpService {
     public record Event(long id, String type, String text, String createdBy, String createdAt) {}
 
     public record Appointment(String id, String status, String startAt, String services, String technician,
-                              Integer minutes, java.math.BigDecimal paid) {}
+                              Integer minutes, java.math.BigDecimal paid, String consultKind) {}
 
     public record Spend(java.math.BigDecimal total, java.math.BigDecimal tips, int visits, String firstVisit,
                         String lastVisit, String nextAppointment) {}
@@ -195,7 +195,7 @@ public class LeadFollowUpService {
                                              AND c.text IN ('LOST', 'BOOKED', 'SPAM')), 'epoch'))) att ON TRUE
             """.formatted(KEY);
 
-    /** Leads plus the person's latest consultation: UPCOMING, or DONE when no real procedure was booked after it. */
+    /** Leads plus the person's latest consultation: UPCOMING, NO_SHOW (client did not come), or DONE when no real procedure was booked after it. */
     private String leadsSql(long businessId, boolean includeOutdated) {
         String ids = ConsultationCatalog.isConsultationSql("p", consultations.ids(businessId));
         String visit = tracksLastVisit(businessId)
@@ -207,8 +207,8 @@ public class LeadFollowUpService {
                 : " LEFT JOIN LATERAL (SELECT NULL::timestamptz AS last_visit_at) v ON TRUE";
         return "SELECT x.*, c.consult_at, c.consult_state, v.last_visit_at FROM (" + LEADS_SELECT
                 + (includeOutdated ? "" : " WHERE f.status <> 'OUTDATED' ") + ") x LEFT JOIN LATERAL ("
-                + "SELECT b.start_at AS consult_at, CASE WHEN b.start_at > now() THEN 'UPCOMING' ELSE 'DONE' END AS consult_state "
-                + "FROM square_booking b WHERE b.business_id = ? AND b.square_customer_id = x.square_customer_id AND b.status = 'ACCEPTED' "
+                + "SELECT b.start_at AS consult_at, CASE WHEN b.status = 'NO_SHOW' THEN 'NO_SHOW' WHEN b.start_at > now() THEN 'UPCOMING' ELSE 'DONE' END AS consult_state "
+                + "FROM square_booking b WHERE b.business_id = ? AND b.square_customer_id = x.square_customer_id AND b.status IN ('ACCEPTED', 'NO_SHOW') "
                 + "AND " + ConsultationCatalog.isConsultationSql("b", consultations.ids(businessId))
                 + " AND NOT EXISTS (SELECT 1 FROM square_booking p WHERE p.business_id = b.business_id AND p.square_customer_id = b.square_customer_id "
                 + "AND p.status = 'ACCEPTED' AND p.start_at >= b.start_at AND NOT "
@@ -541,7 +541,11 @@ public class LeadFollowUpService {
             if (r[2] != null && "ACCEPTED".equals(r[1])) {
                 paid = paidByDay.get(java.time.OffsetDateTime.parse((String) r[2]).atZoneSameInstant(la).toLocalDate());
             }
-            out.add(new Appointment((String) r[0], (String) r[1], (String) r[2], services.isEmpty() ? null : services, tech, minutes, paid));
+            String kind = null;
+            if (!services.isEmpty() && services.toLowerCase().contains("consultation")) {
+                kind = services.toLowerCase().contains("online") ? "ONLINE" : "OFFLINE";
+            }
+            out.add(new Appointment((String) r[0], (String) r[1], (String) r[2], services.isEmpty() ? null : services, tech, minutes, paid, kind));
         }
         return out;
     }
@@ -1039,7 +1043,7 @@ public class LeadFollowUpService {
             Instant t = workingTime(inbound.plus(java.time.Duration.ofHours(UNANSWERED_HOURS)));
             if (current == null || current.isAfter(t)) return t;
         }
-        if (current == null && "DONE".equals(l.consultState()) && l.consultAt() != null) {
+        if (current == null && ("DONE".equals(l.consultState()) || "NO_SHOW".equals(l.consultState())) && l.consultAt() != null) {
             Instant consult = Instant.parse(l.consultAt());
             if (consult.isBefore(now.minus(java.time.Duration.ofDays(CONSULT_MAX_AGE_DAYS)))) return null;
             if (clearedAt != null && clearedAt.isAfter(consult)) return null;

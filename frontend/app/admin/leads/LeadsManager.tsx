@@ -74,7 +74,7 @@ function buildSections(leads: Lead[], tab: Tab, now: number, lang: Language | nu
   if (tab === 'CONSULT') {
     const consultAt = (l: Lead) => (l.consultAt ? new Date(l.consultAt).getTime() : 0);
     return [
-      { key: 'stalled', title: t(lang, 'crmSecStalled'), tone: 'text-red-700', leads: leads.filter((l) => l.consultState === 'DONE').sort((a, b) => consultAt(b) - consultAt(a)) },
+      { key: 'stalled', title: t(lang, 'crmSecStalled'), tone: 'text-red-700', leads: leads.filter((l) => l.consultState === 'DONE' || l.consultState === 'NO_SHOW').sort((a, b) => consultAt(b) - consultAt(a)) },
       { key: 'upcoming', title: t(lang, 'crmSecConsultUpcoming'), tone: 'text-blue-700', leads: leads.filter((l) => l.consultState === 'UPCOMING').sort((a, b) => consultAt(a) - consultAt(b)) },
     ].filter((s) => s.leads.length > 0);
   }
@@ -268,7 +268,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
               const reason: { text: string; cls: string } | null =
                 !isActive(l) ? null
                 : l.closeReady ? { text: t(language, 'crmReasonClose'), cls: 'text-red-700' }
-                : overdue ? { text: `${l.consultState === 'DONE' ? t(language, 'crmReasonConsult') + '. ' : ''}${t(language, 'crmReasonOverdue')} ${late}`, cls: 'text-red-700' }
+                : overdue ? { text: `${l.consultState === 'DONE' || l.consultState === 'NO_SHOW' ? t(language, 'crmReasonConsult') + '. ' : ''}${t(language, 'crmReasonOverdue')} ${late}`, cls: 'text-red-700' }
                 : l.status === 'NEW' ? { text: `${t(language, 'crmReasonNew')} ${waiting}`, cls: 'text-blue-700' }
                 : null;
               const upcoming = !overdue && isActive(l) && l.callbackAt != null;
@@ -291,6 +291,9 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                       {l.academy && <span className="rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-800">{t(language, 'crmAcademy')}</span>}
                       {l.consultState === 'UPCOMING' && l.consultAt && (
                         <span className="rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-800">{t(language, 'crmConsultUpcoming')} {fmt(l.consultAt, language)}</span>
+                      )}
+                      {l.consultState === 'NO_SHOW' && l.consultAt && isActive(l) && (
+                        <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-800">{t(language, 'crmConsultNoShow')} {span(now - new Date(l.consultAt).getTime(), language)} {t(language, 'crmAgo')}</span>
                       )}
                       {l.consultState === 'DONE' && l.consultAt && isActive(l) && (
                         <span className="rounded bg-orange-100 px-1.5 py-0.5 text-xs text-orange-800">{t(language, 'crmConsultDone')} {span(now - new Date(l.consultAt).getTime(), language)} {t(language, 'crmAgo')}</span>

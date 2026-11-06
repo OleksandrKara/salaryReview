@@ -74,6 +74,12 @@ class LeadFollowUpTargetTest {
     }
 
     @Test
+    void missedConsultationGetsTheSameFollowUp() {
+        LeadView missed = lead("NEW", null, "2026-11-05T10:00:00Z", "NO_SHOW", "2026-11-05T18:00:00Z", 0);
+        assertEquals(Instant.parse("2026-11-06T18:00:00Z"), LeadFollowUpService.followUpTarget(missed, null, null, NOW));
+    }
+
+    @Test
     void badgeCountsAllNewAndOverdue() {
         assertTrue(LeadsController.needsAction(lead("NEW", null, "2026-11-05T10:00:00Z", null, null, 0), NOW));
         assertTrue(LeadsController.needsAction(lead("NEW", null, "2026-10-01T10:00:00Z", null, null, 0), NOW));
