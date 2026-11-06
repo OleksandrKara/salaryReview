@@ -181,6 +181,10 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
       text: [a.services, a.technician ? `${t(language, 'crmWith')} ${a.technician}` : null, a.paid != null && a.paid > 0 ? `${t(language, 'crmPaid')} ${money(a.paid)}` : null].filter(Boolean).join(' · '),
       future: new Date(a.startAt).getTime() > now, tone: apptTone(a.status),
     })),
+    ...(data.payments ?? []).map((p): Item => ({
+      key: `p${p.id}`, at: p.at, kind: 'visit', label: t(language, 'crmPaymentEvent'),
+      text: [money(p.amount), p.tip > 0 ? `+ ${money(p.tip)} ${t(language, 'crmTips')}` : null, p.description].filter(Boolean).join(' · '),
+    })),
     ...funnelList.flatMap((f) => [
       ...f.steps.filter((s) => s.at && s.state !== 'PENDING' && s.state !== 'NOT_SENT').flatMap((s): Item[] => {
         const at = s.at as string;
@@ -465,7 +469,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
               </div>
             ))}
           </div>
-          {data.appointments.length === 0 && <p className="text-sm text-zinc-500">{t(language, 'leadAppointmentsEmpty')}</p>}
+          {data.appointments.length === 0 && (data.payments ?? []).length === 0 && <p className="text-sm text-zinc-500">{t(language, 'leadAppointmentsEmpty')}</p>}
           <ul className="flex flex-col gap-1">
             {data.appointments.map((a) => (
               <li key={a.id} className={`flex flex-col gap-0.5 rounded-lg px-3 py-2 text-sm ring-1 ${apptTone(a.status) === 'us' ? 'bg-red-50 ring-red-400' : apptTone(a.status) === 'bad' ? 'bg-red-50/50 ring-red-200' : 'ring-zinc-200'}`}>
@@ -480,6 +484,14 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
                     {a.technician ? `${t(language, 'crmWith')} ${a.technician}` : ''}{a.technician && a.minutes ? ' · ' : ''}{a.minutes ? `${a.minutes} ${language === 'RU' ? 'мин' : 'min'}` : ''}
                   </div>
                 )}
+              </li>
+            ))}
+            {(data.payments ?? []).map((p) => (
+              <li key={p.id} className="flex flex-wrap items-baseline gap-x-3 rounded-lg bg-green-50/60 px-3 py-2 text-sm ring-1 ring-green-200">
+                <span className="font-medium text-zinc-800">{fmt(p.at, language)}</span>
+                <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">{t(language, 'crmPaymentEvent')}</span>
+                {p.description && <span className="text-zinc-700">{p.description}</span>}
+                <span className="ml-auto font-medium tabular-nums">{money(p.amount)}</span>
               </li>
             ))}
           </ul>

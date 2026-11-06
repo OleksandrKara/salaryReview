@@ -74,9 +74,9 @@ class LeadFollowUpTargetTest {
     }
 
     @Test
-    void badgeCountsFreshNewAndOverdueOnly() {
+    void badgeCountsAllNewAndOverdue() {
         assertTrue(LeadsController.needsAction(lead("NEW", null, "2026-11-05T10:00:00Z", null, null, 0), NOW));
-        assertFalse(LeadsController.needsAction(lead("NEW", null, "2026-10-01T10:00:00Z", null, null, 0), NOW));
+        assertTrue(LeadsController.needsAction(lead("NEW", null, "2026-10-01T10:00:00Z", null, null, 0), NOW));
         assertTrue(LeadsController.needsAction(lead("NEW", "2026-11-06T10:00:00Z", "2026-10-01T10:00:00Z", null, null, 0), NOW));
         assertFalse(LeadsController.needsAction(lead("CONTACTED", "2026-11-07T10:00:00Z", "2026-11-05T10:00:00Z", null, null, 0), NOW));
         assertTrue(LeadsController.needsAction(lead("CONTACTED", "2026-11-06T10:00:00Z", "2026-11-05T10:00:00Z", null, null, 0), NOW));

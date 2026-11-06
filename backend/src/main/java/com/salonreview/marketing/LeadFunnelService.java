@@ -89,8 +89,14 @@ public class LeadFunnelService {
         Data data = load(businessId);
         Instant now = Instant.now();
         Map<Long, List<Funnel>> out = new HashMap<>();
-        for (LeadView l : views) out.put(l.id(), evaluate(businessId, l, data, now));
+        for (LeadView l : views) out.put(l.id(), evaluate(businessId, l, data, now).stream().filter(f -> !neverRan(f)).toList());
         return out;
+    }
+
+    /** A funnel whose first step was skipped and that sent nothing is noise for managers, so it is not shown. */
+    static boolean neverRan(Funnel f) {
+        return !f.steps().isEmpty() && "SKIPPED".equals(f.steps().get(0).state())
+                && f.steps().stream().noneMatch(s -> "DONE".equals(s.state()));
     }
 
     public List<Funnel> forLead(long businessId, LeadView lead) {

@@ -104,9 +104,9 @@ export default function FunnelPanel({ leadId, language, onChanged, onLoaded, aut
             {f.reason && f.state !== 'STOPPED' && (
               <p className="text-xs text-zinc-600">{t(language, `funnelReason_${f.reason}` as 'funnelReason_STAFF')}</p>
             )}
-            {f.steps.length > 0 && (
+            {f.steps.some((s) => s.state !== 'NOT_SENT') && (
               <ol className="flex flex-col gap-1.5">
-                {f.steps.map((s) => (
+                {f.steps.filter((s) => s.state !== 'NOT_SENT').map((s) => (
                   <li key={s.key} className="flex items-center gap-2 text-xs">
                     <span aria-hidden className={`h-2.5 w-2.5 shrink-0 rounded-full border ${STEP_DOT[s.state]}`} />
                     <span className={s.state === 'PENDING' ? 'text-zinc-500' : 'text-zinc-800'}>
