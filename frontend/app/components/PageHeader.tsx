@@ -52,9 +52,10 @@ export default async function PageHeader({
   // KB requests stay OWNER-only; the SMS unread badge is now also relevant to MANAGER (see
   // openspec/changes/lead-followup-and-manager-inbox — MANAGER gets read/reply access to the
   // same activity log via /admin/messages).
-  const [kbRequestOpenCount, smsUnreadCount] = await Promise.all([
+  const [kbRequestOpenCount, smsUnreadCount, leadsActionCount] = await Promise.all([
     r === 'OWNER' ? serverApi.getKbRequestOpenCount() : Promise.resolve(0),
     smsInbox ? serverApi.getSmsUnreadCount() : Promise.resolve(0),
+    leadsAccess ? serverApi.getLeadActionCount() : Promise.resolve(0),
   ]);
 
   return (
@@ -72,6 +73,7 @@ export default async function PageHeader({
         platformAdmin={platformAdmin}
         smsInbox={smsInbox}
         leadsAccess={leadsAccess}
+        leadsActionCount={leadsActionCount}
       />
     </div>
   );

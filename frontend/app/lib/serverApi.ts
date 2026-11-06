@@ -280,6 +280,16 @@ export const serverApi = {
 
   getLead: (id: number) => serverFetch<LeadDetail>(`/api/leads/${id}`),
 
+  getLeadActionCount: async (): Promise<number> => {
+    try {
+      const { count } = await serverFetch<{ count: number }>(`/api/leads/action-count`);
+      return count;
+    } catch (e) {
+      if (e && typeof e === 'object' && 'digest' in e && String(e.digest).startsWith('NEXT_REDIRECT')) throw e;
+      return 0;
+    }
+  },
+
   lookupLead: (phone: string) => serverFetch<{ id?: number }>(`/api/leads/lookup?phone=${encodeURIComponent(phone)}`),
 
   listMissedBookings: () => serverFetch<MissedBooking[]>(`/api/missed-bookings`),
