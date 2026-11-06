@@ -53,6 +53,8 @@ public class LeadFollowUpService {
     public LeadFollowUpService(JdbcTemplate jdbc, CurrentBusinessContext business, TelegramNotificationService telegram, GeoIpService geo,
                                SquareClientProvider squares, LeadIntakeService intake, ConsultationCatalog consultations,
                                com.salonreview.repo.MailchimpConfigRepository mailchimpConfigs, com.salonreview.sms.MailchimpClient mailchimpClient,
+                               MarketingContactsService contactsService, com.salonreview.repo.BlockedNumberRepository blockedNumbers,
+                               com.salonreview.sms.SmsMessageLogService smsLog,
                                @org.springframework.beans.factory.annotation.Value("${app.public-base-url}") String publicBaseUrl) {
         this.jdbc = jdbc;
         this.business = business;
@@ -64,7 +66,18 @@ public class LeadFollowUpService {
         this.consultations = consultations;
         this.mailchimpConfigs = mailchimpConfigs;
         this.mailchimpClient = mailchimpClient;
+        this.contactsService = contactsService;
+        this.blockedNumbers = blockedNumbers;
+        this.smsLog = smsLog;
     }
+
+    private final MarketingContactsService contactsService;
+    private final com.salonreview.repo.BlockedNumberRepository blockedNumbers;
+    private final com.salonreview.sms.SmsMessageLogService smsLog;
+
+    public record Place(String countryCode, String country, String city, String region, String flag, String scope) {}
+    public record Badges(boolean vip, Integer visitCount, boolean smsConsent, boolean negativeFeedback, boolean blocked,
+                         boolean optedOut, boolean spamFlag, boolean clickedGoogle, boolean clickedYelp, boolean clickedFeedback) {}
 
     public record LeadView(long id, String channel, String source, String phoneNumber, String email, String name,
                            String detail, String status, String callbackAt, String createdAt, String lastTouchAt,
@@ -99,7 +112,8 @@ public class LeadFollowUpService {
 
     public record LeadDetail(LeadView lead, List<Touch> touches, List<Event> events, List<Origin> origins,
                              List<Appointment> appointments, Spend spend, List<EmailSent> emails,
-                             List<Sms> sms, String squareNote, List<Payment> payments, List<Form> forms) {}
+                             List<Sms> sms, String squareNote, List<Payment> payments, List<Form> forms,
+                             Place place, Badges badges) {}
 
     /** A completed Square payment that is not part of a booked visit day (invoice, deposit, course payment). */
     public record Payment(String id, String at, java.math.BigDecimal amount, java.math.BigDecimal tip, String description) {}
@@ -203,7 +217,57 @@ public class LeadFollowUpService {
                 (rs, i) -> new Event(rs.getLong("id"), rs.getString("type"), rs.getString("text"),
                         rs.getString("created_by"), iso(rs.getTimestamp("created_at"))), id, business.id());
         return new LeadDetail(lead, touches, events, origins(lead), appointments(lead), spend(lead), emails(lead),
-                sms(lead), squareNote(lead), payments(lead), forms(lead, touches));
+                sms(lead), squareNote(lead), payments(lead), forms(lead, touches), place(lead), badges(lead));
+    }
+
+    /** Geo of the most recent website visit that has an IP; scope tells a manager whether the person is local. */
+    private Place place(LeadView lead) {
+        try {
+            String phone = lead.phoneNumber();
+            String email = lead.email() == null ? null : lead.email().toLowerCase();
+            if (phone == null && email == null) return null;
+            List<String> ips = jdbc.queryForList("SELECT ip_address FROM marketing.submissions "
+                    + "WHERE business_id = ? AND ip_address IS NOT NULL AND (customer_phone = ? OR (?::text IS NOT NULL AND lower(customer_email) = ?)) "
+                    + "ORDER BY occurred_at DESC LIMIT 3", String.class, business.id(), phone, email, email);
+            for (String ip : ips) {
+                GeoIpService.Place p = geo.locate(ip);
+                if (p == null) continue;
+                String scope = !"US".equals(p.countryCode()) ? "INTERNATIONAL" : "CA".equals(p.region()) ? "LOCAL" : "OUT_OF_STATE";
+                return new Place(p.countryCode(), p.country(), p.city(), p.region(), p.flag(), scope);
+            }
+        } catch (RuntimeException e) {
+            log.warn("Lead place lookup failed: {}", e.toString());
+        }
+        return null;
+    }
+
+    private Badges badges(LeadView lead) {
+        String phone = lead.phoneNumber();
+        if (phone == null) return null;
+        try {
+            Long biz = business.id();
+            List<String> one = List.of(phone);
+            MarketingContactsService.ContactNameInfo info = contactsService.resolveDisplayNames(one).get(phone);
+            String blockedSource = null;
+            boolean blocked = false;
+            for (com.salonreview.domain.BlockedNumber b : blockedNumbers.findByPhoneNumberIn(one)) {
+                blocked = true;
+                blockedSource = b.getSource();
+            }
+            boolean negative = Boolean.TRUE.equals(jdbc.queryForObject(
+                    "SELECT EXISTS (SELECT 1 FROM sms_message WHERE business_id = ? AND phone_number = ? AND negative_feedback_at IS NOT NULL)",
+                    Boolean.class, biz, phone));
+            return new Badges(info != null && info.vip(), info == null ? null : info.visitCount(),
+                    info != null && info.smsConsent(), negative, blocked,
+                    com.salonreview.domain.BlockedNumber.SOURCE_STOP_REQUEST.equals(blockedSource),
+                    !smsLog.phoneNumbersFlaggedAsSpam(biz, one).isEmpty(),
+                    !smsLog.phoneNumbersWithClickedLinkTarget(biz, one, com.salonreview.sms.CheckoutReviewLinks.GOOGLE_REVIEW_TARGET).isEmpty(),
+                    !smsLog.phoneNumbersWithClickedLinkTarget(biz, one, com.salonreview.sms.CheckoutReviewLinks.YELP_REVIEW_TARGET).isEmpty(),
+                    !smsLog.phoneNumbersWithClickedLinkTarget(biz, one, com.salonreview.sms.CheckoutReviewLinks.FEEDBACK_FORM_TARGET).isEmpty());
+        } catch (RuntimeException e) {
+            log.warn("Lead badges lookup failed: {}", e.toString());
+            return null;
+        }
     }
 
     private java.util.Map<String, String> parsePayload(String raw) {

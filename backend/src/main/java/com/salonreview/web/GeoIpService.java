@@ -47,20 +47,29 @@ public class GeoIpService {
         return sb.toString().trim();
     }
 
+    public record Place(String countryCode, String country, String city, String region, String flag) {}
+
+    public Place locate(String ip) {
+        if (ip == null || ip.isBlank()) return null;
+        String[] g = lookup(ip.trim());
+        if (g == null || g[0] == null) return null;
+        return new Place(g[0], g[1], g[2], g[3], flag(g[0]));
+    }
+
     private String[] lookup(String ip) {
         String[] hit = cache.get(ip);
         if (hit != null) return hit;
         try {
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create("https://ipwho.is/" + URLEncoder.encode(ip, StandardCharsets.UTF_8)
-                            + "?fields=success,country,country_code,city"))
+                            + "?fields=success,country,country_code,city,region_code"))
                     .timeout(Duration.ofSeconds(3)).GET().build();
             HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (res.statusCode() != 200) return null;
             JsonNode n = json.readTree(res.body());
             if (!n.path("success").asBoolean(false)) return null;
             String[] out = {normalizeCode(n.path("country_code").asText(null)), n.path("country").asText(null),
-                    n.path("city").asText(null)};
+                    n.path("city").asText(null), n.path("region_code").asText(null)};
             if (cache.size() >= MAX_CACHE) cache.clear();
             cache.put(ip, out);
             return out;

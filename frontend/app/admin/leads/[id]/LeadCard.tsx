@@ -3,10 +3,21 @@
 import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { t } from '../../../lib/i18n';
+import VipIcon from '../../messages/VipIcon';
+import SmsConsentIcon from '../../messages/SmsConsentIcon';
+import NegativeFeedbackIcon from '../../messages/NegativeFeedbackIcon';
+import BlockedIcon from '../../messages/BlockedIcon';
+import SpamFlagIcon from '../../messages/SpamFlagIcon';
+import GoogleReviewClickedIcon from '../../messages/GoogleReviewClickedIcon';
+import YelpReviewClickedIcon from '../../messages/YelpReviewClickedIcon';
+import FeedbackFormClickedIcon from '../../messages/FeedbackFormClickedIcon';
 import FunnelPanel, { stoppedLine, whyText } from '../FunnelPanel';
 import type { Language, LeadDetail, LeadFunnel, LeadStatus } from '../../../lib/types';
 
 const STATUSES: LeadStatus[] = ['NEW', 'CONTACTED', 'BOOKED', 'LOST', 'SPAM'];
+function Pill({ tone, icon, children }: { tone: string; icon: React.ReactNode; children: React.ReactNode }) {
+  return <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${tone}`}>{icon}{children}</span>;
+}
 function apptTone(status: string): 'ok' | 'us' | 'bad' | 'off' {
   if (status === 'ACCEPTED') return 'ok';
   if (status === 'CANCELLED_BY_SELLER') return 'us';
@@ -142,6 +153,8 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
   const money = (n: number) => `$${n.toLocaleString(language === 'RU' ? 'ru-RU' : 'en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
   const notes = data.events.filter((x) => x.type === 'NOTE').sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   const sp = data.spend;
+  const place = data.place;
+  const b = data.badges;
 
   const sourceLabel = (s: string) =>
     ['Unknown', 'Referral', 'Walk-in', 'Phone', 'Other'].includes(s)
@@ -233,8 +246,38 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
       <Link href="/admin/leads" className="text-sm text-zinc-600 underline">{t(language, 'leadsBack')}</Link>
 
       <section className="rounded-lg p-4 ring-1 ring-zinc-200">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
-          <h2 className="mr-1 break-words text-lg font-semibold">{title}</h2>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="break-words text-lg font-semibold">{title}</h2>
+            {b && (
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {b.vip && <Pill tone="bg-amber-50 text-amber-800" icon={<VipIcon size={12} />}>VIP{b.visitCount != null ? ` · ${b.visitCount} ${t(language, 'crmBadgeVisitsOf')}` : ''}</Pill>}
+                {b.smsConsent && <Pill tone="bg-emerald-50 text-emerald-800" icon={<SmsConsentIcon size={12} />}>{t(language, 'crmBadgeConsent')}</Pill>}
+                {b.negativeFeedback && <Pill tone="bg-red-50 text-red-800" icon={<NegativeFeedbackIcon size={12} />}>{t(language, 'crmBadgeNegative')}</Pill>}
+                {b.blocked && <Pill tone="bg-red-100 text-red-900" icon={<BlockedIcon optedOut={b.optedOut} size={12} />}>{t(language, b.optedOut ? 'crmBadgeOptedOut' : 'crmBadgeBlocked')}</Pill>}
+                {b.spamFlag && <Pill tone="bg-orange-50 text-orange-800" icon={<SpamFlagIcon size={12} />}>{t(language, 'crmBadgeSpam')}</Pill>}
+                {b.clickedGoogle && <Pill tone="bg-blue-50 text-blue-800" icon={<GoogleReviewClickedIcon size={12} />}>{t(language, 'crmBadgeGoogle')}</Pill>}
+                {b.clickedYelp && <Pill tone="bg-rose-50 text-rose-700" icon={<YelpReviewClickedIcon size={12} />}>{t(language, 'crmBadgeYelp')}</Pill>}
+                {b.clickedFeedback && <Pill tone="bg-teal-50 text-teal-700" icon={<FeedbackFormClickedIcon size={12} />}>{t(language, 'crmBadgeForm')}</Pill>}
+              </div>
+            )}
+          </div>
+          {place && (
+            <div className="shrink-0 text-right" data-testid="lead-place">
+              <div className="flex items-center justify-end gap-2">
+                <span className="text-2xl leading-none" aria-hidden>{place.flag}</span>
+                <div className="text-sm font-medium leading-tight">
+                  <div>{place.city ?? place.country}</div>
+                  {place.city && <div className="text-xs font-normal text-zinc-500">{[place.region && place.countryCode === 'US' ? place.region : null, place.country].filter(Boolean).join(', ')}</div>}
+                </div>
+              </div>
+              <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${place.scope === 'LOCAL' ? 'bg-emerald-100 text-emerald-800' : place.scope === 'OUT_OF_STATE' ? 'bg-amber-100 text-amber-800' : 'bg-violet-100 text-violet-800'}`}>
+                {t(language, place.scope === 'LOCAL' ? 'crmPlaceLocal' : place.scope === 'OUT_OF_STATE' ? 'crmPlaceOut' : 'crmPlaceIntl')}
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-2">
           {lead.sourceEditable ? (
             <select
               aria-label={t(language, 'leadSourcePick')}
@@ -258,8 +301,22 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
         <div className="mt-2 flex flex-col gap-0.5 text-sm text-zinc-700">
           {lead.phoneNumber && <div>{lead.phoneNumber}</div>}
           {lead.email && <div className="break-all">{lead.email}</div>}
-          <div className="text-xs text-zinc-500">{fmt(lead.createdAt, language)} · {lead.touches} {t(language, 'leadTouches')}</div>
+          <div className="text-xs text-zinc-500">{lead.touches} {t(language, 'leadTouches')}</div>
         </div>
+        <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {([
+            [t(language, 'crmCreated'), fmt(lead.createdAt, language), ''],
+            [t(language, 'crmVisits'), String(sp.visits), sp.visits === 0 ? t(language, 'crmNoVisitsYet') : sp.lastVisit ? `${t(language, 'crmLastVisit')}: ${fmt(sp.lastVisit, language)}` : ''],
+            [t(language, 'crmSpent'), money(sp.total), sp.tips > 0 ? `+ ${money(sp.tips)} ${t(language, 'crmTips')}` : ''],
+            [t(language, 'crmNextVisit'), sp.nextAppointment ? fmt(sp.nextAppointment, language) : '-', ''],
+          ] as const).map(([label, value, sub]) => (
+            <div key={label} className="rounded-lg bg-zinc-50 px-3 py-2">
+              <dt className="text-[11px] uppercase tracking-wide text-zinc-500">{label}</dt>
+              <dd className="text-sm font-semibold tabular-nums">{value}</dd>
+              {sub && <dd className="text-[11px] text-zinc-500">{sub}</dd>}
+            </div>
+          ))}
+        </dl>
         <div className="mt-3 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-2 sm:flex sm:flex-wrap">
           {lead.phoneNumber && <a href={`tel:${lead.phoneNumber}`} className={`${link} py-2.5 text-center`}>{t(language, 'crmCall')}</a>}
           {chat && <Link href={chat} className={`${link} py-2.5 text-center`}>{t(language, 'leadOpenChat')}</Link>}

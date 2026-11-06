@@ -2602,7 +2602,9 @@ export interface LeadOrigin {
   browser: string | null; ip: string | null; location: string | null; service: string | null;
 }
 export interface LeadEvent { id: number; type: string; text: string | null; createdBy: string | null; createdAt: string }
-export interface LeadDetail { lead: Lead; touches: LeadTouch[]; events: LeadEvent[]; origins: LeadOrigin[]; appointments: LeadAppointment[]; spend: LeadSpend; emails: LeadEmail[]; sms: LeadSms[]; squareNote: string | null; payments: LeadPayment[]; forms: LeadForm[] }
+export interface LeadDetail { lead: Lead; touches: LeadTouch[]; events: LeadEvent[]; origins: LeadOrigin[]; appointments: LeadAppointment[]; spend: LeadSpend; emails: LeadEmail[]; sms: LeadSms[]; squareNote: string | null; payments: LeadPayment[]; forms: LeadForm[]; place: LeadPlace | null; badges: LeadBadges | null }
+export interface LeadPlace { countryCode: string; country: string | null; city: string | null; region: string | null; flag: string; scope: 'LOCAL' | 'OUT_OF_STATE' | 'INTERNATIONAL' }
+export interface LeadBadges { vip: boolean; visitCount: number | null; smsConsent: boolean; negativeFeedback: boolean; blocked: boolean; optedOut: boolean; spamFlag: boolean; clickedGoogle: boolean; clickedYelp: boolean; clickedFeedback: boolean }
 export interface LeadForm { key: string; kind: string; at: string; fields: Record<string, string> }
 export interface LeadPayment { id: string; at: string; amount: number; tip: number; description: string | null }
 export interface LeadSms { id: number; direction: 'INBOUND' | 'OUTBOUND'; body: string; at: string; status: string | null }
