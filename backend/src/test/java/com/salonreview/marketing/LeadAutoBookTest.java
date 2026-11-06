@@ -175,4 +175,14 @@ class LeadAutoBookTest {
         nails.autoBook();
         assertThat(status(lapsed)).isEqualTo("BOOKED");
     }
+
+    @Test
+    void sameEmailWithoutPhoneJoinsTheRowThatHasOne() {
+        jdbc.update("INSERT INTO lead_intake (business_id, channel, source, phone_number, email, outcome, created_at) VALUES (?, 'Form', 'Other', '+995591418548', 'N@Example.com', 'MATCHED', now() - interval '2 days')", b);
+        jdbc.update("INSERT INTO lead_intake (business_id, channel, source, email, outcome, created_at) VALUES (?, 'Academy', 'AI search', 'n@example.com', 'MATCHED', now() - interval '1 day')", b);
+        jdbc.update("INSERT INTO lead_intake (business_id, channel, source, email, outcome) VALUES (?, 'Form', 'Other', 'other@example.com', 'MATCHED')", b);
+        var leads = service.listFor(b, "NEW");
+        assertThat(leads).hasSize(2);
+        assertThat(leads).filteredOn(l -> l.touches() == 2).hasSize(1).allMatch(LeadFollowUpService.LeadView::academy);
+    }
 }

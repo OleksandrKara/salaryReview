@@ -85,7 +85,7 @@ public class GeoIpService {
         return t.matches("[A-Z]{2}") && !t.equals("XX") && !t.equals("T1") ? t : null;
     }
 
-    static String flag(String code) {
+    public static String flag(String code) {
         if (code == null || code.length() != 2) return "";
         StringBuilder sb = new StringBuilder();
         for (char ch : code.toCharArray()) sb.appendCodePoint(0x1F1E6 + (ch - 'A'));
