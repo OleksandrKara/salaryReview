@@ -52,13 +52,19 @@ class LeadDigestServiceTest {
         List<LeadView> all = List.of(
                 lead(1, "Call", "BOOKED", "2026-11-06T15:00:00Z", null, null),
                 lead(2, "Form", "NEW", "2026-11-06T15:30:00Z", null, null));
-        var handled = new LeadDigestService.Handled(Map.of("BOOKED", 1, "CONTACTED", 2), 1, 1, Map.of("Lena", 3));
+        var handled = new LeadDigestService.Handled(Map.of("BOOKED", 1, "CONTACTED", 2), 1, 1, Map.of("Lena", Map.of("CONTACTED", 2, "BOOKED", 1)));
         String text = LeadDigestService.evening(all, handled, DAY, NOW);
         assertTrue(text.contains("Пришло лидов: 2"), text);
         assertTrue(text.contains("Обработано командой: 3"), text);
         assertTrue(text.contains("Записались сами (Square): 1"), text);
         assertTrue(text.contains("Сегодняшние без реакции: 1"), text);
         assertTrue(text.contains("Остаётся к обработке: 1"), text);
-        assertTrue(text.contains("Lena: 3"), text);
+        assertTrue(text.contains("Работал: Lena"), text);
+
+        var two = new LeadDigestService.Handled(Map.of("BOOKED", 1, "CONTACTED", 2), 0, 1,
+                Map.of("Lena", Map.of("CONTACTED", 2), "Kate", Map.of("BOOKED", 1)), Map.of("Kate", 1));
+        String multi = LeadDigestService.evening(all, two, DAY, NOW);
+        assertTrue(multi.contains("• Lena: связались 2"), multi);
+        assertTrue(multi.contains("• Kate: записались 1, перезвонов назначено 1"), multi);
     }
 }
