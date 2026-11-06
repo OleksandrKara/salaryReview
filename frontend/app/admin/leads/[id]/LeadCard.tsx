@@ -3,8 +3,8 @@
 import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { t } from '../../../lib/i18n';
-import FunnelPanel from '../FunnelPanel';
-import type { Language, LeadDetail, LeadStatus } from '../../../lib/types';
+import FunnelPanel, { stoppedLine, whyText } from '../FunnelPanel';
+import type { Language, LeadDetail, LeadFunnel, LeadStatus } from '../../../lib/types';
 
 const STATUSES: LeadStatus[] = ['NEW', 'CONTACTED', 'BOOKED', 'LOST', 'SPAM'];
 function apptTone(status: string): 'ok' | 'us' | 'bad' | 'off' {
@@ -95,7 +95,7 @@ function timeOnly(iso: string, lang: Language | null): string {
   return new Date(iso).toLocaleTimeString(lang === 'RU' ? 'ru-RU' : 'en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
-export default function LeadCard({ initial, language = null }: { initial: LeadDetail; language?: Language | null }) {
+export default function LeadCard({ initial, language = null, stopFunnel = null }: { initial: LeadDetail; language?: Language | null; stopFunnel?: string | null }) {
   const [data, setData] = useState(initial);
   const [losing, setLosing] = useState(false);
   const [lostReason, setLostReason] = useState('');
@@ -110,6 +110,7 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
   const [filter, setFilter] = useState<Filter>('all');
   const [shown, setShown] = useState(PAGE);
   const [now] = useState(() => Date.now());
+  const [funnelList, setFunnelList] = useState<LeadFunnel[]>([]);
   const noteRef = useRef<HTMLTextAreaElement>(null);
 
   async function reload() {
@@ -180,6 +181,24 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
       text: [a.services, a.technician ? `${t(language, 'crmWith')} ${a.technician}` : null, a.paid != null && a.paid > 0 ? `${t(language, 'crmPaid')} ${money(a.paid)}` : null].filter(Boolean).join(' · '),
       future: new Date(a.startAt).getTime() > now, tone: apptTone(a.status),
     })),
+    ...funnelList.flatMap((f) => [
+      ...f.steps.filter((s) => s.at && s.state !== 'PENDING' && s.state !== 'NOT_SENT').flatMap((s): Item[] => {
+        const at = s.at as string;
+        const near = (iso: string) => Math.abs(new Date(iso).getTime() - new Date(at).getTime()) < 10 * 60 * 1000;
+        const dup = s.state === 'DONE' && (s.channel === 'sms' ? data.sms.some((m) => m.direction === 'OUTBOUND' && near(m.at)) : data.emails.some((m) => near(m.sentAt)));
+        if (dup) return [];
+        const why = whyText(s.detail, language);
+        return [{
+          key: `f${f.key}${s.key}`, at, kind: s.state === 'DONE' ? (s.channel === 'sms' ? 'sms' : 'email') : 'system',
+          label: `${t(language, 'funnelTimeline')}: ${t(language, `funnelStep_${s.key}` as 'funnelStep_sms')}`,
+          text: `${t(language, `funnelStep${s.state}` as 'funnelStepDONE')}${why && s.state !== 'DONE' ? `: ${why}` : ''}`,
+        }];
+      }),
+      ...(f.stoppedAt && f.state === 'STOPPED' ? [{
+        key: `fs${f.key}`, at: f.stoppedAt, kind: 'system' as Kind, label: t(language, 'funnelTimelineStopped'),
+        text: [stoppedLine(f, language), f.stopNote].filter(Boolean).join('. '),
+      }] : []),
+    ]),
   ].sort((a, b) => (a.at < b.at ? 1 : -1));
 
   const counts = Object.fromEntries(FILTERS.map((f) => [f.id, f.id === 'all' ? items.length : items.filter((i) => i.kind === f.id).length])) as Record<Filter, number>;
@@ -316,7 +335,7 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
         {error && <p className="w-full text-sm text-red-600">{error}</p>}
       </section>
 
-      <FunnelPanel leadId={lead.id} language={language} onChanged={reload} />
+      <FunnelPanel leadId={lead.id} language={language} onChanged={reload} onLoaded={setFunnelList} autoStop={stopFunnel} />
 
       <nav aria-label="sections" className="sticky top-0 z-10 -mx-1 overflow-x-auto bg-white/95 px-1 py-1 backdrop-blur">
         <div className="flex gap-1">

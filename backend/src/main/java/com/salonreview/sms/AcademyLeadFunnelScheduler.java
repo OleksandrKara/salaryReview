@@ -134,7 +134,7 @@ public class AcademyLeadFunnelScheduler {
      * course added later) doesn't start a second funnel: staff see it in Telegram anyway. */
     private void markDuplicates(Instant now) {
         jdbc.update("""
-                UPDATE academy_lead l SET status = 'duplicate', stopped_at = now()
+                UPDATE academy_lead l SET status = 'duplicate', stopped_at = now(), stop_via = 'duplicate'
                 WHERE l.business_id = ? AND l.kind = 'course_request' AND l.status = 'new' AND l.created_at > ?
                   AND NOT EXISTS (SELECT 1 FROM academy_lead_touch t WHERE t.lead_id = l.id)
                   AND EXISTS (SELECT 1 FROM academy_lead o
@@ -167,7 +167,7 @@ public class AcademyLeadFunnelScheduler {
             }
             // Texted the studio since the request: a person is talking to them now.
             if (lead.phone() != null && contacts.textedUsSince(lead.phone(), BUSINESS_ID, lead.createdAt())) {
-                jdbc.update("UPDATE academy_lead SET status = 'replied', stopped_at = now() WHERE id = ? AND status = 'new'", lead.id());
+                jdbc.update("UPDATE academy_lead SET status = 'replied', stopped_at = now(), stop_via = 'client_reply' WHERE id = ? AND status = 'new'", lead.id());
                 return;
             }
             if (step.channel() == Channel.SMS) {

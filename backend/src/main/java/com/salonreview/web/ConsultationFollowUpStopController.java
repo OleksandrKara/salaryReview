@@ -4,6 +4,7 @@ import com.salonreview.domain.ConsultationFollowUp;
 import com.salonreview.repo.ConsultationFollowUpRepository;
 import com.salonreview.sms.ConsultationFollowUpLinks;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -20,8 +21,11 @@ public class ConsultationFollowUpStopController {
 
     private final ConsultationFollowUpRepository repository;
     private final ConsultationFollowUpLinks links;
+    private final JdbcTemplate jdbc;
 
-    public ConsultationFollowUpStopController(ConsultationFollowUpRepository repository, ConsultationFollowUpLinks links) {
+    public ConsultationFollowUpStopController(ConsultationFollowUpRepository repository, ConsultationFollowUpLinks links,
+                                              JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
         this.repository = repository;
         this.links = links;
     }
@@ -40,6 +44,7 @@ public class ConsultationFollowUpStopController {
             row.setStopReason(ConsultationFollowUp.STOP_STAFF);
             row.setStoppedAt(Instant.now());
             repository.save(row);
+            jdbc.update("UPDATE consultation_follow_up SET stop_via = 'telegram_link' WHERE id = ?", id);
         }
         return ResponseEntity.ok(page("Готово: " + name + " больше не получит сообщений после консультации."
                 + "<br>Done: " + name + " won't get any more follow-up messages."));

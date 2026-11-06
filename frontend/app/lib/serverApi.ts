@@ -292,6 +292,9 @@ export const serverApi = {
 
   lookupLead: (phone: string) => serverFetch<{ id?: number }>(`/api/leads/lookup?phone=${encodeURIComponent(phone)}`),
 
+  resolveFunnelLead: (kind: 'academy' | 'consult', id: number) =>
+    serverFetch<{ id?: number }>(`/api/leads/resolve?${kind}=${id}`),
+
   listMissedBookings: () => serverFetch<MissedBooking[]>(`/api/missed-bookings`),
 
   listManualAdjustments: () => serverFetch<ManualAdjustment[]>(`/api/manual-adjustments`),
