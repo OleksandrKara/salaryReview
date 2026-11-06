@@ -61,13 +61,16 @@ function buildSections(leads: Lead[], tab: Tab, now: number, lang: Language | nu
   const cb = (l: Lead) => (l.callbackAt ? new Date(l.callbackAt).getTime() : Infinity);
   const recent = (a: Lead, b: Lead) => activity(b) - activity(a);
   if (tab === 'ACTION') {
-    const overdue = leads.filter((l) => isOverdue(l, now)).sort((a, b) => Number(b.closeReady) - Number(a.closeReady) || cb(a) - cb(b));
+    const due = leads.filter((l) => isOverdue(l, now));
+    const overdue = due.filter((l) => !isLapsed(l, now)).sort((a, b) => Number(b.closeReady) - Number(a.closeReady) || cb(a) - cb(b));
+    const lapsed = due.filter((l) => isLapsed(l, now)).sort((a, b) => new Date(b.lastVisitAt ?? 0).getTime() - new Date(a.lastVisitAt ?? 0).getTime());
     const rest = leads.filter((l) => !isOverdue(l, now) && l.status === 'NEW');
     const fresh = rest.filter((l) => now - activity(l) <= COLD_AFTER_DAYS * DAY).sort(recent);
     const cold = rest.filter((l) => now - activity(l) > COLD_AFTER_DAYS * DAY).sort(recent);
     return [
-      { key: 'overdue', title: t(lang, 'crmSecOverdue'), tone: 'text-red-700', leads: overdue },
       { key: 'new', title: t(lang, 'crmSecNew'), tone: 'text-blue-700', leads: fresh },
+      { key: 'overdue', title: t(lang, 'crmSecOverdue'), tone: 'text-red-700', leads: overdue },
+      { key: 'lapsed', title: t(lang, 'crmSecLapsedDue'), tone: 'text-orange-700', leads: lapsed },
       { key: 'cold', title: t(lang, 'crmSecCold'), tone: 'text-zinc-500', leads: cold },
     ].filter((s) => s.leads.length > 0);
   }
@@ -278,8 +281,10 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="truncate font-medium">{l.name ?? l.phoneNumber ?? l.email}</span>
                       <LeadIcons b={badges[l.id]} language={language} />
-                      <span className={`rounded px-1.5 py-0.5 text-xs ${STATUS_STYLE[l.status]}`}>{t(language, `leadStatus${l.status}` as 'leadStatusNEW')}</span>
-                      {overdue && l.callbackAt && (
+                      {!(overdue && l.status === 'CONTACTED') && (
+                        <span className={`rounded px-1.5 py-0.5 text-xs ${STATUS_STYLE[l.status]}`}>{t(language, `leadStatus${l.status}` as 'leadStatusNEW')}</span>
+                      )}
+                      {overdue && l.callbackAt && !isLapsed(l, now) && (
                         <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-800">{t(language, 'crmCallbackAt')} {fmt(l.callbackAt, language)}</span>
                       )}
                       {upcoming && l.callbackAt && (
@@ -299,7 +304,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                         <span className="rounded bg-orange-100 px-1.5 py-0.5 text-xs text-orange-800">{t(language, 'crmConsultDone')} {span(now - new Date(l.consultAt).getTime(), language)} {t(language, 'crmAgo')}</span>
                       )}
                       {l.lastVisitAt && isLapsed(l, now) && (
-                        <span className="rounded bg-orange-100 px-1.5 py-0.5 text-xs text-orange-800">{t(language, 'crmLastVisit')} {span(now - new Date(l.lastVisitAt).getTime(), language)} {t(language, 'crmAgo')}</span>
+                        <span className="rounded bg-orange-100 px-1.5 py-0.5 text-xs text-orange-800">{t(language, 'crmLastVisit')} {fmt(l.lastVisitAt, language).replace(/,? \d+:\d+.*$/, '')} ({span(now - new Date(l.lastVisitAt).getTime(), language)} {t(language, 'crmAgo')})</span>
                       )}
                       {(funnels[l.id] ?? []).filter((f) => f.state !== 'NOT_APPLIED' || f.canApply).map((f) => (
                         <span key={f.key} className={`rounded-full px-1.5 py-0.5 text-xs ${FUNNEL_TONE[f.state]}`} title={t(language, `funnelName_${f.key}` as 'funnelName_academy')}>
