@@ -146,7 +146,10 @@ public class LeadIntakeService {
             if (lead.externalId() != null) {
                 List<String> seen = jdbc.queryForList("SELECT outcome FROM lead_intake WHERE business_id = ? AND channel = ? AND external_id = ?",
                         String.class, lead.businessId(), lead.channel(), lead.externalId());
-                if (!seen.isEmpty()) return new Result("DUPLICATE", null, false);
+                if (!seen.isEmpty()) {
+                    mergePayload(lead);
+                    return new Result("DUPLICATE", null, false);
+                }
             }
             if (phone == null && email == null) {
                 record(lead, label, phone, email, "SKIPPED_NO_CONTACT", null, false, null);
@@ -247,6 +250,23 @@ public class LeadIntakeService {
                     updated_at = now()
                 """, lead.businessId(), phone, splitName(lead.name())[0], email,
                 lead.trafficSource() == null ? label : lead.trafficSource(), lead.trafficSource() == null ? label : lead.trafficSource(), customerId);
+    }
+
+    /** A repeated webhook for the same call (e.g. Ringostat sending the recording link later) adds its fields to the stored touch. */
+    private void mergePayload(Lead lead) {
+        if (lead.payload() == null) return;
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+            List<String> rows = jdbc.queryForList("SELECT COALESCE(payload, '{}') FROM lead_intake WHERE business_id = ? AND channel = ? AND external_id = ?",
+                    String.class, lead.businessId(), lead.channel(), lead.externalId());
+            if (rows.isEmpty()) return;
+            java.util.Map<String, Object> merged = om.readValue(rows.get(0), new com.fasterxml.jackson.core.type.TypeReference<java.util.LinkedHashMap<String, Object>>() {});
+            merged.putAll(om.readValue(lead.payload(), new com.fasterxml.jackson.core.type.TypeReference<java.util.LinkedHashMap<String, Object>>() {}));
+            jdbc.update("UPDATE lead_intake SET payload = ? WHERE business_id = ? AND channel = ? AND external_id = ?",
+                    om.writeValueAsString(merged), lead.businessId(), lead.channel(), lead.externalId());
+        } catch (Exception e) {
+            log.warn("Lead payload merge failed: {}", e.toString());
+        }
     }
 
     private void record(Lead lead, String label, String phone, String email, String outcome, String customerId,
