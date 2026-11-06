@@ -186,7 +186,7 @@ public class LeadFollowUpService {
                    agg.customer AS square_customer_id, agg.academy, f.lost_reason, f.lost_comment,
                    (f.channel = 'Square' OR f.source = 'Unknown') AS source_editable,
                    n.text AS last_note, n.created_by AS last_note_by, n.created_at AS last_note_at,
-                   GREATEST(agg.last_touch_at, f.updated_at, n.created_at) AS activity_at,
+                   GREATEST(agg.last_touch_at, n.created_at) AS activity_at,
                    COALESCE(att.attempts, 0) AS attempts, att.first_attempt_at
             FROM (SELECT DISTINCT ON (k) * FROM keyed ORDER BY k, created_at, id) f JOIN agg ON agg.k = f.k
               LEFT JOIN square_customer sc ON sc.business_id = f.business_id AND sc.square_customer_id = agg.customer
