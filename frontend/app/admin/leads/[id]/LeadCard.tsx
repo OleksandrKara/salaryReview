@@ -9,7 +9,7 @@ const STATUSES: LeadStatus[] = ['NEW', 'CONTACTED', 'BOOKED', 'LOST'];
 const APPT_STATUSES = ['ACCEPTED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SELLER', 'NO_SHOW', 'DECLINED'];
 const LOST_REASONS = ['PRICE', 'NO_ANSWER', 'NOT_INTERESTED', 'BOUGHT_ELSEWHERE', 'NOT_ELIGIBLE', 'TOO_FAR', 'WRONG_NUMBER_SPAM', 'TIMING', 'OTHER'];
 const SOURCES = ['Instagram', 'Yelp', 'Google', 'Facebook', 'TikTok', 'Referral', 'Walk-in', 'Phone', 'Other', 'Unknown'];
-const ENTRY_TYPES = ['NOTE', 'CALL', 'AGREEMENT'] as const;
+const ENTRY_TYPES = ['CALL', 'AGREEMENT'] as const;
 const field = 'rounded border border-zinc-300 px-2 py-1.5 text-sm focus:border-zinc-500 focus:outline-none';
 const primary = 'rounded bg-zinc-900 px-3 py-1.5 text-sm text-white disabled:opacity-40';
 const link = 'rounded px-3 py-1.5 text-sm ring-1 ring-zinc-300 hover:bg-zinc-50';
@@ -48,7 +48,7 @@ function Details({ payload, language }: { payload: Record<string, string>; langu
   );
 }
 
-type Row = { key: string; at: string; label: string; text: string | null; by: string | null; tone: 'touch' | 'system' | 'manual'; payload?: Record<string, string> | null };
+type Row = { key: string; touchId?: number; at: string; label: string; text: string | null; by: string | null; tone: 'touch' | 'system' | 'manual'; payload?: Record<string, string> | null };
 
 export default function LeadCard({ initial, language = null }: { initial: LeadDetail; language?: Language | null }) {
   const [data, setData] = useState(initial);
@@ -57,8 +57,10 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
   const [lostComment, setLostComment] = useState('');
   const { lead } = data;
   const [callback, setCallback] = useState(toLocalInput(lead.callbackAt));
-  const [entryType, setEntryType] = useState<(typeof ENTRY_TYPES)[number]>('NOTE');
+  const [entryType, setEntryType] = useState<(typeof ENTRY_TYPES)[number]>('CALL');
   const [entry, setEntry] = useState('');
+  const [note, setNote] = useState('');
+  const [mailId, setMailId] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -82,6 +84,16 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
     if (await send(`/api/leads/${lead.id}/events`, 'POST', { type: entryType, text: entry })) setEntry('');
   }
 
+  async function addNote(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (!note.trim()) return;
+    if (await send(`/api/leads/${lead.id}/events`, 'POST', { type: 'NOTE', text: note.trim() })) setNote('');
+  }
+
+  const money = (n: number) => `$${n.toLocaleString(language === 'RU' ? 'ru-RU' : 'en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  const notes = data.events.filter((x) => x.type === 'NOTE').sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const sp = data.spend;
+
   const sourceLabel = (s: string) =>
     ['Unknown', 'Referral', 'Walk-in', 'Phone', 'Other'].includes(s)
       ? t(language, `leadSrc_${s.replace('-', '_')}` as 'leadSrc_Other')
@@ -93,10 +105,10 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
 
   const rows: Row[] = [
     ...data.touches.map((x) => ({
-      key: `t${x.id}`, at: x.createdAt, label: `${t(language, 'leadEventTouch')}: ${x.channel}`,
+      key: `t${x.id}`, touchId: x.id, at: x.createdAt, label: `${t(language, 'leadEventTouch')}: ${x.channel}`,
       text: [x.source, x.detail].filter(Boolean).join(' · '), by: null, tone: 'touch' as const, payload: x.payload,
     })),
-    ...data.events.map((x) => {
+    ...data.events.filter((x) => x.type !== 'NOTE').map((x) => {
       const manual = x.type === 'NOTE' || x.type === 'CALL' || x.type === 'AGREEMENT';
       const label = manual
         ? t(language, `leadEntry${x.type}` as 'leadEntryNOTE')
@@ -203,21 +215,104 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
         )}
       </section>
 
+      <section className="flex flex-col gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">{t(language, 'crmNotes')}</h3>
+        <form onSubmit={addNote} className="flex flex-col gap-2">
+          <textarea
+            id="lead-note"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) addNote(); }}
+            rows={3}
+            placeholder={t(language, 'crmNotePlaceholder')}
+            className={`${field} w-full resize-y`}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs text-zinc-500">{t(language, 'crmNoteHint')}</span>
+            <button type="submit" className={primary} disabled={busy || !note.trim()}>{t(language, 'crmNoteSave')}</button>
+          </div>
+        </form>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        {notes.length === 0 && <p className="text-sm text-zinc-500">{t(language, 'crmNotesEmpty')}</p>}
+        <ul className="flex flex-col gap-2">
+          {notes.map((n) => (
+            <li key={n.id} className="rounded-lg bg-amber-50 px-3 py-2 ring-1 ring-amber-200">
+              <p className="whitespace-pre-wrap break-words text-sm text-zinc-900">{n.text}</p>
+              <p className="mt-1 text-xs text-zinc-500">{n.createdBy} · {fmt(n.createdAt, language)}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {lead.squareCustomerId && (
+        <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            [t(language, 'crmSpent'), money(sp.total), sp.tips > 0 ? `+ ${money(sp.tips)} ${t(language, 'crmTips')}` : ''],
+            [t(language, 'crmVisits'), String(sp.visits), sp.firstVisit ? fmt(sp.firstVisit, language) : ''],
+            [t(language, 'crmLastVisit'), sp.lastVisit ? fmt(sp.lastVisit, language) : '-', ''],
+            [t(language, 'crmNextVisit'), sp.nextAppointment ? fmt(sp.nextAppointment, language) : '-', ''],
+          ].map(([label, value, sub]) => (
+            <div key={label} className="rounded-lg p-3 ring-1 ring-zinc-200">
+              <div className="text-xs text-zinc-500">{label}</div>
+              <div className="text-lg font-semibold tabular-nums">{value}</div>
+              {sub && <div className="text-xs text-zinc-500">{sub}</div>}
+            </div>
+          ))}
+        </section>
+      )}
+
       {lead.squareCustomerId && (
         <section className="flex flex-col gap-2">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">{t(language, 'leadAppointments')}</h3>
           {data.appointments.length === 0 && <p className="text-sm text-zinc-500">{t(language, 'leadAppointmentsEmpty')}</p>}
           <ul className="flex flex-col gap-1">
             {data.appointments.map((a) => (
-              <li key={a.id} className="flex flex-wrap items-baseline gap-x-3 text-sm ring-1 ring-zinc-200 rounded-lg px-3 py-2">
-                <span className="font-medium text-zinc-800">{a.startAt ? fmt(a.startAt, language) : ''}</span>
-                <span className="text-zinc-600">{APPT_STATUSES.includes(a.status) ? t(language, `leadAppt_${a.status}` as 'leadAppt_ACCEPTED') : a.status}</span>
-                {a.services && <span className="text-zinc-500">{a.services}</span>}
+              <li key={a.id} className="flex flex-col gap-0.5 rounded-lg px-3 py-2 text-sm ring-1 ring-zinc-200">
+                <div className="flex flex-wrap items-baseline gap-x-3">
+                  <span className="font-medium text-zinc-800">{a.startAt ? fmt(a.startAt, language) : ''}</span>
+                  <span className={a.status === 'ACCEPTED' ? 'text-green-700' : 'text-zinc-500'}>{APPT_STATUSES.includes(a.status) ? t(language, `leadAppt_${a.status}` as 'leadAppt_ACCEPTED') : a.status}</span>
+                  {a.paid != null && a.paid > 0 && <span className="ml-auto font-medium tabular-nums">{t(language, 'crmPaid')} {money(a.paid)}</span>}
+                </div>
+                {a.services && <div className="text-zinc-700">{a.services}</div>}
+                {(a.technician || a.minutes) && (
+                  <div className="text-xs text-zinc-500">
+                    {a.technician ? `${t(language, 'crmWith')} ${a.technician}` : ''}{a.technician && a.minutes ? ' · ' : ''}{a.minutes ? `${a.minutes} ${language === 'RU' ? 'мин' : 'min'}` : ''}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
         </section>
       )}
+
+      <section className="flex flex-col gap-2">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">{t(language, 'crmEmails')} ({data.emails.length})</h3>
+        {data.emails.length === 0 && <p className="text-sm text-zinc-500">{t(language, 'crmEmailsEmpty')}</p>}
+        <ul className="flex flex-col gap-1">
+          {data.emails.map((m) => (
+            <li key={m.id} className="rounded-lg ring-1 ring-zinc-200">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                <span className="font-medium text-zinc-800">{m.kind}</span>
+                <span className="text-xs text-zinc-500">{fmt(m.sentAt, language)}</span>
+                {m.openedAt && <span className="rounded bg-green-100 px-1.5 text-xs text-green-800">{t(language, 'crmEmailOpened')}</span>}
+                {m.clickedAt && <span className="rounded bg-blue-100 px-1.5 text-xs text-blue-800">{t(language, 'crmEmailClicked')}</span>}
+                {m.hasContent
+                  ? <button className="ml-auto text-xs underline" onClick={() => setMailId(mailId === m.id ? null : m.id)}>{mailId === m.id ? t(language, 'crmEmailClose') : t(language, 'crmEmailView')}</button>
+                  : <span className="ml-auto text-xs text-zinc-400">{t(language, 'crmEmailNoContent')}</span>}
+              </div>
+              {mailId === m.id && (
+                <iframe
+                  title={m.kind}
+                  sandbox=""
+                  src={`/api/leads/${lead.id}/emails/${m.id}`}
+                  className="h-[28rem] w-full border-t border-zinc-200"
+                />
+              )}
+            </li>
+          ))}
+        </ul>
+        <p className="text-xs text-zinc-400">{t(language, 'crmEmailsNote')}</p>
+      </section>
 
       <section className="flex flex-col gap-3">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">{t(language, 'leadOrigins')}</h3>
@@ -269,10 +364,9 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
                 {r.by && <span>{r.by}</span>}
               </div>
               {r.text && <p className="text-sm text-zinc-800">{r.text}</p>}
-              {recordingUrl(r.payload ?? null) && (
+              {r.touchId != null && recordingUrl(r.payload ?? null) && (
                 <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <audio controls preload="none" src={recordingUrl(r.payload ?? null) ?? undefined} className="h-9 max-w-full" />
-                  <a href={recordingUrl(r.payload ?? null) ?? undefined} target="_blank" rel="noreferrer" className="text-xs text-zinc-600 underline">{t(language, 'leadRecordingOpen')}</a>
+                  <audio controls preload="none" src={`/api/leads/recording/${r.touchId}`} className="h-9 max-w-full" />
                 </div>
               )}
               {r.payload && <Details payload={r.payload} language={language} />}

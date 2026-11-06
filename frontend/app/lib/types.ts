@@ -2582,6 +2582,9 @@ export interface Lead {
   lostReason: string | null;
   lostComment: string | null;
   sourceEditable: boolean;
+  lastNote: string | null;
+  lastNoteBy: string | null;
+  lastNoteAt: string | null;
 }
 export interface LostRow { reason: string; source: string | null; count: number }
 export interface LostReport { days: number; total: number; byReason: LostRow[]; bySource: LostRow[] }
@@ -2593,5 +2596,7 @@ export interface LeadOrigin {
   browser: string | null; ip: string | null; location: string | null; service: string | null;
 }
 export interface LeadEvent { id: number; type: string; text: string | null; createdBy: string | null; createdAt: string }
-export interface LeadDetail { lead: Lead; touches: LeadTouch[]; events: LeadEvent[]; origins: LeadOrigin[]; appointments: LeadAppointment[] }
-export interface LeadAppointment { id: string; status: string; startAt: string | null; services: string | null }
+export interface LeadDetail { lead: Lead; touches: LeadTouch[]; events: LeadEvent[]; origins: LeadOrigin[]; appointments: LeadAppointment[]; spend: LeadSpend; emails: LeadEmail[] }
+export interface LeadAppointment { id: string; status: string; startAt: string | null; services: string | null; technician: string | null; minutes: number | null; paid: number | null }
+export interface LeadSpend { total: number; tips: number; visits: number; firstVisit: string | null; lastVisit: string | null; nextAppointment: string | null }
+export interface LeadEmail { id: number; kind: string; sentAt: string; openedAt: string | null; clickedAt: string | null; hasContent: boolean }
