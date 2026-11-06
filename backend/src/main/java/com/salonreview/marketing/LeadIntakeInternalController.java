@@ -89,10 +89,14 @@ public class LeadIntakeInternalController {
         }
     }
 
+    /** Ringostat fills unmatched UTM fields with placeholders such as ".*" or "(none)". */
+    private static final java.util.regex.Pattern PLACEHOLDER =
+            java.util.regex.Pattern.compile("(?i)\\.\\*|\\(none\\)|\\(not set\\)|\\(direct\\)|none|null|undefined|-");
+
     private static String str(Map<String, Object> m, String... keys) {
         for (String k : keys) {
             Object v = m.get(k);
-            if (v != null && !v.toString().isBlank()) return v.toString();
+            if (v != null && !v.toString().isBlank() && !PLACEHOLDER.matcher(v.toString().trim()).matches()) return v.toString();
         }
         return null;
     }
