@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { FUNNEL_TONE } from './FunnelPanel';
 import { t } from '../../lib/i18n';
-import type { Language, Lead } from '../../lib/types';
+import type { Language, Lead, LeadFunnel } from '../../lib/types';
 
 type Tab = 'ACTION' | 'CONSULT' | 'CONTACTED' | 'BOOKED' | 'LOST' | 'SPAM' | 'ALL';
 const TABS: Tab[] = ['ACTION', 'CONSULT', 'CONTACTED', 'BOOKED', 'LOST', 'SPAM', 'ALL'];
@@ -91,6 +92,11 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
   const [academyOnly, setAcademyOnly] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [now] = useState(() => Date.now());
+  const [funnels, setFunnels] = useState<Record<number, LeadFunnel[]>>({});
+
+  useEffect(() => {
+    fetch('/api/leads/funnels', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : {})).then(setFunnels).catch(() => undefined);
+  }, []);
 
   const sources = useMemo(() => Array.from(new Set(leads.map((l) => l.source))).sort(), [leads]);
   const base = useMemo(() => {
@@ -241,6 +247,11 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
                       {l.consultState === 'DONE' && l.consultAt && isActive(l) && (
                         <span className="rounded bg-orange-100 px-1.5 py-0.5 text-xs text-orange-800">{t(language, 'crmConsultDone')} {span(now - new Date(l.consultAt).getTime(), language)} {t(language, 'crmAgo')}</span>
                       )}
+                      {(funnels[l.id] ?? []).filter((f) => f.state !== 'NOT_APPLIED' || f.canApply).map((f) => (
+                        <span key={f.key} className={`rounded-full px-1.5 py-0.5 text-xs ${FUNNEL_TONE[f.state]}`} title={t(language, `funnelName_${f.key}` as 'funnelName_academy')}>
+                          {t(language, 'funnelChip')}: {t(language, `funnelState_${f.state}` as 'funnelState_ACTIVE').toLowerCase()}
+                        </span>
+                      ))}
                       {waiting && <span className="text-xs text-zinc-500">{t(language, 'crmWaiting')} {waiting}</span>}
                     </div>
                     {reason && (

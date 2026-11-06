@@ -534,7 +534,7 @@ public class LeadFollowUpService {
         addEvent(id, req.type(), req.text().trim(), by);
     }
 
-    private void addEvent(long leadId, String type, String text, String by) {
+    void addEvent(long leadId, String type, String text, String by) {
         jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, ?, ?, ?)",
                 leadId, business.id(), type, text, by);
     }
@@ -549,7 +549,7 @@ public class LeadFollowUpService {
                 "SELECT EXISTS (SELECT 1 FROM lead_intake WHERE business_id = ? AND channel = 'Academy')", Boolean.class, businessId));
     }
 
-    private LeadView find(long id) {
+    LeadView find(long id) {
         try {
             return jdbc.queryForObject("SELECT * FROM (" + leadsSql(business.id()) + ") y WHERE id = ?", leadMapper, business.id(), business.id(), id);
         } catch (EmptyResultDataAccessException e) {
