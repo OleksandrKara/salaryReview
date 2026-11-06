@@ -20,6 +20,7 @@ spring:
   flyway:
     enabled: true
     baseline-on-migrate: true
+    out-of-order: true
 
   # Spring Boot's own default (1MB/file, 10MB/request) is well under a real phone photo — MMS
   # attachments (staff-document uploads too, though those are usually small PDFs) need real
