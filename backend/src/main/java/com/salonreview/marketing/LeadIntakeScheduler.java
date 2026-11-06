@@ -32,5 +32,6 @@ public class LeadIntakeScheduler {
     @SchedulerLock(name = "leadIntakeReconcile", lockAtMostFor = "PT9M", lockAtLeastFor = "PT1M")
     public void reconcile() {
         service.reconcile();
+        followUp.autoBook();
     }
 }

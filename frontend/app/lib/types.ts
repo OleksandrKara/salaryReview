@@ -2632,3 +2632,9 @@ export type LeadFunnel = {
   stopNote: string | null;
   stoppedVia: string | null;
 };
+
+export interface LeadListBadge {
+  vip: boolean; visitCount: number | null; smsConsent: boolean; negativeFeedback: boolean; blocked: boolean; optedOut: boolean;
+  spamFlag: boolean; clickedGoogle: boolean; clickedYelp: boolean; clickedFeedback: boolean;
+  flag: string | null; place: string | null; scope: 'LOCAL' | 'OUT_OF_STATE' | 'INTERNATIONAL' | null;
+}

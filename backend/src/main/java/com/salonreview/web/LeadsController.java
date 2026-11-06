@@ -146,6 +146,12 @@ public class LeadsController {
         return funnels.forLeads(business.id(), list(null, me));
     }
 
+    /** Quick-glance icons (VIP, consent, warnings, review clicks, place) for every lead in the list. */
+    @GetMapping("/badges")
+    public Map<Long, LeadFollowUpService.ListBadge> allBadges(@AuthenticationPrincipal AppUserPrincipal me) {
+        return leads.listBadges(list(null, me));
+    }
+
     @GetMapping("/{id}/funnels")
     public List<com.salonreview.marketing.LeadFunnelService.Funnel> leadFunnels(@PathVariable long id, @AuthenticationPrincipal AppUserPrincipal me) {
         guard(id, me);
