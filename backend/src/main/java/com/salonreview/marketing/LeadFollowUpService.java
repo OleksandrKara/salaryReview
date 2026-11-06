@@ -895,6 +895,7 @@ public class LeadFollowUpService {
                   AND EXISTS (SELECT 1 FROM square_booking b WHERE b.business_id = f.business_id
                               AND b.square_customer_id = agg.customer AND b.status = 'ACCEPTED' AND NOT %s
                               AND (CASE WHEN f.status = 'OUTDATED' THEN b.created_at >= now() - interval '3 days'
+                                        WHEN f.legacy AND f.status = 'NEW' AND agg.last_touch = f.created_at THEN TRUE
                                         ELSE b.created_at >= agg.last_touch - interval '2 hours'
                                              OR (f.status <> 'LOST' AND b.start_at > now()) END))
                 RETURNING li.id, li.business_id
