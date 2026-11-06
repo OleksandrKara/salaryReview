@@ -27,6 +27,8 @@ public class LeadFollowUpService {
 
     private static final Logger log = LoggerFactory.getLogger(LeadFollowUpService.class);
     static final Set<String> STATUSES = Set.of("NEW", "CONTACTED", "BOOKED", "LOST");
+    static final Set<String> LOST_REASONS = Set.of("PRICE", "NO_ANSWER", "NOT_INTERESTED", "BOUGHT_ELSEWHERE",
+            "NOT_ELIGIBLE", "TOO_FAR", "WRONG_NUMBER_SPAM", "TIMING", "OTHER");
     static final Set<String> MANUAL_EVENT_TYPES = Set.of("NOTE", "CALL", "AGREEMENT");
     private static final String SQUARE_CUSTOMER_URL = "https://app.squareup.com/dashboard/customers/directory/customer/";
 
@@ -55,7 +57,8 @@ public class LeadFollowUpService {
 
     public record LeadView(long id, String channel, String source, String phoneNumber, String email, String name,
                            String detail, String status, String callbackAt, String createdAt, String lastTouchAt,
-                           int touches, String squareCustomerId, String squareUrl) {}
+                           int touches, String squareCustomerId, String squareUrl,
+                           String lostReason, String lostComment) {}
 
     public record Touch(long id, String channel, String source, String detail, String createdAt,
                         java.util.Map<String, String> payload) {}
@@ -72,7 +75,12 @@ public class LeadFollowUpService {
     public record LeadDetail(LeadView lead, List<Touch> touches, List<Event> events, List<Origin> origins,
                              List<Appointment> appointments) {}
 
-    public record UpdateRequest(String status, String callbackAt, Boolean clearCallback) {}
+    public record UpdateRequest(String status, String callbackAt, Boolean clearCallback, String lostReason,
+                                String lostComment) {}
+
+    public record LostRow(String reason, String source, int count) {}
+
+    public record LostReport(int days, int total, List<LostRow> byReason, List<LostRow> bySource) {}
 
     public record EventRequest(String type, String text) {}
 
@@ -82,7 +90,8 @@ public class LeadFollowUpService {
                 rs.getString("phone_number"), rs.getString("email"), rs.getString("name"), rs.getString("detail"),
                 rs.getString("status"), iso(rs.getTimestamp("callback_at")), iso(rs.getTimestamp("created_at")),
                 iso(rs.getTimestamp("last_touch_at")), rs.getInt("touches"), customer,
-                customer == null ? null : SQUARE_CUSTOMER_URL + customer);
+                customer == null ? null : SQUARE_CUSTOMER_URL + customer,
+                rs.getString("lost_reason"), rs.getString("lost_comment"));
     };
 
     private static final String LEADS_SELECT = """
@@ -99,7 +108,7 @@ public class LeadFollowUpService {
                    COALESCE(sc.email_address, f.email) AS email,
                    COALESCE(NULLIF(trim(concat_ws(' ', sc.given_name, sc.family_name)), ''), f.name, agg.any_name) AS name,
                    f.detail, f.status, f.callback_at, f.created_at, agg.last_touch_at, agg.touches::int AS touches,
-                   agg.customer AS square_customer_id
+                   agg.customer AS square_customer_id, f.lost_reason, f.lost_comment
             FROM (SELECT DISTINCT ON (k) * FROM keyed ORDER BY k, created_at, id) f JOIN agg ON agg.k = f.k
               LEFT JOIN square_customer sc ON sc.business_id = f.business_id AND sc.square_customer_id = agg.customer
             """.formatted(KEY);
@@ -230,6 +239,16 @@ public class LeadFollowUpService {
         if (req.status() != null && !STATUSES.contains(req.status())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unknown status");
         }
+        String reason = req.lostReason() == null ? null : req.lostReason().trim().toUpperCase();
+        String comment = req.lostComment() == null || req.lostComment().isBlank() ? null : req.lostComment().trim();
+        if ("LOST".equals(req.status())) {
+            if (reason == null || !LOST_REASONS.contains(reason)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "lost reason required");
+            }
+            if ("OTHER".equals(reason) && comment == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "comment required for reason OTHER");
+            }
+        }
         Timestamp callback = null;
         if (req.callbackAt() != null && !req.callbackAt().isBlank()) {
             try {
@@ -243,14 +262,61 @@ public class LeadFollowUpService {
         jdbc.update("""
                 UPDATE lead_intake SET
                   status = COALESCE(?, status),
+                  lost_reason = CASE WHEN ? = 'LOST' THEN ? WHEN ? IS NOT NULL THEN NULL ELSE lost_reason END,
+                  lost_comment = CASE WHEN ? = 'LOST' THEN ? WHEN ? IS NOT NULL THEN NULL ELSE lost_comment END,
+                  lost_at = CASE WHEN ? = 'LOST' THEN now() WHEN ? IS NOT NULL THEN NULL ELSE lost_at END,
                   callback_at = CASE WHEN ? THEN NULL WHEN ?::timestamptz IS NOT NULL THEN ?::timestamptz ELSE callback_at END,
                   callback_reminded = CASE WHEN ? OR ?::timestamptz IS NOT NULL THEN FALSE ELSE callback_reminded END,
                   updated_by = ?, updated_at = now()
                 WHERE id = ? AND business_id = ?
-                """, req.status(), clear, callback, callback, clear, callback, by, id, business.id());
+                """, req.status(), req.status(), reason, req.status(), req.status(), comment, req.status(),
+                req.status(), req.status(), clear, callback, callback, clear, callback, by, id, business.id());
         if (req.status() != null) addEvent(id, "STATUS", req.status(), by);
+        if ("LOST".equals(req.status())) addEvent(id, "LOST_REASON", comment == null ? reason : reason + ": " + comment, by);
         if (callback != null) addEvent(id, "CALLBACK", callback.toInstant().toString(), by);
         if (clear) addEvent(id, "CALLBACK_CLEARED", null, by);
+    }
+
+    /** Moves leads whose Square customer has an accepted appointment made after the lead appeared to BOOKED. */
+    public int autoBook() {
+        var rows = jdbc.queryForList("""
+                WITH keyed AS (
+                  SELECT l.*, %s AS k FROM lead_intake l WHERE outcome <> 'DUPLICATE'
+                ), agg AS (
+                  SELECT k, (array_agg(square_customer_id ORDER BY (square_customer_id IS NULL), created_at))[1] AS customer
+                  FROM keyed GROUP BY k
+                ), f AS (
+                  SELECT DISTINCT ON (k) * FROM keyed ORDER BY k, created_at, id
+                )
+                UPDATE lead_intake li SET status = 'BOOKED', callback_at = NULL, lost_reason = NULL, lost_comment = NULL,
+                       lost_at = NULL, updated_by = 'Square', updated_at = now()
+                FROM f JOIN agg ON agg.k = f.k
+                WHERE li.id = f.id AND f.status IN ('NEW', 'CONTACTED', 'LOST') AND agg.customer IS NOT NULL
+                  AND EXISTS (SELECT 1 FROM square_booking b WHERE b.business_id = f.business_id
+                              AND b.square_customer_id = agg.customer AND b.status = 'ACCEPTED'
+                              AND b.created_at >= f.created_at)
+                RETURNING li.id, li.business_id
+                """.formatted(KEY));
+        for (var r : rows) {
+            jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'STATUS', 'BOOKED', 'Square')",
+                    ((Number) r.get("id")).longValue(), ((Number) r.get("business_id")).longValue());
+        }
+        return rows.size();
+    }
+
+    public LostReport lostReport(int days) {
+        int d = Math.max(1, Math.min(days, 730));
+        List<LostRow> byReason = jdbc.query("""
+                SELECT lost_reason, count(*) FROM lead_intake
+                WHERE business_id = ? AND status = 'LOST' AND lost_reason IS NOT NULL AND lost_at >= now() - make_interval(days => ?)
+                GROUP BY lost_reason ORDER BY count(*) DESC
+                """, (rs, i) -> new LostRow(rs.getString(1), null, rs.getInt(2)), business.id(), d);
+        List<LostRow> bySource = jdbc.query("""
+                SELECT lost_reason, source, count(*) FROM lead_intake
+                WHERE business_id = ? AND status = 'LOST' AND lost_reason IS NOT NULL AND lost_at >= now() - make_interval(days => ?)
+                GROUP BY lost_reason, source ORDER BY count(*) DESC, source
+                """, (rs, i) -> new LostRow(rs.getString(1), rs.getString(2), rs.getInt(3)), business.id(), d);
+        return new LostReport(d, byReason.stream().mapToInt(LostRow::count).sum(), byReason, bySource);
     }
 
     public void addManualEvent(long id, EventRequest req, String by) {

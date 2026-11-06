@@ -2579,7 +2579,11 @@ export interface Lead {
   touches: number;
   squareCustomerId: string | null;
   squareUrl: string | null;
+  lostReason: string | null;
+  lostComment: string | null;
 }
+export interface LostRow { reason: string; source: string | null; count: number }
+export interface LostReport { days: number; total: number; byReason: LostRow[]; bySource: LostRow[] }
 export interface LeadTouch { id: number; channel: string; source: string; detail: string | null; createdAt: string; payload: Record<string, string> | null }
 export interface LeadOrigin {
   type: string; at: string; landingPage: string | null; variant: string | null; trafficSource: string | null;
