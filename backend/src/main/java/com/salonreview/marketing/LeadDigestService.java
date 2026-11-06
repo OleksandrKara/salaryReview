@@ -127,7 +127,7 @@ public class LeadDigestService {
             (Duration.between(activity(l), now).toDays() > COLD_DAYS ? cold : fresh).add(l);
         }
         fresh.sort(Comparator.comparing(LeadDigestService::activity));
-        long stalled = all.stream().filter(l -> active(l) && "DONE".equals(l.consultState())
+        long stalled = all.stream().filter(l -> active(l) && ("DONE".equals(l.consultState()) || "NO_SHOW".equals(l.consultState()))
                 && !"NEW".equals(l.status()) && !overdue(l, now)).count();
         int todo = overdue.size() + fresh.size() + cold.size();
         long closable = all.stream().filter(LeadView::closeReady).count();
