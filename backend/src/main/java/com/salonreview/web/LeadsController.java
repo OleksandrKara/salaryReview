@@ -29,6 +29,11 @@ public class LeadsController {
         return leads.list(status);
     }
 
+    @GetMapping("/lost-report")
+    public LeadFollowUpService.LostReport lostReport(@RequestParam(defaultValue = "90") int days) {
+        return leads.lostReport(days);
+    }
+
     @GetMapping("/lookup")
     public Map<String, Long> lookup(@RequestParam String phone) {
         Long id = leads.lookupByPhone(phone);

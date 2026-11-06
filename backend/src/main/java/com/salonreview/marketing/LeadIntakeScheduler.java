@@ -19,6 +19,7 @@ public class LeadIntakeScheduler {
     @SchedulerLock(name = "leadCallbackReminders", lockAtMostFor = "PT4M", lockAtLeastFor = "PT30S")
     public void callbackReminders() {
         followUp.sendDueReminders();
+        followUp.autoBook();
     }
 
     @Scheduled(cron = "0 */10 * * * *", zone = "America/Los_Angeles")

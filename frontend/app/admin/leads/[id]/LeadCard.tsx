@@ -7,6 +7,7 @@ import type { Language, LeadDetail, LeadStatus } from '../../../lib/types';
 
 const STATUSES: LeadStatus[] = ['NEW', 'CONTACTED', 'BOOKED', 'LOST'];
 const APPT_STATUSES = ['ACCEPTED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_SELLER', 'NO_SHOW', 'DECLINED'];
+const LOST_REASONS = ['PRICE', 'NO_ANSWER', 'NOT_INTERESTED', 'BOUGHT_ELSEWHERE', 'NOT_ELIGIBLE', 'TOO_FAR', 'WRONG_NUMBER_SPAM', 'TIMING', 'OTHER'];
 const ENTRY_TYPES = ['NOTE', 'CALL', 'AGREEMENT'] as const;
 const field = 'rounded border border-zinc-300 px-2 py-1.5 text-sm focus:border-zinc-500 focus:outline-none';
 const primary = 'rounded bg-zinc-900 px-3 py-1.5 text-sm text-white disabled:opacity-40';
@@ -50,6 +51,9 @@ type Row = { key: string; at: string; label: string; text: string | null; by: st
 
 export default function LeadCard({ initial, language = null }: { initial: LeadDetail; language?: Language | null }) {
   const [data, setData] = useState(initial);
+  const [losing, setLosing] = useState(false);
+  const [lostReason, setLostReason] = useState('');
+  const [lostComment, setLostComment] = useState('');
   const { lead } = data;
   const [callback, setCallback] = useState(toLocalInput(lead.callbackAt));
   const [entryType, setEntryType] = useState<(typeof ENTRY_TYPES)[number]>('NOTE');
@@ -93,6 +97,10 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
         : t(language, `leadEvent${x.type}` as 'leadEventSTATUS');
       let text = x.text;
       if (x.type === 'STATUS' && x.text) text = t(language, `leadStatus${x.text}` as 'leadStatusNEW');
+      if (x.type === 'LOST_REASON' && x.text) {
+        const [code, ...rest] = x.text.split(': ');
+        text = LOST_REASONS.includes(code) ? [t(language, `leadLost_${code}` as 'leadLost_PRICE'), ...rest].join(': ') : x.text;
+      }
       if (x.type === 'CALLBACK' && x.text) text = fmt(x.text, language);
       return { key: `e${x.id}`, at: x.createdAt, label, text, by: x.createdBy, tone: manual ? ('manual' as const) : ('system' as const) };
     }),
@@ -126,11 +134,41 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
           aria-label="status"
           value={lead.status}
           disabled={busy}
-          onChange={(e) => send(`/api/leads/${lead.id}`, 'PATCH', { status: e.target.value })}
+          onChange={(e) => (e.target.value === 'LOST' ? setLosing(true) : send(`/api/leads/${lead.id}`, 'PATCH', { status: e.target.value }))}
           className={field}
         >
           {STATUSES.map((s) => <option key={s} value={s}>{t(language, `leadStatus${s}` as 'leadStatusNEW')}</option>)}
         </select>
+        {lead.status === 'LOST' && lead.lostReason && (
+          <span className="rounded bg-red-50 px-2 py-0.5 text-xs text-red-800">
+            {LOST_REASONS.includes(lead.lostReason) ? t(language, `leadLost_${lead.lostReason}` as 'leadLost_PRICE') : lead.lostReason}
+            {lead.lostComment ? `: ${lead.lostComment}` : ''}
+          </span>
+        )}
+        {losing && (
+          <div className="flex w-full flex-wrap items-center gap-2 rounded bg-red-50 p-3">
+            <select aria-label="lost reason" value={lostReason} onChange={(e) => setLostReason(e.target.value)} className={field}>
+              <option value="">{t(language, 'leadLostChoose')}</option>
+              {LOST_REASONS.map((r) => <option key={r} value={r}>{t(language, `leadLost_${r}` as 'leadLost_PRICE')}</option>)}
+            </select>
+            <input
+              value={lostComment}
+              onChange={(e) => setLostComment(e.target.value)}
+              placeholder={t(language, 'leadLostComment')}
+              className={`${field} min-w-0 flex-1`}
+            />
+            <button
+              className={primary}
+              disabled={busy || !lostReason || (lostReason === 'OTHER' && !lostComment.trim())}
+              onClick={async () => {
+                if (await send(`/api/leads/${lead.id}`, 'PATCH', { status: 'LOST', lostReason, lostComment })) { setLosing(false); setLostReason(''); setLostComment(''); }
+              }}
+            >
+              {t(language, 'leadLostConfirm')}
+            </button>
+            <button className={link} onClick={() => { setLosing(false); setLostReason(''); setLostComment(''); }}>{t(language, 'leadLostCancel')}</button>
+          </div>
+        )}
         <label className="flex items-center gap-2 text-sm text-zinc-600">
           {t(language, 'leadCallback')}
           <input type="datetime-local" value={callback} onChange={(e) => setCallback(e.target.value)} className={field} />
