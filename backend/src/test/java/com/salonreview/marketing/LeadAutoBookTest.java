@@ -111,4 +111,22 @@ class LeadAutoBookTest {
         assertThat(status(other)).isEqualTo("NEW");
         assertThat(service.autoBookCustomer(b, null)).isZero();
     }
+
+    @Test
+    void restoredArchiveLeadWithAnyVisitBooksButReturningTouchKeepsItNew() {
+        long visited = lead("+16195550011", "NEW", "C11", "20 days", true);
+        long never = lead("+16195550012", "NEW", "C12", "20 days", true);
+        long touched = lead("+16195550013", "NEW", "C13", "20 days", true);
+        booking("C11", "ACCEPTED", "PROC", "19 days", "-18 days");
+        booking("C12", "CANCELLED_BY_CUSTOMER", "PROC", "19 days", "-18 days");
+        booking("C13", "ACCEPTED", "PROC", "19 days", "-18 days");
+        jdbc.update("""
+                INSERT INTO lead_intake (business_id, channel, source, phone_number, outcome, status, square_customer_id, created_at)
+                VALUES (?, 'Call', 'Direct', '+16195550013', 'MATCHED', 'NEW', 'C13', now() - interval '1 day')
+                """, b);
+        service.autoBook();
+        assertThat(status(visited)).isEqualTo("BOOKED");
+        assertThat(status(never)).isEqualTo("NEW");
+        assertThat(status(touched)).isEqualTo("NEW");
+    }
 }
