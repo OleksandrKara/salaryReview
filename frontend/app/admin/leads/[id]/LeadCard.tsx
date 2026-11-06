@@ -335,8 +335,12 @@ export default function LeadCard({ initial, language = null, stopFunnel = null }
           onChange={(e) => (e.target.value === 'LOST' ? setLosing(true) : send(`/api/leads/${lead.id}`, 'PATCH', { status: e.target.value }))}
           className={`${field} py-2`}
         >
-          {STATUSES.map((s) => <option key={s} value={s}>{t(language, `leadStatus${s}` as 'leadStatusNEW')}</option>)}
+          {lead.status === 'OUTDATED' && <option value="OUTDATED" disabled>{t(language, 'leadStatusOUTDATED')}</option>}
+          {STATUSES.map((s) => <option key={s} value={s}>{lead.status === 'OUTDATED' && s === 'NEW' ? t(language, 'outdatedMoveOut') : t(language, `leadStatus${s}` as 'leadStatusNEW')}</option>)}
         </select>
+        {lead.status === 'OUTDATED' && (
+          <p className="basis-full rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">{t(language, 'outdatedCardBanner')}</p>
+        )}
         {lead.status === 'LOST' && lead.lostReason && (
           <span className="rounded bg-red-50 px-2 py-0.5 text-xs text-red-800">
             {LOST_REASONS.includes(lead.lostReason) ? t(language, `leadLost_${lead.lostReason}` as 'leadLost_PRICE') : lead.lostReason}

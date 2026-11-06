@@ -27,6 +27,9 @@ public class LeadFollowUpService {
 
     private static final Logger log = LoggerFactory.getLogger(LeadFollowUpService.class);
     static final Set<String> STATUSES = Set.of("NEW", "CONTACTED", "BOOKED", "LOST", "SPAM");
+    /** System-only status of the pre-CRM archive; a lead can leave it but nothing can put one there (see V196). */
+    static final String OUTDATED = "OUTDATED";
+    static final int OUTDATED_PAGE = 50;
     static final Set<String> LOST_REASONS = Set.of("PRICE", "NO_ANSWER", "NOT_INTERESTED", "BOUGHT_ELSEWHERE",
             "NOT_ELIGIBLE", "TOO_FAR", "WRONG_NUMBER_SPAM", "TIMING", "OTHER");
     static final Set<String> SOURCES = Set.of("Instagram", "Yelp", "Google", "Facebook", "TikTok", "Referral",
@@ -183,8 +186,9 @@ public class LeadFollowUpService {
             """.formatted(KEY);
 
     /** Leads plus the person's latest consultation: UPCOMING, or DONE when no real procedure was booked after it. */
-    private String leadsSql(long businessId) {
-        return "SELECT x.*, c.consult_at, c.consult_state FROM (" + LEADS_SELECT + ") x LEFT JOIN LATERAL ("
+    private String leadsSql(long businessId, boolean includeOutdated) {
+        return "SELECT x.*, c.consult_at, c.consult_state FROM (" + LEADS_SELECT
+                + (includeOutdated ? "" : " WHERE f.status <> 'OUTDATED' ") + ") x LEFT JOIN LATERAL ("
                 + "SELECT b.start_at AS consult_at, CASE WHEN b.start_at > now() THEN 'UPCOMING' ELSE 'DONE' END AS consult_state "
                 + "FROM square_booking b WHERE b.business_id = ? AND b.square_customer_id = x.square_customer_id AND b.status = 'ACCEPTED' "
                 + "AND " + ConsultationCatalog.isConsultationSql("b", consultations.ids(businessId))
@@ -200,8 +204,45 @@ public class LeadFollowUpService {
 
     public List<LeadView> listFor(long businessId, String status) {
         String filter = status == null || status.isBlank() ? null : status.trim().toUpperCase();
-        return jdbc.query("SELECT * FROM (" + leadsSql(businessId) + ") y WHERE (?::text IS NULL OR status = ?) "
+        return jdbc.query("SELECT * FROM (" + leadsSql(businessId, false) + ") y WHERE (?::text IS NULL OR status = ?) "
                 + "ORDER BY (status = 'NEW') DESC, activity_at DESC LIMIT 1000", leadMapper, businessId, businessId, filter, filter);
+    }
+
+    public record OutdatedRow(long id, String name, String phoneNumber, String email, String source, String createdAt,
+                              int visits, String lastVisitAt, String nextVisitAt, boolean consulted) {}
+
+    public record OutdatedPage(int total, int clients, int never, int page, int pages, List<OutdatedRow> items) {}
+
+    /** The pre-CRM archive, newest first. seg: "clients" (has visited), "never" (never visited) or all. */
+    public OutdatedPage outdated(String q, String seg, int page) {
+        long b = business.id();
+        String cons = ConsultationCatalog.isConsultationSql("b", consultations.ids(b));
+        String needle = q == null ? "" : q.trim().toLowerCase();
+        String digits = needle.matches("[\\d\\s()+.-]+") ? needle.replaceAll("\\D", "") : "";
+        String like = "%" + needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+        String base = "SELECT y.*, COALESCE(st.visits, 0) AS visits, st.last_visit, st.next_visit, COALESCE(st.consulted, FALSE) AS consulted FROM ("
+                + LEADS_SELECT + " WHERE f.status = 'OUTDATED') y LEFT JOIN LATERAL ("
+                + "SELECT count(*) FILTER (WHERE b.status = 'ACCEPTED' AND b.start_at <= now() AND NOT " + cons + ")::int AS visits, "
+                + "max(b.start_at) FILTER (WHERE b.status = 'ACCEPTED' AND b.start_at <= now() AND NOT " + cons + ") AS last_visit, "
+                + "min(b.start_at) FILTER (WHERE b.status = 'ACCEPTED' AND b.start_at > now() AND NOT " + cons + ") AS next_visit, "
+                + "bool_or(b.status = 'ACCEPTED' AND " + cons + ") AS consulted "
+                + "FROM square_booking b WHERE b.business_id = ? AND y.square_customer_id IS NOT NULL AND b.square_customer_id = y.square_customer_id) st ON TRUE "
+                + "WHERE (?::text = '' OR lower(COALESCE(y.name, '')) LIKE ? ESCAPE '\\' OR lower(COALESCE(y.email, '')) LIKE ? ESCAPE '\\' "
+                + "OR (?::text <> '' AND regexp_replace(COALESCE(y.phone_number, ''), '\\D', '', 'g') LIKE '%' || ?::text || '%'))";
+        Object[] args = {b, b, needle, like, like, digits, digits};
+        var counts = jdbc.queryForMap("SELECT count(*)::int AS total, count(*) FILTER (WHERE visits > 0)::int AS clients FROM (" + base + ") z", args);
+        int total = ((Number) counts.get("total")).intValue();
+        int clients = ((Number) counts.get("clients")).intValue();
+        String filter = "clients".equals(seg) ? " WHERE visits > 0" : "never".equals(seg) ? " WHERE visits = 0" : "";
+        int shown = "clients".equals(seg) ? clients : "never".equals(seg) ? total - clients : total;
+        int pages = Math.max(1, (shown + OUTDATED_PAGE - 1) / OUTDATED_PAGE);
+        int p = Math.max(0, Math.min(page, pages - 1));
+        List<OutdatedRow> items = jdbc.query("SELECT * FROM (" + base + ") z" + filter
+                        + " ORDER BY created_at DESC, id DESC LIMIT " + OUTDATED_PAGE + " OFFSET " + (p * OUTDATED_PAGE),
+                (rs, i) -> new OutdatedRow(rs.getLong("id"), rs.getString("name"), rs.getString("phone_number"), rs.getString("email"),
+                        rs.getString("source"), iso(rs.getTimestamp("created_at")), rs.getInt("visits"),
+                        iso(rs.getTimestamp("last_visit")), iso(rs.getTimestamp("next_visit")), rs.getBoolean("consulted")), args);
+        return new OutdatedPage(total, clients, total - clients, p, pages, items);
     }
 
     public LeadDetail detail(long id) {
@@ -665,6 +706,9 @@ public class LeadFollowUpService {
     }
 
     public void update(long id, UpdateRequest req, String by) {
+        if (OUTDATED.equals(req.status())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Outdated is a system archive: leads can leave it, never enter it");
+        }
         if (req.status() != null && !STATUSES.contains(req.status())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unknown status");
         }
@@ -839,7 +883,7 @@ public class LeadFollowUpService {
 
     LeadView find(long id) {
         try {
-            return jdbc.queryForObject("SELECT * FROM (" + leadsSql(business.id()) + ") y WHERE id = ?", leadMapper, business.id(), business.id(), id);
+            return jdbc.queryForObject("SELECT * FROM (" + leadsSql(business.id(), true) + ") y WHERE id = ?", leadMapper, business.id(), business.id(), id);
         } catch (EmptyResultDataAccessException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such lead");
         }
