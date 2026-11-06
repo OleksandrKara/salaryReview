@@ -26,7 +26,6 @@ function when(iso: string, lang: Language | null): string {
 export default function FunnelPanel({ leadId, language, onChanged }: { leadId: number; language: Language | null; onChanged: () => void }) {
   const [funnels, setFunnels] = useState<LeadFunnel[] | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
-  const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -41,12 +40,11 @@ export default function FunnelPanel({ leadId, language, onChanged }: { leadId: n
     setBusy(true);
     setError('');
     const res = await fetch(`/api/leads/${leadId}/funnels/${key}/${action}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ consent }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
     });
     setBusy(false);
     if (!res.ok) { setError(t(language, 'leadErr')); return; }
     setConfirm(null);
-    setConsent(false);
     await load();
     onChanged();
   }
@@ -100,13 +98,9 @@ export default function FunnelPanel({ leadId, language, onChanged }: { leadId: n
               <div className="flex flex-col gap-2 rounded-md bg-white p-3 ring-1 ring-zinc-300">
                 <p className="text-sm font-medium">{t(language, 'funnelStartTitle')}</p>
                 <p className="text-xs text-zinc-600">{t(language, 'funnelStartBody')}</p>
-                <label className="flex items-start gap-2 text-xs text-zinc-700">
-                  <input type="checkbox" className="mt-0.5" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-                  {t(language, 'funnelConsent')}
-                </label>
                 <div className="flex gap-2">
-                  <button className={`${quick} bg-zinc-900 text-white ring-zinc-900`} disabled={!consent || busy} onClick={() => run(f.key, 'apply')}>{t(language, 'funnelStartYes')}</button>
-                  <button className={quick} onClick={() => { setConfirm(null); setConsent(false); }}>{t(language, 'funnelCancel')}</button>
+                  <button className={`${quick} bg-zinc-900 text-white ring-zinc-900`} disabled={busy} onClick={() => run(f.key, 'apply')}>{t(language, 'funnelStartYes')}</button>
+                  <button className={quick} onClick={() => setConfirm(null)}>{t(language, 'funnelCancel')}</button>
                 </div>
               </div>
             )}
