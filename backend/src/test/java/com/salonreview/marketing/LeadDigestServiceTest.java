@@ -19,7 +19,7 @@ class LeadDigestServiceTest {
 
     private static LeadView lead(long id, String channel, String status, String createdAt, String callbackAt, String consultState) {
         return new LeadView(id, channel, "Google", "+1555000" + id, null, "Lead " + id, null, status, callbackAt, createdAt, createdAt,
-                1, null, null, null, null, false, null, null, null, createdAt, false, consultState, null, 0, false);
+                1, null, null, null, null, false, null, null, null, createdAt, false, consultState, null, 0, false, null);
     }
 
     @Test
@@ -33,7 +33,7 @@ class LeadDigestServiceTest {
     void morningMentionsLeadsReadyToClose() {
         LeadView l = lead(7, "Call", "CONTACTED", "2026-11-01T14:00:00Z", "2026-11-10T14:00:00Z", null);
         LeadView ready = new LeadView(l.id(), l.channel(), l.source(), l.phoneNumber(), null, l.name(), null, l.status(), l.callbackAt(),
-                l.createdAt(), l.lastTouchAt(), 1, null, null, null, null, false, null, null, null, l.createdAt(), false, null, null, 3, true);
+                l.createdAt(), l.lastTouchAt(), 1, null, null, null, null, false, null, null, null, l.createdAt(), false, null, null, 3, true, null);
         String text = LeadDigestService.morning(List.of(ready), DAY, NOW);
         assertTrue(text.contains("Можно закрыть как Lost (нет ответа после попыток): 1"), text);
     }

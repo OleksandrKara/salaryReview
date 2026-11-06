@@ -129,4 +129,22 @@ class LeadAutoBookTest {
         assertThat(status(never)).isEqualTo("NEW");
         assertThat(status(touched)).isEqualTo("NEW");
     }
+
+    @Test
+    void lastVisitIsTrackedOnlyForNailsAndSkipsClientsWithAnUpcomingVisit() {
+        long old = lead("+16195550031", "NEW", "C31", "100 days", false);
+        long upcoming = lead("+16195550032", "NEW", "C32", "100 days", false);
+        long consultOnly = lead("+16195550033", "NEW", "C33", "100 days", false);
+        booking("C31", "ACCEPTED", "PROC", "100 days", "-90 days");
+        booking("C32", "ACCEPTED", "PROC", "100 days", "-90 days");
+        booking("C32", "ACCEPTED", "PROC", "1 day", "5 days");
+        booking("C33", "ACCEPTED", CONSULT, "100 days", "-90 days");
+        assertThat(service.listFor(b, null)).extracting(LeadFollowUpService.LeadView::lastVisitAt).containsOnlyNulls();
+        LeadFollowUpService nails = org.mockito.Mockito.spy(service);
+        org.mockito.Mockito.doReturn(true).when(nails).tracksLastVisit(b);
+        var rows = nails.listFor(b, null).stream().collect(java.util.stream.Collectors.toMap(LeadFollowUpService.LeadView::id, v -> java.util.Optional.ofNullable(v.lastVisitAt())));
+        assertThat(rows.get(old)).isPresent();
+        assertThat(rows.get(upcoming)).isEmpty();
+        assertThat(rows.get(consultOnly)).isEmpty();
+    }
 }

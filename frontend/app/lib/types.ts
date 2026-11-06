@@ -2596,6 +2596,7 @@ export interface Lead {
   consultAt: string | null;
   attempts: number;
   closeReady: boolean;
+  lastVisitAt: string | null;
 }
 export interface LostRow { reason: string; source: string | null; count: number }
 export interface LostReport { days: number; total: number; byReason: LostRow[]; bySource: LostRow[] }

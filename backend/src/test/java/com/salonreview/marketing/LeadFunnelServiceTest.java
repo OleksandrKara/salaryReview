@@ -39,7 +39,7 @@ class LeadFunnelServiceTest {
     private static LeadView lead(String status, boolean academy, String consultState) {
         return new LeadView(1, "Form", "Google", "+15550001111", null, "Jane", "PMU course", status, null,
                 "2026-11-06T10:00:00Z", "2026-11-06T10:00:00Z", 1, null, null, null, null, false, null, null, null,
-                "2026-11-06T10:00:00Z", academy, consultState, null, 0, false);
+                "2026-11-06T10:00:00Z", academy, consultState, null, 0, false, null);
     }
 
     private static Data data(List<AcademyRow> academy, Map<Long, Map<String, String[]>> touches, List<ConsultRow> consult, List<SiteRow> site) {

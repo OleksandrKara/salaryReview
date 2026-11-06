@@ -92,7 +92,7 @@ public class LeadFollowUpService {
                            String lostReason, String lostComment, boolean sourceEditable,
                            String lastNote, String lastNoteBy, String lastNoteAt, String activityAt,
                            boolean academy, String consultState, String consultAt,
-                           int attempts, boolean closeReady) {}
+                           int attempts, boolean closeReady, String lastVisitAt) {}
 
     public record Touch(long id, String channel, String source, String detail, String createdAt,
                         java.util.Map<String, String> payload) {}
@@ -144,10 +144,16 @@ public class LeadFollowUpService {
                 rs.getString("lost_reason"), rs.getString("lost_comment"), rs.getBoolean("source_editable"),
                 rs.getString("last_note"), rs.getString("last_note_by"), iso(rs.getTimestamp("last_note_at")), iso(rs.getTimestamp("activity_at")),
                 rs.getBoolean("academy"), rs.getString("consult_state"), iso(rs.getTimestamp("consult_at")),
-                rs.getInt("attempts"), closeReady(rs.getString("status"), rs.getInt("attempts"), rs.getTimestamp("first_attempt_at")));
+                rs.getInt("attempts"), closeReady(rs.getString("status"), rs.getInt("attempts"), rs.getTimestamp("first_attempt_at")),
+                iso(rs.getTimestamp("last_visit_at")));
     };
 
     static final int ATTEMPT_LIMIT = 3;
+    private static final long NAILS_BUSINESS = 1L;
+
+    boolean tracksLastVisit(long businessId) {
+        return businessId == NAILS_BUSINESS;
+    }
     static final int ATTEMPT_WINDOW_DAYS = 7;
     static final int FOLLOW_UP_DAYS = 2;
 
@@ -191,7 +197,15 @@ public class LeadFollowUpService {
 
     /** Leads plus the person's latest consultation: UPCOMING, or DONE when no real procedure was booked after it. */
     private String leadsSql(long businessId, boolean includeOutdated) {
-        return "SELECT x.*, c.consult_at, c.consult_state FROM (" + LEADS_SELECT
+        String ids = ConsultationCatalog.isConsultationSql("p", consultations.ids(businessId));
+        String visit = tracksLastVisit(businessId)
+                ? " LEFT JOIN LATERAL (SELECT max(b.start_at) AS last_visit_at FROM square_booking b WHERE b.business_id = " + businessId
+                  + " AND b.square_customer_id = x.square_customer_id AND b.status = 'ACCEPTED' AND b.start_at <= now() AND NOT "
+                  + ConsultationCatalog.isConsultationSql("b", consultations.ids(businessId))
+                  + " AND NOT EXISTS (SELECT 1 FROM square_booking p WHERE p.business_id = b.business_id AND p.square_customer_id = b.square_customer_id "
+                  + "AND p.status = 'ACCEPTED' AND p.start_at > now() AND NOT " + ids + ")) v ON TRUE"
+                : " LEFT JOIN LATERAL (SELECT NULL::timestamptz AS last_visit_at) v ON TRUE";
+        return "SELECT x.*, c.consult_at, c.consult_state, v.last_visit_at FROM (" + LEADS_SELECT
                 + (includeOutdated ? "" : " WHERE f.status <> 'OUTDATED' ") + ") x LEFT JOIN LATERAL ("
                 + "SELECT b.start_at AS consult_at, CASE WHEN b.start_at > now() THEN 'UPCOMING' ELSE 'DONE' END AS consult_state "
                 + "FROM square_booking b WHERE b.business_id = ? AND b.square_customer_id = x.square_customer_id AND b.status = 'ACCEPTED' "
@@ -199,7 +213,7 @@ public class LeadFollowUpService {
                 + " AND NOT EXISTS (SELECT 1 FROM square_booking p WHERE p.business_id = b.business_id AND p.square_customer_id = b.square_customer_id "
                 + "AND p.status = 'ACCEPTED' AND p.start_at >= b.start_at AND NOT "
                 + ConsultationCatalog.isConsultationSql("p", consultations.ids(businessId)) + ") "
-                + "ORDER BY b.start_at DESC LIMIT 1) c ON TRUE";
+                + "ORDER BY b.start_at DESC LIMIT 1) c ON TRUE" + visit;
     }
 
     public List<LeadView> list(String status) {
