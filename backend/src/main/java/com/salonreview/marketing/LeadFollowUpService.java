@@ -152,7 +152,9 @@ public class LeadFollowUpService {
               LEFT JOIN LATERAL (SELECT e.text, e.created_by, e.created_at FROM lead_events e WHERE e.lead_id = f.id
                                  AND e.type IN ('NOTE', 'CALL', 'AGREEMENT') ORDER BY e.created_at DESC LIMIT 1) n ON TRUE
               LEFT JOIN LATERAL (SELECT count(*)::int AS attempts, min(e.created_at) AS first_attempt_at FROM lead_events e
-                                 WHERE e.lead_id = f.id AND e.type = 'ATTEMPT' AND e.created_at > agg.last_touch_at) att ON TRUE
+                                 WHERE e.lead_id = f.id AND e.type = 'ATTEMPT' AND e.created_at > GREATEST(agg.last_touch_at,
+                                   COALESCE((SELECT max(c.created_at) FROM lead_events c WHERE c.lead_id = f.id AND c.type = 'STATUS'
+                                             AND c.text IN ('LOST', 'BOOKED', 'SPAM')), 'epoch'))) att ON TRUE
             """.formatted(KEY);
 
     /** Leads plus the person's latest consultation: UPCOMING, or DONE when no real procedure was booked after it. */
@@ -576,32 +578,67 @@ public class LeadFollowUpService {
         }
     }
 
+    private static final java.time.ZoneId PT = java.time.ZoneId.of("America/Los_Angeles");
+    private static final int WORK_START_HOUR = 9;
+    private static final int WORK_END_HOUR = 20;
+    private static final int CONSULT_MAX_AGE_DAYS = 30;
+
+    /** Pushes an automatic reminder into working hours (09:00 to 20:00 Pacific) so nobody is pinged at night. */
+    static Instant workingTime(Instant t) {
+        java.time.ZonedDateTime z = t.atZone(PT);
+        if (z.getHour() >= WORK_END_HOUR) {
+            z = z.plusDays(1).withHour(WORK_START_HOUR).withMinute(0).withSecond(0).withNano(0);
+        } else if (z.getHour() < WORK_START_HOUR) {
+            z = z.withHour(WORK_START_HOUR).withMinute(0).withSecond(0).withNano(0);
+        }
+        return z.toInstant();
+    }
+
+    /**
+     * Next automatic callback for an open lead, or null to leave it alone. Never overrides a callback the team set
+     * after the client's last text, never resurrects a callback the team cleared, and ignores old consultations.
+     */
+    static Instant followUpTarget(LeadView l, Instant inbound, Instant clearedAt, Instant now) {
+        if (!"NEW".equals(l.status()) && !"CONTACTED".equals(l.status())) return null;
+        Instant current = l.callbackAt() == null ? null : Instant.parse(l.callbackAt());
+        Instant activity = Instant.parse(l.activityAt() != null ? l.activityAt() : l.createdAt());
+        if (inbound != null && !inbound.isBefore(activity) && (clearedAt == null || clearedAt.isBefore(inbound))) {
+            Instant t = workingTime(inbound.plus(java.time.Duration.ofHours(UNANSWERED_HOURS)));
+            if (current == null || current.isAfter(t)) return t;
+        }
+        if (current == null && "DONE".equals(l.consultState()) && l.consultAt() != null) {
+            Instant consult = Instant.parse(l.consultAt());
+            if (consult.isBefore(now.minus(java.time.Duration.ofDays(CONSULT_MAX_AGE_DAYS)))) return null;
+            if (clearedAt != null && clearedAt.isAfter(consult)) return null;
+            int step = CONSULT_STEPS_DAYS[Math.min(l.attempts(), CONSULT_STEPS_DAYS.length - 1)];
+            return workingTime(consult.plus(java.time.Duration.ofDays(step)));
+        }
+        return null;
+    }
+
     private void scheduleFollowUps(long businessId) {
         java.util.Map<String, Instant> unanswered = new java.util.HashMap<>();
         jdbc.query("""
                 SELECT p, created_at FROM (
-                  SELECT DISTINCT ON (p) right(regexp_replace(phone_number, '\\D', '', 'g'), 10) AS p, direction, created_at
-                  FROM (SELECT * FROM sms_message WHERE business_id = ? AND created_at > now() - interval '14 days') m
-                  ORDER BY p, created_at DESC, id DESC) x
-                WHERE direction = 'INBOUND' AND created_at < now() - make_interval(hours => ?)
+                  SELECT DISTINCT ON (p) m.*, right(regexp_replace(m.phone_number, '\\D', '', 'g'), 10) AS p
+                  FROM sms_message m WHERE m.business_id = ? AND m.created_at > now() - interval '14 days'
+                  ORDER BY p, m.created_at DESC, m.id DESC) x
+                WHERE direction = 'INBOUND' AND reply_flow_id IS NULL AND rating IS NULL
+                  AND body !~* '^\\s*(stop|stopall|unsubscribe|cancel|end|quit|help)\\s*$'
+                  AND created_at < now() - make_interval(hours => ?)
                 """, rs -> {
             unanswered.put(rs.getString("p"), rs.getTimestamp("created_at").toInstant());
         }, businessId, UNANSWERED_HOURS);
+        java.util.Map<Long, Instant> cleared = new java.util.HashMap<>();
+        jdbc.query("SELECT lead_id, max(created_at) AS at FROM lead_events WHERE business_id = ? AND type = 'CALLBACK_CLEARED' GROUP BY lead_id",
+                rs -> {
+                    cleared.put(rs.getLong("lead_id"), rs.getTimestamp("at").toInstant());
+                }, businessId);
         Instant now = Instant.now();
         for (LeadView l : listFor(businessId, null)) {
-            if (!"NEW".equals(l.status()) && !"CONTACTED".equals(l.status())) continue;
-            Instant current = l.callbackAt() == null ? null : Instant.parse(l.callbackAt());
-            Instant activity = Instant.parse(l.activityAt() != null ? l.activityAt() : l.createdAt());
             String digits = l.phoneNumber() == null ? "" : l.phoneNumber().replaceAll("\\D", "");
             Instant inbound = digits.length() >= 10 ? unanswered.get(digits.substring(digits.length() - 10)) : null;
-            Instant target = null;
-            if (inbound != null && !inbound.isBefore(activity)) {
-                Instant t = inbound.plus(java.time.Duration.ofHours(UNANSWERED_HOURS));
-                if (current == null || current.isAfter(t)) target = t;
-            }
-            if (target == null && current == null && "DONE".equals(l.consultState()) && l.consultAt() != null) {
-                target = Instant.parse(l.consultAt()).plus(java.time.Duration.ofDays(CONSULT_STEPS_DAYS[Math.min(l.attempts(), CONSULT_STEPS_DAYS.length - 1)]));
-            }
+            Instant target = followUpTarget(l, inbound, cleared.get(l.id()), now);
             if (target == null) continue;
             boolean stale = target.isBefore(now.minus(java.time.Duration.ofDays(1)));
             jdbc.update("UPDATE lead_intake SET callback_at = ?, callback_reminded = ?, updated_by = 'System' WHERE id = ? AND business_id = ?",
