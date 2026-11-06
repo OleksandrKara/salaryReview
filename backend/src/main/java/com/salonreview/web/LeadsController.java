@@ -134,8 +134,6 @@ public class LeadsController {
         return ResponseEntity.noContent().build();
     }
 
-    public record FunnelApplyRequest(boolean consent) {}
-
     /** Funnel status for every lead the caller can see (list chips). */
     @GetMapping("/funnels")
     public Map<Long, List<com.salonreview.marketing.LeadFunnelService.Funnel>> allFunnels(@AuthenticationPrincipal AppUserPrincipal me) {
@@ -149,10 +147,10 @@ public class LeadsController {
     }
 
     @PostMapping("/{id}/funnels/academy/apply")
-    public ResponseEntity<Void> applyAcademy(@PathVariable long id, @RequestBody FunnelApplyRequest req,
+    public ResponseEntity<Void> applyAcademy(@PathVariable long id,
                                              @AuthenticationPrincipal AppUserPrincipal me) {
         guard(id, me);
-        funnels.applyAcademy(business.id(), id, req.consent(), me == null ? null : me.getUsername());
+        funnels.applyAcademy(business.id(), id, me == null ? null : me.getUsername());
         return ResponseEntity.noContent().build();
     }
 

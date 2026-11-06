@@ -241,9 +241,8 @@ public class LeadFunnelService {
         return new Funnel(SITE, state, "FINISHED".equals(state) ? null : reason, steps, false, false, row.createdAt().toString());
     }
 
-    public void applyAcademy(long businessId, long leadId, boolean consent, String by) {
+    public void applyAcademy(long businessId, long leadId, String by) {
         if (businessId != ACADEMY_BUSINESS) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "no academy funnel for this business");
-        if (!consent) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "consent confirmation required");
         LeadView l = leads.find(leadId);
         Funnel f = forLead(businessId, l).stream().filter(x -> ACADEMY.equals(x.key())).findFirst().orElse(null);
         if (f == null || !f.canApply()) {
@@ -254,7 +253,7 @@ public class LeadFunnelService {
                 INSERT INTO academy_lead (business_id, kind, name, phone, email, course_name, message, sms_consent, email_consent, source_page_url)
                 VALUES (?, 'course_request', ?, ?, ?, ?, ?, ?, ?, 'crm')
                 """, businessId, name, l.phoneNumber(), l.email(), l.detail(), "Started from the Leads CRM by " + by,
-                l.phoneNumber() != null, l.email() != null);
+                false, false);
         leads.addEvent(leadId, "NOTE", "Academy auto-funnel started (SMS + emails)", by);
     }
 
