@@ -2609,7 +2609,7 @@ export interface LeadSpend { total: number; tips: number; visits: number; firstV
 export interface LeadEmail { id: number; kind: string; sentAt: string; openedAt: string | null; clickedAt: string | null; hasContent: boolean }
 
 export type FunnelState = 'ACTIVE' | 'PAUSED' | 'STOPPED' | 'FINISHED' | 'NOT_APPLIED';
-export type FunnelStep = { key: string; state: 'DONE' | 'SKIPPED' | 'FAILED' | 'PENDING'; at: string | null };
+export type FunnelStep = { key: string; channel: 'sms' | 'email' | null; state: 'DONE' | 'SKIPPED' | 'FAILED' | 'PENDING' | 'NOT_SENT'; at: string | null; detail: string | null };
 export type LeadFunnel = {
   key: 'academy' | 'consult' | 'site';
   state: FunnelState;
@@ -2618,4 +2618,8 @@ export type LeadFunnel = {
   canApply: boolean;
   canStop: boolean;
   startedAt: string | null;
+  stoppedAt: string | null;
+  stoppedBy: string | null;
+  stopNote: string | null;
+  stoppedVia: string | null;
 };

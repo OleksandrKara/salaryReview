@@ -154,10 +154,22 @@ public class LeadsController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/resolve")
+    public Map<String, Long> resolve(@RequestParam(required = false) Long academy, @RequestParam(required = false) Long consult,
+                                     @AuthenticationPrincipal AppUserPrincipal me) {
+        Long lead = academy != null ? funnels.resolveLead(business.id(), "academy", academy)
+                : consult != null ? funnels.resolveLead(business.id(), "consult", consult) : null;
+        if (lead == null) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND);
+        guard(lead, me);
+        return Map.of("id", lead);
+    }
+
     @PostMapping("/{id}/funnels/{key}/stop")
-    public ResponseEntity<Void> stopFunnel(@PathVariable long id, @PathVariable String key, @AuthenticationPrincipal AppUserPrincipal me) {
+    public ResponseEntity<Void> stopFunnel(@PathVariable long id, @PathVariable String key,
+                                           @RequestBody(required = false) Map<String, String> body,
+                                           @AuthenticationPrincipal AppUserPrincipal me) {
         guard(id, me);
-        funnels.stop(business.id(), id, key, me == null ? null : me.getUsername());
+        funnels.stop(business.id(), id, key, me == null ? null : me.getUsername(), body == null ? null : body.get("note"));
         return ResponseEntity.noContent().build();
     }
 }

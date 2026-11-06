@@ -16,23 +16,52 @@ const STEP_DOT: Record<string, string> = {
   SKIPPED: 'bg-zinc-300 border-zinc-300',
   FAILED: 'bg-red-500 border-red-500',
   PENDING: 'bg-white border-zinc-400',
+  NOT_SENT: 'bg-white border-zinc-300',
 };
+const WHY = ['late', 'no_phone', 'no_email', 'not_configured', 'no_template', 'texted_us', 'booked', 'disabled', 'recently_sent', 'no_consent', 'skipped', 'not_sent', 'send_failed'];
+const VIA = ['crm', 'telegram_link', 'client_reply', 'duplicate', 'booked', 'system', 'unknown'];
+
+export function whyText(detail: string | null, language: Language | null): string | null {
+  if (!detail) return null;
+  return WHY.includes(detail) ? t(language, `funnelWhy_${detail}` as 'funnelWhy_late') : detail.slice(0, 120);
+}
+
+export function stoppedLine(f: LeadFunnel, language: Language | null): string | null {
+  if (f.state !== 'STOPPED' && !f.stoppedVia) return null;
+  const via = f.stoppedVia && VIA.includes(f.stoppedVia) ? f.stoppedVia : 'unknown';
+  const who = f.stoppedBy ? ` ${f.stoppedBy}` : '';
+  const at = f.stoppedAt ? `, ${new Date(f.stoppedAt).toLocaleString(language === 'RU' ? 'ru-RU' : 'en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : '';
+  return `${t(language, 'funnelStoppedBy')}${who} ${t(language, `funnelVia_${via}` as 'funnelVia_crm')}${at}`;
+}
 const quick = 'rounded px-3 py-1.5 text-sm ring-1 ring-zinc-300 hover:bg-zinc-50 disabled:opacity-40';
 
 function when(iso: string, lang: Language | null): string {
   return new Date(iso).toLocaleString(lang === 'RU' ? 'ru-RU' : 'en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-export default function FunnelPanel({ leadId, language, onChanged }: { leadId: number; language: Language | null; onChanged: () => void }) {
+export default function FunnelPanel({ leadId, language, onChanged, onLoaded, autoStop }: {
+  leadId: number; language: Language | null; onChanged: () => void; onLoaded?: (f: LeadFunnel[]) => void; autoStop?: string | null;
+}) {
   const [funnels, setFunnels] = useState<LeadFunnel[] | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [note, setNote] = useState('');
+  const [autoDone, setAutoDone] = useState(false);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/leads/${leadId}/funnels`, { cache: 'no-store' });
-    if (res.ok) setFunnels(await res.json());
-  }, [leadId]);
+    if (res.ok) {
+      const list: LeadFunnel[] = await res.json();
+      setFunnels(list);
+      onLoaded?.(list);
+      if (autoStop && !autoDone) {
+        setAutoDone(true);
+        const target = list.find((x) => x.key === autoStop && x.canStop);
+        if (target) setConfirm(`stop:${target.key}`);
+      }
+    }
+  }, [leadId, onLoaded, autoStop, autoDone]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -40,11 +69,12 @@ export default function FunnelPanel({ leadId, language, onChanged }: { leadId: n
     setBusy(true);
     setError('');
     const res = await fetch(`/api/leads/${leadId}/funnels/${key}/${action}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(action === 'stop' ? { note } : {}),
     });
     setBusy(false);
     if (!res.ok) { setError(t(language, 'leadErr')); return; }
     setConfirm(null);
+    setNote('');
     await load();
     onChanged();
   }
@@ -67,7 +97,11 @@ export default function FunnelPanel({ leadId, language, onChanged }: { leadId: n
               </span>
               {f.startedAt && <span className="text-xs text-zinc-500">{t(language, 'funnelStarted')} {when(f.startedAt, language)}</span>}
             </div>
-            {f.reason && (
+            {stoppedLine(f, language) && (
+              <p className="text-xs font-medium text-red-800">{stoppedLine(f, language)}</p>
+            )}
+            {f.stopNote && <p className="text-xs text-zinc-700">{t(language, 'funnelNote')}: {f.stopNote}</p>}
+            {f.reason && f.state !== 'STOPPED' && (
               <p className="text-xs text-zinc-600">{t(language, `funnelReason_${f.reason}` as 'funnelReason_STAFF')}</p>
             )}
             {f.steps.length > 0 && (
@@ -78,8 +112,9 @@ export default function FunnelPanel({ leadId, language, onChanged }: { leadId: n
                     <span className={s.state === 'PENDING' ? 'text-zinc-500' : 'text-zinc-800'}>
                       {t(language, `funnelStep_${s.key}` as 'funnelStep_sms')}
                     </span>
-                    <span className="text-zinc-400">
+                    <span className={s.state === 'FAILED' ? 'text-red-700' : 'text-zinc-500'}>
                       {t(language, `funnelStep${s.state}` as 'funnelStepDONE')}{s.at ? `, ${when(s.at, language)}` : ''}
+                      {whyText(s.detail, language) && s.state !== 'DONE' ? `: ${whyText(s.detail, language)}` : ''}
                     </span>
                   </li>
                 ))}
@@ -106,7 +141,14 @@ export default function FunnelPanel({ leadId, language, onChanged }: { leadId: n
             )}
             {confirm === stopKey && (
               <div className="flex flex-col gap-2 rounded-md bg-white p-3 ring-1 ring-zinc-300">
+                {autoStop === f.key && <p className="text-xs text-blue-800">{t(language, 'funnelFromTelegram')}</p>}
                 <p className="text-sm font-medium">{t(language, 'funnelStopTitle')}</p>
+                <label className="flex flex-col gap-1 text-xs text-zinc-600">
+                  {t(language, 'funnelStopNoteLabel')}
+                  <textarea id={`funnel-note-${f.key}`} className="rounded border border-zinc-300 p-2 text-sm text-zinc-900" rows={2} maxLength={500}
+                    value={note} onChange={(e) => setNote(e.target.value)} />
+                </label>
+                <p className="text-xs text-zinc-500">{t(language, 'funnelStopNoteHint')}</p>
                 <div className="flex gap-2">
                   <button className={`${quick} bg-red-600 text-white ring-red-600`} disabled={busy} onClick={() => run(f.key, 'stop')}>{t(language, 'funnelStopYes')}</button>
                   <button className={quick} onClick={() => setConfirm(null)}>{t(language, 'funnelCancel')}</button>

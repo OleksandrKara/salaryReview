@@ -20,10 +20,9 @@ public class AcademyLeadLinks {
         this.publicBaseUrl = publicBaseUrl;
     }
 
-    /** {@code null} when link signing isn't configured: the alert then goes out without a button. */
+    /** Opens the lead in the CRM (login required) with the stop confirmation ready, so the stop is recorded with who and why. */
     public String stopUrl(long leadId) {
-        String sig = signer.sign(PREFIX, leadId);
-        return sig == null ? null : publicBaseUrl + "/api/public/academy-lead/stop?id=" + leadId + "&sig=" + sig;
+        return publicBaseUrl + "/admin/leads/open?academy=" + leadId;
     }
 
     public boolean verifyStop(long leadId, String signature) {

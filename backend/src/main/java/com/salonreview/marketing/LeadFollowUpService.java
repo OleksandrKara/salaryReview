@@ -235,18 +235,49 @@ public class LeadFollowUpService {
         }, business.id(), phone, email, email);
     }
 
+    /** The lead's Square customer plus duplicate profiles of the same person (same phone or email in this business). */
+    private List<String> customerIds(LeadView lead) {
+        java.util.LinkedHashSet<String> ids = new java.util.LinkedHashSet<>();
+        if (lead.squareCustomerId() == null) return List.of();
+        ids.add(lead.squareCustomerId());
+        String digits = lead.phoneNumber() == null ? "" : lead.phoneNumber().replaceAll("\\D", "");
+        String phone = digits.length() < 10 ? null : digits.substring(digits.length() - 10);
+        String email = lead.email() == null || lead.email().isBlank() ? null : lead.email().trim().toLowerCase();
+        if (phone != null || email != null) {
+            ids.addAll(jdbc.queryForList("""
+                    SELECT square_customer_id FROM square_customer WHERE business_id = ?
+                      AND ((?::text IS NOT NULL AND right(regexp_replace(coalesce(phone_number, ''), '\\D', '', 'g'), 10) = ?)
+                           OR (?::text IS NOT NULL AND lower(email_address) = ?))
+                    """, String.class, business.id(), phone, phone, email, email));
+        }
+        return List.copyOf(ids);
+    }
+
+    private static String marks(int n) {
+        return String.join(", ", java.util.Collections.nCopies(n, "?"));
+    }
+
+    private Object[] args(long businessId, List<String> ids, Object... tail) {
+        List<Object> a = new java.util.ArrayList<>();
+        a.add(businessId);
+        a.addAll(ids);
+        a.addAll(List.of(tail));
+        return a.toArray();
+    }
+
     /** Appointments of the linked Square customer, read from the webhook-fed mirror (no Square call
      * except cached catalog names for the service labels). */
     private List<Appointment> appointments(LeadView lead) {
-        if (lead.squareCustomerId() == null) return List.of();
+        List<String> customers = customerIds(lead);
+        if (customers.isEmpty()) return List.of();
         List<Object[]> rows = new java.util.ArrayList<>();
         jdbc.query("""
                 SELECT square_booking_id, status, start_at, appointment_segments_json::text AS segments
-                FROM square_booking WHERE business_id = ? AND square_customer_id = ?
+                FROM square_booking WHERE business_id = ? AND square_customer_id IN (%s)
                 ORDER BY start_at DESC NULLS LAST LIMIT 20
-                """, rs -> {
+                """.formatted(marks(customers.size())), rs -> {
             rows.add(new Object[]{rs.getString(1), rs.getString(2), iso(rs.getTimestamp(3)), rs.getString(4)});
-        }, business.id(), lead.squareCustomerId());
+        }, args(business.id(), customers));
         java.util.Set<String> variationIds = new java.util.LinkedHashSet<>();
         List<List<String>> perRow = new java.util.ArrayList<>();
         for (Object[] r : rows) {
@@ -275,7 +306,7 @@ public class LeadFollowUpService {
                 + "JOIN providers p ON p.id = m.provider_id WHERE p.business_id = ?", rs -> {
             techs.put(rs.getString(1), rs.getString(2));
         }, business.id());
-        java.util.Map<java.time.LocalDate, java.math.BigDecimal> paidByDay = paidByDay(lead.squareCustomerId());
+        java.util.Map<java.time.LocalDate, java.math.BigDecimal> paidByDay = paidByDay(customers);
         java.time.ZoneId la = java.time.ZoneId.of("America/Los_Angeles");
         List<Appointment> out = new java.util.ArrayList<>();
         for (int i = 0; i < rows.size(); i++) {
@@ -309,31 +340,33 @@ public class LeadFollowUpService {
         return out;
     }
 
-    private java.util.Map<java.time.LocalDate, java.math.BigDecimal> paidByDay(String customerId) {
+    private java.util.Map<java.time.LocalDate, java.math.BigDecimal> paidByDay(List<String> customerIds) {
         java.util.Map<java.time.LocalDate, java.math.BigDecimal> out = new java.util.HashMap<>();
-        if (customerId == null) return out;
+        if (customerIds.isEmpty()) return out;
         jdbc.query("""
                 SELECT (created_at AT TIME ZONE 'America/Los_Angeles')::date AS d, sum(total_money) - COALESCE(sum(tip_money), 0) AS amount
-                FROM square_payment WHERE business_id = ? AND square_customer_id = ? AND status = 'COMPLETED'
+                FROM square_payment WHERE business_id = ? AND square_customer_id IN (%s) AND status = 'COMPLETED'
                 GROUP BY 1
-                """, rs -> {
+                """.formatted(marks(customerIds.size())), rs -> {
             out.put(rs.getDate(1).toLocalDate(), rs.getBigDecimal(2));
-        }, business.id(), customerId);
+        }, args(business.id(), customerIds));
         return out;
     }
 
     /** Lifetime money and visits of the linked Square customer, from the payment mirror (tips reported apart). */
     private Spend spend(LeadView lead) {
         java.math.BigDecimal zero = java.math.BigDecimal.ZERO;
-        if (lead.squareCustomerId() == null) return new Spend(zero, zero, 0, null, null, null);
-        var days = paidByDay(lead.squareCustomerId());
+        List<String> customers = customerIds(lead);
+        if (customers.isEmpty()) return new Spend(zero, zero, 0, null, null, null);
+        var days = paidByDay(customers);
         java.math.BigDecimal total = days.values().stream().reduce(zero, java.math.BigDecimal::add);
         java.math.BigDecimal tips = jdbc.queryForObject("SELECT COALESCE(sum(tip_money), 0) FROM square_payment WHERE business_id = ? "
-                + "AND square_customer_id = ? AND status = 'COMPLETED'", java.math.BigDecimal.class, business.id(), lead.squareCustomerId());
+                + "AND square_customer_id IN (" + marks(customers.size()) + ") AND status = 'COMPLETED'", java.math.BigDecimal.class,
+                args(business.id(), customers));
         var sorted = days.keySet().stream().sorted().toList();
-        String next = jdbc.query("SELECT min(start_at) FROM square_booking WHERE business_id = ? AND square_customer_id = ? "
-                        + "AND status = 'ACCEPTED' AND start_at > now()",
-                rs -> rs.next() ? iso(rs.getTimestamp(1)) : null, business.id(), lead.squareCustomerId());
+        String next = jdbc.query("SELECT min(start_at) FROM square_booking WHERE business_id = ? AND square_customer_id IN ("
+                        + marks(customers.size()) + ") AND status = 'ACCEPTED' AND start_at > now()",
+                rs -> rs.next() ? iso(rs.getTimestamp(1)) : null, args(business.id(), customers));
         return new Spend(total, tips, days.size(), sorted.isEmpty() ? null : sorted.get(0).toString(),
                 sorted.isEmpty() ? null : sorted.get(sorted.size() - 1).toString(), next);
     }

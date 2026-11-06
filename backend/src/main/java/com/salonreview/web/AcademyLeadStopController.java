@@ -35,7 +35,7 @@ public class AcademyLeadStopController {
         } catch (EmptyResultDataAccessException e) {
             return ResponseEntity.status(404).body(page("Не найдено / Not found."));
         }
-        jdbc.update("UPDATE academy_lead SET status = 'contacted', stopped_at = now() WHERE id = ? AND status = 'new'", id);
+        jdbc.update("UPDATE academy_lead SET status = 'contacted', stopped_at = now(), stop_via = 'telegram_link' WHERE id = ? AND status = 'new'", id);
         String who = name == null ? "" : name;
         return ResponseEntity.ok(page("Готово: " + who + " больше не получит автоматических писем и SMS академии."
                 + "<br>Done: " + who + " won't get any more automatic academy follow-ups."));
