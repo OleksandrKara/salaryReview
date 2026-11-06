@@ -3,10 +3,13 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { FUNNEL_TONE } from './FunnelPanel';
+import OutdatedPanel, { LockIcon } from './OutdatedPanel';
 import { t } from '../../lib/i18n';
 import type { Language, Lead, LeadFunnel } from '../../lib/types';
 
 type Tab = 'ACTION' | 'CONSULT' | 'CONTACTED' | 'BOOKED' | 'LOST' | 'SPAM' | 'ALL';
+const OUTDATED = 'OUTDATED' as const;
+type AnyTab = Tab | typeof OUTDATED;
 const TABS: Tab[] = ['ACTION', 'CONSULT', 'CONTACTED', 'BOOKED', 'LOST', 'SPAM', 'ALL'];
 const DAY = 86_400_000;
 const COLD_AFTER_DAYS = 7;
@@ -16,6 +19,7 @@ const STATUS_STYLE: Record<string, string> = {
   BOOKED: 'bg-green-100 text-green-800',
   LOST: 'bg-zinc-100 text-zinc-500',
   SPAM: 'bg-zinc-100 text-zinc-400',
+  OUTDATED: 'bg-zinc-100 text-zinc-500 ring-1 ring-inset ring-zinc-300',
 };
 
 function fmt(iso: string, lang: Language | null): string {
@@ -84,9 +88,10 @@ function buildSections(leads: Lead[], tab: Tab, now: number, lang: Language | nu
   return sorted.length ? [{ key: 'all', title: '', tone: '', leads: sorted }] : [];
 }
 
-export default function LeadsManager({ initialLeads, language = null }: { initialLeads: Lead[]; language?: Language | null }) {
+export default function LeadsManager({ initialLeads, language = null, restricted = false }: { initialLeads: Lead[]; language?: Language | null; restricted?: boolean }) {
   const [leads, setLeads] = useState(initialLeads);
-  const [tab, setTab] = useState<Tab | null>(null);
+  const [tab, setTab] = useState<AnyTab | null>(null);
+  const [outdatedTotal, setOutdatedTotal] = useState<number | null>(null);
   const [q, setQ] = useState('');
   const [source, setSource] = useState('');
   const [academyOnly, setAcademyOnly] = useState(false);
@@ -97,6 +102,11 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
   useEffect(() => {
     fetch('/api/leads/funnels', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : {})).then(setFunnels).catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (restricted) return;
+    fetch('/api/leads/outdated?page=0', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setOutdatedTotal(d.total); }).catch(() => undefined);
+  }, [restricted]);
 
   const sources = useMemo(() => Array.from(new Set(leads.map((l) => l.source))).sort(), [leads]);
   const base = useMemo(() => {
@@ -115,8 +125,9 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [base],
   );
-  const activeTab: Tab = tab ?? (counts.ACTION > 0 ? 'ACTION' : 'ALL');
-  const sections = buildSections(base.filter((l) => inTab(l, activeTab)), activeTab, now, language);
+  const activeTab: AnyTab = tab ?? (counts.ACTION > 0 ? 'ACTION' : 'ALL');
+  const archive = activeTab === OUTDATED;
+  const sections = archive ? [] : buildSections(base.filter((l) => inTab(l, activeTab as Tab)), activeTab as Tab, now, language);
 
   async function noAnswer(l: Lead) {
     setBusyId(l.id);
@@ -158,7 +169,7 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div className={`flex flex-col gap-2 sm:flex-row ${archive ? 'hidden' : ''}`}>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -187,7 +198,18 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
             <span className={`rounded-full px-1.5 text-xs tabular-nums ${activeTab === x ? 'bg-white/20' : x === 'ACTION' && counts[x] > 0 ? 'bg-red-100 text-red-700' : 'bg-zinc-100 text-zinc-600'}`}>{counts[x]}</span>
           </button>
         ))}
-        {hasAcademy && (
+        {!restricted && (
+          <button
+            onClick={() => setTab(OUTDATED)}
+            aria-pressed={archive}
+            className={`flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1 text-sm ${archive ? 'border-zinc-700 bg-zinc-700 text-white' : 'border-zinc-400 bg-zinc-50 text-zinc-600 hover:bg-zinc-100'}`}
+          >
+            <LockIcon />
+            {t(language, 'crmTabOutdated')}
+            {outdatedTotal != null && <span className={`rounded-full px-1.5 text-xs tabular-nums ${archive ? 'bg-white/20' : 'bg-zinc-200 text-zinc-600'}`}>{outdatedTotal}</span>}
+          </button>
+        )}
+        {hasAcademy && !archive && (
           <button
             onClick={() => setAcademyOnly(!academyOnly)}
             aria-pressed={academyOnly}
@@ -198,13 +220,15 @@ export default function LeadsManager({ initialLeads, language = null }: { initia
         )}
       </div>
 
+      {archive && <OutdatedPanel language={language} onTotal={setOutdatedTotal} />}
+
       {activeTab === 'ACTION' && (
         <p className="rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-600 ring-1 ring-zinc-200">{t(language, 'crmActionHint')}</p>
       )}
       {activeTab === 'ACTION' && counts.ACTION === 0 && (
         <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200">{t(language, 'crmAllDone')}</p>
       )}
-      {sections.length === 0 && activeTab !== 'ACTION' && <p className="text-sm text-zinc-500">{t(language, 'leadsEmpty')}</p>}
+      {sections.length === 0 && !archive && activeTab !== 'ACTION' && <p className="text-sm text-zinc-500">{t(language, 'leadsEmpty')}</p>}
 
       {sections.map((s) => (
         <section key={s.key} className="flex flex-col gap-2">

@@ -2563,7 +2563,12 @@ export interface MarketingConversionsData {
 }
 
 // --- Leads CRM (owner/manager) — captured by backend LeadIntakeService, followed up via /admin/leads.
-export type LeadStatus = 'NEW' | 'CONTACTED' | 'BOOKED' | 'LOST' | 'SPAM';
+export type LeadStatus = 'NEW' | 'CONTACTED' | 'BOOKED' | 'LOST' | 'SPAM' | 'OUTDATED';
+export interface OutdatedRow {
+  id: number; name: string | null; phoneNumber: string | null; email: string | null; source: string; createdAt: string;
+  visits: number; lastVisitAt: string | null; nextVisitAt: string | null; consulted: boolean;
+}
+export interface OutdatedPage { total: number; clients: number; never: number; page: number; pages: number; items: OutdatedRow[] }
 export interface Lead {
   id: number;
   channel: string;

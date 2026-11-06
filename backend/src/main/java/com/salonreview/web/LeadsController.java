@@ -51,6 +51,14 @@ public class LeadsController {
         return academyOnly(me) ? all.stream().filter(LeadView::academy).toList() : all;
     }
 
+    /** Pre-CRM archive. Owner/manager only: academy-only users never see it. */
+    @GetMapping("/outdated")
+    public LeadFollowUpService.OutdatedPage outdated(@RequestParam(required = false) String q, @RequestParam(required = false) String seg,
+                                                     @RequestParam(defaultValue = "0") int page, @AuthenticationPrincipal AppUserPrincipal me) {
+        if (academyOnly(me)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not available");
+        return leads.outdated(q, seg, page);
+    }
+
     private record CachedCount(long at, int count) {}
 
     private final java.util.concurrent.ConcurrentHashMap<String, CachedCount> counts = new java.util.concurrent.ConcurrentHashMap<>();

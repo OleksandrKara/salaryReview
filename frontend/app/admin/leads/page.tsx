@@ -19,7 +19,7 @@ export default async function LeadsPage() {
       <PageHeader title={t(lang, 'leadsTitle')} role={me.role} language={lang} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <p className="mb-6 text-xs text-zinc-500">{t(lang, 'leadsDesc')}</p>
       {academyOnly ? null : <Link href="/admin/leads/lost-report" className="mb-4 inline-block text-sm text-zinc-600 underline">{t(lang, 'leadLostReport')}</Link>}
-      <LeadsManager initialLeads={leads} language={lang} />
+      <LeadsManager initialLeads={leads} language={lang} restricted={academyOnly} />
     </main>
   );
 }
