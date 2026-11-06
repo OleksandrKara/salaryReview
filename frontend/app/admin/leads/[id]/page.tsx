@@ -12,7 +12,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
   if (!detail) notFound();
 
   return (
-    <main className="mx-auto max-w-3xl p-4 sm:p-8">
+    <main className="mx-auto max-w-3xl overflow-x-clip p-4 sm:p-8">
       <PageHeader title={t(lang, 'leadsTitle')} role={me.role} language={lang} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <LeadCard initial={detail} language={lang} />
     </main>

@@ -453,6 +453,10 @@ const STRINGS = {
   crmText: { EN: 'Text', RU: 'Написать' },
   crmMarkContacted: { EN: 'Mark contacted', RU: 'Взял(а) в работу' },
   crmWaiting: { EN: 'waiting', RU: 'ждёт' },
+  crmNoAnswer: { EN: 'No answer', RU: 'Не ответил(а)' },
+  crmAttempts: { EN: 'attempts', RU: 'попытки' },
+  crmCloseNoAnswer: { EN: 'Close as Lost: no answer', RU: 'В Lost: нет ответа' },
+  crmCloseHint: { EN: 'No answer after several attempts. Check the chat first, then close the lead.', RU: 'Нет ответа после нескольких попыток. Проверьте переписку и закройте лид.' },
   crmCallbackAt: { EN: 'Callback', RU: 'Перезвон' },
   crmNoNote: { EN: 'No notes yet', RU: 'Заметок пока нет' },
   crmJustNow: { EN: 'just now', RU: 'только что' },
@@ -527,6 +531,7 @@ const STRINGS = {
   leadLostReportCount: { EN: 'Leads', RU: 'Лидов' },
   leadEventSTATUS: { EN: 'Status changed to', RU: 'Статус изменён на' },
   leadEventCALLBACK: { EN: 'Callback reminder set for', RU: 'Напоминание о перезвоне на' },
+  leadEventATTEMPT: { EN: 'Tried to reach, no answer', RU: 'Попытка связаться, без ответа' },
   leadEventCALLBACK_CLEARED: { EN: 'Callback reminder cleared', RU: 'Напоминание о перезвоне убрано' },
   leadErr: { EN: 'Something went wrong. Try again.', RU: 'Что-то пошло не так. Попробуйте ещё раз.' },
 

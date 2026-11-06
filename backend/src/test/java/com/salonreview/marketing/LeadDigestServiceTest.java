@@ -19,7 +19,7 @@ class LeadDigestServiceTest {
 
     private static LeadView lead(long id, String channel, String status, String createdAt, String callbackAt, String consultState) {
         return new LeadView(id, channel, "Google", "+1555000" + id, null, "Lead " + id, null, status, callbackAt, createdAt, createdAt,
-                1, null, null, null, null, false, null, null, null, createdAt, false, consultState, null);
+                1, null, null, null, null, false, null, null, null, createdAt, false, consultState, null, 0, false);
     }
 
     @Test

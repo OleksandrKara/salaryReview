@@ -89,6 +89,16 @@ public class LeadsController {
         return ResponseEntity.noContent().build();
     }
 
+    public record AttemptRequest(String channel) {}
+
+    @PostMapping("/{id}/attempts")
+    public ResponseEntity<Void> attempt(@PathVariable long id, @RequestBody(required = false) AttemptRequest req,
+                                        @AuthenticationPrincipal AppUserPrincipal me) {
+        guard(id, me);
+        leads.recordAttempt(id, req == null ? null : req.channel(), me == null ? null : me.getUsername());
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/{id}/events")
     public ResponseEntity<Void> addEvent(@PathVariable long id, @RequestBody EventRequest req,
                                          @AuthenticationPrincipal AppUserPrincipal me) {

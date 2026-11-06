@@ -2589,6 +2589,8 @@ export interface Lead {
   academy: boolean;
   consultState: 'UPCOMING' | 'DONE' | null;
   consultAt: string | null;
+  attempts: number;
+  closeReady: boolean;
 }
 export interface LostRow { reason: string; source: string | null; count: number }
 export interface LostReport { days: number; total: number; byReason: LostRow[]; bySource: LostRow[] }

@@ -23,7 +23,7 @@ const LOST_REASONS = ['PRICE', 'NO_ANSWER', 'NOT_INTERESTED', 'BOUGHT_ELSEWHERE'
 const SOURCES = ['Instagram', 'Yelp', 'Google', 'Facebook', 'TikTok', 'Referral', 'Walk-in', 'Phone', 'Other', 'Unknown'];
 const field = 'rounded border border-zinc-300 px-2 py-1.5 text-sm focus:border-zinc-500 focus:outline-none';
 const primary = 'rounded bg-zinc-900 px-3 py-1.5 text-sm text-white disabled:opacity-40';
-const link = 'rounded px-3 py-1.5 text-sm ring-1 ring-zinc-300 hover:bg-zinc-50';
+const link = 'min-w-0 rounded px-3 py-1.5 text-sm ring-1 ring-zinc-300 hover:bg-zinc-50';
 
 function fmt(iso: string, lang: Language | null): string {
   return new Date(iso).toLocaleString(lang === 'RU' ? 'ru-RU' : 'en-US', {
@@ -201,7 +201,7 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
   );
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 max-w-full flex-col gap-4">
       <Link href="/admin/leads" className="text-sm text-zinc-600 underline">{t(language, 'leadsBack')}</Link>
 
       <section className="rounded-lg p-4 ring-1 ring-zinc-200">
@@ -232,7 +232,7 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
           {lead.email && <div className="break-all">{lead.email}</div>}
           <div className="text-xs text-zinc-500">{fmt(lead.createdAt, language)} · {lead.touches} {t(language, 'leadTouches')}</div>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+        <div className="mt-3 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-2 sm:flex sm:flex-wrap">
           {lead.phoneNumber && <a href={`tel:${lead.phoneNumber}`} className={`${link} py-2.5 text-center`}>{t(language, 'crmCall')}</a>}
           {chat && <Link href={chat} className={`${link} py-2.5 text-center`}>{t(language, 'leadOpenChat')}</Link>}
           <button className={`${link} py-2.5`} onClick={openNotes}>{t(language, 'crmNoteSave')}</button>
@@ -242,7 +242,7 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
         </div>
       </section>
 
-      <section className="flex flex-wrap items-center gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
+      <section className="flex min-w-0 flex-wrap items-center gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
         <select
           aria-label="status"
           value={lead.status}
@@ -282,9 +282,9 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
             <button className={link} onClick={() => { setLosing(false); setLostReason(''); setLostComment(''); }}>{t(language, 'leadLostCancel')}</button>
           </div>
         )}
-        <div className="flex w-full flex-wrap items-center gap-2 text-sm text-zinc-600 sm:w-auto">
-          <label htmlFor="lead-callback">{t(language, 'leadCallback')}</label>
-          <input id="lead-callback" type="datetime-local" value={callback} onChange={(e) => setCallback(e.target.value)} className={`${field} min-w-0 flex-1 sm:flex-none`} />
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 text-sm text-zinc-600 sm:w-auto">
+          <label htmlFor="lead-callback" className="w-full sm:w-auto">{t(language, 'leadCallback')}</label>
+          <input id="lead-callback" type="datetime-local" value={callback} onChange={(e) => setCallback(e.target.value)} className={`${field} w-full min-w-0 sm:w-auto sm:flex-none`} />
           <button className={primary} disabled={busy || !callback} onClick={() => send(`/api/leads/${lead.id}`, 'PATCH', { callbackAt: new Date(callback).toISOString() })}>
             {t(language, 'leadCallbackSet')}
           </button>
@@ -294,6 +294,24 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
             </button>
           )}
         </div>
+        {(lead.status === 'NEW' || lead.status === 'CONTACTED') && (
+          <div className="flex w-full flex-wrap items-center gap-2">
+            {lead.closeReady ? (
+              <>
+                <p className="w-full text-sm text-red-800">{lead.attempts} {t(language, 'crmAttempts')}. {t(language, 'crmCloseHint')}</p>
+                <button
+                  className="rounded bg-red-600 px-3 py-2 text-sm text-white disabled:opacity-40"
+                  disabled={busy}
+                  onClick={() => send(`/api/leads/${lead.id}`, 'PATCH', { status: 'LOST', lostReason: 'NO_ANSWER', lostComment: `${lead.attempts} ${t(language, 'crmAttempts')}` })}
+                >
+                  {t(language, 'crmCloseNoAnswer')}
+                </button>
+              </>
+            ) : null}
+            <button className={`${link} py-2`} disabled={busy} onClick={() => send(`/api/leads/${lead.id}/attempts`, 'POST', {})}>{t(language, 'crmNoAnswer')}</button>
+            {lead.attempts > 0 && <span className="text-sm text-zinc-600">{lead.attempts}/3 {t(language, 'crmAttempts')}</span>}
+          </div>
+        )}
         {error && <p className="w-full text-sm text-red-600">{error}</p>}
       </section>
 
@@ -332,7 +350,7 @@ export default function LeadCard({ initial, language = null }: { initial: LeadDe
             {visible.map((r, idx) => {
               const newDay = idx === 0 || dayKey(visible[idx - 1].at) !== dayKey(r.at);
               return (
-                <li key={r.key}>
+                <li key={r.key} className="min-w-0">
                   {newDay && <div className="sticky top-12 z-[1] bg-white/95 py-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">{dayTitle(r.at, language, now)}</div>}
                   <div className="flex gap-3">
                     <div className="flex flex-col items-center">
