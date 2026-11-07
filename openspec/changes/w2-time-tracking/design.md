@@ -68,6 +68,19 @@ The Yesterday page (no login, signed link, rate limited) shows the proposed day 
 
 See `compliance.md` for the rule-by-rule review and sources (nothing here is a licensed attorney's opinion; CPA or counsel should confirm the flagged items).
 
+### D12. Worker type switch, approvals and commission comparison (owner request 2026-11-07)
+
+- Every provider has a worker type set by the owner: `W2` (employee) or `1099` (subcontractor). Default 1099, so nothing changes for anyone until the owner flips it. First and only W2 at launch: Yana Kovalenko (provider 43).
+- A W2 provider, after login, sees earnings from approved time (hours, overtime, premiums, tips). A 1099 provider keeps the current commission view.
+- The commission calculation keeps running for W2 providers as a hidden comparison ("what it would have been"). Owner and manager-visible comparison for owner only. A per-provider flag `show_commission_comparison_to_provider` (default false) lets the owner show the comparison to the worker later.
+- Time approval chain:
+  1. Worker enters time herself: no worker approval needed, goes to final approval.
+  2. Worker did not enter time: system drafts it from appointments (D1-D4), worker confirms or edits, then goes to final approval.
+  3. Final approval is always a human: owner or an assigned manager. Nothing is payroll-ready without it.
+- Each provider has one or more approvers (owner or managers), table `provider_time_approver(business_id, provider_id, app_user_id)`. Escalations go to the assigned approvers; at launch Yana's approver is Christina only (Evgenia is not touched).
+- Payroll costs for the salon are computed both ways (W2 by time, commission scheme) so the owner sees employer cost under each.
+- Parked, separate Notion task: optimize the October payroll of Yana (W2 cost was about $1000 above commission; goal is no overtime, balanced employer cost and worker earnings, CA compliant).
+
 ## Risks and open questions
 
 - Legal reading of rules (waiver form, reporting time, split shift for client-booked gaps, premium payroll line item) should be confirmed once by the CPA or counsel; the policy lives in one class so changes are cheap. See compliance.md.

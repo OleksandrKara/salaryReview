@@ -1,7 +1,7 @@
 ## 0. Preparation
 
-- [ ] 0.1 Owner answers the open questions in design.md (technician mobile numbers, payroll export layout, waiver form, who is "managers" for escalation)
-- [ ] 0.2 Update `openspec/config.yaml` context: Square is read-only EXCEPT Labor timecards and break types; next migration V181
+- [x] 0.1 Owner answers (2026-11-07: numbers from Square, simple CSV by pay period, waiver to implement, escalation to Christina only) the open questions in design.md (technician mobile numbers, payroll export layout, waiver form, who is "managers" for escalation)
+- [ ] 0.2 Update `openspec/config.yaml` context: Square is read-only EXCEPT Labor timecards and break types; next migration V203 (V202 is latest)
 - [x] 0.3 Compliance research done, see compliance.md (sources, per-rule handling)
 - [ ] 0.4 CPA or counsel one-time review of items flagged in compliance.md (waiver form, reporting time, split shift for client-booked gaps, premium payroll line)
 - [ ] 0.5 Written policies for the owner: free-to-leave gaps, meal and rest policy, meal waiver form for days up to 6 hours, scheduling policy for reporting time
@@ -15,12 +15,13 @@
 - [ ] 1.3a Tests: reporting time review, second report minimum, split shift premium (10/7 example about $12.88, 10/8 covered by overtime)
 - [ ] 1.4 Edge tests: week crossing a period boundary, 7th consecutive day, over 12 hours, split shift premium check, unpaid gap not curing a meal
 
-## 2. Persistence (migration V181)
+## 2. Persistence (migration V203)
 
-- [ ] 2.1 `V181__w2_time_tracking.sql`: `provider_employment`, `square_timecard_mirror`, `timecard_review`, `timecard_audit`, `timecard_reminder` (business_id on every table, indexes, uniques as in D5)
+- [ ] 2.1 `V203__w2_time_tracking.sql`: `provider_employment`, `square_timecard_mirror`, `timecard_review`, `timecard_audit`, `timecard_reminder` (business_id on every table, indexes, uniques as in D5)
 - [ ] 2.2 Entities and business-scoped repositories (`findByIdAndBusinessId` for every caller-controlled id)
 - [ ] 2.2b `sms_enabled` flag (default false) and global `timecards.sms.enabled` (default false); sender checks both
 - [ ] 2.2a `payroll_automation_enabled` and `alerts_enabled` flags on `provider_employment`, owner toggle endpoint and UI
+- [ ] 2.2c Worker type `W2|1099` per provider (default 1099), `provider_time_approver` table (one or more owner/manager approvers), `show_commission_comparison_to_provider` flag (default false)
 - [ ] 2.3 Seed Yana: W2, $18.50 effective 2026-10-01 (owner-run, not a migration)
 
 ## 3. Square Labor
@@ -45,6 +46,13 @@
 - [ ] 5.3 `PayPeriodSummaryService` and CSV export endpoint (OWNER)
 - [ ] 5.3a Tips for W2 paid in full (no processing fee deduction); premium lines and PDF summary in export
 - [ ] 5.4 Cash handling: skip cashew notes for W2 in `SquareMonthAggregator`, `CASH_NOTE_ON_W2` finding
+
+## 5a. Provider-facing earnings (D12)
+
+- [ ] 5a.1 Provider earnings view: W2 sees time-based earnings; 1099 keeps commission view
+- [ ] 5a.2 Commission calculation kept running for W2 as hidden comparison (owner view, optional worker view via flag)
+- [ ] 5a.3 Approval chain: self-entered time skips worker approval; system-drafted needs worker confirm; final approval by assigned approver (owner or manager) required for payroll-ready
+- [ ] 5a.4 Owner UI: worker type switch, approvers per provider, comparison toggle
 
 ## 6. Frontend (salon.akluxnails.com)
 
