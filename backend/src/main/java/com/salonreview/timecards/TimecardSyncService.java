@@ -79,7 +79,7 @@ public class TimecardSyncService {
         return upserted;
     }
 
-    private void upsert(Long businessId, Long providerId, JsonNode c) {
+    void upsert(Long businessId, Long providerId, JsonNode c) {
         String zone = c.path("timezone").asText(DEFAULT_ZONE);
         Instant start = Instant.parse(c.path("start_at").asText());
         Instant end = c.hasNonNull("end_at") ? Instant.parse(c.get("end_at").asText()) : null;

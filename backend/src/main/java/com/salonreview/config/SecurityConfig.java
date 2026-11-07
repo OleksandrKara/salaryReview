@@ -201,6 +201,9 @@ public class SecurityConfig {
                         // Manager time tracking: the payroll view + rate-setting are owner-only; the
                         // self endpoints (clock in/out, own entries) are for managers (owner allowed too,
                         // though owners don't clock time). Specific /admin matcher first so it wins.
+                        .requestMatchers("/api/timecards/me/**").hasRole("PROVIDER")
+                        .requestMatchers("/api/timecards/admin/**").hasRole("OWNER")
+                        .requestMatchers("/api/timecards/**").hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers("/api/time/admin/**").hasRole("OWNER")
                         .requestMatchers("/api/time/**").hasAnyRole("OWNER", "MANAGER")
                         // Manual adjustments: managers get read-only visibility (the routine payroll

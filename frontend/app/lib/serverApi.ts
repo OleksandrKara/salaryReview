@@ -140,6 +140,16 @@ async function serverFetchOrNull<T>(path: string): Promise<T | null> {
 export const serverApi = {
   getMe: () => serverFetch<Me>(`/api/me`),
 
+  // Whether this provider is on hourly (W2) time tracking; never throws so /me always renders.
+  getTimecardProfile: async (): Promise<{ w2: boolean } | null> => {
+    try {
+      const res = await timedFetch(`/api/timecards/me/profile`);
+      return res.ok ? ((await res.json()) as { w2: boolean }) : null;
+    } catch {
+      return null;
+    }
+  },
+
   // null when seo-monitoring.enabled is off for this business (backend 404s) — the page redirects
   // in that case rather than throwing, same contract as any feature-gated page here.
   getAiVisibilityOverview: (site?: string) =>

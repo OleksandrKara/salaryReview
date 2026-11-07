@@ -153,6 +153,17 @@ public class SquareClient {
         return cached("teamMembers:all", Duration.ofMinutes(5), () -> searchTeamMembers(Map.of()));
     }
 
+    /** Mobile number of one team member as Square stores it (E.164 or free text), or null. */
+    public String teamMemberPhone(String teamMemberId) {
+        com.fasterxml.jackson.databind.JsonNode resp = throttled(() -> http.get()
+                .uri("/v2/team-members/{id}", teamMemberId)
+                .retrieve()
+                .body(com.fasterxml.jackson.databind.JsonNode.class));
+        if (resp == null) return null;
+        String phone = resp.path("team_member").path("phone_number").asText(null);
+        return phone == null || phone.isBlank() ? null : phone;
+    }
+
     private List<TeamMember> searchTeamMembers(Object body) {
         TeamMemberSearchResponse resp = throttled(() -> http.post()
                 .uri("/v2/team-members/search")
