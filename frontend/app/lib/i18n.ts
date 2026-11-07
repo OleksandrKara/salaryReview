@@ -439,6 +439,7 @@ const STRINGS = {
   crmSecConsultUpcoming: { EN: 'Consultation scheduled', RU: 'Консультация запланирована' },
   crmAcademyAdd: { EN: 'Add Academy tag', RU: 'Поставить тег Academy' },
   crmAcademyRemove: { EN: 'Remove Academy tag', RU: 'Убрать тег Academy' },
+  crmLapsedDone: { EN: 'Reached out', RU: 'Связались' },
   crmAcademy: { EN: 'Academy', RU: 'Академия' },
   crmAcademyFilter: { EN: 'Academy only', RU: 'Только академия' },
   crmConsultUpcoming: { EN: 'Consultation', RU: 'Консультация' },

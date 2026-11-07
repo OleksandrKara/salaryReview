@@ -164,6 +164,16 @@ export default function LeadsManager({ initialLeads, language = null, restricted
     }
   }
 
+  async function snooze(l: Lead, days: number) {
+    setBusyId(l.id);
+    const next = new Date(Date.now() + days * DAY).toISOString();
+    const res = await fetch(`/api/leads/${l.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callbackAt: next }),
+    });
+    setBusyId(null);
+    if (res.ok) setLeads((prev) => prev.map((x) => (x.id === l.id ? { ...x, callbackAt: next } : x)));
+  }
+
   async function closeLost(l: Lead) {
     setBusyId(l.id);
     const res = await fetch(`/api/leads/${l.id}`, {
@@ -335,6 +345,9 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                         <button className="rounded bg-red-600 px-2.5 py-1 text-xs text-white disabled:opacity-40" disabled={busyId === l.id} onClick={() => closeLost(l)}>{t(language, 'crmCloseNoAnswer')}</button>
                       ) : (
                         <button className={quick} disabled={busyId === l.id} onClick={() => noAnswer(l)}>{t(language, 'crmNoAnswer')}</button>
+                      )}
+                      {overdue && isLapsed(l, now) && (
+                        <button className="rounded bg-emerald-600 px-2.5 py-1 text-xs text-white disabled:opacity-40" disabled={busyId === l.id} onClick={() => snooze(l, LAPSED_AFTER_DAYS)}>{t(language, 'crmLapsedDone')}</button>
                       )}
                       <button className={quick} disabled={busyId === l.id} onClick={() => setStatus(l, 'SPAM')}>{t(language, 'crmMarkSpam')}</button>
                       {l.status === 'NEW' && (
