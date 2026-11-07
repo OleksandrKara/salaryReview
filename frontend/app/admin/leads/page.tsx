@@ -19,7 +19,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const leads = await serverApi.listLeads();
 
   return (
-    <main className="mx-auto max-w-4xl p-4 sm:p-8">
+    <main className="mx-auto w-full min-w-0 max-w-4xl p-4 sm:p-8">
       <PageHeader title={t(lang, 'leadsTitle')} role={me.role} language={lang} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <p className="mb-6 text-xs text-zinc-500">{t(lang, 'leadsDesc')}</p>
       {academyOnly ? null : <Link href="/admin/leads/lost-report" className="mb-4 inline-block text-sm text-zinc-600 underline">{t(lang, 'leadLostReport')}</Link>}

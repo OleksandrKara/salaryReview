@@ -29,7 +29,7 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
   }
 
   return (
-    <main className="mx-auto max-w-3xl overflow-x-clip p-4 sm:p-8">
+    <main className="mx-auto w-full min-w-0 max-w-3xl overflow-x-clip p-4 sm:p-8">
       <PageHeader title={t(lang, 'leadsTitle')} role={me.role} language={lang} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
       <LeadCard initial={detail} language={lang} canTagAcademy={me.activeBusinessId === 2} stopFunnel={stop === 'academy' || stop === 'consult' ? stop : null} />
     </main>
