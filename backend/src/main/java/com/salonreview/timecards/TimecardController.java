@@ -164,6 +164,24 @@ public class TimecardController {
         return out;
     }
 
+    @GetMapping("/me/range")
+    public List<DayView> myRange(@AuthenticationPrincipal AppUserPrincipal me, @RequestParam String from, @RequestParam String to) {
+        Long pid = w2Provider(me);
+        LocalDate start = TimecardReviewService.parseDate(from);
+        LocalDate end = TimecardReviewService.parseDate(to);
+        LocalDate today = LocalDate.now(TimecardDayService.RULES.zone());
+        if (end.isAfter(today)) end = today;
+        if (end.isBefore(start) || java.time.temporal.ChronoUnit.DAYS.between(start, end) > 35) {
+            throw TimecardReviewService.bad("Invalid date range");
+        }
+        List<DayView> out = new ArrayList<>();
+        for (LocalDate d = end; !d.isBefore(start); d = d.minusDays(1)) {
+            DayView v = this.days.view(business.id(), pid, d, true);
+            if (!v.source().equals("NONE")) out.add(v);
+        }
+        return out;
+    }
+
     @GetMapping("/me/day")
     public DayView myDay(@AuthenticationPrincipal AppUserPrincipal me, @RequestParam String date) {
         return days.view(business.id(), w2Provider(me), TimecardReviewService.parseDate(date), true);
