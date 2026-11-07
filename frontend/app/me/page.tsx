@@ -3,6 +3,7 @@ import { serverApi } from '../lib/serverApi';
 import MonthNav from '../components/MonthNav';
 import type { Feedback, HalfSettlement, Language } from '../lib/types';
 import { t, tf, monthName, monthShort } from '../lib/i18n';
+import MyPay from './MyPay';
 import NoShowBreakdown from './NoShowBreakdown';
 import ServiceBreakdown from './ServiceBreakdown';
 import SettlementFeedbackForm from './SettlementFeedbackForm';
@@ -33,6 +34,24 @@ export default async function MyReportPage({
   const curYear = Number(sp.year) || now.getUTCFullYear();
   const curMonth = Number(sp.month) || now.getUTCMonth() + 1;
 
+  const w2 = (await serverApi.getTimecardProfile())?.w2 ?? false;
+  if (w2) {
+    const principal = await serverApi.getMe();
+    const lang = principal.preferredLanguage;
+    const prev = shift(curYear, curMonth, -1);
+    const next = shift(curYear, curMonth, 1);
+    return (
+      <main className="mx-auto max-w-3xl p-4 sm:p-8 lg:max-w-5xl">
+        <PageHeader title={t(lang, 'navMyPay')} role={principal.role} language={lang}
+          activeBusinessId={principal.activeBusinessId} businesses={principal.businesses} />
+        <div className="-mt-4 mb-4">
+          <MonthNav base="/me" year={curYear} month={curMonth} prev={prev} next={next} language={lang} />
+        </div>
+        <MyPay language={lang ?? 'EN'} year={curYear} month={curMonth} />
+      </main>
+    );
+  }
+
   let year = curYear;
   let month = curMonth;
   let detail = await serverApi.getMyDetail(year, month);
@@ -51,7 +70,6 @@ export default async function MyReportPage({
   }
   const me = detail.payout;
   const principal = await serverApi.getMe();
-  const w2 = (await serverApi.getTimecardProfile())?.w2 ?? false;
   const lang = principal.preferredLanguage;
   const prev = shift(year, month, -1);
   const next = shift(year, month, 1);
@@ -77,11 +95,6 @@ export default async function MyReportPage({
         activeBusinessId={principal.activeBusinessId}
         businesses={principal.businesses}
       />
-      {w2 && (
-        <Link href="/me/time" className="mb-4 inline-block rounded border border-zinc-400 px-3 py-1.5 text-sm">
-          {t(lang, 'tcNavMyTime')}
-        </Link>
-      )}
       <div className="-mt-4 mb-4">
         <MonthNav base="/me" year={year} month={month} prev={prev} next={next} language={lang} />
       </div>
