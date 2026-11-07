@@ -869,10 +869,10 @@ public class LeadFollowUpService {
         }
         jdbc.update("""
                 UPDATE lead_intake SET
-                  status = COALESCE(?, status),
-                  lost_reason = CASE WHEN ? = 'LOST' THEN ? WHEN ? IS NOT NULL THEN NULL ELSE lost_reason END,
-                  lost_comment = CASE WHEN ? = 'LOST' THEN ? WHEN ? IS NOT NULL THEN NULL ELSE lost_comment END,
-                  lost_at = CASE WHEN ? = 'LOST' THEN now() WHEN ? IS NOT NULL THEN NULL ELSE lost_at END,
+                  status = COALESCE(?::text, status),
+                  lost_reason = CASE WHEN ?::text = 'LOST' THEN ?::text WHEN ?::text IS NOT NULL THEN NULL ELSE lost_reason END,
+                  lost_comment = CASE WHEN ?::text = 'LOST' THEN ?::text WHEN ?::text IS NOT NULL THEN NULL ELSE lost_comment END,
+                  lost_at = CASE WHEN ?::text = 'LOST' THEN now() WHEN ?::text IS NOT NULL THEN NULL ELSE lost_at END,
                   callback_at = CASE WHEN ? THEN NULL WHEN ?::timestamptz IS NOT NULL THEN ?::timestamptz ELSE callback_at END,
                   callback_reminded = CASE WHEN ? OR ?::timestamptz IS NOT NULL THEN FALSE ELSE callback_reminded END,
                   updated_by = ?, updated_at = now()
