@@ -398,27 +398,32 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
           </span>
         )}
         {losing && (
-          <div className="flex w-full flex-wrap items-center gap-2 rounded bg-red-50 p-3">
-            <select aria-label="lost reason" value={lostReason} onChange={(e) => setLostReason(e.target.value)} className={field}>
+          <div className="flex w-full min-w-0 flex-col gap-2 rounded bg-red-50 p-3">
+            <select aria-label="lost reason" value={lostReason} onChange={(e) => setLostReason(e.target.value)} className={`${field} w-full text-base sm:text-sm`}>
               <option value="">{t(language, 'leadLostChoose')}</option>
               {LOST_REASONS.map((r) => <option key={r} value={r}>{t(language, `leadLost_${r}` as 'leadLost_PRICE')}</option>)}
             </select>
-            <input
+            <textarea
+              aria-label={t(language, 'leadLostComment')}
               value={lostComment}
               onChange={(e) => setLostComment(e.target.value)}
               placeholder={t(language, 'leadLostComment')}
-              className={`${field} min-w-0 flex-1`}
+              rows={lostReason === 'OTHER' ? 3 : 2}
+              autoFocus={lostReason === 'OTHER'}
+              className={`${field} block w-full min-w-0 resize-y text-base sm:text-sm`}
             />
-            <button
-              className={primary}
-              disabled={busy || !lostReason || (lostReason === 'OTHER' && !lostComment.trim())}
-              onClick={async () => {
-                if (await send(`/api/leads/${lead.id}`, 'PATCH', { status: 'LOST', lostReason, lostComment })) { setLosing(false); setLostReason(''); setLostComment(''); }
-              }}
-            >
-              {t(language, 'leadLostConfirm')}
-            </button>
-            <button className={link} onClick={() => { setLosing(false); setLostReason(''); setLostComment(''); }}>{t(language, 'leadLostCancel')}</button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                className={primary}
+                disabled={busy || !lostReason || (lostReason === 'OTHER' && !lostComment.trim())}
+                onClick={async () => {
+                  if (await send(`/api/leads/${lead.id}`, 'PATCH', { status: 'LOST', lostReason, lostComment })) { setLosing(false); setLostReason(''); setLostComment(''); }
+                }}
+              >
+                {t(language, 'leadLostConfirm')}
+              </button>
+              <button className={link} onClick={() => { setLosing(false); setLostReason(''); setLostComment(''); }}>{t(language, 'leadLostCancel')}</button>
+            </div>
           </div>
         )}
         <div className="flex w-full min-w-0 flex-wrap items-center gap-2 text-sm text-zinc-600 sm:w-auto">
