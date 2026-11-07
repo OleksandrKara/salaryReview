@@ -201,10 +201,10 @@ export default function LeadsManager({ initialLeads, language = null, restricted
         : x === 'ALL' ? t(language, 'leadsFilterAll')
           : t(language, `leadStatus${x}` as 'leadStatusNEW');
 
-  const quick = 'rounded px-2.5 py-1 text-xs ring-1 ring-zinc-300 hover:bg-zinc-100';
+  const quick = 'rounded px-2.5 py-1.5 text-center text-xs ring-1 ring-zinc-300 hover:bg-zinc-100';
 
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    <div className="flex min-w-0 max-w-full flex-col gap-4 overflow-x-clip">
       <div className={`flex flex-col gap-2 sm:flex-row ${archive ? 'hidden' : ''}`}>
         <input
           value={q}
@@ -267,13 +267,13 @@ export default function LeadsManager({ initialLeads, language = null, restricted
       {sections.length === 0 && !archive && activeTab !== 'ACTION' && <p className="text-sm text-zinc-500">{t(language, 'leadsEmpty')}</p>}
 
       {sections.map((s) => (
-        <section key={s.key} className="flex flex-col gap-2">
+        <section key={s.key} className="flex min-w-0 flex-col gap-2">
           {s.title && (
-            <h3 className={`flex items-start gap-2 text-xs font-semibold leading-snug ${s.tone}`}>
+            <h3 className={`flex items-start gap-2 font-sans text-xs font-semibold leading-snug ${s.tone}`}>
               {s.title}<span className="tabular-nums text-zinc-400">{s.leads.length}</span>
             </h3>
           )}
-          <ul className="flex flex-col divide-y divide-zinc-200 rounded-lg ring-1 ring-zinc-200">
+          <ul className="flex min-w-0 flex-col divide-y divide-zinc-200 rounded-lg ring-1 ring-zinc-200">
             {s.leads.map((l) => {
               const overdue = isOverdue(l, now);
               const waiting = l.status === 'NEW' ? span(now - activity(l), language) : null;
@@ -286,10 +286,10 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                 : null;
               const upcoming = !overdue && isActive(l) && l.callbackAt != null;
               return (
-                <li key={l.id} className={`flex flex-col gap-2 p-3 lg:flex-row lg:items-center lg:gap-4 ${overdue ? 'bg-red-50/60' : ''}`}>
-                  <Link href={`/admin/leads/${l.id}`} className="min-w-0 flex-1 hover:underline">
+                <li key={l.id} className={`flex min-w-0 flex-col gap-2 p-3 lg:flex-row lg:items-center lg:gap-4 ${overdue ? 'bg-red-50/60' : ''}`}>
+                  <Link href={`/admin/leads/${l.id}`} className="block min-w-0 flex-1 hover:underline">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="min-w-0 max-w-full truncate font-medium">{l.name ?? l.phoneNumber ?? l.email}</span>
+                      <span className="max-w-full break-words font-medium">{l.name ?? l.phoneNumber ?? l.email}</span>
                       <LeadIcons b={badges[l.id]} language={language} />
                       {!(overdue && l.status === 'CONTACTED') && (
                         <span className={`rounded px-1.5 py-0.5 text-xs ${STATUS_STYLE[l.status]}`}>{t(language, `leadStatus${l.status}` as 'leadStatusNEW')}</span>
@@ -327,18 +327,18 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                         <span aria-hidden className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-current" />{reason.text}
                       </div>
                     )}
-                    <div className="truncate text-xs text-zinc-500">
+                    <div className="break-words text-xs text-zinc-500">
                       {l.name && l.phoneNumber ? `${l.phoneNumber} · ` : ''}{l.source} · {l.channel}
                       {l.touches > 1 ? ` · ${l.touches} ${t(language, 'leadTouches')}` : ''} · {fmt(new Date(activity(l)).toISOString(), language)}
                     </div>
                     {l.lastNote && (
-                      <div className="mt-0.5 truncate text-xs text-zinc-700">
+                      <div className="mt-0.5 line-clamp-2 break-words text-xs text-zinc-700">
                         <span className="text-zinc-400">{l.lastNoteBy}: </span>{l.lastNote}
                       </div>
                     )}
                   </Link>
                   {isActive(l) && (
-                    <div className="flex flex-wrap gap-2 lg:max-w-[15rem] lg:shrink-0 lg:justify-end">
+                    <div className="flex flex-wrap gap-1.5 [&>*]:flex-1 lg:[&>*]:flex-none lg:max-w-[15rem] lg:shrink-0 lg:justify-end">
                       {l.phoneNumber && <a href={`tel:${l.phoneNumber}`} className={quick}>{t(language, 'crmCall')}</a>}
                       {l.phoneNumber && <Link href={`/admin/messages?phone=${encodeURIComponent(l.phoneNumber)}`} className={quick}>{t(language, 'crmText')}</Link>}
                       {l.closeReady ? (
