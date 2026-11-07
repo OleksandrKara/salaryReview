@@ -74,6 +74,8 @@ const AUTOMATION_CHANNELS: Record<string, Channel[]> = {
   four_hand_request: ['sms', 'telegram'],
   // 2026-10-30: staff-chat heads-up for PMU procedures booked on the website; Telegram only.
   pmu_booking_staff_alert: ['telegram'],
+  // 2026-11-06: 8:05am PT "leads to process" and 7:50pm PT "results of the day" digests, one message per business chat.
+  lead_daily_digest: ['telegram'],
   // 2026-09-25: consultation_lead_sms grew a Telegram leg too — same "staff heads-up, not a
   // customer-facing message" role as four_hand_request's own Telegram leg above (see
   // InternalNotificationController#notifyConsultationRequest / ConsultationRequestNotification).

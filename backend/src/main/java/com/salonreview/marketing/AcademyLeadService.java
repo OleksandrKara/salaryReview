@@ -24,13 +24,15 @@ public class AcademyLeadService {
     private final TelegramNotificationService telegram;
     private final HubSpotFormClient hubspot;
     private final AcademyLeadLinks links;
+    private final LeadIntakeService leadIntake;
 
     public AcademyLeadService(JdbcTemplate jdbc, TelegramNotificationService telegram, HubSpotFormClient hubspot,
-                              AcademyLeadLinks links) {
+                              AcademyLeadLinks links, LeadIntakeService leadIntake) {
         this.jdbc = jdbc;
         this.telegram = telegram;
         this.hubspot = hubspot;
         this.links = links;
+        this.leadIntake = leadIntake;
     }
 
     /** {@code kind}: "subscribe" for the email-only "Subscribe now" band, anything else is a course
@@ -72,6 +74,25 @@ public class AcademyLeadService {
                 "PMU Academy: " + (notBlank(l.courseName()) ? l.courseName() : "course request"));
         if (hs.error() != null && !"not_configured".equals(hs.error())) {
             log.warn("Academy lead {}: HubSpot form submission failed: {}", id, hs.error());
+        }
+        if (!l.isSubscription()) {
+            try {
+                Map<String, String> payload = new LinkedHashMap<>();
+                payload.put("courses", l.courseName());
+                payload.put("message", l.message());
+                payload.put("pageUrl", l.sourcePageUrl());
+                payload.put("utmSource", l.utmSource());
+                payload.put("utmCampaign", l.utmCampaign());
+                payload.put("location", l.location());
+                payload.put("smsConsent", String.valueOf(l.smsConsent()));
+                payload.put("emailConsent", String.valueOf(l.emailConsent()));
+                payload.values().removeIf(v -> v == null || v.isBlank());
+                String traffic = notBlank(l.gclid()) ? "Google Ads" : notBlank(l.utmSource()) ? l.utmSource() : null;
+                leadIntake.capture(new LeadIntakeService.Lead(businessId, "Academy", traffic, l.phone(), l.email(), l.name(),
+                        l.courseName(), "academy:" + id, new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(payload)));
+            } catch (Exception e) {
+                log.warn("Academy lead {}: CRM capture failed: {}", id, e.toString());
+            }
         }
         jdbc.update("UPDATE academy_lead SET telegram_sent = ?, hubspot_submitted = ?, hubspot_error = ? WHERE id = ?",
                 sent, hs.submitted(), hs.error(), id);

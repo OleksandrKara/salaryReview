@@ -2542,3 +2542,101 @@ export interface PermissionsOverview {
   permissions: string[];
   users: UserPermissionsRow[];
 }
+
+export interface MarketingConversionRow {
+  key: string;
+  label: string;
+  hint: string;
+  weight: number;
+  count: number;
+  points: number;
+}
+
+export interface MarketingConversionsData {
+  available: boolean;
+  landingPageSlug: string;
+  pageViews: number;
+  rows: MarketingConversionRow[];
+  totalPoints: number;
+  payingCustomers: number;
+  revenue: number;
+}
+
+// --- Leads CRM (owner/manager) — captured by backend LeadIntakeService, followed up via /admin/leads.
+export type LeadStatus = 'NEW' | 'CONTACTED' | 'BOOKED' | 'LOST' | 'SPAM' | 'OUTDATED';
+export interface OutdatedRow {
+  id: number; name: string | null; phoneNumber: string | null; email: string | null; source: string; createdAt: string;
+  visits: number; lastVisitAt: string | null; nextVisitAt: string | null; consulted: boolean;
+}
+export interface OutdatedPage { total: number; clients: number; never: number; page: number; pages: number; items: OutdatedRow[] }
+export interface Lead {
+  id: number;
+  channel: string;
+  source: string;
+  phoneNumber: string | null;
+  email: string | null;
+  name: string | null;
+  detail: string | null;
+  status: LeadStatus;
+  callbackAt: string | null;
+  createdAt: string;
+  lastTouchAt: string;
+  touches: number;
+  squareCustomerId: string | null;
+  squareUrl: string | null;
+  lostReason: string | null;
+  lostComment: string | null;
+  sourceEditable: boolean;
+  lastNote: string | null;
+  lastNoteBy: string | null;
+  lastNoteAt: string | null;
+  activityAt: string;
+  academy: boolean;
+  consultState: 'UPCOMING' | 'DONE' | 'NO_SHOW' | null;
+  consultAt: string | null;
+  attempts: number;
+  closeReady: boolean;
+  lastVisitAt: string | null;
+}
+export interface LostRow { reason: string; source: string | null; count: number }
+export interface LostReport { days: number; total: number; byReason: LostRow[]; bySource: LostRow[] }
+export interface LeadTouch { id: number; channel: string; source: string; detail: string | null; createdAt: string; payload: Record<string, string> | null }
+export interface LeadOrigin {
+  type: string; at: string; landingPage: string | null; variant: string | null; trafficSource: string | null;
+  utmSource: string | null; utmMedium: string | null; utmCampaign: string | null; utmTerm: string | null; utmContent: string | null;
+  googleClick: boolean; facebookClick: boolean; referrer: string | null; device: string | null; os: string | null;
+  browser: string | null; ip: string | null; location: string | null; service: string | null;
+}
+export interface LeadEvent { id: number; type: string; text: string | null; createdBy: string | null; createdAt: string }
+export interface LeadDetail { lead: Lead; touches: LeadTouch[]; events: LeadEvent[]; origins: LeadOrigin[]; appointments: LeadAppointment[]; spend: LeadSpend; emails: LeadEmail[]; sms: LeadSms[]; squareNote: string | null; payments: LeadPayment[]; forms: LeadForm[]; place: LeadPlace | null; badges: LeadBadges | null }
+export interface LeadPlace { countryCode: string; country: string | null; city: string | null; region: string | null; flag: string; scope: 'LOCAL' | 'OUT_OF_STATE' | 'INTERNATIONAL' | null }
+export interface LeadBadges { vip: boolean; visitCount: number | null; smsConsent: boolean; negativeFeedback: boolean; blocked: boolean; optedOut: boolean; spamFlag: boolean; clickedGoogle: boolean; clickedYelp: boolean; clickedFeedback: boolean }
+export interface LeadForm { key: string; kind: string; at: string; fields: Record<string, string> }
+export interface LeadPayment { id: string; at: string; amount: number; tip: number; description: string | null }
+export interface LeadSmsMedia { url: string; contentType: string }
+export interface LeadSms { id: number; direction: 'INBOUND' | 'OUTBOUND'; body: string; at: string; status: string | null; media: LeadSmsMedia[] }
+export interface LeadAppointment { id: string; status: string; startAt: string | null; services: string | null; technician: string | null; minutes: number | null; paid: number | null; consultKind?: 'ONLINE' | 'OFFLINE' | null; sellerNote?: string | null; customerNote?: string | null }
+export interface LeadSpend { total: number; tips: number; visits: number; firstVisit: string | null; lastVisit: string | null; nextAppointment: string | null }
+export interface LeadEmail { id: number; kind: string; sentAt: string; openedAt: string | null; clickedAt: string | null; hasContent: boolean }
+
+export type FunnelState = 'ACTIVE' | 'PAUSED' | 'STOPPED' | 'FINISHED' | 'NOT_APPLIED';
+export type FunnelStep = { key: string; channel: 'sms' | 'email' | null; state: 'DONE' | 'SKIPPED' | 'FAILED' | 'PENDING' | 'NOT_SENT'; at: string | null; detail: string | null };
+export type LeadFunnel = {
+  key: 'academy' | 'consult' | 'site';
+  state: FunnelState;
+  reason: string | null;
+  steps: FunnelStep[];
+  canApply: boolean;
+  canStop: boolean;
+  startedAt: string | null;
+  stoppedAt: string | null;
+  stoppedBy: string | null;
+  stopNote: string | null;
+  stoppedVia: string | null;
+};
+
+export interface LeadListBadge {
+  vip: boolean; visitCount: number | null; smsConsent: boolean; negativeFeedback: boolean; blocked: boolean; optedOut: boolean;
+  spamFlag: boolean; clickedGoogle: boolean; clickedYelp: boolean; clickedFeedback: boolean;
+  flag: string | null; place: string | null; scope: 'LOCAL' | 'OUT_OF_STATE' | 'INTERNATIONAL' | null;
+}

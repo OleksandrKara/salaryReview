@@ -3,6 +3,7 @@ import { serverApi } from '../../lib/serverApi';
 import PageHeader from '../../components/PageHeader';
 import SetupRequiredNotice from '../../components/SetupRequiredNotice';
 import AbuseBlocksPanel from './AbuseBlocksPanel';
+import ConversionsPanel from './ConversionsPanel';
 import MarketingManager from './MarketingManager';
 import MarketingTabs from './MarketingTabs';
 import { parsePeriodParams, periodToBounds } from './period';
@@ -48,9 +49,10 @@ export default async function MarketingDashboardPage({
     );
   }
 
-  const [data, abuseBlocks] = await Promise.all([
+  const [data, abuseBlocks, conversions] = await Promise.all([
     serverApi.getMarketingDashboard(slug, undefined, bounds.from, bounds.to),
     serverApi.getAbuseBlocks(),
+    serverApi.getMarketingConversions(slug, bounds.from, bounds.to).catch(() => null),
   ]);
 
   return (
@@ -68,6 +70,8 @@ export default async function MarketingDashboardPage({
           <div className="mt-4 flex items-center gap-2">
             <span className="text-sm text-zinc-500">Landing page: {data.landingPageSlug}</span>
           </div>
+
+          {conversions?.available && <ConversionsPanel data={conversions} />}
 
           <div className="mt-6">
             <h2 className="mb-2 text-sm font-medium text-zinc-500">Variant performance</h2>

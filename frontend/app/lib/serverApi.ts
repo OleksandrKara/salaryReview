@@ -32,6 +32,7 @@ import type {
   FunnelDashboardData,
   MarketingAdsReportData,
   MarketingLtvData,
+  MarketingConversionsData,
   MarketingAnalyticsData,
   MarketingContactsData,
   MarketingDashboardData,
@@ -47,6 +48,8 @@ import type {
   RetentionSeries,
   ReviewsOverview,
   MissedBooking,
+  Lead,
+  LeadDetail, LostReport,
   Redo,
   RevenueDayDetail,
   RevenuePulse,
@@ -271,6 +274,27 @@ export const serverApi = {
 
   listRedos: () => serverFetch<Redo[]>(`/api/redos`),
 
+  listLeads: () => serverFetch<Lead[]>(`/api/leads`),
+
+  getLostReport: (days: number) => serverFetch<LostReport>(`/api/leads/lost-report?days=${days}`),
+
+  getLead: (id: number) => serverFetch<LeadDetail>(`/api/leads/${id}`),
+
+  getLeadActionCount: async (): Promise<number> => {
+    try {
+      const { count } = await serverFetch<{ count: number }>(`/api/leads/action-count`);
+      return count;
+    } catch (e) {
+      if (e && typeof e === 'object' && 'digest' in e && String(e.digest).startsWith('NEXT_REDIRECT')) throw e;
+      return 0;
+    }
+  },
+
+  lookupLead: (phone: string) => serverFetch<{ id?: number }>(`/api/leads/lookup?phone=${encodeURIComponent(phone)}`),
+
+  resolveFunnelLead: (kind: 'academy' | 'consult', id: number) =>
+    serverFetch<{ id?: number }>(`/api/leads/resolve?${kind}=${id}`),
+
   listMissedBookings: () => serverFetch<MissedBooking[]>(`/api/missed-bookings`),
 
   listManualAdjustments: () => serverFetch<ManualAdjustment[]>(`/api/manual-adjustments`),
@@ -330,6 +354,14 @@ export const serverApi = {
     if (from) query.set('from', from);
     if (to) query.set('to', to);
     return serverFetch<MarketingDashboardData>(`/api/owner/marketing?${query.toString()}`);
+  },
+
+  getMarketingConversions: (slug?: string, from?: string, to?: string) => {
+    const query = new URLSearchParams();
+    if (slug) query.set('slug', slug);
+    if (from) query.set('from', from);
+    if (to) query.set('to', to);
+    return serverFetch<MarketingConversionsData>(`/api/owner/marketing/conversions?${query.toString()}`);
   },
 
   getMarketingPages: () => serverFetch<MarketingLandingPage[]>('/api/owner/marketing/pages'),

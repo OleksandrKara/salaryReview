@@ -20,6 +20,7 @@ spring:
   flyway:
     enabled: true
     baseline-on-migrate: true
+    out-of-order: true
 
   # Spring Boot's own default (1MB/file, 10MB/request) is well under a real phone photo — MMS
   # attachments (staff-document uploads too, though those are usually small PDFs) need real
@@ -82,9 +83,19 @@ marketing:
   # GA4 Measurement Protocol targets for the sms_lead event (SmsWebsiteLeadService), per business:
   # "2=G-XTPZZV1DKR:<api secret>". Blank = no GA4 send (the contact and Telegram line still happen).
   ga4-mp-targets: ${GA4_MP_TARGETS:}
+  lead-intake:
+    # Business ids whose leads are pushed into Square with a source (blank = off).
+    businesses: ${LEAD_INTAKE_BUSINESSES:}
+    webhook-token: ${LEAD_WEBHOOK_TOKEN:}
   # Secret for the Google Ads offline-conversion feed (AdsConversionFeedController), read by Ads'
   # scheduled upload. Blank = the feed answers 404.
   ads-conversion-feed-key: ${ADS_CONVERSION_FEED_KEY:}
+  # Read-only Google Ads history and weekly ROMI report (GoogleAdsSyncService): "2=7340887092"
+  # (businessId=customerId), service account JSON in base64. Blank = disabled.
+  google-ads:
+    accounts: ${GOOGLE_ADS_ACCOUNTS:}
+    service-account-json-b64: ${GOOGLE_ADS_SA_JSON_B64:}
+    developer-token: ${GOOGLE_ADS_DEVELOPER_TOKEN:}
   landing-base-urls:
     mani: ${MARKETING_LANDING_BASE_URL_MANI:https://mani.akluxnails.com}
     home: ${MARKETING_LANDING_BASE_URL_HOME:https://akluxnails.com}

@@ -268,6 +268,7 @@ public class TelegramNotificationService {
         if (attachments != null) sb.append(body != null && !body.isBlank() ? "" : "\n").append(attachments).append('\n');
         sb.append('\n');
         sb.append("<a href=\"").append(escapeHtml(chatLink(phoneNumber, businessId))).append("\">💬 Open chat</a>");
+        sb.append("  ·  <a href=\"").append(escapeHtml(leadLink(phoneNumber, businessId))).append("\">🧲 Open lead</a>");
         return sb.toString();
     }
 
@@ -282,6 +283,12 @@ public class TelegramNotificationService {
      * both studios to that business before opening the thread (AdminMenu's ?business= handling). */
     String chatLink(String phoneNumber, Long businessId) {
         return publicBaseUrl + "/admin/messages?phone=" + URLEncoder.encode(phoneNumber, StandardCharsets.UTF_8)
+                + (businessId == null ? "" : "&business=" + businessId);
+    }
+
+    /** Leads CRM entry for this phone; the page resolves the phone to the lead (see /admin/leads/open). */
+    String leadLink(String phoneNumber, Long businessId) {
+        return publicBaseUrl + "/admin/leads/open?phone=" + URLEncoder.encode(phoneNumber, StandardCharsets.UTF_8)
                 + (businessId == null ? "" : "&business=" + businessId);
     }
 

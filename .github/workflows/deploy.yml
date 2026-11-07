@@ -61,6 +61,7 @@ jobs:
         run: |
           npm ci
           npx tsc --noEmit
+          node --test tests/*.test.mjs
           npm run build
 
   deploy:

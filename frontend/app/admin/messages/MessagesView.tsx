@@ -124,6 +124,7 @@ export default function MessagesView({
   initialHasMore,
   initialSelectedPhone,
   initialFilter = 'all',
+  canOpenLead = false,
 }: {
   /** First page only (default 10) — see page.tsx, which now fetches via
    * serverApi.listSmsConversationsPage instead of the old unbounded listSmsConversations, so
@@ -143,6 +144,8 @@ export default function MessagesView({
   initialSelectedPhone?: string | null;
   /** "All" vs "Unread" list filter (owner request 2026-10-13), from page.tsx's ?filter=unread. */
   initialFilter?: 'all' | 'unread';
+  /** Owner, manager, or someone granted CRM access: shows the shortcuts to the lead card. */
+  canOpenLead?: boolean;
 }) {
   const [conversations, setConversations] = useState(initialConversations);
   // "Unread" is filtered server-side (unreadOnly on the paged endpoint), so it covers every unread
@@ -1014,6 +1017,20 @@ export default function MessagesView({
                   </span>
                   <span className="flex shrink-0 items-center gap-1.5">
                     <span data-testid="conversation-row-time" className="text-xs tabular-nums text-zinc-400">{formatListTime(c.lastMessageAt)}</span>
+                    {canOpenLead && (
+                      <a
+                        href={`/admin/leads/open?phone=${encodeURIComponent(c.phoneNumber)}`}
+                        data-testid="conversation-row-lead-link"
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`Open lead card for ${name ?? formatPhone(c.phoneNumber)}`}
+                        title="Open lead card"
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700"
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                        </svg>
+                      </a>
+                    )}
                     <ConversationMenu
                       phoneNumber={c.phoneNumber}
                       blocked={c.blocked}
@@ -1154,6 +1171,17 @@ export default function MessagesView({
               {/* Visible on both mobile and desktop — unlike the info-panel toggle below (which
                   only matters on mobile, since desktop always shows that panel inline), unread/
                   copy/block have no other entry point on desktop. */}
+              {canOpenLead && <a
+                href={`/admin/leads/open?phone=${encodeURIComponent(selectedPhone)}`}
+                data-testid="thread-header-lead-link"
+                aria-label="Open lead card"
+                className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-white px-3 text-xs font-semibold !text-zinc-800 shadow-sm ring-1 ring-zinc-300 hover:bg-zinc-50"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+                Lead
+              </a>}
               <ConversationMenu
                 phoneNumber={selectedPhone}
                 blocked={selectedConversation?.blocked ?? false}
@@ -1484,6 +1512,7 @@ export default function MessagesView({
           className={`${showContactPanel ? 'flex' : 'hidden'} fixed inset-0 z-20 flex-col bg-white sm:static sm:z-auto sm:flex sm:w-96 sm:shrink-0 sm:border-l sm:border-zinc-200`}
         >
           <ContactInfoPanel
+            canOpenLead={canOpenLead}
             phoneNumber={selectedPhone}
             contact={contact}
             squareProfileUrl={selectedConversation?.squareProfileUrl ?? null}

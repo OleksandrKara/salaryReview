@@ -62,7 +62,7 @@ class AcademyLeadServiceTest {
         when(hubspot.submit(eq("jane@example.com"), anyMap(), anyString(), anyString()))
                 .thenReturn(new HubSpotFormClient.Result(false, "HTTP 400: bad form"));
 
-        var out = new AcademyLeadService(jdbc, telegram, hubspot, mock(AcademyLeadLinks.class)).submit(2L, lead("Jane", "jane@example.com", false));
+        var out = new AcademyLeadService(jdbc, telegram, hubspot, mock(AcademyLeadLinks.class), mock(LeadIntakeService.class)).submit(2L, lead("Jane", "jane@example.com", false));
 
         assertThat(out.id()).isEqualTo(42L);
         assertThat(out.telegramSent()).isTrue();

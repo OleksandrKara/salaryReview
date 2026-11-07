@@ -105,7 +105,7 @@ class TwilioInboundSmsControllerTest {
         TwilioInboundSmsController controller = new TwilioInboundSmsController(
                 properties, messageLogService, replyFlowRepository, replyService, telegramService, contactsService,
                 blockedNumberRepository, mediaService, reactionService, businesses, twilioConfigs,
-                currentBusinessContext, websiteLeadService);
+                currentBusinessContext, websiteLeadService, mock(com.salonreview.marketing.LeadIntakeService.class));
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 

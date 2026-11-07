@@ -268,6 +268,10 @@ public class ConsultationFollowUpScheduler {
 
     void advance(ConsultationFollowUp row, SquareClient square, MailchimpConfig mailchimp, Instant now) {
         Long businessId = row.getBusinessId();
+        if (noShow(row)) {
+            stop(row, ConsultationFollowUp.STOP_NO_SHOW, now);
+            return;
+        }
         if (row.getStaffAlertSentAt() == null) {
             String stopUrl = links.stopUrl(row.getId());
             String who = row.getCustomerName() == null ? "Client" : row.getCustomerName();
@@ -304,6 +308,12 @@ public class ConsultationFollowUpScheduler {
         repository.save(row);
     }
 
+    /** The client did not come to the consultation (Square marked the booking NO_SHOW): no thank-you or offer texts. */
+    private boolean noShow(ConsultationFollowUp row) {
+        return bookingMirrorRepository.findByBusinessIdAndSquareCustomerId(row.getBusinessId(), row.getSquareCustomerId()).stream()
+                .anyMatch(b -> row.getSquareBookingId().equals(b.getSquareBookingId()) && "NO_SHOW".equals(b.getStatus()));
+    }
+
     private Step nextDueStep(ConsultationFollowUp row, Instant now) {
         for (Step step : Step.values()) {
             if (step.state.apply(row) != null) {
@@ -318,13 +328,8 @@ public class ConsultationFollowUpScheduler {
         return null;
     }
 
-    /** Booked anything (asked of Square itself) or replied by text: the sequence ends for good. */
+    /** Booked anything (asked of Square itself): the sequence ends for good. A text reply does not stop it. */
     private boolean stopIfDone(ConsultationFollowUp row, SquareClient square, Instant now) {
-        if (row.getPhoneNumber() != null && smsMessageRepository.existsByBusinessIdAndPhoneNumberAndDirectionAndCreatedAtAfter(
-                row.getBusinessId(), row.getPhoneNumber(), "INBOUND", row.getCreatedAt())) {
-            stop(row, ConsultationFollowUp.STOP_REPLIED, now);
-            return true;
-        }
         List<SquareClient.Booking> bookings = square.bookingsForCustomer(row.getSquareCustomerId(),
                 row.getConsultationStartAt().minus(Duration.ofDays(1)));
         Set<String> consultationIds = consultationVariationIdsLive(square, bookings);

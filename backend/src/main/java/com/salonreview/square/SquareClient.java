@@ -1046,6 +1046,18 @@ public class SquareClient {
         return resp == null || resp.invoices() == null ? List.of() : resp.invoices();
     }
 
+    /** The free-text note staff keep on the Square customer profile, or null (also when the lookup fails). */
+    public String customerNote(String id) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode n = throttled(() ->
+                    http.get().uri("/v2/customers/{id}", id).retrieve().body(com.fasterxml.jackson.databind.JsonNode.class));
+            String note = n == null ? null : n.path("customer").path("note").asText(null);
+            return note == null || note.isBlank() ? null : note.trim();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     private java.util.Optional<Customer> fetchCustomer(String id) {
         try {
             CustomerResponse resp = throttled(() ->
@@ -1677,6 +1689,136 @@ public class SquareClient {
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     record CatalogBatchUpsertResponse(List<CatalogIdMapping> idMappings) {}
 
+
+    /** Customers matching an exact phone or email, straight from Square (uncached): lead intake must
+     * see a customer another channel created seconds ago, so it can never create a duplicate. */
+    public List<Customer> findCustomersExact(String phoneE164, String email) {
+        List<Customer> out = new ArrayList<>();
+        if (phoneE164 != null && !phoneE164.isBlank()) out.addAll(searchExact("phone_number", phoneE164));
+        if (email != null && !email.isBlank()) {
+            for (Customer c : searchExact("email_address", email.trim())) {
+                if (out.stream().noneMatch(o -> o.id().equals(c.id()))) out.add(c);
+            }
+        }
+        return out;
+    }
+
+    private List<Customer> searchExact(String field, String value) {
+        Map<String, Object> body = Map.of("query", Map.of("filter", Map.of(field, Map.of("exact", value))));
+        CustomersSearchResponse resp = throttled(() -> http.post()
+                .uri("/v2/customers/search")
+                .body(body)
+                .retrieve()
+                .body(CustomersSearchResponse.class));
+        return resp == null || resp.customers() == null ? List.of() : resp.customers();
+    }
+
+    /** Creates a customer; idempotent per key so a retried webhook cannot make two profiles. */
+    public Customer createCustomer(String idempotencyKey, String givenName, String familyName, String phoneE164,
+                                   String email, String note) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("idempotency_key", idempotencyKey);
+        if (givenName != null && !givenName.isBlank()) body.put("given_name", givenName);
+        if (familyName != null && !familyName.isBlank()) body.put("family_name", familyName);
+        if (phoneE164 != null && !phoneE164.isBlank()) body.put("phone_number", phoneE164);
+        if (email != null && !email.isBlank()) body.put("email_address", email.trim());
+        if (note != null && !note.isBlank()) body.put("note", note);
+        CustomerResponse resp = throttled(() -> http.post()
+                .uri("/v2/customers")
+                .body(body)
+                .retrieve()
+                .body(CustomerResponse.class));
+        if (resp == null || resp.customer() == null || resp.customer().id() == null) {
+            throw new IllegalStateException("Square did not return a customer");
+        }
+        return resp.customer();
+    }
+
+    /** Id of the customer group with this exact name, creating it when missing. */
+    public String ensureCustomerGroup(String name) {
+        String cursor = null;
+        do {
+            final String c = cursor;
+            CustomerGroupsListResponse resp = throttled(() -> http.get()
+                    .uri(b -> {
+                        b.path("/v2/customers/groups");
+                        if (c != null) b.queryParam("cursor", c);
+                        return b.build();
+                    })
+                    .retrieve()
+                    .body(CustomerGroupsListResponse.class));
+            if (resp != null && resp.groups() != null) {
+                for (SquareCustomerGroup g : resp.groups()) if (name.equals(g.name())) return g.id();
+            }
+            cursor = resp == null ? null : resp.cursor();
+        } while (cursor != null && !cursor.isBlank());
+        return createCustomerGroup(name);
+    }
+
+    /** Creates the string custom attribute on customers if it does not exist yet (visible and editable in the Dashboard). */
+    public void ensureCustomerStringAttribute(String key, String label, String description) {
+        CustomAttrDefsResponse resp = throttled(() -> http.get()
+                .uri("/v2/customers/custom-attribute-definitions")
+                .retrieve()
+                .body(CustomAttrDefsResponse.class));
+        if (resp != null && resp.customAttributeDefinitions() != null
+                && resp.customAttributeDefinitions().stream().anyMatch(d -> d.key() != null && (key.equals(d.key()) || d.key().endsWith(":" + key)))) return;
+        Map<String, Object> body = Map.of(
+                "idempotency_key", "attr-" + key,
+                "custom_attribute_definition", Map.of(
+                        "key", key, "name", label, "description", description,
+                        "visibility", "VISIBILITY_READ_WRITE_VALUES",
+                        "schema", Map.of("$ref", "https://developer-production-s.squarecdn.com/schemas/v1/common.json#squareup.common.String")));
+        throttled(() -> http.post()
+                .uri("/v2/customers/custom-attribute-definitions")
+                .header("Square-Version", "2025-10-16")
+                .body(body)
+                .retrieve()
+                .toBodilessEntity());
+    }
+
+    /** Current string value of a customer's custom attribute, or null. */
+    public String customerAttribute(String customerId, String key) {
+        try {
+            CustomAttrResponse resp = throttled(() -> http.get()
+                    .uri("/v2/customers/{id}/custom-attributes/{key}", customerId, key)
+                    .header("Square-Version", "2025-10-16")
+                    .retrieve()
+                    .body(CustomAttrResponse.class));
+            return resp == null || resp.customAttribute() == null || resp.customAttribute().value() == null
+                    ? null : resp.customAttribute().value().asText();
+        } catch (org.springframework.web.client.HttpClientErrorException.NotFound e) {
+            return null;
+        }
+    }
+
+    public void setCustomerAttribute(String customerId, String key, String value) {
+        Map<String, Object> body = Map.of("custom_attribute", Map.of("value", value));
+        throttled(() -> http.post()
+                .uri("/v2/customers/{id}/custom-attributes/{key}", customerId, key)
+                .header("Square-Version", "2025-10-16")
+                .body(body)
+                .retrieve()
+                .toBodilessEntity());
+    }
+
+    /** Raw keys of customer attribute definitions as the pinned API version sees them (diagnostics). */
+    public List<String> customerAttributeKeys() {
+        CustomAttrDefsResponse resp = throttled(() -> http.get()
+                .uri("/v2/customers/custom-attribute-definitions")
+                .header("Square-Version", "2025-10-16")
+                .retrieve()
+                .body(CustomAttrDefsResponse.class));
+        return resp == null || resp.customAttributeDefinitions() == null ? List.of()
+                : resp.customAttributeDefinitions().stream().map(CustomAttrDef::key).toList();
+    }
+
+    /** Deletes a customer; used to clean up verification data. */
+    public void deleteCustomer(String customerId) {
+        throttled(() -> http.delete().uri("/v2/customers/{id}", customerId).retrieve().toBodilessEntity());
+        customerCache.remove(customerId);
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     record SquareCustomerGroup(String id, String name) {}
@@ -1684,4 +1826,24 @@ public class SquareClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     record CreateCustomerGroupResponse(SquareCustomerGroup group) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    record CustomerGroupsListResponse(List<SquareCustomerGroup> groups, String cursor) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    record CustomAttrDef(String key) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    record CustomAttrDefsResponse(List<CustomAttrDef> customAttributeDefinitions) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    record CustomAttr(com.fasterxml.jackson.databind.JsonNode value) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    record CustomAttrResponse(CustomAttr customAttribute) {}
 }

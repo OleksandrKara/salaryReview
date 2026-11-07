@@ -26,10 +26,9 @@ public class ConsultationFollowUpLinks {
         this.publicBaseUrl = publicBaseUrl;
     }
 
-    /** {@code null} when link signing isn't configured: the alert then goes out without a button. */
+    /** Opens the lead in the CRM (login required) with the stop confirmation ready, so the stop is recorded with who and why. */
     public String stopUrl(long followUpId) {
-        String sig = signer.sign(PREFIX, followUpId);
-        return sig == null ? null : publicBaseUrl + "/api/public/consultation-follow-up/stop?id=" + followUpId + "&sig=" + sig;
+        return publicBaseUrl + "/admin/leads/open?consult=" + followUpId + "&business=2";
     }
 
     public boolean verifyStop(long followUpId, String signature) {

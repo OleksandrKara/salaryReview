@@ -1,6 +1,7 @@
 package com.salonreview.sms;
 
 import com.salonreview.domain.MailchimpConfig;
+import com.salonreview.marketing.ConsultationCatalog;
 import com.salonreview.marketing.MarketingContactsRepository;
 import com.salonreview.repo.MailchimpConfigRepository;
 import com.salonreview.util.Names;
@@ -55,12 +56,14 @@ public class AcademyLeadFunnelScheduler {
     static final LocalTime SMS_FROM = LocalTime.of(9, 0);
     static final LocalTime SMS_UNTIL = LocalTime.of(20, 0);
     /** Oldest lead still in the funnel: the last step plus its window. */
-    static final Duration MAX_LEAD_AGE = Duration.ofDays(10);
+    public static final Duration MAX_LEAD_AGE = Duration.ofDays(10);
 
     enum Channel { EMAIL, SMS }
 
     record Step(String key, Duration due, Duration window, Channel channel, String template, String subject, String preview) {
     }
+
+    public static final List<String> STEP_KEYS = List.of("confirm_email", "confirm_sms", "reviews_email", "checkin", "payment_email");
 
     static final List<Step> STEPS = List.of(
             new Step("confirm_email", Duration.ZERO, Duration.ofDays(1), Channel.EMAIL, "academy_request_confirmation",
@@ -85,20 +88,21 @@ public class AcademyLeadFunnelScheduler {
     private final MailchimpEmailTemplateService templates;
     private final MarketingContactsRepository contacts;
     private final MailchimpClient mailchimpClient;
+    private final ConsultationCatalog consultations;
     private final Clock clock;
 
     @Autowired
     public AcademyLeadFunnelScheduler(JdbcTemplate jdbc, SmsAutomationService automationService, TwilioSmsService smsService,
                                       MailchimpConfigRepository mailchimpConfigs, MailchimpEmailService mailchimp,
                                       MailchimpEmailTemplateService templates, MarketingContactsRepository contacts,
-                                      MailchimpClient mailchimpClient) {
-        this(jdbc, automationService, smsService, mailchimpConfigs, mailchimp, templates, contacts, mailchimpClient, Clock.systemUTC());
+                                      MailchimpClient mailchimpClient, ConsultationCatalog consultations) {
+        this(jdbc, automationService, smsService, mailchimpConfigs, mailchimp, templates, contacts, mailchimpClient, consultations, Clock.systemUTC());
     }
 
     AcademyLeadFunnelScheduler(JdbcTemplate jdbc, SmsAutomationService automationService, TwilioSmsService smsService,
                                MailchimpConfigRepository mailchimpConfigs, MailchimpEmailService mailchimp,
                                MailchimpEmailTemplateService templates, MarketingContactsRepository contacts,
-                               MailchimpClient mailchimpClient, Clock clock) {
+                               MailchimpClient mailchimpClient, ConsultationCatalog consultations, Clock clock) {
         this.jdbc = jdbc;
         this.automationService = automationService;
         this.smsService = smsService;
@@ -107,6 +111,7 @@ public class AcademyLeadFunnelScheduler {
         this.templates = templates;
         this.contacts = contacts;
         this.mailchimpClient = mailchimpClient;
+        this.consultations = consultations;
         this.clock = clock;
     }
 
@@ -132,7 +137,7 @@ public class AcademyLeadFunnelScheduler {
      * course added later) doesn't start a second funnel: staff see it in Telegram anyway. */
     private void markDuplicates(Instant now) {
         jdbc.update("""
-                UPDATE academy_lead l SET status = 'duplicate', stopped_at = now()
+                UPDATE academy_lead l SET status = 'duplicate', stopped_at = now(), stop_via = 'duplicate'
                 WHERE l.business_id = ? AND l.kind = 'course_request' AND l.status = 'new' AND l.created_at > ?
                   AND NOT EXISTS (SELECT 1 FROM academy_lead_touch t WHERE t.lead_id = l.id)
                   AND EXISTS (SELECT 1 FROM academy_lead o
@@ -144,8 +149,8 @@ public class AcademyLeadFunnelScheduler {
 
     private List<Lead> openLeads(Instant now) {
         return jdbc.query("""
-                SELECT id, name, phone, email, course_name, sms_consent, created_at FROM academy_lead
-                WHERE business_id = ? AND kind = 'course_request' AND status = 'new' AND created_at > ?
+                SELECT id, name, phone, email, course_name, sms_consent, created_at + funnel_shift_seconds * interval '1 second' AS created_at FROM academy_lead
+                WHERE business_id = ? AND kind = 'course_request' AND status = 'new' AND created_at + funnel_shift_seconds * interval '1 second' > ?
                   AND (SELECT count(*) FROM academy_lead_touch t WHERE t.lead_id = academy_lead.id) < ?
                 ORDER BY id
                 """, (rs, i) -> new Lead(rs.getLong("id"), rs.getString("name"), rs.getString("phone"), rs.getString("email"),
@@ -163,9 +168,9 @@ public class AcademyLeadFunnelScheduler {
                 touch(lead, step, "-", "skipped_late", null);
                 continue;
             }
-            // Texted the studio since the request: a person is talking to them now.
-            if (lead.phone() != null && contacts.textedUsSince(lead.phone(), BUSINESS_ID, lead.createdAt())) {
-                jdbc.update("UPDATE academy_lead SET status = 'replied', stopped_at = now() WHERE id = ? AND status = 'new'", lead.id());
+            // A reply by text does not stop the funnel; only a purchase does (booked a procedure, or enrolled in a course by staff).
+            if (boughtService(lead)) {
+                jdbc.update("UPDATE academy_lead SET status = 'converted', stopped_at = now(), stop_via = 'booked_service' WHERE id = ? AND status = 'new'", lead.id());
                 return;
             }
             if (step.channel() == Channel.SMS) {
@@ -180,6 +185,22 @@ public class AcademyLeadFunnelScheduler {
             }
             return; // one message per lead per run
         }
+    }
+
+    /** A non-consultation Square booking made after the request, matched to the lead by phone or email. */
+    private boolean boughtService(Lead lead) {
+        String digits = lead.phone() == null ? "" : lead.phone().replaceAll("\\D", "");
+        String phone = digits.length() < 10 ? null : digits.substring(digits.length() - 10);
+        String email = lead.email() == null || lead.email().isBlank() ? null : lead.email().trim().toLowerCase();
+        if (phone == null && email == null) return false;
+        Boolean found = jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM square_booking b JOIN square_customer c "
+                + "ON c.business_id = b.business_id AND c.square_customer_id = b.square_customer_id "
+                + "WHERE b.business_id = ? AND b.status = 'ACCEPTED' AND b.created_at >= ? "
+                + "AND ((?::text IS NOT NULL AND right(regexp_replace(coalesce(c.phone_number, ''), '\\D', '', 'g'), 10) = ?) "
+                + "OR (?::text IS NOT NULL AND lower(c.email_address) = ?)) "
+                + "AND NOT " + ConsultationCatalog.isConsultationSql("b", consultations.ids(BUSINESS_ID)) + ")",
+                Boolean.class, BUSINESS_ID, java.sql.Timestamp.from(lead.createdAt()), phone, phone, email, email);
+        return Boolean.TRUE.equals(found);
     }
 
     /** Opens and clicks for the automations page (AcademyLeadFunnelStats), same Mailchimp activity

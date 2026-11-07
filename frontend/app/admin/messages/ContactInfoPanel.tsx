@@ -92,8 +92,11 @@ function linkEngagementBadge(clickedAt: string | null): { label: string; classNa
 }
 
 function appointmentBadge(a: MarketingContactAppointment): { label: string; className: string } {
-  if (a.status === 'CANCELLED_BY_CUSTOMER' || a.status === 'CANCELLED_BY_SELLER' || a.status === 'DECLINED') {
-    return { label: 'Cancelled', className: 'bg-zinc-100 text-zinc-500' };
+  if (a.status === 'CANCELLED_BY_SELLER') {
+    return { label: 'Cancelled by us', className: 'bg-red-600 text-white font-semibold' };
+  }
+  if (a.status === 'CANCELLED_BY_CUSTOMER' || a.status === 'DECLINED') {
+    return { label: 'Cancelled', className: 'bg-red-100 text-red-800 font-semibold' };
   }
   if (a.status === 'NO_SHOW') {
     return { label: 'No-show', className: 'bg-amber-50 text-amber-700' };
@@ -126,6 +129,7 @@ export default function ContactInfoPanel({
   clickedYelpReview,
   clickedFeedbackForm,
   flaggedAsSpam,
+  canOpenLead = false,
   onClose,
 }: {
   phoneNumber: string;
@@ -173,6 +177,7 @@ export default function ContactInfoPanel({
   /** True if any outbound message to this number has ever come back flagged as spam by the
    * carrier or opted-out (replied STOP) — see SpamFlagIcon's own doc comment. */
   flaggedAsSpam?: boolean;
+  canOpenLead?: boolean;
   onClose: () => void;
 }) {
   const resolvedSquareProfileUrl = squareProfileUrl ?? contact?.squareProfileUrl ?? null;
@@ -295,6 +300,16 @@ export default function ContactInfoPanel({
               {contact?.emailAddress ? (
                 <div className="mt-0.5 truncate text-sm text-zinc-500">{contact.emailAddress}</div>
               ) : null}
+              {canOpenLead && <a
+                href={`/admin/leads/open?phone=${encodeURIComponent(phoneNumber)}`}
+                data-testid="contact-info-lead-link"
+                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold !text-white hover:bg-zinc-700"
+              >
+                Open lead card
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M5 12h14" /><path d="m12 5 7 7-7 7" />
+                </svg>
+              </a>}
               {resolvedSquareProfileUrl ? (
                 <a
                   href={resolvedSquareProfileUrl}

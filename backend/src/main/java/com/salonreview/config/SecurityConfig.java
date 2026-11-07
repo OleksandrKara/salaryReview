@@ -97,7 +97,7 @@ public class SecurityConfig {
                         // /confirm gap below — a later route added without updating this list.
                         .requestMatchers("/api/public/webhooks/square", "/api/public/webhooks/square/*",
                                 "/api/public/sms/inbound", "/api/public/sms/status",
-                                "/api/public/voice/inbound", "/r/**")
+                                "/api/public/voice/inbound", "/api/public/leads/call", "/r/**")
                                 .permitAll()
                         // The checkout-review-request satisfaction email's rating links — same "harmless
                         // public redirect, own signature check" shape as /r/** above (see
@@ -209,6 +209,19 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/manual-adjustments", "/api/manual-adjustments/**")
                                 .hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers("/api/manual-adjustments", "/api/manual-adjustments/**").hasRole("OWNER")
+                        // Leads CRM: owner/manager, or anyone with an owner-granted LEADS_ALL / LEADS_ACADEMY
+                        // (Staff > Permissions); the controller narrows LEADS_ACADEMY to academy leads.
+                        .requestMatchers("/api/leads/**").access((authentication, ctx) -> {
+                            var caller = authentication.get();
+                            if (caller == null || !(caller.getPrincipal() instanceof AppUserPrincipal p)) {
+                                return new org.springframework.security.authorization.AuthorizationDecision(false);
+                            }
+                            Long businessId = currentBusinessContext.isPopulated()
+                                    ? currentBusinessContext.id() : p.getActiveBusinessId();
+                            return new org.springframework.security.authorization.AuthorizationDecision(
+                                    userPermissions.leadsScope(p.getUserId(), p.getRole(), businessId)
+                                            != com.salonreview.service.UserPermissionService.LeadsScope.NONE);
+                        })
                         .requestMatchers("/api/redos/**", "/api/providers/**", "/api/missed-bookings/**")
                                 .hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers("/api/settlements/**", "/api/square/**", "/api/pay-periods/**",
