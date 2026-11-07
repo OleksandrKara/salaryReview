@@ -28,7 +28,7 @@ public class ConsultationFollowUpLinks {
 
     /** Opens the lead in the CRM (login required) with the stop confirmation ready, so the stop is recorded with who and why. */
     public String stopUrl(long followUpId) {
-        return publicBaseUrl + "/admin/leads/open?consult=" + followUpId;
+        return publicBaseUrl + "/admin/leads/open?consult=" + followUpId + "&business=2";
     }
 
     public boolean verifyStop(long followUpId, String signature) {
