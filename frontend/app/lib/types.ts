@@ -2613,7 +2613,8 @@ export interface LeadPlace { countryCode: string; country: string | null; city: 
 export interface LeadBadges { vip: boolean; visitCount: number | null; smsConsent: boolean; negativeFeedback: boolean; blocked: boolean; optedOut: boolean; spamFlag: boolean; clickedGoogle: boolean; clickedYelp: boolean; clickedFeedback: boolean }
 export interface LeadForm { key: string; kind: string; at: string; fields: Record<string, string> }
 export interface LeadPayment { id: string; at: string; amount: number; tip: number; description: string | null }
-export interface LeadSms { id: number; direction: 'INBOUND' | 'OUTBOUND'; body: string; at: string; status: string | null }
+export interface LeadSmsMedia { url: string; contentType: string }
+export interface LeadSms { id: number; direction: 'INBOUND' | 'OUTBOUND'; body: string; at: string; status: string | null; media: LeadSmsMedia[] }
 export interface LeadAppointment { id: string; status: string; startAt: string | null; services: string | null; technician: string | null; minutes: number | null; paid: number | null; consultKind?: 'ONLINE' | 'OFFLINE' | null; sellerNote?: string | null; customerNote?: string | null }
 export interface LeadSpend { total: number; tips: number; visits: number; firstVisit: string | null; lastVisit: string | null; nextAppointment: string | null }
 export interface LeadEmail { id: number; kind: string; sentAt: string; openedAt: string | null; clickedAt: string | null; hasContent: boolean }
