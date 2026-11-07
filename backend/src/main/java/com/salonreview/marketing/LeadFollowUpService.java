@@ -200,8 +200,8 @@ public class LeadFollowUpService {
                                  AND e.type IN ('NOTE', 'CALL', 'AGREEMENT') ORDER BY e.created_at DESC LIMIT 1) n ON TRUE
               LEFT JOIN LATERAL (SELECT count(*)::int AS attempts, min(e.created_at) AS first_attempt_at FROM lead_events e
                                  WHERE e.lead_id = f.id AND e.type = 'ATTEMPT' AND e.created_at > GREATEST(agg.last_touch_at,
-                                   COALESCE((SELECT max(c.created_at) FROM lead_events c WHERE c.lead_id = f.id AND c.type = 'STATUS'
-                                             AND c.text IN ('LOST', 'BOOKED', 'SPAM')), 'epoch'))) att ON TRUE
+                                   COALESCE((SELECT max(c.created_at) FROM lead_events c WHERE c.lead_id = f.id AND (c.type = 'REACHED_OUT'
+                                             OR c.type = 'STATUS' AND c.text IN ('LOST', 'BOOKED', 'SPAM'))), 'epoch'))) att ON TRUE
             """.formatted(KEY);
 
     /** Leads plus the person's latest consultation: UPCOMING, NO_SHOW (client did not come), or DONE when no real procedure was booked after it. */
@@ -889,6 +889,30 @@ public class LeadFollowUpService {
         if ("LOST".equals(req.status())) addEvent(id, "LOST_REASON", comment == null ? reason : reason + ": " + comment, by);
         if (callback != null) addEvent(id, "CALLBACK", callback.toInstant().toString(), by);
         if (clear) addEvent(id, "CALLBACK_CLEARED", null, by);
+    }
+
+    static final int REACHED_OUT_DAYS = 7;
+
+    /** Next check-in after a manager reached out: a month for a lapsed client, a week for everyone else. */
+    static int reachedOutDays(String lastVisitAt, Instant now) {
+        boolean lapsed = lastVisitAt != null && Instant.parse(lastVisitAt).isBefore(now.minus(java.time.Duration.ofDays(LAPSED_DAYS)));
+        return lapsed ? LAPSED_DAYS : REACHED_OUT_DAYS;
+    }
+
+    /** The manager got through: the lead is CONTACTED, the reminder is cleared and the next one is scheduled. */
+    public void reachedOut(long id, String by) {
+        LeadView lead = find(id);
+        if (!"NEW".equals(lead.status()) && !"CONTACTED".equals(lead.status())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "lead is closed");
+        }
+        int days = reachedOutDays(lead.lastVisitAt(), Instant.now());
+        jdbc.update("""
+                UPDATE lead_intake SET status = 'CONTACTED',
+                  callback_at = now() + make_interval(days => ?), callback_reminded = FALSE, updated_by = ?, updated_at = now()
+                WHERE id = ? AND business_id = ?
+                """, days, by, id, business.id());
+        if ("NEW".equals(lead.status())) addEvent(id, "STATUS", "CONTACTED", by);
+        addEvent(id, "REACHED_OUT", String.valueOf(days), by);
     }
 
     static final Set<String> ATTEMPT_CHANNELS = Set.of("CALL", "SMS", "MESSAGE");

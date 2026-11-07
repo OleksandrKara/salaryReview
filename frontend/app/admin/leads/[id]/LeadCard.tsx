@@ -12,6 +12,8 @@ import SpamFlagIcon from '../../messages/SpamFlagIcon';
 import GoogleReviewClickedIcon from '../../messages/GoogleReviewClickedIcon';
 import YelpReviewClickedIcon from '../../messages/YelpReviewClickedIcon';
 import FeedbackFormClickedIcon from '../../messages/FeedbackFormClickedIcon';
+import LeadActions from '../LeadActions';
+import { isActive } from '../leadActions';
 import FunnelPanel, { stoppedLine, whyText } from '../FunnelPanel';
 import type { Language, LeadDetail, LeadFunnel, LeadStatus } from '../../../lib/types';
 
@@ -127,7 +129,11 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
 
   async function reload() {
     const res = await fetch(`/api/leads/${lead.id}`, { cache: 'no-store' });
-    if (res.ok) setData(await res.json());
+    if (res.ok) {
+      const d: LeadDetail = await res.json();
+      setData(d);
+      setCallback(toLocalInput(d.lead.callbackAt));
+    }
   }
 
   async function send(url: string, method: string, body: unknown) {
@@ -185,6 +191,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
         text = LOST_REASONS.includes(code) ? [t(language, `leadLost_${code}` as 'leadLost_PRICE'), ...rest].join(': ') : x.text;
       }
       if ((x.type === 'CALLBACK' || x.type === 'LAPSED') && x.text) text = fmt(x.text, language);
+      if (x.type === 'REACHED_OUT' && x.text) text = `${t(language, 'crmNextCheckIn')} ${x.text} ${t(language, 'crmDaysShort')}`;
       return { key: `e${x.id}`, at: x.createdAt, kind: manual ? 'note' : 'system', label, text, by: x.createdBy };
     }),
     ...data.sms.map((m): Item => ({
@@ -335,6 +342,27 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
         </div>
       </section>
 
+      {isActive(lead) && (
+        <section className={`flex min-w-0 flex-col gap-2 rounded-lg p-4 ring-1 ${overdue || lead.status === 'NEW' ? 'bg-amber-50/70 ring-amber-200' : 'ring-zinc-200'}`} data-testid="lead-next-step">
+          {(overdue || lead.status === 'NEW' || lead.attempts > 0) && (
+            <p className="text-sm font-medium text-zinc-800">
+              {overdue ? t(language, 'leadReminderDue') : lead.status === 'NEW' ? t(language, 'crmReasonNew') : ''}
+              {lead.attempts > 0 && <span className="font-normal text-zinc-600">{overdue || lead.status === 'NEW' ? ' · ' : ''}{lead.attempts}/3 {t(language, 'crmAttempts')}</span>}
+            </p>
+          )}
+          {lead.closeReady && <p className="text-sm text-red-800">{t(language, 'crmCloseHint')}</p>}
+          <LeadActions
+            lead={lead} now={now} language={language} busy={busy} withContact={false}
+            handlers={{
+              onReachedOut: () => { void send(`/api/leads/${lead.id}/reached-out`, 'POST', {}); },
+              onNoAnswer: () => { void send(`/api/leads/${lead.id}/attempts`, 'POST', {}); },
+              onCloseLost: () => { void send(`/api/leads/${lead.id}`, 'PATCH', { status: 'LOST', lostReason: 'NO_ANSWER', lostComment: `${lead.attempts} ${t(language, 'crmAttempts')}` }); },
+              onSpam: () => { void send(`/api/leads/${lead.id}`, 'PATCH', { status: 'SPAM' }); },
+            }}
+          />
+        </section>
+      )}
+
       <section className="flex min-w-0 flex-wrap items-center gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
         <select
           aria-label="status"
@@ -391,24 +419,6 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
             </button>
           )}
         </div>
-        {(lead.status === 'NEW' || lead.status === 'CONTACTED') && (
-          <div className="flex w-full flex-wrap items-center gap-2">
-            {lead.closeReady ? (
-              <>
-                <p className="w-full text-sm text-red-800">{lead.attempts} {t(language, 'crmAttempts')}. {t(language, 'crmCloseHint')}</p>
-                <button
-                  className="rounded bg-red-600 px-3 py-2 text-sm text-white disabled:opacity-40"
-                  disabled={busy}
-                  onClick={() => send(`/api/leads/${lead.id}`, 'PATCH', { status: 'LOST', lostReason: 'NO_ANSWER', lostComment: `${lead.attempts} ${t(language, 'crmAttempts')}` })}
-                >
-                  {t(language, 'crmCloseNoAnswer')}
-                </button>
-              </>
-            ) : null}
-            <button className={`${link} py-2`} disabled={busy} onClick={() => send(`/api/leads/${lead.id}/attempts`, 'POST', {})}>{t(language, 'crmNoAnswer')}</button>
-            {lead.attempts > 0 && <span className="text-sm text-zinc-600">{lead.attempts}/3 {t(language, 'crmAttempts')}</span>}
-          </div>
-        )}
         {error && <p className="w-full text-sm text-red-600">{error}</p>}
       </section>
 
