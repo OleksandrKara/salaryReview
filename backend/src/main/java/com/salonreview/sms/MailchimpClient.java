@@ -234,6 +234,27 @@ public class MailchimpClient {
         return out;
     }
 
+    public record MemberEvent(String type, String campaignId, String title, Instant at) {}
+
+    /** Campaign sends, opens and clicks Mailchimp recorded for one audience member, covering emails
+     * sent from the Mailchimp UI as well as ours. Empty when the person is not in the audience. */
+    public List<MemberEvent> fetchMemberActivity(MailchimpConfig config, String email) throws IOException, InterruptedException {
+        HttpRequest req = baseRequest(config, "/lists/" + config.getAudienceId() + "/members/" + subscriberHash(email)
+                + "/activity-feed?count=500", Duration.ofSeconds(8)).GET().build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (res.statusCode() == 404) return List.of();
+        requireSuccess(res, "fetch member activity");
+        List<MemberEvent> out = new java.util.ArrayList<>();
+        for (var n : mapper.readTree(res.body()).path("activity")) {
+            String type = n.path("activity_type").asText("");
+            String cid = n.path("campaign_id").asText("");
+            String ts = n.path("created_at_timestamp").asText("");
+            if (cid.isBlank() || ts.isBlank() || !(type.equals("sent") || type.equals("open") || type.equals("click"))) continue;
+            out.add(new MemberEvent(type, cid, n.path("campaign_title").asText(null), parseTimestamp(ts)));
+        }
+        return out;
+    }
+
     /** Actually sends the campaign — irreversible, unlike a test send. */
     public void send(MailchimpConfig config, String campaignId) throws IOException, InterruptedException {
         HttpRequest req = baseRequest(config, "/campaigns/" + campaignId + "/actions/send")

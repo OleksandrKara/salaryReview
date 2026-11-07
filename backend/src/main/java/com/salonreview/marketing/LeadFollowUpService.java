@@ -748,10 +748,59 @@ public class LeadFollowUpService {
                    OR (cardinality(?::text[]) > 0 AND lower(email) = ANY(?::text[])))
             """;
 
-    private List<EmailSent> emails(LeadView lead) {
+    private static final long FEED_ID_BASE = 10_000_000_000_000L;
+    private static final java.time.Duration FEED_TTL = java.time.Duration.ofMinutes(5);
+    private record CachedFeed(java.time.Instant at, List<com.salonreview.sms.MailchimpClient.MemberEvent> events) {}
+    private final java.util.concurrent.ConcurrentHashMap<String, CachedFeed> feedCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Mailchimp's own record of sends, opens and clicks for these addresses, cached for a few minutes. Never fails the card. */
+    private List<com.salonreview.sms.MailchimpClient.MemberEvent> mailchimpFeed(List<String> mails) {
+        if (mailchimpClient == null || mailchimpConfigs == null || mails.isEmpty()) return List.of();
+        var config = mailchimpConfigs.findByBusinessId(business.id()).filter(com.salonreview.domain.MailchimpConfig::isConfigured).orElse(null);
+        if (config == null || config.getAudienceId() == null || config.getAudienceId().isBlank()) return List.of();
+        List<com.salonreview.sms.MailchimpClient.MemberEvent> all = new java.util.ArrayList<>();
+        for (String mail : mails) {
+            String key = business.id() + "|" + mail;
+            CachedFeed c = feedCache.get(key);
+            if (c == null || c.at().plus(FEED_TTL).isBefore(java.time.Instant.now())) {
+                try {
+                    c = new CachedFeed(java.time.Instant.now(), mailchimpClient.fetchMemberActivity(config, mail));
+                    feedCache.put(key, c);
+                } catch (java.io.IOException | RuntimeException e) {
+                    log.warn("Mailchimp activity for a lead email unavailable: {}", e.toString());
+                    if (c == null) continue;
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    continue;
+                }
+            }
+            all.addAll(c.events());
+        }
+        return all;
+    }
+
+    private record Activity(String openedAt, String clickedAt) {}
+
+    private static Activity feedActivity(List<com.salonreview.sms.MailchimpClient.MemberEvent> feed, String campaignId) {
+        java.time.Instant open = null, click = null;
+        for (var e : feed) {
+            if (!e.campaignId().equals(campaignId)) continue;
+            if (e.type().equals("open") && (open == null || e.at().isBefore(open))) open = e.at();
+            if (e.type().equals("click") && (click == null || e.at().isBefore(click))) click = e.at();
+        }
+        return new Activity(open == null ? null : open.toString(), click == null ? null : click.toString());
+    }
+
+    private static long feedCode(String campaignId) {
+        try { return FEED_ID_BASE + Long.parseLong(campaignId, 16); } catch (NumberFormatException e) { return 0; }
+    }
+
+    List<EmailSent> emails(LeadView lead) {
         List<String> mails = emailsOf(lead);
         String[] mailArr = mails.toArray(new String[0]);
         String tail = phoneTail(lead);
+        List<com.salonreview.sms.MailchimpClient.MemberEvent> feed = mailchimpFeed(mails);
+        java.util.Set<String> known = new java.util.HashSet<>();
         List<EmailSent> out = new java.util.ArrayList<>(jdbc.query("""
                 SELECT id, automation_key, created_at, opened_at, email_clicked_at, content_html IS NOT NULL AS has_content
                 FROM winback_email_send WHERE business_id = ? AND state = 'SENT'
@@ -771,14 +820,30 @@ public class LeadFollowUpService {
         // Every other single-recipient Mailchimp email (consultation follow-up, website nudge, ...).
         if (!mails.isEmpty()) {
             out.addAll(jdbc.query("""
-                    SELECT e.id, e.campaign_title, e.subject, e.sent_at FROM mailchimp_sent_email e
+                    SELECT e.id, e.campaign_title, e.subject, e.sent_at, e.campaign_id FROM mailchimp_sent_email e
                     WHERE e.business_id = ? AND lower(e.email) = ANY(?::text[])
                       AND NOT EXISTS (SELECT 1 FROM winback_email_send w WHERE w.mailchimp_campaign_id = e.campaign_id)
                       AND NOT EXISTS (SELECT 1 FROM academy_lead_touch t WHERE t.campaign_id = e.campaign_id)
                     ORDER BY e.sent_at DESC LIMIT 100
-                    """, (rs, i) -> new EmailSent(-(LOG_ID_BASE + rs.getLong("id")), logKind(rs.getString("campaign_title"), rs.getString("subject")),
-                    iso(rs.getTimestamp("sent_at")), null, null, true), business.id(), (Object) mailArr));
+                    """, (rs, i) -> {
+                        known.add(rs.getString("campaign_id"));
+                        var act = feedActivity(feed, rs.getString("campaign_id"));
+                        return new EmailSent(-(LOG_ID_BASE + rs.getLong("id")), logKind(rs.getString("campaign_title"), rs.getString("subject")),
+                                iso(rs.getTimestamp("sent_at")), act.openedAt(), act.clickedAt(), true);
+                    }, business.id(), (Object) mailArr));
         }
+        // Emails sent straight from Mailchimp (campaigns, journeys) that our own tables do not know about.
+        known.addAll(jdbc.queryForList("SELECT mailchimp_campaign_id FROM winback_email_send WHERE business_id = ? AND mailchimp_campaign_id IS NOT NULL AND lower(email_address) = ANY(?::text[])",
+                String.class, business.id(), (Object) mailArr));
+        known.addAll(jdbc.queryForList("SELECT t.campaign_id FROM academy_lead_touch t WHERE t.campaign_id IS NOT NULL AND t.lead_id IN (" + ACADEMY_OF_LEAD + ")",
+                String.class, business.id(), tail, tail, mailArr, mailArr));
+        feed.stream().filter(e -> e.type().equals("sent") && !known.contains(e.campaignId())).forEach(sent -> {
+            known.add(sent.campaignId());
+            var act = feedActivity(feed, sent.campaignId());
+            long code = feedCode(sent.campaignId());
+            if (code > 0) out.add(new EmailSent(-code, sent.title() == null || sent.title().isBlank() ? "Mailchimp" : sent.title().trim(),
+                    sent.at().toString(), act.openedAt(), act.clickedAt(), true));
+        });
         out.sort(java.util.Comparator.comparing(EmailSent::sentAt, java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())));
         return out;
     }
@@ -800,7 +865,10 @@ public class LeadFollowUpService {
         String[] mailArr = emailsOf(lead).toArray(new String[0]);
         String tail = phoneTail(lead);
         List<String> campaigns;
-        if (code > LOG_ID_BASE) {
+        if (code > FEED_ID_BASE) {
+            campaigns = mailchimpFeed(java.util.Arrays.asList(mailArr)).stream().map(com.salonreview.sms.MailchimpClient.MemberEvent::campaignId)
+                    .filter(id -> feedCode(id) == code).distinct().toList();
+        } else if (code > LOG_ID_BASE) {
             campaigns = jdbc.queryForList("SELECT campaign_id FROM mailchimp_sent_email WHERE id = ? AND business_id = ? AND lower(email) = ANY(?::text[])",
                     String.class, code - LOG_ID_BASE, business.id(), (Object) mailArr);
         } else {
