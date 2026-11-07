@@ -234,4 +234,21 @@ class LeadAutoBookTest {
         assertThat(leads).hasSize(2);
         assertThat(leads).filteredOn(l -> l.touches() == 2).hasSize(1).allMatch(LeadFollowUpService.LeadView::academy);
     }
+
+    @Test
+    void appointmentNotesReachTheLeadDetail() {
+        long id = lead("+16195550077", "CONTACTED", "C77", "3 days", false);
+        jdbc.update("""
+                INSERT INTO square_booking (business_id, square_booking_id, square_customer_id, status, start_at, created_at, seller_note, customer_note, appointment_segments_json)
+                VALUES (?, 'BKN1', 'C77', 'ACCEPTED', now() + interval '2 days', now(), '  Wants lip blush, allergic to latex ', 'Please call after 5pm', '[]'::jsonb),
+                       (?, 'BKN2', 'C77', 'ACCEPTED', now() + interval '3 days', now(), '   ', NULL, '[]'::jsonb)
+                """, b, b);
+        var appts = service.appointments(service.listFor(b, null).stream().filter(v -> v.id() == id).findFirst().orElseThrow());
+        var withNotes = appts.stream().filter(a -> a.id().equals("BKN1")).findFirst().orElseThrow();
+        var blank = appts.stream().filter(a -> a.id().equals("BKN2")).findFirst().orElseThrow();
+        assertThat(withNotes.sellerNote()).isEqualTo("Wants lip blush, allergic to latex");
+        assertThat(withNotes.customerNote()).isEqualTo("Please call after 5pm");
+        assertThat(blank.sellerNote()).isNull();
+        assertThat(blank.customerNote()).isNull();
+    }
 }

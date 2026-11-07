@@ -462,6 +462,8 @@ const STRINGS = {
   crmSmsIn: { EN: 'Client text', RU: 'SMS от клиента' },
   crmSmsOut: { EN: 'Text from us', RU: 'SMS от нас' },
   crmApptEvent: { EN: 'Appointment', RU: 'Запись' },
+  crmApptNote: { EN: 'Notes', RU: 'Заметки' },
+  crmApptClientNote: { EN: 'Client comment', RU: 'Комментарий клиента' },
   crmConsultOnline: { EN: 'online', RU: 'онлайн' },
   crmConsultOffline: { EN: 'in person', RU: 'офлайн' },
   crmConsultNoShow: { EN: 'Missed the consultation', RU: 'Не пришли на консультацию' },

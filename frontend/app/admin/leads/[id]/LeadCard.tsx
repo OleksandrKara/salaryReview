@@ -75,10 +75,17 @@ function Details({ payload, language, open }: { payload: Record<string, string>;
 }
 
 type Kind = 'contact' | 'sms' | 'email' | 'visit' | 'note' | 'system';
+function apptNotes(a: { sellerNote?: string | null; customerNote?: string | null }, language: Language | null) {
+  return [
+    a.sellerNote ? { label: t(language, 'crmApptNote'), text: a.sellerNote } : null,
+    a.customerNote ? { label: t(language, 'crmApptClientNote'), text: a.customerNote } : null,
+  ].filter((n): n is { label: string; text: string } => n !== null);
+}
+
 type Item = {
   key: string; at: string; kind: Kind; label: string; text?: string | null; by?: string | null;
   touchId?: number; payload?: Record<string, string> | null; inbound?: boolean; emailId?: number;
-  opened?: boolean; clicked?: boolean; hasContent?: boolean; tone?: string; future?: boolean; openDetails?: boolean;
+  opened?: boolean; clicked?: boolean; hasContent?: boolean; apptNotes?: { label: string; text: string }[]; tone?: string; future?: boolean; openDetails?: boolean;
 };
 type PanelTab = 'timeline' | 'notes' | 'visits' | 'emails' | 'web';
 type Filter = 'all' | Kind;
@@ -204,7 +211,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
     ...data.appointments.flatMap((a) => (a.startAt ? [{ ...a, startAt: a.startAt }] : [])).map((a): Item => ({
       key: `a${a.id}`, at: a.startAt, kind: 'visit', label: `${t(language, 'crmApptEvent')}: ${APPT_STATUSES.includes(a.status) ? t(language, `leadAppt_${a.status}` as 'leadAppt_ACCEPTED') : a.status}`,
       text: [a.services, a.consultKind ? t(language, a.consultKind === 'ONLINE' ? 'crmConsultOnline' : 'crmConsultOffline') : null, a.technician ? `${t(language, 'crmWith')} ${a.technician}` : null, a.paid != null && a.paid > 0 ? `${t(language, 'crmPaid')} ${money(a.paid)}` : null].filter(Boolean).join(' · '),
-      future: new Date(a.startAt).getTime() > now, tone: apptTone(a.status),
+      future: new Date(a.startAt).getTime() > now, tone: apptTone(a.status), apptNotes: apptNotes(a, language),
     })),
     ...(data.payments ?? []).map((p): Item => ({
       key: `p${p.id}`, at: p.at, kind: 'visit', label: t(language, 'crmPaymentEvent'),
@@ -480,6 +487,9 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
                         <p className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-amber-50 px-3 py-2 text-sm text-zinc-900 ring-1 ring-amber-200">{r.text}</p>
                       )}
                       {r.kind !== 'sms' && r.kind !== 'note' && r.text && <p className={`break-words text-sm ${r.tone === 'off' ? 'text-zinc-500' : r.tone === 'us' || r.tone === 'bad' ? 'text-red-800' : 'text-zinc-800'}`}>{r.text}</p>}
+                      {r.apptNotes?.map((n) => (
+                        <p key={n.label} className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-amber-50 px-3 py-2 text-sm text-zinc-900 ring-1 ring-amber-200"><span className="mb-0.5 block text-xs font-semibold text-amber-800">{n.label}</span>{n.text}</p>
+                      ))}
                       {r.kind === 'email' && (
                         <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs">
                           {r.opened && <span className="rounded bg-green-100 px-1.5 text-green-800">{t(language, 'crmEmailOpened')}</span>}
@@ -562,6 +572,9 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
                   {a.paid != null && a.paid > 0 && <span className="ml-auto font-medium tabular-nums">{t(language, 'crmPaid')} {money(a.paid)}</span>}
                 </div>
                 {a.services && <div className="text-zinc-700">{a.services}{a.consultKind ? ` (${t(language, a.consultKind === 'ONLINE' ? 'crmConsultOnline' : 'crmConsultOffline')})` : ''}</div>}
+                {apptNotes(a, language).map((n) => (
+                  <p key={n.label} className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-amber-50 px-3 py-2 text-sm text-zinc-900 ring-1 ring-amber-200"><span className="mb-0.5 block text-xs font-semibold text-amber-800">{n.label}</span>{n.text}</p>
+                ))}
                 {(a.technician || a.minutes) && (
                   <div className="text-xs text-zinc-500">
                     {a.technician ? `${t(language, 'crmWith')} ${a.technician}` : ''}{a.technician && a.minutes ? ' · ' : ''}{a.minutes ? `${a.minutes} ${language === 'RU' ? 'мин' : 'min'}` : ''}
