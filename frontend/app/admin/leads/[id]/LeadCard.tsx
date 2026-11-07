@@ -19,7 +19,7 @@ import type { Language, LeadDetail, LeadFunnel, LeadStatus } from '../../../lib/
 
 const STATUSES: LeadStatus[] = ['NEW', 'CONTACTED', 'BOOKED', 'LOST', 'SPAM'];
 function Pill({ tone, icon, children }: { tone: string; icon: React.ReactNode; children: React.ReactNode }) {
-  return <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${tone}`}>{icon}{children}</span>;
+  return <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${tone}`}>{icon}{children}</span>;
 }
 function apptTone(status: string): 'ok' | 'us' | 'bad' | 'off' {
   if (status === 'ACCEPTED') return 'ok';
@@ -261,7 +261,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
       <Link href="/admin/leads" className="text-sm text-zinc-600 underline">{t(language, 'leadsBack')}</Link>
 
       <section className="rounded-lg p-4 ring-1 ring-zinc-200">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <h2 className="break-words text-lg font-semibold">{title}</h2>
             {b && (
@@ -278,8 +278,8 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
             )}
           </div>
           {place && (
-            <div className="shrink-0 text-right" data-testid="lead-place">
-              <div className="flex items-center justify-end gap-2">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:shrink-0 sm:flex-col sm:items-end sm:gap-0 sm:text-right" data-testid="lead-place">
+              <div className="flex items-center gap-2 sm:justify-end">
                 <FlagIcon flag={place.flag} className="h-6 w-8 rounded-sm object-cover" />
                 <div className="text-sm font-medium leading-tight">
                   <div>{place.city ?? place.country}</div>
