@@ -194,7 +194,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
   const quick = 'rounded px-2.5 py-1 text-xs ring-1 ring-zinc-300 hover:bg-zinc-100';
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex min-w-0 flex-col gap-4">
       <div className={`flex flex-col gap-2 sm:flex-row ${archive ? 'hidden' : ''}`}>
         <input
           value={q}
@@ -259,7 +259,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
       {sections.map((s) => (
         <section key={s.key} className="flex flex-col gap-2">
           {s.title && (
-            <h3 className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wide ${s.tone}`}>
+            <h3 className={`flex items-start gap-2 text-xs font-semibold leading-snug ${s.tone}`}>
               {s.title}<span className="tabular-nums text-zinc-400">{s.leads.length}</span>
             </h3>
           )}
@@ -271,15 +271,15 @@ export default function LeadsManager({ initialLeads, language = null, restricted
               const reason: { text: string; cls: string } | null =
                 !isActive(l) ? null
                 : l.closeReady ? { text: t(language, 'crmReasonClose'), cls: 'text-red-700' }
-                : overdue ? { text: `${l.consultState === 'DONE' || l.consultState === 'NO_SHOW' ? t(language, 'crmReasonConsult') + '. ' : isLapsed(l, now) ? t(language, 'crmReasonLapsed') + '. ' : ''}${t(language, 'crmReasonOverdue')} ${late}`, cls: 'text-red-700' }
+                : overdue ? { text: isLapsed(l, now) ? '' : `${l.consultState === 'DONE' || l.consultState === 'NO_SHOW' ? t(language, 'crmReasonConsult') + '. ' : ''}${t(language, 'crmReasonOverdue')} ${late}`, cls: 'text-red-700' }
                 : l.status === 'NEW' ? { text: `${t(language, 'crmReasonNew')} ${waiting}`, cls: 'text-blue-700' }
                 : null;
               const upcoming = !overdue && isActive(l) && l.callbackAt != null;
               return (
-                <li key={l.id} className={`flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:gap-4 ${overdue ? 'bg-red-50/60' : ''}`}>
+                <li key={l.id} className={`flex flex-col gap-2 p-3 lg:flex-row lg:items-center lg:gap-4 ${overdue ? 'bg-red-50/60' : ''}`}>
                   <Link href={`/admin/leads/${l.id}`} className="min-w-0 flex-1 hover:underline">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="truncate font-medium">{l.name ?? l.phoneNumber ?? l.email}</span>
+                      <span className="min-w-0 max-w-full truncate font-medium">{l.name ?? l.phoneNumber ?? l.email}</span>
                       <LeadIcons b={badges[l.id]} language={language} />
                       {!(overdue && l.status === 'CONTACTED') && (
                         <span className={`rounded px-1.5 py-0.5 text-xs ${STATUS_STYLE[l.status]}`}>{t(language, `leadStatus${l.status}` as 'leadStatusNEW')}</span>
@@ -311,9 +311,8 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                           {t(language, 'funnelChip')}: {t(language, `funnelState_${f.state}` as 'funnelState_ACTIVE').toLowerCase()}
                         </span>
                       ))}
-                      {waiting && <span className="text-xs text-zinc-500">{t(language, 'crmWaiting')} {waiting}</span>}
                     </div>
-                    {reason && (
+                    {reason && reason.text && (
                       <div className={`mt-0.5 flex items-start gap-1.5 text-xs font-medium ${reason.cls}`}>
                         <span aria-hidden className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-current" />{reason.text}
                       </div>
@@ -329,7 +328,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                     )}
                   </Link>
                   {isActive(l) && (
-                    <div className="flex shrink-0 flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-2 lg:max-w-[15rem] lg:shrink-0 lg:justify-end">
                       {l.phoneNumber && <a href={`tel:${l.phoneNumber}`} className={quick}>{t(language, 'crmCall')}</a>}
                       {l.phoneNumber && <Link href={`/admin/messages?phone=${encodeURIComponent(l.phoneNumber)}`} className={quick}>{t(language, 'crmText')}</Link>}
                       {l.closeReady ? (
