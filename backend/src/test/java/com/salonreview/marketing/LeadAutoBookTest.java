@@ -251,4 +251,36 @@ class LeadAutoBookTest {
         assertThat(blank.sellerNote()).isNull();
         assertThat(blank.customerNote()).isNull();
     }
+
+    @Test
+    void mailchimpActivityShowsDirectCampaignsWithOpensAndClicks() throws Exception {
+        long id = lead("+16195550088", "CONTACTED", "C88", "3 days", false);
+        jdbc.update("UPDATE lead_intake SET email = 'Pat@Example.com' WHERE id = ?", id);
+        jdbc.update("INSERT INTO mailchimp_sent_email (business_id, email, subject, campaign_title, campaign_id, sent_at) VALUES (?, 'pat@example.com', 's', 'Known one', '0a0b0c0d0e', now() - interval '2 days')", b);
+        var config = new com.salonreview.domain.MailchimpConfig();
+        config.setBusinessId(b); config.setApiKey("k-us1"); config.setAudienceId("aud"); config.setFromName("n"); config.setFromEmail("f@x.com"); config.setReplyToEmail("r@x.com");
+        var configs = mock(com.salonreview.repo.MailchimpConfigRepository.class);
+        when(configs.findByBusinessId(b)).thenReturn(java.util.Optional.of(config));
+        var mc = mock(com.salonreview.sms.MailchimpClient.class);
+        var t0 = java.time.Instant.parse("2026-11-01T10:00:00Z");
+        when(mc.fetchMemberActivity(config, "pat@example.com")).thenReturn(java.util.List.of(
+                new com.salonreview.sms.MailchimpClient.MemberEvent("sent", "ab12cd34ef", "Black Friday", t0),
+                new com.salonreview.sms.MailchimpClient.MemberEvent("open", "ab12cd34ef", "Black Friday", t0.plusSeconds(600)),
+                new com.salonreview.sms.MailchimpClient.MemberEvent("open", "ab12cd34ef", "Black Friday", t0.plusSeconds(60)),
+                new com.salonreview.sms.MailchimpClient.MemberEvent("click", "ab12cd34ef", "Black Friday", t0.plusSeconds(900)),
+                new com.salonreview.sms.MailchimpClient.MemberEvent("sent", "0a0b0c0d0e", "Known one", t0),
+                new com.salonreview.sms.MailchimpClient.MemberEvent("open", "0a0b0c0d0e", "Known one", t0.plusSeconds(30))));
+        CurrentBusinessContext ctx = mock(CurrentBusinessContext.class);
+        when(ctx.id()).thenReturn(b);
+        var svc = new LeadFollowUpService(jdbc, ctx, null, null, null, mock(LeadIntakeService.class), mock(ConsultationCatalog.class), configs, mc, null, null, null, "https://x");
+        var mails = svc.emails(svc.find(id));
+        assertThat(mails).hasSize(2);
+        var direct = mails.stream().filter(m -> m.kind().equals("Black Friday")).findFirst().orElseThrow();
+        assertThat(direct.sentAt()).isEqualTo("2026-11-01T10:00:00Z");
+        assertThat(direct.openedAt()).isEqualTo("2026-11-01T10:01:00Z");
+        assertThat(direct.clickedAt()).isEqualTo("2026-11-01T10:15:00Z");
+        var known = mails.stream().filter(m -> !m.kind().equals("Black Friday")).findFirst().orElseThrow();
+        assertThat(known.openedAt()).isEqualTo("2026-11-01T10:00:30Z");
+        assertThat(known.clickedAt()).isNull();
+    }
 }
