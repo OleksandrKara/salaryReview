@@ -17,16 +17,16 @@
 
 ## 2. Persistence (migration V203)
 
-- [ ] 2.1 `V203__w2_time_tracking.sql`: `provider_employment`, `square_timecard_mirror`, `timecard_review`, `timecard_audit`, `timecard_reminder` (business_id on every table, indexes, uniques as in D5)
+- [x] 2.1 `V203__w2_time_tracking.sql`: `provider_employment`, `square_timecard_mirror`, `timecard_review`, `timecard_audit`, `timecard_reminder` (business_id on every table, indexes, uniques as in D5)
 - [ ] 2.2 Entities and business-scoped repositories (`findByIdAndBusinessId` for every caller-controlled id)
 - [ ] 2.2b `sms_enabled` flag (default false) and global `timecards.sms.enabled` (default false); sender checks both
 - [ ] 2.2a `payroll_automation_enabled` and `alerts_enabled` flags on `provider_employment`, owner toggle endpoint and UI
-- [ ] 2.2c Worker type `W2|1099` per provider (default 1099), `provider_time_approver` table (one or more owner/manager approvers), `show_commission_comparison_to_provider` flag (default false)
+- [x] 2.2c Worker type `W2|1099` per provider (default 1099), `provider_time_approver` table (one or more owner/manager approvers), `show_commission_comparison_to_provider` flag (default false)
 - [ ] 2.3 Seed Yana: W2, $18.50 effective 2026-10-01 (owner-run, not a migration)
 
 ## 3. Square Labor
 
-- [ ] 3.1 `SquareLaborClient` with path allow-list, search, create, update, break types; fixture-based tests
+- [x] 3.1 `SquareLaborClient` with path allow-list, search, create, update, break types; fixture-based tests
 - [ ] 3.2 `TimecardSyncService` (rolling 45 days, nightly job zone America/Los_Angeles, on-demand), drift detection, retry job for `CONFIRMED_PENDING_WRITE`
 - [ ] 3.3 Break type bootstrap ("Unpaid break", "Paid rest 10 min") per location
 
