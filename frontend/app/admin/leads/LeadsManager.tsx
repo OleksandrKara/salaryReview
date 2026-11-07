@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { FUNNEL_TONE } from './FunnelPanel';
+import LeadActions from './LeadActions';
+import { DAY, LAPSED_AFTER_DAYS, isActive, isLapsed, isOverdue, reachedOutDays } from './leadActions';
 import LeadIcons from './LeadIcons';
 import OutdatedPanel, { LockIcon } from './OutdatedPanel';
 import { t } from '../../lib/i18n';
@@ -12,9 +14,7 @@ type Tab = 'ACTION' | 'CONSULT' | 'LAPSED' | 'CONTACTED' | 'BOOKED' | 'LOST' | '
 const OUTDATED = 'OUTDATED' as const;
 type AnyTab = Tab | typeof OUTDATED;
 const TABS: Tab[] = ['ACTION', 'CONSULT', 'LAPSED', 'CONTACTED', 'BOOKED', 'LOST', 'SPAM', 'ALL'];
-const DAY = 86_400_000;
 const COLD_AFTER_DAYS = 7;
-const LAPSED_AFTER_DAYS = 30;
 const STATUS_STYLE: Record<string, string> = {
   NEW: 'bg-blue-100 text-blue-800',
   CONTACTED: 'bg-zinc-100 text-zinc-700',
@@ -38,18 +38,6 @@ function span(ms: number, lang: Language | null): string {
 }
 
 const activity = (l: Lead) => new Date(l.activityAt ?? l.lastTouchAt).getTime();
-
-function isActive(l: Lead): boolean {
-  return l.status === 'NEW' || l.status === 'CONTACTED';
-}
-
-function isOverdue(l: Lead, now: number): boolean {
-  return isActive(l) && l.callbackAt != null && new Date(l.callbackAt).getTime() <= now;
-}
-
-function isLapsed(l: Lead, now: number): boolean {
-  return isActive(l) && l.lastVisitAt != null && now - new Date(l.lastVisitAt).getTime() > LAPSED_AFTER_DAYS * DAY;
-}
 
 function needsAction(l: Lead, now: number): boolean {
   return isOverdue(l, now) || l.status === 'NEW';
@@ -164,14 +152,15 @@ export default function LeadsManager({ initialLeads, language = null, restricted
     }
   }
 
-  async function snooze(l: Lead, days: number) {
+  async function reachedOut(l: Lead) {
     setBusyId(l.id);
-    const next = new Date(Date.now() + days * DAY).toISOString();
-    const res = await fetch(`/api/leads/${l.id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callbackAt: next }),
-    });
+    const days = reachedOutDays(l, Date.now());
+    const res = await fetch(`/api/leads/${l.id}/reached-out`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     setBusyId(null);
-    if (res.ok) setLeads((prev) => prev.map((x) => (x.id === l.id ? { ...x, callbackAt: next } : x)));
+    if (res.ok) {
+      const next = new Date(Date.now() + days * DAY).toISOString();
+      setLeads((prev) => prev.map((x) => (x.id === l.id ? { ...x, status: 'CONTACTED', callbackAt: next, attempts: 0, closeReady: false } : x)));
+    }
   }
 
   async function closeLost(l: Lead) {
@@ -201,7 +190,6 @@ export default function LeadsManager({ initialLeads, language = null, restricted
         : x === 'ALL' ? t(language, 'leadsFilterAll')
           : t(language, `leadStatus${x}` as 'leadStatusNEW');
 
-  const quick = 'rounded px-2.5 py-1.5 text-center text-xs ring-1 ring-zinc-300 hover:bg-zinc-100';
 
   return (
     <div className="flex min-w-0 max-w-full flex-col gap-4 overflow-x-clip">
@@ -337,24 +325,10 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                       </div>
                     )}
                   </Link>
-                  {isActive(l) && (
-                    <div className="flex flex-wrap gap-1.5 [&>*]:flex-1 lg:[&>*]:flex-none lg:max-w-[15rem] lg:shrink-0 lg:justify-end">
-                      {l.phoneNumber && <a href={`tel:${l.phoneNumber}`} className={quick}>{t(language, 'crmCall')}</a>}
-                      {l.phoneNumber && <Link href={`/admin/messages?phone=${encodeURIComponent(l.phoneNumber)}`} className={quick}>{t(language, 'crmText')}</Link>}
-                      {l.closeReady ? (
-                        <button className="rounded bg-red-600 px-2.5 py-1 text-xs text-white disabled:opacity-40" disabled={busyId === l.id} onClick={() => closeLost(l)}>{t(language, 'crmCloseNoAnswer')}</button>
-                      ) : (
-                        <button className={quick} disabled={busyId === l.id} onClick={() => noAnswer(l)}>{t(language, 'crmNoAnswer')}</button>
-                      )}
-                      {overdue && isLapsed(l, now) && (
-                        <button className="rounded bg-emerald-600 px-2.5 py-1 text-xs text-white disabled:opacity-40" disabled={busyId === l.id} onClick={() => snooze(l, LAPSED_AFTER_DAYS)}>{t(language, 'crmLapsedDone')}</button>
-                      )}
-                      <button className={quick} disabled={busyId === l.id} onClick={() => setStatus(l, 'SPAM')}>{t(language, 'crmMarkSpam')}</button>
-                      {l.status === 'NEW' && (
-                        <button className={quick} disabled={busyId === l.id} onClick={() => setStatus(l, 'CONTACTED')}>{t(language, 'crmMarkContacted')}</button>
-                      )}
-                    </div>
-                  )}
+                  <LeadActions
+                    lead={l} now={now} language={language} busy={busyId === l.id} withContact
+                    handlers={{ onReachedOut: () => reachedOut(l), onNoAnswer: () => noAnswer(l), onCloseLost: () => closeLost(l), onSpam: () => setStatus(l, 'SPAM') }}
+                  />
                 </li>
               );
             })}

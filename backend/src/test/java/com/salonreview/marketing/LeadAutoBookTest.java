@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.salonreview.domain.Business;
+import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.repo.BusinessRepository;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,7 +34,9 @@ class LeadAutoBookTest {
         when(intake.enabledBusinesses()).thenReturn(Set.of(b));
         ConsultationCatalog catalog = mock(ConsultationCatalog.class);
         when(catalog.ids(b)).thenReturn(Set.of(CONSULT));
-        service = new LeadFollowUpService(jdbc, null, null, null, null, intake, catalog, null, null, null, null, null, "https://x");
+        CurrentBusinessContext ctx = mock(CurrentBusinessContext.class);
+        when(ctx.id()).thenReturn(b);
+        service = new LeadFollowUpService(jdbc, ctx, null, null, null, intake, catalog, null, null, null, null, null, "https://x");
     }
 
     private long lead(String phone, String status, String customer, String createdAgo, boolean legacy) {
@@ -174,6 +177,43 @@ class LeadAutoBookTest {
         booking("C41", "ACCEPTED", "PROC", "0 seconds", "3 days");
         nails.autoBook();
         assertThat(status(lapsed)).isEqualTo("BOOKED");
+    }
+
+    @Test
+    void reachedOutClearsTheReminderResetsAttemptsAndSchedulesTheNextCheckIn() {
+        long fresh = lead("+16195550051", "NEW", null, "3 days", false);
+        service.recordAttempt(fresh, "CALL", "tester");
+        service.recordAttempt(fresh, "CALL", "tester");
+        jdbc.update("UPDATE lead_intake SET callback_at = now() - interval '1 hour' WHERE id = ?", fresh);
+        jdbc.update("UPDATE lead_events SET created_at = now() - interval '2 hours' WHERE lead_id = ? AND type = 'ATTEMPT'", fresh);
+        assertThat(service.find(fresh).attempts()).isEqualTo(2);
+
+        service.reachedOut(fresh, "tester");
+        var after = service.find(fresh);
+        assertThat(after.status()).isEqualTo("CONTACTED");
+        assertThat(after.attempts()).isZero();
+        assertThat(after.closeReady()).isFalse();
+        assertThat(java.time.Instant.parse(after.callbackAt())).isBetween(
+                java.time.Instant.now().plus(java.time.Duration.ofDays(6)), java.time.Instant.now().plus(java.time.Duration.ofDays(8)));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM lead_events WHERE lead_id = ? AND type = 'REACHED_OUT' AND text = '7'", Integer.class, fresh)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT callback_reminded FROM lead_intake WHERE id = ?", Boolean.class, fresh)).isFalse();
+
+        jdbc.update("UPDATE lead_events SET created_at = now() - interval '1 minute' WHERE lead_id = ? AND type = 'REACHED_OUT'", fresh);
+        service.recordAttempt(fresh, "CALL", "tester");
+        assertThat(service.find(fresh).attempts()).isEqualTo(1);
+    }
+
+    @Test
+    void reachedOutPicksAMonthForLapsedClientsAndRefusesClosedLeads() {
+        java.time.Instant now = java.time.Instant.now();
+        assertThat(LeadFollowUpService.reachedOutDays(now.minus(java.time.Duration.ofDays(45)).toString(), now)).isEqualTo(30);
+        assertThat(LeadFollowUpService.reachedOutDays(now.minus(java.time.Duration.ofDays(10)).toString(), now)).isEqualTo(7);
+        assertThat(LeadFollowUpService.reachedOutDays(null, now)).isEqualTo(7);
+
+        long lost = lead("+16195550052", "LOST", null, "3 days", false);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.reachedOut(lost, "tester"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        assertThat(status(lost)).isEqualTo("LOST");
     }
 
     @Test

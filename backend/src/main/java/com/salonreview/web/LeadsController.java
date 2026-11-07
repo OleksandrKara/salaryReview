@@ -141,6 +141,13 @@ public class LeadsController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/{id}/reached-out")
+    public ResponseEntity<Void> reachedOut(@PathVariable long id, @AuthenticationPrincipal AppUserPrincipal me) {
+        guard(id, me);
+        leads.reachedOut(id, me == null ? null : me.getUsername());
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/{id}/events")
     public ResponseEntity<Void> addEvent(@PathVariable long id, @RequestBody EventRequest req,
                                          @AuthenticationPrincipal AppUserPrincipal me) {
