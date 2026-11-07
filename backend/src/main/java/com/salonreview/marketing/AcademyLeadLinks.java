@@ -22,7 +22,7 @@ public class AcademyLeadLinks {
 
     /** Opens the lead in the CRM (login required) with the stop confirmation ready, so the stop is recorded with who and why. */
     public String stopUrl(long leadId) {
-        return publicBaseUrl + "/admin/leads/open?academy=" + leadId;
+        return publicBaseUrl + "/admin/leads/open?academy=" + leadId + "&business=2";
     }
 
     public boolean verifyStop(long leadId, String signature) {

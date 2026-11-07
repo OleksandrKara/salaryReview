@@ -1,23 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
+import { loadTs } from './_load.mjs';
 
-const require = createRequire(import.meta.url);
-const ts = require('typescript');
-
-async function load(rel) {
-  const src = fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
-  const out = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lead-actions-'));
-  const file = path.join(dir, 'm.mjs');
-  fs.writeFileSync(file, out);
-  return import(pathToFileURL(file).href);
-}
-
+const load = loadTs;
 const { actionPlan, isOverdue, isLapsed, reachedOutDays, DAY } = await load('../app/admin/leads/leadActions.ts');
 const NOW = Date.parse('2026-11-07T12:00:00Z');
 const lead = (o) => ({ status: 'CONTACTED', callbackAt: null, closeReady: false, phoneNumber: '+16195550000', lastVisitAt: null, ...o });
