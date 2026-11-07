@@ -56,7 +56,7 @@ rules:
     - State how the change is verified (which test, and the localhost/Square read-only check).
   design:
     - Note any new Flyway migration (next is V112) and any SecurityConfig role gating.
-    - Respect Square read-only — never propose writing to Square; messy real-world data is handled
+    - Respect Square read-only — never propose writing to Square, except Labor timecards and break types (SquareLaborClient allow-list); messy real-world data is handled
       through in-app records (e.g. manual credit), not by mutating Square.
     - Any new caller-controlled-id repository method must be business-scoped from the start —
       see the Multi-tenant context note above.
