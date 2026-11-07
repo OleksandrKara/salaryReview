@@ -63,6 +63,8 @@ function linksFor(role: Role, leadsAccess = false): NavSections {
             { href: '/admin/redos', key: 'mgrRedos' },
             { href: '/admin/manual-adjustments', key: 'navManualAdjustments' },
             { href: '/admin/manager-time', key: 'navManagerTime' },
+            { href: '/timecards', key: 'tcNavApprove' },
+            { href: '/owner/settings/timecards', key: 'tcNavSetup' },
           ],
         },
         {
@@ -114,6 +116,7 @@ function linksFor(role: Role, leadsAccess = false): NavSections {
         { href: '/manager', key: 'navDashboard' },
         { href: '/admin/leads', key: 'navLeads' },
         { href: '/manager/time', key: 'navMyTime' },
+        { href: '/timecards', key: 'tcNavApprove' },
         { href: '/admin/redos', key: 'mgrRedos' },
         { href: '/admin/missed-bookings', key: 'missedBookingsTitle' },
         { href: '/admin/manual-adjustments', key: 'navManualAdjustments' },
