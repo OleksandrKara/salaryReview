@@ -12,6 +12,7 @@ import SpamFlagIcon from '../../messages/SpamFlagIcon';
 import GoogleReviewClickedIcon from '../../messages/GoogleReviewClickedIcon';
 import YelpReviewClickedIcon from '../../messages/YelpReviewClickedIcon';
 import FeedbackFormClickedIcon from '../../messages/FeedbackFormClickedIcon';
+import ImageViewer, { type ViewerImage } from './ImageViewer';
 import LeadActions from '../LeadActions';
 import { isActive } from '../leadActions';
 import FunnelPanel, { stoppedLine, whyText } from '../FunnelPanel';
@@ -85,9 +86,9 @@ function apptNotes(a: { sellerNote?: string | null; customerNote?: string | null
 type Item = {
   key: string; at: string; kind: Kind; label: string; text?: string | null; by?: string | null;
   touchId?: number; payload?: Record<string, string> | null; inbound?: boolean; emailId?: number;
-  opened?: boolean; clicked?: boolean; hasContent?: boolean; apptNotes?: { label: string; text: string }[]; tone?: string; future?: boolean; openDetails?: boolean;
+  media?: string[]; opened?: boolean; clicked?: boolean; hasContent?: boolean; apptNotes?: { label: string; text: string }[]; tone?: string; future?: boolean; openDetails?: boolean;
 };
-type PanelTab = 'timeline' | 'notes' | 'visits' | 'emails' | 'web';
+type PanelTab = 'timeline' | 'notes' | 'visits' | 'images' | 'emails' | 'web';
 type Filter = 'all' | Kind;
 const FILTERS: { id: Filter; key: 'crmFilterAll' | 'crmFilterContacts' | 'crmFilterMessages' | 'crmFilterEmails' | 'crmFilterVisits' | 'crmFilterNotes' | 'crmFilterSystem' }[] = [
   { id: 'all', key: 'crmFilterAll' }, { id: 'contact', key: 'crmFilterContacts' }, { id: 'sms', key: 'crmFilterMessages' },
@@ -125,6 +126,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
   const [callback, setCallback] = useState(toLocalInput(lead.callbackAt));
   const [note, setNote] = useState('');
   const [mailId, setMailId] = useState<number | null>(null);
+  const [viewer, setViewer] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<PanelTab>('timeline');
@@ -202,7 +204,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
       return { key: `e${x.id}`, at: x.createdAt, kind: manual ? 'note' : 'system', label, text, by: x.createdBy };
     }),
     ...data.sms.map((m): Item => ({
-      key: `s${m.id}`, at: m.at, kind: 'sms', inbound: m.direction === 'INBOUND', label: t(language, m.direction === 'INBOUND' ? 'crmSmsIn' : 'crmSmsOut'), text: m.body,
+      key: `s${m.id}`, at: m.at, kind: 'sms', inbound: m.direction === 'INBOUND', label: t(language, m.direction === 'INBOUND' ? 'crmSmsIn' : 'crmSmsOut'), text: m.body, media: m.media.map((x) => x.url),
     })),
     ...data.emails.map((m): Item => ({
       key: `m${m.id}`, at: m.sentAt, kind: 'email', label: t(language, 'crmEmailSentEvent'), text: m.kind, emailId: m.id,
@@ -241,10 +243,15 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
   const filtered = items.filter((i) => filter === 'all' || i.kind === filter);
   const visible = filtered.slice(0, shown);
 
+  const photos: ViewerImage[] = data.sms
+    .flatMap((m) => m.media.map((x) => ({ url: x.url, at: fmt(m.at, language), label: t(language, m.direction === 'INBOUND' ? 'crmSmsIn' : 'crmSmsOut'), ts: m.at })))
+    .sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
+  const openPhoto = (url: string) => setViewer(Math.max(0, photos.findIndex((p) => p.url === url)));
   const tabs: { id: PanelTab; label: string; n?: number }[] = [
     { id: 'timeline', label: t(language, 'crmTabTimeline'), n: items.length },
     { id: 'notes', label: t(language, 'crmTabNotes'), n: notes.length + (data.squareNote ? 1 : 0) },
     ...(lead.squareCustomerId ? [{ id: 'visits' as const, label: t(language, 'crmTabVisits'), n: data.appointments.length }] : []),
+    { id: 'images', label: t(language, 'crmTabImages'), n: photos.length },
     { id: 'emails', label: t(language, 'crmTabEmails'), n: data.emails.length },
     { id: 'web', label: t(language, 'crmTabWeb'), n: data.origins.length },
   ];
@@ -483,6 +490,16 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
                       {r.kind === 'sms' && r.text && (
                         <p className={`mt-1 inline-block max-w-full whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${r.inbound ? 'bg-emerald-50 text-zinc-900 ring-1 ring-emerald-200' : 'bg-zinc-100 text-zinc-800'}`}>{r.text}</p>
                       )}
+                      {r.media && r.media.length > 0 && (
+                        <div className={`mt-1 grid max-w-xs gap-1 ${r.media.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                          {r.media.map((u) => (
+                            <button key={u} type="button" onClick={() => openPhoto(u)} aria-label={t(language, 'crmImagesOpen')} className="block overflow-hidden rounded-xl bg-zinc-100 ring-1 ring-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={u} alt="" loading="lazy" className="max-h-60 w-full object-cover" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       {r.kind === 'note' && r.text && (
                         <p className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-amber-50 px-3 py-2 text-sm text-zinc-900 ring-1 ring-amber-200">{r.text}</p>
                       )}
@@ -594,6 +611,23 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
         </section>
       )}
 
+      {tab === 'images' && (
+        <section>
+          {photos.length === 0 && <p className="text-sm text-zinc-500">{t(language, 'crmImagesEmpty')}</p>}
+          <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+            {photos.map((p, i) => (
+              <li key={p.url} className="min-w-0">
+                <button type="button" onClick={() => setViewer(i)} aria-label={t(language, 'crmImagesOpen')} className="block aspect-square w-full overflow-hidden rounded-xl bg-zinc-100 ring-1 ring-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.url} alt="" loading="lazy" className="h-full w-full object-cover" />
+                </button>
+                <div className="mt-1 truncate text-xs text-zinc-500">{p.label} · {p.at}</div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {tab === 'emails' && (
         <section className="flex flex-col gap-2">
           {data.emails.length === 0 && <p className="text-sm text-zinc-500">{t(language, 'crmEmailsEmpty')}</p>}
@@ -650,6 +684,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
           </ul>
         </section>
       )}
+      {viewer != null && photos.length > 0 && <ImageViewer images={photos} start={Math.min(viewer, photos.length - 1)} language={language} onClose={() => setViewer(null)} />}
     </div>
   );
 }

@@ -120,7 +120,8 @@ public class LeadFollowUpService {
     public record Spend(java.math.BigDecimal total, java.math.BigDecimal tips, int visits, String firstVisit,
                         String lastVisit, String nextAppointment) {}
 
-    public record Sms(long id, String direction, String body, String at, String status) {}
+    public record SmsMedia(String url, String contentType) {}
+    public record Sms(long id, String direction, String body, String at, String status, List<SmsMedia> media) {}
 
     public record EmailSent(long id, String kind, String sentAt, String openedAt, String clickedAt, boolean hasContent) {}
 
@@ -1058,12 +1059,25 @@ public class LeadFollowUpService {
     private List<Sms> sms(LeadView lead) {
         String digits = lead.phoneNumber() == null ? "" : lead.phoneNumber().replaceAll("\\D", "");
         if (digits.length() < 10) return List.of();
-        return jdbc.query("""
+        List<Sms> rows = jdbc.query("""
                 SELECT id, direction, body, created_at, COALESCE(delivery_status, status) AS st FROM sms_message
                 WHERE business_id = ? AND right(regexp_replace(phone_number, '\\D', '', 'g'), 10) = ?
                 ORDER BY created_at DESC LIMIT 100
                 """, (rs, i) -> new Sms(rs.getLong("id"), rs.getString("direction"), rs.getString("body"),
-                iso(rs.getTimestamp("created_at")), rs.getString("st")), business.id(), digits.substring(digits.length() - 10));
+                iso(rs.getTimestamp("created_at")), rs.getString("st"), new java.util.ArrayList<>()), business.id(), digits.substring(digits.length() - 10));
+        if (rows.isEmpty()) return rows;
+        java.util.Map<Long, Sms> byId = new java.util.HashMap<>();
+        rows.forEach(r -> byId.put(r.id(), r));
+        String ids = rows.stream().map(r -> String.valueOf(r.id())).collect(java.util.stream.Collectors.joining(","));
+        jdbc.query("SELECT sms_message_id, content_type, access_token FROM sms_message_media WHERE sms_message_id IN (" + ids + ") ORDER BY id",
+                rs -> {
+                    String type = rs.getString("content_type");
+                    Sms m = byId.get(rs.getLong("sms_message_id"));
+                    if (m != null && type != null && type.toLowerCase().startsWith("image/")) {
+                        m.media().add(new SmsMedia(publicBaseUrl + "/api/public/sms-media/" + rs.getString("access_token"), type));
+                    }
+                });
+        return rows;
     }
 
     private String squareNote(LeadView lead) {
