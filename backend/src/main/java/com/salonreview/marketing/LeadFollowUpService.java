@@ -114,7 +114,8 @@ public class LeadFollowUpService {
     public record Event(long id, String type, String text, String createdBy, String createdAt) {}
 
     public record Appointment(String id, String status, String startAt, String services, String technician,
-                              Integer minutes, java.math.BigDecimal paid, String consultKind) {}
+                              Integer minutes, java.math.BigDecimal paid, String consultKind,
+                              String sellerNote, String customerNote) {}
 
     public record Spend(java.math.BigDecimal total, java.math.BigDecimal tips, int visits, String firstVisit,
                         String lastVisit, String nextAppointment) {}
@@ -505,16 +506,16 @@ public class LeadFollowUpService {
 
     /** Appointments of the linked Square customer, read from the webhook-fed mirror (no Square call
      * except cached catalog names for the service labels). */
-    private List<Appointment> appointments(LeadView lead) {
+    List<Appointment> appointments(LeadView lead) {
         List<String> customers = customerIds(lead);
         if (customers.isEmpty()) return List.of();
         List<Object[]> rows = new java.util.ArrayList<>();
         jdbc.query("""
-                SELECT square_booking_id, status, start_at, appointment_segments_json::text AS segments
+                SELECT square_booking_id, status, start_at, appointment_segments_json::text AS segments, seller_note, customer_note
                 FROM square_booking WHERE business_id = ? AND square_customer_id IN (%s)
                 ORDER BY start_at DESC NULLS LAST LIMIT 20
                 """.formatted(marks(customers.size())), rs -> {
-            rows.add(new Object[]{rs.getString(1), rs.getString(2), iso(rs.getTimestamp(3)), rs.getString(4)});
+            rows.add(new Object[]{rs.getString(1), rs.getString(2), iso(rs.getTimestamp(3)), rs.getString(4), blankToNull(rs.getString(5)), blankToNull(rs.getString(6))});
         }, args(business.id(), customers));
         java.util.Set<String> variationIds = new java.util.LinkedHashSet<>();
         List<List<String>> perRow = new java.util.ArrayList<>();
@@ -577,9 +578,13 @@ public class LeadFollowUpService {
             if (!services.isEmpty() && services.toLowerCase().contains("consultation")) {
                 kind = services.toLowerCase().contains("online") ? "ONLINE" : "OFFLINE";
             }
-            out.add(new Appointment((String) r[0], (String) r[1], (String) r[2], services.isEmpty() ? null : services, tech, minutes, paid, kind));
+            out.add(new Appointment((String) r[0], (String) r[1], (String) r[2], services.isEmpty() ? null : services, tech, minutes, paid, kind, (String) r[4], (String) r[5]));
         }
         return out;
+    }
+
+    private static String blankToNull(String v) {
+        return v == null || v.isBlank() ? null : v.trim();
     }
 
     private List<Payment> payments(LeadView lead) {
