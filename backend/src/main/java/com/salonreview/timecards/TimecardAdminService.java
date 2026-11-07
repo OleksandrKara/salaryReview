@@ -37,10 +37,19 @@ public class TimecardAdminService {
         this.days = days;
     }
 
+    /** Only providers Square reports as ACTIVE. If Square cannot be reached, nothing is shown rather than stale people. */
     public List<ProviderSetup> list(Long businessId) {
-        List<Long> ids = jdbc.queryForList("SELECT id FROM providers WHERE business_id = ? ORDER BY active DESC, display_name",
-                Long.class, businessId);
+        java.util.Set<String> activeMembers = activeSquareMembers(businessId);
+        List<Long> ids = jdbc.queryForList("""
+                SELECT p.id FROM providers p JOIN provider_square_member m ON m.provider_id = p.id
+                WHERE p.business_id = ? AND m.square_team_member_id = ANY (?) ORDER BY p.display_name""",
+                Long.class, businessId, activeMembers.toArray(new String[0]));
         return ids.stream().map(id -> get(businessId, id)).toList();
+    }
+
+    private java.util.Set<String> activeSquareMembers(Long businessId) {
+        return squares.forBusiness(businessId).activeTeamMembers().stream()
+                .map(com.salonreview.square.SquareClient.TeamMember::id).collect(java.util.stream.Collectors.toSet());
     }
 
     public ProviderSetup get(Long businessId, Long providerId) {
@@ -80,6 +89,9 @@ public class TimecardAdminService {
     @Transactional
     public ProviderSetup update(Long businessId, Long providerId, UpdateRequest req) {
         get(businessId, providerId);
+        Integer activeInSquare = jdbc.queryForObject("SELECT COUNT(*) FROM provider_square_member WHERE provider_id = ? AND square_team_member_id = ANY (?)",
+                Integer.class, providerId, activeSquareMembers(businessId).toArray(new String[0]));
+        if (activeInSquare == null || activeInSquare == 0) throw TimecardReviewService.bad("This person is not active in Square");
         if (req.workerType() != null) {
             if (!req.workerType().equals("W2") && !req.workerType().equals("1099")) {
                 throw TimecardReviewService.bad("workerType must be W2 or 1099");
