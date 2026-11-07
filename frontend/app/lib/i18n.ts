@@ -451,6 +451,8 @@ const STRINGS = {
   crmTabEmails: { EN: 'Emails', RU: 'Письма' },
   crmTabImages: { EN: 'Images', RU: 'Фото' },
   crmImagesEmpty: { EN: 'No photos yet. Photos the client texts us show up here.', RU: 'Фото пока нет. Здесь появятся фото, которые клиент присылает в SMS.' },
+  crmImagesSquare: { EN: 'Photos in Square', RU: 'Фото в Square' },
+  crmImagesSquareHint: { EN: 'Open the client profile in Square', RU: 'Открыть профиль клиента в Square' },
   crmImagesViewer: { EN: 'Photo viewer', RU: 'Просмотр фото' },
   crmImagesOpenOriginal: { EN: 'Open original', RU: 'Открыть оригинал' },
   crmImagesZoom: { EN: 'Zoom', RU: 'Масштаб' },

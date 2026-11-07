@@ -613,6 +613,12 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
 
       {tab === 'images' && (
         <section>
+          {lead.squareUrl && (
+            <a href={lead.squareUrl} target="_blank" rel="noreferrer" className="mb-3 flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-4 py-3 text-sm ring-1 ring-zinc-200 hover:bg-zinc-100">
+              <span className="min-w-0"><span className="block font-medium text-zinc-900">{t(language, 'crmImagesSquare')}</span><span className="block text-xs text-zinc-500">{t(language, 'crmImagesSquareHint')}</span></span>
+              <span aria-hidden="true" className="shrink-0 text-zinc-500">↗</span>
+            </a>
+          )}
           {photos.length === 0 && <p className="text-sm text-zinc-500">{t(language, 'crmImagesEmpty')}</p>}
           <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
             {photos.map((p, i) => (
