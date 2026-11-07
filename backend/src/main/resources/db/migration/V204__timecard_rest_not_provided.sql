@@ -1,0 +1,1 @@
+ALTER TABLE timecard_review ADD COLUMN IF NOT EXISTS rest_not_provided BOOLEAN NOT NULL DEFAULT FALSE;
