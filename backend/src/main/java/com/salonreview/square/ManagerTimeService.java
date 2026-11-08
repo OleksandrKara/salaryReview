@@ -172,7 +172,8 @@ public class ManagerTimeService {
         YearMonth ym = YearMonth.of(year, month);
         List<ManagerTimeEntry> list = entries.findByUserIdAndWorkDateBetweenOrderByStartAtAsc(
                 userId, ym.atDay(1), ym.atEndOfMonth());
-        BigDecimal rate = rateOf(userId);
+        List<ManagerPayRate> history = rates.findByUserIdOrderByEffectiveFromAsc(userId);
+        BigDecimal rate = rateAt(history, ym.atEndOfMonth());
 
         int monthMin = 0;
         List<TimeEntryDto> dtos = new ArrayList<>();
@@ -183,7 +184,7 @@ public class ManagerTimeService {
             monthMin += dto.minutes();
         }
         return new ManagerTimesheetDto(year, month, z.getId(), rate,
-                monthMin, pay(rate, monthMin), dtos, openShift(userId));
+                monthMin, rate == null ? null : payOver(history, list), dtos, openShift(userId));
     }
 
     // --- owner actions ---
@@ -195,23 +196,27 @@ public class ManagerTimeService {
         List<AppUser> managers = users.findByBusinessIdAndRoleInAndActiveTrueOrderByUsernameAsc(currentBusinessContext.id(), List.of(Role.MANAGER));
         List<Long> ids = managers.stream().map(AppUser::getId).toList();
 
-        Map<Long, BigDecimal> rateById = rates.findByUserIdIn(ids).stream()
-                .collect(Collectors.toMap(ManagerPayRate::getUserId, ManagerPayRate::getUsdPerHour));
+        Map<Long, List<ManagerPayRate>> historyById = rates.findByUserIdInOrderByEffectiveFromAsc(ids).stream()
+                .collect(Collectors.groupingBy(ManagerPayRate::getUserId));
 
         Map<Long, Integer> minsById = new HashMap<>();
+        Map<Long, List<ManagerTimeEntry>> entriesById = new HashMap<>();
         for (ManagerTimeEntry e : entries.findByBusinessIdAndWorkDateBetween(currentBusinessContext.id(), ym.atDay(1), ym.atEndOfMonth())) {
             if (e.getEndAt() == null) continue;
             minsById.merge(e.getUserId(),
                     (int) Duration.between(e.getStartAt(), e.getEndAt()).toMinutes(), Integer::sum);
+            entriesById.computeIfAbsent(e.getUserId(), k -> new ArrayList<>()).add(e);
         }
         Set<Long> clockedIn = entries.findByBusinessIdAndEndAtIsNull(currentBusinessContext.id()).stream()
                 .map(ManagerTimeEntry::getUserId).collect(Collectors.toSet());
 
         List<AdminTimesheetDto.Row> rows = managers.stream().map(u -> {
             int monthMin = minsById.getOrDefault(u.getId(), 0);
-            BigDecimal rate = rateById.get(u.getId());
+            List<ManagerPayRate> history = historyById.getOrDefault(u.getId(), List.of());
+            BigDecimal rate = rateAt(history, ym.atEndOfMonth());
+            BigDecimal monthPay = rate == null ? null : payOver(history, entriesById.getOrDefault(u.getId(), List.of()));
             return new AdminTimesheetDto.Row(u.getId(), u.getUsername(), u.getEmail(), rate,
-                    monthMin, pay(rate, monthMin), clockedIn.contains(u.getId()));
+                    monthMin, monthPay, clockedIn.contains(u.getId()));
         }).toList();
         return new AdminTimesheetDto(year, month, z.getId(), rows);
     }
@@ -381,25 +386,28 @@ public class ManagerTimeService {
      * as opposed to a legitimate zero, which only happens when shifts exist but no manager involved
      * has a rate configured yet. */
     public BigDecimal totalLaborCost(LocalDate from, LocalDate to) {
-        Map<Long, Integer> minsById = new HashMap<>();
+        Map<Long, List<ManagerTimeEntry>> byUser = new HashMap<>();
         for (ManagerTimeEntry e : entries.findByBusinessIdAndWorkDateBetween(currentBusinessContext.id(), from, to)) {
             if (e.getEndAt() == null) continue; // an open shift has no fixed cost yet
-            minsById.merge(e.getUserId(),
-                    (int) Duration.between(e.getStartAt(), e.getEndAt()).toMinutes(), Integer::sum);
+            byUser.computeIfAbsent(e.getUserId(), k -> new ArrayList<>()).add(e);
         }
-        if (minsById.isEmpty()) return null;
+        if (byUser.isEmpty()) return null;
 
+        Map<Long, List<ManagerPayRate>> historyById = rates.findByUserIdInOrderByEffectiveFromAsc(byUser.keySet()).stream()
+                .collect(Collectors.groupingBy(ManagerPayRate::getUserId));
         BigDecimal total = BigDecimal.ZERO;
-        for (Map.Entry<Long, Integer> en : minsById.entrySet()) {
-            BigDecimal pay = pay(rateOf(en.getKey()), en.getValue());
-            if (pay != null) total = total.add(pay); // no rate set yet — best-effort, skip its cost
+        for (Map.Entry<Long, List<ManagerTimeEntry>> en : byUser.entrySet()) {
+            // a manager with no rate yet is best-effort skipped (contributes 0)
+            total = total.add(payOver(historyById.getOrDefault(en.getKey(), List.of()), en.getValue()));
         }
         return total.setScale(2, RoundingMode.HALF_UP);
     }
 
-    /** Owner sets a manager's hourly rate (USD/hour). */
+    /** Owner sets a manager's hourly rate (USD/hour) effective from {@code effectiveFrom}; earlier
+     * dates keep their rate. A manager's first rate always covers all past dates. Setting a rate
+     * for a date that already has one replaces it. */
     @Transactional
-    public void setRate(Long userId, BigDecimal usdPerHour, String by) {
+    public void setRate(Long userId, BigDecimal usdPerHour, LocalDate effectiveFrom, String by) {
         if (usdPerHour == null || usdPerHour.signum() < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rate must be zero or more");
         }
@@ -408,8 +416,11 @@ public class ManagerTimeService {
         if (u.getRole() != Role.MANAGER) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A rate can only be set for a manager");
         }
-        ManagerPayRate r = rates.findById(userId).orElseGet(ManagerPayRate::new);
+        LocalDate from = effectiveFrom != null ? effectiveFrom : LocalDate.now(clock);
+        if (rates.findByUserIdOrderByEffectiveFromAsc(userId).isEmpty()) from = EPOCH;
+        ManagerPayRate r = rates.findByUserIdAndEffectiveFrom(userId, from).orElseGet(ManagerPayRate::new);
         r.setUserId(userId);
+        r.setEffectiveFrom(from);
         r.setUsdPerHour(usdPerHour.setScale(2, RoundingMode.HALF_UP));
         r.setUpdatedBy(by);
         rates.save(r);
@@ -426,15 +437,29 @@ public class ManagerTimeService {
         return e;
     }
 
-    private BigDecimal rateOf(Long userId) {
-        return rates.findById(userId).map(ManagerPayRate::getUsdPerHour).orElse(null);
+    private static final LocalDate EPOCH = LocalDate.of(2000, 1, 1);
+
+    /** The rate in effect on {@code date} (latest row starting on or before it), or null. */
+    private static BigDecimal rateAt(List<ManagerPayRate> history, LocalDate date) {
+        BigDecimal rate = null;
+        for (ManagerPayRate r : history) {
+            if (r.getEffectiveFrom().isAfter(date)) break;
+            rate = r.getUsdPerHour();
+        }
+        return rate;
     }
 
-    /** Pay for {@code minutes} at {@code rate}/hour, or null when the rate isn't set. */
-    private static BigDecimal pay(BigDecimal rate, int minutes) {
-        if (rate == null) return null;
-        return rate.multiply(BigDecimal.valueOf(minutes))
-                .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
+    /** Pay for completed entries, each priced at the rate in effect on its work date. */
+    private static BigDecimal payOver(List<ManagerPayRate> history, List<ManagerTimeEntry> list) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (ManagerTimeEntry e : list) {
+            if (e.getEndAt() == null) continue;
+            BigDecimal rate = rateAt(history, e.getWorkDate());
+            if (rate == null) continue;
+            int minutes = (int) Duration.between(e.getStartAt(), e.getEndAt()).toMinutes();
+            total = total.add(rate.multiply(BigDecimal.valueOf(minutes)).divide(BigDecimal.valueOf(60), 6, RoundingMode.HALF_UP));
+        }
+        return total.setScale(2, RoundingMode.HALF_UP);
     }
 
     private static TimeEntryDto toDto(ManagerTimeEntry e, ZoneId z) {

@@ -119,8 +119,8 @@ export const api = {
   updateTimeEntry: (id: number, body: TimeEntryInput) =>
     proxyJson<TimeEntry>(`/api/time/entries/${id}`, 'PATCH', body),
   deleteTimeEntry: (id: number) => proxyVoid(`/api/time/entries/${id}`, 'DELETE'),
-  setManagerRate: (userId: number, usdPerHour: number) =>
-    proxyVoid(`/api/time/admin/rate/${userId}`, 'PUT', { usdPerHour }),
+  setManagerRate: (userId: number, usdPerHour: number, effectiveFrom: string) =>
+    proxyVoid(`/api/time/admin/rate/${userId}`, 'PUT', { usdPerHour, effectiveFrom }),
 
   // Tier grant/revoke (owner/manager).
   grantTier: (providerId: number, year: number, month: number) =>

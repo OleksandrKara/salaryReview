@@ -111,8 +111,8 @@ class ManagerTimeServiceTest {
         when(entries.findByUserIdAndWorkDateBetweenOrderByStartAtAsc(7L,
                 LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31))).thenReturn(List.of(a, b));
         when(entries.findByUserIdAndEndAtIsNull(7L)).thenReturn(Optional.empty());
-        when(rates.findById(7L)).thenReturn(Optional.of(
-                ManagerPayRate.builder().userId(7L).usdPerHour(new BigDecimal("25.00")).build()));
+        when(rates.findByUserIdOrderByEffectiveFromAsc(7L)).thenReturn(List.of(
+                ManagerPayRate.builder().userId(7L).effectiveFrom(LocalDate.of(2000, 1, 1)).usdPerHour(new BigDecimal("25.00")).build()));
 
         ManagerTimesheetDto ts = service.myTimesheet(7L, 2026, 7);
 
@@ -126,7 +126,7 @@ class ManagerTimeServiceTest {
         when(entries.findByUserIdAndWorkDateBetweenOrderByStartAtAsc(any(), any(), any()))
                 .thenReturn(List.of());
         when(entries.findByUserIdAndEndAtIsNull(7L)).thenReturn(Optional.empty());
-        when(rates.findById(7L)).thenReturn(Optional.empty());
+        when(rates.findByUserIdOrderByEffectiveFromAsc(7L)).thenReturn(List.of());
 
         ManagerTimesheetDto ts = service.myTimesheet(7L, 2026, 7);
 
@@ -138,7 +138,7 @@ class ManagerTimeServiceTest {
     void setRateRejectsNonManager() {
         when(users.findById(9L)).thenReturn(Optional.of(
                 AppUser.builder().id(9L).username("p").role(Role.PROVIDER).active(true).build()));
-        assertThatThrownBy(() -> service.setRate(9L, new BigDecimal("30"), "owner"))
+        assertThatThrownBy(() -> service.setRate(9L, new BigDecimal("30"), null, "owner"))
                 .isInstanceOf(ResponseStatusException.class);
     }
 
@@ -168,10 +168,9 @@ class ManagerTimeServiceTest {
                 .startAt(Instant.parse("2026-07-10T16:00:00Z")).endAt(Instant.parse("2026-07-10T17:00:00Z")).build(); // 60m
         when(entries.findByBusinessIdAndWorkDateBetween(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
                 .thenReturn(List.of(susan, tatiana));
-        when(rates.findById(7L)).thenReturn(Optional.of(
-                ManagerPayRate.builder().userId(7L).usdPerHour(new BigDecimal("20.00")).build()));
-        when(rates.findById(8L)).thenReturn(Optional.of(
-                ManagerPayRate.builder().userId(8L).usdPerHour(new BigDecimal("30.00")).build()));
+        when(rates.findByUserIdInOrderByEffectiveFromAsc(any())).thenReturn(List.of(
+                ManagerPayRate.builder().userId(7L).effectiveFrom(LocalDate.of(2000, 1, 1)).usdPerHour(new BigDecimal("20.00")).build(),
+                ManagerPayRate.builder().userId(8L).effectiveFrom(LocalDate.of(2000, 1, 1)).usdPerHour(new BigDecimal("30.00")).build()));
 
         // Susan: 2h * $20 = $40; Tatiana: 1h * $30 = $30; total = $70
         assertThat(service.totalLaborCost(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
@@ -187,12 +186,58 @@ class ManagerTimeServiceTest {
                 .startAt(Instant.parse("2026-07-10T16:00:00Z")).endAt(Instant.parse("2026-07-10T17:00:00Z")).build();
         when(entries.findByBusinessIdAndWorkDateBetween(1L, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
                 .thenReturn(List.of(open, noRate));
-        when(rates.findById(8L)).thenReturn(Optional.empty());
+        when(rates.findByUserIdInOrderByEffectiveFromAsc(any())).thenReturn(List.of());
 
         // Both entries contribute nothing (open shift has no fixed cost; no rate is unpriceable) —
         // but the range isn't empty of entries, so this is a legitimate zero, not "no data at all".
         assertThat(service.totalLaborCost(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
                 .isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    void raisingARateFromNovemberLeavesOctoberUntouched() {
+        ManagerTimeEntry oct = ManagerTimeEntry.builder().id(1L).userId(7L)
+                .workDate(LocalDate.of(2026, 10, 20))
+                .startAt(Instant.parse("2026-10-20T16:00:00Z")).endAt(Instant.parse("2026-10-20T18:00:00Z")).build(); // 120m
+        ManagerTimeEntry nov = ManagerTimeEntry.builder().id(2L).userId(7L)
+                .workDate(LocalDate.of(2026, 11, 3))
+                .startAt(Instant.parse("2026-11-03T16:00:00Z")).endAt(Instant.parse("2026-11-03T18:00:00Z")).build(); // 120m
+        when(entries.findByUserIdAndWorkDateBetweenOrderByStartAtAsc(7L,
+                LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31))).thenReturn(List.of(oct));
+        when(entries.findByUserIdAndWorkDateBetweenOrderByStartAtAsc(7L,
+                LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 30))).thenReturn(List.of(nov));
+        when(entries.findByUserIdAndEndAtIsNull(7L)).thenReturn(Optional.empty());
+        when(rates.findByUserIdOrderByEffectiveFromAsc(7L)).thenReturn(List.of(
+                ManagerPayRate.builder().userId(7L).effectiveFrom(LocalDate.of(2000, 1, 1)).usdPerHour(new BigDecimal("5.00")).build(),
+                ManagerPayRate.builder().userId(7L).effectiveFrom(LocalDate.of(2026, 11, 1)).usdPerHour(new BigDecimal("6.00")).build()));
+
+        ManagerTimesheetDto october = service.myTimesheet(7L, 2026, 10);
+        ManagerTimesheetDto november = service.myTimesheet(7L, 2026, 11);
+
+        assertThat(october.usdPerHour()).isEqualByComparingTo("5.00");
+        assertThat(october.monthPay()).isEqualByComparingTo("10.00");
+        assertThat(november.usdPerHour()).isEqualByComparingTo("6.00");
+        assertThat(november.monthPay()).isEqualByComparingTo("12.00");
+    }
+
+    @Test
+    void firstRateCoversAllPastDatesAndNewRateIsDatedByTheOwner() {
+        when(users.findById(7L)).thenReturn(Optional.of(
+                AppUser.builder().id(7L).username("m").role(Role.MANAGER).active(true).build()));
+        when(rates.findByUserIdOrderByEffectiveFromAsc(7L)).thenReturn(List.of());
+        when(rates.findByUserIdAndEffectiveFrom(any(), any())).thenReturn(Optional.empty());
+
+        service.setRate(7L, new BigDecimal("5"), LocalDate.of(2026, 11, 1), "owner");
+
+        var cap = org.mockito.ArgumentCaptor.forClass(ManagerPayRate.class);
+        org.mockito.Mockito.verify(rates).save(cap.capture());
+        assertThat(cap.getValue().getEffectiveFrom()).isEqualTo(LocalDate.of(2000, 1, 1));
+
+        when(rates.findByUserIdOrderByEffectiveFromAsc(7L)).thenReturn(List.of(cap.getValue()));
+        service.setRate(7L, new BigDecimal("6"), LocalDate.of(2026, 11, 1), "owner");
+        org.mockito.Mockito.verify(rates, org.mockito.Mockito.times(2)).save(cap.capture());
+        assertThat(cap.getValue().getEffectiveFrom()).isEqualTo(LocalDate.of(2026, 11, 1));
+        assertThat(cap.getValue().getUsdPerHour()).isEqualByComparingTo("6.00");
     }
 
     // --- adminDailySchedule() ---

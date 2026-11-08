@@ -278,6 +278,7 @@ const STRINGS = {
   timePay: { EN: 'Pay', RU: 'Оплата' },
   timeHours: { EN: 'Hours', RU: 'Часы' },
   timeClockedInNow: { EN: 'On the clock now', RU: 'Сейчас на смене' },
+  timeRateFrom: { EN: 'from', RU: 'с' },
   timeSetRatePlaceholder: { EN: 'Set rate', RU: 'Ставка' },
   timeAllManagersTotal: { EN: 'All managers, this month', RU: 'Все менеджеры, за месяц' },
   timeMissingRateNote: {

@@ -92,9 +92,9 @@ public class ManagerTimeController {
     @PutMapping("/admin/rate/{userId}")
     public ResponseEntity<Void> setRate(@PathVariable Long userId, @RequestBody RateRequest req,
                                         @AuthenticationPrincipal AppUserPrincipal me) {
-        service.setRate(userId, req.usdPerHour(), me == null ? null : me.getUsername());
+        service.setRate(userId, req.usdPerHour(), req.effectiveFrom(), me == null ? null : me.getUsername());
         return ResponseEntity.ok().build();
     }
 
-    public record RateRequest(BigDecimal usdPerHour) {}
+    public record RateRequest(BigDecimal usdPerHour, LocalDate effectiveFrom) {}
 }
