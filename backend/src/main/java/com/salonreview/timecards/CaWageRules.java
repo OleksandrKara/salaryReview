@@ -19,7 +19,8 @@ public record CaWageRules(
         int weeklyOvertimeMinutes,
         int minimumWageCents,
         int splitShiftGapMinutes,
-        int reportingMinimumMinutes) {
+        int reportingMinimumMinutes,
+        boolean skipSplitShiftPremium) {
 
     public static CaWageRules defaults() {
         return new CaWageRules(
@@ -30,7 +31,15 @@ public record CaWageRules(
                 480, 720, 2400,
                 1775,
                 60,
-                120);
+                120,
+                false);
+    }
+
+    public CaWageRules withSkipSplitShiftPremium(boolean skip) {
+        return new CaWageRules(zone, padMinutes, noShowCreditMinutes, mealMinutes, mealRequiredAfterMinutes,
+                mealWaiverMaxMinutes, secondMealRequiredAfterMinutes, secondMealWaiverMaxMinutes, restMinutes,
+                restFirstAfterMinutes, dailyOvertimeMinutes, doubleTimeMinutes, weeklyOvertimeMinutes,
+                minimumWageCents, splitShiftGapMinutes, reportingMinimumMinutes, skip);
     }
 
     /** Paid 10 minute rests owed for a day with this many paid minutes (over 3.5h: 1, over 6h: 2, over 10h: 3, ...). */

@@ -51,7 +51,8 @@ public final class TimecardTypes {
         OVERTIME_WEEKLY(Severity.WARNING),
         SEVENTH_DAY(Severity.ALERT),
         REPORTING_TIME_REVIEW(Severity.WARNING),
-        SPLIT_SHIFT_PREMIUM_OWED(Severity.ALERT);
+        SPLIT_SHIFT_PREMIUM_OWED(Severity.ALERT),
+        SPLIT_SHIFT_NOT_OWED(Severity.INFO);
 
         private final Severity severity;
 
@@ -65,16 +66,26 @@ public final class TimecardTypes {
     }
 
     /** {@code minutes} carries hours of pay in minutes for premiums, or affected minutes for overtime. */
-    public record Finding(FindingCode code, LocalDate date, long minutes, String message) {}
+    public record Finding(FindingCode code, LocalDate date, long minutes, String message, String messageNoMoney) {
+        public Finding(FindingCode code, LocalDate date, long minutes, String message) {
+            this(code, date, minutes, message, message);
+        }
+    }
 
     public record DayInput(
             LocalDate date,
             List<DayTimecard> timecards,
             boolean mealWaiver,
             boolean restNotProvided,
-            int extraRestConfirmed) {
+            int extraRestConfirmed,
+            LocalDate freeGapAckSignedAt) {
         public DayInput {
             timecards = List.copyOf(timecards);
+        }
+
+        public DayInput(LocalDate date, List<DayTimecard> timecards, boolean mealWaiver, boolean restNotProvided,
+                        int extraRestConfirmed) {
+            this(date, timecards, mealWaiver, restNotProvided, extraRestConfirmed, null);
         }
 
         public static DayInput of(LocalDate date, List<DayTimecard> timecards) {

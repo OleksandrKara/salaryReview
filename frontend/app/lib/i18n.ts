@@ -172,6 +172,8 @@ const STRINGS = {
   tcPayrollAuto: { EN: 'Payroll automation on', RU: 'Автоматизация расчёта включена' },
   tcApprovers: { EN: 'Approvers', RU: 'Утверждающие' },
   tcShowComparison: { EN: 'Show commission comparison to worker', RU: 'Показывать работнику сравнение с комиссией' },
+  tcFreeGapAck: { EN: 'Free-time agreement signed (date)', RU: 'Соглашение о свободном времени подписано (дата)' },
+  tcFreeGapAckHint: { EN: 'Evidence only, does not change pay. Leave empty if not signed.', RU: 'Только для подтверждения, на выплату не влияет. Пусто, если не подписано.' },
   tcSave: { EN: 'Save', RU: 'Сохранить' },
   tcSaved: { EN: 'Saved', RU: 'Сохранено' },
   tcMyTitle: { EN: 'My hours', RU: 'Мои часы' },
