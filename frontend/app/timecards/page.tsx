@@ -11,7 +11,7 @@ export default async function TimecardsPage() {
   return (
     <main className="mx-auto max-w-4xl p-4 sm:p-8">
       <PageHeader title={t(lang, 'tcNavApprove')} role={me.role} language={lang} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
-      <TimecardsApproval role={me.role} language={lang ?? 'EN'} />
+      <TimecardsApproval role={me.role} language={lang ?? 'EN'} businessName={me.businesses.find((b) => b.id === me.activeBusinessId)?.name ?? ''} />
     </main>
   );
 }

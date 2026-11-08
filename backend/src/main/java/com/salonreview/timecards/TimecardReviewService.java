@@ -56,10 +56,14 @@ public class TimecardReviewService {
             throw bad("Cannot confirm a future day");
         }
         DayCalc c = days.calc(businessId, providerId, date);
-        if (c.source().equals("NONE")) throw bad("No work recorded for this day");
+        List<DayTimecard> cards = c.timecards();
+        if (c.source().equals("NONE")) {
+            if (req.start() == null || req.end() == null) throw bad("No work recorded for this day");
+            if (req.note() == null || req.note().isBlank()) throw bad("A note is required for a manually added shift");
+            cards = List.of(new DayTimecard(new TimeSpan(Instant.parse(req.start()), Instant.parse(req.end())), List.of()));
+        }
         if ("APPROVED".equals(c.status())) throw new ResponseStatusException(HttpStatus.CONFLICT, "Day already approved");
 
-        List<DayTimecard> cards = c.timecards();
         String mode = c.source().equals("SQUARE") ? "EXTERNAL" : "DRAFT";
         String proposed = null;
         if (mode.equals("DRAFT")) {

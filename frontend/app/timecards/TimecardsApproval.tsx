@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { Language } from '../lib/types';
-import { t } from '../lib/i18n';
+import { t, tf } from '../lib/i18n';
 import { type DayView, type Summary, hhmm, hrs, tcFetch, usd } from '../lib/timecards';
 
 const SEV = {
@@ -43,6 +43,9 @@ function DayCard({ d, owner, lang, onChange }: { d: DayView; owner: boolean; lan
       <div className="mt-1 text-sm text-zinc-600">
         {t(lang, d.source === 'SQUARE' ? 'tcSourceSQUARE' : 'tcSourceDRAFT')}
         {card ? ` · ${hhmm(card.start)}-${hhmm(card.end)}` : ''}
+        {d.source === 'DRAFT' && d.appointments.length === 0 && (
+          <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">{t(lang, 'tcManualBadge')}</span>
+        )}
         {card?.breaks.length ? ` · ${card.breaks.map((b) => `${b.kind === 'UNPAID' ? 'meal' : 'rest'} ${hhmm(b.start)}-${hhmm(b.end)}`).join(', ')}` : ''}
       </div>
       <div className="mt-1 text-sm">
@@ -156,7 +159,7 @@ function PayrollTab({ lang }: { lang: Language }) {
   );
 }
 
-export default function TimecardsApproval({ role, language }: { role: string; language: Language }) {
+export default function TimecardsApproval({ role, language, businessName }: { role: string; language: Language; businessName: string }) {
   const owner = role === 'OWNER';
   const [tab, setTab] = useState<'queue' | 'payroll'>('queue');
   const [rows, setRows] = useState<DayView[] | null>(null);
@@ -181,7 +184,7 @@ export default function TimecardsApproval({ role, language }: { role: string; la
       ) : (
         <>
           {err && <div className="text-sm text-red-700">{err}</div>}
-          {rows && rows.length === 0 && <p className="text-sm text-zinc-500">{t(language, 'tcNothing')}</p>}
+          {rows && rows.length === 0 && <p className="text-sm text-zinc-500">{t(language, 'tcNothing')}{businessName ? ` ${tf(language, 'tcViewingBusiness', { name: businessName })}` : ''}</p>}
           <ul className="flex flex-col gap-3">
             {rows?.map((d) => <DayCard key={`${d.providerId}-${d.date}`} d={d} owner={owner} lang={language} onChange={load} />)}
           </ul>
