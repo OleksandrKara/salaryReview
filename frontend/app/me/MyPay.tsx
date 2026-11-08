@@ -144,6 +144,50 @@ function DayRow({ d, tone, waiverSigned, lang, open, onToggle, onDone }: {
   );
 }
 
+function AddShift({ lang, from, to, onDone }: { lang: Language; from: string; to: string; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [date, setDate] = useState('');
+  const [start, setStart] = useState('');
+  const [end, setEnd] = useState('');
+  const [note, setNote] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const field = 'rounded-md border border-zinc-300 px-2 py-1.5 text-sm';
+  const send = async () => {
+    setBusy(true);
+    setErr('');
+    try {
+      await tcFetch<DayView>('me/submit', 'POST', { date, start: laToIso(date, start), end: laToIso(date, end), mealWaiver: false, restsTaken: false, note });
+      setOpen(false);
+      setDate(''); setStart(''); setEnd(''); setNote('');
+      onDone();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!open) {
+    return <button type="button" onClick={() => setOpen(true)} className="mt-3 text-sm text-zinc-700 underline">{t(lang, 'payAddShift')}</button>;
+  }
+  return (
+    <div className="mt-3 flex flex-col gap-2 rounded-md border border-zinc-200 p-3">
+      <p className="text-xs text-zinc-500">{t(lang, 'payAddShiftHint')}</p>
+      <div className="flex flex-wrap gap-3">
+        <label className="flex flex-col gap-1 text-xs">{t(lang, 'payAddShiftDate')}<input className={field} type="date" min={from} max={to} value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        <label className="flex flex-col gap-1 text-xs">{t(lang, 'tcStart')}<input className={field} type="time" value={start} onChange={(e) => setStart(e.target.value)} /></label>
+        <label className="flex flex-col gap-1 text-xs">{t(lang, 'tcEnd')}<input className={field} type="time" value={end} onChange={(e) => setEnd(e.target.value)} /></label>
+      </div>
+      <label className="flex flex-col gap-1 text-xs">{t(lang, 'tcNote')}<input className={field} value={note} onChange={(e) => setNote(e.target.value)} /></label>
+      <div className="flex items-center gap-3">
+        <button disabled={busy || !date || !start || !end || !note.trim()} onClick={send} className="rounded-md bg-zinc-900 px-4 py-2 text-sm text-white disabled:opacity-50">{t(lang, 'payAddShiftSend')}</button>
+        <button type="button" onClick={() => setOpen(false)} className="text-sm text-zinc-500">×</button>
+        {err && <span className="text-sm text-red-700">{err}</span>}
+      </div>
+    </div>
+  );
+}
+
 function PeriodCard({ title, range, from, to, earn, byDate, today, waiverSigned, lang, openDate, setOpenDate, reload }: {
   title: string; range: string; from: string; to: string; earn: Earnings | undefined; byDate: Map<string, DayView>; today: string;
   waiverSigned: boolean; lang: Language; openDate: string | null; setOpenDate: (d: string | null) => void; reload: () => void;
@@ -204,6 +248,7 @@ function PeriodCard({ title, range, from, to, earn, byDate, today, waiverSigned,
           ))}
         </div>
       </div>
+      <AddShift lang={lang} from={from} to={to < today ? to : today} onDone={reload} />
       {rows.length === 0 ? (
         <p className="mt-4 text-sm text-zinc-400">{t(lang, 'payNoDays')}</p>
       ) : (
