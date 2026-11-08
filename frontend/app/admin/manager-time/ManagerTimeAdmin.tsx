@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { api } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import type { AdminTimesheet, AdminTimesheetRow, Language } from '../../lib/types';
@@ -11,7 +12,6 @@ function fmtHM(minutes: number) {
   const m = minutes % 60;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
-const payOf = (rate: number | null, minutes: number) => (rate == null ? null : (rate * minutes) / 60);
 
 export default function ManagerTimeAdmin({
   initial,
@@ -20,10 +20,18 @@ export default function ManagerTimeAdmin({
   initial: AdminTimesheet;
   language: Language | null;
 }) {
+  const router = useRouter();
+  const monthStart = `${initial.year}-${String(initial.month).padStart(2, '0')}-01`;
   const [rows, setRows] = useState<AdminTimesheetRow[]>(initial.managers);
   const [rateInput, setRateInput] = useState<Record<number, string>>(
     () => Object.fromEntries(initial.managers.map((m) => [m.userId, m.usdPerHour != null ? String(m.usdPerHour) : '']))
   );
+  const [fromInput, setFromInput] = useState<Record<number, string>>({});
+  useEffect(() => {
+    setRows(initial.managers);
+    setRateInput(Object.fromEntries(initial.managers.map((m) => [m.userId, m.usdPerHour != null ? String(m.usdPerHour) : ''])));
+    setFromInput({});
+  }, [initial]);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState('');
 
@@ -37,8 +45,8 @@ export default function ManagerTimeAdmin({
     setError('');
     setBusyId(userId);
     try {
-      await api.setManagerRate(userId, val);
-      setRows((prev) => prev.map((r) => (r.userId === userId ? { ...r, usdPerHour: val, monthPay: payOf(val, r.monthMinutes) } : r)));
+      await api.setManagerRate(userId, val, fromInput[userId] || monthStart);
+      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message.replace(/^\d+\s*/, '') : 'Could not save the rate.');
     } finally {
@@ -68,9 +76,19 @@ export default function ManagerTimeAdmin({
         className="w-20 rounded-md border border-zinc-300 px-2 py-1 text-sm tabular-nums focus:border-zinc-500 focus:outline-none"
         data-testid={`rate-input-${r.userId}`}
       />
+      <label className="flex items-center gap-1 text-xs text-zinc-500">
+        {t(language, 'timeRateFrom')}
+        <input
+          type="date"
+          value={fromInput[r.userId] ?? monthStart}
+          onChange={(e) => setFromInput((p) => ({ ...p, [r.userId]: e.target.value }))}
+          className="rounded-md border border-zinc-300 px-1.5 py-1 text-xs tabular-nums focus:border-zinc-500 focus:outline-none"
+          data-testid={`rate-from-${r.userId}`}
+        />
+      </label>
       <button
         onClick={() => saveRate(r.userId)}
-        disabled={busyId === r.userId || (rateInput[r.userId] ?? '') === (r.usdPerHour != null ? String(r.usdPerHour) : '')}
+        disabled={busyId === r.userId || (rateInput[r.userId] ?? '').trim() === ''}
         data-testid={`rate-save-${r.userId}`}
         className="rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-40"
       >
