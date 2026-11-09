@@ -40,7 +40,7 @@ public class AcademyLeadService {
     public record AcademyLead(String kind, String name, String phone, String email, String courseSlug, String courseName,
                               String message, boolean smsConsent, boolean emailConsent, String sourcePageUrl,
                               String utmSource, String utmMedium, String utmCampaign, String gclid,
-                              String location) {
+                              String location, String utmTerm, String utmContent) {
         public boolean isSubscription() {
             return "subscribe".equals(kind);
         }
@@ -57,11 +57,11 @@ public class AcademyLeadService {
     public Outcome submit(long businessId, AcademyLead l) {
         Long id = jdbc.queryForObject("""
                 INSERT INTO academy_lead (business_id, kind, name, phone, email, course_slug, course_name, message,
-                    sms_consent, email_consent, source_page_url, utm_source, utm_medium, utm_campaign, gclid)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+                    sms_consent, email_consent, source_page_url, utm_source, utm_medium, utm_campaign, gclid, utm_term, utm_content)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
                 """, Long.class, businessId, l.isSubscription() ? "subscribe" : "course_request", l.name(), l.phone(), l.email(), l.courseSlug(), l.courseName(),
                 l.message(), l.smsConsent(), l.emailConsent(), l.sourcePageUrl(), l.utmSource(), l.utmMedium(),
-                l.utmCampaign(), l.gclid());
+                l.utmCampaign(), l.gclid(), l.utmTerm(), l.utmContent());
 
         // Course requests get the automatic follow-up funnel (AcademyLeadFunnelScheduler); the button
         // stops it once staff have talked to the person.
