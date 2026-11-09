@@ -39,6 +39,7 @@ export type ProviderSetup = {
   smsEnabled: boolean;
   approvers: Approver[];
   squareLinked: boolean;
+  freeGapAckSignedAt: string | null;
 };
 export type DayLine = { date: string; source: string; status: string; paidMinutes: number; approved: boolean };
 export type ProviderSummary = {

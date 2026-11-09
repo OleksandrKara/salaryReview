@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.salonreview.timecards.TimecardDtos.*;
 import com.salonreview.timecards.TimecardTypes.*;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -27,11 +28,13 @@ public class TimecardDayService {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final JdbcTemplate jdbc;
-    private final CaWagePolicy policy = new CaWagePolicy(RULES);
+    private final CaWagePolicy policy;
     private final TimecardDraftCalculator draftCalculator = new TimecardDraftCalculator(RULES);
 
-    public TimecardDayService(JdbcTemplate jdbc) {
+    public TimecardDayService(JdbcTemplate jdbc,
+                              @Value("${timecards.split-shift.skip-premium:false}") boolean skipSplitShiftPremium) {
         this.jdbc = jdbc;
+        this.policy = new CaWagePolicy(RULES.withSkipSplitShiftPremium(skipSplitShiftPremium));
     }
 
     public record ReviewRow(long id, String mode, String status, String proposedJson, boolean mealWaiver,
@@ -74,10 +77,11 @@ public class TimecardDayService {
         DayAnalysis analysis = null;
         if (!cards.isEmpty()) {
             int r = rate == null ? 0 : rate;
-            analysis = policy.analyzeDay(new DayInput(date, cards, mealWaiver, restNotProvided, 0), r);
+            LocalDate ack = freeGapAckSignedAt(providerId);
+            analysis = policy.analyzeDay(new DayInput(date, cards, mealWaiver, restNotProvided, 0, ack), r);
             if (review != null && review.restConfirmed() && analysis.restsRequired() > analysis.restsEvidenced()) {
                 analysis = policy.analyzeDay(new DayInput(date, cards, mealWaiver, restNotProvided,
-                        analysis.restsRequired() - analysis.restsEvidenced()), r);
+                        analysis.restsRequired() - analysis.restsEvidenced(), ack), r);
             }
         }
 
@@ -107,7 +111,8 @@ public class TimecardDayService {
         int premium = 0;
         if (a != null) {
             for (Finding f : a.findings()) {
-                findings.add(new FindingDto(f.code().name(), f.code().severity().name(), f.minutes(), f.message()));
+                findings.add(new FindingDto(f.code().name(), f.code().severity().name(), f.minutes(),
+                        money ? f.message() : f.messageNoMoney()));
             }
             int rate = c.rateCents() == null ? 0 : c.rateCents();
             if (a.mealPremium()) premium += CaWagePolicy.mealPremiumCents(rate);
@@ -150,6 +155,12 @@ public class TimecardDayService {
     /** Paid minutes of a candidate set of timecards (used to validate worker edits). */
     public long paidMinutesOf(List<DayTimecard> cards, LocalDate date, Integer rateCents) {
         return policy.analyzeDay(DayInput.of(date, cards), rateCents == null ? 0 : rateCents).paidMinutes();
+    }
+
+    public LocalDate freeGapAckSignedAt(Long providerId) {
+        List<java.sql.Date> r = jdbc.queryForList("SELECT free_gap_ack_signed_at FROM providers WHERE id = ?",
+                java.sql.Date.class, providerId);
+        return r.isEmpty() || r.get(0) == null ? null : r.get(0).toLocalDate();
     }
 
     public boolean activeWaiver(Long businessId, Long providerId) {

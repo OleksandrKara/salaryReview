@@ -14,6 +14,7 @@ function ProviderCard({ p, candidates, lang, onSaved }: { p: ProviderSetup; cand
   const [sms, setSms] = useState(p.smsEnabled);
   const [auto, setAuto] = useState(p.payrollAutomationEnabled);
   const [cmp, setCmp] = useState(p.showCommissionComparisonToProvider);
+  const [ack, setAck] = useState(p.freeGapAckSignedAt ?? '');
   const [approvers, setApprovers] = useState<number[]>(p.approvers.map((a) => a.userId));
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
@@ -29,6 +30,7 @@ function ProviderCard({ p, candidates, lang, onSaved }: { p: ProviderSetup; cand
         showCommissionComparisonToProvider: cmp,
         ...(rateChanged ? { hourlyRateCents: cents, rateEffectiveFrom: from } : {}),
         ...(p.hourlyRateCents != null || rateChanged ? { mobilePhone: phone, alertsEnabled: alerts, smsEnabled: sms, payrollAutomationEnabled: auto } : {}),
+        freeGapAckSignedAt: ack,
         approverUserIds: approvers,
       });
       onSaved(saved);
@@ -73,6 +75,10 @@ function ProviderCard({ p, candidates, lang, onSaved }: { p: ProviderSetup; cand
               <button type="button" onClick={importPhone} className="rounded border border-zinc-400 px-2 text-xs">{t(lang, 'tcImportPhone')}</button>
             )}
           </span>
+        </label>
+        <label className="flex flex-col gap-1 text-sm">{t(lang, 'tcFreeGapAck')}
+          <input className={field} type="date" value={ack} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setAck(e.target.value)} />
+          <span className="text-xs text-zinc-500">{t(lang, 'tcFreeGapAckHint')}</span>
         </label>
       </div>
       <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm">

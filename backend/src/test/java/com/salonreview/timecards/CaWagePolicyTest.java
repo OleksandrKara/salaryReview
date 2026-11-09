@@ -128,6 +128,79 @@ class CaWagePolicyTest {
         assertThat(f.minutes()).isEqualTo(1288);
     }
 
+    private static Finding splitFinding(DayAnalysis an) {
+        return an.findings().stream()
+                .filter(x -> x.code() == FindingCode.SPLIT_SHIFT_PREMIUM_OWED || x.code() == FindingCode.SPLIT_SHIFT_NOT_OWED)
+                .findFirst().orElseThrow();
+    }
+
+    @Test
+    @DisplayName("10/7: finding message is readable, in dollars, and says pending CPA")
+    void oct7SplitShiftMessage() {
+        LocalDate d = LocalDate.of(2026, 10, 7);
+        DayInput in = DayInput.of(d, List.of(new DayTimecard(span(d, "13:00", "21:30"),
+                List.of(unpaid(d, "15:15", "17:15")))));
+        Finding f = splitFinding(POLICY.analyzeDay(in, RATE));
+        assertThat(f.code()).isEqualTo(FindingCode.SPLIT_SHIFT_PREMIUM_OWED);
+        assertThat(f.message()).contains("unpaid gap 2h 00m (15:15-17:15)", "Premium $12.88", "day pay $120.25",
+                "$133.13", "6.5 h + 1 h", "included in pay", "Disputed, pending CPA review",
+                "Free-time acknowledgment not signed");
+        assertThat(f.messageNoMoney()).doesNotContain("$").contains("Disputed, pending CPA review");
+    }
+
+    @Test
+    @DisplayName("10/8: overtime pay already covers minimum wage x (hours + 1), premium is 0 and not an alert")
+    void oct8CoveredByOvertime() {
+        LocalDate d = LocalDate.of(2026, 10, 8);
+        DayInput in = DayInput.of(d, List.of(new DayTimecard(span(d, "07:45", "20:15"),
+                List.of(unpaid(d, "14:15", "17:15"), rest(d, "09:45", "09:55"), rest(d, "12:30", "12:40")))));
+        DayAnalysis an = POLICY.analyzeDay(in, RATE);
+        assertThat(an.paidMinutes()).isEqualTo(570);
+        assertThat(an.splitShiftCandidate()).isTrue();
+        Finding f = splitFinding(an);
+        assertThat(f.code()).isEqualTo(FindingCode.SPLIT_SHIFT_NOT_OWED);
+        assertThat(f.code().severity()).isEqualTo(TimecardTypes.Severity.INFO);
+        assertThat(f.minutes()).isZero();
+        assertThat(f.message()).contains("unpaid gap 3h 00m (14:15-17:15)", "Premium $0.00", "day pay $189.63",
+                "$186.38", "9.5 h + 1 h");
+        assertThat(POLICY.splitShiftPremiumCents(d, 570, RATE)).isZero();
+    }
+
+    @Test
+    @DisplayName("split shift premium is capped at one hour of minimum wage and counts overtime pay")
+    void splitShiftPremiumEdges() {
+        LocalDate d = LocalDate.of(2026, 10, 14);
+        assertThat(POLICY.splitShiftPremiumCents(d, 360, 1775)).isEqualTo(1775);
+        assertThat(POLICY.splitShiftPremiumCents(d, 540, 1775)).isEqualTo(887);
+        assertThat(POLICY.splitShiftPremiumCents(d, 360, 2500)).isZero();
+    }
+
+    @Test
+    @DisplayName("acknowledgment date is only noted in the finding, the amount does not change")
+    void ackDoesNotChangeAmount() {
+        LocalDate d = LocalDate.of(2026, 10, 7);
+        DayInput plain = DayInput.of(d, List.of(new DayTimecard(span(d, "13:00", "21:30"),
+                List.of(unpaid(d, "15:15", "17:15")))));
+        DayInput signed = new DayInput(d, plain.timecards(), false, false, 0, LocalDate.of(2026, 11, 20));
+        Finding a = splitFinding(POLICY.analyzeDay(plain, RATE));
+        Finding b = splitFinding(POLICY.analyzeDay(signed, RATE));
+        assertThat(b.minutes()).isEqualTo(a.minutes());
+        assertThat(b.message()).contains("Free-time acknowledgment signed 2026-11-20");
+    }
+
+    @Test
+    @DisplayName("skip split shift premium flag: no premium, finding says so")
+    void skipFlag() {
+        CaWagePolicy skip = new CaWagePolicy(RULES.withSkipSplitShiftPremium(true));
+        LocalDate d = LocalDate.of(2026, 10, 7);
+        DayInput in = DayInput.of(d, List.of(new DayTimecard(span(d, "13:00", "21:30"),
+                List.of(unpaid(d, "15:15", "17:15")))));
+        Finding f = splitFinding(skip.analyzeDay(in, RATE));
+        assertThat(f.code()).isEqualTo(FindingCode.SPLIT_SHIFT_NOT_OWED);
+        assertThat(f.minutes()).isZero();
+        assertThat(f.message()).contains("skip split shift premium setting is on");
+    }
+
     @Test
     @DisplayName("10/11: meal inside 5h is compliant")
     void oct11() {

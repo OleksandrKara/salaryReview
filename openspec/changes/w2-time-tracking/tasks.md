@@ -13,6 +13,7 @@
 - [x] 1.2a Break placement: natural-gap meal, `MEAL_NOT_POSSIBLE`, rest centering and padding snap, unticked break to finding
 - [x] 1.3 Golden tests from Yana's October 2026 data (fixtures from the booking mirror): 119.25 h, 114.33 regular, 4.92 OT, gross $2,251.60, meal findings 10/8 and 10/30, 10/25 with and without waiver, rest findings with and without recorded rests, 10/31 second meal
 - [x] 1.3a Tests: reporting time review, second report minimum, split shift premium (10/7 example about $12.88, 10/8 covered by overtime)
+- [x] 1.3b Split shift premium counts overtime pay (10/8 = $0.00), readable dollar message, free-time acknowledgment date per worker, `timecards.split-shift.skip-premium` flag (default off); open until CPA answers 0.4: switch the flag on for workers with a signed acknowledgment
 - [x] 1.4 Edge tests: week crossing a period boundary, 7th consecutive day, over 12 hours, split shift premium check, unpaid gap not curing a meal
 
 ## 2. Persistence (migration V203)

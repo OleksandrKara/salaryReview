@@ -9,10 +9,14 @@ import com.salonreview.timecards.TimecardTypes.Finding;
 import com.salonreview.timecards.TimecardTypes.FindingCode;
 import com.salonreview.timecards.TimecardTypes.TimeSpan;
 import com.salonreview.timecards.TimecardTypes.TimecardBreak;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -37,6 +41,8 @@ public final class CaWagePolicy {
         boolean firstMealOnTime = false;
         boolean secondMealOnTime = false;
         boolean splitShift = false;
+        Instant gapStart = null;
+        Instant gapEnd = null;
         long worked = 0;
         Instant prevEnd = null;
 
@@ -45,7 +51,13 @@ public final class CaWagePolicy {
                 long gap = Duration.between(prevEnd, card.span().start()).toMinutes();
                 if (gap > 0) {
                     unpaidGap += gap;
-                    if (gap > rules.splitShiftGapMinutes()) splitShift = true;
+                    if (gap > rules.splitShiftGapMinutes()) {
+                        splitShift = true;
+                        if (gapStart == null || gap > Duration.between(gapStart, gapEnd).toMinutes()) {
+                            gapStart = prevEnd;
+                            gapEnd = card.span().start();
+                        }
+                    }
                     long[] r = registerUnpaid(gap, worked, meals, firstMealOnTime, secondMealOnTime);
                     meals = (int) r[0];
                     firstMealOnTime = r[1] == 1;
@@ -64,7 +76,13 @@ public final class CaWagePolicy {
                 } else {
                     long len = b.span().minutes();
                     unpaidGap += len;
-                    if (len > rules.splitShiftGapMinutes()) splitShift = true;
+                    if (len > rules.splitShiftGapMinutes()) {
+                        splitShift = true;
+                        if (gapStart == null || len > Duration.between(gapStart, gapEnd).toMinutes()) {
+                            gapStart = b.span().start();
+                            gapEnd = b.span().end();
+                        }
+                    }
                     long[] r = registerUnpaid(len, cursorWorked, meals, firstMealOnTime, secondMealOnTime);
                     meals = (int) r[0];
                     firstMealOnTime = r[1] == 1;
@@ -127,8 +145,7 @@ public final class CaWagePolicy {
                     "Paid time under the 2 hour reporting minimum, review whether reporting time pay applies"));
         }
         if (splitShift) {
-            int premium = splitShiftPremiumCents(paid, hourlyRateCents);
-            findings.add(new Finding(FindingCode.SPLIT_SHIFT_PREMIUM_OWED, d, premium, "Split shift premium cents"));
+            findings.add(splitShiftFinding(d, paid, hourlyRateCents, gapStart, gapEnd, day.freeGapAckSignedAt()));
         }
 
         return new DayAnalysis(d, paid, unpaidGap, restsRequired, rests, mealPremium, restPremium, splitShift, findings);
@@ -184,10 +201,54 @@ public final class CaWagePolicy {
         return DayOfWeek.MONDAY;
     }
 
-    /** Minimum wage for the hour, offset by what the worker already earns above minimum for the day. */
-    public int splitShiftPremiumCents(long paidMinutes, int hourlyRateCents) {
-        double above = Math.max(0, hourlyRateCents - rules.minimumWageCents()) * paidMinutes / 60.0;
-        return (int) Math.max(0, Math.round(rules.minimumWageCents() - above));
+    /**
+     * Premium is the shortfall between the day's actual pay (daily overtime and double time included) and
+     * minimum wage x (paid hours + 1), capped at one hour of minimum wage.
+     */
+    public int splitShiftPremiumCents(LocalDate date, long paidMinutes, int hourlyRateCents) {
+        if (rules.skipSplitShiftPremium()) return 0;
+        long shortfall = splitShiftRequiredCents(paidMinutes) - dayPayCents(date, paidMinutes, hourlyRateCents);
+        return (int) Math.max(0, Math.min(rules.minimumWageCents(), shortfall));
+    }
+
+    private long splitShiftRequiredCents(long paidMinutes) {
+        return Math.round(rules.minimumWageCents() * (paidMinutes / 60.0 + 1));
+    }
+
+    private int dayPayCents(LocalDate date, long paidMinutes, int hourlyRateCents) {
+        return cents(dailyPay(date, paidMinutes), hourlyRateCents);
+    }
+
+    private Finding splitShiftFinding(LocalDate date, long paid, int rate, Instant gapStart, Instant gapEnd,
+                                      LocalDate ack) {
+        long gapMinutes = Duration.between(gapStart, gapEnd).toMinutes();
+        ZoneId zone = rules.zone();
+        DateTimeFormatter hm = DateTimeFormatter.ofPattern("HH:mm");
+        String gap = "Split shift: unpaid gap " + (gapMinutes / 60) + "h " + String.format("%02d", gapMinutes % 60)
+                + "m (" + hm.format(gapStart.atZone(zone)) + "-" + hm.format(gapEnd.atZone(zone)) + "). ";
+        String ackNote = ack == null ? "Free-time acknowledgment not signed." : "Free-time acknowledgment signed " + ack + ".";
+        String pending = "Disputed, pending CPA review. ";
+        if (rules.skipSplitShiftPremium()) {
+            String m = gap + "Premium not applied: the skip split shift premium setting is on. " + ackNote;
+            return new Finding(FindingCode.SPLIT_SHIFT_NOT_OWED, date, 0, m, m);
+        }
+        int premium = splitShiftPremiumCents(date, paid, rate);
+        long dayPay = dayPayCents(date, paid, rate);
+        String hours = BigDecimal.valueOf(paid).divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP)
+                .stripTrailingZeros().toPlainString();
+        String compare = "day pay " + usd(dayPay) + " vs minimum wage " + usd(rules.minimumWageCents()) + " x ("
+                + hours + " h + 1 h) = " + usd(splitShiftRequiredCents(paid));
+        String noMoney = gap + pending + ackNote;
+        if (premium == 0) {
+            String m = gap + "Premium $0.00: " + compare + ", so the day pay already covers it. " + pending + ackNote;
+            return new Finding(FindingCode.SPLIT_SHIFT_NOT_OWED, date, 0, m, noMoney);
+        }
+        String m = gap + "Premium " + usd(premium) + " (" + compare + "), included in pay. " + pending + ackNote;
+        return new Finding(FindingCode.SPLIT_SHIFT_PREMIUM_OWED, date, premium, m, noMoney);
+    }
+
+    private static String usd(long cents) {
+        return "$" + BigDecimal.valueOf(cents).movePointLeft(2).setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 
     public static int cents(DayPay pay, int rateCents) {

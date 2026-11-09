@@ -20,12 +20,12 @@ public class TimecardAdminService {
                                 boolean showCommissionComparisonToProvider, Integer hourlyRateCents,
                                 String rateEffectiveFrom, String mobilePhone, boolean payrollAutomationEnabled,
                                 boolean alertsEnabled, boolean smsEnabled, List<Approver> approvers,
-                                boolean squareLinked) {}
+                                boolean squareLinked, String freeGapAckSignedAt) {}
 
     public record UpdateRequest(String workerType, Boolean showCommissionComparisonToProvider,
                                 Integer hourlyRateCents, String rateEffectiveFrom, String mobilePhone,
                                 Boolean payrollAutomationEnabled, Boolean alertsEnabled, Boolean smsEnabled,
-                                List<Long> approverUserIds) {}
+                                List<Long> approverUserIds, String freeGapAckSignedAt) {}
 
     private final JdbcTemplate jdbc;
     private final SquareClientProvider squares;
@@ -57,7 +57,7 @@ public class TimecardAdminService {
                 SELECT p.id, p.display_name, p.active, p.worker_type, p.show_commission_comparison_to_provider,
                        e.hourly_rate_cents, e.effective_from, e.mobile_phone,
                        COALESCE(e.payroll_automation_enabled, false), COALESCE(e.alerts_enabled, true),
-                       COALESCE(e.sms_enabled, false)
+                       COALESCE(e.sms_enabled, false), p.free_gap_ack_signed_at
                 FROM providers p
                 LEFT JOIN LATERAL (SELECT * FROM provider_employment x WHERE x.business_id = p.business_id
                     AND x.provider_id = p.id AND x.effective_to IS NULL ORDER BY x.effective_from DESC LIMIT 1) e ON true
@@ -65,7 +65,8 @@ public class TimecardAdminService {
                 (rs, i) -> new ProviderSetup(rs.getLong(1), rs.getString(2), rs.getBoolean(3), rs.getString(4),
                         rs.getBoolean(5), (Integer) rs.getObject(6),
                         rs.getDate(7) == null ? null : rs.getDate(7).toString(), rs.getString(8),
-                        rs.getBoolean(9), rs.getBoolean(10), rs.getBoolean(11), List.of(), false),
+                        rs.getBoolean(9), rs.getBoolean(10), rs.getBoolean(11), List.of(), false,
+                        rs.getDate(12) == null ? null : rs.getDate(12).toString()),
                 providerId, businessId);
         if (r.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Provider not found");
         ProviderSetup s = r.get(0);
@@ -77,7 +78,7 @@ public class TimecardAdminService {
         boolean linked = !days.memberIds(providerId).isEmpty();
         return new ProviderSetup(s.providerId(), s.name(), s.active(), s.workerType(),
                 s.showCommissionComparisonToProvider(), s.hourlyRateCents(), s.rateEffectiveFrom(), s.mobilePhone(),
-                s.payrollAutomationEnabled(), s.alertsEnabled(), s.smsEnabled(), approvers, linked);
+                s.payrollAutomationEnabled(), s.alertsEnabled(), s.smsEnabled(), approvers, linked, s.freeGapAckSignedAt());
     }
 
     public List<Approver> approverCandidates(Long businessId) {
@@ -124,6 +125,14 @@ public class TimecardAdminService {
             if (req.smsEnabled() != null) updateCurrent(businessId, providerId, "sms_enabled", req.smsEnabled());
         } else if (req.mobilePhone() != null || req.payrollAutomationEnabled() != null || req.smsEnabled() != null) {
             throw TimecardReviewService.bad("Set an hourly rate first");
+        }
+        if (req.freeGapAckSignedAt() != null) {
+            LocalDate ack = req.freeGapAckSignedAt().isBlank() ? null : TimecardReviewService.parseDate(req.freeGapAckSignedAt());
+            if (ack != null && ack.isAfter(LocalDate.now(TimecardDayService.RULES.zone()))) {
+                throw TimecardReviewService.bad("The signing date cannot be in the future");
+            }
+            jdbc.update("UPDATE providers SET free_gap_ack_signed_at = ? WHERE id = ? AND business_id = ?",
+                    ack == null ? null : java.sql.Date.valueOf(ack), providerId, businessId);
         }
         if (req.approverUserIds() != null) {
             List<Long> valid = approverCandidates(businessId).stream().map(Approver::userId).toList();
