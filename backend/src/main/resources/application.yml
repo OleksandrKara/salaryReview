@@ -97,7 +97,7 @@ marketing:
     service-account-json-b64: ${GOOGLE_ADS_SA_JSON_B64:}
     developer-token: ${GOOGLE_ADS_DEVELOPER_TOKEN:}
   landing-base-urls:
-    mani: ${MARKETING_LANDING_BASE_URL_MANI:https://mani.akluxnails.com}
+    mani: ${MARKETING_LANDING_BASE_URL_MANI:https://akluxnails.com/mani}
     home: ${MARKETING_LANDING_BASE_URL_HOME:https://akluxnails.com}
     pmu: ${MARKETING_LANDING_BASE_URL_PMU:https://book.pmu-annakara.com}
     "[pmu-website]": ${MARKETING_LANDING_BASE_URL_PMU_WEBSITE:https://pmu-annakara.com}

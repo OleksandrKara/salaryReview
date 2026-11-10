@@ -9,7 +9,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Base URL of each public landing page (mani.akluxnails.com, akluxnails.com, ...), keyed by
+ * Base URL of each public landing page (akluxnails.com/mani, akluxnails.com, ...), keyed by
  * marketing.landing_pages.slug — used to build direct {@code ?v=<key>} deep links to a specific
  * marketing variant on the owner dashboard. Each landing page is its own separately-deployed
  * service on its own domain (see docs on the akluxnails-home repo for why), so this can't be a
@@ -28,6 +28,6 @@ public class MarketingLandingProperties {
     public String baseUrlFor(String slug) {
         String direct = landingBaseUrls.get(slug);
         if (direct != null) return direct;
-        return landingBaseUrls.getOrDefault("mani", "https://mani.akluxnails.com");
+        return landingBaseUrls.getOrDefault("mani", "https://akluxnails.com/mani");
     }
 }
