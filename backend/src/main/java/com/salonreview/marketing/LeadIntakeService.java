@@ -266,6 +266,36 @@ public class LeadIntakeService {
             }
         }
         n += importSquareCreated();
+        n += enrichFromSquare();
+        return n;
+    }
+
+    /** A lead created from a text/call has no name or email; staff often add them in Square on a
+     * newer profile with the same phone (or on the lead's own profile). Copies the name and email
+     * onto the lead, never overwriting a value already set. Reads the webhook-fed mirror only. */
+    public int enrichFromSquare() {
+        int n = 0;
+        for (long b : enabled) {
+            n += jdbc.update("""
+                    UPDATE lead_intake l SET
+                        name = COALESCE(NULLIF(l.name, ''), NULLIF(trim(concat_ws(' ', sc.given_name, sc.family_name)), '')),
+                        email = COALESCE(NULLIF(l.email, ''), NULLIF(sc.email_address, ''))
+                    FROM (
+                        SELECT DISTINCT ON (l2.id) l2.id AS lead_id, m.given_name, m.family_name, m.email_address
+                        FROM lead_intake l2
+                        JOIN square_customer m ON m.business_id = l2.business_id
+                         AND (m.square_customer_id = l2.square_customer_id
+                              OR (length(regexp_replace(COALESCE(l2.phone_number, ''), '\\D', '', 'g')) >= 10
+                                  AND right(regexp_replace(COALESCE(m.phone_number, ''), '\\D', '', 'g'), 10)
+                                    = right(regexp_replace(l2.phone_number, '\\D', '', 'g'), 10)))
+                        WHERE l2.business_id = ? AND l2.created_at > now() - interval '30 days'
+                          AND (COALESCE(l2.name, '') = '' OR COALESCE(l2.email, '') = '')
+                          AND (COALESCE(m.given_name, '') <> '' OR COALESCE(m.email_address, '') <> '')
+                        ORDER BY l2.id, m.square_created_at DESC
+                    ) sc
+                    WHERE l.id = sc.lead_id
+                    """, b);
+        }
         return n;
     }
 
