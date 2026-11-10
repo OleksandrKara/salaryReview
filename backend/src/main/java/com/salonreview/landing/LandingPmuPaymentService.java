@@ -188,7 +188,8 @@ public class LandingPmuPaymentService {
             if (errorCodes(e).stream().anyMatch(CONFLICT_CODES::contains)) {
                 throw new LandingException(409, "This time slot is no longer available.");
             }
-            throw new LandingException(502, "Unable to create appointment in Square");
+            throw new LandingException(502, "Unable to create appointment in Square", false,
+                    String.join(", ", errorCodesInOrder(e)));
         } catch (RuntimeException e) {
             log.error("Square booking create failed: {}", e.toString());
             throw new LandingException(502, "Unable to create appointment in Square");
@@ -229,7 +230,7 @@ public class LandingPmuPaymentService {
             } catch (RuntimeException ne) {
                 log.warn("Payment-failed alert failed: {}", ne.toString());
             }
-            throw new LandingException(declined ? 402 : 502, message);
+            throw new LandingException(declined ? 402 : 502, message, true, null);
         }
     }
 

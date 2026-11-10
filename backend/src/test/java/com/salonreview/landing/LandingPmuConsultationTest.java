@@ -94,10 +94,10 @@ class LandingPmuConsultationTest {
         LandingFourHandService fourHand = new LandingFourHandService(provider, telegram, sms, businesses);
         LandingPmuBookingService bookings = new LandingPmuBookingService(gateway, fourHand, telegram, sms, geoIp);
         mvc = MockMvcBuilders.standaloneSetup(new LandingWriteController(true, true, false, new LandingBusinessResolver(businesses),
-                repository, guard, fourHand, bookings, null, null)).setControllerAdvice(new LandingWriteAdvice()).build();
+                repository, guard, fourHand, bookings, null, null)).setControllerAdvice(new LandingWriteAdvice(org.mockito.Mockito.mock(LandingFailureAlerter.class))).build();
         disabled = MockMvcBuilders.standaloneSetup(new LandingWriteController(true, false, false,
                 new LandingBusinessResolver(businesses), repository, guard, fourHand, bookings, null, null))
-                .setControllerAdvice(new LandingWriteAdvice()).build();
+                .setControllerAdvice(new LandingWriteAdvice(org.mockito.Mockito.mock(LandingFailureAlerter.class))).build();
 
         jdbc.update("INSERT INTO marketing.landing_pages (id, name, slug, business_id) VALUES "
                 + "('11111111-1111-1111-1111-111111111111', 'PMU', 'pmu', 2)");
