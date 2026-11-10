@@ -45,9 +45,11 @@ class AcademyLeadFunnelSchedulerTest {
         when(sms.sendTemplated(anyLong(), anyString(), anyString(), anyMap())).thenReturn(TwilioSmsService.SmsSendResult.ok());
     }
 
+    private final com.salonreview.telegram.TelegramNotificationService telegram = mock(com.salonreview.telegram.TelegramNotificationService.class);
+
     private AcademyLeadFunnelScheduler scheduler(Instant now) {
         return new AcademyLeadFunnelScheduler(jdbc, mock(SmsAutomationService.class), sms, mock(MailchimpConfigRepository.class),
-                mailchimp, templates, contacts, mock(MailchimpClient.class), mock(com.salonreview.marketing.ConsultationCatalog.class), Clock.fixed(now, ZoneOffset.UTC));
+                mailchimp, templates, contacts, mock(MailchimpClient.class), mock(com.salonreview.marketing.ConsultationCatalog.class), telegram, Clock.fixed(now, ZoneOffset.UTC));
     }
 
     private void done(String... steps) {
@@ -57,6 +59,26 @@ class AcademyLeadFunnelSchedulerTest {
     private static AcademyLeadFunnelScheduler.Lead lead(Instant created, boolean smsConsent) {
         return new AcademyLeadFunnelScheduler.Lead(7L, "jane doe", "+16195550100", "jane@example.com",
                 "Brows Basic Course; Lips Basic Course", smsConsent, created);
+    }
+
+    @Test
+    void failedConfirmationEmailAlertsStaffOnce() throws Exception {
+        done();
+        when(mailchimp.sendWinbackEmail(any(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(new RuntimeException("jane@example.com looks fake or invalid"));
+        when(jdbc.queryForObject(contains("send_failed"), eq(Integer.class))).thenReturn(1);
+        scheduler(DAY).advance(lead(DAY.minusSeconds(30), false), mc, DAY);
+        verify(telegram).sendPlainAlert(eq(2L), contains("looks mistyped"));
+    }
+
+    @Test
+    void emailFailureAlertsAreCappedPerHour() throws Exception {
+        done();
+        when(mailchimp.sendWinbackEmail(any(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenThrow(new RuntimeException("Mailchimp down"));
+        when(jdbc.queryForObject(contains("send_failed"), eq(Integer.class))).thenReturn(4);
+        scheduler(DAY).advance(lead(DAY.minusSeconds(30), false), mc, DAY);
+        verifyNoInteractions(telegram);
     }
 
     @Test
