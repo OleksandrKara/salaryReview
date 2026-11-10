@@ -13,7 +13,7 @@ class AcademyLeadServiceTest {
     private static AcademyLeadService.AcademyLead lead(String name, String email, boolean sms) {
         return new AcademyLeadService.AcademyLead("course_request", name, "+16195550100", email, "lips-permanent-makeup-basic",
                 "Lips Basic Course", "Weekends only", sms, false, "https://pmu-annakara.com/academy/",
-                "google", "cpc", "Academy", null, "🇫🇷 France, Paris (IP 1.2.3.4)", null, null);
+                "google", "cpc", "Academy", null, "🇫🇷 France, Paris (IP 1.2.3.4)", null, null, null, null);
     }
 
     @Test
@@ -29,7 +29,7 @@ class AcademyLeadServiceTest {
     void severalCoursesGetOneHashtagEach() {
         var l = new AcademyLeadService.AcademyLead("course_request", "Jane", "+16195550100", "jane@example.com",
                 "brows-permanent-makeup-basic,lips-permanent-makeup-basic", "Brows Basic Course; Lips Basic Course", null,
-                false, true, null, null, null, null, null, null, null, null);
+                false, true, null, null, null, null, null, null, null, null, null, null);
         assertThat(AcademyLeadService.formatAlert(l))
                 .contains("#academy_lead #course_brows_permanent_makeup_basic #course_lips_permanent_makeup_basic\n")
                 .contains("Courses: Brows Basic Course; Lips Basic Course");
@@ -38,7 +38,7 @@ class AcademyLeadServiceTest {
     @Test
     void subscriberAlertHasItsOwnHashtag() {
         var sub = new AcademyLeadService.AcademyLead("subscribe", "Newsletter subscriber", null, "jane@example.com", null, null,
-                "Subscribed to academy news", false, true, "https://pmu-annakara.com/academy/", null, null, null, null, null, null, null);
+                "Subscribed to academy news", false, true, "https://pmu-annakara.com/academy/", null, null, null, null, null, null, null, null, null);
         String text = AcademyLeadService.formatAlert(sub);
         assertThat(text).startsWith("📩 Academy newsletter subscriber\n#academy #academy_subscriber\n")
                 .contains("Email: jane@example.com").doesNotContain("Course:").doesNotContain("Name:");
@@ -74,5 +74,25 @@ class AcademyLeadServiceTest {
     void hubspotClientWithoutFormDoesNothing() {
         var r = new HubSpotFormClient("40072325", "").submit("jane@example.com", java.util.Map.of(), null, null);
         assertThat(r.error()).isEqualTo("not_configured");
+    }
+
+    private static AcademyLeadService.AcademyLead withSource(String referrer, String utmSource, String gclid) {
+        return new AcademyLeadService.AcademyLead("course_request", "Jane", "+16195550100", "jane@example.com", null, null, null,
+                false, true, null, utmSource, null, null, gclid, null, null, null, referrer, null);
+    }
+
+    @Test
+    void trafficSourceTellsDirectOrganicAndAdsApart() {
+        assertThat(AcademyLeadService.trafficSource(withSource("", null, null))).isEqualTo("Direct / No referrer");
+        assertThat(AcademyLeadService.trafficSource(withSource("https://pmu-annakara.com/academy/", null, null))).isEqualTo("Direct / No referrer");
+        assertThat(AcademyLeadService.trafficSource(withSource("https://www.google.com/", null, null))).isEqualTo("Google (organic)");
+        assertThat(AcademyLeadService.trafficSource(withSource("", "google", "abc"))).startsWith("Google Ads");
+        assertThat(AcademyLeadService.trafficSource(withSource("https://chatgpt.com/", "chatgpt.com", null))).isEqualTo("chatgpt.com");
+    }
+
+    @Test
+    void olderSiteWithoutReferrerKeepsTheOldRule() {
+        assertThat(AcademyLeadService.trafficSource(withSource(null, null, null))).isNull();
+        assertThat(AcademyLeadService.trafficSource(withSource(null, null, "abc"))).isEqualTo("Google Ads");
     }
 }

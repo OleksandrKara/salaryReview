@@ -37,10 +37,27 @@ public class AcademyLeadService {
 
     /** {@code kind}: "subscribe" for the email-only "Subscribe now" band, anything else is a course
      * request. Sets the alert wording and hashtags, and only course requests get the follow-up funnel. */
+    /** Where the visitor came from. A site that sends the first-touch referrer (null means an older
+     * site build that does not) gets the same labels as website-form contacts, so Direct, Google
+     * organic and referrals are told apart instead of landing as Unknown. */
+    static String trafficSource(AcademyLead l) {
+        if (l.referrer() == null) {
+            return notBlank(l.gclid()) ? "Google Ads" : notBlank(l.utmSource()) ? l.utmSource() : null;
+        }
+        String ref = l.referrer().isBlank() || l.referrer().toLowerCase(java.util.Locale.ROOT).contains("pmu-annakara.com") ? null : l.referrer();
+        return com.salonreview.landing.LandingTracking.classify(new com.salonreview.landing.LandingTracking(null, null, ref,
+                blankToNull(l.utmSource()), blankToNull(l.utmMedium()), blankToNull(l.utmCampaign()), blankToNull(l.utmTerm()),
+                blankToNull(l.utmContent()), blankToNull(l.fbclid()), blankToNull(l.gclid()), null, null));
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s;
+    }
+
     public record AcademyLead(String kind, String name, String phone, String email, String courseSlug, String courseName,
                               String message, boolean smsConsent, boolean emailConsent, String sourcePageUrl,
                               String utmSource, String utmMedium, String utmCampaign, String gclid,
-                              String location, String utmTerm, String utmContent) {
+                              String location, String utmTerm, String utmContent, String referrer, String fbclid) {
         public boolean isSubscription() {
             return "subscribe".equals(kind);
         }
@@ -87,7 +104,7 @@ public class AcademyLeadService {
                 payload.put("smsConsent", String.valueOf(l.smsConsent()));
                 payload.put("emailConsent", String.valueOf(l.emailConsent()));
                 payload.values().removeIf(v -> v == null || v.isBlank());
-                String traffic = notBlank(l.gclid()) ? "Google Ads" : notBlank(l.utmSource()) ? l.utmSource() : null;
+                String traffic = trafficSource(l);
                 leadIntake.capture(new LeadIntakeService.Lead(businessId, "Academy", traffic, l.phone(), l.email(), l.name(),
                         l.courseName(), "academy:" + id, new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(payload)));
             } catch (Exception e) {
