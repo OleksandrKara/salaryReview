@@ -183,8 +183,7 @@ class LandingNailsBookingTest {
                 .andExpect(jsonPath("$.duration_minutes").value(150))
                 .andExpect(jsonPath("$.service_name").value("Russian Hard Gel Manicure + Nail Art / Design"))
                 .andExpect(jsonPath("$.tier").value("top")).andExpect(jsonPath("$.artist_name").value("Lucy S."))
-                .andExpect(jsonPath("$.price").value(105.0)).andExpect(jsonPath("$.compare_at_price").value(
-                        org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.price").value(105.0)).andExpect(jsonPath("$.compare_at_price").value(120.0))
                 .andExpect(jsonPath("$.location_name").value("AK.LUX.NAILS Studio"))
                 .andExpect(jsonPath("$.location_address").value("1 Main St, San Diego, CA 92101"))
                 .andExpect(jsonPath("$.location_phone").value("+16193231185"))
@@ -242,9 +241,10 @@ class LandingNailsBookingTest {
                         "{\"errors\":[{\"code\":\"BOOKING_TIME_NOT_AVAILABLE\"}]}".getBytes(StandardCharsets.UTF_8), null));
         mvc.perform(json(body(seg("manicure", "M_TOP"), PHONE, ""))).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("This time slot is no longer available."));
-        when(gateway.createBooking(anyLong(), any(), any(), any(), anyList(), any())).thenThrow(
+        org.mockito.Mockito.doThrow(
                 HttpClientErrorException.create(HttpStatus.BAD_REQUEST, "Bad", HttpHeaders.EMPTY,
-                        "{\"errors\":[{\"code\":\"INVALID_VALUE\"}]}".getBytes(StandardCharsets.UTF_8), null));
+                        "{\"errors\":[{\"code\":\"INVALID_VALUE\"}]}".getBytes(StandardCharsets.UTF_8), null))
+                .when(gateway).createBooking(anyLong(), any(), any(), any(), anyList(), any());
         mvc.perform(json(body(seg("manicure", "M_TOP"), PHONE, ""))).andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.detail").value("Unable to create appointment in Square"));
         assertThat(count("submissions", null)).isZero();
