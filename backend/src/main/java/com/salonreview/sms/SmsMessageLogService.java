@@ -117,6 +117,11 @@ public class SmsMessageLogService {
         return saved;
     }
 
+    @Transactional
+    public void markTelegramAlerted(Long messageId) {
+        repository.markTelegramAlerted(messageId, java.time.Instant.now());
+    }
+
     /** Used by {@link CheckoutReviewReplyService} to finalize a reserved placeholder row once the
      * real body (containing that row's own short link) and send outcome are known. The row already
      * carries its own {@code businessId} (set when it was first reserved), so this doesn't need one

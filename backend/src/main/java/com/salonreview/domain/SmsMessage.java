@@ -63,6 +63,12 @@ public class SmsMessage {
     @Column(name = "read_at")
     private Instant readAt;
 
+    /** When the Telegram alert for this INBOUND message was confirmed sent (or deliberately
+     * skipped for a blocked number); a null here after a couple of minutes means the alert was
+     * lost and {@code InboundSmsAlertSweeper} re-sends it. */
+    @Column(name = "telegram_alerted_at")
+    private Instant telegramAlertedAt;
+
     /** Twilio's delivery-status callback for this send — "queued" | "sending" | "sent" |
      * "delivered" | "undelivered" | "failed" — distinct from {@link #status}, which only ever
      * reflects whether *our* API call to Twilio succeeded, not what happened to the message

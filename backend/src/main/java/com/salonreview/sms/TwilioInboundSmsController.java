@@ -190,7 +190,11 @@ public class TwilioInboundSmsController {
 
         // Every inbound text is a lead: tie it to a Square profile with its source (never duplicates; see LeadIntakeService).
         if (!isOptOut) {
-            leadIntake.capture(new LeadIntakeService.Lead(businessId, websiteContext != null ? "SMS" : "Text", null, from, null, null, null, "sms:" + params.get("MessageSid"), smsPayload(params)));
+            try {
+                leadIntake.capture(new LeadIntakeService.Lead(businessId, websiteContext != null ? "SMS" : "Text", null, from, null, null, null, "sms:" + params.get("MessageSid"), smsPayload(params)));
+            } catch (RuntimeException e) {
+                log.warn("Inbound SMS lead intake failed, continuing with the alert: {}", e.toString());
+            }
         }
 
         // A customer reply always needs a human's attention right away, not just a dashboard entry
@@ -210,9 +214,26 @@ public class TwilioInboundSmsController {
             // incident from earlier tonight too, not just the missing Telegram alert). businessId
             // is already resolved above; populate the context explicitly for this one call, same
             // established pattern every other background/webhook caller in this codebase uses.
-            String customerName = currentBusinessContext.runAsAndGet(businessId, () -> resolveCustomerName(from));
-            telegramService.sendInboundSmsAlert(businessId, from, customerName, body, logged.getAutomationKey(), websiteContext,
-                    attachmentCount, media == null ? List.of() : media);
+            // The name is cosmetic: any failure resolving it must not cost us the alert or the
+            // reply-flow logic below.
+            String customerName = null;
+            try {
+                customerName = currentBusinessContext.runAsAndGet(businessId, () -> resolveCustomerName(from));
+            } catch (RuntimeException e) {
+                log.warn("Inbound SMS name lookup failed, alerting without a name: {}", e.toString());
+            }
+            boolean alerted = false;
+            try {
+                alerted = telegramService.sendInboundSmsAlert(businessId, from, customerName, body, logged.getAutomationKey(), websiteContext,
+                        attachmentCount, media == null ? List.of() : media);
+            } catch (RuntimeException e) {
+                log.warn("Inbound SMS Telegram alert threw: {}", e.toString());
+            }
+            if (alerted) {
+                messageLogService.markTelegramAlerted(logged.getId());
+            }
+        } else {
+            messageLogService.markTelegramAlerted(logged.getId());
         }
 
         // A STOP-style reply isn't a satisfaction-rating reply — the block above already stops

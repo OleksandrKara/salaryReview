@@ -153,6 +153,27 @@ class TwilioInboundSmsControllerTest {
     }
 
     @Test
+    @DisplayName("name lookup blowing up still sends the alert and the reply flow continues")
+    void nameLookupFailureStillAlerts() throws Exception {
+        var p = params(PHONE, "5 stars! love it");
+        String signature = sign(AUTH_TOKEN, WEBHOOK_URL, p);
+        SmsReplyFlow pending = SmsReplyFlow.builder().id(7L).automationKey("checkout_review_request")
+                .phoneNumber(PHONE).state(SmsReplyFlow.STATE_AWAITING_REPLY).build();
+        when(replyFlowRepository.findFirstByBusinessIdAndPhoneNumberAndStateOrderByCreatedAtDesc(BUSINESS_ID, PHONE, SmsReplyFlow.STATE_AWAITING_REPLY))
+                .thenReturn(Optional.of(pending));
+        when(contactsService.resolveDisplayNames(any())).thenThrow(new IllegalStateException("boom"));
+
+        mvc.perform(post("/api/public/sms/inbound")
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .header("X-Twilio-Signature", signature)
+                        .param("From", p.get("From")).param("Body", p.get("Body")).param("MessageSid", p.get("MessageSid")))
+                .andExpect(status().isOk());
+
+        verify(telegramService).sendInboundSmsAlert(BUSINESS_ID, PHONE, null, p.get("Body"), "checkout_review_request", null, 0, java.util.List.of());
+        verify(replyService).sendBranchReply(pending, true);
+    }
+
+    @Test
     @DisplayName("valid signature, body contains '5' → logged, positive branch sent, flow completed")
     void positiveBranchOnFive() throws Exception {
         var p = params(PHONE, "5 stars! love it");
