@@ -679,6 +679,7 @@ const STRINGS = {
   funnelHint_consult: { EN: 'Starts by itself within 4 days after a consultation.', RU: 'Запускается сама в течение 4 дней после консультации.' },
   funnelHint_site: { EN: 'Starts by itself for website visitors who leave contact details. Not used for calls.', RU: 'Запускается сама для посетителей сайта, оставивших контакты. Для звонков не применяется.' },
   funnelStepNOT_SENT: { EN: 'Not sent, funnel ended', RU: 'Не отправлялось, воронка закончилась' },
+  funnelWhy_staff: { EN: 'stopped by staff', RU: 'остановил сотрудник' },
   funnelWhy_late: { EN: 'too late to send', RU: 'слишком поздно отправлять' },
   funnelWhy_no_phone: { EN: 'no phone number', RU: 'нет номера телефона' },
   funnelWhy_no_email: { EN: 'no email address', RU: 'нет email' },
