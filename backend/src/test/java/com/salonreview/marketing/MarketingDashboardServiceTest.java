@@ -48,7 +48,7 @@ class MarketingDashboardServiceTest {
         when(contactsService.resolveCustomerIdsByBookingId(any())).thenReturn(Map.of());
         when(contactsService.countFollowUpBookingsByVariant(any(), any(), any(), any(), any(), any())).thenReturn(Map.of());
         MarketingLandingProperties landingProperties = new MarketingLandingProperties();
-        landingProperties.setLandingBaseUrls(java.util.Map.of("mani", "https://mani.akluxnails.com"));
+        landingProperties.setLandingBaseUrls(java.util.Map.of("mani", "https://akluxnails.com/mani"));
         SquareClient square = mock(SquareClient.class);
         when(square.locationTimeZone()).thenReturn("America/Los_Angeles");
         com.salonreview.square.SquareClientProvider squareClientProvider =
@@ -93,7 +93,7 @@ class MarketingDashboardServiceTest {
         assertThat(variant.conversionRate()).isEqualTo(0.04);
         assertThat(variant.followUpBookings()).isEqualTo(0);
         assertThat(variant.adjustedConversionRate()).isEqualTo(0.04);
-        assertThat(variant.deepLinkUrl()).isEqualTo("https://mani.akluxnails.com/?v=control");
+        assertThat(variant.deepLinkUrl()).isEqualTo("https://akluxnails.com/mani/?v=control");
         assertThat(variant.description()).isEqualTo("Baseline, no changes");
         assertThat(dashboard.statsSince()).isNull();
     }
