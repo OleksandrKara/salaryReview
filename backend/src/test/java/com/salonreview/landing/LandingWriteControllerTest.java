@@ -91,8 +91,8 @@ class LandingWriteControllerTest {
     private SquareClientProvider provider;
 
     private MockMvc controller(boolean enabled) {
-        LandingWriteController c = new LandingWriteController(enabled, false, new LandingBusinessResolver(businesses),
-                repository, guard, new LandingFourHandService(provider, telegram, sms, businesses), null);
+        LandingWriteController c = new LandingWriteController(enabled, false, false, new LandingBusinessResolver(businesses),
+                repository, guard, new LandingFourHandService(provider, telegram, sms, businesses), null, null, null);
         return MockMvcBuilders.standaloneSetup(c).setControllerAdvice(new LandingWriteAdvice()).build();
     }
 
