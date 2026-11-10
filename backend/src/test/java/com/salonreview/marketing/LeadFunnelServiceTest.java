@@ -146,6 +146,12 @@ class LeadFunnelServiceTest {
         SiteRow full = new SiteRow("+15550001111", "SENT", "SENT", "SENT", NOW.minusSeconds(86400));
         assertEquals("FINISHED", one(svc.evaluate(1, lead("NEW", false, null), data(List.of(), Map.of(), List.of(), List.of(full)), NOW), "site").state());
         assertFalse(one(svc.evaluate(1, lead("NEW", false, null), data(List.of(), Map.of(), List.of(), List.of()), NOW), "site").canApply());
+        assertTrue(one(svc.evaluate(1, lead("NEW", false, null), data(List.of(), Map.of(), List.of(), List.of(fresh)), NOW), "site").canStop());
+        SiteRow staff = new SiteRow("+15550001111", "SENT", "SKIPPED_STAFF", "SKIPPED_STAFF", NOW.minusSeconds(3600));
+        Funnel st = one(svc.evaluate(1, lead("NEW", false, null), data(List.of(), Map.of(), List.of(), List.of(staff)), NOW), "site");
+        assertEquals("STOPPED", st.state());
+        assertEquals("STAFF", st.reason());
+        assertFalse(st.canStop());
     }
 
     @Test
