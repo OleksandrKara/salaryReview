@@ -57,7 +57,7 @@ public class TimecardReviewService {
         }
         DayCalc c = days.calc(businessId, providerId, date);
         List<DayTimecard> cards = c.timecards();
-        if (c.source().equals("NONE")) {
+        if (c.source().equals("NONE") || c.source().equals("VOIDED")) {
             if (req.start() == null || req.end() == null) throw bad("No work recorded for this day");
             if (req.note() == null || req.note().isBlank()) throw bad("A note is required for a manually added shift");
             cards = List.of(new DayTimecard(new TimeSpan(Instant.parse(req.start()), Instant.parse(req.end())), List.of()));
@@ -110,7 +110,54 @@ public class TimecardReviewService {
         return List.of(new DayTimecard(span, breaks));
     }
 
+    /** Worker cancels a shift they added by hand (no appointments behind it) that is not approved yet. */
+    public DayView withdraw(Long businessId, Long providerId, String dateStr, String reason) {
+        requireW2(businessId, providerId);
+        LocalDate date = parseDate(dateStr);
+        DayCalc c = days.calc(businessId, providerId, date);
+        if (c.source().equals("SQUARE")) throw bad("This shift is already in Square. Ask your manager to remove it");
+        if (!c.source().equals("DRAFT") || !c.appointments().isEmpty()) {
+            throw bad("Only a shift you added by hand can be cancelled. Ask your manager for other days");
+        }
+        if ("APPROVED".equals(c.status())) throw new ResponseStatusException(HttpStatus.CONFLICT, "Day already approved");
+        voidReview(businessId, providerId, date, "provider:" + providerId, reason, "WORKER_VOID");
+        return days.view(businessId, providerId, date, false);
+    }
+
     // ---- approver ----
+
+    /** Approver cancels a day that has no Square timecard: it leaves payroll and reminders but stays in the audit trail. */
+    public DayView voidDay(Long businessId, Long userId, String role, Long providerId, LocalDate date, String reason) {
+        requireW2(businessId, providerId);
+        requireApprover(businessId, userId, role, providerId);
+        DayCalc c = days.calc(businessId, providerId, date);
+        if (c.source().equals("SQUARE")) throw bad("This shift is a Square timecard. Delete it in Square and it disappears here");
+        if (c.source().equals("NONE") || c.source().equals("VOIDED")) throw bad("Nothing to cancel on this day");
+        voidReview(businessId, providerId, date, "user:" + userId, reason, "VOID");
+        return days.view(businessId, providerId, date, "OWNER".equals(role));
+    }
+
+    public DayView restoreDay(Long businessId, Long userId, String role, Long providerId, LocalDate date) {
+        requireApprover(businessId, userId, role, providerId);
+        DayCalc c = days.calc(businessId, providerId, date);
+        if (!"VOIDED".equals(c.status())) throw bad("This day is not cancelled");
+        long id = ensureReview(businessId, providerId, date, "DRAFT");
+        String before = snapshot(id);
+        jdbc.update("UPDATE timecard_review SET status = 'NEEDS_REVIEW', voided_at = NULL, voided_by = NULL, "
+                + "void_reason = NULL WHERE id = ? AND business_id = ?", id, businessId);
+        audit(businessId, id, "user:" + userId, "RESTORE", before, snapshot(id));
+        return days.view(businessId, providerId, date, "OWNER".equals(role));
+    }
+
+    private void voidReview(Long businessId, Long providerId, LocalDate date, String actor, String reason, String action) {
+        if (reason == null || reason.isBlank()) throw bad("Give a short reason");
+        if (reason.length() > 300) throw bad("Reason is too long");
+        long id = ensureReview(businessId, providerId, date, "DRAFT");
+        String before = snapshot(id);
+        jdbc.update("UPDATE timecard_review SET status = 'VOIDED', voided_at = now(), voided_by = ?, void_reason = ? "
+                + "WHERE id = ? AND business_id = ?", actor, reason.trim(), id, businessId);
+        audit(businessId, id, actor, action, before, snapshot(id));
+    }
 
     public DayView approve(Long businessId, Long userId, String role, Long providerId, LocalDate date, boolean onBehalf) {
         requireW2(businessId, providerId);
@@ -291,7 +338,7 @@ public class TimecardReviewService {
 
     private String snapshot(long reviewId) {
         List<String> r = jdbc.queryForList("SELECT row_to_json(t)::text FROM (SELECT mode, status, proposed_json, meal_waiver, "
-                + "rest_confirmed, rest_not_provided, note, square_timecard_id, square_version FROM timecard_review "
+                + "rest_confirmed, rest_not_provided, note, square_timecard_id, square_version, void_reason FROM timecard_review "
                 + "WHERE id = ?) t", String.class, reviewId);
         return r.isEmpty() ? null : r.get(0);
     }

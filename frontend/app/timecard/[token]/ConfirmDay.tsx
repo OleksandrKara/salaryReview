@@ -47,6 +47,9 @@ export default function ConfirmDay({ token }: { token: string }) {
 
   if (error && !day) return <p className="rounded-lg bg-red-50 p-4 text-sm text-red-800">{error}</p>;
   if (!day) return <p className="text-sm text-gray-500">Loading...</p>;
+  if (day.status === 'VOIDED') {
+    return <p className="rounded-lg bg-gray-50 p-4 text-sm text-gray-700">This shift for {day.date} was cancelled. Nothing to confirm.</p>;
+  }
   if (done || day.status === 'WORKER_CONFIRMED' || day.status === 'APPROVED') {
     return <p className="rounded-lg bg-green-50 p-4 text-sm text-green-800">Thank you, your hours for {day.date} are confirmed.</p>;
   }

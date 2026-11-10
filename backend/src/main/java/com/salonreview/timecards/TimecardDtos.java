@@ -36,7 +36,8 @@ public final class TimecardDtos {
             List<FindingDto> findings,
             Integer rateCents,
             Integer payCents,
-            Integer premiumCents) {}
+            Integer premiumCents,
+            String voidReason) {}
 
     public record SubmitRequest(
             String date,

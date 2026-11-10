@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Language } from '../lib/types';
 import { t, tf } from '../lib/i18n';
+import VoidPanel from './VoidPanel';
 import { type DayView, type Summary, hhmm, hrs, tcFetch, usd } from '../lib/timecards';
 
 const SEV = {
@@ -14,6 +15,7 @@ const SEV = {
 function DayCard({ d, owner, lang, onChange }: { d: DayView; owner: boolean; lang: Language; onChange: () => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [voiding, setVoiding] = useState(false);
   const post = async (path: string, body: object) => {
     setBusy(true);
     setErr('');
@@ -29,6 +31,23 @@ function DayCard({ d, owner, lang, onChange }: { d: DayView; owner: boolean; lan
   const base = { date: d.date, providerId: d.providerId };
   const workerDone = d.source === 'SQUARE' || d.status === 'WORKER_CONFIRMED' || d.status === 'CONFIRMED_PENDING_WRITE';
   const card = d.timecards[0];
+  if (d.source === 'VOIDED') {
+    return (
+      <li className="flex flex-col gap-2 rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 text-sm text-zinc-500">
+          <div className="font-medium text-zinc-600">
+            {d.providerName} <span className="font-normal">{d.date}</span>
+            <span className="ml-2 rounded bg-zinc-200 px-2 py-0.5 text-xs font-normal text-zinc-700">{t(lang, 'tcStatusVOIDED')}</span>
+          </div>
+          {d.voidReason && <div className="mt-1 break-words text-xs">{t(lang, 'tcVoidedReason')}: {d.voidReason}</div>}
+          {err && <div className="mt-1 text-xs text-red-700">{err}</div>}
+        </div>
+        <button disabled={busy} onClick={() => post('restore', base)} className="w-full rounded-md border border-zinc-400 bg-white px-4 py-2 text-sm disabled:opacity-50 sm:w-auto">
+          {t(lang, 'tcRestore')}
+        </button>
+      </li>
+    );
+  }
   return (
     <li className="rounded-lg border border-zinc-200 bg-white p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -72,7 +91,7 @@ function DayCard({ d, owner, lang, onChange }: { d: DayView; owner: boolean; lan
           ))}
         </ul>
       )}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center [&>button]:w-full sm:[&>button]:w-auto">
         {d.status !== 'APPROVED' && (
           <>
             {workerDone ? (
@@ -91,12 +110,22 @@ function DayCard({ d, owner, lang, onChange }: { d: DayView; owner: boolean; lan
             {t(lang, 'tcReopen')}
           </button>
         )}
+        {d.source === 'DRAFT' && !voiding && (
+          <button disabled={busy} onClick={() => setVoiding(true)} className="rounded border border-red-300 px-3 py-1.5 text-sm text-red-700 disabled:opacity-50">
+            {t(lang, 'tcVoid')}
+          </button>
+        )}
         <label className="flex items-center gap-1 text-sm">
           <input type="checkbox" checked={d.restNotProvided} disabled={busy} onChange={(e) => post('rest-not-provided', { ...base, notProvided: e.target.checked })} />
           {t(lang, 'tcRestNot')}
         </label>
       </div>
-      {err && <div className="mt-2 text-sm text-red-700">{err}</div>}
+      {d.source === 'SQUARE' && <div className="mt-2 text-xs text-zinc-500">{t(lang, 'tcVoidSquare')}</div>}
+      {voiding && (
+        <VoidPanel lang={lang} hint={t(lang, 'tcVoidHint')} busy={busy} err={err} onClose={() => setVoiding(false)}
+          onConfirm={(reason) => post('void', { ...base, reason })} />
+      )}
+      {!voiding && err && <div className="mt-2 text-sm text-red-700">{err}</div>}
     </li>
   );
 }
@@ -184,10 +213,18 @@ export default function TimecardsApproval({ role, language, businessName }: { ro
       ) : (
         <>
           {err && <div className="text-sm text-red-700">{err}</div>}
-          {rows && rows.length === 0 && <p className="text-sm text-zinc-500">{t(language, 'tcNothing')}{businessName ? ` ${tf(language, 'tcViewingBusiness', { name: businessName })}` : ''}</p>}
+          {rows && rows.filter((d) => d.source !== 'VOIDED').length === 0 && <p className="text-sm text-zinc-500">{t(language, 'tcNothing')}{businessName ? ` ${tf(language, 'tcViewingBusiness', { name: businessName })}` : ''}</p>}
           <ul className="flex flex-col gap-3">
-            {rows?.map((d) => <DayCard key={`${d.providerId}-${d.date}`} d={d} owner={owner} lang={language} onChange={load} />)}
+            {rows?.filter((d) => d.source !== 'VOIDED').map((d) => <DayCard key={`${d.providerId}-${d.date}`} d={d} owner={owner} lang={language} onChange={load} />)}
           </ul>
+          {rows && rows.some((d) => d.source === 'VOIDED') && (
+            <details className="mt-4">
+              <summary className="cursor-pointer text-sm text-zinc-600">{t(language, 'tcVoidedList')} ({rows.filter((d) => d.source === 'VOIDED').length})</summary>
+              <ul className="mt-2 flex flex-col gap-2">
+                {rows.filter((d) => d.source === 'VOIDED').map((d) => <DayCard key={`${d.providerId}-${d.date}`} d={d} owner={owner} lang={language} onChange={load} />)}
+              </ul>
+            </details>
+          )}
         </>
       )}
     </div>

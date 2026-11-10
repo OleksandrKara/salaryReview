@@ -38,7 +38,8 @@ public class TimecardDayService {
     }
 
     public record ReviewRow(long id, String mode, String status, String proposedJson, boolean mealWaiver,
-                            boolean restConfirmed, boolean restNotProvided, String note, Integer squareVersion) {}
+                            boolean restConfirmed, boolean restNotProvided, String note, Integer squareVersion,
+                            String voidReason) {}
 
     /** Everything the policy and the summary need for one day. */
     public record DayCalc(LocalDate date, Long providerId, String source, List<DayTimecard> timecards,
@@ -59,6 +60,8 @@ public class TimecardDayService {
         String source;
         if (!cards.isEmpty()) {
             source = "SQUARE";
+        } else if (review != null && "VOIDED".equals(review.status())) {
+            source = "VOIDED";
         } else if (review != null && review.proposedJson() != null) {
             cards = parseProposed(review.proposedJson());
             source = "DRAFT";
@@ -87,6 +90,9 @@ public class TimecardDayService {
 
         boolean changed = false;
         String status = review == null ? (source.equals("NONE") ? "NONE" : "PROPOSED") : review.status();
+        if ("VOIDED".equals(status) && "SQUARE".equals(source)) {
+            status = "NEEDS_REVIEW";
+        }
         if (review != null && "APPROVED".equals(status) && review.squareVersion() != null && "SQUARE".equals(source)) {
             Integer maxV = jdbc.queryForObject("SELECT COALESCE(MAX(square_version), 0) FROM square_timecard_mirror "
                     + "WHERE business_id = ? AND provider_id = ? AND work_date = ? AND NOT deleted",
@@ -128,18 +134,19 @@ public class TimecardDayService {
                 pay.overtimeMinutes(), pay.doubleTimeMinutes(),
                 rv != null && rv.mealWaiver(), rv != null && rv.restConfirmed(), rv != null && rv.restNotProvided(),
                 c.waiverOnFile(), rv == null ? null : rv.note(), findings,
-                money ? c.rateCents() : null, money ? payCents : null, money ? premium : null);
+                money ? c.rateCents() : null, money ? payCents : null, money ? premium : null,
+                rv == null ? null : rv.voidReason());
     }
 
     // ---- loading ----
 
     public Optional<ReviewRow> review(Long businessId, Long providerId, LocalDate date) {
         List<ReviewRow> rows = jdbc.query("SELECT id, mode, status, proposed_json, meal_waiver, rest_confirmed, "
-                        + "rest_not_provided, note, square_version FROM timecard_review "
+                        + "rest_not_provided, note, square_version, void_reason FROM timecard_review "
                         + "WHERE business_id = ? AND provider_id = ? AND work_date = ?",
                 (rs, i) -> new ReviewRow(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4),
                         rs.getBoolean(5), rs.getBoolean(6), rs.getBoolean(7), rs.getString(8),
-                        (Integer) rs.getObject(9)),
+                        (Integer) rs.getObject(9), rs.getString(10)),
                 businessId, providerId, java.sql.Date.valueOf(date));
         return rows.stream().findFirst();
     }

@@ -30,6 +30,7 @@ public class TimecardController {
 
     public record ApproveRequest(String date, Long providerId, Boolean onBehalf) {}
     public record ReopenRequest(String date, Long providerId) {}
+    public record VoidRequest(String date, Long providerId, String reason) {}
     public record RestRequest(String date, Long providerId, boolean notProvided) {}
     public record SignRequest(String signedName) {}
     public record Earnings(String from, String to, ProviderSummary timeBased, Integer commissionComparisonCents) {}
@@ -131,6 +132,18 @@ public class TimecardController {
                 TimecardReviewService.parseDate(r.date()));
     }
 
+    @PostMapping("/void")
+    public DayView voidDay(@AuthenticationPrincipal AppUserPrincipal me, @RequestBody VoidRequest r) {
+        return reviews.voidDay(business.id(), me.getUserId(), me.getRole().name(), r.providerId(),
+                TimecardReviewService.parseDate(r.date()), r.reason());
+    }
+
+    @PostMapping("/restore")
+    public DayView restore(@AuthenticationPrincipal AppUserPrincipal me, @RequestBody ReopenRequest r) {
+        return reviews.restoreDay(business.id(), me.getUserId(), me.getRole().name(), r.providerId(),
+                TimecardReviewService.parseDate(r.date()));
+    }
+
     @PostMapping("/rest-not-provided")
     public DayView restNotProvided(@AuthenticationPrincipal AppUserPrincipal me, @RequestBody RestRequest r) {
         return reviews.markRestNotProvided(business.id(), me.getUserId(), me.getRole().name(), r.providerId(),
@@ -190,6 +203,11 @@ public class TimecardController {
     @PostMapping("/me/submit")
     public DayView submit(@AuthenticationPrincipal AppUserPrincipal me, @RequestBody SubmitRequest r) {
         return reviews.submit(business.id(), w2Provider(me), r);
+    }
+
+    @PostMapping("/me/void")
+    public DayView withdraw(@AuthenticationPrincipal AppUserPrincipal me, @RequestBody VoidRequest r) {
+        return reviews.withdraw(business.id(), w2Provider(me), r.date(), r.reason());
     }
 
     @GetMapping("/me/waiver")
