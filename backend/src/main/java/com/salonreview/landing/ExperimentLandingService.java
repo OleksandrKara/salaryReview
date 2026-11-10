@@ -10,7 +10,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /** Resolves which landing-page variants a visitor may see, from the marketing schema. */
@@ -69,7 +68,7 @@ public class ExperimentLandingService {
         m.put("name", row.get("name"));
         m.put("weight", row.get("weight"));
         Object content = row.get("content");
-        JsonNode parsed = content == null ? null : mapper.readTree(content.toString());
+        Object parsed = content == null ? null : mapper.readValue(content.toString(), Object.class);
         m.put("content", parsed);
         return m;
     }
