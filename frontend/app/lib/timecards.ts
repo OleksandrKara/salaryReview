@@ -5,7 +5,7 @@ export type DayView = {
   date: string;
   providerId: number;
   providerName: string;
-  source: 'SQUARE' | 'DRAFT' | 'NONE';
+  source: 'SQUARE' | 'DRAFT' | 'NONE' | 'VOIDED';
   status: string;
   changedInSquare: boolean;
   timecards: Card[];
@@ -23,6 +23,7 @@ export type DayView = {
   rateCents: number | null;
   payCents: number | null;
   premiumCents: number | null;
+  voidReason?: string | null;
 };
 export type Approver = { userId: number; username: string; email: string | null; role: string };
 export type ProviderSetup = {

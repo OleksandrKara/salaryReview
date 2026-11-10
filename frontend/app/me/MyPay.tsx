@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Language } from '../lib/types';
 import { t, tf } from '../lib/i18n';
+import VoidPanel from '../timecards/VoidPanel';
 import { type DayView, type ProviderSummary, type Waiver, hhmm, hrs, laToIso, tcFetch, usd } from '../lib/timecards';
 
 type Earnings = { from: string; to: string; timeBased: ProviderSummary; commissionComparisonCents: number | null };
-type Tone = 'approved' | 'waiting' | 'confirm' | 'review' | 'today' | 'off';
+type Tone = 'approved' | 'waiting' | 'confirm' | 'review' | 'today' | 'off' | 'voided';
 
 const TONE: Record<Tone, { chip: string; dot: string }> = {
   approved: { chip: 'bg-emerald-50 text-emerald-800 ring-emerald-200', dot: 'bg-emerald-500' },
@@ -15,6 +16,7 @@ const TONE: Record<Tone, { chip: string; dot: string }> = {
   review: { chip: 'bg-red-50 text-red-800 ring-red-200', dot: 'bg-red-500' },
   today: { chip: 'bg-zinc-100 text-zinc-700 ring-zinc-200', dot: 'bg-zinc-400' },
   off: { chip: 'bg-zinc-50 text-zinc-400 ring-zinc-100', dot: 'bg-zinc-200' },
+  voided: { chip: 'bg-zinc-100 text-zinc-500 ring-zinc-200', dot: 'bg-zinc-300' },
 };
 
 function pad(n: number) { return String(n).padStart(2, '0'); }
@@ -26,6 +28,7 @@ function todayLa(): string {
 function toneOf(d: DayView | undefined, date: string, today: string): Tone {
   if (date > today) return 'off';
   if (!d) return 'off';
+  if (d.source === 'VOIDED') return 'voided';
   if (date === today) return d.status === 'APPROVED' ? 'approved' : 'today';
   if (d.status === 'APPROVED' || d.status === 'CONFIRMED_PENDING_WRITE') return 'approved';
   if (d.status === 'WORKER_CONFIRMED') return 'waiting';
@@ -34,7 +37,7 @@ function toneOf(d: DayView | undefined, date: string, today: string): Tone {
 }
 
 function label(tone: Tone, lang: Language): string {
-  const k = { approved: 'payApproved', waiting: 'payWaiting', confirm: 'payConfirm', review: 'payReview', today: 'payToday', off: 'payOff' } as const;
+  const k = { approved: 'payApproved', waiting: 'payWaiting', confirm: 'payConfirm', review: 'payReview', today: 'payToday', off: 'payOff', voided: 'payVoided' } as const;
   return t(lang, k[tone]);
 }
 
@@ -61,10 +64,26 @@ function DayRow({ d, tone, waiverSigned, lang, open, onToggle, onDone }: {
   const [note, setNote] = useState(d.note ?? '');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [voiding, setVoiding] = useState(false);
   const locked = d.status === 'APPROVED' || tone === 'today';
   const editable = d.source === 'DRAFT' && !locked;
+  const voided = d.source === 'VOIDED';
+  const manual = d.source === 'DRAFT' && d.appointments.length === 0 && d.status !== 'APPROVED' && tone !== 'today';
   const { wd, md } = weekday(d.date, lang);
   const field = 'rounded-md border border-zinc-300 px-2 py-1.5 text-sm';
+
+  const withdraw = async (reason: string) => {
+    setBusy(true);
+    setErr('');
+    try {
+      await tcFetch<DayView>('me/void', 'POST', { date: d.date, reason });
+      onDone();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submit = async () => {
     setBusy(true);
@@ -115,7 +134,12 @@ function DayRow({ d, tone, waiverSigned, lang, open, onToggle, onDone }: {
             <div key={i} className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800">{f.message}</div>
           ))}
           {d.premiumCents ? <div className="text-xs text-zinc-600">{t(lang, 'payPremium')}: {usd(d.premiumCents)}</div> : null}
-          {locked ? (
+          {voided ? (
+            <div className="text-xs text-zinc-500">
+              {t(lang, 'payVoidedNote')}
+              {d.voidReason ? ` ${t(lang, 'tcVoidedReason')}: ${d.voidReason}` : ''}
+            </div>
+          ) : locked ? (
             tone === 'approved' && <div className="text-xs text-zinc-500">{t(lang, 'payLocked')}</div>
           ) : (
             <>
@@ -132,10 +156,14 @@ function DayRow({ d, tone, waiverSigned, lang, open, onToggle, onDone }: {
                 <label className="flex items-center gap-2"><input type="checkbox" checked={waiver} onChange={(e) => setWaiver(e.target.checked)} />{t(lang, 'tcUseWaiver')}</label>
               )}
               <label className="flex flex-col gap-1 text-xs">{t(lang, 'tcNote')}<input className={field} value={note} onChange={(e) => setNote(e.target.value)} /></label>
-              <div className="flex items-center gap-3">
-                <button disabled={busy} onClick={submit} className="rounded-md bg-zinc-900 px-4 py-2 text-sm text-white disabled:opacity-50">{t(lang, 'tcConfirmDay')}</button>
-                {err && <span className="text-sm text-red-700">{err}</span>}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                <button disabled={busy} onClick={submit} className="w-full rounded-md bg-zinc-900 px-4 py-2.5 text-sm text-white disabled:opacity-50 sm:w-auto">{t(lang, 'tcConfirmDay')}</button>
+                {manual && !voiding && (
+                  <button type="button" disabled={busy} onClick={() => setVoiding(true)} className="w-full rounded-md border border-red-300 px-4 py-2.5 text-sm text-red-700 disabled:opacity-50 sm:w-auto">{t(lang, 'payWithdraw')}</button>
+                )}
+                {!voiding && err && <span className="text-sm text-red-700">{err}</span>}
               </div>
+              {voiding && <VoidPanel lang={lang} hint={t(lang, 'payWithdrawHint')} busy={busy} err={err} onClose={() => setVoiding(false)} onConfirm={withdraw} />}
             </>
           )}
         </div>
