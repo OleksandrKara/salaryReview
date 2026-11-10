@@ -271,8 +271,8 @@ public class LeadFollowUpScheduler {
 
         String givenName = com.salonreview.util.Names.capitalizeFirst(contact.givenName());
         Business business = businessRepository.findById(businessId).orElse(null);
-        String bookingLink = business == null || business.getPublicDomain() == null || business.getPublicDomain().isBlank()
-                ? "" : "https://" + business.getPublicDomain() + "/";
+        String siteUrl = business == null ? null : business.publicSiteUrl();
+        String bookingLink = siteUrl == null ? "" : siteUrl + "/";
 
         Map<String, String> vars = new HashMap<>();
         vars.put("FNAME", givenName == null ? "there" : givenName);

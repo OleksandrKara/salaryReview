@@ -42,6 +42,17 @@ public class Business {
     @Column(name = "public_domain")
     private String publicDomain;
 
+    /** Customer-facing booking page URL (no trailing slash), or null when no landing page is set up.
+     * mani.akluxnails.com is only the Host the backend still sees (nginx rewrites it), the page itself
+     * lives at akluxnails.com/mani, so links sent to clients must not use the old host. */
+    public String publicSiteUrl() {
+        if (publicDomain == null || publicDomain.isBlank()) {
+            return null;
+        }
+        return "mani.akluxnails.com".equalsIgnoreCase(publicDomain.trim())
+                ? "https://akluxnails.com/mani" : "https://" + publicDomain.trim();
+    }
+
     /** Owner-set destination for the {@code checkout_review_request} automation's positive-reply
      * branch — see {@link com.salonreview.sms.CheckoutReviewLinks}. Null/blank means that
      * automation is treated as not configured for this business (see
