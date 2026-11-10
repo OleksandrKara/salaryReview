@@ -61,11 +61,8 @@ public class LandingFourHandService {
     }
 
     public Result submit(long businessId, Request r) {
-        SquareClient square = squareProvider.forBusiness(businessId);
-        String customerId = findOrCreate(square, r);
-        attachTracking(square, customerId, r.clientTracking());
-        setAttribute(square, customerId, "sms_marketing_consent", r.marketingOptIn() ? "Opted In" : "Opted Out");
-        if (r.email() != null) setAttribute(square, customerId, "email_marketing_consent", "Opted In");
+        String customerId = prepareCustomer(businessId, r.givenName(), r.familyName(), r.email(), r.phone(),
+                r.marketingOptIn(), r.clientTracking());
 
         List<String> noteParts = new ArrayList<>();
         if (r.requestedServices() != null && !r.requestedServices().isEmpty()) {
@@ -79,17 +76,28 @@ public class LandingFourHandService {
         return new Result(bookingId, customerId);
     }
 
-    private String findOrCreate(SquareClient square, Request r) {
+    /** Finds or creates the Square customer and stamps tracking and consent attributes on it. */
+    String prepareCustomer(long businessId, String givenName, String familyName, String email, String phone,
+                           boolean marketingOptIn, LandingTracking tracking) {
+        SquareClient square = squareProvider.forBusiness(businessId);
+        String customerId = findOrCreate(square, givenName, familyName, email, phone);
+        attachTracking(square, customerId, tracking);
+        setAttribute(square, customerId, "sms_marketing_consent", marketingOptIn ? "Opted In" : "Opted Out");
+        if (email != null) setAttribute(square, customerId, "email_marketing_consent", "Opted In");
+        return customerId;
+    }
+
+    private String findOrCreate(SquareClient square, String givenName, String familyName, String email, String phone) {
         String existing;
         try {
-            existing = searchByPhoneThenEmail(square, r.phone(), r.email());
+            existing = searchByPhoneThenEmail(square, phone, email);
         } catch (RuntimeException e) {
             log.error("Square customer search failed: {}", e.getMessage());
             throw new LandingException(502, "Unable to look up customer record in Square");
         }
         if (existing != null) return existing;
         try {
-            return square.createLandingCustomer(r.givenName(), r.familyName(), r.phone(), r.email(), REFERENCE_ID).id();
+            return square.createLandingCustomer(givenName, familyName, phone, email, REFERENCE_ID).id();
         } catch (RuntimeException e) {
             log.error("Square customer create failed: {}", e.getMessage());
             throw new LandingException(502, "Unable to create customer record in Square");

@@ -43,10 +43,16 @@ public class LandingWriteController {
     private final LandingWriteRepository repository;
     private final LandingAbuseGuard abuseGuard;
     private final LandingFourHandService fourHand;
+    private final LandingPmuBookingService pmuBookings;
+    private final boolean consultationEnabled;
 
     public LandingWriteController(@Value("${landing.writes.enabled:false}") boolean enabled,
+                                  @Value("${landing.consultation.enabled:false}") boolean consultationEnabled,
                                   LandingBusinessResolver resolver, LandingWriteRepository repository,
-                                  LandingAbuseGuard abuseGuard, LandingFourHandService fourHand) {
+                                  LandingAbuseGuard abuseGuard, LandingFourHandService fourHand,
+                                  LandingPmuBookingService pmuBookings) {
+        this.consultationEnabled = consultationEnabled;
+        this.pmuBookings = pmuBookings;
         this.enabled = enabled;
         this.resolver = resolver;
         this.repository = repository;
@@ -283,6 +289,109 @@ public class LandingWriteController {
         out.put("service_name", LandingFourHandService.SERVICE_NAME);
         out.put("message", LandingFourHandService.CONFIRMATION_MESSAGE);
         return created(out);
+    }
+
+    @PostMapping("/api/pmu/bookings/consultation")
+    public ResponseEntity<Map<String, Object>> pmuConsultation(@RequestBody(required = false) String raw,
+                                                               HttpServletRequest request, HttpServletResponse response) {
+        requireEnabled();
+        if (!consultationEnabled) throw new LandingException(404, "Not Found");
+        long businessId = business(request);
+        LandingBody body = LandingBody.root(parse(raw));
+        String slug = body.string("consultation_slug", true, 0, 0);
+        String teamMemberId = body.string("team_member_id", true, 0, 0);
+        String startAt = body.string("start_at", true, 0, 0);
+        LandingBody customer = body.child("customer", true);
+        String given = null;
+        String family = null;
+        String email = null;
+        String phoneRaw = null;
+        boolean optIn = false;
+        if (customer != null) {
+            given = customer.string("given_name", true, 1, 100);
+            family = customer.string("family_name", true, 1, 100);
+            email = customer.email("email_address");
+            phoneRaw = customer.string("phone_number", true, 7, 20);
+            optIn = customer.bool("marketing_opt_in", false);
+        }
+        String note = body.string("note", 500);
+        LandingTracking snapshot = body.tracking("tracking");
+        String sourceUrl = body.string("source_page_url", 500);
+        String sourceTitle = body.string("source_page_title", 300);
+        String website = body.string("website", 0);
+        body.string("form_rendered_at", 0);
+        body.integer("form_filled_ms", false, null);
+        String token = body.string("turnstile_token", 0);
+        body.string("client_ip", 64);
+        body.string("client_country_code", 8);
+        body.finish();
+
+        LandingTracking tracking = snapshot == null ? null : resolveSnapshot(request, response, snapshot);
+        LandingUserAgents.Context ctx = clientContext(request);
+        String phone = LandingPhones.forStorage(phoneRaw);
+        abuseGuard.check(businessId, "pmu_consultation", phone, ctx.ipAddress(), website, token);
+
+        LandingPmuBookingService.Request req = new LandingPmuBookingService.Request(slug, teamMemberId, startAt, given,
+                family, email, phoneRaw, optIn, note, snapshot, sourceUrl, sourceTitle, ctx.ipAddress(),
+                request.getHeader("cf-ipcountry"));
+        if (LandingAbuseGuard.isTestPhone(phone)) {
+            return created(confirmation(pmuBookings.testConfirmation(businessId, req)));
+        }
+        LandingPmuBookingService.Confirmation c = pmuBookings.bookConsultation(businessId, req);
+
+        String visitor = tracking == null ? null : tracking.visitorId();
+        String source = LandingTracking.classify(tracking);
+        String[] landing = new String[] {null, null};
+        try {
+            landing = repository.resolveLandingContext(tracking == null ? null : tracking.landingPageId(),
+                    tracking == null ? null : tracking.variantId());
+            repository.insertSubmission(businessId, visitor, "booking", tracking, ctx, c.bookingId(), c.serviceName(),
+                    BigDecimal.ZERO, email, phone, landing[0], landing[1], source);
+        } catch (RuntimeException e) {
+            log.error("Failed to record marketing submission (booking itself was unaffected)", e);
+        }
+        if (tracking != null && tracking.landingPageId() != null && tracking.variantId() != null) {
+            try {
+                repository.insertAttribution(businessId, c.bookingId(), tracking.landingPageId(), tracking.variantId(),
+                        tracking.utmSource());
+            } catch (RuntimeException e) {
+                log.error("Failed to record attribution (booking itself was unaffected)", e);
+            }
+        }
+        try {
+            repository.insertSmsConsent(businessId, phone, optIn, SMS_CONSENT_TEXT, SMS_CONSENT_VERSION, "booking",
+                    visitor, ctx.ipAddress());
+        } catch (RuntimeException e) {
+            log.error("Failed to record SMS consent (booking itself was unaffected)", e);
+        }
+        if (email != null) {
+            try {
+                repository.insertEmailConsent(businessId, email, true, EMAIL_CONSENT_TEXT, EMAIL_CONSENT_VERSION,
+                        "booking", visitor, ctx.ipAddress());
+            } catch (RuntimeException e) {
+                log.error("Failed to record email consent (booking itself was unaffected)", e);
+            }
+        }
+        try {
+            repository.updateContactAfterBooking(businessId, phone, given, email, source,
+                    tracking == null ? null : tracking.utmSource(), tracking == null ? null : tracking.utmMedium(),
+                    tracking == null ? null : tracking.utmCampaign(), tracking == null ? null : tracking.referrer(),
+                    landing[0], landing[1], ctx, optIn, email != null, c.customerId(), c.bookingId(), c.status(),
+                    LandingFourHandService.parseInstant(c.startAt()), c.serviceName(), BigDecimal.ZERO, c.artistName());
+        } catch (RuntimeException e) {
+            log.error("Failed to link contact to booking (booking itself was unaffected)", e);
+        }
+        return created(confirmation(c));
+    }
+
+    private static Map<String, Object> confirmation(LandingPmuBookingService.Confirmation c) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("booking_id", c.bookingId());
+        out.put("status", c.status());
+        out.put("start_at", c.startAt());
+        out.put("service_name", c.serviceName());
+        out.put("artist_name", c.artistName());
+        return out;
     }
 
     private static LandingUserAgents.Context clientContext(HttpServletRequest request) {

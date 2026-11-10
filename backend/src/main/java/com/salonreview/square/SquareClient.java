@@ -1812,6 +1812,57 @@ public class SquareClient {
         return resp.customer();
     }
 
+    /** Raw location record (address included), cached; for the street address in consultation texts. */
+    public com.fasterxml.jackson.databind.JsonNode landingLocation() {
+        return cached("landing:location", Duration.ofHours(1), () -> {
+            com.fasterxml.jackson.databind.JsonNode resp = throttled(() -> http.get()
+                    .uri("/v2/locations/{id}", locationId)
+                    .retrieve()
+                    .body(com.fasterxml.jackson.databind.JsonNode.class));
+            return resp == null ? com.fasterxml.jackson.databind.node.MissingNode.getInstance() : resp.path("location");
+        });
+    }
+
+    /** Creates a single-segment appointment and returns Square's raw booking. Square errors surface
+     * as RestClientResponseException so the caller can read the error codes. */
+    public com.fasterxml.jackson.databind.JsonNode landingCreateBooking(String customerId, String startAt,
+            String teamMemberId, String variationId, long variationVersion, int durationMinutes,
+            String customerNote, String sellerNote) {
+        Map<String, Object> segment = new LinkedHashMap<>();
+        segment.put("duration_minutes", durationMinutes);
+        segment.put("service_variation_id", variationId);
+        segment.put("service_variation_version", variationVersion);
+        segment.put("team_member_id", teamMemberId);
+        Map<String, Object> booking = new LinkedHashMap<>();
+        booking.put("start_at", startAt);
+        booking.put("location_id", locationId);
+        booking.put("customer_id", customerId);
+        booking.put("customer_note", customerNote);
+        if (sellerNote != null && !sellerNote.isEmpty()) booking.put("seller_note", sellerNote);
+        booking.put("appointment_segments", List.of(segment));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("idempotency_key", java.util.UUID.randomUUID().toString());
+        body.put("booking", booking);
+        com.fasterxml.jackson.databind.JsonNode resp = throttled(() -> http.post()
+                .uri("/v2/bookings")
+                .body(body)
+                .retrieve()
+                .body(com.fasterxml.jackson.databind.JsonNode.class));
+        if (resp == null || !resp.path("booking").isObject()) {
+            throw new IllegalStateException("Square did not return a booking");
+        }
+        return resp.path("booking");
+    }
+
+    /** Cancels a booking; used to roll back a reservation and to clean up verification data. */
+    public void landingCancelBooking(String bookingId) {
+        throttled(() -> http.post()
+                .uri("/v2/bookings/{id}/cancel", bookingId)
+                .body(Map.of())
+                .retrieve()
+                .toBodilessEntity());
+    }
+
     private List<Customer> searchExact(String field, String value) {
         Map<String, Object> body = Map.of("query", Map.of("filter", Map.of(field, Map.of("exact", value))));
         CustomersSearchResponse resp = throttled(() -> http.post()

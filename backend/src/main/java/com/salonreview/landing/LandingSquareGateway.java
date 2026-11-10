@@ -62,4 +62,19 @@ public class LandingSquareGateway {
                 .orElseThrow(() -> new LandingException(502, "Square is not connected for this business"));
         return new Credentials(c.applicationId(), c.locationId());
     }
+
+    public JsonNode location(long businessId) {
+        return clients.forBusiness(businessId).landingLocation();
+    }
+
+    public JsonNode createBooking(long businessId, String customerId, String startAt, String teamMemberId,
+                                  String variationId, long variationVersion, int durationMinutes, String customerNote,
+                                  String sellerNote) {
+        return clients.forBusiness(businessId).landingCreateBooking(customerId, startAt, teamMemberId, variationId,
+                variationVersion, durationMinutes, customerNote, sellerNote);
+    }
+
+    public void cancelBooking(long businessId, String bookingId) {
+        clients.forBusiness(businessId).landingCancelBooking(bookingId);
+    }
 }
