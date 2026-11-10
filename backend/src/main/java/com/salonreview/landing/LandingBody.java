@@ -158,6 +158,24 @@ final class LandingBody {
         return value;
     }
 
+    Long longInteger(String field, boolean required) {
+        JsonNode n = raw(field);
+        if (n == null) {
+            if (required) error(loc(field), "missing", "Field required");
+            return null;
+        }
+        Long value = null;
+        if (n.isIntegralNumber() && n.canConvertToLong()) {
+            value = n.asLong();
+        } else if (n.isTextual() && n.asText().trim().matches("[+-]?\\d{1,18}")) {
+            value = Long.parseLong(n.asText().trim());
+        }
+        if (value == null) {
+            error(loc(field), "int_parsing", "Input should be a valid integer, unable to parse string as an integer");
+        }
+        return value;
+    }
+
     Map<String, Object> object(String field) {
         JsonNode n = raw(field);
         if (n == null) return new LinkedHashMap<>();

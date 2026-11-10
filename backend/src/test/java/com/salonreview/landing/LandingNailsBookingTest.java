@@ -160,7 +160,7 @@ class LandingNailsBookingTest {
 
     private static String seg(String slug, String variation) {
         return "{\"service_slug\":\"" + slug + "\",\"service_variation_id\":\"" + variation
-                + "\",\"service_variation_version\":1}";
+                + "\",\"service_variation_version\":1791403939962}";
     }
 
     private long count(String table, String where) {
