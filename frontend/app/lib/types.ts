@@ -2641,3 +2641,16 @@ export interface LeadListBadge {
   spamFlag: boolean; clickedGoogle: boolean; clickedYelp: boolean; clickedFeedback: boolean;
   flag: string | null; place: string | null; scope: 'LOCAL' | 'OUT_OF_STATE' | 'INTERNATIONAL' | null;
 }
+
+export type LeadOwner = { userId: number | null; name: string | null; kind: 'ASSIGNED' | 'DEFAULT' | 'TEAM' };
+export type OwnerCandidate = { userId: number; name: string; role: string };
+export type LeadOwnersView = {
+  owners: Record<number, LeadOwner>;
+  candidates: OwnerCandidate[];
+  academyDefault: number | null;
+  canSetDefault: boolean;
+  meId: number;
+  meIsTeam: boolean;
+  mine: number[];
+};
+export type LeadOwnerCard = { owner: LeadOwner; candidates: OwnerCandidate[]; academyDefault: number | null; meId: number };

@@ -17,6 +17,8 @@ import LeadActions from '../LeadActions';
 import RemindersPanel from '../RemindersPanel';
 import ReminderSheet, { type ReachedOutBody } from '../ReminderSheet';
 import { isActive } from '../leadActions';
+import CopyButton from '../CopyButton';
+import LeadOwnerPanel from '../LeadOwnerPanel';
 import FunnelPanel, { stoppedLine, whyText } from '../FunnelPanel';
 import type { Language, LeadDetail, LeadFunnel, LeadStatus } from '../../../lib/types';
 
@@ -194,6 +196,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
         text = LOST_REASONS.includes(code) ? [t(language, `leadLost_${code}` as 'leadLost_PRICE'), ...rest].join(': ') : x.text;
       }
       if ((x.type === 'CALLBACK' || x.type === 'LAPSED') && x.text) text = fmt(x.text, language);
+      if (x.type === 'OWNER') text = x.text === 'none' ? t(language, 'ownerBackToDefault') : x.text;
       if (x.type === 'REACHED_OUT' && x.text === 'none') text = t(language, 'leadEventNOFOLLOWUP');
       else if (x.type === 'REACHED_OUT' && x.text) text = `${t(language, 'crmNextCheckIn')} ${x.text} ${t(language, 'crmDaysShort')}`;
       return { key: `e${x.id}`, at: x.createdAt, kind: manual ? 'note' : 'system', label, text, by: x.createdBy };
@@ -323,10 +326,21 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
           {overdue && <span className="rounded bg-amber-100 px-2 py-1 text-xs text-amber-800">{t(language, 'leadReminderDue')}</span>}
         </div>
         <div className="mt-2 flex flex-col gap-0.5 text-sm text-zinc-700">
-          {lead.phoneNumber && <div>{lead.phoneNumber}</div>}
-          {lead.email && <div className="break-all">{lead.email}</div>}
+          {lead.phoneNumber && (
+            <div className="flex items-center gap-1">
+              <a href={`tel:${lead.phoneNumber}`} className="font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-700">{lead.phoneNumber}</a>
+              <CopyButton value={lead.phoneNumber} language={language} />
+            </div>
+          )}
+          {lead.email && (
+            <div className="flex items-center gap-1">
+              <span className="break-all">{lead.email}</span>
+              <CopyButton value={lead.email} language={language} />
+            </div>
+          )}
           <div className="text-xs text-zinc-500">{lead.touches} {t(language, 'leadTouches')}</div>
         </div>
+        <LeadOwnerPanel leadId={lead.id} language={language} version={data.events.length} />
         <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {([
             [t(language, 'crmCreated'), fmt(lead.createdAt, language), ''],
@@ -342,7 +356,6 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
           ))}
         </dl>
         <div className="mt-3 grid grid-cols-[repeat(2,minmax(0,1fr))] gap-2 sm:flex sm:flex-wrap">
-          {lead.phoneNumber && <a href={`tel:${lead.phoneNumber}`} className={`${link} py-2.5 text-center`}>{t(language, 'crmCall')}</a>}
           {chat && <Link href={chat} className={`${link} py-2.5 text-center`}>{t(language, 'leadOpenChat')}</Link>}
           <button className={`${link} py-2.5`} onClick={openNotes}>{t(language, 'crmNoteSave')}</button>
           {lead.squareUrl

@@ -9,7 +9,7 @@ import LeadIcons from './LeadIcons';
 import ReminderSheet, { type ReachedOutBody } from './ReminderSheet';
 import OutdatedPanel, { LockIcon } from './OutdatedPanel';
 import { t } from '../../lib/i18n';
-import type { Language, Lead, LeadFunnel, LeadListBadge } from '../../lib/types';
+import type { Language, Lead, LeadFunnel, LeadListBadge, LeadOwnersView } from '../../lib/types';
 
 type Tab = 'ACTION' | 'CONSULT' | 'LAPSED' | 'CONTACTED' | 'BOOKED' | 'LOST' | 'SPAM' | 'ALL';
 const OUTDATED = 'OUTDATED' as const;
@@ -108,6 +108,19 @@ export default function LeadsManager({ initialLeads, language = null, restricted
   const [now] = useState(() => Date.now());
   const [funnels, setFunnels] = useState<Record<number, LeadFunnel[]>>({});
   const [badges, setBadges] = useState<Record<number, LeadListBadge>>({});
+  const [ownerView, setOwnerView] = useState<LeadOwnersView | null>(null);
+  const [mineOnly, setMineOnly] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/leads/owners', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) setOwnerView(d); }).catch(() => undefined);
+  }, []);
+
+  async function setAcademyDefault(userId: number) {
+    const res = await fetch('/api/leads/owners/default', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId }) });
+    if (!res.ok) return;
+    const r = await fetch('/api/leads/owners', { cache: 'no-store' });
+    if (r.ok) setOwnerView(await r.json());
+  }
 
   useEffect(() => {
     fetch('/api/leads/funnels', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : {})).then(setFunnels).catch(() => undefined);
@@ -123,12 +136,13 @@ export default function LeadsManager({ initialLeads, language = null, restricted
   }, [restricted]);
 
   const sources = useMemo(() => Array.from(new Set(leads.map((l) => l.source))).sort(), [leads]);
+  const mineSet = useMemo(() => new Set(ownerView?.mine ?? []), [ownerView]);
   const base = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return leads.filter((l) =>
-      (!source || l.source === source) && (!academyOnly || l.academy) &&
+      (!source || l.source === source) && (!academyOnly || l.academy) && (!mineOnly || mineSet.has(l.id)) &&
       (!needle || [l.name, l.phoneNumber, l.email, l.source, l.lastNote].some((v) => v?.toLowerCase().includes(needle))));
-  }, [leads, q, source, academyOnly]);
+  }, [leads, q, source, academyOnly, mineOnly, mineSet]);
   const hasAcademy = useMemo(() => leads.some((l) => l.academy), [leads]);
   const hasConsult = useMemo(() => leads.some((l) => l.consultState), [leads]);
   const hasLapsed = useMemo(() => leads.some((l) => isLapsed(l, now)), [leads, now]);
@@ -233,6 +247,15 @@ export default function LeadsManager({ initialLeads, language = null, restricted
             {outdatedTotal != null && <span className={`rounded-full px-1.5 text-xs tabular-nums ${archive ? 'bg-white/20' : 'bg-zinc-200 text-zinc-600'}`}>{outdatedTotal}</span>}
           </button>
         )}
+        {ownerView && !archive && (
+          <button
+            onClick={() => setMineOnly(!mineOnly)}
+            aria-pressed={mineOnly}
+            className={`rounded-full px-3 py-1 text-sm ring-1 ${mineOnly ? 'bg-emerald-700 text-white ring-emerald-700' : 'text-emerald-800 ring-emerald-300 hover:bg-emerald-50'}`}
+          >
+            {t(language, 'ownersMine')}
+          </button>
+        )}
         {hasAcademy && !archive && (
           <button
             onClick={() => setAcademyOnly(!academyOnly)}
@@ -243,6 +266,20 @@ export default function LeadsManager({ initialLeads, language = null, restricted
           </button>
         )}
       </div>
+
+      {ownerView?.canSetDefault && hasAcademy && !archive && (
+        <label className="flex flex-wrap items-center gap-2 text-xs text-zinc-600">
+          <span>{t(language, 'ownerAcademyDefault')}</span>
+          <select
+            value={ownerView.academyDefault ?? ''} onChange={(e) => setAcademyDefault(Number(e.target.value))}
+            className="rounded border border-zinc-300 px-2 py-1 text-sm text-zinc-900"
+          >
+            {ownerView.academyDefault == null && <option value="" disabled />}
+            {ownerView.candidates.map((c) => <option key={c.userId} value={c.userId}>{c.name}</option>)}
+          </select>
+          <span className="text-zinc-500">{t(language, 'ownerAcademyDefaultHint')}</span>
+        </label>
+      )}
 
       {archive && <OutdatedPanel language={language} onTotal={setOutdatedTotal} />}
 
@@ -292,6 +329,11 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                         <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-700">{l.attempts}/3 {t(language, 'crmAttempts')}</span>
                       )}
                       {l.academy && <span className="rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-800">{t(language, 'crmAcademy')}</span>}
+                      {ownerView?.owners[l.id] && isActive(l) && (l.academy || ownerView.owners[l.id].kind !== 'TEAM') && (
+                        <span className={`rounded-full px-1.5 py-0.5 text-xs ${ownerView.owners[l.id].userId === ownerView.meId ? 'bg-emerald-100 text-emerald-900' : 'bg-indigo-100 text-indigo-900'}`} title={t(language, 'ownerLabel')}>
+                          {ownerView.owners[l.id].name ?? t(language, 'ownerTeam')}
+                        </span>
+                      )}
                       {l.consultState === 'UPCOMING' && l.consultAt && (
                         <span className="rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-800">{t(language, 'crmConsultUpcoming')} {fmt(l.consultAt, language)}</span>
                       )}

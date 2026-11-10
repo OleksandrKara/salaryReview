@@ -1051,6 +1051,7 @@ public class LeadFollowUpService {
         Instant due = reminderDue(req.days(), req.date(), req.time(), Instant.now());
         long rid = addReminder(lead.id(), due, cleanNote(req.note()), "MANUAL", by, false);
         addEvent(lead.id(), "CALLBACK", due.toString(), by);
+        noteEvent(lead.id(), cleanNote(req.note()), by);
         return reminders(lead.id()).stream().filter(r -> r.id() == rid).findFirst().orElseThrow();
     }
 
@@ -1065,6 +1066,8 @@ public class LeadFollowUpService {
             due = reminderDue(null, cur.atZone(PT).toLocalDate().toString(), req.time(), Instant.now());
         }
         String note = req.note() == null ? null : cleanNote(req.note());
+        String oldNote = jdbc.query("SELECT note FROM lead_reminders WHERE id = ? AND lead_id = ? AND business_id = ?",
+                rs -> rs.next() ? rs.getString(1) : null, reminderId, lead.id(), business.id());
         boolean clearNote = req.note() != null && note == null;
         int n = jdbc.update("""
                 UPDATE lead_reminders SET due_at = COALESCE(?::timestamptz, due_at),
@@ -1076,6 +1079,12 @@ public class LeadFollowUpService {
         if (n == 0) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such reminder");
         syncCallback(lead.id());
         if (due != null) addEvent(lead.id(), "CALLBACK", due.toString(), by);
+        if (note != null && !note.equals(oldNote)) noteEvent(lead.id(), note, by);
+    }
+
+    /** A note typed into a reminder is also a regular note, so it shows among all the lead's notes. */
+    private void noteEvent(long leadId, String note, String by) {
+        if (note != null && !note.isBlank()) addEvent(leadId, "NOTE", note, by);
     }
 
     public void deleteReminder(long id, long reminderId, String by) {
@@ -1114,6 +1123,7 @@ public class LeadFollowUpService {
         if ("NEW".equals(lead.status())) addEvent(lead.id(), "STATUS", "CONTACTED", by);
         addEvent(lead.id(), "REACHED_OUT", due == null ? "none" : String.valueOf(java.time.temporal.ChronoUnit.DAYS.between(now.atZone(PT).toLocalDate(), due.atZone(PT).toLocalDate())), by);
         if (due != null) addEvent(lead.id(), "CALLBACK", due.toString(), by);
+        noteEvent(lead.id(), note, by);
     }
 
     static final Set<String> ATTEMPT_CHANNELS = Set.of("CALL", "SMS", "MESSAGE");
@@ -1277,6 +1287,31 @@ public class LeadFollowUpService {
         String key = leadKey(id);
         jdbc.update("UPDATE lead_intake l SET academy_override = ? WHERE l.business_id = ? AND l.outcome <> 'DUPLICATE' AND " + KEY + " = ?",
                 value, business.id(), key);
+    }
+
+    /** Explicit owner per displayed lead id; a person's rows share one owner (the latest assignment wins). */
+    java.util.Map<Long, Long> explicitOwners() {
+        java.util.Map<String, Long> byKey = new java.util.HashMap<>();
+        java.util.List<Object[]> rows = new java.util.ArrayList<>();
+        jdbc.query("SELECT l.id, l.owner_user_id, " + KEY + " AS k FROM lead_intake l WHERE l.business_id = ? AND l.outcome <> 'DUPLICATE' ORDER BY l.id",
+                rs -> {
+                    String k = rs.getString("k");
+                    Long o = (Long) rs.getObject("owner_user_id");
+                    if (o != null) byKey.put(k, o);
+                    rows.add(new Object[]{rs.getLong("id"), k});
+                }, business.id());
+        java.util.Map<Long, Long> out = new java.util.HashMap<>();
+        for (Object[] r : rows) {
+            Long o = byKey.get((String) r[1]);
+            if (o != null) out.put((Long) r[0], o);
+        }
+        return out;
+    }
+
+    void setOwner(long id, Long userId) {
+        String key = leadKey(id);
+        jdbc.update("UPDATE lead_intake l SET owner_user_id = ? WHERE l.business_id = ? AND l.outcome <> 'DUPLICATE' AND " + KEY + " = ?",
+                userId, business.id(), key);
     }
 
     private String leadKey(long id) {
