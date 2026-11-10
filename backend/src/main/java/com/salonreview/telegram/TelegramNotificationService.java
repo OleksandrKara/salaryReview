@@ -217,14 +217,21 @@ public class TelegramNotificationService {
             HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (res.statusCode() < 200 || res.statusCode() >= 300) {
                 log.warn("Inbound-SMS Telegram alert send failed: HTTP {} {}", res.statusCode(), res.body());
-                return false;
+                return sendInboundPlainFallback(businessId, phoneNumber, customerName, body);
             }
             sendPhotos(token, chatId, media);
             return true;
         } catch (Exception e) {
             log.warn("Inbound-SMS Telegram alert send failed (caller unaffected): {}", e.getMessage());
-            return false;
+            return sendInboundPlainFallback(businessId, phoneNumber, customerName, body);
         }
+    }
+
+    /** Last resort when the formatted alert fails (HTML rejected, timeout): the message text must
+     * still reach staff, so send it as plain text with no formatting. */
+    private boolean sendInboundPlainFallback(Long businessId, String phoneNumber, String customerName, String body) {
+        String who = customerName != null && !customerName.isBlank() ? customerName + " " : "";
+        return sendPlainText(businessId, "New message from " + who + formatPhoneDisplay(phoneNumber) + ":\n\n" + body);
     }
 
     /** Package-private for direct unit testing, same convention as {@link #formatMessage}. Telegram's
