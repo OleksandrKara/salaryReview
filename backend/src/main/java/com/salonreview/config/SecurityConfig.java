@@ -121,6 +121,12 @@ public class SecurityConfig {
                         // Academy lead "Stop follow-ups" link from the staff Telegram alert, same shape
                         // (AcademyLeadLinks, AcademyLeadStopController).
                         .requestMatchers("/api/public/academy-lead/stop").permitAll()
+                        // Read-only endpoints the public booking sites call (LandingReadController), same
+                        // paths the former salonLandings service served; the business comes from Host.
+                        .requestMatchers(HttpMethod.GET, "/api/health", "/api/services", "/api/artists",
+                                "/api/availability", "/api/pmu/catalog", "/api/pmu/menu", "/api/pmu/offer",
+                                "/api/pmu/availability/**", "/api/experiments/*", "/api/promos/verify",
+                                "/api/tracking/clarity-config", "/api/calendar/event.ics").permitAll()
                         // Google Ads offline-conversion CSV, fetched by Ads' scheduled upload; guarded
                         // by its own secret key (AdsConversionFeedController), 404 without it.
                         .requestMatchers(HttpMethod.GET, "/api/public/ads-conversions/pmu.csv").permitAll()

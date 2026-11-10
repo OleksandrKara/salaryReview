@@ -153,6 +153,71 @@ public class SquareClient {
         return cached("teamMembers:all", Duration.ofMinutes(5), () -> searchTeamMembers(Map.of()));
     }
 
+    /** Raw catalog objects of one type (ITEM or CATEGORY), cached briefly; backs the public
+     * landing-page read endpoints, which need fields the typed catalog records do not carry. */
+    public List<com.fasterxml.jackson.databind.JsonNode> landingCatalogObjects(String type) {
+        return cached("landing:catalog:" + type, Duration.ofMinutes(5), () -> {
+            List<com.fasterxml.jackson.databind.JsonNode> all = new ArrayList<>();
+            String cursor = null;
+            do {
+                final String c = cursor;
+                com.fasterxml.jackson.databind.JsonNode resp = throttled(() -> http.get()
+                        .uri(b -> {
+                            b.path("/v2/catalog/list").queryParam("types", type);
+                            if (c != null) b.queryParam("cursor", c);
+                            return b.build();
+                        })
+                        .retrieve()
+                        .body(com.fasterxml.jackson.databind.JsonNode.class));
+                if (resp != null && resp.path("objects").isArray()) resp.path("objects").forEach(all::add);
+                cursor = resp == null ? null : resp.path("cursor").asText(null);
+            } while (cursor != null && !cursor.isBlank());
+            return all;
+        });
+    }
+
+    /** Active team members at the configured location, raw; cached briefly. */
+    public List<com.fasterxml.jackson.databind.JsonNode> landingTeamMembers() {
+        return cached("landing:team", Duration.ofMinutes(5), () -> {
+            Map<String, Object> body = Map.of("query", Map.of("filter",
+                    Map.of("location_ids", List.of(locationId), "status", "ACTIVE")));
+            com.fasterxml.jackson.databind.JsonNode resp = throttled(() -> http.post()
+                    .uri("/v2/team-members/search")
+                    .body(body)
+                    .retrieve()
+                    .body(com.fasterxml.jackson.databind.JsonNode.class));
+            List<com.fasterxml.jackson.databind.JsonNode> out = new ArrayList<>();
+            if (resp != null && resp.path("team_members").isArray()) resp.path("team_members").forEach(out::add);
+            return out;
+        });
+    }
+
+    /** Live (uncached) booking availability for services performed back to back, raw. */
+    public List<com.fasterxml.jackson.databind.JsonNode> landingSearchAvailability(
+            List<String> serviceVariationIds, List<String> teamMemberIds, String startAt, String endAt) {
+        List<Map<String, Object>> segments = new ArrayList<>();
+        for (String variationId : serviceVariationIds) {
+            Map<String, Object> seg = new java.util.LinkedHashMap<>();
+            seg.put("service_variation_id", variationId);
+            if (teamMemberIds != null && !teamMemberIds.isEmpty()) {
+                seg.put("team_member_id_filter", Map.of("any", teamMemberIds));
+            }
+            segments.add(seg);
+        }
+        Map<String, Object> body = Map.of("query", Map.of("filter", Map.of(
+                "start_at_range", Map.of("start_at", startAt, "end_at", endAt),
+                "location_id", locationId,
+                "segment_filters", segments)));
+        com.fasterxml.jackson.databind.JsonNode resp = throttled(() -> http.post()
+                .uri("/v2/bookings/availability/search")
+                .body(body)
+                .retrieve()
+                .body(com.fasterxml.jackson.databind.JsonNode.class));
+        List<com.fasterxml.jackson.databind.JsonNode> out = new ArrayList<>();
+        if (resp != null && resp.path("availabilities").isArray()) resp.path("availabilities").forEach(out::add);
+        return out;
+    }
+
     /** Mobile number of one team member as Square stores it (E.164 or free text), or null. */
     public String teamMemberPhone(String teamMemberId) {
         com.fasterxml.jackson.databind.JsonNode resp = throttled(() -> http.get()
