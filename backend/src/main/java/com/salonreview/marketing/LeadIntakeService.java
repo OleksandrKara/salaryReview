@@ -152,7 +152,7 @@ public class LeadIntakeService {
         List<String> ts = jdbc.queryForList("""
                 SELECT COALESCE(original_traffic_source, marketing_traffic_source) FROM marketing.contacts
                 WHERE business_id = ? AND (phone_number = ? OR (?::text IS NOT NULL AND lower(email_address) = ?::text))
-                  AND COALESCE(original_traffic_source, marketing_traffic_source, '') <> ''
+                  AND COALESCE(original_traffic_source, marketing_traffic_source, '') NOT IN ('', 'Unknown')
                 ORDER BY created_at LIMIT 1
                 """, String.class, businessId, phone, email, email);
         return ts.isEmpty() ? null : ts.get(0);
@@ -267,6 +267,33 @@ public class LeadIntakeService {
         }
         n += importSquareCreated();
         n += enrichFromSquare();
+        n += resolveUnknownSources();
+        return n;
+    }
+
+    /** A lead saved before its visitor's tracking arrived has source Unknown; the website contact
+     * (marketing.contacts, written by the site's tracking call) usually knows it a few minutes later.
+     * Fills only leads with no hand-picked source, never overwrites a known one. */
+    public int resolveUnknownSources() {
+        int n = 0;
+        for (long b : enabled) {
+            List<java.util.Map<String, Object>> rows = jdbc.queryForList("""
+                    SELECT l.id, COALESCE(c.original_traffic_source, c.marketing_traffic_source) AS ts
+                    FROM lead_intake l
+                    JOIN marketing.contacts c ON c.business_id = l.business_id
+                     AND (c.phone_number = l.phone_number OR (COALESCE(l.email, '') <> '' AND lower(c.email_address) = lower(l.email)))
+                    WHERE l.business_id = ? AND NOT l.source_manual AND l.source = 'Unknown'
+                      AND COALESCE(NULLIF(c.marketing_traffic_source, 'Unknown'), NULLIF(c.original_traffic_source, 'Unknown')) IS NOT NULL
+                    """, b);
+            for (var r : rows) {
+                String ts = (String) r.get("ts");
+                if (ts == null || ts.isBlank() || "Unknown".equals(ts)) continue;
+                String label = sourceLabel(ts);
+                if ("Unknown".equals(label)) continue;
+                n += jdbc.update("UPDATE lead_intake SET source = ?, traffic_source = ? WHERE id = ? AND source = 'Unknown' AND NOT source_manual",
+                        label, ts, ((Number) r.get("id")).longValue());
+            }
+        }
         return n;
     }
 
@@ -351,7 +378,7 @@ public class LeadIntakeService {
                     square_customer_id = COALESCE(marketing.contacts.square_customer_id, EXCLUDED.square_customer_id),
                     updated_at = now()
                 """, lead.businessId(), phone, splitName(lead.name())[0], email,
-                lead.trafficSource() == null ? label : lead.trafficSource(), lead.trafficSource() == null ? label : lead.trafficSource(), customerId);
+                lead.trafficSource(), lead.trafficSource(), customerId);
     }
 
     /** Non-US numbers cannot go to Square, but the lead keeps them so one person's Academy and site rows share a key. */
