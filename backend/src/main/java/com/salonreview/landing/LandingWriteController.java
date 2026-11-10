@@ -45,13 +45,21 @@ public class LandingWriteController {
     private final LandingFourHandService fourHand;
     private final LandingPmuBookingService pmuBookings;
     private final boolean consultationEnabled;
+    private final boolean paymentsEnabled;
+    private final LandingPmuPaymentService payments;
+    private final com.salonreview.web.InternalNotificationController notifications;
 
     public LandingWriteController(@Value("${landing.writes.enabled:false}") boolean enabled,
                                   @Value("${landing.consultation.enabled:false}") boolean consultationEnabled,
+                                  @Value("${landing.payments.enabled:false}") boolean paymentsEnabled,
                                   LandingBusinessResolver resolver, LandingWriteRepository repository,
                                   LandingAbuseGuard abuseGuard, LandingFourHandService fourHand,
-                                  LandingPmuBookingService pmuBookings) {
+                                  LandingPmuBookingService pmuBookings, LandingPmuPaymentService payments,
+                                  com.salonreview.web.InternalNotificationController notifications) {
         this.consultationEnabled = consultationEnabled;
+        this.paymentsEnabled = paymentsEnabled;
+        this.payments = payments;
+        this.notifications = notifications;
         this.pmuBookings = pmuBookings;
         this.enabled = enabled;
         this.resolver = resolver;
@@ -339,20 +347,29 @@ public class LandingWriteController {
         }
         LandingPmuBookingService.Confirmation c = pmuBookings.bookConsultation(businessId, req);
 
+        recordBooking(businessId, tracking, ctx, c.bookingId(), c.serviceName(), BigDecimal.ZERO, email, phone, given,
+                optIn, c.customerId(), c.status(), c.startAt(), c.artistName());
+        return created(confirmation(c));
+    }
+
+    private void recordBooking(long businessId, LandingTracking tracking, LandingUserAgents.Context ctx,
+                               String bookingId, String serviceName, BigDecimal price, String email, String phone,
+                               String given, boolean optIn, String customerId, String status, String startAt,
+                               String artistName) {
         String visitor = tracking == null ? null : tracking.visitorId();
         String source = LandingTracking.classify(tracking);
         String[] landing = new String[] {null, null};
         try {
             landing = repository.resolveLandingContext(tracking == null ? null : tracking.landingPageId(),
                     tracking == null ? null : tracking.variantId());
-            repository.insertSubmission(businessId, visitor, "booking", tracking, ctx, c.bookingId(), c.serviceName(),
-                    BigDecimal.ZERO, email, phone, landing[0], landing[1], source);
+            repository.insertSubmission(businessId, visitor, "booking", tracking, ctx, bookingId, serviceName,
+                    price, email, phone, landing[0], landing[1], source);
         } catch (RuntimeException e) {
             log.error("Failed to record marketing submission (booking itself was unaffected)", e);
         }
         if (tracking != null && tracking.landingPageId() != null && tracking.variantId() != null) {
             try {
-                repository.insertAttribution(businessId, c.bookingId(), tracking.landingPageId(), tracking.variantId(),
+                repository.insertAttribution(businessId, bookingId, tracking.landingPageId(), tracking.variantId(),
                         tracking.utmSource());
             } catch (RuntimeException e) {
                 log.error("Failed to record attribution (booking itself was unaffected)", e);
@@ -376,12 +393,149 @@ public class LandingWriteController {
             repository.updateContactAfterBooking(businessId, phone, given, email, source,
                     tracking == null ? null : tracking.utmSource(), tracking == null ? null : tracking.utmMedium(),
                     tracking == null ? null : tracking.utmCampaign(), tracking == null ? null : tracking.referrer(),
-                    landing[0], landing[1], ctx, optIn, email != null, c.customerId(), c.bookingId(), c.status(),
-                    LandingFourHandService.parseInstant(c.startAt()), c.serviceName(), BigDecimal.ZERO, c.artistName());
+                    landing[0], landing[1], ctx, optIn, email != null, customerId, bookingId, status,
+                    LandingFourHandService.parseInstant(startAt), serviceName, price, artistName);
         } catch (RuntimeException e) {
             log.error("Failed to link contact to booking (booking itself was unaffected)", e);
         }
-        return created(confirmation(c));
+    }
+
+    private LandingPmuPaymentService.Customer customer(LandingBody customer) {
+        String given = null;
+        String family = null;
+        String email = null;
+        String phoneRaw = null;
+        boolean optIn = false;
+        if (customer != null) {
+            given = customer.string("given_name", true, 1, 100);
+            family = customer.string("family_name", true, 1, 100);
+            email = customer.email("email_address");
+            phoneRaw = customer.string("phone_number", true, 7, 20);
+            optIn = customer.bool("marketing_opt_in", false);
+        }
+        return new LandingPmuPaymentService.Customer(given, family, email, phoneRaw, optIn);
+    }
+
+    @PostMapping("/api/pmu/bookings/deposit")
+    public ResponseEntity<Map<String, Object>> pmuDeposit(@RequestBody(required = false) String raw,
+                                                          HttpServletRequest request, HttpServletResponse response) {
+        requireEnabled();
+        requirePayments();
+        long businessId = business(request);
+        LandingBody body = LandingBody.root(parse(raw));
+        String slug = body.string("technique_slug", true, 0, 0);
+        String teamMemberId = body.string("team_member_id", true, 0, 0);
+        String startAt = body.string("start_at", true, 0, 0);
+        LandingPmuPaymentService.Customer customer = customer(body.child("customer", true));
+        String sourceId = body.string("source_id", true, 1, 200);
+        String note = body.string("note", 500);
+        LandingTracking snapshot = body.tracking("tracking");
+        PromoAttempt promo = promo(body);
+        String website = body.string("website", 0);
+        body.string("form_rendered_at", 0);
+        body.integer("form_filled_ms", false, null);
+        String token = body.string("turnstile_token", 0);
+        body.finish();
+
+        LandingTracking tracking = snapshot == null ? null : resolveSnapshot(request, response, snapshot);
+        LandingUserAgents.Context ctx = clientContext(request);
+        String phone = LandingPhones.forStorage(customer.phone());
+        abuseGuard.check(businessId, "pmu_deposit", phone, ctx.ipAddress(), website, token);
+
+        LandingPmuPaymentService.Result r = payments.bookDeposit(businessId, new LandingPmuPaymentService.DepositRequest(
+                slug, teamMemberId, startAt, customer, sourceId, note, snapshot));
+        enrollPromo(businessId, promo, r, customer, phone);
+        recordBooking(businessId, tracking, ctx, r.bookingId(), r.serviceName(), BigDecimal.valueOf(r.fullPrice()),
+                customer.email(), phone, customer.givenName(), customer.marketingOptIn(), r.customerId(), r.status(),
+                r.startAt(), r.artistName());
+        return created(paymentConfirmation(r, false));
+    }
+
+    @PostMapping("/api/pmu/bookings/service")
+    public ResponseEntity<Map<String, Object>> pmuService(@RequestBody(required = false) String raw,
+                                                          HttpServletRequest request, HttpServletResponse response) {
+        requireEnabled();
+        requirePayments();
+        long businessId = business(request);
+        LandingBody body = LandingBody.root(parse(raw));
+        String variationId = body.string("variation_id", true, 0, 0);
+        String teamMemberId = body.string("team_member_id", true, 0, 0);
+        String startAt = body.string("start_at", true, 0, 0);
+        LandingPmuPaymentService.Customer customer = customer(body.child("customer", true));
+        String sourceId = body.string("source_id", 200);
+        String note = body.string("note", 500);
+        LandingTracking snapshot = body.tracking("tracking");
+        PromoAttempt promo = promo(body);
+        String offerToken = body.string("offer_token", 200);
+        boolean accepted = body.bool("deposit_policy_accepted", false);
+        body.string("source_page_url", 500);
+        body.string("source_page_title", 300);
+        String website = body.string("website", 0);
+        body.string("form_rendered_at", 0);
+        body.integer("form_filled_ms", false, null);
+        String token = body.string("turnstile_token", 0);
+        body.finish();
+
+        LandingTracking tracking = snapshot == null ? null : resolveSnapshot(request, response, snapshot);
+        LandingUserAgents.Context ctx = clientContext(request);
+        String phone = LandingPhones.forStorage(customer.phone());
+        abuseGuard.check(businessId, "pmu_service", phone, ctx.ipAddress(), website, token);
+
+        boolean test = LandingAbuseGuard.isTestPhone(phone);
+        LandingPmuPaymentService.Result r = payments.bookService(businessId, new LandingPmuPaymentService.ServiceRequest(
+                variationId, teamMemberId, startAt, customer, sourceId, note, snapshot, offerToken, accepted), test);
+        double discount = payments.offerDiscount(businessId, offerToken, r.fullPrice(), test, r.customerId(), r.startAt());
+        if (test) return created(paymentConfirmation(r.withOfferDiscount(discount), true));
+        if (promo != null && r.depositAmount() > 0) enrollPromo(businessId, promo, r, customer, phone);
+        recordBooking(businessId, tracking, ctx, r.bookingId(), r.serviceName(), BigDecimal.valueOf(r.fullPrice()),
+                customer.email(), phone, customer.givenName(), customer.marketingOptIn(), r.customerId(), r.status(),
+                r.startAt(), r.artistName());
+        return created(paymentConfirmation(r.withOfferDiscount(discount), true));
+    }
+
+    private void requirePayments() {
+        if (!paymentsEnabled) throw new LandingException(404, "Not Found");
+    }
+
+    private record PromoAttempt(String code, int expEpochSeconds, String signature) {
+    }
+
+    private static PromoAttempt promo(LandingBody body) {
+        LandingBody p = body.child("promo", false);
+        if (p == null) return null;
+        String code = p.string("code", true, 0, 0);
+        Integer exp = p.integer("exp_epoch_seconds", true, null);
+        String sig = p.string("signature", true, 0, 0);
+        return new PromoAttempt(code, exp == null ? 0 : exp, sig);
+    }
+
+    /** Best-effort, like the Python relay: the booking has already succeeded, so nothing here may fail it. */
+    private void enrollPromo(long businessId, PromoAttempt promo, LandingPmuPaymentService.Result r,
+                             LandingPmuPaymentService.Customer c, String phone) {
+        if (promo == null) return;
+        try {
+            notifications.enrollRebookingPromo(new com.salonreview.web.InternalNotificationController.RebookingPromoEnrollRequest(
+                    r.customerId(), promo.expEpochSeconds(), promo.signature(),
+                    (c.givenName() + " " + c.familyName()).strip(), phone, r.startAt(), promo.code(), null, businessId));
+        } catch (RuntimeException e) {
+            log.warn("Rebooking-promo enroll failed (booking itself was unaffected): {}", e.toString());
+        }
+    }
+
+    private static Map<String, Object> paymentConfirmation(LandingPmuPaymentService.Result r, boolean service) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("booking_id", r.bookingId());
+        out.put("status", r.status());
+        out.put("start_at", r.startAt());
+        out.put("duration_minutes", r.durationMinutes());
+        out.put("service_name", r.serviceName());
+        out.put("full_price", r.fullPrice());
+        out.put("deposit_amount", r.depositAmount());
+        out.put("remaining_balance", r.remainingBalance());
+        out.put("artist_name", r.artistName());
+        out.put("payment_id", r.paymentId());
+        if (service) out.put("offer_discount", r.offerDiscount());
+        return out;
     }
 
     private static Map<String, Object> confirmation(LandingPmuBookingService.Confirmation c) {

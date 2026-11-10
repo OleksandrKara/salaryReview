@@ -1863,6 +1863,43 @@ public class SquareClient {
                 .toBodilessEntity());
     }
 
+    /** Charges a card nonce at this client's location (autocomplete). A reused idempotency key returns
+     * the original payment, so a retry after a lost response cannot double-charge. Square errors
+     * surface as RestClientResponseException so the caller can read the error codes. */
+    public com.fasterxml.jackson.databind.JsonNode landingCreatePayment(String idempotencyKey, String sourceId,
+            long amountCents, String customerId, String note) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("source_id", sourceId);
+        body.put("idempotency_key", idempotencyKey);
+        body.put("amount_money", Map.of("amount", amountCents, "currency", "USD"));
+        body.put("location_id", locationId);
+        body.put("customer_id", customerId);
+        body.put("note", note);
+        body.put("autocomplete", true);
+        com.fasterxml.jackson.databind.JsonNode resp = throttled(() -> http.post()
+                .uri("/v2/payments")
+                .body(body)
+                .retrieve()
+                .body(com.fasterxml.jackson.databind.JsonNode.class));
+        if (resp == null || !resp.path("payment").isObject()) {
+            throw new IllegalStateException("Square did not return a payment");
+        }
+        return resp.path("payment");
+    }
+
+    /** Refunds a payment in full; used only to clean up verification charges. */
+    public com.fasterxml.jackson.databind.JsonNode landingRefundPayment(String paymentId, long amountCents) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("idempotency_key", java.util.UUID.randomUUID().toString());
+        body.put("payment_id", paymentId);
+        body.put("amount_money", Map.of("amount", amountCents, "currency", "USD"));
+        return throttled(() -> http.post()
+                .uri("/v2/refunds")
+                .body(body)
+                .retrieve()
+                .body(com.fasterxml.jackson.databind.JsonNode.class));
+    }
+
     private List<Customer> searchExact(String field, String value) {
         Map<String, Object> body = Map.of("query", Map.of("filter", Map.of(field, Map.of("exact", value))));
         CustomersSearchResponse resp = throttled(() -> http.post()

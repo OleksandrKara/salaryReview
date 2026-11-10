@@ -93,10 +93,10 @@ class LandingPmuConsultationTest {
         LandingAbuseGuard guard = new LandingAbuseGuard(repository, new TurnstileVerifier("", "http://127.0.0.1:1/unused"));
         LandingFourHandService fourHand = new LandingFourHandService(provider, telegram, sms, businesses);
         LandingPmuBookingService bookings = new LandingPmuBookingService(gateway, fourHand, telegram, sms, geoIp);
-        mvc = MockMvcBuilders.standaloneSetup(new LandingWriteController(true, true, new LandingBusinessResolver(businesses),
-                repository, guard, fourHand, bookings)).setControllerAdvice(new LandingWriteAdvice()).build();
-        disabled = MockMvcBuilders.standaloneSetup(new LandingWriteController(true, false,
-                new LandingBusinessResolver(businesses), repository, guard, fourHand, bookings))
+        mvc = MockMvcBuilders.standaloneSetup(new LandingWriteController(true, true, false, new LandingBusinessResolver(businesses),
+                repository, guard, fourHand, bookings, null, null)).setControllerAdvice(new LandingWriteAdvice()).build();
+        disabled = MockMvcBuilders.standaloneSetup(new LandingWriteController(true, false, false,
+                new LandingBusinessResolver(businesses), repository, guard, fourHand, bookings, null, null))
                 .setControllerAdvice(new LandingWriteAdvice()).build();
 
         jdbc.update("INSERT INTO marketing.landing_pages (id, name, slug, business_id) VALUES "

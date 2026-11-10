@@ -15,6 +15,14 @@ import java.util.Optional;
 
 public interface SmsMessageRepository extends JpaRepository<SmsMessage, Long> {
 
+    @Query("SELECT m FROM SmsMessage m WHERE m.direction = 'INBOUND' AND m.telegramAlertedAt IS NULL "
+            + "AND m.createdAt < :before AND m.createdAt > :after ORDER BY m.id")
+    List<SmsMessage> findUnalertedInbound(@Param("before") Instant before, @Param("after") Instant after);
+
+    @Modifying
+    @Query("UPDATE SmsMessage m SET m.telegramAlertedAt = :at WHERE m.id = :id AND m.telegramAlertedAt IS NULL")
+    int markTelegramAlerted(@Param("id") Long id, @Param("at") Instant at);
+
     /** One row per distinct phone number this salon has ever texted with, most-recent-message-
      * first — backs the manager conversation view's contact list (see
      * openspec/changes/lead-followup-and-manager-inbox design.md D8). */
