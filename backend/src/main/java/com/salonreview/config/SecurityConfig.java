@@ -131,7 +131,7 @@ public class SecurityConfig {
                         // landing.writes.enabled is set.
                         .requestMatchers(HttpMethod.POST, "/api/tracking/visit", "/api/tracking/event",
                                 "/api/tracking/funnel-event", "/api/contacts",
-                                "/api/bookings/four-hand-request", "/api/pmu/bookings/consultation", "/api/pmu/bookings/deposit", "/api/pmu/bookings/service").permitAll()
+                                "/api/bookings", "/api/bookings/four-hand-request", "/api/pmu/bookings/consultation", "/api/pmu/bookings/deposit", "/api/pmu/bookings/service").permitAll()
                         // Google Ads offline-conversion CSV, fetched by Ads' scheduled upload; guarded
                         // by its own secret key (AdsConversionFeedController), 404 without it.
                         .requestMatchers(HttpMethod.GET, "/api/public/ads-conversions/pmu.csv").permitAll()
