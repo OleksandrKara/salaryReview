@@ -22,11 +22,10 @@ public class ExperimentLandingService {
             "SELECT id::text AS id, name, weight, content::text AS content FROM marketing.landing_variants ";
 
     private final JdbcTemplate jdbc;
-    private final ObjectMapper mapper;
+    private final ObjectMapper mapper = new ObjectMapper();
 
-    public ExperimentLandingService(JdbcTemplate jdbc, ObjectMapper mapper) {
+    public ExperimentLandingService(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
-        this.mapper = mapper;
     }
 
     public Map<String, Object> resolve(String slug, String variantKey) {

@@ -54,7 +54,7 @@ class LandingReadControllerTest {
         LandingBusinessResolver resolver = new LandingBusinessResolver(businesses);
         LandingReadController controller = new LandingReadController(resolver, new NailsLandingService(square),
                 new PmuLandingService(square, mock(ConsultationOfferService.class)),
-                new ExperimentLandingService(jdbc, JSON), signer, mock(PromoConfigService.class), tracking);
+                new ExperimentLandingService(jdbc), signer, mock(PromoConfigService.class), tracking);
         mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new LandingExceptionAdvice()).build();
 
         Business pmu = mock(Business.class);
