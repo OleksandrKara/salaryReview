@@ -231,7 +231,7 @@ public class LandingWriteController {
                 for (LandingBody s : segments) {
                     String slug = s.string("service_slug", true, 0, 0);
                     String variation = s.string("service_variation_id", true, 0, 0);
-                    s.integer("service_variation_version", true, null);
+                    s.longInteger("service_variation_version", true);
                     picks.add(new NailsLandingService.SegmentPick(slug, variation));
                 }
             }
@@ -303,7 +303,7 @@ public class LandingWriteController {
                 for (LandingBody s : segments) {
                     s.string("service_slug", true, 0, 0);
                     s.string("service_variation_id", true, 0, 0);
-                    s.integer("service_variation_version", true, null);
+                    s.longInteger("service_variation_version", true);
                 }
             }
         }
