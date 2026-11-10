@@ -215,6 +215,24 @@ class LandingReadControllerTest {
     }
 
     @Test
+    void experimentVariantContentIsRawJson() throws Exception {
+        when(jdbc.queryForList(org.mockito.ArgumentMatchers.startsWith("SELECT id::text FROM marketing.landing_pages"),
+                eq(String.class), any(Object[].class))).thenReturn(List.of("page-1"));
+        when(jdbc.queryForList(org.mockito.ArgumentMatchers.contains("key = ?"), any(Object[].class)))
+                .thenReturn(List.of(new LinkedHashMap<>(Map.of("id", "v1", "name", "Version 7", "weight", 50,
+                        "content", "{\"headline\":\"Hi\",\"n\":3,\"tags\":[\"a\"],\"nested\":{\"x\":null}}"))));
+        mvc.perform(get("/api/experiments/mani").param("variant_key", "version-7"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.experiment_status").value("forced"))
+                .andExpect(jsonPath("$.variants[0].content.headline").value("Hi"))
+                .andExpect(jsonPath("$.variants[0].content.n").value(3))
+                .andExpect(jsonPath("$.variants[0].content.tags[0]").value("a"))
+                .andExpect(jsonPath("$.variants[0].content.nested.x").doesNotExist())
+                .andExpect(jsonPath("$.variants[0].content.array").doesNotExist())
+                .andExpect(jsonPath("$.variants[0].content.bigDecimal").doesNotExist());
+    }
+
+    @Test
     void invalidPromoReturnsNulls() throws Exception {
         when(signer.verify("x", 1L, "x")).thenReturn(false);
         mvc.perform(get("/api/promos/verify?code=x&exp=1&sig=x").header("Host", "mani.akluxnails.com"))
