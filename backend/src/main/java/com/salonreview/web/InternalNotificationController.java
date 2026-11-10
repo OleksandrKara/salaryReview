@@ -223,27 +223,32 @@ public class InternalNotificationController {
         if (!keyMatches(key)) {
             return ResponseEntity.status(401).build();
         }
+        return ResponseEntity.ok(enrollRebookingPromo(body));
+    }
+
+    /** The enrollment itself, also called in-process by the landing booking endpoints. */
+    public Map<String, Object> enrollRebookingPromo(RebookingPromoEnrollRequest body) {
         String promoCode = resolvePromoCode(body.promoCode());
         if (!promoSigner.verify(promoCode, body.expEpochSeconds(), body.signature())) {
-            return ResponseEntity.ok(Map.of("enrolled", false, "reason", "invalid_signature"));
+            return Map.of("enrolled", false, "reason", "invalid_signature");
         }
         Instant expiresAt = Instant.ofEpochSecond(body.expEpochSeconds());
         if (expiresAt.isBefore(Instant.now())) {
-            return ResponseEntity.ok(Map.of("enrolled", false, "reason", "expired"));
+            return Map.of("enrolled", false, "reason", "expired");
         }
         // VIP perk: only for a next visit within 4 weeks (akluxnails-home already blocks a later
         // date before booking; this is the server-side backstop).
         if (PromoConfigService.VIP_PROMO_CODE.equals(promoCode) && !withinVipWindow(body.appointmentStartAt())) {
-            return ResponseEntity.ok(Map.of("enrolled", false, "reason", "outside_window"));
+            return Map.of("enrolled", false, "reason", "outside_window");
         }
         Business business = resolveBusiness(body.businessShortCode(), body.businessId());
         if (business == null) {
-            return ResponseEntity.ok(Map.of("enrolled", false, "reason", "unknown_business"));
+            return Map.of("enrolled", false, "reason", "unknown_business");
         }
         Long businessId = business.getId();
         Optional<PromoConfigService.PromoTerms> terms = promoConfigService.get(businessId, promoCode);
         if (terms.isEmpty()) {
-            return ResponseEntity.ok(Map.of("enrolled", false, "reason", "not_configured"));
+            return Map.of("enrolled", false, "reason", "not_configured");
         }
         String groupId = terms.get().squareCustomerGroupId();
         try {
@@ -251,7 +256,7 @@ public class InternalNotificationController {
                     .addCustomerToGroup(body.squareCustomerId(), groupId);
         } catch (RuntimeException e) {
             log.warn("Failed to enroll customer {} in {} group: {}", body.squareCustomerId(), promoCode, e.getMessage());
-            return ResponseEntity.ok(Map.of("enrolled", false, "reason", "square_error"));
+            return Map.of("enrolled", false, "reason", "square_error");
         }
         groupMembershipRepository.save(SameDayRebookingGroupMembership.builder()
                 .businessId(businessId)
@@ -263,7 +268,7 @@ public class InternalNotificationController {
         // notification in this codebase is decoupled from the primary action it accompanies.
         telegram.sendRebookingPromoAlert(businessId, body.customerName(), body.phoneNumber(), body.appointmentStartAt(),
                 resolveTechnicianName(businessId, body.squareCustomerId(), body.appointmentStartAt()));
-        return ResponseEntity.ok(Map.of("enrolled", true));
+        return Map.of("enrolled", true);
     }
 
     /** Best-effort display name of the technician on the just-created booking (matched by customer

@@ -21,6 +21,7 @@ x-backend-env: &backend-env
   # fails open when the secret is blank, so it must be set before traffic is switched.
   LANDING_WRITES_ENABLED: ${LANDING_WRITES_ENABLED:-false}
   LANDING_CONSULTATION_ENABLED: ${LANDING_CONSULTATION_ENABLED:-false}
+  LANDING_PAYMENTS_ENABLED: ${LANDING_PAYMENTS_ENABLED:-false}
   TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
   SQUARE_LOCATION_ID: ${SQUARE_LOCATION_ID:-}
   # Phase 3 multi-account Square support (SquareConnectionBootstrap/SquareCredentialCipher) — AES

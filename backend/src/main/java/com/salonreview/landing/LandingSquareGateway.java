@@ -77,4 +77,13 @@ public class LandingSquareGateway {
     public void cancelBooking(long businessId, String bookingId) {
         clients.forBusiness(businessId).landingCancelBooking(bookingId);
     }
+
+    public JsonNode createPayment(long businessId, String idempotencyKey, String sourceId, long amountCents,
+                                  String customerId, String note) {
+        return clients.forBusiness(businessId).landingCreatePayment(idempotencyKey, sourceId, amountCents, customerId, note);
+    }
+
+    public JsonNode refundPayment(long businessId, String paymentId, long amountCents) {
+        return clients.forBusiness(businessId).landingRefundPayment(paymentId, amountCents);
+    }
 }

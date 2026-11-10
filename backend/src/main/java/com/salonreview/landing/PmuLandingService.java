@@ -243,6 +243,33 @@ public class PmuLandingService {
         return out;
     }
 
+    /** One bookable menu option with its service name, as the booking endpoints need it. */
+    record FoundOption(String serviceName, String variationId, long variationVersion, List<String> teamMemberIds,
+                       double price, int durationMinutes, double depositAmount) {
+    }
+
+    /** Looks a variation up in the live menu (same rules as {@link #menu}); empty when it is not bookable. */
+    java.util.Optional<FoundOption> findOption(long businessId, String variationId) {
+        Map<String, JsonNode> items = square.items(businessId);
+        Map<String, String> categories = square.categoryNames(businessId);
+        Map<String, JsonNode> team = square.team(businessId);
+        Function<String, String> artistName = id -> {
+            JsonNode m = team.get(id);
+            return m == null ? null : NailsLandingService.displayName(m);
+        };
+        for (JsonNode item : items.values()) {
+            Placed placed = place(item, categories, artistName);
+            if (placed == null) continue;
+            for (Option o : placed.service().options) {
+                if (o.variationId.equals(variationId)) {
+                    return java.util.Optional.of(new FoundOption(placed.service().name, o.variationId,
+                            o.variationVersion, o.teamMemberIds, o.price, o.durationMinutes, o.depositAmount));
+                }
+            }
+        }
+        return java.util.Optional.empty();
+    }
+
     private static Map<String, Object> section(String key, String title, String subtitle, List<Map<String, Object>> groups,
                                                String externalUrl, boolean contactOnly) {
         Map<String, Object> m = new LinkedHashMap<>();
