@@ -18,7 +18,7 @@ const STEP_DOT: Record<string, string> = {
   PENDING: 'bg-white border-zinc-400',
   NOT_SENT: 'bg-white border-zinc-300',
 };
-const WHY = ['late', 'no_phone', 'no_email', 'not_configured', 'no_template', 'texted_us', 'booked', 'disabled', 'recently_sent', 'no_consent', 'skipped', 'not_sent', 'send_failed'];
+const WHY = ['late', 'no_phone', 'no_email', 'not_configured', 'no_template', 'texted_us', 'booked', 'disabled', 'staff', 'recently_sent', 'no_consent', 'skipped', 'not_sent', 'send_failed'];
 const VIA = ['crm', 'telegram_link', 'client_reply', 'duplicate', 'booked', 'system', 'unknown'];
 
 export function whyText(detail: string | null, language: Language | null): string | null {

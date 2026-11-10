@@ -317,11 +317,13 @@ public class LeadFunnelService {
         boolean allDecided = st.stream().noneMatch(String::isEmpty);
         boolean aged = row.createdAt().isBefore(now.minus(SITE_MAX_AGE));
         String state;
-        if (allDecided || aged) state = reason != null && !"SENT".equals(row.state()) && !aged ? "STOPPED" : "FINISHED";
+        if (st.contains("SKIPPED_STAFF")) { state = "STOPPED"; reason = "STAFF"; }
+        else if (allDecided || aged) state = reason != null && !"SENT".equals(row.state()) && !aged ? "STOPPED" : "FINISHED";
         else if (reason != null) state = "STOPPED";
         else if (!automations.isEnabled(businessId, "lead_follow_up")) { state = "PAUSED"; reason = "AUTOMATION_OFF"; }
         else state = "ACTIVE";
-        return new Funnel(SITE, state, "FINISHED".equals(state) ? null : reason, steps, false, false, row.createdAt().toString());
+        return new Funnel(SITE, state, "FINISHED".equals(state) ? null : reason, steps, false,
+                "ACTIVE".equals(state) || "PAUSED".equals(state), row.createdAt().toString());
     }
 
     public void applyAcademy(long businessId, long leadId, String by) {
@@ -358,6 +360,15 @@ public class LeadFunnelService {
                     WHERE business_id = ? AND stop_reason IS NULL
                       AND right(regexp_replace(coalesce(phone_number, ''), '\\D', '', 'g'), 10) = ?
                     """, by, cleanNote, businessId, pk);
+        } else if (SITE.equals(key) && pk != null) {
+            n = jdbc.update("""
+                    UPDATE lead_followup_send SET
+                      email_followup_state = COALESCE(email_followup_state, 'SKIPPED_STAFF'),
+                      sms_followup_state = COALESCE(sms_followup_state, 'SKIPPED_STAFF')
+                    WHERE business_id = ? AND state = 'SENT' AND created_at > now() - interval '120 days'
+                      AND (email_followup_state IS NULL OR sms_followup_state IS NULL)
+                      AND right(regexp_replace(coalesce(phone_number, ''), '\\D', '', 'g'), 10) = ?
+                    """, businessId, pk);
         } else {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "this funnel cannot be stopped manually");
         }
