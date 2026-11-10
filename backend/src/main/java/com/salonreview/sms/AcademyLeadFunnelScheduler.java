@@ -4,6 +4,7 @@ import com.salonreview.domain.MailchimpConfig;
 import com.salonreview.marketing.ConsultationCatalog;
 import com.salonreview.marketing.MarketingContactsRepository;
 import com.salonreview.repo.MailchimpConfigRepository;
+import com.salonreview.telegram.TelegramNotificationService;
 import com.salonreview.util.Names;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
@@ -89,20 +90,21 @@ public class AcademyLeadFunnelScheduler {
     private final MarketingContactsRepository contacts;
     private final MailchimpClient mailchimpClient;
     private final ConsultationCatalog consultations;
+    private final TelegramNotificationService telegram;
     private final Clock clock;
 
     @Autowired
     public AcademyLeadFunnelScheduler(JdbcTemplate jdbc, SmsAutomationService automationService, TwilioSmsService smsService,
                                       MailchimpConfigRepository mailchimpConfigs, MailchimpEmailService mailchimp,
                                       MailchimpEmailTemplateService templates, MarketingContactsRepository contacts,
-                                      MailchimpClient mailchimpClient, ConsultationCatalog consultations) {
-        this(jdbc, automationService, smsService, mailchimpConfigs, mailchimp, templates, contacts, mailchimpClient, consultations, Clock.systemUTC());
+                                      MailchimpClient mailchimpClient, ConsultationCatalog consultations, TelegramNotificationService telegram) {
+        this(jdbc, automationService, smsService, mailchimpConfigs, mailchimp, templates, contacts, mailchimpClient, consultations, telegram, Clock.systemUTC());
     }
 
     AcademyLeadFunnelScheduler(JdbcTemplate jdbc, SmsAutomationService automationService, TwilioSmsService smsService,
                                MailchimpConfigRepository mailchimpConfigs, MailchimpEmailService mailchimp,
                                MailchimpEmailTemplateService templates, MarketingContactsRepository contacts,
-                               MailchimpClient mailchimpClient, ConsultationCatalog consultations, Clock clock) {
+                               MailchimpClient mailchimpClient, ConsultationCatalog consultations, TelegramNotificationService telegram, Clock clock) {
         this.jdbc = jdbc;
         this.automationService = automationService;
         this.smsService = smsService;
@@ -112,6 +114,7 @@ public class AcademyLeadFunnelScheduler {
         this.contacts = contacts;
         this.mailchimpClient = mailchimpClient;
         this.consultations = consultations;
+        this.telegram = telegram;
         this.clock = clock;
     }
 
@@ -270,6 +273,29 @@ public class AcademyLeadFunnelScheduler {
         } catch (Exception e) {
             log.warn("Academy funnel: {} email for lead {} failed (not retried): {}", step.key(), lead.id(), e.getMessage());
             finish(lead, step, "send_failed", e.getMessage());
+            alertEmailFailed(lead, step, e.getMessage());
+        }
+    }
+
+    private static final int EMAIL_FAIL_ALERTS_PER_HOUR = 3;
+
+    /** One staff alert per failed email (a failed step is never retried, so no repeats), capped per
+     * hour so a Mailchimp outage can't flood the chat. The SMS still reaches the person; staff can
+     * fix a mistyped address by phone. */
+    private void alertEmailFailed(Lead lead, Step step, String error) {
+        try {
+            Integer recent = jdbc.queryForObject("SELECT count(*) FROM academy_lead_touch WHERE channel = 'email'"
+                    + " AND state = 'send_failed' AND created_at > now() - interval '1 hour'", Integer.class);
+            if (recent != null && recent > EMAIL_FAIL_ALERTS_PER_HOUR) {
+                log.warn("Academy funnel: email failure alert for lead {} suppressed (hourly cap)", lead.id());
+                return;
+            }
+            String reason = error != null && error.contains("looks fake or invalid") ? "the address looks mistyped" : "Mailchimp error";
+            telegram.sendPlainAlert(BUSINESS_ID, "Academy request: the confirmation email did not go out to " + lead.name()
+                    + " (" + lead.email() + "), " + reason + ". Phone " + lead.phone()
+                    + ". Please check the address with the client.");
+        } catch (RuntimeException ex) {
+            log.warn("Academy funnel: email failure alert for lead {} failed: {}", lead.id(), ex.getMessage());
         }
     }
 
