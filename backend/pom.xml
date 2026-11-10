@@ -128,6 +128,13 @@
 			<artifactId>jsoup</artifactId>
 			<version>1.21.2</version>
 		</dependency>
+		<!-- Landing write endpoints: device/OS/browser from the User-Agent, same uap-core regexes the
+		     former salonLandings (Python ua-parser) used. -->
+		<dependency>
+			<groupId>com.github.ua-parser</groupId>
+			<artifactId>uap-java</artifactId>
+			<version>1.6.1</version>
+		</dependency>
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>

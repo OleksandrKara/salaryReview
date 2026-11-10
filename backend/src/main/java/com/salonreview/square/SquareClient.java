@@ -1779,6 +1779,39 @@ public class SquareClient {
         return out;
     }
 
+    /** First customer matching an exact field (limit 1), as the public landing forms look people up. */
+    public Customer firstCustomerExact(String field, String value) {
+        Map<String, Object> body = Map.of("query", Map.of("filter", Map.of(field, Map.of("exact", value))), "limit", 1);
+        CustomersSearchResponse resp = throttled(() -> http.post()
+                .uri("/v2/customers/search")
+                .body(body)
+                .retrieve()
+                .body(CustomersSearchResponse.class));
+        return resp == null || resp.customers() == null || resp.customers().isEmpty() ? null : resp.customers().get(0);
+    }
+
+    /** Customer created by a public landing form: the phone goes in exactly as submitted, and the
+     * profile carries the same reference_id the former landing service used. */
+    public Customer createLandingCustomer(String givenName, String familyName, String rawPhone, String email,
+                                          String referenceId) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("idempotency_key", java.util.UUID.randomUUID().toString());
+        body.put("given_name", givenName);
+        body.put("family_name", familyName);
+        if (email != null) body.put("email_address", email);
+        body.put("phone_number", rawPhone);
+        body.put("reference_id", referenceId);
+        CustomerResponse resp = throttled(() -> http.post()
+                .uri("/v2/customers")
+                .body(body)
+                .retrieve()
+                .body(CustomerResponse.class));
+        if (resp == null || resp.customer() == null || resp.customer().id() == null) {
+            throw new IllegalStateException("Square did not return a customer");
+        }
+        return resp.customer();
+    }
+
     private List<Customer> searchExact(String field, String value) {
         Map<String, Object> body = Map.of("query", Map.of("filter", Map.of(field, Map.of("exact", value))));
         CustomersSearchResponse resp = throttled(() -> http.post()
