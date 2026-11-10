@@ -240,10 +240,10 @@ public class LeadsController {
     /** Owner of every lead the caller can see, who can be picked, and which leads are the caller's own. */
     @GetMapping("/owners")
     public OwnersView allOwners(@AuthenticationPrincipal AppUserPrincipal me) {
-        Map<Long, LeadOwnerService.Owner> map = owners.forLeads(list(null, me));
+        Map<Long, LeadOwnerService.Owner> map = owners.forLeads(list(null, me), me == null ? null : me.getUserId());
         boolean team = me != null && !academyOnly(me);
         long meId = me == null ? 0 : me.getUserId();
-        return new OwnersView(map, owners.candidates(), owners.academyDefault(), me != null && "OWNER".equals(me.getRole().name()),
+        return new OwnersView(map, owners.candidates(me == null ? null : me.getUserId()), owners.academyDefault(), me != null && "OWNER".equals(me.getRole().name()),
                 meId, team, owners.mine(map, meId, team));
     }
 
@@ -252,14 +252,14 @@ public class LeadsController {
     @GetMapping("/{id}/owner")
     public OwnerCard leadOwner(@PathVariable long id, @AuthenticationPrincipal AppUserPrincipal me) {
         guard(id, me);
-        LeadOwnerService.Info i = owners.info(id);
+        LeadOwnerService.Info i = owners.info(id, me == null ? null : me.getUserId());
         return new OwnerCard(i.owner(), i.candidates(), i.academyDefault(), me == null ? 0 : me.getUserId());
     }
 
     @PutMapping("/{id}/owner")
     public ResponseEntity<Void> setOwner(@PathVariable long id, @RequestBody Map<String, Long> body, @AuthenticationPrincipal AppUserPrincipal me) {
         guard(id, me);
-        owners.assign(id, body == null ? null : body.get("userId"), me == null ? null : me.getUsername());
+        owners.assign(id, body == null ? null : body.get("userId"), me == null ? null : me.getUsername(), me == null ? null : me.getUserId());
         return ResponseEntity.noContent().build();
     }
 
@@ -269,7 +269,7 @@ public class LeadsController {
         if (me == null || !"OWNER".equals(me.getRole().name())) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "owner only");
         Long uid = body == null ? null : body.get("userId");
         if (uid == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "userId required");
-        owners.setAcademyDefault(uid, me.getUsername());
+        owners.setAcademyDefault(uid, me.getUsername(), me.getUserId());
         return ResponseEntity.noContent().build();
     }
 }

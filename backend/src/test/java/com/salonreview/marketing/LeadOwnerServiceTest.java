@@ -22,7 +22,7 @@ class LeadOwnerServiceTest {
     void setUp() {
         leads = mock(LeadFollowUpService.class);
         svc = new LeadOwnerService(null, null, leads) {
-            @Override public List<Candidate> candidates() {
+            @Override public List<Candidate> candidates(Long meId) {
                 return List.of(new Candidate(31, "Alex", "OWNER"), new Candidate(42, "Anastasiia", "MANAGER"), new Candidate(17, "Manager", "MANAGER"));
             }
             @Override public Long academyDefault() { return 42L; }
