@@ -104,9 +104,9 @@ public class ShortLinkController {
      * only for a business that hasn't been set up with one yet (see {@link Business#getPublicDomain()}),
      * rather than ever pointing a click-tracked link at a domain that isn't this business's own. */
     private String publicSiteFor(Business business) {
-        String domain = business.getPublicDomain();
-        if (domain != null && !domain.isBlank()) {
-            return "https://" + domain;
+        String siteUrl = business.publicSiteUrl();
+        if (siteUrl != null) {
+            return siteUrl;
         }
         return landingProperties.baseUrlFor("home");
     }
