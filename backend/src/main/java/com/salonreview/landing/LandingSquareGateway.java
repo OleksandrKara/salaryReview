@@ -74,6 +74,16 @@ public class LandingSquareGateway {
                 variationVersion, durationMinutes, customerNote, sellerNote);
     }
 
+    public JsonNode createBooking(long businessId, String customerId, String startAt, String teamMemberId,
+                                  List<SquareClient.LandingSegment> segments, String customerNote) {
+        return clients.forBusiness(businessId).landingCreateBooking(customerId, startAt, teamMemberId, segments,
+                customerNote, null);
+    }
+
+    public JsonNode bookingProfile(long businessId) {
+        return clients.forBusiness(businessId).landingBookingProfile();
+    }
+
     public void cancelBooking(long businessId, String bookingId) {
         clients.forBusiness(businessId).landingCancelBooking(bookingId);
     }

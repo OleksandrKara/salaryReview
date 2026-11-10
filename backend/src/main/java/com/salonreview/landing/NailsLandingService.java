@@ -239,6 +239,55 @@ public class NailsLandingService {
         return null;
     }
 
+    // ---- booking resolution ----
+
+    public record SegmentPick(String slug, String variationId) {
+    }
+
+    public record ResolvedSegment(String name, String variationId, long variationVersion, int durationMinutes,
+                                  double price, Double compareAtPrice, String tier) {
+    }
+
+    public record ResolvedBooking(List<ResolvedSegment> segments, String artistName) {
+    }
+
+    /** Prices, versions and durations come from the live catalog, never from the request. */
+    public ResolvedBooking resolveBooking(long businessId, List<SegmentPick> picks, String teamMemberId) {
+        CartMenu menu = buildCartMenu(businessId, square.items(businessId));
+        List<ResolvedSegment> resolved = new ArrayList<>();
+        for (SegmentPick pick : picks) resolved.add(resolveSegment(menu, pick.slug(), pick.variationId()));
+        if (resolved.isEmpty()) throw new LandingException(400, "No services selected.");
+        return new ResolvedBooking(resolved, artistName(businessId, menu, teamMemberId));
+    }
+
+    private ResolvedSegment resolveSegment(CartMenu menu, String slug, String variationId) {
+        for (Offer offer : List.of(menu.manicure(), menu.pedicure())) {
+            if (!offer.slug().equals(slug)) continue;
+            TierPricing p = offer.pricing().stream().filter(t -> t.variationId().equals(variationId)).findFirst()
+                    .orElseThrow(() -> new LandingException(400,
+                            "'" + slug + "' pricing no longer matches variation '" + variationId + "'."));
+            return new ResolvedSegment(offer.name(), p.variationId(), p.variationVersion(), p.durationMinutes(), p.price(),
+                    p.compareAtPrice(), p.tier());
+        }
+        Addon d = menu.design();
+        if (slug.equals(d.slug()) && variationId.equals(d.variationId())) {
+            return new ResolvedSegment(d.name(), d.variationId(), d.variationVersion(), d.durationMinutes(), d.price(),
+                    null, null);
+        }
+        throw new LandingException(400, "Unknown service '" + slug + "' with variation '" + variationId + "'.");
+    }
+
+    private String artistName(long businessId, CartMenu menu, String teamMemberId) {
+        try {
+            for (ArtistRow a : listArtists(menu, square.team(businessId))) {
+                if (a.id().equals(teamMemberId)) return a.displayName();
+            }
+        } catch (RuntimeException e) {
+            return null;
+        }
+        return null;
+    }
+
     // ---- artists ----
 
     private record ArtistRow(String id, String displayName, String tier, Map<String, Object> json) {

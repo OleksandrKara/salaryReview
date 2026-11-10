@@ -49,13 +49,30 @@ public class LandingWriteController {
     private final LandingPmuPaymentService payments;
     private final com.salonreview.web.InternalNotificationController notifications;
 
+    private final boolean nailsEnabled;
+    private final LandingNailsBookingService nailsBookings;
+
+    LandingWriteController(boolean enabled, boolean consultationEnabled, boolean paymentsEnabled,
+                           LandingBusinessResolver resolver, LandingWriteRepository repository,
+                           LandingAbuseGuard abuseGuard, LandingFourHandService fourHand,
+                           LandingPmuBookingService pmuBookings, LandingPmuPaymentService payments,
+                           com.salonreview.web.InternalNotificationController notifications) {
+        this(enabled, consultationEnabled, paymentsEnabled, false, resolver, repository, abuseGuard, fourHand,
+                pmuBookings, payments, notifications, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
     public LandingWriteController(@Value("${landing.writes.enabled:false}") boolean enabled,
                                   @Value("${landing.consultation.enabled:false}") boolean consultationEnabled,
                                   @Value("${landing.payments.enabled:false}") boolean paymentsEnabled,
+                                  @Value("${landing.nails-booking.enabled:false}") boolean nailsEnabled,
                                   LandingBusinessResolver resolver, LandingWriteRepository repository,
                                   LandingAbuseGuard abuseGuard, LandingFourHandService fourHand,
                                   LandingPmuBookingService pmuBookings, LandingPmuPaymentService payments,
-                                  com.salonreview.web.InternalNotificationController notifications) {
+                                  com.salonreview.web.InternalNotificationController notifications,
+                                  LandingNailsBookingService nailsBookings) {
+        this.nailsEnabled = nailsEnabled;
+        this.nailsBookings = nailsBookings;
         this.consultationEnabled = consultationEnabled;
         this.paymentsEnabled = paymentsEnabled;
         this.payments = payments;
@@ -193,6 +210,81 @@ public class LandingWriteController {
             log.error("Failed to record Step 1 contact", e);
         }
         return created(Map.of("recorded", true));
+    }
+
+    @PostMapping("/api/bookings")
+    public ResponseEntity<Map<String, Object>> nailsBooking(@RequestBody(required = false) String raw,
+                                                            HttpServletRequest request, HttpServletResponse response) {
+        requireEnabled();
+        if (!nailsEnabled) throw new LandingException(404, "Not Found");
+        long businessId = business(request);
+        LandingBody body = LandingBody.root(parse(raw));
+        LandingBody slot = body.child("slot", true);
+        String startAt = null;
+        String teamMemberId = null;
+        java.util.List<NailsLandingService.SegmentPick> picks = new java.util.ArrayList<>();
+        if (slot != null) {
+            startAt = slot.string("start_at", true, 0, 0);
+            teamMemberId = slot.string("team_member_id", true, 0, 0);
+            java.util.List<LandingBody> segments = slot.children("segments", true);
+            if (segments != null) {
+                for (LandingBody s : segments) {
+                    String slug = s.string("service_slug", true, 0, 0);
+                    String variation = s.string("service_variation_id", true, 0, 0);
+                    s.integer("service_variation_version", true, null);
+                    picks.add(new NailsLandingService.SegmentPick(slug, variation));
+                }
+            }
+        }
+        LandingPmuPaymentService.Customer customer = customer(body.child("customer", true));
+        String note = body.string("note", 500);
+        body.bool("sms_opt_in", false);
+        LandingTracking snapshot = body.tracking("tracking");
+        PromoAttempt promo = promo(body);
+        String website = body.string("website", 0);
+        body.string("form_rendered_at", 0);
+        body.integer("form_filled_ms", false, null);
+        String token = body.string("turnstile_token", 0);
+        body.finish();
+
+        LandingTracking tracking = snapshot == null ? null : resolveSnapshot(request, response, snapshot);
+        LandingUserAgents.Context ctx = clientContext(request);
+        String phone = LandingPhones.forStorage(customer.phone());
+        abuseGuard.check(businessId, "booking", phone, ctx.ipAddress(), website, token);
+
+        LandingNailsBookingService.Confirmation c = nailsBookings.book(businessId, new LandingNailsBookingService.Request(
+                startAt, teamMemberId, picks, customer.givenName(), customer.familyName(), customer.email(),
+                customer.phone(), customer.marketingOptIn(), note, snapshot));
+
+        if (promo != null) {
+            try {
+                notifications.enrollRebookingPromo(new com.salonreview.web.InternalNotificationController.RebookingPromoEnrollRequest(
+                        c.customerId(), promo.expEpochSeconds(), promo.signature(),
+                        (customer.givenName() + " " + (customer.familyName() == null ? "" : customer.familyName())).strip(),
+                        phone, c.startAt(), promo.code(), null, businessId));
+            } catch (RuntimeException e) {
+                log.warn("Rebooking-promo enroll failed (booking itself was unaffected): {}", e.toString());
+            }
+        }
+        recordBooking(businessId, tracking, ctx, c.bookingId(), c.serviceName(), BigDecimal.valueOf(c.price()),
+                customer.email(), phone, customer.givenName(), customer.marketingOptIn(), c.customerId(), c.status(),
+                c.startAt(), c.artistName());
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("booking_id", c.bookingId());
+        out.put("status", c.status());
+        out.put("start_at", c.startAt());
+        out.put("duration_minutes", c.durationMinutes());
+        out.put("service_name", c.serviceName());
+        out.put("tier", c.tier());
+        out.put("artist_name", c.artistName());
+        out.put("price", c.price());
+        out.put("compare_at_price", c.compareAtPrice());
+        out.put("location_name", c.locationName());
+        out.put("location_address", c.locationAddress());
+        out.put("location_phone", c.locationPhone());
+        out.put("cancellation_policy_text", c.cancellationPolicyText());
+        return created(out);
     }
 
     @PostMapping("/api/bookings/four-hand-request")
