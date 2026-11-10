@@ -6,6 +6,7 @@ import com.salonreview.marketing.LeadFollowUpService.EventRequest;
 import com.salonreview.marketing.LeadFollowUpService.LeadDetail;
 import com.salonreview.marketing.LeadFollowUpService.LeadView;
 import com.salonreview.marketing.LeadFollowUpService.UpdateRequest;
+import com.salonreview.marketing.LeadOwnerService;
 import com.salonreview.config.CurrentBusinessContext;
 import com.salonreview.service.UserPermissionService;
 import com.salonreview.service.UserPermissionService.LeadsScope;
@@ -28,8 +29,11 @@ public class LeadsController {
 
     private final UserPermissionService permissions;
     private final CurrentBusinessContext business;
+    private final LeadOwnerService owners;
 
-    public LeadsController(LeadFollowUpService leads, com.salonreview.marketing.LeadFunnelService funnels, UserPermissionService permissions, CurrentBusinessContext business) {
+    public LeadsController(LeadFollowUpService leads, com.salonreview.marketing.LeadFunnelService funnels, UserPermissionService permissions,
+                           CurrentBusinessContext business, LeadOwnerService owners) {
+        this.owners = owners;
         this.leads = leads;
         this.funnels = funnels;
         this.permissions = permissions;
@@ -227,6 +231,45 @@ public class LeadsController {
                                            @AuthenticationPrincipal AppUserPrincipal me) {
         guard(id, me);
         funnels.stop(business.id(), id, key, me == null ? null : me.getUsername(), body == null ? null : body.get("note"));
+        return ResponseEntity.noContent().build();
+    }
+
+    public record OwnersView(Map<Long, LeadOwnerService.Owner> owners, List<LeadOwnerService.Candidate> candidates, Long academyDefault,
+                             boolean canSetDefault, long meId, boolean meIsTeam, List<Long> mine) {}
+
+    /** Owner of every lead the caller can see, who can be picked, and which leads are the caller's own. */
+    @GetMapping("/owners")
+    public OwnersView allOwners(@AuthenticationPrincipal AppUserPrincipal me) {
+        Map<Long, LeadOwnerService.Owner> map = owners.forLeads(list(null, me));
+        boolean team = me != null && !academyOnly(me);
+        long meId = me == null ? 0 : me.getUserId();
+        return new OwnersView(map, owners.candidates(), owners.academyDefault(), me != null && "OWNER".equals(me.getRole().name()),
+                meId, team, owners.mine(map, meId, team));
+    }
+
+    public record OwnerCard(LeadOwnerService.Owner owner, List<LeadOwnerService.Candidate> candidates, Long academyDefault, long meId) {}
+
+    @GetMapping("/{id}/owner")
+    public OwnerCard leadOwner(@PathVariable long id, @AuthenticationPrincipal AppUserPrincipal me) {
+        guard(id, me);
+        LeadOwnerService.Info i = owners.info(id);
+        return new OwnerCard(i.owner(), i.candidates(), i.academyDefault(), me == null ? 0 : me.getUserId());
+    }
+
+    @PutMapping("/{id}/owner")
+    public ResponseEntity<Void> setOwner(@PathVariable long id, @RequestBody Map<String, Long> body, @AuthenticationPrincipal AppUserPrincipal me) {
+        guard(id, me);
+        owners.assign(id, body == null ? null : body.get("userId"), me == null ? null : me.getUsername());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Who owns Academy leads nobody was assigned to (e.g. the owner while Anastasia is away). Owner role only. */
+    @PutMapping("/owners/default")
+    public ResponseEntity<Void> setAcademyDefault(@RequestBody Map<String, Long> body, @AuthenticationPrincipal AppUserPrincipal me) {
+        if (me == null || !"OWNER".equals(me.getRole().name())) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "owner only");
+        Long uid = body == null ? null : body.get("userId");
+        if (uid == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "userId required");
+        owners.setAcademyDefault(uid, me.getUsername());
         return ResponseEntity.noContent().build();
     }
 }
