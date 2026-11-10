@@ -17,6 +17,10 @@ x-backend-env: &backend-env
   # Square credentials — read from your shell or the .env file next to this compose file.
   SQUARE_ENVIRONMENT: ${SQUARE_ENVIRONMENT:-sandbox}
   SQUARE_ACCESS_TOKEN: ${SQUARE_ACCESS_TOKEN:-}
+  # Landing write endpoints (decommissioning salonLandings): off until the flag is set; Turnstile
+  # fails open when the secret is blank, so it must be set before traffic is switched.
+  LANDING_WRITES_ENABLED: ${LANDING_WRITES_ENABLED:-false}
+  TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
   SQUARE_LOCATION_ID: ${SQUARE_LOCATION_ID:-}
   # Phase 3 multi-account Square support (SquareConnectionBootstrap/SquareCredentialCipher) — AES
   # master key for square_connection.access_token_encrypted. Blank means the backfill/decrypt

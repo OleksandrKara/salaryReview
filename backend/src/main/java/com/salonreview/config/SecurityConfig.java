@@ -127,6 +127,11 @@ public class SecurityConfig {
                                 "/api/availability", "/api/pmu/catalog", "/api/pmu/menu", "/api/pmu/offer",
                                 "/api/pmu/availability/**", "/api/experiments/*", "/api/promos/verify",
                                 "/api/tracking/clarity-config", "/api/calendar/event.ics").permitAll()
+                        // Public write endpoints of the booking sites (LandingWriteController); 404 unless
+                        // landing.writes.enabled is set.
+                        .requestMatchers(HttpMethod.POST, "/api/tracking/visit", "/api/tracking/event",
+                                "/api/tracking/funnel-event", "/api/contacts",
+                                "/api/bookings/four-hand-request").permitAll()
                         // Google Ads offline-conversion CSV, fetched by Ads' scheduled upload; guarded
                         // by its own secret key (AdsConversionFeedController), 404 without it.
                         .requestMatchers(HttpMethod.GET, "/api/public/ads-conversions/pmu.csv").permitAll()
