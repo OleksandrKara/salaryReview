@@ -88,7 +88,7 @@ public class LandingReadController {
         if (days != null && (days < 1 || days > 32)) {
             throw new LandingException(422, "days must be between 1 and 32");
         }
-        List<String> slugs = Arrays.stream(services.split(",")).map(String::strip).filter(s -> !s.isEmpty()).toList();
+        List<String> slugs = Arrays.stream(services.split(",")).map(LandingText::strip).filter(s -> !s.isEmpty()).toList();
         return nails.availability(business(host), slugs, artist, days == null || days == 0 ? DEFAULT_DAYS : days);
     }
 
