@@ -263,7 +263,7 @@ public class PmuLandingService {
         if (item.path("is_deleted").asBoolean(false)) return null;
         JsonNode data = item.path("item_data");
         if (data.isMissingNode() || !"APPOINTMENTS_SERVICE".equals(data.path("product_type").asText(""))) return null;
-        String name = data.path("name").asText("").strip();
+        String name = LandingText.strip(data.path("name").asText(""));
         if (name.isEmpty()) return null;
         String lower = name.toLowerCase();
         if (EXCLUDED_NAME_PARTS.stream().anyMatch(lower::contains)) return null;
@@ -290,7 +290,7 @@ public class PmuLandingService {
             }
             if (team.isEmpty()) continue;
             double price = vd.path("price_money").path("amount").asLong(0) / 100.0;
-            String label = vd.path("name").asText("").strip();
+            String label = LandingText.strip(vd.path("name").asText(""));
             if (label.isEmpty() || List.of("regular", "standard", "default").contains(label.toLowerCase())) label = null;
             Option o = new Option();
             o.variationId = v.path("id").asText();
@@ -305,7 +305,7 @@ public class PmuLandingService {
         }
         if (options.isEmpty()) return null;
         options.sort(Comparator.comparingDouble(o -> o.price));
-        String description = data.path("description").asText("").strip();
+        String description = LandingText.strip(data.path("description").asText(""));
         MenuService s = new MenuService();
         s.id = item.path("id").asText();
         s.name = name;
@@ -325,7 +325,7 @@ public class PmuLandingService {
         List<Double> prices = new ArrayList<>();
         artists.forEach((tm, name) -> {
             List<Option> mine = options.stream().filter(o -> o.teamMemberIds.contains(tm)).toList();
-            String first = name.split("\\s+")[0].toLowerCase();
+            String first = LandingText.firstWord(name).toLowerCase();
             first = first.substring(0, Math.min(5, first.length()));
             final String prefix = first;
             List<Option> named = mine.stream()

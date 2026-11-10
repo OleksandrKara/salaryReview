@@ -33,7 +33,7 @@ public class LandingBusinessResolver {
         if (hostHeader == null) return "";
         int colon = hostHeader.indexOf(':');
         String host = colon >= 0 ? hostHeader.substring(0, colon) : hostHeader;
-        return host.trim().toLowerCase();
+        return LandingText.strip(host).toLowerCase();
     }
 
     public BusinessContext resolve(String hostHeader) {

@@ -82,6 +82,6 @@ final class LandingDefinitions {
     static final String DEPOSIT_VARIATION_ID = "NVEO2SSBJ6RBHTL5UBA2WVOZ";
 
     static boolean isTopTierName(String variationName) {
-        return variationName != null && variationName.strip().toLowerCase().contains("top");
+        return variationName != null && LandingText.strip(variationName).toLowerCase().contains("top");
     }
 }
