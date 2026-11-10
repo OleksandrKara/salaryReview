@@ -413,6 +413,7 @@ public class LandingWriteController {
             phoneRaw = customer.string("phone_number", true, 7, 20);
             optIn = customer.bool("marketing_opt_in", false);
         }
+        LandingFailureAlerter.rememberContact(email, phoneRaw);
         return new LandingPmuPaymentService.Customer(given, family, email, phoneRaw, optIn);
     }
 

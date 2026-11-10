@@ -93,7 +93,7 @@ class LandingWriteControllerTest {
     private MockMvc controller(boolean enabled) {
         LandingWriteController c = new LandingWriteController(enabled, false, false, new LandingBusinessResolver(businesses),
                 repository, guard, new LandingFourHandService(provider, telegram, sms, businesses), null, null, null);
-        return MockMvcBuilders.standaloneSetup(c).setControllerAdvice(new LandingWriteAdvice()).build();
+        return MockMvcBuilders.standaloneSetup(c).setControllerAdvice(new LandingWriteAdvice(org.mockito.Mockito.mock(LandingFailureAlerter.class))).build();
     }
 
     private static MockHttpServletRequestBuilder json(String path, String body) {
