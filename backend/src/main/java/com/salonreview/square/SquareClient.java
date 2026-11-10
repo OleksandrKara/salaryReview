@@ -1823,23 +1823,49 @@ public class SquareClient {
         });
     }
 
+    public record LandingSegment(String variationId, long variationVersion, int durationMinutes) {
+    }
+
+    /** Raw business booking profile (cancellation policy text), cached. */
+    public com.fasterxml.jackson.databind.JsonNode landingBookingProfile() {
+        return cached("landing:booking-profile", Duration.ofHours(1), () -> {
+            com.fasterxml.jackson.databind.JsonNode resp = throttled(() -> http.get()
+                    .uri("/v2/bookings/business-booking-profile")
+                    .retrieve()
+                    .body(com.fasterxml.jackson.databind.JsonNode.class));
+            return resp == null ? com.fasterxml.jackson.databind.node.MissingNode.getInstance()
+                    : resp.path("business_booking_profile");
+        });
+    }
+
     /** Creates a single-segment appointment and returns Square's raw booking. Square errors surface
      * as RestClientResponseException so the caller can read the error codes. */
     public com.fasterxml.jackson.databind.JsonNode landingCreateBooking(String customerId, String startAt,
             String teamMemberId, String variationId, long variationVersion, int durationMinutes,
             String customerNote, String sellerNote) {
-        Map<String, Object> segment = new LinkedHashMap<>();
-        segment.put("duration_minutes", durationMinutes);
-        segment.put("service_variation_id", variationId);
-        segment.put("service_variation_version", variationVersion);
-        segment.put("team_member_id", teamMemberId);
+        return landingCreateBooking(customerId, startAt, teamMemberId,
+                List.of(new LandingSegment(variationId, variationVersion, durationMinutes)), customerNote, sellerNote);
+    }
+
+    /** Creates an appointment with one or more back-to-back segments, all with the same team member. */
+    public com.fasterxml.jackson.databind.JsonNode landingCreateBooking(String customerId, String startAt,
+            String teamMemberId, List<LandingSegment> segments, String customerNote, String sellerNote) {
+        List<Map<String, Object>> segs = new ArrayList<>();
+        for (LandingSegment s : segments) {
+            Map<String, Object> segment = new LinkedHashMap<>();
+            segment.put("duration_minutes", s.durationMinutes());
+            segment.put("service_variation_id", s.variationId());
+            segment.put("service_variation_version", s.variationVersion());
+            segment.put("team_member_id", teamMemberId);
+            segs.add(segment);
+        }
         Map<String, Object> booking = new LinkedHashMap<>();
         booking.put("start_at", startAt);
         booking.put("location_id", locationId);
         booking.put("customer_id", customerId);
         booking.put("customer_note", customerNote);
         if (sellerNote != null && !sellerNote.isEmpty()) booking.put("seller_note", sellerNote);
-        booking.put("appointment_segments", List.of(segment));
+        booking.put("appointment_segments", segs);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("idempotency_key", java.util.UUID.randomUUID().toString());
         body.put("booking", booking);
