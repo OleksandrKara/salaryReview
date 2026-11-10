@@ -368,6 +368,7 @@ public class LeadIntakeService {
                 RETURNING f.id
                 """.formatted(ConsultationCatalog.isConsultationSql("b", consultations.ids(businessId))), Long.class, businessId, key, key);
         for (Long id : ids) {
+            jdbc.update("UPDATE lead_reminders SET done_at = now() WHERE lead_id = ? AND done_at IS NULL", id);
             jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'STATUS', 'NEW', 'System')",
                     id, businessId);
         }

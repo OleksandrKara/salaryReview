@@ -15,6 +15,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Set;
 
@@ -131,7 +132,13 @@ public class LeadFollowUpService {
     public record LeadDetail(LeadView lead, List<Touch> touches, List<Event> events, List<Origin> origins,
                              List<Appointment> appointments, Spend spend, List<EmailSent> emails,
                              List<Sms> sms, String squareNote, List<Payment> payments, List<Form> forms,
-                             Place place, Badges badges) {}
+                             Place place, Badges badges, List<Reminder> reminders) {}
+
+    public record Reminder(long id, String dueAt, String note, String origin, String createdBy, boolean fired) {}
+
+    public record ReminderRequest(String date, String time, Integer days, String note) {}
+
+    public record ReachedOutRequest(Integer days, String date, String time, String note, Boolean none) {}
 
     /** A completed Square payment that is not part of a booked visit day (invoice, deposit, course payment). */
     public record Payment(String id, String at, java.math.BigDecimal amount, java.math.BigDecimal tip, String description) {}
@@ -291,7 +298,8 @@ public class LeadFollowUpService {
                 (rs, i) -> new Event(rs.getLong("id"), rs.getString("type"), rs.getString("text"),
                         rs.getString("created_by"), iso(rs.getTimestamp("created_at"))), id, business.id());
         return new LeadDetail(lead, touches, events, origins(lead), appointments(lead), spend(lead), emails(lead),
-                sms(lead), squareNote(lead), payments(lead), forms(lead, touches), place(lead), badges(lead));
+                sms(lead), squareNote(lead), payments(lead), forms(lead, touches), place(lead), badges(lead),
+                "NEW".equals(lead.status()) || "CONTACTED".equals(lead.status()) ? reminders(lead.id()) : List.of());
     }
 
     /** Geo of the most recent website visit that has an IP; scope tells a manager whether the person is local. */
@@ -947,12 +955,13 @@ public class LeadFollowUpService {
                   lost_reason = CASE WHEN ?::text = 'LOST' THEN ?::text WHEN ?::text IS NOT NULL THEN NULL ELSE lost_reason END,
                   lost_comment = CASE WHEN ?::text = 'LOST' THEN ?::text WHEN ?::text IS NOT NULL THEN NULL ELSE lost_comment END,
                   lost_at = CASE WHEN ?::text = 'LOST' THEN now() WHEN ?::text IS NOT NULL THEN NULL ELSE lost_at END,
-                  callback_at = CASE WHEN ? THEN NULL WHEN ?::timestamptz IS NOT NULL THEN ?::timestamptz ELSE callback_at END,
-                  callback_reminded = CASE WHEN ? OR ?::timestamptz IS NOT NULL THEN FALSE ELSE callback_reminded END,
                   updated_by = ?, updated_at = now()
                 WHERE id = ? AND business_id = ?
                 """, req.status(), req.status(), reason, req.status(), req.status(), comment, req.status(),
-                req.status(), req.status(), clear, callback, callback, clear, callback, by, id, business.id());
+                req.status(), req.status(), by, id, business.id());
+        if (req.status() != null && !"NEW".equals(req.status()) && !"CONTACTED".equals(req.status())) closeReminders(id);
+        if (clear) closeReminders(id);
+        else if (callback != null) replaceReminders(id, callback.toInstant(), "MANUAL", by, false);
         if (source != null) {
             jdbc.update("UPDATE lead_intake SET source = ?, source_manual = TRUE WHERE id = ? AND business_id = ?", source, id, business.id());
             addEvent(id, "SOURCE", source, by);
@@ -965,28 +974,146 @@ public class LeadFollowUpService {
         if (clear) addEvent(id, "CALLBACK_CLEARED", null, by);
     }
 
-    static final int REACHED_OUT_DAYS = 7;
+    static final java.time.LocalTime DEFAULT_REMINDER_TIME = java.time.LocalTime.of(9, 0);
+    static final int MAX_REMINDER_DAYS = 365;
 
-    /** Next check-in after a manager reached out: a month for a lapsed client, a week for everyone else. */
-    static int reachedOutDays(String lastVisitAt, Instant now) {
-        boolean lapsed = lastVisitAt != null && Instant.parse(lastVisitAt).isBefore(now.minus(java.time.Duration.ofDays(LAPSED_DAYS)));
-        return lapsed ? LAPSED_DAYS : REACHED_OUT_DAYS;
+    /** Resolves "N days" or a calendar date plus an optional time of day (Pacific time, 9:00 by default) to an instant. */
+    static Instant reminderDue(Integer days, String date, String time, Instant now) {
+        try {
+            java.time.LocalDate day;
+            if (date != null && !date.isBlank()) day = java.time.LocalDate.parse(date.trim());
+            else if (days != null) day = now.atZone(PT).toLocalDate().plusDays(days);
+            else throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "days or date required");
+            java.time.LocalTime at = time == null || time.isBlank() ? DEFAULT_REMINDER_TIME : java.time.LocalTime.parse(time.trim());
+            Instant due = day.atTime(at).atZone(PT).toInstant();
+            if (!due.isAfter(now)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "reminder must be in the future");
+            if (due.isAfter(now.plus(java.time.Duration.ofDays(MAX_REMINDER_DAYS)))) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "reminder is too far ahead");
+            return due;
+        } catch (java.time.format.DateTimeParseException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "bad date or time");
+        }
     }
 
-    /** The manager got through: the lead is CONTACTED, the reminder is cleared and the next one is scheduled. */
-    public void reachedOut(long id, String by) {
+    private static String cleanNote(String note) {
+        if (note == null || note.isBlank()) return null;
+        String n = note.trim();
+        if (n.length() > 500) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "note is too long");
+        return n;
+    }
+
+    private static final String REMINDER_COLUMNS = "id, due_at, note, origin, created_by, fired_at";
+
+    private final RowMapper<Reminder> reminderMapper = (rs, i) -> new Reminder(rs.getLong("id"), iso(rs.getTimestamp("due_at")),
+            rs.getString("note"), rs.getString("origin"), rs.getString("created_by"), rs.getTimestamp("fired_at") != null);
+
+    /** Open reminders of the person, soonest first. */
+    public List<Reminder> reminders(long leadId) {
+        return jdbc.query("SELECT " + REMINDER_COLUMNS + " FROM lead_reminders WHERE lead_id = ? AND business_id = ? AND done_at IS NULL ORDER BY due_at, id",
+                reminderMapper, leadId, business.id());
+    }
+
+    /** lead_intake.callback_at stays the soonest open reminder: list sorting, overdue flags and the digest read it. */
+    private void syncCallback(long leadId) {
+        jdbc.update("""
+                UPDATE lead_intake li SET
+                  callback_at = n.due_at,
+                  callback_reminded = COALESCE(n.fired_at IS NOT NULL, FALSE)
+                FROM (SELECT l.id, (SELECT due_at FROM lead_reminders r WHERE r.lead_id = l.id AND r.done_at IS NULL ORDER BY due_at, id LIMIT 1) AS due_at,
+                             (SELECT fired_at FROM lead_reminders r WHERE r.lead_id = l.id AND r.done_at IS NULL ORDER BY due_at, id LIMIT 1) AS fired_at
+                      FROM lead_intake l WHERE l.id = ?) n
+                WHERE li.id = n.id AND li.business_id = ?
+                """, leadId, business.id());
+    }
+
+    private long addReminder(long leadId, Instant due, String note, String origin, String by, boolean fired) {
+        long id = jdbc.queryForObject("""
+                INSERT INTO lead_reminders (business_id, lead_id, due_at, note, origin, created_by, fired_at)
+                VALUES (?, ?, ?, ?, ?, ?, CASE WHEN ? THEN now() END) RETURNING id
+                """, Long.class, business.id(), leadId, Timestamp.from(due), note, origin, by, fired);
+        syncCallback(leadId);
+        return id;
+    }
+
+    /** Closes every open reminder and leaves exactly this one (single-callback semantics for system and legacy writers). */
+    private void replaceReminders(long leadId, Instant due, String origin, String by, boolean fired) {
+        jdbc.update("UPDATE lead_reminders SET done_at = now() WHERE lead_id = ? AND business_id = ? AND done_at IS NULL", leadId, business.id());
+        addReminder(leadId, due, null, origin, by, fired);
+    }
+
+    private void closeReminders(long leadId) {
+        jdbc.update("UPDATE lead_reminders SET done_at = now() WHERE lead_id = ? AND business_id = ? AND done_at IS NULL", leadId, business.id());
+        syncCallback(leadId);
+    }
+
+    public Reminder addReminder(long id, ReminderRequest req, String by) {
+        LeadView lead = find(id);
+        if (!"NEW".equals(lead.status()) && !"CONTACTED".equals(lead.status())) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "lead is closed");
+        Instant due = reminderDue(req.days(), req.date(), req.time(), Instant.now());
+        long rid = addReminder(lead.id(), due, cleanNote(req.note()), "MANUAL", by, false);
+        addEvent(lead.id(), "CALLBACK", due.toString(), by);
+        return reminders(lead.id()).stream().filter(r -> r.id() == rid).findFirst().orElseThrow();
+    }
+
+    public void editReminder(long id, long reminderId, ReminderRequest req, String by) {
+        LeadView lead = find(id);
+        Instant due = null;
+        if (req.days() != null || (req.date() != null && !req.date().isBlank())) due = reminderDue(req.days(), req.date(), req.time(), Instant.now());
+        else if (req.time() != null && !req.time().isBlank()) {
+            Instant cur = jdbc.query("SELECT due_at FROM lead_reminders WHERE id = ? AND lead_id = ? AND business_id = ? AND done_at IS NULL",
+                    rs -> rs.next() ? rs.getTimestamp(1).toInstant() : null, reminderId, lead.id(), business.id());
+            if (cur == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such reminder");
+            due = reminderDue(null, cur.atZone(PT).toLocalDate().toString(), req.time(), Instant.now());
+        }
+        String note = req.note() == null ? null : cleanNote(req.note());
+        boolean clearNote = req.note() != null && note == null;
+        int n = jdbc.update("""
+                UPDATE lead_reminders SET due_at = COALESCE(?::timestamptz, due_at),
+                  fired_at = CASE WHEN ?::timestamptz IS NOT NULL THEN NULL ELSE fired_at END,
+                  note = CASE WHEN ? THEN NULL WHEN ?::text IS NOT NULL THEN ?::text ELSE note END
+                WHERE id = ? AND lead_id = ? AND business_id = ? AND done_at IS NULL
+                """, due == null ? null : Timestamp.from(due), due == null ? null : Timestamp.from(due), clearNote, note, note,
+                reminderId, lead.id(), business.id());
+        if (n == 0) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such reminder");
+        syncCallback(lead.id());
+        if (due != null) addEvent(lead.id(), "CALLBACK", due.toString(), by);
+    }
+
+    public void deleteReminder(long id, long reminderId, String by) {
+        LeadView lead = find(id);
+        int n = jdbc.update("UPDATE lead_reminders SET done_at = now() WHERE id = ? AND lead_id = ? AND business_id = ? AND done_at IS NULL",
+                reminderId, lead.id(), business.id());
+        if (n == 0) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "no such reminder");
+        syncCallback(lead.id());
+        if (reminders(lead.id()).isEmpty()) addEvent(lead.id(), "CALLBACK_CLEARED", null, by);
+    }
+
+    /**
+     * The manager got through: the lead is CONTACTED, reminders that were due are done, and the next follow-up is
+     * scheduled (2 days by default; the caller picks days or a date, or none).
+     */
+    public void reachedOut(long id, ReachedOutRequest req, String by) {
         LeadView lead = find(id);
         if (!"NEW".equals(lead.status()) && !"CONTACTED".equals(lead.status())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "lead is closed");
         }
-        int days = reachedOutDays(lead.lastVisitAt(), Instant.now());
-        jdbc.update("""
-                UPDATE lead_intake SET status = 'CONTACTED',
-                  callback_at = now() + make_interval(days => ?), callback_reminded = FALSE, updated_by = ?, updated_at = now()
-                WHERE id = ? AND business_id = ?
-                """, days, by, id, business.id());
-        if ("NEW".equals(lead.status())) addEvent(id, "STATUS", "CONTACTED", by);
-        addEvent(id, "REACHED_OUT", String.valueOf(days), by);
+        boolean none = req != null && Boolean.TRUE.equals(req.none());
+        Instant now = Instant.now();
+        Instant due = null;
+        String note = null;
+        if (!none) {
+            boolean picked = req != null && (req.days() != null || (req.date() != null && !req.date().isBlank()));
+            due = reminderDue(picked ? req.days() : Integer.valueOf(FOLLOW_UP_DAYS), picked ? req.date() : null, req == null ? null : req.time(), now);
+            note = req == null ? null : cleanNote(req.note());
+        }
+        jdbc.update("UPDATE lead_intake SET status = 'CONTACTED', updated_by = ?, updated_at = now() WHERE id = ? AND business_id = ?",
+                by, lead.id(), business.id());
+        jdbc.update("UPDATE lead_reminders SET done_at = now() WHERE lead_id = ? AND business_id = ? AND done_at IS NULL AND due_at <= now()",
+                lead.id(), business.id());
+        if (due != null) addReminder(lead.id(), due, note, "REACHED_OUT", by, false);
+        else syncCallback(lead.id());
+        if ("NEW".equals(lead.status())) addEvent(lead.id(), "STATUS", "CONTACTED", by);
+        addEvent(lead.id(), "REACHED_OUT", due == null ? "none" : String.valueOf(java.time.temporal.ChronoUnit.DAYS.between(now.atZone(PT).toLocalDate(), due.atZone(PT).toLocalDate())), by);
+        if (due != null) addEvent(lead.id(), "CALLBACK", due.toString(), by);
     }
 
     static final Set<String> ATTEMPT_CHANNELS = Set.of("CALL", "SMS", "MESSAGE");
@@ -999,11 +1126,9 @@ public class LeadFollowUpService {
         if (!"NEW".equals(lead.status()) && !"CONTACTED".equals(lead.status())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "lead is closed");
         }
-        jdbc.update("""
-                UPDATE lead_intake SET status = 'CONTACTED',
-                  callback_at = now() + make_interval(days => ?), callback_reminded = FALSE, updated_by = ?, updated_at = now()
-                WHERE id = ? AND business_id = ?
-                """, FOLLOW_UP_DAYS, by, id, business.id());
+        jdbc.update("UPDATE lead_intake SET status = 'CONTACTED', updated_by = ?, updated_at = now() WHERE id = ? AND business_id = ?",
+                by, lead.id(), business.id());
+        replaceReminders(lead.id(), Instant.now().plus(java.time.Duration.ofDays(FOLLOW_UP_DAYS)), "ATTEMPT", by, false);
         if ("NEW".equals(lead.status())) addEvent(id, "STATUS", "CONTACTED", by);
         addEvent(id, "ATTEMPT", ch, by);
     }
@@ -1050,6 +1175,7 @@ public class LeadFollowUpService {
                 RETURNING li.id, li.business_id
                 """.formatted(KEY, ConsultationCatalog.isConsultationSql("b", consultations.ids(businessId))), businessId, onlyCustomer, onlyCustomer);
         for (var r : rows) {
+            jdbc.update("UPDATE lead_reminders SET done_at = now() WHERE lead_id = ? AND done_at IS NULL", ((Number) r.get("id")).longValue());
             jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'STATUS', 'BOOKED', 'Square')",
                     ((Number) r.get("id")).longValue(), ((Number) r.get("business_id")).longValue());
         }
@@ -1174,7 +1300,7 @@ public class LeadFollowUpService {
         }
     }
 
-    private static final java.time.ZoneId PT = java.time.ZoneId.of("America/Los_Angeles");
+    static final java.time.ZoneId PT = java.time.ZoneId.of("America/Los_Angeles");
     private static final int WORK_START_HOUR = 9;
     private static final int WORK_END_HOUR = 20;
     private static final int CONSULT_MAX_AGE_DAYS = 30;
@@ -1230,8 +1356,11 @@ public class LeadFollowUpService {
             if (!last.isBefore(now.minus(java.time.Duration.ofDays(LAPSED_DAYS)))) continue;
             Instant prev = done.get(l.id());
             if (prev != null && prev.isAfter(last)) continue;
-            jdbc.update("UPDATE lead_intake SET status = 'CONTACTED', callback_at = now(), callback_reminded = TRUE, lost_reason = NULL, "
+            jdbc.update("UPDATE lead_intake SET status = 'CONTACTED', lost_reason = NULL, "
                     + "lost_comment = NULL, lost_at = NULL, updated_by = 'System', updated_at = now() WHERE id = ? AND business_id = ?", l.id(), businessId);
+            jdbc.update("UPDATE lead_reminders SET done_at = now() WHERE lead_id = ? AND business_id = ? AND done_at IS NULL", l.id(), businessId);
+            jdbc.update("INSERT INTO lead_reminders (business_id, lead_id, due_at, origin, fired_at, created_by) VALUES (?, ?, now(), 'LAPSED', now(), 'System')", businessId, l.id());
+            jdbc.update("UPDATE lead_intake SET callback_at = now(), callback_reminded = TRUE WHERE id = ? AND business_id = ?", l.id(), businessId);
             jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'STATUS', 'CONTACTED', 'System')", l.id(), businessId);
             jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'LAPSED', ?, 'System')", l.id(), businessId, last.toString());
             n++;
@@ -1265,20 +1394,27 @@ public class LeadFollowUpService {
             Instant target = followUpTarget(l, inbound, cleared.get(l.id()), now);
             if (target == null) continue;
             boolean stale = target.isBefore(now.minus(java.time.Duration.ofDays(1)));
-            jdbc.update("UPDATE lead_intake SET callback_at = ?, callback_reminded = ?, updated_by = 'System' WHERE id = ? AND business_id = ?",
-                    Timestamp.from(target), stale, l.id(), businessId);
+            jdbc.update("UPDATE lead_reminders SET done_at = now() WHERE lead_id = ? AND business_id = ? AND done_at IS NULL AND origin IN ('AUTO', 'LEGACY')", l.id(), businessId);
+            jdbc.update("INSERT INTO lead_reminders (business_id, lead_id, due_at, origin, fired_at, created_by) VALUES (?, ?, ?, 'AUTO', CASE WHEN ? THEN now() END, 'System')",
+                    businessId, l.id(), Timestamp.from(target), stale);
+            jdbc.update("""
+                    UPDATE lead_intake SET updated_by = 'System',
+                      callback_at = (SELECT due_at FROM lead_reminders r WHERE r.lead_id = lead_intake.id AND r.done_at IS NULL ORDER BY due_at, id LIMIT 1),
+                      callback_reminded = COALESCE((SELECT fired_at IS NOT NULL FROM lead_reminders r WHERE r.lead_id = lead_intake.id AND r.done_at IS NULL ORDER BY due_at, id LIMIT 1), FALSE)
+                    WHERE id = ? AND business_id = ?""", l.id(), businessId);
             jdbc.update("INSERT INTO lead_events (lead_id, business_id, type, text, created_by) VALUES (?, ?, 'CALLBACK', ?, 'System')",
                     l.id(), businessId, target.toString());
         }
     }
 
-    /** Pings the business Telegram chat about callbacks that came due; each reminder fires once. */
+    /** Pings the business Telegram chat about reminders that came due; one message per lead, each reminder fires once. */
     public void sendDueReminders() {
         var due = jdbc.queryForList("""
-                SELECT id, business_id, name, phone_number, email, source
-                FROM lead_intake
-                WHERE callback_at <= now() AND NOT callback_reminded AND status IN ('NEW', 'CONTACTED')
-                ORDER BY callback_at LIMIT 50
+                SELECT li.id, li.business_id, li.name, li.phone_number, li.email, li.source,
+                       string_agg(NULLIF(r.note, ''), '; ' ORDER BY r.due_at) AS notes, array_agg(r.id) AS reminder_ids
+                FROM lead_reminders r JOIN lead_intake li ON li.id = r.lead_id
+                WHERE r.due_at <= now() AND r.fired_at IS NULL AND r.done_at IS NULL AND li.status IN ('NEW', 'CONTACTED')
+                GROUP BY li.id ORDER BY min(r.due_at) LIMIT 50
                 """);
         for (var row : due) {
             long id = ((Number) row.get("id")).longValue();
@@ -1288,11 +1424,15 @@ public class LeadFollowUpService {
                     : String.valueOf(row.get("email"));
             StringBuilder text = new StringBuilder("Callback reminder: ").append(who);
             if (row.get("phone_number") != null && row.get("name") != null) text.append(" ").append(row.get("phone_number"));
+            if (row.get("notes") != null) text.append("\nNote: ").append(row.get("notes"));
             text.append("\nSource: ").append(row.get("source"));
             text.append("\nOpen lead: ").append(publicBaseUrl).append("/admin/leads/").append(id)
                     .append("?business=").append(businessId);
             if (telegram.sendPlainText(businessId, text.toString())) {
-                jdbc.update("UPDATE lead_intake SET callback_reminded = TRUE WHERE id = ?", id);
+                jdbc.update("UPDATE lead_reminders SET fired_at = now() WHERE lead_id = ? AND due_at <= now() AND fired_at IS NULL AND done_at IS NULL", id);
+                jdbc.update("""
+                        UPDATE lead_intake SET callback_reminded = COALESCE((SELECT fired_at IS NOT NULL FROM lead_reminders r
+                          WHERE r.lead_id = lead_intake.id AND r.done_at IS NULL ORDER BY due_at, id LIMIT 1), TRUE) WHERE id = ?""", id);
             } else {
                 log.info("Lead {} callback reminder not delivered, will retry", id);
             }

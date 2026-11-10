@@ -32,9 +32,3 @@ export function actionPlan(l: Pick<Lead, 'status' | 'callbackAt' | 'closeReady' 
     spam: active,
   };
 }
-
-export const REACHED_OUT_DAYS = 7;
-
-export function reachedOutDays(l: Pick<Lead, 'status' | 'lastVisitAt'>, now: number): number {
-  return isLapsed(l, now) ? LAPSED_AFTER_DAYS : REACHED_OUT_DAYS;
-}
