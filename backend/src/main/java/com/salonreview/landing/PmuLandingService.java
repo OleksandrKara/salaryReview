@@ -13,6 +13,7 @@ import java.util.function.Function;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -102,6 +103,7 @@ public class PmuLandingService {
     private final ConsultationOfferService offers;
     private final Clock clock;
 
+    @Autowired
     public PmuLandingService(LandingSquareGateway square, ConsultationOfferService offers) {
         this(square, offers, Clock.systemUTC());
     }

@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -143,6 +144,7 @@ public class NailsLandingService {
     private final LandingSquareGateway square;
     private final Clock clock;
 
+    @Autowired
     public NailsLandingService(LandingSquareGateway square) {
         this(square, Clock.systemUTC());
     }
