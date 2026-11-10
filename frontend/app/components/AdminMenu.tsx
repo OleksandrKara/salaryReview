@@ -278,7 +278,10 @@ export default function AdminMenu({
       // Every server-rendered page (settings, reports, ...) needs to re-fetch under the new
       // business context — a client-side refresh() won't re-run their server components' data
       // fetches reliably here, so a full reload is the simple, correct choice.
-      window.location.reload();
+      // A lead page names its business in the URL (?business=) and would switch straight back, and
+      // the lead belongs to the old business anyway: go to the leads list instead of reloading.
+      if (/^\/admin\/leads\/[^/]+/.test(window.location.pathname)) window.location.assign('/admin/leads');
+      else window.location.reload();
     } catch {
       setSwitching(false);
     }
