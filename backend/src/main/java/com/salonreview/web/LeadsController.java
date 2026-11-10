@@ -142,9 +142,38 @@ public class LeadsController {
     }
 
     @PostMapping("/{id}/reached-out")
-    public ResponseEntity<Void> reachedOut(@PathVariable long id, @AuthenticationPrincipal AppUserPrincipal me) {
+    public ResponseEntity<Void> reachedOut(@PathVariable long id, @RequestBody(required = false) LeadFollowUpService.ReachedOutRequest req,
+                                           @AuthenticationPrincipal AppUserPrincipal me) {
         guard(id, me);
-        leads.reachedOut(id, me == null ? null : me.getUsername());
+        leads.reachedOut(id, req, me == null ? null : me.getUsername());
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{id}/reminders")
+    public List<LeadFollowUpService.Reminder> reminders(@PathVariable long id, @AuthenticationPrincipal AppUserPrincipal me) {
+        guard(id, me);
+        return leads.reminders(leads.lead(id).id());
+    }
+
+    @PostMapping("/{id}/reminders")
+    public LeadFollowUpService.Reminder addReminder(@PathVariable long id, @RequestBody LeadFollowUpService.ReminderRequest req,
+                                                    @AuthenticationPrincipal AppUserPrincipal me) {
+        guard(id, me);
+        return leads.addReminder(id, req, me == null ? null : me.getUsername());
+    }
+
+    @PatchMapping("/{id}/reminders/{reminderId}")
+    public ResponseEntity<Void> editReminder(@PathVariable long id, @PathVariable long reminderId, @RequestBody LeadFollowUpService.ReminderRequest req,
+                                             @AuthenticationPrincipal AppUserPrincipal me) {
+        guard(id, me);
+        leads.editReminder(id, reminderId, req, me == null ? null : me.getUsername());
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{id}/reminders/{reminderId}")
+    public ResponseEntity<Void> deleteReminder(@PathVariable long id, @PathVariable long reminderId, @AuthenticationPrincipal AppUserPrincipal me) {
+        guard(id, me);
+        leads.deleteReminder(id, reminderId, me == null ? null : me.getUsername());
         return ResponseEntity.noContent().build();
     }
 

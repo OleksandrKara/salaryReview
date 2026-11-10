@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { FUNNEL_TONE } from './FunnelPanel';
 import LeadActions from './LeadActions';
-import { DAY, LAPSED_AFTER_DAYS, isActive, isLapsed, isOverdue, reachedOutDays } from './leadActions';
+import { DAY, LAPSED_AFTER_DAYS, isActive, isLapsed, isOverdue } from './leadActions';
 import LeadIcons from './LeadIcons';
+import ReminderSheet, { type ReachedOutBody } from './ReminderSheet';
 import OutdatedPanel, { LockIcon } from './OutdatedPanel';
 import { t } from '../../lib/i18n';
 import type { Language, Lead, LeadFunnel, LeadListBadge } from '../../lib/types';
@@ -103,6 +104,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
   const [source, setSource] = useState('');
   const [academyOnly, setAcademyOnly] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [reaching, setReaching] = useState<Lead | null>(null);
   const [now] = useState(() => Date.now());
   const [funnels, setFunnels] = useState<Record<number, LeadFunnel[]>>({});
   const [badges, setBadges] = useState<Record<number, LeadListBadge>>({});
@@ -152,15 +154,13 @@ export default function LeadsManager({ initialLeads, language = null, restricted
     }
   }
 
-  async function reachedOut(l: Lead) {
-    setBusyId(l.id);
-    const days = reachedOutDays(l, Date.now());
-    const res = await fetch(`/api/leads/${l.id}/reached-out`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-    setBusyId(null);
-    if (res.ok) {
-      const next = new Date(Date.now() + days * DAY).toISOString();
-      setLeads((prev) => prev.map((x) => (x.id === l.id ? { ...x, status: 'CONTACTED', callbackAt: next, attempts: 0, closeReady: false } : x)));
-    }
+  async function reachedOut(l: Lead, body: ReachedOutBody): Promise<boolean> {
+    const res = await fetch(`/api/leads/${l.id}/reached-out`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) return false;
+    const d = await fetch(`/api/leads/${l.id}`, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    const next: string | null = d ? d.lead.callbackAt : null;
+    setLeads((prev) => prev.map((x) => (x.id === l.id ? { ...x, status: 'CONTACTED', callbackAt: next, attempts: 0, closeReady: false } : x)));
+    return true;
   }
 
   async function closeLost(l: Lead) {
@@ -327,7 +327,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                   </Link>
                   <LeadActions
                     lead={l} now={now} language={language} busy={busyId === l.id} withContact
-                    handlers={{ onReachedOut: () => reachedOut(l), onNoAnswer: () => noAnswer(l), onCloseLost: () => closeLost(l), onSpam: () => setStatus(l, 'SPAM') }}
+                    handlers={{ onReachedOut: () => setReaching(l), onNoAnswer: () => noAnswer(l), onCloseLost: () => closeLost(l), onSpam: () => setStatus(l, 'SPAM') }}
                   />
                 </li>
               );
@@ -335,6 +335,10 @@ export default function LeadsManager({ initialLeads, language = null, restricted
           </ul>
         </section>
       ))}
+      <ReminderSheet
+        open={reaching != null} title={t(language, 'remSheetTitle')} subtitle={reaching ? (reaching.name ?? reaching.phoneNumber ?? reaching.email ?? '') : ''}
+        language={language} onClose={() => setReaching(null)} onSubmit={(body) => (reaching ? reachedOut(reaching, body) : Promise.resolve(false))}
+      />
     </div>
   );
 }

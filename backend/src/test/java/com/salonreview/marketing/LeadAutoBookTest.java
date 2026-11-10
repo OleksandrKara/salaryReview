@@ -179,41 +179,110 @@ class LeadAutoBookTest {
         assertThat(status(lapsed)).isEqualTo("BOOKED");
     }
 
+    private static final java.time.ZoneId PT = java.time.ZoneId.of("America/Los_Angeles");
+
+    private int open(long lead) {
+        return jdbc.queryForObject("SELECT count(*) FROM lead_reminders WHERE lead_id = ? AND done_at IS NULL", Integer.class, lead);
+    }
+
     @Test
-    void reachedOutClearsTheReminderResetsAttemptsAndSchedulesTheNextCheckIn() {
+    void reachedOutDefaultsToTwoDaysAt9amPacificResetsAttemptsAndCompletesDueReminders() {
         long fresh = lead("+16195550051", "NEW", null, "3 days", false);
         service.recordAttempt(fresh, "CALL", "tester");
         service.recordAttempt(fresh, "CALL", "tester");
-        jdbc.update("UPDATE lead_intake SET callback_at = now() - interval '1 hour' WHERE id = ?", fresh);
+        jdbc.update("UPDATE lead_reminders SET due_at = now() - interval '1 hour' WHERE lead_id = ?", fresh);
         jdbc.update("UPDATE lead_events SET created_at = now() - interval '2 hours' WHERE lead_id = ? AND type = 'ATTEMPT'", fresh);
         assertThat(service.find(fresh).attempts()).isEqualTo(2);
 
-        service.reachedOut(fresh, "tester");
+        service.reachedOut(fresh, null, "tester");
         var after = service.find(fresh);
         assertThat(after.status()).isEqualTo("CONTACTED");
         assertThat(after.attempts()).isZero();
         assertThat(after.closeReady()).isFalse();
-        assertThat(java.time.Instant.parse(after.callbackAt())).isBetween(
-                java.time.Instant.now().plus(java.time.Duration.ofDays(6)), java.time.Instant.now().plus(java.time.Duration.ofDays(8)));
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM lead_events WHERE lead_id = ? AND type = 'REACHED_OUT' AND text = '7'", Integer.class, fresh)).isEqualTo(1);
+        var due = java.time.Instant.parse(after.callbackAt()).atZone(PT);
+        assertThat(due.toLocalDate()).isEqualTo(java.time.LocalDate.now(PT).plusDays(2));
+        assertThat(due.toLocalTime()).isEqualTo(java.time.LocalTime.of(9, 0));
+        assertThat(open(fresh)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM lead_events WHERE lead_id = ? AND type = 'REACHED_OUT' AND text = '2'", Integer.class, fresh)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT callback_reminded FROM lead_intake WHERE id = ?", Boolean.class, fresh)).isFalse();
-
-        jdbc.update("UPDATE lead_events SET created_at = now() - interval '1 minute' WHERE lead_id = ? AND type = 'REACHED_OUT'", fresh);
-        service.recordAttempt(fresh, "CALL", "tester");
-        assertThat(service.find(fresh).attempts()).isEqualTo(1);
     }
 
     @Test
-    void reachedOutPicksAMonthForLapsedClientsAndRefusesClosedLeads() {
-        java.time.Instant now = java.time.Instant.now();
-        assertThat(LeadFollowUpService.reachedOutDays(now.minus(java.time.Duration.ofDays(45)).toString(), now)).isEqualTo(30);
-        assertThat(LeadFollowUpService.reachedOutDays(now.minus(java.time.Duration.ofDays(10)).toString(), now)).isEqualTo(7);
-        assertThat(LeadFollowUpService.reachedOutDays(null, now)).isEqualTo(7);
+    void reachedOutTakesDaysDateTimeNoteOrNoFollowUpAndRefusesClosedLeads() {
+        long l = lead("+16195550053", "NEW", null, "3 days", false);
+        service.reachedOut(l, new LeadFollowUpService.ReachedOutRequest(5, null, "14:30", "ask about brows", false), "tester");
+        var r = service.reminders(l);
+        assertThat(r).hasSize(1);
+        assertThat(r.get(0).note()).isEqualTo("ask about brows");
+        assertThat(r.get(0).origin()).isEqualTo("REACHED_OUT");
+        var at = java.time.Instant.parse(r.get(0).dueAt()).atZone(PT);
+        assertThat(at.toLocalDate()).isEqualTo(java.time.LocalDate.now(PT).plusDays(5));
+        assertThat(at.toLocalTime()).isEqualTo(java.time.LocalTime.of(14, 30));
+
+        String date = java.time.LocalDate.now(PT).plusDays(20).toString();
+        service.reachedOut(l, new LeadFollowUpService.ReachedOutRequest(null, date, null, null, false), "tester");
+        assertThat(service.reminders(l)).hasSize(2);
+        assertThat(service.find(l).callbackAt()).isEqualTo(r.get(0).dueAt());
+
+        long q = lead("+16195550054", "NEW", null, "3 days", false);
+        service.reachedOut(q, new LeadFollowUpService.ReachedOutRequest(null, null, null, null, true), "tester");
+        assertThat(status(q)).isEqualTo("CONTACTED");
+        assertThat(open(q)).isZero();
+        assertThat(service.find(q).callbackAt()).isNull();
 
         long lost = lead("+16195550052", "LOST", null, "3 days", false);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.reachedOut(lost, "tester"))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.reachedOut(lost, null, "tester"))
                 .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
         assertThat(status(lost)).isEqualTo("LOST");
+    }
+
+    @Test
+    void remindersCanBeAddedEditedAndDeletedAndCallbackFollowsTheSoonestOne() {
+        long l = lead("+16195550055", "CONTACTED", null, "3 days", false);
+        String d3 = java.time.LocalDate.now(PT).plusDays(3).toString();
+        String d9 = java.time.LocalDate.now(PT).plusDays(9).toString();
+        var far = service.addReminder(l, new LeadFollowUpService.ReminderRequest(d9, null, null, "send prices"), "tester");
+        var near = service.addReminder(l, new LeadFollowUpService.ReminderRequest(d3, "10:15", null, null), "tester");
+        assertThat(service.reminders(l)).extracting(LeadFollowUpService.Reminder::id).containsExactly(near.id(), far.id());
+        assertThat(service.find(l).callbackAt()).isEqualTo(near.dueAt());
+
+        service.editReminder(l, near.id(), new LeadFollowUpService.ReminderRequest(java.time.LocalDate.now(PT).plusDays(12).toString(), null, null, null), "tester");
+        assertThat(service.find(l).callbackAt()).isEqualTo(far.dueAt());
+        service.editReminder(l, far.id(), new LeadFollowUpService.ReminderRequest(null, null, null, ""), "tester");
+        assertThat(service.reminders(l).stream().filter(x -> x.id() == far.id()).findFirst().get().note()).isNull();
+
+        service.deleteReminder(l, far.id(), "tester");
+        service.deleteReminder(l, near.id(), "tester");
+        assertThat(service.reminders(l)).isEmpty();
+        assertThat(service.find(l).callbackAt()).isNull();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.deleteReminder(l, near.id(), "tester"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+    }
+
+    @Test
+    void remindersRejectThePastBadInputAndClosedLeads() {
+        long l = lead("+16195550056", "CONTACTED", null, "3 days", false);
+        String yesterday = java.time.LocalDate.now(PT).minusDays(1).toString();
+        for (var bad : java.util.List.of(
+                new LeadFollowUpService.ReminderRequest(yesterday, null, null, null),
+                new LeadFollowUpService.ReminderRequest("not-a-date", null, null, null),
+                new LeadFollowUpService.ReminderRequest(null, null, null, null),
+                new LeadFollowUpService.ReminderRequest(null, null, 1000, null))) {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.addReminder(l, bad, "tester"))
+                    .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        }
+        long lost = lead("+16195550057", "LOST", null, "3 days", false);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.addReminder(lost, new LeadFollowUpService.ReminderRequest(null, null, 2, null), "tester"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+    }
+
+    @Test
+    void closingALeadCompletesItsReminders() {
+        long l = lead("+16195550058", "CONTACTED", null, "3 days", false);
+        service.addReminder(l, new LeadFollowUpService.ReminderRequest(null, null, 2, null), "tester");
+        service.update(l, new LeadFollowUpService.UpdateRequest("SPAM", null, null, null, null, null), "tester");
+        assertThat(open(l)).isZero();
+        assertThat(service.find(l).callbackAt()).isNull();
     }
 
     @Test

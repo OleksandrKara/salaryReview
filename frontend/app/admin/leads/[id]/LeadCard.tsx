@@ -14,6 +14,8 @@ import YelpReviewClickedIcon from '../../messages/YelpReviewClickedIcon';
 import FeedbackFormClickedIcon from '../../messages/FeedbackFormClickedIcon';
 import ImageViewer, { type ViewerImage } from './ImageViewer';
 import LeadActions from '../LeadActions';
+import RemindersPanel from '../RemindersPanel';
+import ReminderSheet, { type ReachedOutBody } from '../ReminderSheet';
 import { isActive } from '../leadActions';
 import FunnelPanel, { stoppedLine, whyText } from '../FunnelPanel';
 import type { Language, LeadDetail, LeadFunnel, LeadStatus } from '../../../lib/types';
@@ -45,13 +47,6 @@ function fmt(iso: string, lang: Language | null): string {
   return new Date(iso).toLocaleString(lang === 'RU' ? 'ru-RU' : 'en-US', {
     month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
   });
-}
-
-function toLocalInput(iso: string | null): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 function recordingUrl(payload: Record<string, string> | null): string | null {
@@ -123,7 +118,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
   const [lostReason, setLostReason] = useState('');
   const [lostComment, setLostComment] = useState('');
   const { lead } = data;
-  const [callback, setCallback] = useState(toLocalInput(lead.callbackAt));
+  const [sheet, setSheet] = useState(false);
   const [note, setNote] = useState('');
   const [mailId, setMailId] = useState<number | null>(null);
   const [viewer, setViewer] = useState<number | null>(null);
@@ -141,7 +136,6 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
     if (res.ok) {
       const d: LeadDetail = await res.json();
       setData(d);
-      setCallback(toLocalInput(d.lead.callbackAt));
     }
   }
 
@@ -200,7 +194,8 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
         text = LOST_REASONS.includes(code) ? [t(language, `leadLost_${code}` as 'leadLost_PRICE'), ...rest].join(': ') : x.text;
       }
       if ((x.type === 'CALLBACK' || x.type === 'LAPSED') && x.text) text = fmt(x.text, language);
-      if (x.type === 'REACHED_OUT' && x.text) text = `${t(language, 'crmNextCheckIn')} ${x.text} ${t(language, 'crmDaysShort')}`;
+      if (x.type === 'REACHED_OUT' && x.text === 'none') text = t(language, 'leadEventNOFOLLOWUP');
+      else if (x.type === 'REACHED_OUT' && x.text) text = `${t(language, 'crmNextCheckIn')} ${x.text} ${t(language, 'crmDaysShort')}`;
       return { key: `e${x.id}`, at: x.createdAt, kind: manual ? 'note' : 'system', label, text, by: x.createdBy };
     }),
     ...data.sms.map((m): Item => ({
@@ -368,7 +363,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
           <LeadActions
             lead={lead} now={now} language={language} busy={busy} withContact={false}
             handlers={{
-              onReachedOut: () => { void send(`/api/leads/${lead.id}/reached-out`, 'POST', {}); },
+              onReachedOut: () => setSheet(true),
               onNoAnswer: () => { void send(`/api/leads/${lead.id}/attempts`, 'POST', {}); },
               onCloseLost: () => { void send(`/api/leads/${lead.id}`, 'PATCH', { status: 'LOST', lostReason: 'NO_ANSWER', lostComment: `${lead.attempts} ${t(language, 'crmAttempts')}` }); },
               onSpam: () => { void send(`/api/leads/${lead.id}`, 'PATCH', { status: 'SPAM' }); },
@@ -376,6 +371,14 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
           />
         </section>
       )}
+
+      {isActive(lead) && (
+        <RemindersPanel leadId={lead.id} reminders={data.reminders ?? []} language={language} now={now} onChanged={reload} />
+      )}
+      <ReminderSheet
+        open={sheet} title={t(language, 'remSheetTitle')} subtitle={title} language={language} onClose={() => setSheet(false)}
+        onSubmit={(body: ReachedOutBody) => send(`/api/leads/${lead.id}/reached-out`, 'POST', body)}
+      />
 
       <section className="flex min-w-0 flex-wrap items-center gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
         <select
@@ -426,18 +429,6 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
             </div>
           </div>
         )}
-        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 text-sm text-zinc-600 sm:w-auto">
-          <label htmlFor="lead-callback" className="w-full sm:w-auto">{t(language, 'leadCallback')}</label>
-          <input id="lead-callback" type="datetime-local" value={callback} onChange={(e) => setCallback(e.target.value)} className={`${field} w-full min-w-0 sm:w-auto sm:flex-none`} />
-          <button className={primary} disabled={busy || !callback} onClick={() => send(`/api/leads/${lead.id}`, 'PATCH', { callbackAt: new Date(callback).toISOString() })}>
-            {t(language, 'leadCallbackSet')}
-          </button>
-          {lead.callbackAt && (
-            <button className="text-sm text-zinc-600 underline" disabled={busy} onClick={() => { setCallback(''); send(`/api/leads/${lead.id}`, 'PATCH', { clearCallback: true }); }}>
-              {t(language, 'leadCallbackClear')}
-            </button>
-          )}
-        </div>
         {error && <p className="w-full text-sm text-red-600">{error}</p>}
       </section>
 

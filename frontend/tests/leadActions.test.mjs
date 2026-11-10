@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { loadTs } from './_load.mjs';
 
 const load = loadTs;
-const { actionPlan, isOverdue, isLapsed, reachedOutDays, DAY } = await load('../app/admin/leads/leadActions.ts');
+const { actionPlan, isOverdue, isLapsed, DAY } = await load('../app/admin/leads/leadActions.ts');
 const NOW = Date.parse('2026-11-07T12:00:00Z');
 const lead = (o) => ({ status: 'CONTACTED', callbackAt: null, closeReady: false, phoneNumber: '+16195550000', lastVisitAt: null, ...o });
 const ago = (days) => new Date(NOW - days * DAY).toISOString();
@@ -48,10 +48,4 @@ test('overdue and lapsed rules', () => {
   assert.equal(isOverdue(lead({ status: 'LOST', callbackAt: ago(1) }), NOW), false);
   assert.equal(isLapsed(lead({ lastVisitAt: ago(31) }), NOW), true);
   assert.equal(isLapsed(lead({ lastVisitAt: ago(29) }), NOW), false);
-});
-
-test('next check-in matches the backend: 30 days for lapsed clients, 7 for others', () => {
-  assert.equal(reachedOutDays(lead({ lastVisitAt: ago(45) }), NOW), 30);
-  assert.equal(reachedOutDays(lead({ lastVisitAt: ago(10) }), NOW), 7);
-  assert.equal(reachedOutDays(lead({}), NOW), 7);
 });
