@@ -219,6 +219,10 @@ public class MarketingContactsRepository {
                 // follow-up (AcademyLeadFunnelScheduler); the studio's "started booking online" nudge
                 // would be wrong for them.
                 + " AND c.landing_page_slug IS DISTINCT FROM 'academy'"
+                // The contact row of an Academy request can arrive without the slug; the request
+                // itself (academy_lead) is the reliable marker.
+                + " AND NOT EXISTS (SELECT 1 FROM academy_lead al WHERE al.phone = c.phone_number"
+                + "     AND al.created_at >= c.updated_at - interval '1 day')"
                 + " AND NOT EXISTS (SELECT 1 FROM lead_followup_send lfs"
                 + "     WHERE lfs.contact_id = c.id AND lfs.contact_updated_at >= c.updated_at)"
                 + " ORDER BY c.updated_at ASC";
