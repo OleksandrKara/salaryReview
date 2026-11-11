@@ -239,6 +239,7 @@ class TwilioInboundSmsControllerTest {
         verify(leadIntake).capture(lead.capture());
         assertThat(lead.getValue().channel()).isEqualTo("SMS");
         assertThat(lead.getValue().trafficSource()).isEqualTo("Google (organic)");
+        assertThat(lead.getValue().payload()).contains("\"" + com.salonreview.marketing.LeadFollowUpService.TAP_MATCHED_KEY + "\"");
     }
 
     @Test

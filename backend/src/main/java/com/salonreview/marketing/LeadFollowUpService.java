@@ -299,7 +299,7 @@ public class LeadFollowUpService {
         String key = leadKey(id);
         List<Touch> touches = jdbc.query("SELECT id, channel, source, detail, created_at, payload FROM (SELECT l.*, " + KEY
                         + " AS k FROM lead_intake l WHERE business_id = ? AND outcome <> 'DUPLICATE') t WHERE k = ? ORDER BY created_at DESC",
-                (rs, i) -> new Touch(rs.getLong("id"), rs.getString("channel"), rs.getString("source"),
+                (rs, i) -> touchOf(rs.getLong("id"), rs.getString("channel"), rs.getString("source"),
                         rs.getString("detail"), iso(rs.getTimestamp("created_at")), parsePayload(rs.getString("payload"))),
                 business.id(), key);
         List<Event> events = jdbc.query("SELECT id, type, text, created_by, created_at FROM lead_events "
@@ -451,6 +451,24 @@ public class LeadFollowUpService {
             log.warn("Lead list places lookup failed: {}", e.toString());
             return java.util.Map.of();
         }
+    }
+
+    /** Payload flag set on an inbound text that was tied to a website tap, so its own source may be shown. */
+    public static final String TAP_MATCHED_KEY = "_tap_matched";
+
+    /** A website text shows the source of the tap behind it; a text we could not tie to a tap (or an
+     * ambiguous one) shows none, never the person's first-touch source. */
+    static Touch touchOf(long id, String channel, String source, String detail, String createdAt,
+                         java.util.Map<String, String> payload) {
+        if (!"SMS".equals(channel) && !"Text".equals(channel)) return new Touch(id, channel, source, detail, createdAt, payload);
+        boolean matched = payload != null && payload.containsKey(TAP_MATCHED_KEY);
+        java.util.Map<String, String> shown = null;
+        if (payload != null) {
+            shown = new java.util.LinkedHashMap<>(payload);
+            shown.remove(TAP_MATCHED_KEY);
+            if (shown.isEmpty()) shown = null;
+        }
+        return new Touch(id, channel, matched ? source : null, detail, createdAt, shown);
     }
 
     private java.util.Map<String, String> parsePayload(String raw) {
