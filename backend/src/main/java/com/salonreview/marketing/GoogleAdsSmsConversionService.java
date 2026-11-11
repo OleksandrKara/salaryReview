@@ -152,7 +152,7 @@ public class GoogleAdsSmsConversionService {
         if (err.isMissingNode() || err.isNull()) return null;
         String text = err.toString();
         if (text.contains("DUPLICATE_ORDER_ID") || text.contains("ALREADY_IMPORTED")) return null;
-        return "Google Ads rejected the conversion: " + abbreviate(err.path("message").asText(text));
+        return "Google Ads rejected the conversion: " + text;
     }
 
     /** Looks the action up by name; a miss is not cached so a newly created action is picked up on the next run. */
