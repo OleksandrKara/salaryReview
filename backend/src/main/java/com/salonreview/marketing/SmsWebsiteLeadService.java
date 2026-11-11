@@ -304,9 +304,9 @@ public class SmsWebsiteLeadService {
         if (ref.contains("yahoo.")) return "Yahoo (organic)";
         try {
             String host = URI.create(referrer).getHost();
-            return host != null ? "Referral: " + host : "Direct / Unknown";
+            return host != null ? "Referral: " + host : "Direct / No referrer";
         } catch (IllegalArgumentException e) {
-            return "Direct / Unknown";
+            return "Direct / No referrer";
         }
     }
 }
