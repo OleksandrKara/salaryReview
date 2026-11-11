@@ -179,7 +179,7 @@ class TwilioSmsServiceTest {
         assertThat(result.sent()).isTrue();
         verify(client).send(any(), eq(PHONE), eq("hand-typed reply"));
         verify(messageLogService).logOutbound(eq(BUSINESS_ID), eq(null), eq(null), eq(PHONE), eq("hand-typed reply"),
-                eq(true), eq(null), any());
+                eq(true), eq(null), any(), eq(null));
         verifyNoInteractions(templateService, consentRepository, automationService);
     }
 
@@ -236,7 +236,7 @@ class TwilioSmsServiceTest {
     @DisplayName("sendManualWithMedia: stores each attachment against the reserved row, then sends with media URLs")
     void sendManualWithMediaStoresThenSends() throws Exception {
         SmsMessage reserved = SmsMessage.builder().id(55L).build();
-        when(messageLogService.logOutbound(eq(BUSINESS_ID), eq(null), eq(null), eq(PHONE), eq("here's a photo"), eq(false), eq("pending"), eq(null)))
+        when(messageLogService.logOutbound(eq(BUSINESS_ID), eq(null), eq(null), eq(PHONE), eq("here's a photo"), eq(false), eq("pending"), eq(null), eq(null)))
                 .thenReturn(reserved);
         SmsMessageMedia media = SmsMessageMedia.builder().id(1L).smsMessageId(55L).accessToken("abc12").build();
         when(mediaService.store(eq(55L), eq("image/jpeg"), any())).thenReturn(media);
@@ -270,7 +270,7 @@ class TwilioSmsServiceTest {
     @DisplayName("sendManualWithMedia: Twilio send failure → send_failed, reserved row updated, never throws")
     void sendManualWithMediaSendFailureReturnsSendFailed() throws Exception {
         SmsMessage reserved = SmsMessage.builder().id(56L).build();
-        when(messageLogService.logOutbound(eq(BUSINESS_ID), eq(null), eq(null), eq(PHONE), eq("photo"), eq(false), eq("pending"), eq(null)))
+        when(messageLogService.logOutbound(eq(BUSINESS_ID), eq(null), eq(null), eq(PHONE), eq("photo"), eq(false), eq("pending"), eq(null), eq(null)))
                 .thenReturn(reserved);
         SmsMessageMedia media = SmsMessageMedia.builder().id(2L).smsMessageId(56L).accessToken("xyz99").build();
         when(mediaService.store(eq(56L), any(), any())).thenReturn(media);

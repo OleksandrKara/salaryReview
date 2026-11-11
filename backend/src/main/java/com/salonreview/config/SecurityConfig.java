@@ -216,6 +216,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/timecards/me/**").hasRole("PROVIDER")
                         .requestMatchers("/api/timecards/admin/**").hasRole("OWNER")
                         .requestMatchers("/api/timecards/**").hasAnyRole("OWNER", "MANAGER")
+                        .requestMatchers("/api/metrics/**").hasAnyRole("OWNER", "MANAGER")
                         .requestMatchers("/api/time/admin/**").hasRole("OWNER")
                         .requestMatchers("/api/time/**").hasAnyRole("OWNER", "MANAGER")
                         // Manual adjustments: managers get read-only visibility (the routine payroll

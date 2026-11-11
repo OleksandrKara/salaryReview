@@ -65,6 +65,8 @@ class SmsActivityControllerTest {
     private WinbackEmailSendRepository winbackEmailSendRepository;
     private MockMvc mvc;
 
+    private static final Long MANAGER_USER_ID = 7L;
+
     @BeforeEach
     void setUp() {
         service = mock(SmsMessageLogService.class);
@@ -84,7 +86,13 @@ class SmsActivityControllerTest {
         when(reactionService.reactionsForMessages(any())).thenReturn(Map.of());
         when(winbackEmailSendRepository.findBySmsMessageIdIn(any())).thenReturn(List.of());
         mvc = MockMvcBuilders.standaloneSetup(
-                new SmsActivityController(service, smsService, contactsService, blockedNumberRepository, events, mediaService, reactionService, draftService, users, currentBusinessContext, winbackEmailSendRepository)).build();
+                new SmsActivityController(service, smsService, contactsService, blockedNumberRepository, events, mediaService, reactionService, draftService, users, currentBusinessContext, winbackEmailSendRepository))
+                .setCustomArgumentResolvers(new org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver())
+                .build();
+        AppUserPrincipal principal = mock(AppUserPrincipal.class);
+        when(principal.getUserId()).thenReturn(MANAGER_USER_ID);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(principal, null, List.of()));
     }
 
     private static Contact contact(String givenName, String emailAddress) {
@@ -355,7 +363,7 @@ class SmsActivityControllerTest {
     @Test
     @DisplayName("POST /reply sends via TwilioSmsService.sendManual and returns the result")
     void replySendsManualMessage() throws Exception {
-        when(smsService.sendManual(BUSINESS_ID, PHONE, "hand-typed reply"))
+        when(smsService.sendManual(BUSINESS_ID, PHONE, "hand-typed reply", MANAGER_USER_ID))
                 .thenReturn(new TwilioSmsService.SmsSendResult(true, null));
         String body = new ObjectMapper().writeValueAsString(
                 new SmsActivityController.ReplyRequest(PHONE, "hand-typed reply"));
@@ -366,13 +374,13 @@ class SmsActivityControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sent").value(true));
 
-        verify(smsService).sendManual(BUSINESS_ID, PHONE, "hand-typed reply");
+        verify(smsService).sendManual(BUSINESS_ID, PHONE, "hand-typed reply", MANAGER_USER_ID);
     }
 
     @Test
     @DisplayName("POST /reply-with-media sends via TwilioSmsService.sendManualWithMedia and returns the result")
     void replyWithMediaSendsManualMessageWithFiles() throws Exception {
-        when(smsService.sendManualWithMedia(eq(BUSINESS_ID), eq(PHONE), eq("check this out"), any()))
+        when(smsService.sendManualWithMedia(eq(BUSINESS_ID), eq(PHONE), eq("check this out"), any(), eq(MANAGER_USER_ID)))
                 .thenReturn(new TwilioSmsService.SmsSendResult(true, null));
         MockMultipartFile file = new MockMultipartFile("files", "photo.jpg", "image/jpeg", new byte[]{1, 2, 3});
 
@@ -384,7 +392,7 @@ class SmsActivityControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sent").value(true));
 
-        verify(smsService).sendManualWithMedia(eq(BUSINESS_ID), eq(PHONE), eq("check this out"), any());
+        verify(smsService).sendManualWithMedia(eq(BUSINESS_ID), eq(PHONE), eq("check this out"), any(), eq(MANAGER_USER_ID));
     }
 
     @Test

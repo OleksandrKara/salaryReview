@@ -110,6 +110,10 @@ public class SmsMessage {
     @Column(name = "rating")
     private Integer rating;
 
+    /** The app_user who typed this manual reply; null for automations and rows older than V218. */
+    @Column(name = "sent_by_user_id")
+    private Long sentByUserId;
+
     @Column(name = "created_at", nullable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();

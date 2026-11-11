@@ -61,6 +61,11 @@ public class SmsMessageLogService {
 
     public SmsMessage logOutbound(Long businessId, String templateKey, String automationKey, String phoneNumber,
                                    String body, boolean sent, String reason, String twilioMessageSid) {
+        return logOutbound(businessId, templateKey, automationKey, phoneNumber, body, sent, reason, twilioMessageSid, null);
+    }
+
+    public SmsMessage logOutbound(Long businessId, String templateKey, String automationKey, String phoneNumber,
+                                   String body, boolean sent, String reason, String twilioMessageSid, Long sentByUserId) {
         SmsMessage saved = repository.save(SmsMessage.builder()
                 .businessId(businessId)
                 .direction("OUTBOUND")
@@ -71,6 +76,7 @@ public class SmsMessageLogService {
                 .twilioMessageSid(twilioMessageSid)
                 .status(sent ? "SENT" : "NOT_SENT")
                 .reason(reason)
+                .sentByUserId(sentByUserId)
                 .build());
         events.broadcast(saved.getPhoneNumber());
         return saved;

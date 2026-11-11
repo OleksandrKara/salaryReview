@@ -50,6 +50,7 @@ function linksFor(role: Role, leadsAccess = false): NavSections {
         { href: '/owner/overview', key: 'navRevenue' },
         { href: '/owner/marketing', key: 'navMarketing' },
         { href: '/admin/leads', key: 'navLeads' },
+        { href: '/admin/response-times', key: 'navResponseSpeed' },
         { href: '/owner/retention', key: 'navRetention' },
         ...COMMON,
       ],
@@ -113,14 +114,15 @@ function linksFor(role: Role, leadsAccess = false): NavSections {
   if (role === 'MANAGER') {
     return {
       flat: [
-        { href: '/manager', key: 'navDashboard' },
         { href: '/admin/leads', key: 'navLeads' },
+        { href: '/admin/response-times', key: 'navResponseSpeed' },
         { href: '/manager/time', key: 'navMyTime' },
         { href: '/timecards', key: 'tcNavApprove' },
         { href: '/admin/redos', key: 'mgrRedos' },
         { href: '/admin/missed-bookings', key: 'missedBookingsTitle' },
         { href: '/admin/manual-adjustments', key: 'navManualAdjustments' },
         { href: '/my-documents', key: 'navMyDocuments' },
+        { href: '/manager', key: 'navDashboard' },
         ...COMMON,
       ],
       groups: [],

@@ -1,0 +1,41 @@
+export type Lang = 'EN' | 'RU';
+
+/** "45 s", "3 min 20 s", "2 h 05 min". Null means no data. */
+export function formatWait(seconds: number | null | undefined, lang: Lang | null): string {
+  if (seconds == null) return '-';
+  const ru = lang === 'RU';
+  const s = Math.max(0, Math.round(seconds));
+  const sec = ru ? 'с' : 's';
+  const min = ru ? 'мин' : 'min';
+  const hr = ru ? 'ч' : 'h';
+  if (s < 60) return `${s} ${sec}`;
+  if (s < 3600) {
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return r === 0 || m >= 10 ? `${m} ${min}` : `${m} ${min} ${r} ${sec}`;
+  }
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return m === 0 ? `${h} ${hr}` : `${h} ${hr} ${String(m).padStart(2, '0')} ${min}`;
+}
+
+export type SpeedTone = 'good' | 'ok' | 'slow' | 'none';
+
+/** Colour band for a median wait: under 5 min good, under 15 ok, above that slow. */
+export function speedTone(medianSeconds: number | null | undefined): SpeedTone {
+  if (medianSeconds == null) return 'none';
+  if (medianSeconds <= 300) return 'good';
+  if (medianSeconds <= 900) return 'ok';
+  return 'slow';
+}
+
+export type RankableManager = { replies: number; medianSeconds: number | null };
+
+/** Fastest median first; managers with no replies in the period go last. Stable for ties. */
+export function rankManagers<T extends RankableManager>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    if ((a.replies === 0) !== (b.replies === 0)) return a.replies === 0 ? 1 : -1;
+    if (a.replies === 0) return 0;
+    return (a.medianSeconds ?? Infinity) - (b.medianSeconds ?? Infinity);
+  });
+}

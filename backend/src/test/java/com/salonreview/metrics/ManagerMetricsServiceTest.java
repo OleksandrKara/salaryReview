@@ -1,0 +1,97 @@
+package com.salonreview.metrics;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import com.salonreview.domain.AppUser;
+import com.salonreview.domain.Business;
+import com.salonreview.domain.Role;
+import com.salonreview.marketing.LeadFollowUpService;
+import com.salonreview.repo.AppUserRepository;
+import com.salonreview.repo.BusinessRepository;
+import java.sql.Timestamp;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
+
+@SpringBootTest
+@Transactional
+class ManagerMetricsServiceTest {
+
+    private static final Instant NOW = Instant.parse("2026-11-11T20:00:00Z");
+
+    @Autowired private BusinessRepository businesses;
+    @Autowired private AppUserRepository users;
+    @Autowired private JdbcTemplate jdbc;
+    private ManagerMetricsService service;
+    private long b;
+    private AppUser anna;
+    private AppUser bob;
+
+    @BeforeEach
+    void setUp() {
+        b = businesses.save(Business.builder().name("Metrics").shortCode("mm-" + System.nanoTime()).timezone("UTC").active(true).build()).getId();
+        anna = users.save(AppUser.builder().businessId(b).username("anna-" + System.nanoTime()).passwordHash("x").role(Role.MANAGER).active(true).build());
+        bob = users.save(AppUser.builder().businessId(b).username("bob-" + System.nanoTime()).passwordHash("x").role(Role.MANAGER).active(true).build());
+        LeadFollowUpService leads = mock(LeadFollowUpService.class);
+        when(leads.listFor(b, "NEW")).thenReturn(List.of());
+        service = new ManagerMetricsService(jdbc, users, leads, Clock.fixed(NOW, ZoneOffset.UTC));
+    }
+
+    private void shift(AppUser u, String start, String end) {
+        jdbc.update("INSERT INTO manager_time_entry (user_id, work_date, start_at, end_at) VALUES (?, ?::date, ?, ?)",
+                u.getId(), start.substring(0, 10), Timestamp.from(Instant.parse(start)), end == null ? null : Timestamp.from(Instant.parse(end)));
+    }
+
+    private void sms(String dir, String at, String body, Long sender, String automationKey) {
+        jdbc.update("""
+                INSERT INTO sms_message (business_id, direction, phone_number, body, status, created_at, sent_by_user_id, automation_key)
+                VALUES (?, ?, '+15550001111', ?, ?, ?, ?, ?)
+                """, b, dir, body, "INBOUND".equals(dir) ? "RECEIVED" : "SENT", Timestamp.from(Instant.parse(at)), sender, automationKey);
+    }
+
+    @Test
+    void leaderboardRanksManagerWithDirectReply() {
+        shift(anna, "2026-11-11T16:00:00Z", null);
+        sms("INBOUND", "2026-11-11T18:00:00Z", "hi, do you have a slot?", null, null);
+        sms("OUTBOUND", "2026-11-11T18:03:00Z", "Yes!", anna.getId(), null);
+        sms("OUTBOUND", "2026-11-11T18:04:00Z", "automated reminder", null, "appt_reminder");
+
+        var lb = service.leaderboard(b, "today");
+
+        var row = lb.managers().stream().filter(r -> r.userId() == anna.getId()).findFirst().orElseThrow();
+        assertThat(row.replies()).isEqualTo(1);
+        assertThat(row.medianSeconds()).isEqualTo(180);
+        assertThat(lb.managers().stream().filter(r -> r.userId() == bob.getId()).findFirst().orElseThrow().replies()).isZero();
+        assertThat(lb.unansweredNow()).isZero();
+    }
+
+    @Test
+    void shiftSummaryCountsUnansweredAndEmptyState() {
+        var empty = service.shiftSummary(b, bob.getId(), bob.getUsername());
+        assertThat(empty.onShift()).isFalse();
+        assertThat(empty.shiftStart()).isNull();
+
+        shift(bob, "2026-11-11T17:00:00Z", null);
+        sms("INBOUND", "2026-11-11T19:30:00Z", "are you open?", null, null);
+
+        var s = service.shiftSummary(b, bob.getId(), bob.getUsername());
+        assertThat(s.onShift()).isTrue();
+        assertThat(s.unansweredCount()).isEqualTo(1);
+        assertThat(s.oldestUnansweredSeconds()).isEqualTo(1800);
+    }
+
+    @Test
+    void rejectsUnknownPeriod() {
+        org.junit.jupiter.api.Assertions.assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> service.leaderboard(b, "year"));
+    }
+}

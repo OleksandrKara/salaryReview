@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 // routing by role to a role-specific home:
 //  - no session (`sid`) → `/` (the landing page, with its sign-in modal)
 //  - PROVIDER → /me (their pay), plus /kb and /sops
-//  - MANAGER → /manager (redos, KB, SOPs, assistant, retention). Managers don't manage salaries, so
+//  - MANAGER → /admin/leads (the CRM with the live shift summary; everything else is in the menu). Managers don't manage salaries, so
 //    they're kept out of /reports and the owner admin tools; redos is their one management task, and
 //    retention is read-only visibility shared with the owner.
 //  - ADS_MANAGER → /owner/marketing only (read-only there too — enforced by the page/API, not here).
@@ -16,14 +16,14 @@ import { NextRequest, NextResponse } from 'next/server';
 // as protected as its own code. `/`, `/api/*`, and static assets are excluded so the landing page,
 // the proxy API routes, and assets stay reachable.
 const PROVIDER_HOME = '/me';
-const MANAGER_HOME = '/manager';
+const MANAGER_HOME = '/admin/leads';
 const OWNER_HOME = '/reports';
 const ADS_MANAGER_HOME = '/owner/marketing';
 
 // Owner + manager (providers blocked). Retention is view-only for managers, same data as owners.
 // Manual credits are routine payroll bookkeeping, not a salary decision, so managers get it too
 // (see SecurityConfig.java's matching backend rule).
-const STAFF_ONLY = ['/manager', '/admin/redos', '/owner/retention', '/admin/manual-adjustments'];
+const STAFF_ONLY = ['/manager', '/admin/redos', '/owner/retention', '/admin/manual-adjustments', '/admin/response-times'];
 // Owner only (managers and providers blocked). /reports (salary) and the other admin tools live here;
 // redos and manual-adjustments are intentionally absent (gated by STAFF_ONLY instead). Retention is
 // carved out of /owner into STAFF_ONLY above, so only /owner/overview stays owner-only here.
