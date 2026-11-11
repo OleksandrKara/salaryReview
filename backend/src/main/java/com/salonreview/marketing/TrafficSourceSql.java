@@ -102,12 +102,15 @@ final class TrafficSourceSql {
             CASE
                 WHEN %1$s.marketing_traffic_source LIKE 'Google Ads%%' OR %1$s.original_traffic_source LIKE 'Google Ads%%'
                      THEN 'google_ads'
+                WHEN %1$s.marketing_traffic_source ~ '^(Instagram|Facebook) Ads' OR %1$s.original_traffic_source ~ '^(Instagram|Facebook) Ads'
+                     THEN 'meta_ads'
                 WHEN (%1$s.marketing_traffic_source LIKE 'Meta Ads%%' OR %1$s.original_traffic_source LIKE 'Meta Ads%%')
                      AND %1$s.utm_medium IS NOT NULL AND %1$s.utm_medium <> 'social' THEN 'meta_ads'
                 WHEN %1$s.utm_source ILIKE 'ig' AND COALESCE(%1$s.utm_medium, '') IN ('', 'social') THEN 'instagram_organic'
                 WHEN %1$s.referrer ILIKE '%%instagram.com%%' THEN 'instagram_organic'
                 WHEN %1$s.utm_source ILIKE 'yelp%%' OR %1$s.referrer ~* '^https?://([a-z0-9-]+\\.)*yelp\\.'
-                     OR %1$s.marketing_traffic_source ILIKE '%%yelp.%%' THEN 'yelp'
+                     OR %1$s.marketing_traffic_source ILIKE '%%yelp.%%'
+                     OR %1$s.marketing_traffic_source ~ '^Yelp (Ads|\\(organic\\))' THEN 'yelp'
                 WHEN %1$s.utm_source IS NULL AND %1$s.referrer ILIKE '%%google.%%'
                      AND NOT (@TOOL_REF@) THEN 'google_organic'
                 WHEN %1$s.utm_source IS NULL AND (%1$s.referrer IS NULL OR %1$s.referrer = '' OR (@TOOL_REF@)) THEN 'direct'

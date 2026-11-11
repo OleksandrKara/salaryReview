@@ -42,7 +42,8 @@ public class AcademyLeadService {
      * organic and referrals are told apart instead of landing as Unknown. */
     static String trafficSource(AcademyLead l) {
         if (l.referrer() == null) {
-            return notBlank(l.gclid()) ? "Google Ads" : notBlank(l.utmSource()) ? l.utmSource() : null;
+            return notBlank(l.gclid()) ? "Google Ads" : notBlank(l.utmSource())
+                    ? com.salonreview.landing.TrafficSource.classify(l.utmSource(), l.utmMedium(), l.utmCampaign(), null, null, null, null, null, null, null) : null;
         }
         String ref = l.referrer().isBlank() || l.referrer().toLowerCase(java.util.Locale.ROOT).contains("pmu-annakara.com") ? null : l.referrer();
         return com.salonreview.landing.LandingTracking.classify(new com.salonreview.landing.LandingTracking(null, null, ref,

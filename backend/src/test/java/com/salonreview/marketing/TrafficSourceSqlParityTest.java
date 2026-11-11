@@ -34,6 +34,8 @@ class TrafficSourceSqlParityTest {
         REFERRER_TO_BUCKET.put("https://search.google.com/local/reviews", "google_organic");
         REFERRER_TO_BUCKET.put("https://l.instagram.com/", "instagram_organic");
         REFERRER_TO_BUCKET.put("https://www.yelp.com/biz/x", "yelp");
+        REFERRER_TO_BUCKET.put("https://m.yelp.com/", "yelp");
+        REFERRER_TO_BUCKET.put("https://www.yelp.com/biz_redir?url=x", "yelp");
     }
 
     @Test
@@ -54,6 +56,7 @@ class TrafficSourceSqlParityTest {
                 case "direct" -> "Direct / No referrer";
                 case "google_organic" -> "Google (organic)";
                 case "instagram_organic" -> "Instagram (organic)";
+                case "yelp" -> "Yelp (organic)";
                 default -> label;
             });
             if (!e.getValue().equals("yelp")) {

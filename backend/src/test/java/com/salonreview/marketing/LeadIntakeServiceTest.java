@@ -10,8 +10,8 @@ class LeadIntakeServiceTest {
     void sourceLabels() {
         assertEquals("Google Ads", LeadIntakeService.sourceLabel("Google Ads (pmu-book)"));
         assertEquals("Meta Ads", LeadIntakeService.sourceLabel("Meta Ads (x)"));
-        assertEquals("Instagram", LeadIntakeService.sourceLabel("Instagram (organic)"));
-        assertEquals("Google organic", LeadIntakeService.sourceLabel("Google (organic)"));
+        assertEquals("Instagram (organic)", LeadIntakeService.sourceLabel("Instagram (organic)"));
+        assertEquals("Google (organic)", LeadIntakeService.sourceLabel("Google (organic)"));
         assertEquals("Direct", LeadIntakeService.sourceLabel("Direct / No referrer"));
         assertEquals("Unknown", LeadIntakeService.sourceLabel(null));
     }

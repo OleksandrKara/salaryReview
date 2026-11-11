@@ -279,34 +279,10 @@ public class SmsWebsiteLeadService {
         return s.isBlank() ? null : s;
     }
 
-    /** Same labels salonLandings' classify_traffic_source gives a booking (app/services/
-     * traffic_source.py), so an SMS lead and a booked contact read the same in Contacts and the
-     * "Google Ads%"/"Meta Ads%" prefix matching keeps working. Keep the two in step. */
+    /** Delegates to the single taxonomy (landing.TrafficSource). */
     static String classifyTrafficSource(String utmSource, String utmMedium, String utmCampaign, String referrer,
                                         String gclid, String fbclid) {
-        String utmDetail = null;
-        if (utmSource != null) {
-            StringBuilder sb = new StringBuilder(utmSource);
-            if (utmMedium != null) sb.append(" / ").append(utmMedium);
-            if (utmCampaign != null) sb.append(" / ").append(utmCampaign);
-            utmDetail = sb.toString();
-        }
-        if (fbclid != null) return utmDetail != null ? "Meta Ads (" + utmDetail + ")" : "Meta Ads (click)";
-        if (gclid != null) return utmDetail != null ? "Google Ads (" + utmDetail + ")" : "Google Ads (click)";
-        if (utmDetail != null) return utmDetail;
-
-        String ref = referrer == null || com.salonreview.landing.LandingTracking.isGoogleToolReferrer(referrer) ? "" : referrer.toLowerCase(Locale.ROOT);
-        if (ref.isEmpty()) return "Direct / No referrer";
-        if (ref.contains("google.")) return "Google (organic)";
-        if (ref.contains("instagram.com")) return "Instagram (organic)";
-        if (ref.contains("facebook.com") || ref.contains("fb.com")) return "Facebook (organic)";
-        if (ref.contains("bing.")) return "Bing (organic)";
-        if (ref.contains("yahoo.")) return "Yahoo (organic)";
-        try {
-            String host = URI.create(referrer).getHost();
-            return host != null ? "Referral: " + host : "Direct / No referrer";
-        } catch (IllegalArgumentException e) {
-            return "Direct / No referrer";
-        }
+        return com.salonreview.landing.TrafficSource.classify(utmSource, utmMedium, utmCampaign, referrer, gclid,
+                null, null, null, fbclid, null);
     }
 }

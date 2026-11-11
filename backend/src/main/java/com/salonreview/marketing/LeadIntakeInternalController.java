@@ -42,13 +42,7 @@ public class LeadIntakeInternalController {
         String campaign = str(body, "utm_campaign", "campaign");
         String ts = null;
         if (utmSource != null) {
-            String m = utmMedium == null ? "" : utmMedium.toLowerCase();
-            String s = utmSource.toLowerCase();
-            if (s.contains("google") && (m.contains("cpc") || m.contains("ppc") || m.contains("paid"))) ts = "Google Ads (" + (campaign == null ? "call" : campaign) + ")";
-            else if (s.contains("google")) ts = "Google (organic)";
-            else if (s.contains("instagram")) ts = "Instagram (organic)";
-            else if (s.contains("facebook") || s.contains("meta")) ts = "Facebook (organic)";
-            else ts = utmSource;
+            ts = com.salonreview.landing.TrafficSource.classify(utmSource, utmMedium, campaign, null, null, null, null, null, null, null);
         }
         LeadIntakeService.Result r = service.capture(new LeadIntakeService.Lead(businessId, "Call", ts, phone, null,
                 str(body, "caller_name", "name"), campaign, callId, payloadJson(body)));

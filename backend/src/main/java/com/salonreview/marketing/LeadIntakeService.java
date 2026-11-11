@@ -109,17 +109,7 @@ public class LeadIntakeService {
 
     /** Short source label used for the group and the attribute, from a traffic-source string. */
     static String sourceLabel(String trafficSource) {
-        if (trafficSource == null || trafficSource.isBlank()) return "Unknown";
-        String t = trafficSource.toLowerCase(Locale.ROOT);
-        if (t.startsWith("google ads")) return "Google Ads";
-        if (t.startsWith("meta ads")) return "Meta Ads";
-        if (t.contains("instagram")) return "Instagram";
-        if (t.contains("facebook")) return "Facebook";
-        if (t.contains("google")) return "Google organic";
-        if (t.contains("bing") || t.contains("yahoo")) return "Search organic";
-        if (t.startsWith("direct")) return "Direct";
-        if (t.matches(".*(chatgpt|openai|perplexity|gemini|copilot|claude).*")) return "AI search";
-        return "Other";
+        return com.salonreview.landing.TrafficSource.crmLabel(trafficSource);
     }
 
     static String[] splitName(String name) {
