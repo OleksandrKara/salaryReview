@@ -197,7 +197,10 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
       }
       if ((x.type === 'CALLBACK' || x.type === 'LAPSED') && x.text) text = fmt(x.text, language);
       if (x.type === 'OWNER') text = x.text === 'none' ? t(language, 'ownerBackToDefault') : x.text;
-      if (x.type === 'REACHED_OUT' && x.text === 'none') text = t(language, 'leadEventNOFOLLOWUP');
+      if (x.type === 'REACHED_OUT' && x.text?.startsWith('none')) {
+        const r = x.text.split(':')[1];
+        text = r ? `${t(language, 'leadEventNOFOLLOWUP')}: ${t(language, `remSkip_${r}` as 'remSkip_ARRANGED')}` : t(language, 'leadEventNOFOLLOWUP');
+      }
       else if (x.type === 'REACHED_OUT' && x.text) text = `${t(language, 'crmNextCheckIn')} ${x.text} ${t(language, 'crmDaysShort')}`;
       return { key: `e${x.id}`, at: x.createdAt, kind: manual ? 'note' : 'system', label, text, by: x.createdBy };
     }),
@@ -398,7 +401,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
           aria-label="status"
           value={lead.status}
           disabled={busy}
-          onChange={(e) => (e.target.value === 'LOST' ? setLosing(true) : send(`/api/leads/${lead.id}`, 'PATCH', { status: e.target.value }))}
+          onChange={(e) => (e.target.value === 'LOST' ? setLosing(true) : e.target.value === 'CONTACTED' && lead.status === 'NEW' ? setSheet(true) : send(`/api/leads/${lead.id}`, 'PATCH', { status: e.target.value }))}
           className={`${field} py-2`}
         >
           {lead.status === 'OUTDATED' && <option value="OUTDATED" disabled>{t(language, 'leadStatusOUTDATED')}</option>}

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { loadTs } from './_load.mjs';
 
 const load = loadTs;
-const { actionPlan, isOverdue, isLapsed, DAY } = await load('../app/admin/leads/leadActions.ts');
+const { actionPlan, isOverdue, isLapsed, hasNextStep, lacksNextStep, DAY } = await load('../app/admin/leads/leadActions.ts');
 const NOW = Date.parse('2026-11-07T12:00:00Z');
 const lead = (o) => ({ status: 'CONTACTED', callbackAt: null, closeReady: false, phoneNumber: '+16195550000', lastVisitAt: null, ...o });
 const ago = (days) => new Date(NOW - days * DAY).toISOString();
@@ -48,4 +48,13 @@ test('overdue and lapsed rules', () => {
   assert.equal(isOverdue(lead({ status: 'LOST', callbackAt: ago(1) }), NOW), false);
   assert.equal(isLapsed(lead({ lastVisitAt: ago(31) }), NOW), true);
   assert.equal(isLapsed(lead({ lastVisitAt: ago(29) }), NOW), false);
+});
+
+test('next step: a future reminder is a next step, none or overdue is not, closed leads never lack one', () => {
+  const fut = new Date(NOW + DAY).toISOString();
+  assert.equal(hasNextStep(lead({ callbackAt: fut }), NOW), true);
+  assert.equal(lacksNextStep(lead({ callbackAt: fut }), NOW), false);
+  assert.equal(lacksNextStep(lead({ callbackAt: null }), NOW), true);
+  assert.equal(lacksNextStep(lead({ callbackAt: ago(1) }), NOW), true);
+  assert.equal(lacksNextStep(lead({ status: 'LOST' }), NOW), false);
 });

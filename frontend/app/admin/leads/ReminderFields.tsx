@@ -39,27 +39,27 @@ export default function ReminderFields({ language, value, onChange, note, onNote
         })}
       </div>
 
-      <div className="flex min-w-0 flex-wrap items-end gap-3">
-        <div className="min-w-0 flex-1 basis-40">
+      <div className="grid min-w-0 grid-cols-2 items-end gap-3 max-[359px]:grid-cols-1">
+        <div className="min-w-0">
           <label htmlFor={`${idPrefix}-date`} className="mb-1 block text-xs font-medium text-zinc-600">{t(language, 'remPickDate')}</label>
           <input
             id={`${idPrefix}-date`} type="date" min={today} value={date} disabled={disabled}
             onChange={(e) => e.target.value && onChange({ ...value, days: null, date: e.target.value })}
-            className={`${fieldCls} min-h-11`}
+            className={`${fieldCls} min-h-11 max-w-full appearance-none`}
           />
         </div>
         {timeOpen ? (
-          <div className="min-w-0 flex-1 basis-32">
+          <div className="min-w-0">
             <label htmlFor={`${idPrefix}-time`} className="mb-1 block text-xs font-medium text-zinc-600">{t(language, 'remTime')}</label>
             <input
               id={`${idPrefix}-time`} type="time" value={value.time} disabled={disabled}
               onChange={(e) => e.target.value && onChange({ ...value, time: e.target.value, timeSet: true })}
-              className={`${fieldCls} min-h-11`}
+              className={`${fieldCls} min-h-11 max-w-full appearance-none`}
             />
           </div>
         ) : (
           <button type="button" disabled={disabled} onClick={() => { setTimeOpen(true); onChange({ ...value, timeSet: true }); }}
-            className="inline-flex min-h-11 items-center px-1 text-sm text-zinc-700 underline underline-offset-2">
+            className="inline-flex min-h-11 min-w-0 items-center px-1 text-sm text-zinc-700 underline underline-offset-2">
             {t(language, 'remAddTime')}
           </button>
         )}

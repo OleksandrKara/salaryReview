@@ -7,7 +7,9 @@ import type { Language } from '../../lib/types';
 import ReminderFields, { btnPrimary, btnQuiet } from './ReminderFields';
 import { DEFAULT_DAYS, DEFAULT_TIME, addDays, choiceBody, choiceInPast, ptYmd, type ReminderChoice } from './reminders';
 
-export type ReachedOutBody = { days?: number; date?: string; time?: string; note?: string; none?: boolean };
+export type ReachedOutBody = { days?: number; date?: string; time?: string; note?: string; none?: boolean; skipReason?: string };
+
+const SKIP_REASONS = ['CLIENT_WILL_WRITE', 'ARRANGED', 'NOT_NEEDED'] as const;
 
 const CLOSE_DISTANCE = 90;
 
@@ -18,6 +20,7 @@ function Sheet({ title, subtitle, language, onClose, onSubmit }: {
   const [choice, setChoice] = useState<ReminderChoice>({ days: DEFAULT_DAYS, date: addDays(ptYmd(now), DEFAULT_DAYS), time: DEFAULT_TIME, timeSet: false });
   const [note, setNote] = useState('');
   const [none, setNone] = useState(false);
+  const [skipReason, setSkipReason] = useState<string>('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(0);
@@ -35,10 +38,11 @@ function Sheet({ title, subtitle, language, onClose, onSubmit }: {
 
   async function submit() {
     if (busy) return;
+    if (none && !skipReason) { setError(t(language, 'remSkipReasonRequired')); return; }
     if (!none && choiceInPast(choice, now)) { setError(t(language, 'remPast')); return; }
     setBusy(true);
     setError('');
-    const ok = await onSubmit(none ? { none: true } : choiceBody(choice, note));
+    const ok = await onSubmit(none ? { none: true, skipReason } : choiceBody(choice, note));
     setBusy(false);
     if (ok) onClose(); else setError(t(language, 'remErr'));
   }
@@ -93,8 +97,16 @@ function Sheet({ title, subtitle, language, onClose, onSubmit }: {
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 pt-2">
           {none ? (
             <div className="flex flex-col items-start gap-3 py-2">
-              <p className="text-sm text-zinc-700">{t(language, 'remSheetNoneHint')}</p>
-              <button type="button" onClick={() => setNone(false)} className="inline-flex min-h-11 items-center text-sm text-zinc-800 underline underline-offset-2">{t(language, 'remSheetNoneUndo')}</button>
+              <p className="text-sm text-zinc-700">{t(language, 'remSkipWhy')}</p>
+              <div role="radiogroup" aria-label={t(language, 'remSkipWhy')} className="flex w-full flex-col gap-2">
+                {SKIP_REASONS.map((r) => (
+                  <button key={r} type="button" role="radio" aria-checked={skipReason === r} onClick={() => { setSkipReason(r); setError(''); }}
+                    className={`min-h-11 w-full rounded-lg px-3 text-left text-sm font-medium ring-1 ${skipReason === r ? 'bg-zinc-900 text-white ring-zinc-900' : 'bg-white text-zinc-800 ring-zinc-300 hover:bg-zinc-100'}`}>
+                    {t(language, `remSkip_${r}` as 'remSkip_ARRANGED')}
+                  </button>
+                ))}
+              </div>
+              <button type="button" onClick={() => { setNone(false); setError(''); }} className="inline-flex min-h-11 items-center text-sm text-zinc-800 underline underline-offset-2">{t(language, 'remSheetNoneUndo')}</button>
               {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
             </div>
           ) : (

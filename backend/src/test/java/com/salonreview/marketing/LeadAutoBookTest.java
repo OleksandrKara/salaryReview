@@ -210,7 +210,7 @@ class LeadAutoBookTest {
     @Test
     void reachedOutTakesDaysDateTimeNoteOrNoFollowUpAndRefusesClosedLeads() {
         long l = lead("+16195550053", "NEW", null, "3 days", false);
-        service.reachedOut(l, new LeadFollowUpService.ReachedOutRequest(5, null, "14:30", "ask about brows", false), "tester");
+        service.reachedOut(l, new LeadFollowUpService.ReachedOutRequest(5, null, "14:30", "ask about brows", false, null), "tester");
         var r = service.reminders(l);
         assertThat(r).hasSize(1);
         assertThat(r.get(0).note()).isEqualTo("ask about brows");
@@ -220,12 +220,12 @@ class LeadAutoBookTest {
         assertThat(at.toLocalTime()).isEqualTo(java.time.LocalTime.of(14, 30));
 
         String date = java.time.LocalDate.now(PT).plusDays(20).toString();
-        service.reachedOut(l, new LeadFollowUpService.ReachedOutRequest(null, date, null, null, false), "tester");
+        service.reachedOut(l, new LeadFollowUpService.ReachedOutRequest(null, date, null, null, false, null), "tester");
         assertThat(service.reminders(l)).hasSize(2);
         assertThat(service.find(l).callbackAt()).isEqualTo(r.get(0).dueAt());
 
         long q = lead("+16195550054", "NEW", null, "3 days", false);
-        service.reachedOut(q, new LeadFollowUpService.ReachedOutRequest(null, null, null, null, true), "tester");
+        service.reachedOut(q, new LeadFollowUpService.ReachedOutRequest(null, null, null, null, true, "CLIENT_WILL_WRITE"), "tester");
         assertThat(status(q)).isEqualTo("CONTACTED");
         assertThat(open(q)).isZero();
         assertThat(service.find(q).callbackAt()).isNull();
@@ -234,6 +234,16 @@ class LeadAutoBookTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.reachedOut(lost, null, "tester"))
                 .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
         assertThat(status(lost)).isEqualTo("LOST");
+    }
+
+    @Test
+    void reachedOutWithoutFollowUpNeedsAKnownSkipReason() {
+        long l = lead("+16195550056", "NEW", null, "3 days", false);
+        for (String bad : new String[] {null, "", "whatever"}) {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.reachedOut(l, new LeadFollowUpService.ReachedOutRequest(null, null, null, null, true, bad), "tester"))
+                    .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        }
+        assertThat(status(l)).isEqualTo("NEW");
     }
 
     @Test
