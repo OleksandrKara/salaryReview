@@ -29,6 +29,18 @@ class SmsWebsiteLeadServiceTest {
     }
 
     @Test
+    @DisplayName("classifyTrafficSource: Google tooling referrers count as no referrer, real search stays organic")
+    void googleToolReferrerIsDirect() {
+        for (String r : new String[] {"https://tagassistant.google.com/", "https://tagmanager.google.com/x", "https://analytics.google.com/analytics/web/",
+                "https://ads.google.com/", "https://lookerstudio.google.com/", "https://search.google.com/search-console", "https://pagespeed.web.dev/"}) {
+            assertThat(SmsWebsiteLeadService.classifyTrafficSource(null, null, null, r, null, null)).as(r).isEqualTo("Direct / No referrer");
+        }
+        for (String r : new String[] {"https://www.google.com/", "https://google.com/", "https://www.google.co.uk/", "https://www.google.com/search?q=x"}) {
+            assertThat(SmsWebsiteLeadService.classifyTrafficSource(null, null, null, r, null, null)).as(r).isEqualTo("Google (organic)");
+        }
+    }
+
+    @Test
     @DisplayName("classifyTrafficSource: same labels as salonLandings' classify_traffic_source")
     void classify() {
         assertThat(SmsWebsiteLeadService.classifyTrafficSource("google", "cpc", "pmax", null, "abc", null))
