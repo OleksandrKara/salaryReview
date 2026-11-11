@@ -225,6 +225,11 @@ public class TelegramNotificationService {
         return businesses.findById(businessId).map(b -> "🏢 " + escapeHtml(b.getName()) + "\n").orElse("");
     }
 
+    Map<String, Object> plainTextBody(String chatId, Long businessId, String text) {
+        String label = businesses.findById(businessId).map(b -> "🏢 " + b.getName() + "\n").orElse("");
+        return Map.of("chat_id", chatId, "text", label + text, "disable_web_page_preview", true);
+    }
+
     /** Plain-text message to the business's chat (AI-visibility weekly digest,
      * openspec/changes/ai-visibility-monitoring design.md D8). Same never-throws contract as the
      * alerts below; link previews off so the dashboard link doesn't expand into a card. */
@@ -237,7 +242,7 @@ public class TelegramNotificationService {
             return false;
         }
         try {
-            Map<String, Object> body = Map.of("chat_id", chatId, "text", text, "disable_web_page_preview", true);
+            Map<String, Object> body = plainTextBody(chatId, businessId, text);
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create("https://api.telegram.org/bot" + token + "/sendMessage"))
                     .timeout(Duration.ofSeconds(10))

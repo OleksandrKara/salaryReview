@@ -207,6 +207,19 @@ class TelegramNotificationServiceTest {
     }
 
     @Test
+    @DisplayName("sendPlainText body: text is prefixed with the business label")
+    void plainTextBodyCarriesBusinessLabel() {
+        BusinessRepository businesses = mock(BusinessRepository.class);
+        when(businesses.findById(2L)).thenReturn(Optional.of(
+                Business.builder().id(2L).name("Anna Kara's Brow Studio LLC").shortCode("annakarapmu")
+                        .timezone("America/Los_Angeles").active(true).build()));
+        TelegramNotificationService service = service(mock(TelegramConfigService.class), businesses);
+
+        assertThat(service.plainTextBody("123", 2L, "Reminder").get("text"))
+                .isEqualTo("🏢 Anna Kara's Brow Studio LLC\nReminder");
+    }
+
+    @Test
     @DisplayName("businessLabel: unresolvable business id → empty string, not a placeholder or an exception")
     void businessLabelEmptyWhenUnresolvable() {
         BusinessRepository businesses = mock(BusinessRepository.class);
