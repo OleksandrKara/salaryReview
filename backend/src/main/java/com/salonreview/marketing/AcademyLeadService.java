@@ -57,7 +57,8 @@ public class AcademyLeadService {
     public record AcademyLead(String kind, String name, String phone, String email, String courseSlug, String courseName,
                               String message, boolean smsConsent, boolean emailConsent, String sourcePageUrl,
                               String utmSource, String utmMedium, String utmCampaign, String gclid,
-                              String location, String utmTerm, String utmContent, String referrer, String fbclid) {
+                              String location, String utmTerm, String utmContent, String referrer, String fbclid,
+                              String visitorId, String pagePath) {
         public boolean isSubscription() {
             return "subscribe".equals(kind);
         }
@@ -79,6 +80,8 @@ public class AcademyLeadService {
                 """, Long.class, businessId, l.isSubscription() ? "subscribe" : "course_request", l.name(), l.phone(), l.email(), l.courseSlug(), l.courseName(),
                 l.message(), l.smsConsent(), l.emailConsent(), l.sourcePageUrl(), l.utmSource(), l.utmMedium(),
                 l.utmCampaign(), l.gclid(), l.utmTerm(), l.utmContent());
+
+        recordSubmission(businessId, l, id);
 
         // Course requests get the automatic follow-up funnel (AcademyLeadFunnelScheduler); the button
         // stops it once staff have talked to the person.
@@ -114,6 +117,32 @@ public class AcademyLeadService {
         jdbc.update("UPDATE academy_lead SET telegram_sent = ?, hubspot_submitted = ?, hubspot_error = ? WHERE id = ?",
                 sent, hs.submitted(), hs.error(), id);
         return new Outcome(id, sent, hs.submitted(), hs.error());
+    }
+
+    /** One marketing.submissions row per form, tied to the browser (visitor id) and carrying the first-touch
+     * source, so the lead's Website tab shows where each form came from and which visits led to it. */
+    private void recordSubmission(long businessId, AcademyLead l, Long id) {
+        try {
+            String visitor = l.visitorId() != null && l.visitorId().matches("[0-9a-fA-F-]{36}") ? l.visitorId() : null;
+            String path = notBlank(l.sourcePageUrl()) ? l.sourcePageUrl().replaceFirst("^https?://[^/]+", "") : null;
+            String phone = notBlank(l.phone()) ? l.phone() : null;
+            jdbc.update("""
+                    INSERT INTO marketing.submissions (business_id, visitor_id, submission_type, customer_email, customer_phone,
+                        landing_path, referrer, utm_source, utm_medium, utm_campaign, utm_term, utm_content, fbclid, gclid,
+                        landing_page_slug, traffic_source, page_path)
+                    VALUES (?, ?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'academy', ?, ?)
+                    """, businessId, visitor, l.isSubscription() ? "academy_subscribe" : "academy_request",
+                    notBlank(l.email()) ? l.email().trim().toLowerCase() : null, phone, path, blankToNull(l.referrer()),
+                    blankToNull(l.utmSource()), blankToNull(l.utmMedium()), blankToNull(l.utmCampaign()), blankToNull(l.utmTerm()),
+                    blankToNull(l.utmContent()), blankToNull(l.fbclid()), blankToNull(l.gclid()),
+                    trafficSource(l) == null ? "Direct / Unknown" : trafficSource(l), blankToNull(l.pagePath()));
+            if (visitor != null && !l.isSubscription()) {
+                jdbc.update("UPDATE lead_intake SET visitor_id = ?::uuid WHERE business_id = ? AND external_id = ? AND visitor_id IS NULL",
+                        visitor, businessId, "academy:" + id);
+            }
+        } catch (RuntimeException e) {
+            log.warn("Academy lead {}: submission row failed: {}", id, e.toString());
+        }
     }
 
     /** Hashtags first, so staff can find every academy lead in Telegram search: #academy for all,

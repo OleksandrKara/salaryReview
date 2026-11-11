@@ -54,32 +54,45 @@ public class LandingWriteRepository {
                     business_id, visitor_id, landing_path, referrer,
                     utm_source, utm_medium, utm_campaign, utm_term, utm_content,
                     fbclid, gclid, user_agent, device_type, os_name, os_version,
-                    browser_name, browser_version, ip_address
-                ) VALUES (?, ?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    browser_name, browser_version, ip_address,
+                    gbraid, wbraid, msclkid, landing_url, visit_referrer, is_first_visit
+                ) VALUES (?, ?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, businessId, t.visitorId(), t.landingPath(), t.referrer(), t.utmSource(), t.utmMedium(),
                 t.utmCampaign(), t.utmTerm(), t.utmContent(), t.fbclid(), t.gclid(), c.userAgent(), c.deviceType(),
-                c.osName(), c.osVersion(), c.browserName(), c.browserVersion(), c.ipAddress());
+                c.osName(), c.osVersion(), c.browserName(), c.browserVersion(), c.ipAddress(),
+                t.gbraid(), t.wbraid(), t.msclkid(), t.landingUrl(), t.visitReferrer(), t.firstVisit());
     }
 
     public void insertSubmission(long businessId, String visitorId, String submissionType, LandingTracking t,
                                  LandingUserAgents.Context c, String squareBookingId, String serviceName,
                                  BigDecimal price, String customerEmail, String customerPhone,
                                  String landingPageSlug, String variantName, String trafficSource) {
+        insertSubmission(businessId, visitorId, submissionType, t, c, squareBookingId, serviceName, price,
+                customerEmail, customerPhone, landingPageSlug, variantName, trafficSource, null);
+    }
+
+    public void insertSubmission(long businessId, String visitorId, String submissionType, LandingTracking t,
+                                 LandingUserAgents.Context c, String squareBookingId, String serviceName,
+                                 BigDecimal price, String customerEmail, String customerPhone,
+                                 String landingPageSlug, String variantName, String trafficSource, String pagePath) {
         jdbc.update("""
                 INSERT INTO marketing.submissions (
                     business_id, visitor_id, submission_type, square_booking_id, service_name, price,
                     customer_email, customer_phone, landing_path, referrer,
                     utm_source, utm_medium, utm_campaign, utm_term, utm_content,
                     fbclid, gclid, user_agent, device_type, os_name, os_version,
-                    browser_name, browser_version, ip_address, landing_page_slug, variant_name, traffic_source
-                ) VALUES (?, ?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    browser_name, browser_version, ip_address, landing_page_slug, variant_name, traffic_source,
+                    gbraid, wbraid, msclkid, landing_url, page_path
+                ) VALUES (?, ?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, businessId, visitorId, submissionType, squareBookingId, serviceName, price, customerEmail,
                 customerPhone, t == null ? null : t.landingPath(), t == null ? null : t.referrer(),
                 t == null ? null : t.utmSource(), t == null ? null : t.utmMedium(),
                 t == null ? null : t.utmCampaign(), t == null ? null : t.utmTerm(),
                 t == null ? null : t.utmContent(), t == null ? null : t.fbclid(), t == null ? null : t.gclid(),
                 c.userAgent(), c.deviceType(), c.osName(), c.osVersion(), c.browserName(), c.browserVersion(),
-                c.ipAddress(), landingPageSlug, variantName, trafficSource);
+                c.ipAddress(), landingPageSlug, variantName, trafficSource,
+                t == null ? null : t.gbraid(), t == null ? null : t.wbraid(), t == null ? null : t.msclkid(),
+                t == null ? null : t.landingUrl(), pagePath);
     }
 
     public void insertSmsConsent(long businessId, String phone, boolean consented, String text, String version,

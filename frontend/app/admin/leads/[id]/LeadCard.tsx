@@ -251,7 +251,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
     ...(lead.squareCustomerId ? [{ id: 'visits' as const, label: t(language, 'crmTabVisits'), n: data.appointments.length }] : []),
     { id: 'images', label: t(language, 'crmTabImages'), n: photos.length },
     { id: 'emails', label: t(language, 'crmTabEmails'), n: data.emails.length },
-    { id: 'web', label: t(language, 'crmTabWeb'), n: data.origins.length },
+    { id: 'web', label: t(language, 'crmTabWeb'), n: data.origins.length + (data.journey?.visits.length ?? 0) },
   ];
 
   const squareNoteCard = data.squareNote && (
@@ -664,11 +664,56 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
 
       {tab === 'web' && (
         <section className="flex flex-col gap-3">
-          {data.origins.length === 0 && <p className="text-sm text-zinc-500">{t(language, 'leadOriginsEmpty')}</p>}
+          {data.journey?.first && (
+            <div className="rounded-lg bg-emerald-50 p-3 text-sm ring-1 ring-emerald-200">
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-emerald-800">{t(language, 'leadFirstVisit')}</div>
+              <div className="font-medium text-zinc-900">{[data.journey.first.trafficSource, data.journey.first.utm].filter(Boolean).join(' · ') || '-'}</div>
+              <dl className="mt-1 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5">
+                {([
+                  [t(language, 'leadLanding'), data.journey.first.landing],
+                  [t(language, 'leadReferrer'), data.journey.first.referrer],
+                  [t(language, 'leadAdClick'), data.journey.first.adClick],
+                  [t(language, 'leadDevice'), data.journey.first.device],
+                  ['', fmt(data.journey.first.at, language)],
+                ] as [string, string | null][]).filter(([, v]) => v).map(([k, v], i) => (<div key={i} className="contents"><dt className="text-zinc-500">{k}</dt><dd className="break-all text-zinc-800">{v}</dd></div>))}
+              </dl>
+            </div>
+          )}
+          {data.journey && data.journey.visits.length > 0 && (
+            <div>
+              <h3 className="mb-1 text-sm font-semibold text-zinc-800">{t(language, 'leadVisitsList')} ({data.journey.visits.length})</h3>
+              <ul className="flex flex-col gap-1">
+                {data.journey.visits.map((v, i) => (
+                  <li key={i} className="rounded-lg p-2 text-sm ring-1 ring-zinc-200">
+                    <div className="flex flex-wrap gap-x-2 text-xs text-zinc-500">
+                      <span>{fmt(v.at, language)}</span>
+                      {v.first && <span className="rounded bg-emerald-100 px-1 font-semibold text-emerald-800">{t(language, 'leadFirstBadge')}</span>}
+                      {v.device && <span>{v.device}</span>}
+                    </div>
+                    <div className="text-zinc-800">{[v.trafficSource, v.utm].filter(Boolean).join(' · ') || '-'}</div>
+                    {v.landing && <div className="break-all text-xs text-zinc-500">{v.landing}</div>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.journey && data.journey.pages.length > 0 && (
+            <div>
+              <h3 className="mb-1 text-sm font-semibold text-zinc-800">{t(language, 'leadPagesList')} ({data.journey.pageTotal})</h3>
+              {data.journey.pageTotal > data.journey.pages.length && <p className="mb-1 text-xs text-zinc-500">{t(language, 'leadPagesMore')} {data.journey.pageTotal}</p>}
+              <ul className="flex flex-col gap-0.5 text-sm">
+                {data.journey.pages.map((p, i) => (
+                  <li key={i} className="flex gap-2"><span className="shrink-0 text-xs text-zinc-500">{fmt(p.at, language)}</span><span className="break-all text-zinc-800">{p.path}</span></li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.origins.length > 0 && <h3 className="text-sm font-semibold text-zinc-800">{t(language, 'leadFormsList')}</h3>}
+          {data.origins.length === 0 && !data.journey?.first && <p className="text-sm text-zinc-500">{t(language, 'leadOriginsEmpty')}</p>}
           <ul className="flex flex-col gap-2">
             {data.origins.map((o, i) => {
               const utm = [o.utmSource, o.utmMedium, o.utmCampaign, o.utmTerm, o.utmContent].filter(Boolean).join(' / ');
-              const typeKey = o.type === 'step1' || o.type === 'booking' ? o.type : 'other';
+              const typeKey = o.type === 'step1' || o.type === 'booking' || o.type === 'academy_request' || o.type === 'academy_subscribe' ? o.type : 'other';
               const rows: [string, string | null][] = [
                 [t(language, 'leadTraffic'), [o.trafficSource, utm].filter(Boolean).join(' · ') || null],
                 [t(language, 'leadAdClick'), o.googleClick ? 'gclid (Google Ads)' : o.facebookClick ? 'fbclid (Meta)' : null],

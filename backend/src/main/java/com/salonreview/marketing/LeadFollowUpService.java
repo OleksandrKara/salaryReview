@@ -132,7 +132,16 @@ public class LeadFollowUpService {
     public record LeadDetail(LeadView lead, List<Touch> touches, List<Event> events, List<Origin> origins,
                              List<Appointment> appointments, Spend spend, List<EmailSent> emails,
                              List<Sms> sms, String squareNote, List<Payment> payments, List<Form> forms,
-                             Place place, Badges badges, List<Reminder> reminders) {}
+                             Place place, Badges badges, List<Reminder> reminders, Journey journey) {}
+
+    /** One site visit of this person: where it began and the traffic source of that visit itself. */
+    public record Visit(String at, String landing, String trafficSource, String referrer, String utm, String adClick,
+                        String device, boolean first) {}
+
+    public record PageView(String at, String path) {}
+
+    /** The person's path on our sites: first visit, every later visit, and the pages they opened. */
+    public record Journey(Visit first, List<Visit> visits, List<PageView> pages, int pageTotal) {}
 
     public record Reminder(long id, String dueAt, String note, String origin, String createdBy, boolean fired) {}
 
@@ -299,7 +308,8 @@ public class LeadFollowUpService {
                         rs.getString("created_by"), iso(rs.getTimestamp("created_at"))), id, business.id());
         return new LeadDetail(lead, touches, events, origins(lead), appointments(lead), spend(lead), emails(lead),
                 sms(lead), squareNote(lead), payments(lead), forms(lead, touches), place(lead), badges(lead),
-                "NEW".equals(lead.status()) || "CONTACTED".equals(lead.status()) ? reminders(lead.id()) : List.of());
+                "NEW".equals(lead.status()) || "CONTACTED".equals(lead.status()) ? reminders(lead.id()) : List.of(),
+                journey(lead));
     }
 
     /** Geo of the most recent website visit that has an IP; scope tells a manager whether the person is local. */
@@ -458,13 +468,18 @@ public class LeadFollowUpService {
         String email = lead.email() == null ? null : lead.email().toLowerCase();
         if (phone == null && email == null) return List.of();
         java.util.Map<String, String> places = new java.util.HashMap<>();
+        List<String> visitors = visitorIds(lead);
+        String byVisitor = visitors.isEmpty() ? "" : " OR visitor_id IN (" + uuidMarks(visitors.size()) + ")";
+        List<Object> originArgs = new java.util.ArrayList<>(List.of(business.id(), phone == null ? "" : phone, email == null ? "" : email, email == null ? "" : email));
+        originArgs.addAll(visitors);
         return jdbc.query("""
                 SELECT submission_type, occurred_at, landing_page_slug, landing_path, variant_name, traffic_source,
                        utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, fbclid, referrer,
                        device_type, os_name, os_version, browser_name, browser_version, ip_address, service_name
                 FROM marketing.submissions
-                WHERE business_id = ? AND (customer_phone = ? OR (?::text IS NOT NULL AND lower(customer_email) = ?))
-                ORDER BY occurred_at DESC LIMIT 12
+                WHERE business_id = ? AND (customer_phone = ? OR (?::text <> '' AND lower(customer_email) = ?)""" + byVisitor + """
+                )
+                ORDER BY occurred_at DESC LIMIT 20
                 """, (rs, i) -> {
             String ip = rs.getString("ip_address");
             String where = ip == null ? null : places.computeIfAbsent(ip, k -> {
@@ -480,7 +495,125 @@ public class LeadFollowUpService {
                     rs.getString("device_type"), join(rs.getString("os_name"), rs.getString("os_version")),
                     join(rs.getString("browser_name"), rs.getString("browser_version")), ip,
                     where == null || where.isEmpty() ? null : where, rs.getString("service_name"));
-        }, business.id(), phone, email, email);
+        }, originArgs.toArray());
+    }
+
+    private static String uuidMarks(int n) {
+        return String.join(", ", java.util.Collections.nCopies(n, "?::uuid"));
+    }
+
+    /** Browsers (visitor ids) tied to this person by a form, a text-consent tick or the lead row itself. */
+    private List<String> visitorIds(LeadView lead) {
+        String phone = lead.phoneNumber() == null ? "" : lead.phoneNumber();
+        String email = lead.email() == null ? "" : lead.email().toLowerCase();
+        if (phone.isEmpty() && email.isEmpty()) return List.of();
+        return jdbc.queryForList("""
+                SELECT v::text FROM (
+                    SELECT visitor_id AS v FROM marketing.submissions
+                     WHERE business_id = ? AND visitor_id IS NOT NULL AND (customer_phone = ? OR (?::text <> '' AND lower(customer_email) = ?))
+                    UNION
+                    SELECT visitor_id FROM lead_intake
+                     WHERE business_id = ? AND visitor_id IS NOT NULL AND (phone_number = ? OR (?::text <> '' AND lower(email) = ?))
+                    UNION
+                    SELECT visitor_id FROM marketing.sms_consent
+                     WHERE business_id = ? AND visitor_id IS NOT NULL AND phone_number = ?
+                ) x LIMIT 12
+                """, String.class, business.id(), phone, email, email, business.id(), phone, email, email, business.id(), phone);
+    }
+
+    private static final java.util.Set<String> OWN_HOSTS = java.util.Set.of("pmu-annakara.com", "akluxnails.com");
+
+    private static String firstParam(String query, String key) {
+        if (query == null) return null;
+        for (String part : query.split("&")) {
+            int eq = part.indexOf('=');
+            if (eq > 0 && part.substring(0, eq).equals(key)) {
+                try {
+                    String v = java.net.URLDecoder.decode(part.substring(eq + 1), java.nio.charset.StandardCharsets.UTF_8);
+                    return v.isBlank() ? null : v;
+                } catch (IllegalArgumentException e) {
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Source of this visit alone: its own landing URL parameters and referrer when the site sent them,
+     * otherwise the attribution stored on the row. */
+    private static Visit visitOf(java.sql.ResultSet rs, boolean first) throws java.sql.SQLException {
+        String landingUrl = rs.getString("landing_url");
+        String q = landingUrl != null && landingUrl.contains("?") ? landingUrl.substring(landingUrl.indexOf('?') + 1) : null;
+        String rawRef = landingUrl != null ? rs.getString("visit_referrer") : rs.getString("referrer");
+        String referrer = rawRef == null || rawRef.isBlank() || OWN_HOSTS.stream().anyMatch(h -> rawRef.toLowerCase().contains(h)) ? null : rawRef;
+        String src, med, camp, term, content, gclid, gbraid, wbraid, fbclid, msclkid;
+        if (landingUrl != null) {
+            src = firstParam(q, "utm_source"); med = firstParam(q, "utm_medium"); camp = firstParam(q, "utm_campaign");
+            term = firstParam(q, "utm_term"); content = firstParam(q, "utm_content");
+            gclid = firstParam(q, "gclid"); gbraid = firstParam(q, "gbraid"); wbraid = firstParam(q, "wbraid");
+            fbclid = firstParam(q, "fbclid"); msclkid = firstParam(q, "msclkid");
+        } else {
+            src = rs.getString("utm_source"); med = rs.getString("utm_medium"); camp = rs.getString("utm_campaign");
+            term = rs.getString("utm_term"); content = rs.getString("utm_content");
+            gclid = rs.getString("gclid"); gbraid = rs.getString("gbraid"); wbraid = rs.getString("wbraid");
+            fbclid = rs.getString("fbclid"); msclkid = rs.getString("msclkid");
+        }
+        String label = com.salonreview.landing.LandingTracking.classify(new com.salonreview.landing.LandingTracking(
+                null, null, referrer, src, med, camp, term, content, fbclid, gclid, null, null, gbraid, wbraid, msclkid, null, null, false));
+        String utm = java.util.stream.Stream.of(src, med, camp, term, content).filter(x -> x != null && !x.isBlank())
+                .collect(java.util.stream.Collectors.joining(" / "));
+        String click = gclid != null ? "gclid (Google Ads)" : gbraid != null || wbraid != null ? "gbraid/wbraid (Google Ads)"
+                : fbclid != null ? "fbclid (Meta)" : msclkid != null ? "msclkid (Microsoft Ads)" : null;
+        String landing = landingUrl != null ? landingUrl : rs.getString("landing_path");
+        return new Visit(iso(rs.getTimestamp("occurred_at")), landing, label, referrer, utm.isEmpty() ? null : utm, click,
+                join(rs.getString("device_type"), rs.getString("browser_name")), first);
+    }
+
+    private Journey journey(LeadView lead) {
+        try {
+            List<String> ids = visitorIds(lead);
+            if (ids.isEmpty()) return new Journey(null, List.of(), List.of(), 0);
+            List<Object> a = new java.util.ArrayList<>();
+            a.add(business.id());
+            a.addAll(ids);
+            String in = uuidMarks(ids.size());
+            List<java.util.Map.Entry<Boolean, Visit>> rows = new java.util.ArrayList<>();
+            jdbc.query("""
+                    SELECT occurred_at, landing_path, landing_url, referrer, visit_referrer, utm_source, utm_medium,
+                           utm_campaign, utm_term, utm_content, gclid, gbraid, wbraid, fbclid, msclkid,
+                           device_type, browser_name, is_first_visit
+                    FROM marketing.visits WHERE business_id = ? AND visitor_id IN (%s)
+                    ORDER BY occurred_at ASC LIMIT 100
+                    """.formatted(in), rs -> {
+                rows.add(java.util.Map.entry(rs.getBoolean("is_first_visit"), visitOf(rs, false)));
+            }, a.toArray());
+            if (rows.isEmpty() && ids.isEmpty()) return new Journey(null, List.of(), List.of(), 0);
+            Visit first = null;
+            List<Visit> visits = new java.util.ArrayList<>();
+            for (int i = 0; i < rows.size(); i++) {
+                Visit v = rows.get(i).getValue();
+                boolean isFirst = i == 0;
+                Visit marked = new Visit(v.at(), v.landing(), v.trafficSource(), v.referrer(), v.utm(), v.adClick(), v.device(), isFirst);
+                if (isFirst) first = marked;
+                visits.add(marked);
+            }
+            java.util.Collections.reverse(visits);
+            List<Object> pa = new java.util.ArrayList<>();
+            pa.add(business.id());
+            pa.addAll(ids);
+            Integer total = jdbc.queryForObject("SELECT count(*) FROM marketing.events WHERE business_id = ? AND event_type = 'page_view' AND session_id IN (%s)"
+                    .formatted(in), Integer.class, pa.toArray());
+            List<PageView> pages = jdbc.query("""
+                    SELECT created_at, metadata->>'path' AS path, metadata->>'query' AS query FROM marketing.events
+                    WHERE business_id = ? AND event_type = 'page_view' AND session_id IN (%s)
+                    ORDER BY created_at DESC LIMIT 200
+                    """.formatted(in), (rs, i) -> new PageView(iso(rs.getTimestamp("created_at")),
+                    (rs.getString("path") == null ? "/" : rs.getString("path")) + (rs.getString("query") == null || rs.getString("query").isBlank() ? "" : "?" + rs.getString("query"))), pa.toArray());
+            return new Journey(first, visits, pages, total == null ? pages.size() : total);
+        } catch (RuntimeException e) {
+            log.warn("Lead {} journey lookup failed: {}", lead.id(), e.toString());
+            return new Journey(null, List.of(), List.of(), 0);
+        }
     }
 
     /** The lead's Square customer plus duplicate profiles of the same person (same phone or email in this business). */

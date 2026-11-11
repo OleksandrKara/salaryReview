@@ -237,7 +237,8 @@ final class LandingBody {
                 string("referrer", 1000), string("utm_source", 200), string("utm_medium", 200),
                 string("utm_campaign", 200), string("utm_term", 200), string("utm_content", 200),
                 string("fbclid", 500), string("gclid", 500), string("landing_page_id", 64),
-                string("variant_id", 64));
+                string("variant_id", 64), string("gbraid", 500), string("wbraid", 500), string("msclkid", 500),
+                string("landing_url", 1000), string("visit_referrer", 1000), bool("is_first_visit", false));
     }
 
     /** Snapshot as the whole request body. */
