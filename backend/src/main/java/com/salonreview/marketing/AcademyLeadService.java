@@ -25,6 +25,12 @@ public class AcademyLeadService {
     private final HubSpotFormClient hubspot;
     private final AcademyLeadLinks links;
     private final LeadIntakeService leadIntake;
+    private AttributionResolver attributionResolver;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setAttributionResolver(AttributionResolver r) {
+        this.attributionResolver = r;
+    }
 
     public AcademyLeadService(JdbcTemplate jdbc, TelegramNotificationService telegram, HubSpotFormClient hubspot,
                               AcademyLeadLinks links, LeadIntakeService leadIntake) {
@@ -109,8 +115,9 @@ public class AcademyLeadService {
                 payload.put("emailConsent", String.valueOf(l.emailConsent()));
                 payload.values().removeIf(v -> v == null || v.isBlank());
                 String traffic = trafficSource(l);
+                String attribution = academyAttribution(businessId, l).toJson();
                 leadIntake.capture(new LeadIntakeService.Lead(businessId, "Academy", traffic, l.phone(), l.email(), l.name(),
-                        l.courseName(), "academy:" + id, new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(payload)));
+                        l.courseName(), "academy:" + id, new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(payload), attribution));
                 linkVisitor(businessId, l, id);
             } catch (Exception e) {
                 log.warn("Academy lead {}: CRM capture failed: {}", id, e.toString());
@@ -123,6 +130,12 @@ public class AcademyLeadService {
 
     /** One marketing.submissions row per form, tied to the browser (visitor id) and carrying the first-touch
      * source, so the lead's Website tab shows where each form came from and which visits led to it. */
+    private com.salonreview.landing.Attribution academyAttribution(long businessId, AcademyLead l) {
+        var given = new com.salonreview.landing.Attribution(l.utmSource(), l.utmMedium(), l.utmCampaign(), l.utmTerm(),
+                l.utmContent(), l.gclid(), null, null, null, l.fbclid(), null, l.sourcePageUrl(), l.referrer());
+        return attributionResolver == null ? given : attributionResolver.resolve(businessId, l.visitorId(), given);
+    }
+
     private void recordSubmission(long businessId, AcademyLead l, Long id) {
         try {
             String visitor = l.visitorId() != null && l.visitorId().matches("[0-9a-fA-F-]{36}") ? l.visitorId() : null;

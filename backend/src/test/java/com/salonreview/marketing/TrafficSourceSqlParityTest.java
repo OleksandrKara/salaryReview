@@ -44,7 +44,7 @@ class TrafficSourceSqlParityTest {
             String ref = e.getKey();
             String visit = jdbc.queryForObject("SELECT (" + TrafficSourceSql.visitChannelCase("c")
                     + ") FROM (SELECT CAST(? AS text) AS referrer, CAST(NULL AS text) AS utm_source, CAST(NULL AS text) AS utm_medium,"
-                    + " CAST(NULL AS text) AS gclid, CAST(NULL AS text) AS fbclid) c", String.class, ref);
+                    + " CAST(NULL AS text) AS gclid, CAST(NULL AS text) AS gbraid, CAST(NULL AS text) AS wbraid, CAST(NULL AS text) AS fbclid) c", String.class, ref);
             String contact = jdbc.queryForObject("SELECT (" + TrafficSourceSql.contactChannelCase("c")
                     + ") FROM (SELECT CAST(? AS text) AS referrer, CAST(NULL AS text) AS utm_source, CAST(NULL AS text) AS utm_medium,"
                     + " CAST(NULL AS text) AS marketing_traffic_source, CAST(NULL AS text) AS original_traffic_source) c", String.class, ref);

@@ -44,6 +44,10 @@ class TrafficSourceTest {
         assertThat(utm("google", "organic", "gbp")).isEqualTo("Google Business Profile");
         assertThat(utm("google", "cpc", "brand")).isEqualTo("Google Ads");
         assertThat(utm("chatgpt.com", null, null)).isEqualTo("ChatGPT (AI)");
+        assertThat(utm("google", "paid-search", "x")).isEqualTo("Google Ads");
+        assertThat(utm("google", "organic", "spring")).isEqualTo("Google (organic)");
+        assertThat(utm("google", null, "spring")).isEqualTo("Google Ads");
+        assertThat(TrafficSource.classify(null, null, null, "https://www.google.com/", null, "gb1", null, null, null, null)).isEqualTo("Google Ads");
         assertThat(utm("adwords", null, null)).isEqualTo("Google Ads");
         assertThat(ref("https://us19.campaign-archive.com/?u=1")).isEqualTo("Email (Mailchimp)");
         assertThat(ref("https://linktr.ee/x")).isEqualTo("Linktree");

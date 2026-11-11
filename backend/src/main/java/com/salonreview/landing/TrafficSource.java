@@ -101,6 +101,16 @@ public final class TrafficSource {
         return "Referral: " + host;
     }
 
+    private static boolean isMetaSource(String source) {
+        return Set.of("ig", "instagram", "insta", "fb", "facebook", "meta").contains(lc(source));
+    }
+
+    private static boolean isPaidMedium(String medium) {
+        String m = lc(medium);
+        if (PAID_MEDIUMS.contains(m)) return true;
+        return m.contains("cpc") || m.contains("ppc") || m.contains("paid") || m.contains("cpm");
+    }
+
     private static String fromUtmSource(String source, String medium, String campaign) {
         String s = lc(source);
         String c = lc(campaign);
@@ -109,7 +119,8 @@ public final class TrafficSource {
             case "fb", "facebook", "meta": return FACEBOOK_ORGANIC;
             case "yelp": return YELP_ORGANIC;
             case "google":
-                return c.contains("gbp") || c.contains("gmb") || c.contains("business") ? GBP : GOOGLE_ORGANIC;
+                if (c.contains("gbp") || c.contains("gmb") || c.contains("business")) return GBP;
+                return !c.isEmpty() && lc(medium).isEmpty() ? GOOGLE_ADS : GOOGLE_ORGANIC;
             case "gbp", "gmb": return GBP;
             case "adwords", "googleads", "google_ads", "google-ads": return GOOGLE_ADS;
             case "bing": return BING_ORGANIC;
@@ -159,12 +170,16 @@ public final class TrafficSource {
         if (has(msclkid)) return BING_ADS;
         if (has(ttclid)) return TIKTOK_ADS;
 
-        boolean paidMedium = PAID_MEDIUMS.contains(lc(utmMedium));
+        boolean paidMedium = isPaidMedium(utmMedium);
         if (paidMedium) {
             if (has(utmSource)) return paidFromSource(utmSource, has(fbclid));
             if (has(fbclid)) return META_ADS;
             String viaRef = fromReferrer(referrer);
             return viaRef == null ? "Paid (unspecified)" : "Paid: " + viaRef;
+        }
+        if (has(utmSource) && has(fbclid) && isMetaSource(utmSource) && has(utmMedium)
+                && !Set.of("social", "organic", "bio", "referral").contains(lc(utmMedium))) {
+            return paidFromSource(utmSource, true);
         }
         if (has(utmSource)) return fromUtmSource(utmSource, utmMedium, utmCampaign);
 

@@ -106,7 +106,7 @@ class AcademyLeadServiceTest {
         assertThat(AcademyLeadService.trafficSource(withSource("https://pmu-annakara.com/academy/", null, null))).isEqualTo("Direct / No referrer");
         assertThat(AcademyLeadService.trafficSource(withSource("https://www.google.com/", null, null))).isEqualTo("Google (organic)");
         assertThat(AcademyLeadService.trafficSource(withSource("", "google", "abc"))).startsWith("Google Ads");
-        assertThat(AcademyLeadService.trafficSource(withSource("https://chatgpt.com/", "chatgpt.com", null))).isEqualTo("chatgpt.com");
+        assertThat(AcademyLeadService.trafficSource(withSource("https://chatgpt.com/", "chatgpt.com", null))).isEqualTo("ChatGPT (AI)");
     }
 
     @Test

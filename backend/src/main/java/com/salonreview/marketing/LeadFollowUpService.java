@@ -105,7 +105,12 @@ public class LeadFollowUpService {
                            int attempts, boolean closeReady, String lastVisitAt) {}
 
     public record Touch(long id, String channel, String source, String detail, String createdAt,
-                        java.util.Map<String, String> payload) {}
+                        java.util.Map<String, String> payload, java.util.Map<String, String> attribution) {
+        public Touch(long id, String channel, String source, String detail, String createdAt,
+                     java.util.Map<String, String> payload) {
+            this(id, channel, source, detail, createdAt, payload, null);
+        }
+    }
 
     public record Origin(String type, String at, String landingPage, String variant, String trafficSource,
                          String utmSource, String utmMedium, String utmCampaign, String utmTerm, String utmContent,
@@ -132,7 +137,8 @@ public class LeadFollowUpService {
     public record LeadDetail(LeadView lead, List<Touch> touches, List<Event> events, List<Origin> origins,
                              List<Appointment> appointments, Spend spend, List<EmailSent> emails,
                              List<Sms> sms, String squareNote, List<Payment> payments, List<Form> forms,
-                             Place place, Badges badges, List<Reminder> reminders, Journey journey) {}
+                             Place place, Badges badges, List<Reminder> reminders, Journey journey,
+                             java.util.Map<String, String> firstTouch) {}
 
     /** One site visit of this person: where it began and the traffic source of that visit itself. */
     public record Visit(String at, String landing, String trafficSource, String referrer, String utm, String adClick,
@@ -299,11 +305,17 @@ public class LeadFollowUpService {
     public LeadDetail detail(long id) {
         LeadView lead = find(id);
         String key = leadKey(id);
-        List<Touch> touches = jdbc.query("SELECT id, channel, source, detail, created_at, payload FROM (SELECT l.*, " + KEY
+        List<Touch> touches = jdbc.query("SELECT id, channel, source, detail, created_at, payload, attribution::text AS attribution FROM (SELECT l.*, " + KEY
                         + " AS k FROM lead_intake l WHERE business_id = ? AND outcome <> 'DUPLICATE') t WHERE k = ? ORDER BY created_at DESC",
                 (rs, i) -> touchOf(rs.getLong("id"), rs.getString("channel"), rs.getString("source"),
-                        rs.getString("detail"), iso(rs.getTimestamp("created_at")), parsePayload(rs.getString("payload"))),
+                        rs.getString("detail"), iso(rs.getTimestamp("created_at")), parsePayload(rs.getString("payload")),
+                        parsePayload(rs.getString("attribution"))),
                 business.id(), key);
+        java.util.Map<String, String> firstTouch = null;
+        for (int i = touches.size() - 1; i >= 0 && firstTouch == null; i--) {
+            var a = touches.get(i).attribution();
+            if (a != null && !a.isEmpty()) firstTouch = a;
+        }
         List<Event> events = jdbc.query("SELECT id, type, text, created_by, created_at FROM lead_events "
                         + "WHERE lead_id = ? AND business_id = ? ORDER BY created_at DESC",
                 (rs, i) -> new Event(rs.getLong("id"), rs.getString("type"), rs.getString("text"),
@@ -311,7 +323,7 @@ public class LeadFollowUpService {
         return new LeadDetail(lead, touches, events, origins(lead), appointments(lead), spend(lead), emails(lead),
                 sms(lead), squareNote(lead), payments(lead), forms(lead, touches), place(lead), badges(lead),
                 "NEW".equals(lead.status()) || "CONTACTED".equals(lead.status()) ? reminders(lead.id()) : List.of(),
-                journey(lead));
+                journey(lead), firstTouch);
     }
 
     /** Geo of the most recent website visit that has an IP; scope tells a manager whether the person is local. */
@@ -462,7 +474,12 @@ public class LeadFollowUpService {
      * ambiguous one) shows none, never the person's first-touch source. */
     static Touch touchOf(long id, String channel, String source, String detail, String createdAt,
                          java.util.Map<String, String> payload) {
-        if (!"SMS".equals(channel) && !"Text".equals(channel)) return new Touch(id, channel, source, detail, createdAt, payload);
+        return touchOf(id, channel, source, detail, createdAt, payload, null);
+    }
+
+    static Touch touchOf(long id, String channel, String source, String detail, String createdAt,
+                         java.util.Map<String, String> payload, java.util.Map<String, String> attribution) {
+        if (!"SMS".equals(channel) && !"Text".equals(channel)) return new Touch(id, channel, source, detail, createdAt, payload, attribution);
         boolean matched = payload != null && payload.containsKey(TAP_MATCHED_KEY);
         java.util.Map<String, String> shown = null;
         if (payload != null) {
@@ -470,7 +487,7 @@ public class LeadFollowUpService {
             shown.remove(TAP_MATCHED_KEY);
             if (shown.isEmpty()) shown = null;
         }
-        return new Touch(id, channel, matched ? source : null, detail, createdAt, shown);
+        return new Touch(id, channel, matched ? source : null, detail, createdAt, shown, attribution);
     }
 
     private java.util.Map<String, String> parsePayload(String raw) {

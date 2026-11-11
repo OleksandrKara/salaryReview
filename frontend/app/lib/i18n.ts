@@ -827,6 +827,8 @@ const STRINGS = {
   leadService: { EN: 'Service', RU: 'Услуга' },
   leadAdClick: { EN: 'Click ID', RU: 'Клик по рекламе' },
   leadDetails: { EN: 'Details', RU: 'Детали' },
+  leadCampaignDetails: { EN: 'Campaign details', RU: 'Детали кампании' },
+  leadFirstTouchCampaign: { EN: 'First touch: campaign details', RU: 'Первое касание: детали кампании' },
   leadAppointments: { EN: 'Appointments in Square', RU: 'Записи в Square' },
   leadAppointmentsEmpty: { EN: 'No appointments yet.', RU: 'Записей пока нет.' },
   leadAppt_ACCEPTED: { EN: 'Booked', RU: 'Запись' },

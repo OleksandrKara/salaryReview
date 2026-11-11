@@ -44,14 +44,14 @@ class SmsWebsiteLeadServiceTest {
     @DisplayName("classifyTrafficSource: same labels as salonLandings' classify_traffic_source")
     void classify() {
         assertThat(SmsWebsiteLeadService.classifyTrafficSource("google", "cpc", "pmax", null, "abc", null))
-                .isEqualTo("Google Ads (google / cpc / pmax)");
-        assertThat(SmsWebsiteLeadService.classifyTrafficSource(null, null, null, null, "abc", null)).isEqualTo("Google Ads (click)");
+                .isEqualTo("Google Ads");
+        assertThat(SmsWebsiteLeadService.classifyTrafficSource(null, null, null, null, "abc", null)).isEqualTo("Google Ads");
         assertThat(SmsWebsiteLeadService.classifyTrafficSource("ig", "Instagram_Stories", null, null, null, "fb1"))
-                .isEqualTo("Meta Ads (ig / Instagram_Stories)");
+                .isEqualTo("Instagram Ads (Meta)");
         assertThat(SmsWebsiteLeadService.classifyTrafficSource(null, null, null, "https://www.google.com/", null, null))
                 .isEqualTo("Google (organic)");
         assertThat(SmsWebsiteLeadService.classifyTrafficSource(null, null, null, "https://yelp.com/biz/x", null, null))
-                .isEqualTo("Referral: yelp.com");
+                .isEqualTo("Yelp (organic)");
         assertThat(SmsWebsiteLeadService.classifyTrafficSource(null, null, null, null, null, null)).isEqualTo("Direct / No referrer");
     }
 
@@ -78,9 +78,9 @@ class SmsWebsiteLeadServiceTest {
 
         Optional<String> line = service.capture(2L, "+16195550100", "Hi! I have a question about permanent makeup.\n\nRef: K7Q2X9");
 
-        assertThat(line).contains("🌐 From the website: /3d-lips/ · Google Ads (google / cpc) (new contact)");
+        assertThat(line).contains("🌐 From the website: /3d-lips/ · Google Ads (new contact)");
         verify(jdbc).update(contains("INSERT INTO marketing.contacts"), eq(2L), eq("+16195550100"),
-                eq("Google Ads (google / cpc)"), eq("Google Ads (google / cpc)"), eq("google"), eq("cpc"), isNull(),
+                eq("Google Ads"), eq("Google Ads"), eq("google"), eq("cpc"), isNull(),
                 isNull(), eq("pmu-website"), eq("Website"));
     }
 
@@ -121,7 +121,7 @@ class SmsWebsiteLeadServiceTest {
         SmsWebsiteLeadService service = new SmsWebsiteLeadService(jdbc, "");
 
         assertThat(service.capture(2L, "+16195550100", "Hi! I have a question about Lip Blush Tattoo."))
-                .contains("🌐 From the website: /lip-blush/ · google (new contact)");
+                .contains("🌐 From the website: /lip-blush/ · Google (organic) (new contact)");
         verify(jdbc).update(contains("matched_phone"), eq("+16195550100"), eq("e1"));
     }
 
@@ -135,7 +135,7 @@ class SmsWebsiteLeadServiceTest {
         SmsWebsiteLeadService service = new SmsWebsiteLeadService(jdbc, "");
 
         assertThat(service.captureDetailed(2L, "+16195550100", "Hi! I have a question about Lip Blush Tattoo."))
-                .hasValueSatisfying(c -> assertThat(c.trafficSource()).isEqualTo("google"));
+                .hasValueSatisfying(c -> assertThat(c.trafficSource()).isEqualTo("Google (organic)"));
 
         JdbcTemplate two = mock(JdbcTemplate.class);
         when(two.queryForList(contains("make_interval"), eq(2L), eq(SmsWebsiteLeadService.MATCH_WINDOW_MINUTES)))
@@ -154,7 +154,7 @@ class SmsWebsiteLeadServiceTest {
         SmsWebsiteLeadService service = new SmsWebsiteLeadService(jdbc, "");
 
         assertThat(service.capture(2L, "+16195550100", "Hi! I have a question about 3D Lips. Price?"))
-                .hasValueSatisfying(v -> assertThat(v).startsWith("🌐 From the website").contains("google"));
+                .hasValueSatisfying(v -> assertThat(v).startsWith("🌐 From the website").contains("Google (organic)"));
         assertThat(service.capture(2L, "+16195550101", "Hi! I have a question about permanent makeup."))
                 .contains("🌐 Possibly from the website (2 visitors tapped Text in the last 30 min, can't tell which)");
     }
@@ -242,7 +242,7 @@ class SmsWebsiteLeadServiceTest {
         org.mockito.ArgumentCaptor<Ga4SmsSentService.Tap> tap = org.mockito.ArgumentCaptor.forClass(Ga4SmsSentService.Tap.class);
         verify(smsSent).record(eq(2L), eq("e1"), tap.capture(), any());
         assertThat(tap.getValue()).isEqualTo(new Ga4SmsSentService.Tap("123.456", "1700000000", "v1", null, "gb1", null,
-                "Google Ads (google / cpc / acad)", "google", "cpc", "acad", null, "pmu-academy", "/academy/",
+                "Google Ads", "google", "cpc", "acad", null, "pmu-academy", "/academy/",
                 "/academy/courses/", "hero", null));
     }
 }

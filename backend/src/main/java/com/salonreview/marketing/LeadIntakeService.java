@@ -37,10 +37,15 @@ public class LeadIntakeService {
     static final int FRESH_DAYS = 30;
 
     public record Lead(long businessId, String channel, String trafficSource, String phone, String email,
-                       String name, String detail, String externalId, String payload) {
+                       String name, String detail, String externalId, String payload, String attribution) {
+        public Lead(long businessId, String channel, String trafficSource, String phone, String email,
+                    String name, String detail, String externalId, String payload) {
+            this(businessId, channel, trafficSource, phone, email, name, detail, externalId, payload, null);
+        }
+
         public Lead(long businessId, String channel, String trafficSource, String phone, String email,
                     String name, String detail, String externalId) {
-            this(businessId, channel, trafficSource, phone, email, name, detail, externalId, null);
+            this(businessId, channel, trafficSource, phone, email, name, detail, externalId, null, null);
         }
     }
 
@@ -156,7 +161,7 @@ public class LeadIntakeService {
             if (lead.trafficSource() == null || lead.trafficSource().isBlank()) {
                 String ts = contactTraffic(lead.businessId(), phone, email);
                 if (ts != null) {
-                    lead = new Lead(lead.businessId(), lead.channel(), ts, lead.phone(), lead.email(), lead.name(), lead.detail(), lead.externalId(), lead.payload());
+                    lead = new Lead(lead.businessId(), lead.channel(), ts, lead.phone(), lead.email(), lead.name(), lead.detail(), lead.externalId(), lead.payload(), lead.attribution());
                     label = sourceLabel(lead.trafficSource());
                 }
             }
@@ -233,7 +238,8 @@ public class LeadIntakeService {
         for (long b : enabled) {
             List<java.util.Map<String, Object>> rows = jdbc.queryForList("""
                     SELECT c.phone_number, c.email_address, c.given_name, c.square_customer_id,
-                           COALESCE(c.original_traffic_source, c.marketing_traffic_source) AS ts
+                           COALESCE(c.original_traffic_source, c.marketing_traffic_source) AS ts,
+                           c.utm_source, c.utm_medium, c.utm_campaign, c.referrer
                     FROM marketing.contacts c
                     WHERE c.business_id = ? AND c.square_customer_id IS NOT NULL AND c.created_at > now() - interval '3 days'
                       AND NOT EXISTS (SELECT 1 FROM lead_intake l WHERE l.business_id = c.business_id AND l.square_customer_id = c.square_customer_id)
@@ -245,7 +251,8 @@ public class LeadIntakeService {
                     String id = (String) r.get("square_customer_id");
                     SquareClient.Customer cust = new SquareClient.Customer(id, null, null, Instant.now().toString(), null, null, null);
                     Lead l = new Lead(b, "Form", (String) r.get("ts"), (String) r.get("phone_number"), (String) r.get("email_address"),
-                            (String) r.get("given_name"), "reconciled from website contact", null);
+                            (String) r.get("given_name"), "reconciled from website contact", null, null,
+                            com.salonreview.landing.Attribution.of(k -> k.startsWith("utm_") || k.equals("referrer") ? (String) r.get(k) : null).toJson());
                     String label = sourceLabel(l.trafficSource());
                     boolean marked = markIfFirstTouch(sq, b, cust, label, "Form", false);
                     record(l, label, validPhone(l.phone()), l.email(), "MATCHED", id, marked, null);
@@ -383,11 +390,11 @@ public class LeadIntakeService {
         if (phone == null) phone = foreignPhone(lead.phone());
         int inserted = jdbc.update("""
                 INSERT INTO lead_intake (business_id, channel, source, traffic_source, phone_number, email, name, detail,
-                    external_id, square_customer_id, outcome, marked, error, payload)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    external_id, square_customer_id, outcome, marked, error, payload, attribution)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
                 ON CONFLICT DO NOTHING
                 """, lead.businessId(), lead.channel(), label, lead.trafficSource(), phone, email, lead.name(), lead.detail(),
-                lead.externalId(), customerId, outcome, marked, error, lead.payload());
+                lead.externalId(), customerId, outcome, marked, error, lead.payload(), lead.attribution());
         if (inserted > 0 && !"Square".equals(lead.channel()) && !"SKIPPED_NO_CONTACT".equals(outcome)) {
             reopen(lead.businessId(), phone, email);
         }
