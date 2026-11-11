@@ -199,7 +199,7 @@ class LandingPmuPaymentTest {
 
         verify(gateway).createPayment(eq(2L), any(), eq("cnon:card-nonce-ok"), eq(10_000L), eq("CUST-7"),
                 eq("Deposit for " + TECH.name() + " (booking BK-1)"));
-        verify(squareClient).setCustomerAttribute("CUST-7", "marketing_traffic_source", "google / cpc / lips");
+        verify(squareClient).setCustomerAttribute("CUST-7", "marketing_traffic_source", "Google Ads");
         verify(squareClient).setCustomerAttribute("CUST-7", "sms_marketing_consent", "Opted In");
         verify(squareClient).setCustomerAttribute("CUST-7", "email_marketing_consent", "Opted In");
         verify(telegram, never()).sendPaymentFailedAlert(any(), any());
