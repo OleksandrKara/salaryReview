@@ -394,6 +394,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
       <ReminderSheet
         open={sheet} title={t(language, 'remSheetTitle')} subtitle={title} language={language} onClose={() => setSheet(false)}
         onSubmit={(body: ReachedOutBody) => send(`/api/leads/${lead.id}/reached-out`, 'POST', body)}
+        onLost={(b) => send(`/api/leads/${lead.id}`, 'PATCH', { status: 'LOST', ...b })}
       />
 
       <section className="flex min-w-0 flex-wrap items-center gap-3 rounded-lg p-4 ring-1 ring-zinc-200">
@@ -450,7 +451,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
 
       <FunnelPanel leadId={lead.id} language={language} onChanged={reload} onLoaded={setFunnelList} autoStop={stopFunnel} />
 
-      <nav aria-label="sections" className="sticky top-0 z-10 -mx-1 overflow-x-auto bg-white/95 px-1 py-1 backdrop-blur">
+      <nav aria-label="sections" className="sticky top-0 z-10 overflow-x-auto bg-white/95 py-1 backdrop-blur">
         <div className="flex gap-1">
           {tabs.map((x) => (
             <button
@@ -468,7 +469,7 @@ export default function LeadCard({ initial, language = null, stopFunnel = null, 
 
       {tab === 'timeline' && (
         <section className="flex flex-col gap-3">
-          <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+          <div className="flex gap-1.5 overflow-x-auto pb-1">
             {FILTERS.filter((f) => f.id === 'all' || counts[f.id] > 0).map((f) => (
               <button
                 key={f.id}

@@ -424,6 +424,12 @@ export default function LeadsManager({ initialLeads, language = null, restricted
       <ReminderSheet
         open={reaching != null} title={t(language, 'remSheetTitle')} subtitle={reaching ? (reaching.name ?? reaching.phoneNumber ?? reaching.email ?? '') : ''}
         language={language} onClose={() => setReaching(null)} onSubmit={(body) => (reaching ? reachedOut(reaching, body) : Promise.resolve(false))}
+        onLost={async (b) => {
+          if (!reaching) return false;
+          const res = await fetch(`/api/leads/${reaching.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'LOST', ...b }) });
+          if (res.ok) setLeads((prev) => prev.map((x) => (x.id === reaching.id ? { ...x, status: 'LOST', closeReady: false } : x)));
+          return res.ok;
+        }}
       />
     </div>
   );
