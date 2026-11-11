@@ -85,10 +85,14 @@ public class AcademyLeadService {
 
         // Course requests get the automatic follow-up funnel (AcademyLeadFunnelScheduler); the button
         // stops it once staff have talked to the person.
+        var ctx = telegram.academyRequestContext(businessId);
+        String owner = ctx == null || ctx.owners().isEmpty() ? null : "Owner: " + String.join(", ", ctx.owners());
+        String alert = com.salonreview.telegram.LeadAlertFormat.insertAfterFirstLine(formatAlert(l), owner);
+        String openLead = notBlank(l.phone()) ? telegram.leadUrl(ctx, l.phone(), businessId) : null;
         boolean sent = l.isSubscription()
-                ? telegram.sendPlainAlert(businessId, formatAlert(l))
-                : telegram.sendPlainAlert(businessId, formatAlert(l) + "\n\n" + FUNNEL_NOTE,
-                        "🛑 Stop follow-ups / Остановить рассылку", links.stopUrl(id));
+                ? telegram.sendPlainAlert(businessId, alert, "🧲 Open lead", openLead)
+                : telegram.sendPlainAlert(businessId, alert + "\n\n" + FUNNEL_NOTE,
+                        "🛑 Stop follow-ups / Остановить рассылку", links.stopUrl(id), "🧲 Open lead", openLead);
 
         HubSpotFormClient.Result hs = hubspot.submit(l.email(), hubspotProperties(l), l.sourcePageUrl(),
                 "PMU Academy: " + (notBlank(l.courseName()) ? l.courseName() : "course request"));

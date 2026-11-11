@@ -87,8 +87,10 @@ public class PmuBookingStaffAlertService {
             } catch (org.springframework.dao.DataIntegrityViolationException dup) {
                 return;
             }
-            boolean sent = telegram.sendPlainAlert(businessId, formatMessage(serviceNames,
-                    customerName(businessId, booking.customerId()), providerNames(booking), booking.startAt()));
+            var cust = customers.findByBusinessIdAndSquareCustomerId(businessId, booking.customerId() == null ? "" : booking.customerId());
+            boolean sent = telegram.sendProcedureBookingAlert(businessId, String.join(", ", serviceNames),
+                    customerName(businessId, booking.customerId()), cust.map(c -> c.getPhoneNumber()).orElse(null),
+                    cust.map(c -> c.getEmailAddress()).orElse(null), providerNames(booking), booking.startAt());
             if (sent) {
                 row.setDeliveryStatus("SENT");
                 row.setDeliveredAt(java.time.Instant.now());

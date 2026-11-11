@@ -459,36 +459,78 @@ class TelegramNotificationServiceTest {
                 .contains("Susan Alieva закрыл(а) 6 слотов в своём календаре меньше чем за день");
     }
 
+    private static TelegramNotificationService svc() {
+        return service(mock(TelegramConfigService.class));
+    }
+
+    private static final LeadAlertContext ACADEMY_CTX = new LeadAlertContext(LeadAlertContext.State.FOUND, 7L, true,
+            java.util.List.of("Anastasia", "Lucy"), "Google Ads");
+
     @Test
-    @DisplayName("consultation alert: shows the booking page and ad campaign, and doesn't call the paid in-studio one free")
-    void consultationAlertShowsSourcePageAndAd() {
+    @DisplayName("consultation alert: compact lines, Academy tag, source, owners, ad and note")
+    void consultationAlertCompact() {
         ConsultationRequestNotification n = new ConsultationRequestNotification(
                 2L, null, "Kalynn", "2405772146", "2026-09-29T00:30:00Z", false,
                 "2527 University Ave, San Diego, CA 92104", "Anna Kara",
                 "https://pmu-annakara.com/permanent-makeup-lips/", "Permanent Lips | Anna Kara PMU", "lips_sept",
-                "Want soft powder brows, had microblading in 2022", "🇫🇷 France, Paris (IP 1.2.3.4)");
+                "Want soft powder brows", "France");
 
-        String msg = TelegramNotificationService.formatConsultationRequestMessage(n);
+        String msg = TelegramNotificationService.formatConsultationRequestMessage(n, ACADEMY_CTX);
 
-        assertThat(msg).contains("New in-studio consultation booked").doesNotContain("New free consultation");
-        assertThat(msg).contains("📄 Page: Permanent Lips | Anna Kara PMU — https://pmu-annakara.com/permanent-makeup-lips/");
-        assertThat(msg).contains("📄 Страница: Permanent Lips | Anna Kara PMU — https://pmu-annakara.com/permanent-makeup-lips/");
-        assertThat(msg).contains("🌍 From: 🇫🇷 France, Paris (IP 1.2.3.4)").contains("🌍 Откуда: 🇫🇷 France, Paris (IP 1.2.3.4)");
-        assertThat(msg).contains("📣 Ad: lips_sept").contains("📣 Реклама: lips_sept");
-        assertThat(msg).contains("💬 Client's note: Want soft powder brows, had microblading in 2022")
-                .contains("💬 Комментарий клиента: Want soft powder brows, had microblading in 2022");
+        assertThat(msg).startsWith("🆕 <b>New consultation</b> · in studio\n");
+        assertThat(msg).contains("👤 Kalynn · (240) 577-2146").contains("🕐 Mon, Sep 28, 5:30 PM PT · Anna Kara");
+        assertThat(msg).contains("🏷 🎓 Academy · Google Ads · Ad: lips_sept · Owner: Anastasia, Lucy");
+        assertThat(msg).contains("💬 Want soft powder brows");
+        assertThat(msg.split("\n").length).isLessThanOrEqualTo(6);
+        assertThat(msg).doesNotContain("—").doesNotContain("Страница");
     }
 
     @Test
-    @DisplayName("consultation alert: online one stays 'free', unknown page renders as a dash, no ad line without a campaign")
-    void consultationAlertWithoutSourcePage() {
+    @DisplayName("consultation alert: no lead says so, no owner, no Academy; unknown lookup adds nothing")
+    void consultationAlertWithoutLead() {
         ConsultationRequestNotification n = new ConsultationRequestNotification(
-                2L, null, "Kalynn", "2405772146", "2026-09-29T00:30:00Z", true, null, null, null, null, null, "  ", null);
+                2L, null, null, "2405772146", "2026-09-29T00:30:00Z", true, null, null, null, null, null, "  ", null);
 
-        String msg = TelegramNotificationService.formatConsultationRequestMessage(n);
+        String missing = TelegramNotificationService.formatConsultationRequestMessage(n, LeadAlertContext.MISSING);
+        String unknown = TelegramNotificationService.formatConsultationRequestMessage(n, LeadAlertContext.UNKNOWN);
 
-        assertThat(msg).contains("New free consultation booked").contains("📄 Page: —").contains("📄 Страница: —");
-        assertThat(msg).doesNotContain("📣").doesNotContain("💬").doesNotContain("🌍");
+        assertThat(missing).contains("online call").contains("🏷 No CRM lead yet").doesNotContain("Academy").doesNotContain("💬");
+        assertThat(unknown).doesNotContain("🏷").doesNotContain("No CRM lead");
+    }
+
+    @Test
+    @DisplayName("procedure alert: compact format with tags; HTML in names is escaped")
+    void procedureAlertCompact() {
+        String msg = TelegramNotificationService.formatProcedureMessage("Powder Brows", "Jane <b>", "+18585550100",
+                "Anna Kara", "2026-11-05T18:00:00Z", ACADEMY_CTX);
+
+        assertThat(msg).startsWith("🆕 <b>New procedure</b> · Powder Brows\n");
+        assertThat(msg).contains("👤 Jane &lt;b&gt; · (858) 555-0100").contains("🕐 Thu, Nov 5, 10:00 AM PT · Anna Kara");
+        assertThat(msg).contains("Owner: Anastasia, Lucy");
+    }
+
+    @Test
+    @DisplayName("lead link: none when no lead exists, phone route when it does, id route without phone")
+    void leadUrlRules() {
+        TelegramNotificationService svc = svc();
+        assertThat(svc.leadUrl(LeadAlertContext.MISSING, "+18585550100", 2L)).isNull();
+        assertThat(svc.leadUrl(ACADEMY_CTX, "+18585550100", 2L)).contains("/admin/leads/open?phone=");
+        assertThat(svc.leadUrl(ACADEMY_CTX, null, 2L)).endsWith("/admin/leads/7");
+        assertThat(svc.leadUrl(LeadAlertContext.UNKNOWN, null, 2L)).isNull();
+    }
+
+    @Test
+    @DisplayName("lead context lookup fails open: a throwing service yields UNKNOWN, alert text still builds")
+    void leadContextFailsOpen() {
+        TelegramNotificationService svc = svc();
+        LeadAlertContextService broken = org.mockito.Mockito.mock(LeadAlertContextService.class);
+        org.mockito.Mockito.when(broken.lookup(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new RuntimeException("db down"));
+        svc.setLeadContexts(broken);
+
+        assertThat(svc.leadContext(2L, "+18585550100", null)).isEqualTo(LeadAlertContext.UNKNOWN);
+        assertThat(svc.leadUrl(LeadAlertContext.UNKNOWN, "+18585550100", 2L)).contains("/admin/leads/open");
+        assertThat(LeadAlertFormat.toPlain("<b>New</b> a &amp; b", "https://x")).isEqualTo("New a & b\nhttps://x");
     }
 
     @Test
