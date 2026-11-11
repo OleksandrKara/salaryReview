@@ -197,6 +197,16 @@ class ConsultationFollowUpSchedulerTest {
     }
 
     @Test
+    @DisplayName("sweep stops a client who paid a deposit long before the next step is due")
+    void sweepStopsEarly() {
+        ConsultationFollowUp r = row(NOW.minus(Duration.ofDays(5)));
+        when(repo.findByBusinessIdAndStopReasonIsNullAndConsultationStartAtAfter(eq(BIZ), any())).thenReturn(List.of(r));
+        when(square.invoicesForCustomer(CUST)).thenReturn(List.of(invoice("PAID", 10000, NOW.minus(Duration.ofHours(1)))));
+        at(NOW).stopFinished(BIZ, square, NOW);
+        assertThat(r.getStopReason()).isEqualTo(ConsultationFollowUp.STOP_BOOKED);
+    }
+
+    @Test
     @DisplayName("a paid $50 consultation-fee invoice or an unpaid invoice does not stop it")
     void smallOrUnpaidInvoiceDoesNotStop() {
         ConsultationFollowUp r = row(NOW.minus(Duration.ofDays(2)).minus(Duration.ofHours(1)));

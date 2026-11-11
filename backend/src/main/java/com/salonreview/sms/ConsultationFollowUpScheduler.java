@@ -203,6 +203,7 @@ public class ConsultationFollowUpScheduler {
         SquareClient square = squareClientProvider.forBusiness(businessId);
         enroll(businessId, square, now);
         closeExpiredOffers(businessId, square, now);
+        stopFinished(businessId, square, now);
         if (!isDaytime(now)) {
             return;
         }
@@ -212,6 +213,19 @@ public class ConsultationFollowUpScheduler {
                 advance(row, square, mailchimp, now);
             } catch (RuntimeException e) {
                 log.warn("Consultation follow-up for booking {} failed this tick: {}", row.getSquareBookingId(), e.getMessage(), e);
+            }
+        }
+    }
+
+    /** Every tick, day or night: a client who booked or paid since is marked stopped right away, so the CRM
+     * never shows a running funnel for someone who already bought (the next step may be weeks away). */
+    void stopFinished(Long businessId, SquareClient square, Instant now) {
+        for (ConsultationFollowUp row : repository.findByBusinessIdAndStopReasonIsNullAndConsultationStartAtAfter(
+                businessId, now.minus(Duration.ofDays(60)))) {
+            try {
+                stopIfDone(row, square, now);
+            } catch (RuntimeException e) {
+                log.warn("Consultation follow-up stop check for booking {} failed this tick: {}", row.getSquareBookingId(), e.getMessage());
             }
         }
     }
