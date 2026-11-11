@@ -11,6 +11,14 @@ export function isOverdue(l: Pick<Lead, 'status' | 'callbackAt'>, now: number): 
   return isActive(l) && l.callbackAt != null && new Date(l.callbackAt).getTime() <= now;
 }
 
+export function hasNextStep(l: Pick<Lead, 'status' | 'callbackAt'>, now: number): boolean {
+  return isActive(l) && l.callbackAt != null && new Date(l.callbackAt).getTime() > now;
+}
+
+export function lacksNextStep(l: Pick<Lead, 'status' | 'callbackAt'>, now: number): boolean {
+  return isActive(l) && !hasNextStep(l, now);
+}
+
 export function isLapsed(l: Pick<Lead, 'status' | 'lastVisitAt'>, now: number): boolean {
   return isActive(l) && l.lastVisitAt != null && now - new Date(l.lastVisitAt).getTime() > LAPSED_AFTER_DAYS * DAY;
 }

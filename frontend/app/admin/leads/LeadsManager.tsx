@@ -4,11 +4,11 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { FUNNEL_TONE } from './FunnelPanel';
 import LeadActions from './LeadActions';
-import { DAY, LAPSED_AFTER_DAYS, isActive, isLapsed, isOverdue } from './leadActions';
+import { DAY, LAPSED_AFTER_DAYS, hasNextStep, isActive, isLapsed, isOverdue, lacksNextStep } from './leadActions';
 import LeadIcons from './LeadIcons';
 import ReminderSheet, { type ReachedOutBody } from './ReminderSheet';
 import OutdatedPanel, { LockIcon } from './OutdatedPanel';
-import { t } from '../../lib/i18n';
+import { t, tf } from '../../lib/i18n';
 import type { Language, Lead, LeadFunnel, LeadListBadge, LeadOwnersView } from '../../lib/types';
 
 type Tab = 'ACTION' | 'CONSULT' | 'LAPSED' | 'CONTACTED' | 'BOOKED' | 'LOST' | 'SPAM' | 'ALL';
@@ -44,7 +44,7 @@ function needsAction(l: Lead, now: number): boolean {
   return isOverdue(l, now) || l.status === 'NEW';
 }
 
-type Section = { key: string; title: string; tone: string; leads: Lead[] };
+type Section = { key: string; title: string; tone: string; leads: Lead[]; group?: 'todo' | 'inwork' };
 
 function buildSections(leads: Lead[], tab: Tab, now: number, lang: Language | null): Section[] {
   const cb = (l: Lead) => (l.callbackAt ? new Date(l.callbackAt).getTime() : Infinity);
@@ -63,22 +63,30 @@ function buildSections(leads: Lead[], tab: Tab, now: number, lang: Language | nu
       { key: 'cold', title: t(lang, 'crmSecCold'), tone: 'text-zinc-500', leads: cold },
     ].filter((s) => s.leads.length > 0);
   }
-  if (tab === 'CONSULT') {
-    const consultAt = (l: Lead) => (l.consultAt ? new Date(l.consultAt).getTime() : 0);
+  if (tab === 'CONSULT' || tab === 'LAPSED') {
+    const todo = leads.filter((l) => lacksNextStep(l, now));
+    const inwork = leads.filter((l) => hasNextStep(l, now));
+    const sub = (ls: Lead[]): Section[] => {
+      if (tab === 'CONSULT') {
+        const consultAt = (l: Lead) => (l.consultAt ? new Date(l.consultAt).getTime() : 0);
+        return [
+          { key: 'stalled', title: t(lang, 'crmSecStalled'), tone: 'text-red-700', leads: ls.filter((l) => l.consultState === 'DONE' || l.consultState === 'NO_SHOW').sort((a, b) => consultAt(b) - consultAt(a)) },
+          { key: 'upcoming', title: t(lang, 'crmSecConsultUpcoming'), tone: 'text-blue-700', leads: ls.filter((l) => l.consultState === 'UPCOMING').sort((a, b) => consultAt(a) - consultAt(b)) },
+        ];
+      }
+      const visit = (l: Lead) => new Date(l.lastVisitAt ?? 0).getTime();
+      const ago = (l: Lead) => (now - visit(l)) / DAY;
+      const by = (lo: number, hi: number) => ls.filter((l) => ago(l) > lo && ago(l) <= hi).sort((a, b) => visit(b) - visit(a));
+      return [
+        { key: 'l1', title: t(lang, 'crmSecLapsed1'), tone: 'text-orange-700', leads: by(LAPSED_AFTER_DAYS, 60) },
+        { key: 'l2', title: t(lang, 'crmSecLapsed2'), tone: 'text-zinc-600', leads: by(60, 180) },
+        { key: 'l3', title: t(lang, 'crmSecLapsed3'), tone: 'text-zinc-500', leads: by(180, Infinity) },
+      ];
+    };
     return [
-      { key: 'stalled', title: t(lang, 'crmSecStalled'), tone: 'text-red-700', leads: leads.filter((l) => l.consultState === 'DONE' || l.consultState === 'NO_SHOW').sort((a, b) => consultAt(b) - consultAt(a)) },
-      { key: 'upcoming', title: t(lang, 'crmSecConsultUpcoming'), tone: 'text-blue-700', leads: leads.filter((l) => l.consultState === 'UPCOMING').sort((a, b) => consultAt(a) - consultAt(b)) },
-    ].filter((s) => s.leads.length > 0);
-  }
-  if (tab === 'LAPSED') {
-    const visit = (l: Lead) => new Date(l.lastVisitAt ?? 0).getTime();
-    const ago = (l: Lead) => (now - visit(l)) / DAY;
-    const by = (lo: number, hi: number) => leads.filter((l) => ago(l) > lo && ago(l) <= hi).sort((a, b) => visit(b) - visit(a));
-    return [
-      { key: 'l1', title: t(lang, 'crmSecLapsed1'), tone: 'text-orange-700', leads: by(LAPSED_AFTER_DAYS, 60) },
-      { key: 'l2', title: t(lang, 'crmSecLapsed2'), tone: 'text-zinc-600', leads: by(60, 180) },
-      { key: 'l3', title: t(lang, 'crmSecLapsed3'), tone: 'text-zinc-500', leads: by(180, Infinity) },
-    ].filter((s) => s.leads.length > 0);
+      ...sub(todo).map((x) => ({ ...x, key: `todo-${x.key}`, group: 'todo' as const })),
+      ...sub(inwork).map((x) => ({ ...x, key: `inwork-${x.key}`, group: 'inwork' as const })),
+    ].filter((x) => x.leads.length > 0);
   }
   if (tab === 'ALL') {
     return (['NEW', 'CONTACTED', 'BOOKED', 'LOST'] as const)
@@ -150,7 +158,12 @@ export default function LeadsManager({ initialLeads, language = null, restricted
   const inTab = (l: Lead, x: Tab): boolean =>
     x === 'ALL' ? l.status !== 'SPAM' : x === 'CONSULT' ? isActive(l) && l.consultState != null : x === 'LAPSED' ? isLapsed(l, now) : x === 'ACTION' ? (l.status === 'NEW' || isOverdue(l, now)) : l.status === x;
   const counts = useMemo(
-    () => Object.fromEntries(TABS.map((x) => [x, base.filter((l) => inTab(l, x) && (x !== 'ACTION' || needsAction(l, now))).length])) as Record<Tab, number>,
+    () => Object.fromEntries(TABS.map((x) => [x, base.filter((l) => inTab(l, x) && (x !== 'ACTION' || needsAction(l, now)) && ((x !== 'CONSULT' && x !== 'LAPSED') || lacksNextStep(l, now))).length])) as Record<Tab, number>,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [base],
+  );
+  const tabTotals = useMemo(
+    () => ({ CONSULT: base.filter((l) => inTab(l, 'CONSULT')).length, LAPSED: base.filter((l) => inTab(l, 'LAPSED')).length }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [base],
   );
@@ -230,6 +243,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
           <button
             key={x}
             onClick={() => setTab(x)}
+            title={x === 'CONSULT' || x === 'LAPSED' ? tf(language, 'crmTabCountHint', { n: counts[x], total: tabTotals[x] }) : undefined}
             className={`flex items-center gap-2 rounded-full px-3 py-1 text-sm ring-1 ${activeTab === x ? 'bg-zinc-900 text-white ring-zinc-900' : 'text-zinc-700 ring-zinc-300 hover:bg-zinc-50'}`}
           >
             {tabLabel(x)}
@@ -291,7 +305,12 @@ export default function LeadsManager({ initialLeads, language = null, restricted
       )}
       {sections.length === 0 && !archive && activeTab !== 'ACTION' && <p className="text-sm text-zinc-500">{t(language, 'leadsEmpty')}</p>}
 
-      {sections.map((s) => (
+      {(() => {
+        const todo = sections.filter((x) => x.group === 'todo');
+        const inwork = sections.filter((x) => x.group === 'inwork');
+        const plain = sections.filter((x) => !x.group);
+        const total = (xs: Section[]) => xs.reduce((n, x) => n + x.leads.length, 0);
+        const renderSection = (s: Section) => (
         <section key={s.key} className="flex min-w-0 flex-col gap-2">
           {s.title && (
             <h3 className={`flex items-start gap-2 font-sans text-xs font-semibold leading-snug ${s.tone}`}>
@@ -309,7 +328,7 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                 : overdue ? { text: isLapsed(l, now) ? '' : `${l.consultState === 'DONE' || l.consultState === 'NO_SHOW' ? t(language, 'crmReasonConsult') + '. ' : ''}${t(language, 'crmReasonOverdue')} ${late}`, cls: 'text-red-700' }
                 : l.status === 'NEW' ? { text: `${t(language, 'crmReasonNew')} ${waiting}`, cls: 'text-blue-700' }
                 : null;
-              const upcoming = !overdue && isActive(l) && l.callbackAt != null;
+              const nextStepSet = hasNextStep(l, now);
               return (
                 <li key={l.id} className={`flex min-w-0 flex-col gap-2 p-3 lg:flex-row lg:items-center lg:gap-4 ${overdue ? 'bg-red-50/60' : ''}`}>
                   <Link href={`/admin/leads/${l.id}`} className="block min-w-0 flex-1 hover:underline">
@@ -322,8 +341,11 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                       {overdue && l.callbackAt && !isLapsed(l, now) && (
                         <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-800">{t(language, 'crmCallbackAt')} {fmt(l.callbackAt, language)}</span>
                       )}
-                      {upcoming && l.callbackAt && (
-                        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">{t(language, 'crmCallbackAt')} {fmt(l.callbackAt, language)}</span>
+                      {nextStepSet && l.callbackAt && (
+                        <span className="rounded bg-green-100 px-1.5 py-0.5 text-xs text-green-800">{t(language, 'crmNextStepSet')} {fmt(l.callbackAt, language)}</span>
+                      )}
+                      {isActive(l) && l.callbackAt == null && (
+                        <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-800">{t(language, 'crmNextStepNone')}</span>
                       )}
                       {l.attempts > 0 && isActive(l) && (
                         <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-700">{l.attempts}/3 {t(language, 'crmAttempts')}</span>
@@ -376,7 +398,29 @@ export default function LeadsManager({ initialLeads, language = null, restricted
             })}
           </ul>
         </section>
-      ))}
+        );
+        return (
+          <>
+            {plain.map(renderSection)}
+            {todo.length > 0 && (
+              <div className="flex min-w-0 flex-col gap-3">
+                <h2 className="flex items-center gap-2 font-sans text-sm font-semibold text-red-700">
+                  {t(language, 'crmGroupNoStep')}<span className="tabular-nums text-zinc-400">{total(todo)}</span>
+                </h2>
+                {todo.map(renderSection)}
+              </div>
+            )}
+            {inwork.length > 0 && (
+              <details className="group flex min-w-0 flex-col gap-3">
+                <summary className="flex cursor-pointer items-center gap-2 font-sans text-sm font-semibold text-green-800">
+                  {t(language, 'crmGroupInWork')}<span className="tabular-nums text-zinc-400">{total(inwork)}</span>
+                </summary>
+                <div className="mt-3 flex min-w-0 flex-col gap-3">{inwork.map(renderSection)}</div>
+              </details>
+            )}
+          </>
+        );
+      })()}
       <ReminderSheet
         open={reaching != null} title={t(language, 'remSheetTitle')} subtitle={reaching ? (reaching.name ?? reaching.phoneNumber ?? reaching.email ?? '') : ''}
         language={language} onClose={() => setReaching(null)} onSubmit={(body) => (reaching ? reachedOut(reaching, body) : Promise.resolve(false))}
