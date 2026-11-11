@@ -31,7 +31,7 @@ class LandingParityUnitTest {
 
     @Test
     void trafficSourceMatchesFormerService() {
-        assertThat(LandingTracking.classify(null)).isEqualTo("Direct / Unknown");
+        assertThat(LandingTracking.classify(null)).isEqualTo("Direct / No referrer");
         assertThat(LandingTracking.classify(t(null, null, null, null, null, null))).isEqualTo("Direct / No referrer");
         assertThat(LandingTracking.classify(t(null, "ig", "social", "c1", null, null))).isEqualTo("ig / social / c1");
         assertThat(LandingTracking.classify(t(null, null, null, null, "x", null))).isEqualTo("Meta Ads (click)");
@@ -48,7 +48,7 @@ class LandingParityUnitTest {
                 .isEqualTo("Facebook (organic)");
         assertThat(LandingTracking.classify(t("https://www.bing.com/", null, null, null, null, null)))
                 .isEqualTo("Bing (organic)");
-        assertThat(LandingTracking.classify(t("not a url", null, null, null, null, null))).isEqualTo("Direct / Unknown");
+        assertThat(LandingTracking.classify(t("not a url", null, null, null, null, null))).isEqualTo("Direct / No referrer");
         assertThat(LandingTracking.classify(t("https://www.pinterest.com/", null, null, null, null, null)))
                 .isEqualTo("Referral: www.pinterest.com");
         assertThat(LandingTracking.classify(t(null, "newsletter", null, null, null, null))).isEqualTo("newsletter");

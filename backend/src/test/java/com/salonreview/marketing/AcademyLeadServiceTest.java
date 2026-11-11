@@ -53,6 +53,25 @@ class AcademyLeadServiceTest {
     }
 
     @Test
+    void visitorIsLinkedToLeadOnlyAfterTheLeadRowExists() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        TelegramNotificationService telegram = mock(TelegramNotificationService.class);
+        HubSpotFormClient hubspot = mock(HubSpotFormClient.class);
+        LeadIntakeService intake = mock(LeadIntakeService.class);
+        when(jdbc.queryForObject(anyString(), eq(Long.class), any(Object[].class))).thenReturn(42L);
+        when(hubspot.submit(any(), anyMap(), any(), any())).thenReturn(new HubSpotFormClient.Result(true, null));
+        String visitor = "123e4567-e89b-12d3-a456-426614174000";
+        var l = new AcademyLeadService.AcademyLead("course_request", "Jane", "+16195550100", "jane@example.com", "x", "X", null,
+                false, false, "https://pmu-annakara.com/academy/", null, null, null, null, null, null, null, null, null, visitor, null);
+
+        new AcademyLeadService(jdbc, telegram, hubspot, mock(AcademyLeadLinks.class), intake).submit(2L, l);
+
+        var order = inOrder(intake, jdbc);
+        order.verify(intake).capture(any());
+        order.verify(jdbc).update(contains("UPDATE lead_intake SET visitor_id"), eq(visitor), eq(2L), eq("academy:42"));
+    }
+
+    @Test
     void leadIsSavedEvenWhenHubSpotFails() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         TelegramNotificationService telegram = mock(TelegramNotificationService.class);

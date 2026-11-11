@@ -110,6 +110,7 @@ public class AcademyLeadService {
                 String traffic = trafficSource(l);
                 leadIntake.capture(new LeadIntakeService.Lead(businessId, "Academy", traffic, l.phone(), l.email(), l.name(),
                         l.courseName(), "academy:" + id, new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(payload)));
+                linkVisitor(businessId, l, id);
             } catch (Exception e) {
                 log.warn("Academy lead {}: CRM capture failed: {}", id, e.toString());
             }
@@ -135,13 +136,20 @@ public class AcademyLeadService {
                     notBlank(l.email()) ? l.email().trim().toLowerCase() : null, phone, path, blankToNull(l.referrer()),
                     blankToNull(l.utmSource()), blankToNull(l.utmMedium()), blankToNull(l.utmCampaign()), blankToNull(l.utmTerm()),
                     blankToNull(l.utmContent()), blankToNull(l.fbclid()), blankToNull(l.gclid()),
-                    trafficSource(l) == null ? "Direct / Unknown" : trafficSource(l), blankToNull(l.pagePath()));
-            if (visitor != null && !l.isSubscription()) {
-                jdbc.update("UPDATE lead_intake SET visitor_id = ?::uuid WHERE business_id = ? AND external_id = ? AND visitor_id IS NULL",
-                        visitor, businessId, "academy:" + id);
-            }
+                    trafficSource(l) == null ? "Direct / No referrer" : trafficSource(l), blankToNull(l.pagePath()));
         } catch (RuntimeException e) {
             log.warn("Academy lead {}: submission row failed: {}", id, e.toString());
+        }
+    }
+
+    private void linkVisitor(long businessId, AcademyLead l, Long id) {
+        String visitor = l.visitorId() != null && l.visitorId().matches("[0-9a-fA-F-]{36}") ? l.visitorId() : null;
+        if (visitor == null) return;
+        try {
+            jdbc.update("UPDATE lead_intake SET visitor_id = ?::uuid WHERE business_id = ? AND external_id = ? AND visitor_id IS NULL",
+                    visitor, businessId, "academy:" + id);
+        } catch (RuntimeException e) {
+            log.warn("Academy lead {}: visitor link failed: {}", id, e.toString());
         }
     }
 

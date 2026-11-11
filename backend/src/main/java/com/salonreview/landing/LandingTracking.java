@@ -40,7 +40,7 @@ public record LandingTracking(String visitorId, String landingPath, String refer
 
     /** Human-readable attribution label, same rules and strings as the former classify_traffic_source. */
     public static String classify(LandingTracking t) {
-        if (t == null) return "Direct / Unknown";
+        if (t == null) return "Direct / No referrer";
 
         String utmDetail = null;
         if (has(t.utmSource())) {
@@ -65,7 +65,7 @@ public record LandingTracking(String visitorId, String landingPath, String refer
         if (referrer.contains("yahoo.")) return "Yahoo (organic)";
 
         String domain = netloc(t.referrer());
-        return domain.isEmpty() ? "Direct / Unknown" : "Referral: " + domain;
+        return domain.isEmpty() ? "Direct / No referrer" : "Referral: " + domain;
     }
 
     /** Python urllib.parse.urlparse(url).netloc for the cases referrers actually take. */

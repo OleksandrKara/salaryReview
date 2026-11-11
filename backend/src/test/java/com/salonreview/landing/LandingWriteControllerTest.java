@@ -396,7 +396,7 @@ class LandingWriteControllerTest {
         String body = "{\"slot\":{\"start_at\":\"2026-12-05T18:30:00Z\",\"team_member_id\":\"T\",\"segments\":[]},"
                 + "\"customer\":{\"given_name\":\"A\",\"family_name\":\"B\",\"phone_number\":\"" + TEST_PHONE + "\"}}";
         mvc.perform(json("/api/bookings/four-hand-request", body)).andExpect(status().isCreated());
-        verify(square).setCustomerAttribute("C1", "marketing_traffic_source", "Direct / Unknown");
+        verify(square).setCustomerAttribute("C1", "marketing_traffic_source", "Direct / No referrer");
         verify(square).setCustomerAttribute("C1", "original_organic_source", "na");
         verify(square).setCustomerAttribute("C1", "sms_marketing_consent", "Opted Out");
         verify(square, never()).setCustomerAttribute(eq("C1"), eq("email_marketing_consent"), any());
