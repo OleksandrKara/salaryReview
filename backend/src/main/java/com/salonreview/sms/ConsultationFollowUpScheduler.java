@@ -57,7 +57,7 @@ import java.util.function.Function;
  *       marketing consent; email to everyone with an address; a no-discount last check-in SMS for
  *       a client who can get neither.</li>
  * </ul>
- * The sequence stops for good when the client books anything, replies to a text, opts out, or
+ * The sequence stops for good when the client books anything or pays an invoice of $100+ (even with no booking), opts out, or
  * staff tap the button. Before every message Square itself is asked about bookings (the mirror
  * only hears about future bookings through webhooks), messages only go out 09:00-20:00 Pacific,
  * and a step waits if another automation texted the client in the last 7 days.
@@ -83,6 +83,7 @@ public class ConsultationFollowUpScheduler {
     private static final Duration ALERT_HEAD_START = Duration.ofHours(6);
     private static final Duration RECENT_OTHER_SMS = Duration.ofDays(7);
     private static final int OFFER_DAYS = 7;
+    private static final java.math.BigDecimal PAID_INVOICE_MIN = new java.math.BigDecimal("100");
     private static final int SEND_FROM_HOUR = 9;
     private static final int SEND_UNTIL_HOUR = 20;
     private static final DateTimeFormatter OFFER_DATE = DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.US);
@@ -337,11 +338,21 @@ public class ConsultationFollowUpScheduler {
                 .filter(b -> !b.id().equals(row.getSquareBookingId()))
                 .filter(b -> ACCEPTED.equals(b.status()) || "PENDING".equals(b.status()))
                 .anyMatch(b -> !isConsultationLive(b.appointmentSegments(), consultationIds));
-        if (booked) {
+        if (booked || paidInvoice(row, square)) {
             stop(row, ConsultationFollowUp.STOP_BOOKED, now);
             return true;
         }
         return false;
+    }
+
+    /** A paid (even partly) Square invoice of at least the $100 deposit since the consultation: the client
+     * bought without a booking showing yet. The $50 consultation fee stays below the threshold. */
+    private boolean paidInvoice(ConsultationFollowUp row, SquareClient square) {
+        Instant since = row.getConsultationStartAt().minus(Duration.ofDays(1));
+        return square.invoicesForCustomer(row.getSquareCustomerId()).stream()
+                .filter(i -> "PAID".equals(i.status()) || "PARTIALLY_PAID".equals(i.status()))
+                .filter(i -> i.createdAt() != null && !Instant.parse(i.createdAt()).isBefore(since))
+                .anyMatch(i -> i.total().compareTo(PAID_INVOICE_MIN) >= 0);
     }
 
     private void stop(ConsultationFollowUp row, String reason, Instant now) {

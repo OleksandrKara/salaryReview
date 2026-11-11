@@ -181,6 +181,31 @@ class ConsultationFollowUpSchedulerTest {
         assertThat(r.getThanksSmsState()).isEqualTo(ConsultationFollowUp.STATE_SENT);
     }
 
+    private SquareClient.Invoice invoice(String status, long cents, Instant created) {
+        return new SquareClient.Invoice("inv", "001", "Deposit", status, created.toString(),
+                List.of(new SquareClient.PaymentRequest(new SquareClient.Money(cents, "USD"))), null);
+    }
+
+    @Test
+    @DisplayName("paid a $100+ invoice with no booking yet: the sequence stops, nothing sent")
+    void paidInvoiceStops() {
+        ConsultationFollowUp r = row(NOW.minus(Duration.ofDays(2)).minus(Duration.ofHours(1)));
+        when(square.invoicesForCustomer(CUST)).thenReturn(List.of(invoice("PAID", 10000, NOW.minus(Duration.ofDays(1)))));
+        at(NOW).advance(r, square, mcConfig, NOW);
+        assertThat(r.getStopReason()).isEqualTo(ConsultationFollowUp.STOP_BOOKED);
+        verifyNoInteractions(sms);
+    }
+
+    @Test
+    @DisplayName("a paid $50 consultation-fee invoice or an unpaid invoice does not stop it")
+    void smallOrUnpaidInvoiceDoesNotStop() {
+        ConsultationFollowUp r = row(NOW.minus(Duration.ofDays(2)).minus(Duration.ofHours(1)));
+        when(square.invoicesForCustomer(CUST)).thenReturn(List.of(
+                invoice("PAID", 5000, NOW.minus(Duration.ofDays(1))), invoice("UNPAID", 20000, NOW.minus(Duration.ofDays(1)))));
+        at(NOW).advance(r, square, mcConfig, NOW);
+        assertThat(r.getStopReason()).isNull();
+    }
+
     @Test
     @DisplayName("booked a procedure (asked of Square itself): the sequence stops, nothing sent")
     void bookedStops() {
