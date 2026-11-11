@@ -105,6 +105,7 @@ x-backend-env: &backend-env
   LEAD_WEBHOOK_TOKEN: ${LEAD_WEBHOOK_TOKEN:-}
   GOOGLE_ADS_SA_JSON_B64: ${GOOGLE_ADS_SA_JSON_B64:-}
   GOOGLE_ADS_DEVELOPER_TOKEN: ${GOOGLE_ADS_DEVELOPER_TOKEN:-}
+  GOOGLE_ADS_SMS_CONVERSION_ACCOUNTS: ${GOOGLE_ADS_SMS_CONVERSION_ACCOUNTS:-}
 
 x-backend-healthcheck: &backend-healthcheck
   test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]

@@ -16,11 +16,20 @@ public class GoogleAdsInternalController {
     private final GoogleAdsSyncService sync;
     private final GoogleAdsWeeklyReportService report;
     private final InternalApiProperties props;
+    private final GoogleAdsSmsConversionService smsConversions;
 
-    public GoogleAdsInternalController(GoogleAdsSyncService sync, GoogleAdsWeeklyReportService report, InternalApiProperties props) {
+    public GoogleAdsInternalController(GoogleAdsSyncService sync, GoogleAdsWeeklyReportService report, InternalApiProperties props,
+                                       GoogleAdsSmsConversionService smsConversions) {
         this.sync = sync;
         this.report = report;
         this.props = props;
+        this.smsConversions = smsConversions;
+    }
+
+    @PostMapping("/sms-conversions/upload")
+    public String uploadSmsConversions(@RequestHeader(value = "X-Internal-Api-Key", required = false) String key) {
+        auth(key);
+        return smsConversions.uploadPending();
     }
 
     @PostMapping("/sync")

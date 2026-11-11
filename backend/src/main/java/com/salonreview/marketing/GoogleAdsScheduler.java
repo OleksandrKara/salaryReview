@@ -19,10 +19,24 @@ public class GoogleAdsScheduler {
 
     private final GoogleAdsSyncService sync;
     private final GoogleAdsWeeklyReportService report;
+    private final GoogleAdsSmsConversionService smsConversions;
 
-    public GoogleAdsScheduler(GoogleAdsSyncService sync, GoogleAdsWeeklyReportService report) {
+    public GoogleAdsScheduler(GoogleAdsSyncService sync, GoogleAdsWeeklyReportService report,
+                              GoogleAdsSmsConversionService smsConversions) {
         this.sync = sync;
         this.report = report;
+        this.smsConversions = smsConversions;
+    }
+
+    @Scheduled(cron = "0 20 * * * *", zone = "America/Los_Angeles")
+    @SchedulerLock(name = "GoogleAdsScheduler_smsConversions", lockAtLeastFor = "PT1M", lockAtMostFor = "PT15M")
+    public void uploadSmsConversions() {
+        if (!smsConversions.enabled()) return;
+        try {
+            smsConversions.uploadPending();
+        } catch (RuntimeException e) {
+            log.warn("SMS Sent conversion upload failed: {}", e.toString());
+        }
     }
 
     @Scheduled(cron = "0 30 6 * * *", zone = "America/Los_Angeles")
