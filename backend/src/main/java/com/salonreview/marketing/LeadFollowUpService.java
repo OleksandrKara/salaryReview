@@ -147,7 +147,9 @@ public class LeadFollowUpService {
 
     public record ReminderRequest(String date, String time, Integer days, String note) {}
 
-    public record ReachedOutRequest(Integer days, String date, String time, String note, Boolean none) {}
+    public record ReachedOutRequest(Integer days, String date, String time, String note, Boolean none, String skipReason) {}
+
+    static final Set<String> SKIP_REASONS = Set.of("CLIENT_WILL_WRITE", "ARRANGED", "NOT_NEEDED");
 
     /** A completed Square payment that is not part of a booked visit day (invoice, deposit, course payment). */
     public record Payment(String id, String at, java.math.BigDecimal amount, java.math.BigDecimal tip, String description) {}
@@ -1266,6 +1268,10 @@ public class LeadFollowUpService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "lead is closed");
         }
         boolean none = req != null && Boolean.TRUE.equals(req.none());
+        String skipReason = none && req.skipReason() != null ? req.skipReason().trim().toUpperCase() : null;
+        if (none && (skipReason == null || !SKIP_REASONS.contains(skipReason))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "skipReason is required without a follow-up");
+        }
         Instant now = Instant.now();
         Instant due = null;
         String note = null;
@@ -1281,7 +1287,7 @@ public class LeadFollowUpService {
         if (due != null) addReminder(lead.id(), due, note, "REACHED_OUT", by, false);
         else syncCallback(lead.id());
         if ("NEW".equals(lead.status())) addEvent(lead.id(), "STATUS", "CONTACTED", by);
-        addEvent(lead.id(), "REACHED_OUT", due == null ? "none" : String.valueOf(java.time.temporal.ChronoUnit.DAYS.between(now.atZone(PT).toLocalDate(), due.atZone(PT).toLocalDate())), by);
+        addEvent(lead.id(), "REACHED_OUT", due == null ? "none:" + skipReason : String.valueOf(java.time.temporal.ChronoUnit.DAYS.between(now.atZone(PT).toLocalDate(), due.atZone(PT).toLocalDate())), by);
         if (due != null) addEvent(lead.id(), "CALLBACK", due.toString(), by);
         noteEvent(lead.id(), note, by);
     }
