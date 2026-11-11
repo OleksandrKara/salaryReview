@@ -383,3 +383,18 @@ ALTER TABLE ONLY marketing.landing_variants
     ADD CONSTRAINT landing_variants_landing_page_id_fkey FOREIGN KEY (landing_page_id) REFERENCES marketing.landing_pages(id);
 
 
+
+ALTER TABLE marketing.visits
+    ADD COLUMN landing_url text,
+    ADD COLUMN visit_referrer text,
+    ADD COLUMN is_first_visit boolean NOT NULL DEFAULT false,
+    ADD COLUMN gbraid text,
+    ADD COLUMN wbraid text,
+    ADD COLUMN msclkid text;
+
+ALTER TABLE marketing.submissions
+    ADD COLUMN gbraid text,
+    ADD COLUMN wbraid text,
+    ADD COLUMN msclkid text,
+    ADD COLUMN landing_url text,
+    ADD COLUMN page_path text;
