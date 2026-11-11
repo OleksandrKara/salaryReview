@@ -1608,36 +1608,106 @@ public class LeadFollowUpService {
         }
     }
 
-    /** Pings the business Telegram chat about reminders that came due; one message per lead, each reminder fires once. */
+    static final java.util.Set<Integer> DIGEST_HOURS = java.util.Set.of(8, 11, 14, 17);
+    static final int DIGEST_MAX_LINES = 15;
+    private final java.util.Map<Long, Integer> digestRetry = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Digest runs at HH:00 for the primary send and HH:05 / HH:10 only for businesses whose delivery failed. */
+    static boolean isDigestHour(java.time.ZonedDateTime now) {
+        return DIGEST_HOURS.contains(now.getHour()) && now.getMinute() < 15;
+    }
+
+    /**
+     * One Telegram message per business at 08, 11, 14 and 17 PT listing reminders that came due since the last digest.
+     * A reminder is marked fired only after the message is delivered, so each fires once; a failed delivery retries
+     * within the same hour and otherwise lands in the next digest.
+     */
     public void sendDueReminders() {
-        var due = jdbc.queryForList("""
-                SELECT li.id, li.business_id, li.name, li.phone_number, li.email, li.source,
-                       string_agg(NULLIF(r.note, ''), '; ' ORDER BY r.due_at) AS notes, array_agg(r.id) AS reminder_ids
-                FROM lead_reminders r JOIN lead_intake li ON li.id = r.lead_id
+        sendDueReminders(java.time.ZonedDateTime.now(PT));
+    }
+
+    void sendDueReminders(java.time.ZonedDateTime now) {
+        if (!isDigestHour(now)) {
+            digestRetry.clear();
+            return;
+        }
+        boolean primary = now.getMinute() < 5;
+        int slot = now.getDayOfYear() * 100 + now.getHour();
+        var businesses = jdbc.queryForList("""
+                SELECT DISTINCT li.business_id FROM lead_reminders r JOIN lead_intake li ON li.id = r.lead_id
                 WHERE r.due_at <= now() AND r.fired_at IS NULL AND r.done_at IS NULL AND li.status IN ('NEW', 'CONTACTED')
-                GROUP BY li.id ORDER BY min(r.due_at) LIMIT 50
-                """);
-        for (var row : due) {
-            long id = ((Number) row.get("id")).longValue();
-            long businessId = ((Number) row.get("business_id")).longValue();
-            String who = row.get("name") != null ? row.get("name").toString()
-                    : row.get("phone_number") != null ? row.get("phone_number").toString()
-                    : String.valueOf(row.get("email"));
-            StringBuilder text = new StringBuilder("Callback reminder: ").append(who);
-            if (row.get("phone_number") != null && row.get("name") != null) text.append(" ").append(row.get("phone_number"));
-            if (row.get("notes") != null) text.append("\nNote: ").append(row.get("notes"));
-            text.append("\nSource: ").append(row.get("source"));
-            text.append("\nOpen lead: ").append(publicBaseUrl).append("/admin/leads/").append(id)
-                    .append("?business=").append(businessId);
-            if (telegram.sendPlainText(businessId, text.toString())) {
-                jdbc.update("UPDATE lead_reminders SET fired_at = now() WHERE lead_id = ? AND due_at <= now() AND fired_at IS NULL AND done_at IS NULL", id);
-                jdbc.update("""
-                        UPDATE lead_intake SET callback_reminded = COALESCE((SELECT fired_at IS NOT NULL FROM lead_reminders r
-                          WHERE r.lead_id = lead_intake.id AND r.done_at IS NULL ORDER BY due_at, id LIMIT 1), TRUE) WHERE id = ?""", id);
-            } else {
-                log.info("Lead {} callback reminder not delivered, will retry", id);
+                """, Long.class);
+        for (long businessId : businesses) {
+            if (!primary && !Integer.valueOf(slot).equals(digestRetry.get(businessId))) continue;
+            try {
+                if (sendDigest(businessId, now.toInstant())) digestRetry.remove(businessId);
+                else digestRetry.put(businessId, slot);
+            } catch (RuntimeException e) {
+                log.warn("Reminder digest failed for business {}: {}", businessId, e.toString());
+                digestRetry.put(businessId, slot);
             }
         }
+    }
+
+    record DigestItem(long leadId, String who, String source, String notes, long overdueMinutes) {}
+
+    private boolean sendDigest(long businessId, Instant now) {
+        Timestamp cutoff = Timestamp.from(now);
+        var rows = jdbc.queryForList("""
+                SELECT li.id, li.name, li.phone_number, li.email, li.source,
+                       string_agg(NULLIF(r.note, ''), '; ' ORDER BY r.due_at) AS notes, min(r.due_at) AS due
+                FROM lead_reminders r JOIN lead_intake li ON li.id = r.lead_id
+                WHERE li.business_id = ? AND r.due_at <= ? AND r.fired_at IS NULL AND r.done_at IS NULL AND li.status IN ('NEW', 'CONTACTED')
+                GROUP BY li.id ORDER BY min(r.due_at)
+                """, businessId, cutoff);
+        if (rows.isEmpty()) return true;
+        java.util.List<DigestItem> items = new java.util.ArrayList<>();
+        java.util.List<Long> ids = new java.util.ArrayList<>();
+        for (var row : rows) {
+            long id = ((Number) row.get("id")).longValue();
+            ids.add(id);
+            String phone = row.get("phone_number") == null ? null : row.get("phone_number").toString();
+            String who = row.get("name") != null ? row.get("name").toString() : phone != null ? phone : String.valueOf(row.get("email"));
+            if (row.get("name") != null && phone != null) who += " " + phone;
+            long mins = Math.max(0, java.time.Duration.between(((Timestamp) row.get("due")).toInstant(), now).toMinutes());
+            items.add(new DigestItem(id, who, row.get("source") == null ? null : row.get("source").toString(),
+                    row.get("notes") == null ? null : row.get("notes").toString(), mins));
+        }
+        var all = listFor(businessId, null);
+        int fresh = (int) all.stream().filter(l -> "NEW".equals(l.status())).count();
+        int noStep = (int) all.stream().filter(l -> ("NEW".equals(l.status()) || "CONTACTED".equals(l.status())) && l.callbackAt() == null).count();
+        String text = digestText(items, fresh, noStep, publicBaseUrl + "/admin/leads?business=" + businessId);
+        if (!telegram.sendPlainText(businessId, text)) {
+            log.info("Reminder digest for business {} not delivered, will retry", businessId);
+            return false;
+        }
+        Long[] idArray = ids.toArray(new Long[0]);
+        jdbc.update("UPDATE lead_reminders SET fired_at = now() WHERE due_at <= ? AND fired_at IS NULL AND done_at IS NULL AND lead_id = ANY(?)",
+                cutoff, idArray);
+        jdbc.update("""
+                UPDATE lead_intake SET callback_reminded = COALESCE((SELECT fired_at IS NOT NULL FROM lead_reminders r
+                  WHERE r.lead_id = lead_intake.id AND r.done_at IS NULL ORDER BY due_at, id LIMIT 1), TRUE) WHERE id = ANY(?)""", (Object) idArray);
+        return true;
+    }
+
+    static String digestText(java.util.List<DigestItem> items, int newLeads, int noNextStep, String link) {
+        StringBuilder t = new StringBuilder("Callback reminders: ").append(items.size()).append(" overdue");
+        t.append("\nNew leads waiting: ").append(newLeads).append("\nActive leads with no next step: ").append(noNextStep).append("\n");
+        int shown = Math.min(items.size(), DIGEST_MAX_LINES);
+        for (int i = 0; i < shown; i++) {
+            DigestItem it = items.get(i);
+            t.append("\n- ").append(it.who()).append(", ").append(overdue(it.overdueMinutes()));
+            if (it.source() != null) t.append(", ").append(it.source());
+            if (it.notes() != null) t.append("\n  Note: ").append(it.notes().length() > 80 ? it.notes().substring(0, 80) + "..." : it.notes());
+        }
+        if (items.size() > shown) t.append("\n+").append(items.size() - shown).append(" more");
+        return t.append("\n\nOpen CRM: ").append(link).toString();
+    }
+
+    private static String overdue(long mins) {
+        if (mins < 60) return mins + " min overdue";
+        if (mins < 48 * 60) return (mins / 60) + " h overdue";
+        return (mins / 1440) + " d overdue";
     }
 
     private static String iso(Timestamp t) {
