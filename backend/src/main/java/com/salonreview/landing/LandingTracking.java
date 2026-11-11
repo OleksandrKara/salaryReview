@@ -26,9 +26,12 @@ public record LandingTracking(String visitorId, String landingPath, String refer
         return s != null && !s.isEmpty();
     }
 
-    private static final java.util.regex.Pattern GOOGLE_TOOL_HOST = java.util.regex.Pattern.compile(
+    /** Single definition of "Google tooling referrer"; TrafficSourceSql reuses it as a Postgres regex (ARE, ~*). */
+    public static final String GOOGLE_TOOL_HOST_REGEX =
             "^(?:[a-z][a-z0-9+.-]*://)?(?:tagassistant|tagmanager|analytics|ads|lookerstudio|datastudio)\\.google\\.[a-z.]+(?:[:/?#]|$)"
-                    + "|^(?:[a-z][a-z0-9+.-]*://)?(?:search\\.google\\.com/search-console|web\\.dev|pagespeed\\.web\\.dev)(?:[:/?#]|$)");
+                    + "|^(?:[a-z][a-z0-9+.-]*://)?(?:search\\.google\\.com/search-console|web\\.dev|pagespeed\\.web\\.dev)(?:[:/?#]|$)";
+
+    private static final java.util.regex.Pattern GOOGLE_TOOL_HOST = java.util.regex.Pattern.compile(GOOGLE_TOOL_HOST_REGEX);
 
     /** Google debug/admin tools (Tag Assistant, GA, Ads, Search Console...) are not search results: such a referrer counts as none. */
     public static boolean isGoogleToolReferrer(String referrer) {
