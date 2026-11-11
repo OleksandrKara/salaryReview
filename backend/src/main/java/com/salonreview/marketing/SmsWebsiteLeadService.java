@@ -217,9 +217,19 @@ public class SmsWebsiteLeadService {
 
     private Capture recordLead(Long businessId, String phoneNumber, Map<String, Object> row) {
         JsonNode meta = readMeta(row);
-        com.salonreview.landing.Attribution tapAttr = com.salonreview.landing.Attribution.of(k ->
-                k.equals("referrer") ? referrer(meta) : text(meta, k));
-        com.salonreview.landing.Attribution attr = attributionResolver == null ? tapAttr
+        boolean visitMode = text(meta, "landing_url") != null;
+        java.util.Map<String, String> adHistory = java.util.Map.of();
+        com.salonreview.landing.Attribution tapAttr;
+        if (visitMode) {
+            // This tap's label comes from its own visit; the stored first-touch fields only feed the ad history.
+            tapAttr = com.salonreview.landing.VisitAttribution.current(text(meta, "landing_url"), firstNonNull(text(meta, "visit_referrer"), null));
+            adHistory = com.salonreview.landing.VisitAttribution.adHistory(
+                    com.salonreview.landing.Attribution.of(k -> text(meta, k)),
+                    com.salonreview.landing.VisitAttribution.isoFromEpochMillis(text(meta, "first_touch_at")), text(meta, "landing_path"));
+        } else {
+            tapAttr = com.salonreview.landing.Attribution.of(k -> k.equals("referrer") ? referrer(meta) : text(meta, k));
+        }
+        com.salonreview.landing.Attribution attr = attributionResolver == null || (visitMode && !tapAttr.hasMarkers()) ? tapAttr
                 : attributionResolver.resolve(businessId, (String) row.get("visitor_id"), tapAttr);
         String source = attr.trafficSource();
 
@@ -251,7 +261,7 @@ public class SmsWebsiteLeadService {
 
         String page = text(meta, "path");
         return new Capture("🌐 From the website" + (page != null ? ": " + page : "") + " · " + source
-                + (inserted > 0 ? " (new contact)" : ""), source, attr.toJson());
+                + (inserted > 0 ? " (new contact)" : ""), source, attr.toJson(adHistory));
     }
 
     private void sendGa4SmsLead(Long businessId, String gaClientId, String visitorId, String page, String source) {

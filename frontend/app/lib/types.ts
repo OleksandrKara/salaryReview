@@ -2597,6 +2597,10 @@ export interface Lead {
   attempts: number;
   closeReady: boolean;
   lastVisitAt: string | null;
+  adsAssisted: boolean;
+  adFirstSource: string | null;
+  adFirstCampaign: string | null;
+  adFirstAt: string | null;
 }
 export interface LostRow { reason: string; source: string | null; count: number }
 export interface LostReport { days: number; total: number; byReason: LostRow[]; bySource: LostRow[] }

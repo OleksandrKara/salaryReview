@@ -102,7 +102,20 @@ public class LeadFollowUpService {
                            String lostReason, String lostComment, boolean sourceEditable,
                            String lastNote, String lastNoteBy, String lastNoteAt, String activityAt,
                            boolean academy, String consultState, String consultAt,
-                           int attempts, boolean closeReady, String lastVisitAt) {}
+                           int attempts, boolean closeReady, String lastVisitAt,
+                           boolean adsAssisted, String adFirstSource, String adFirstCampaign, String adFirstAt) {
+        public LeadView(long id, String channel, String source, String phoneNumber, String email, String name,
+                        String detail, String status, String callbackAt, String createdAt, String lastTouchAt,
+                        int touches, String squareCustomerId, String squareUrl,
+                        String lostReason, String lostComment, boolean sourceEditable,
+                        String lastNote, String lastNoteBy, String lastNoteAt, String activityAt,
+                        boolean academy, String consultState, String consultAt,
+                        int attempts, boolean closeReady, String lastVisitAt) {
+            this(id, channel, source, phoneNumber, email, name, detail, status, callbackAt, createdAt, lastTouchAt, touches,
+                    squareCustomerId, squareUrl, lostReason, lostComment, sourceEditable, lastNote, lastNoteBy, lastNoteAt,
+                    activityAt, academy, consultState, consultAt, attempts, closeReady, lastVisitAt, false, null, null, null);
+        }
+    }
 
     public record Touch(long id, String channel, String source, String detail, String createdAt,
                         java.util.Map<String, String> payload, java.util.Map<String, String> attribution) {
@@ -180,7 +193,9 @@ public class LeadFollowUpService {
                 rs.getString("last_note"), rs.getString("last_note_by"), iso(rs.getTimestamp("last_note_at")), iso(rs.getTimestamp("activity_at")),
                 rs.getBoolean("academy"), rs.getString("consult_state"), iso(rs.getTimestamp("consult_at")),
                 rs.getInt("attempts"), closeReady(rs.getString("status"), rs.getInt("attempts"), rs.getTimestamp("first_attempt_at")),
-                iso(rs.getTimestamp("last_visit_at")));
+                iso(rs.getTimestamp("last_visit_at")),
+                rs.getString("ad_source") != null && !com.salonreview.landing.TrafficSource.isPaid(rs.getString("source")),
+                rs.getString("ad_source"), rs.getString("ad_campaign"), iso(rs.getTimestamp("ad_at")));
     };
 
     static final int ATTEMPT_LIMIT = 3;
@@ -208,6 +223,12 @@ public class LeadFollowUpService {
               SELECT k, count(*) AS touches, max(created_at) AS last_touch_at,
                      (array_agg(square_customer_id ORDER BY (square_customer_id IS NULL), created_at))[1] AS customer,
                      (array_agg(name ORDER BY (name IS NULL), created_at))[1] AS any_name,
+                     (array_agg(attribution->>'ad_first_source' ORDER BY COALESCE((attribution->>'ad_first_at')::timestamptz, created_at))
+                         FILTER (WHERE attribution->>'ad_first_source' IS NOT NULL))[1] AS ad_source,
+                     (array_agg(attribution->>'ad_first_campaign' ORDER BY COALESCE((attribution->>'ad_first_at')::timestamptz, created_at))
+                         FILTER (WHERE attribution->>'ad_first_source' IS NOT NULL))[1] AS ad_campaign,
+                     (array_agg(COALESCE((attribution->>'ad_first_at')::timestamptz, created_at) ORDER BY COALESCE((attribution->>'ad_first_at')::timestamptz, created_at))
+                         FILTER (WHERE attribution->>'ad_first_source' IS NOT NULL))[1] AS ad_at,
                      COALESCE((array_agg(academy_override ORDER BY created_at DESC) FILTER (WHERE academy_override IS NOT NULL))[1], bool_or(channel = 'Academy')) AS academy
               FROM keyed GROUP BY k
             )
@@ -215,7 +236,7 @@ public class LeadFollowUpService {
                    COALESCE(sc.email_address, f.email) AS email,
                    COALESCE(NULLIF(trim(concat_ws(' ', sc.given_name, sc.family_name)), ''), f.name, agg.any_name) AS name,
                    f.detail, f.status, f.callback_at, f.created_at, agg.last_touch_at, agg.touches::int AS touches,
-                   agg.customer AS square_customer_id, agg.academy, f.lost_reason, f.lost_comment,
+                   agg.customer AS square_customer_id, agg.academy, agg.ad_source, agg.ad_campaign, agg.ad_at, f.lost_reason, f.lost_comment,
                    (f.channel = 'Square' OR f.source = 'Unknown') AS source_editable,
                    n.text AS last_note, n.created_by AS last_note_by, n.created_at AS last_note_at,
                    GREATEST(agg.last_touch_at, n.created_at) AS activity_at,

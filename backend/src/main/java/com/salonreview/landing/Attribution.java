@@ -69,11 +69,18 @@ public record Attribution(String utmSource, String utmMedium, String utmCampaign
 
     /** JSON for lead_intake.attribution including the label; null when nothing is known. */
     public String toJson() {
+        return toJson(null);
+    }
+
+    /** Same, plus extra flat keys (the lead's ad history); present even when no other attribution is known. */
+    public String toJson(Map<String, String> extra) {
         Map<String, String> m = toMap();
-        if (m.isEmpty()) return null;
+        boolean hasExtra = extra != null && !extra.isEmpty();
+        if (m.isEmpty() && !hasExtra) return null;
         ObjectNode n = JSON.createObjectNode();
         m.forEach(n::put);
         n.put("traffic_source", trafficSource());
+        if (hasExtra) extra.forEach(n::put);
         return n.toString();
     }
 }

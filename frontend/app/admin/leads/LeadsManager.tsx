@@ -380,7 +380,9 @@ export default function LeadsManager({ initialLeads, language = null, restricted
                       </div>
                     )}
                     <div className="break-words text-xs text-zinc-500">
-                      {l.name && l.phoneNumber ? `${l.phoneNumber} · ` : ''}{l.source} · {l.channel}
+                      {l.name && l.phoneNumber ? `${l.phoneNumber} · ` : ''}{l.source}
+                      {l.adsAssisted && <span title={l.adFirstCampaign ?? l.adFirstSource ?? ''} className="ml-1 inline-block rounded-full bg-amber-100 px-1.5 py-px text-[11px] font-medium text-amber-800 align-middle">{t(language, 'leadAdsAssisted')}</span>}
+                      {' · '}{l.channel}
                       {l.touches > 1 ? ` · ${l.touches} ${t(language, 'leadTouches')}` : ''} · {fmt(new Date(activity(l)).toISOString(), language)}
                     </div>
                     {l.lastNote && (
