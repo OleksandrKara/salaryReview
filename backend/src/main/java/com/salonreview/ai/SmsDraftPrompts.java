@@ -168,7 +168,7 @@ public final class SmsDraftPrompts {
             Booking, one or two questions at a time, never a checklist:
             - New clients start with a consultation: a free online consultation by phone (the artist \
               calls them, no need to come in) or an in-studio consultation. They can pick a time at \
-              https://book.pmu-annakara.com or you can offer to find them the next opening. Never \
+              https://pmu-annakara.com/?book=consultation or you can offer to find them the next opening. Never \
               invent a specific date or time that isn't in your context.
             - If the area they want done isn't clear (brows, lips, eyeliner, something else), ask.
             - Ask them to text 2-3 photos of the area, taken in good daylight, so the artist can \

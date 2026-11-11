@@ -60,8 +60,8 @@ public class LifecycleReminderEmailFallbackScheduler {
      * touch-up/color-booster are deliberately not on the public landing page's technique list, so
      * this is the only way either email's CTA button can reach the right pre-set booking modal. */
     private static final Map<String, String> BOOKING_LINKS = Map.of(
-            ColorBoosterReminderScheduler.AUTOMATION_KEY, "https://book.pmu-annakara.com/?book=color-booster",
-            TouchupReminderScheduler.AUTOMATION_KEY, "https://book.pmu-annakara.com/?book=touch-up"
+            ColorBoosterReminderScheduler.AUTOMATION_KEY, "https://pmu-annakara.com/?book=color-booster",
+            TouchupReminderScheduler.AUTOMATION_KEY, "https://pmu-annakara.com/?book=touch-up"
     );
 
     private static final Map<String, String> SUBJECT_LINES = Map.of(

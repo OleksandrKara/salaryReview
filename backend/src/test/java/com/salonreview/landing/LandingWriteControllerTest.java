@@ -148,6 +148,37 @@ class LandingWriteControllerTest {
     }
 
     @Test
+    void visitStoresEveryClickIdLandingUrlAndFirstVisitFlag() throws Exception {
+        String vid = UUID.randomUUID().toString();
+        String body = "{\"visitor_id\":\"" + vid + "\",\"landing_path\":\"/book/\",\"referrer\":\"https://pmu-annakara.com/\","
+                + "\"utm_source\":\"google\",\"utm_medium\":\"cpc\",\"utm_campaign\":\"brows\",\"gclid\":\"g1\",\"gbraid\":\"gb1\","
+                + "\"wbraid\":\"wb1\",\"msclkid\":\"ms1\",\"fbclid\":\"fb1\","
+                + "\"landing_url\":\"/book/?utm_source=google&gclid=g1\",\"visit_referrer\":\"https://www.google.com/\",\"is_first_visit\":true}";
+        mvc.perform(json("/api/tracking/visit", body)).andExpect(status().isCreated());
+        Map<String, Object> row = jdbc.queryForMap("SELECT * FROM marketing.visits WHERE visitor_id = ?::uuid", vid);
+        assertThat(row).containsEntry("gbraid", "gb1").containsEntry("wbraid", "wb1").containsEntry("msclkid", "ms1")
+                .containsEntry("fbclid", "fb1").containsEntry("gclid", "g1").containsEntry("utm_campaign", "brows")
+                .containsEntry("landing_url", "/book/?utm_source=google&gclid=g1")
+                .containsEntry("visit_referrer", "https://www.google.com/").containsEntry("is_first_visit", true);
+
+        String later = "{\"visitor_id\":\"" + vid + "\",\"landing_path\":\"/gallery/\",\"landing_url\":\"/gallery/\","
+                + "\"visit_referrer\":\"https://pmu-annakara.com/book/\",\"is_first_visit\":false}";
+        mvc.perform(json("/api/tracking/visit", later).header("Cookie", "mani_vid=" + vid)).andExpect(status().isCreated());
+        assertThat(count("visits", "visitor_id = ?::uuid", vid)).isEqualTo(2);
+        assertThat(count("visits", "visitor_id = ?::uuid AND is_first_visit", vid)).isEqualTo(1);
+    }
+
+    @Test
+    void blankFirstVisitFlagAndMissingNewFieldsDefaultSafely() throws Exception {
+        String vid = UUID.randomUUID().toString();
+        mvc.perform(json("/api/tracking/visit", tracking(vid))).andExpect(status().isCreated());
+        Map<String, Object> row = jdbc.queryForMap("SELECT * FROM marketing.visits WHERE visitor_id = ?::uuid", vid);
+        assertThat(row.get("is_first_visit")).isEqualTo(false);
+        assertThat(row.get("landing_url")).isNull();
+        assertThat(row.get("gbraid")).isNull();
+    }
+
+    @Test
     void existingCookieWinsOverClientVisitorId() throws Exception {
         String cookieVid = UUID.randomUUID().toString();
         String clientVid = UUID.randomUUID().toString();
@@ -278,6 +309,26 @@ class LandingWriteControllerTest {
         assertThat(jdbc.queryForMap("SELECT * FROM marketing.contacts WHERE phone_number = '+16195550101'"))
                 .containsEntry("booking_status", "requested").containsEntry("square_customer_id", "CUST-9")
                 .containsEntry("square_booking_id", bookingId).containsEntry("booking_service_name", "4-Hand Service");
+    }
+
+    @Test
+    void submissionKeepsItsOwnSourceAndClickIdsWhileFirstVisitStaysSeparate() throws Exception {
+        when(square.createLandingCustomer(any(), any(), any(), any(), any()))
+                .thenReturn(new SquareClient.Customer("CUST-8", "Ann", "Test", null, "+16195550101", "ann@example.com", null));
+        String vid = UUID.randomUUID().toString();
+        mvc.perform(json("/api/tracking/visit", "{\"visitor_id\":\"" + vid + "\",\"landing_path\":\"/\",\"fbclid\":\"first\","
+                + "\"landing_url\":\"/?fbclid=first\",\"is_first_visit\":true}")).andExpect(status().isCreated());
+        String body = fourHand(TEST_PHONE, "", vid).replace("\"gclid\":\"abc\"",
+                "\"gclid\":\"abc\",\"gbraid\":\"gb9\",\"msclkid\":\"ms9\",\"landing_url\":\"/book/?gclid=abc\"");
+        MvcResult r = mvc.perform(json("/api/bookings/four-hand-request", body.replace("\"visitor_id\":\"" + vid + "\"", "\"visitor_id\":\"" + vid + "\"")))
+                .andExpect(status().isCreated()).andReturn();
+        String bookingId = com.fasterxml.jackson.databind.json.JsonMapper.builder().build()
+                .readTree(r.getResponse().getContentAsString()).get("booking_id").asText();
+        Map<String, Object> sub = jdbc.queryForMap("SELECT * FROM marketing.submissions WHERE square_booking_id = ?", bookingId);
+        assertThat(sub).containsEntry("gclid", "abc").containsEntry("gbraid", "gb9").containsEntry("msclkid", "ms9")
+                .containsEntry("landing_url", "/book/?gclid=abc").containsEntry("traffic_source", "Google Ads (google / cpc)");
+        assertThat(jdbc.queryForMap("SELECT fbclid, is_first_visit FROM marketing.visits WHERE visitor_id = ?::uuid", vid))
+                .containsEntry("fbclid", "first").containsEntry("is_first_visit", true);
     }
 
     @Test

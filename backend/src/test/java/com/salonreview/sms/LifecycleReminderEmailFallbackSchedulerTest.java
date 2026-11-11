@@ -110,7 +110,7 @@ class LifecycleReminderEmailFallbackSchedulerTest {
         verify(templateService).render(eq(BUSINESS_ID), eq(ColorBoosterReminderScheduler.AUTOMATION_KEY), varsCaptor.capture());
         assertThat(varsCaptor.getValue())
                 .containsEntry("FNAME", "Jane")
-                .containsEntry("LINK", "https://book.pmu-annakara.com/?book=color-booster");
+                .containsEntry("LINK", "https://pmu-annakara.com/?book=color-booster");
 
         ArgumentCaptor<String> subjectCaptor = ArgumentCaptor.forClass(String.class);
         verify(mailchimpEmailService).sendWinbackEmail(any(), eq("jane@example.com"), subjectCaptor.capture(), anyString(), anyString(), anyString());
@@ -135,7 +135,7 @@ class LifecycleReminderEmailFallbackSchedulerTest {
 
         ArgumentCaptor<Map<String, String>> varsCaptor = ArgumentCaptor.forClass(Map.class);
         verify(templateService).render(eq(BUSINESS_ID), eq(TouchupReminderScheduler.AUTOMATION_KEY), varsCaptor.capture());
-        assertThat(varsCaptor.getValue()).containsEntry("LINK", "https://book.pmu-annakara.com/?book=touch-up");
+        assertThat(varsCaptor.getValue()).containsEntry("LINK", "https://pmu-annakara.com/?book=touch-up");
     }
 
     @Test
