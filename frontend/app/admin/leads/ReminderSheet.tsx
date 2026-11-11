@@ -9,18 +9,23 @@ import { DEFAULT_DAYS, DEFAULT_TIME, addDays, choiceBody, choiceInPast, ptYmd, t
 
 export type ReachedOutBody = { days?: number; date?: string; time?: string; note?: string; none?: boolean; skipReason?: string };
 
+const LOST_CHOICES = ['PRICE', 'NO_ANSWER', 'NOT_INTERESTED', 'BOUGHT_ELSEWHERE', 'NOT_ELIGIBLE', 'TOO_FAR', 'WRONG_NUMBER_SPAM', 'TIMING', 'OTHER'] as const;
+export type LostBody = { lostReason: string; lostComment: string };
 const SKIP_REASONS = ['CLIENT_WILL_WRITE', 'ARRANGED', 'NOT_NEEDED'] as const;
 
 const CLOSE_DISTANCE = 90;
 
-function Sheet({ title, subtitle, language, onClose, onSubmit }: {
-  title: string; subtitle: string; language: Language | null; onClose: () => void; onSubmit: (body: ReachedOutBody) => Promise<boolean>;
+function Sheet({ title, subtitle, language, onClose, onSubmit, onLost }: {
+  title: string; subtitle: string; language: Language | null; onClose: () => void; onSubmit: (body: ReachedOutBody) => Promise<boolean>; onLost?: (body: LostBody) => Promise<boolean>;
 }) {
   const [now] = useState(() => Date.now());
   const [choice, setChoice] = useState<ReminderChoice>({ days: DEFAULT_DAYS, date: addDays(ptYmd(now), DEFAULT_DAYS), time: DEFAULT_TIME, timeSet: false });
   const [note, setNote] = useState('');
   const [none, setNone] = useState(false);
   const [skipReason, setSkipReason] = useState<string>('');
+  const [lost, setLost] = useState(false);
+  const [lostReason, setLostReason] = useState('');
+  const [lostComment, setLostComment] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(0);
@@ -38,6 +43,15 @@ function Sheet({ title, subtitle, language, onClose, onSubmit }: {
 
   async function submit() {
     if (busy) return;
+    if (lost) {
+      if (!lostReason || (lostReason === 'OTHER' && !lostComment.trim())) { setError(t(language, 'remLostReasonRequired')); return; }
+      setBusy(true);
+      setError('');
+      const done = await onLost!({ lostReason, lostComment: lostComment.trim() });
+      setBusy(false);
+      if (done) onClose(); else setError(t(language, 'remErr'));
+      return;
+    }
     if (none && !skipReason) { setError(t(language, 'remSkipReasonRequired')); return; }
     if (!none && choiceInPast(choice, now)) { setError(t(language, 'remPast')); return; }
     setBusy(true);
@@ -95,7 +109,23 @@ function Sheet({ title, subtitle, language, onClose, onSubmit }: {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 pt-2">
-          {none ? (
+          {lost ? (
+            <div className="flex flex-col items-start gap-3 py-2">
+              <p className="text-sm text-zinc-700">{t(language, 'remLostWhy')}</p>
+              <div role="radiogroup" aria-label={t(language, 'remLostWhy')} className="flex w-full flex-col gap-2">
+                {LOST_CHOICES.map((r) => (
+                  <button key={r} type="button" role="radio" aria-checked={lostReason === r} onClick={() => { setLostReason(r); setError(''); }}
+                    className={`min-h-11 w-full rounded-lg px-3 text-left text-sm font-medium ring-1 ${lostReason === r ? 'bg-zinc-900 text-white ring-zinc-900' : 'bg-white text-zinc-800 ring-zinc-300 hover:bg-zinc-100'}`}>
+                    {t(language, `leadLost_${r}` as 'leadLost_PRICE')}
+                  </button>
+                ))}
+              </div>
+              <textarea aria-label={t(language, 'leadLostComment')} value={lostComment} onChange={(e) => setLostComment(e.target.value)} placeholder={t(language, 'leadLostComment')} rows={2} maxLength={500}
+                className="block w-full min-w-0 resize-y rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 focus:border-zinc-600 focus:outline-none sm:text-sm" />
+              <button type="button" onClick={() => { setLost(false); setError(''); }} className="inline-flex min-h-11 items-center text-sm text-zinc-800 underline underline-offset-2">{t(language, 'remSheetNoneUndo')}</button>
+              {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+            </div>
+          ) : none ? (
             <div className="flex flex-col items-start gap-3 py-2">
               <p className="text-sm text-zinc-700">{t(language, 'remSkipWhy')}</p>
               <div role="radiogroup" aria-label={t(language, 'remSkipWhy')} className="flex w-full flex-col gap-2">
@@ -112,14 +142,17 @@ function Sheet({ title, subtitle, language, onClose, onSubmit }: {
           ) : (
             <>
               <ReminderFields language={language} value={choice} onChange={(v) => { setChoice(v); setError(''); }} note={note} onNote={setNote} now={now} idPrefix="sheet" error={error} disabled={busy} />
-              <button type="button" onClick={() => setNone(true)} className="mt-2 inline-flex min-h-11 items-center text-sm text-zinc-600 underline underline-offset-2">{t(language, 'remSheetNone')}</button>
+              <div className="mt-2 flex flex-wrap gap-x-4">
+                <button type="button" onClick={() => setNone(true)} className="inline-flex min-h-11 items-center text-sm text-zinc-600 underline underline-offset-2">{t(language, 'remSheetNone')}</button>
+                {onLost && <button type="button" onClick={() => setLost(true)} className="inline-flex min-h-11 items-center text-sm text-red-700 underline underline-offset-2">{t(language, 'remCloseLost')}</button>}
+              </div>
             </>
           )}
         </div>
 
         <div className="grid shrink-0 grid-cols-2 gap-2 border-t border-zinc-200 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <button type="button" className={btnQuiet} onClick={onClose} disabled={busy}>{t(language, 'remCancel')}</button>
-          <button type="button" className={btnPrimary} onClick={() => void submit()} disabled={busy} data-testid="reminder-sheet-save">{t(language, 'remSheetConfirm')}</button>
+          <button type="button" className={btnPrimary} onClick={() => void submit()} disabled={busy} data-testid="reminder-sheet-save">{lost ? t(language, 'remCloseLostConfirm') : t(language, 'remSheetConfirm')}</button>
         </div>
       </div>
     </div>
@@ -128,7 +161,7 @@ function Sheet({ title, subtitle, language, onClose, onSubmit }: {
 
 /** The Reached out popup: bottom sheet on phones (swipe down by the handle only), centered dialog from sm up. */
 export default function ReminderSheet({ open, ...rest }: {
-  open: boolean; title: string; subtitle: string; language: Language | null; onClose: () => void; onSubmit: (body: ReachedOutBody) => Promise<boolean>;
+  open: boolean; title: string; subtitle: string; language: Language | null; onClose: () => void; onSubmit: (body: ReachedOutBody) => Promise<boolean>; onLost?: (body: LostBody) => Promise<boolean>;
 }) {
   if (!open || typeof document === 'undefined') return null;
   return createPortal(<Sheet {...rest} />, document.body);
