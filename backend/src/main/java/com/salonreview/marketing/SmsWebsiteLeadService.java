@@ -124,6 +124,14 @@ public class SmsWebsiteLeadService {
      * one whose page topic the text names; still ambiguous -> "possibly from the website", no
      * contact, no GA4 event. A legacy "Ref: XXXXXX" code (site version of 2026-10-04) still wins. */
     public Optional<String> capture(Long businessId, String phoneNumber, String body) {
+        return captureDetailed(businessId, phoneNumber, body).map(Capture::context);
+    }
+
+    /** The staff-alert line plus, when the text was tied to one tap, that tap's classified traffic
+     * source (null for the ambiguous "possibly from the website" case). */
+    public record Capture(String context, String trafficSource) {}
+
+    public Optional<Capture> captureDetailed(Long businessId, String phoneNumber, String body) {
         try {
             Optional<String> ref = extractRefCode(body);
             if (ref.isPresent()) {
@@ -152,8 +160,8 @@ public class SmsWebsiteLeadService {
             if (match.isPresent()) return Optional.of(recordLead(businessId, phoneNumber, match.get()));
             long visitors = taps.stream().map(t -> t.get("visitor_id")).distinct().count();
             if (visitors > 1) {
-                return Optional.of("🌐 Possibly from the website (" + visitors + " visitors tapped Text in the last "
-                        + MATCH_WINDOW_MINUTES + " min, can't tell which)");
+                return Optional.of(new Capture("🌐 Possibly from the website (" + visitors + " visitors tapped Text in the last "
+                        + MATCH_WINDOW_MINUTES + " min, can't tell which)", null));
             }
             return Optional.empty();
         } catch (Exception e) {
@@ -197,7 +205,7 @@ public class SmsWebsiteLeadService {
         }
     }
 
-    private String recordLead(Long businessId, String phoneNumber, Map<String, Object> row) {
+    private Capture recordLead(Long businessId, String phoneNumber, Map<String, Object> row) {
         JsonNode meta = readMeta(row);
         String googleClick = firstNonNull(text(meta, "gclid"), text(meta, "gbraid"), text(meta, "wbraid"));
         String source = classifyTrafficSource(text(meta, "utm_source"), text(meta, "utm_medium"),
@@ -230,8 +238,8 @@ public class SmsWebsiteLeadService {
         }
 
         String page = text(meta, "path");
-        return "🌐 From the website" + (page != null ? ": " + page : "") + " · " + source
-                + (inserted > 0 ? " (new contact)" : "");
+        return new Capture("🌐 From the website" + (page != null ? ": " + page : "") + " · " + source
+                + (inserted > 0 ? " (new contact)" : ""), source);
     }
 
     private void sendGa4SmsLead(Long businessId, String gaClientId, String visitorId, String page, String source) {

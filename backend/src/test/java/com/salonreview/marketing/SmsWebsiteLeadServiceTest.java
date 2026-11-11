@@ -114,6 +114,25 @@ class SmsWebsiteLeadServiceTest {
     }
 
     @Test
+    @DisplayName("captureDetailed exposes the matched tap's classified source, none when ambiguous")
+    void captureDetailedExposesTapSource() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForList(contains("make_interval"), eq(2L), eq(SmsWebsiteLeadService.MATCH_WINDOW_MINUTES)))
+                .thenReturn(List.of(tap("e1", "v1", "Lip Blush Tattoo", "google")));
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(0);
+        SmsWebsiteLeadService service = new SmsWebsiteLeadService(jdbc, "");
+
+        assertThat(service.captureDetailed(2L, "+16195550100", "Hi! I have a question about Lip Blush Tattoo."))
+                .hasValueSatisfying(c -> assertThat(c.trafficSource()).isEqualTo("google"));
+
+        JdbcTemplate two = mock(JdbcTemplate.class);
+        when(two.queryForList(contains("make_interval"), eq(2L), eq(SmsWebsiteLeadService.MATCH_WINDOW_MINUTES)))
+                .thenReturn(List.of(tap("e1", "v1", "Lip Blush Tattoo", null), tap("e2", "v2", "3D Lips", "google")));
+        assertThat(new SmsWebsiteLeadService(two, "").captureDetailed(2L, "+16195550101", "Hi! I have a question about permanent makeup."))
+                .hasValueSatisfying(c -> assertThat(c.trafficSource()).isNull());
+    }
+
+    @Test
     @DisplayName("several visitors tapped: the text's topic picks one; otherwise 'possibly', no contact")
     void timeWindowSeveralTaps() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);

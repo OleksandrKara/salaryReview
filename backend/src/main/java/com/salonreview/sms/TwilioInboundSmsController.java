@@ -186,12 +186,15 @@ public class TwilioInboundSmsController {
         // A text sent from the website's Text button carries a short ref code tying it to that
         // visit: creates the lead's contact with the visit's traffic source and tells staff where
         // it came from (see SmsWebsiteLeadService). Never throws; empty for any other text.
-        String websiteContext = websiteLeadService.capture(businessId, from, body).orElse(null);
+        Optional<SmsWebsiteLeadService.Capture> websiteCapture = websiteLeadService.captureDetailed(businessId, from, body);
+        String websiteContext = websiteCapture.map(SmsWebsiteLeadService.Capture::context).orElse(null);
+        // The lead carries this visit's own source; the contact keeps its first touch.
+        String tapTrafficSource = websiteCapture.map(SmsWebsiteLeadService.Capture::trafficSource).orElse(null);
 
         // Every inbound text is a lead: tie it to a Square profile with its source (never duplicates; see LeadIntakeService).
         if (!isOptOut) {
             try {
-                leadIntake.capture(new LeadIntakeService.Lead(businessId, websiteContext != null ? "SMS" : "Text", null, from, null, null, null, "sms:" + params.get("MessageSid"), smsPayload(params)));
+                leadIntake.capture(new LeadIntakeService.Lead(businessId, websiteContext != null ? "SMS" : "Text", tapTrafficSource, from, null, null, null, "sms:" + params.get("MessageSid"), smsPayload(params)));
             } catch (RuntimeException e) {
                 log.warn("Inbound SMS lead intake failed, continuing with the alert: {}", e.toString());
             }
