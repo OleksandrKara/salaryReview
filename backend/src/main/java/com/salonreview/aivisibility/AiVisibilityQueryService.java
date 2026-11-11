@@ -336,11 +336,13 @@ public class AiVisibilityQueryService {
         return new Trends(points, topKeys.stream().map(display::get).toList());
     }
 
-    public record ProgressWeek(LocalDate weekStart, Integer mentionedPercent, Integer citedPercent, Double avgRank, int answers) {
+    public record ProgressWeek(LocalDate weekStart, Integer mentionedPercent, Integer citedPercent, Double avgRank, int answers,
+            int questions, boolean partial) {
     }
 
+    /** {@code basis}: "pairs" = same (question, assistant) pairs in both weeks; "rates" = no shared pairs, plain weekly rates. */
     public record ProgressDelta(String direction, Integer mentionedPoints, Integer citedPoints, int comparedPairs,
-            LocalDate from, LocalDate to) {
+            LocalDate from, LocalDate to, String basis) {
     }
 
     /** {@code mentionedPercent}: per week, share of this question's OK answers that name us (null = no answers). */
@@ -380,7 +382,9 @@ public class AiVisibilityQueryService {
             Double rank = list.stream().filter(c -> Boolean.TRUE.equals(c.getMentioned()) && c.getMentionRank() != null)
                     .mapToInt(c -> c.getMentionRank()).average().stream().boxed().findFirst()
                     .map(r -> Math.round(r * 10) / 10.0).orElse(null);
-            points.add(new ProgressWeek(wk, pct(named, list.size()), pct(cited, list.size()), rank, list.size()));
+            int nq = (int) list.stream().map(AiVisibilityCheck::getQueryId).distinct().count();
+            boolean partial = wk.equals(LocalDate.now(AiVisibilityRunService.PT).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)));
+            points.add(new ProgressWeek(wk, pct(named, list.size()), pct(cited, list.size()), rank, list.size(), nq, partial));
         });
 
         ProgressDelta delta = null;
@@ -398,7 +402,15 @@ public class AiVisibilityQueryService {
             if (n > 0) {
                 int dn = (int) Math.round(100 * (sn2 - sn1) / n), dc = (int) Math.round(100 * (sc2 - sc1) / n);
                 String dir = Math.abs(dn) < FLAT_THRESHOLD_POINTS ? "flat" : dn > 0 ? "up" : "down";
-                delta = new ProgressDelta(dir, dn, dc, n, prev, cur);
+                delta = new ProgressDelta(dir, dn, dc, n, prev, cur, "pairs");
+            } else {
+                ProgressWeek p0 = points.get(points.size() - 2), p1 = points.get(points.size() - 1);
+                if (p0.mentionedPercent() != null && p1.mentionedPercent() != null) {
+                    int dn = p1.mentionedPercent() - p0.mentionedPercent();
+                    int dc = (p1.citedPercent() == null ? 0 : p1.citedPercent()) - (p0.citedPercent() == null ? 0 : p0.citedPercent());
+                    String dir = Math.abs(dn) < FLAT_THRESHOLD_POINTS ? "flat" : dn > 0 ? "up" : "down";
+                    delta = new ProgressDelta(dir, dn, dc, 0, prev, cur, "rates");
+                }
             }
         }
 

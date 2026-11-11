@@ -114,17 +114,19 @@ function Sparkline({ values }: { values: (number | null)[] }) {
 export function AiProgressPanel({ site }: { site?: string }) {
   const [engine, setEngine] = useState<AiEngine | ''>('');
   const [data, setData] = useState<AiProgress | null>(null);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    api.getAiProgress(site, engine || undefined, 12)
+    setFailed(false);
+    api.getAiProgress(site, engine || undefined, 52)
       .then((d) => { if (!cancelled) setData(d); })
-      .catch(() => { if (!cancelled) setData({ weeks: [], delta: null, queries: [], weeksAvailable: 0 }); });
+      .catch(() => { if (!cancelled) { setFailed(true); setData({ weeks: [], delta: null, queries: [], weeksAvailable: 0 }); } });
     return () => { cancelled = true; };
   }, [site, engine]);
 
   const weeks = data?.weeks ?? [];
   const latest = weeks.length ? weeks[weeks.length - 1] : null;
-  const rows = weeks.map((w) => ({ week: weekLabel(w.weekStart), named: w.mentionedPercent, cited: w.citedPercent }));
+  const rows = weeks.map((w) => ({ week: weekLabel(w.weekStart) + (w.partial ? '*' : ''), named: w.mentionedPercent, cited: w.citedPercent, answers: w.answers, questions: w.questions }));
   const d = data?.delta ?? null;
   const badge = d && (d.direction === 'up' ? 'bg-emerald-50 text-emerald-700' : d.direction === 'down' ? 'bg-red-50 text-red-700' : 'bg-zinc-100 text-zinc-600');
   const arrow = d ? (d.direction === 'up' ? '▲' : d.direction === 'down' ? '▼' : '■') : '';
@@ -149,11 +151,11 @@ export function AiProgressPanel({ site }: { site?: string }) {
         <div className="mt-3 flex flex-wrap items-end gap-x-6 gap-y-2">
           <div>
             <div className="text-3xl font-semibold text-zinc-900">{latest.mentionedPercent ?? '-'}%</div>
-            <div className="text-xs text-zinc-500">named, week of {weekLabel(latest.weekStart)} ({latest.answers} answers)</div>
+            <div className="text-xs text-zinc-500">named, week of {weekLabel(latest.weekStart)} ({latest.answers} answers, {latest.questions} questions{latest.partial ? ', week in progress' : ''})</div>
           </div>
           {d && (
-            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${badge}`} title={`${d.comparedPairs} question and assistant pairs checked in both weeks`}>
-              {arrow} {d.mentionedPoints > 0 ? '+' : ''}{d.mentionedPoints} pts vs week of {weekLabel(d.from)}
+            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${badge}`} title={d.basis === 'pairs' ? `${d.comparedPairs} question and assistant pairs checked in both weeks` : 'No question was checked in both weeks, so this compares the weekly rates'}>
+              {arrow} {d.mentionedPoints > 0 ? '+' : ''}{d.mentionedPoints} pts vs week of {weekLabel(d.from)}{d.basis === 'rates' ? ' (rates)' : ''}
             </span>
           )}
           <div className="text-xs text-zinc-600">
@@ -162,7 +164,7 @@ export function AiProgressPanel({ site }: { site?: string }) {
           </div>
         </div>
       )}
-      {data && weeks.length < 2 && <p className="mt-3 text-sm text-zinc-400">{weeks.length === 0 ? 'No checks yet.' : 'The curve appears after two weeks of checks.'}</p>}
+      {data && weeks.length < 2 && <p className="mt-3 text-sm text-zinc-400">{failed ? 'Could not load progress. Reload the page.' : weeks.length === 0 ? 'No checks yet.' : 'The curve appears after two weeks of checks.'}</p>}
       {data && weeks.length >= 2 && (
         <div className="mt-3 h-56 w-full sm:h-64">
           <ResponsiveContainer>
@@ -170,13 +172,19 @@ export function AiProgressPanel({ site }: { site?: string }) {
               <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" vertical={false} />
               <XAxis dataKey="week" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
               <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(v) => (v === null || v === undefined ? 'no data' : `${v}%`)} />
+              <Tooltip formatter={(v) => (v === null || v === undefined ? 'no data' : `${v}%`)}
+                labelFormatter={(label, payload) => { const r = payload?.[0]?.payload as { answers?: number; questions?: number } | undefined; return r ? `Week of ${label} (${r.answers} answers, ${r.questions} questions)` : String(label); }} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Line type="monotone" dataKey="named" name="Named" stroke="#18181b" strokeWidth={3} dot={{ r: 3 }} connectNulls />
               <Line type="monotone" dataKey="cited" name="Cited our site" stroke="#10a37f" strokeWidth={2} dot={{ r: 2 }} connectNulls />
             </LineChart>
           </ResponsiveContainer>
         </div>
+      )}
+      {data && weeks.length >= 2 && (
+        <p className="mt-1 text-xs text-zinc-500">
+          Weekly rate over all successful answers, so weeks with more checks or different questions are still plotted. Hover a point for the number of answers.{weeks.some((w) => w.partial) ? ' * = week in progress.' : ''}
+        </p>
       )}
       {data && weeks.length >= 2 && data.queries.length > 0 && (
         <details className="mt-3">
@@ -248,7 +256,8 @@ export function AiTrendsPanel() {
               <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" vertical={false} />
               <XAxis dataKey="week" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
               <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(v) => (v === null || v === undefined ? 'no data' : `${v}%`)} />
+              <Tooltip formatter={(v) => (v === null || v === undefined ? 'no data' : `${v}%`)}
+                labelFormatter={(label, payload) => { const r = payload?.[0]?.payload as { answers?: number; questions?: number } | undefined; return r ? `Week of ${label} (${r.answers} answers, ${r.questions} questions)` : String(label); }} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               {mode === 'engines'
                 ? ENGINE_LINES.map((e) => <Line key={e.key} type="monotone" dataKey={e.key} name={e.label} stroke={e.color} strokeWidth={2} dot={{ r: 2 }} connectNulls />)
