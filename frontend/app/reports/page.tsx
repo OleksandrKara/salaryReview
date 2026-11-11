@@ -8,6 +8,7 @@ import GrantTierButton from './GrantTierButton';
 import NoShowFeesPanel from './NoShowFeesPanel';
 import ClearFeedbackButton from './ClearFeedbackButton';
 import RevenuePulse from './RevenuePulse';
+import ManagerSpeedCard from './ManagerSpeedCard';
 import SalaryButtons from './SalaryButtons';
 import { SyncBadge } from '../components/SyncBadge';
 import SetupRequiredNotice from '../components/SetupRequiredNotice';
@@ -161,6 +162,7 @@ export default async function ReportsPage({
       return (
         <main className="mx-auto max-w-6xl p-4 sm:p-8">
           <PageHeader title="Salary report" role={me.role} language={me.preferredLanguage} activeBusinessId={me.activeBusinessId} businesses={me.businesses} />
+          {me.role === 'OWNER' && <ManagerSpeedCard language={me.preferredLanguage} />}
           <SetupRequiredNotice
             title="Connect Square to see reports"
             message="This business's salary reports need a Square connection to pull bookings, orders, and payments from."
@@ -201,6 +203,8 @@ export default async function ReportsPage({
         )}
         <br />Each period shows <span className="font-medium text-zinc-600">Zelle paid to provider</span> over <span className="text-zinc-400">cash returned to salon</span>.
       </p>
+
+      {me?.role === 'OWNER' && <ManagerSpeedCard language={me.preferredLanguage} />}
 
       {/* Revenue pulse — owner-only, streams in via Suspense so it doesn't delay the table. */}
       {me?.role === 'OWNER' && (

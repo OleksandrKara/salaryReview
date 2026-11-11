@@ -122,7 +122,6 @@ function linksFor(role: Role, leadsAccess = false): NavSections {
         { href: '/admin/missed-bookings', key: 'missedBookingsTitle' },
         { href: '/admin/manual-adjustments', key: 'navManualAdjustments' },
         { href: '/my-documents', key: 'navMyDocuments' },
-        { href: '/manager', key: 'navDashboard' },
         ...COMMON,
       ],
       groups: [],

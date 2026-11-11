@@ -56,14 +56,21 @@ public class ManagerMetricsService {
 
     public record ManagerRow(long userId, String username, int replies, Long medianSeconds, Long averageSeconds,
                              Integer within5Percent, Integer within15Percent, int leadsProcessed, double shiftHours,
-                             int inferredReplies) {}
+                             int inferredReplies, List<SlowReply> slowest) {}
+
+    /** Phone is reduced to its last 4 digits: enough to find the thread, not enough to leak the number into a report. */
+    public record SlowReply(String phoneLast4, Instant inboundAt, Instant replyAt, long seconds) {}
+
+    public record WaitingNow(String phoneLast4, Instant since, long seconds) {}
 
     public record Leaderboard(String period, Instant from, Instant to, List<ManagerRow> managers, ResponseTimes.Stats team,
-                              int unknownReplies, int offShiftReplies, int unansweredNow, Long oldestUnansweredSeconds) {}
+                              int unknownReplies, int offShiftReplies, int unansweredNow, Long oldestUnansweredSeconds,
+                              List<WaitingNow> waiting) {}
 
     public record ShiftSummary(boolean onShift, Instant shiftStart, Instant shiftEnd, int leadsProcessed, int replies,
                                Long medianSeconds, Integer within5Percent, int newLeadsWaiting, Instant oldestNewLeadAt,
-                               int unansweredCount, Long oldestUnansweredSeconds, Instant oldestUnansweredSince) {}
+                               int unansweredCount, Long oldestUnansweredSeconds, Instant oldestUnansweredSince,
+                               Long myMedian7dSeconds, Long teamMedian7dSeconds, Integer rank7d, int ranked7d) {}
 
     public Leaderboard leaderboard(long businessId, String period) {
         Instant now = clock.instant();
@@ -85,13 +92,18 @@ public class ManagerMetricsService {
             double hours = ResponseTimes.shiftSeconds(d.shifts, m.getId(), from, now, now) / 3600.0;
             rows.add(new ManagerRow(m.getId(), m.getUsername(), st.replies(), st.medianSeconds(), st.averageSeconds(),
                     st.within5Percent(), st.within15Percent(), processed.getOrDefault(m.getUsername(), Set.of()).size(),
-                    Math.round(hours * 10) / 10.0, (int) mine.stream().filter(r -> r.attribution() == Attribution.INFERRED).count()));
+                    Math.round(hours * 10) / 10.0, (int) mine.stream().filter(r -> r.attribution() == Attribution.INFERRED).count(),
+                    mine.stream().sorted(java.util.Comparator.comparingLong(Reply::effectiveSeconds).reversed()).limit(3)
+                            .map(r -> new SlowReply(last4(r.phone()), r.inboundAt(), r.replyAt(), r.effectiveSeconds())).toList()));
         }
         var team = ResponseTimes.stats(inWindow.stream().filter(Reply::onShift).map(Reply::effectiveSeconds).toList());
         int unknown = (int) inWindow.stream().filter(r -> r.onShift() && r.attribution() == Attribution.UNKNOWN).count();
         int off = (int) inWindow.stream().filter(r -> !r.onShift()).count();
         Long oldest = d.result.unanswered().stream().map(ResponseTimes.Unanswered::effectiveSeconds).max(Long::compare).orElse(null);
-        return new Leaderboard(period, from, now, rows, team, unknown, off, d.result.unanswered().size(), oldest);
+        List<WaitingNow> waiting = d.result.unanswered().stream()
+                .sorted(java.util.Comparator.comparingLong(ResponseTimes.Unanswered::effectiveSeconds).reversed()).limit(5)
+                .map(u -> new WaitingNow(last4(u.phone()), u.since(), u.effectiveSeconds())).toList();
+        return new Leaderboard(period, from, now, rows, team, unknown, off, d.result.unanswered().size(), oldest, waiting);
     }
 
     public ShiftSummary shiftSummary(long businessId, long userId, String username) {
@@ -106,8 +118,16 @@ public class ManagerMetricsService {
         Long oldestSec = unanswered.stream().map(ResponseTimes.Unanswered::effectiveSeconds).max(Long::compare).orElse(null);
         Instant oldestSince = unanswered.stream().max((a, b) -> Long.compare(a.effectiveSeconds(), b.effectiveSeconds()))
                 .map(ResponseTimes.Unanswered::since).orElse(null);
+        Leaderboard week = leaderboard(businessId, "7d");
+        var ranked = week.managers().stream().filter(r -> r.replies() > 0)
+                .sorted(java.util.Comparator.comparingLong(ManagerRow::medianSeconds)).toList();
+        ManagerRow mineRow = week.managers().stream().filter(r -> r.userId() == userId).findFirst().orElse(null);
+        Long myMedian = mineRow == null ? null : mineRow.medianSeconds();
+        Integer rank = myMedian == null ? null : ranked.indexOf(mineRow) + 1;
+        Long teamMedian = week.team().medianSeconds();
         if (last.isEmpty()) {
-            return new ShiftSummary(false, null, null, 0, 0, null, null, fresh.size(), oldestNew, unanswered.size(), oldestSec, oldestSince);
+            return new ShiftSummary(false, null, null, 0, 0, null, null, fresh.size(), oldestNew, unanswered.size(), oldestSec, oldestSince,
+                    myMedian, teamMedian, rank, ranked.size());
         }
         Instant start = last.get(0)[0];
         Instant end = last.get(0)[1];
@@ -123,7 +143,12 @@ public class ManagerMetricsService {
         me.setUsername(username);
         int processed = processed(businessId, start, to, mine, List.of(me)).getOrDefault(username, Set.of()).size();
         return new ShiftSummary(open, start, open ? null : to, processed, st.replies(), st.medianSeconds(), st.within5Percent(),
-                fresh.size(), oldestNew, unanswered.size(), oldestSec, oldestSince);
+                fresh.size(), oldestNew, unanswered.size(), oldestSec, oldestSince, myMedian, teamMedian, rank, ranked.size());
+    }
+
+    private static String last4(String phone) {
+        String digits = phone == null ? "" : phone.replaceAll("\\D", "");
+        return digits.length() <= 4 ? digits : digits.substring(digits.length() - 4);
     }
 
     private record Data(List<Shift> shifts, ResponseTimes.Result result) {}

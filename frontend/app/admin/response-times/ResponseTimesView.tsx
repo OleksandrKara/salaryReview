@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import type { Language, ResponseLeaderboard } from '../../lib/types';
 import { t, tf } from '../../lib/i18n';
 import { formatWait, rankManagers, speedTone } from '../../lib/responseTime';
@@ -17,6 +17,7 @@ export default function ResponseTimesView({ language }: { language: Language | n
   const [period, setPeriod] = useState<Period>('7d');
   const [data, setData] = useState<ResponseLeaderboard | null>(null);
   const [error, setError] = useState(false);
+  const [open, setOpen] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -52,11 +53,15 @@ export default function ResponseTimesView({ language }: { language: Language | n
 
       {data ? (
         <>
-          {data.unansweredNow > 0 ? (
-            <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              {tf(language, 'rtUnansweredNow', { n: data.unansweredNow })}
-              {data.oldestUnansweredSeconds != null ? ` (${tf(language, 'shiftUnansweredOldest', { wait: formatWait(data.oldestUnansweredSeconds, language) })})` : ''}
-            </p>
+          {data.waiting.length > 0 ? (
+            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="rt-waiting">
+              <p className="mb-1 font-medium">{t(language, 'rtWaitingTitle')}</p>
+              <ul className="space-y-0.5">
+                {data.waiting.map((w, k) => (
+                  <li key={k}><span className="font-semibold tabular-nums">{formatWait(w.seconds, language)}</span>{` · ${t(language, 'rtThread')} ${w.phoneLast4}`}</li>
+                ))}
+              </ul>
+            </div>
           ) : null}
 
           {rows.length === 0 ? (
@@ -78,8 +83,18 @@ export default function ResponseTimesView({ language }: { language: Language | n
                 </thead>
                 <tbody className="tabular-nums">
                   {rows.map((m, i) => (
-                    <tr key={m.userId} className="border-t border-zinc-100">
-                      <td className="px-3 py-2 font-medium">{m.replies > 0 ? `${i + 1}. ` : ''}{m.username}</td>
+                    <Fragment key={m.userId}>
+                    <tr className="border-t border-zinc-100">
+                      <td className="px-3 py-2 font-medium">
+                        <button
+                          type="button"
+                          aria-expanded={open === m.userId}
+                          onClick={() => setOpen(open === m.userId ? null : m.userId)}
+                          className="min-h-9 text-left underline decoration-dotted underline-offset-2"
+                        >
+                          {m.replies > 0 ? `${i + 1}. ` : ''}{m.username}
+                        </button>
+                      </td>
                       <td className={`px-3 py-2 font-semibold ${TONE[speedTone(m.medianSeconds)]}`}>{formatWait(m.medianSeconds, language)}</td>
                       <td className="px-3 py-2">{formatWait(m.averageSeconds, language)}</td>
                       <td className="px-3 py-2">{pct(m.within5Percent)}</td>
@@ -88,6 +103,24 @@ export default function ResponseTimesView({ language }: { language: Language | n
                       <td className="px-3 py-2">{m.leadsProcessed}</td>
                       <td className="px-3 py-2">{m.shiftHours}</td>
                     </tr>
+                    {open === m.userId ? (
+                      <tr className="bg-zinc-50" data-testid={`rt-detail-${m.userId}`}>
+                        <td colSpan={8} className="px-3 py-3 text-xs text-zinc-700">
+                          <p className="mb-1 font-medium">{t(language, 'rtSlowest')}</p>
+                          {m.slowest.length === 0 ? <p className="text-zinc-500">{t(language, 'rtSlowestNone')}</p> : (
+                            <ul className="space-y-0.5">
+                              {m.slowest.map((s, k) => (
+                                <li key={k}>
+                                  <span className="font-semibold tabular-nums">{formatWait(s.seconds, language)}</span>
+                                  {` · ${t(language, 'rtThread')} ${s.phoneLast4} · ${new Date(s.replyAt).toLocaleString(language === 'RU' ? 'ru-RU' : 'en-US', { dateStyle: 'short', timeStyle: 'short' })}`}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </td>
+                      </tr>
+                    ) : null}
+                    </Fragment>
                   ))}
                   <tr className="border-t border-zinc-200 bg-zinc-50 font-medium">
                     <td className="px-3 py-2">{t(language, 'rtTeam')}</td>
