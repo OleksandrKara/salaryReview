@@ -1,6 +1,7 @@
 package com.salonreview.square.webhook;
 
 import com.salonreview.marketing.LeadFollowUpService;
+import com.salonreview.marketing.LeadIntakeService;
 import com.salonreview.square.SquareBookingMirrorIngestService;
 import com.salonreview.square.SquareClient;
 import org.slf4j.Logger;
@@ -23,10 +24,13 @@ public class SquareBookingWebhookHandler {
 
     private final SquareBookingMirrorIngestService ingest;
     private final LeadFollowUpService leads;
+    private final LeadIntakeService intake;
 
-    public SquareBookingWebhookHandler(SquareBookingMirrorIngestService ingest, LeadFollowUpService leads) {
+    public SquareBookingWebhookHandler(SquareBookingMirrorIngestService ingest, LeadFollowUpService leads,
+                                       LeadIntakeService intake) {
         this.ingest = ingest;
         this.leads = leads;
+        this.intake = intake;
     }
 
     public void handleBookingEvent(Long businessId, SquareWebhookEvent.Booking booking) {
@@ -37,10 +41,19 @@ public class SquareBookingWebhookHandler {
                     booking.startAt(), booking.createdAt(), booking.updatedAt(), booking.locationId(),
                     booking.customerId(), booking.sellerNote(), booking.customerNote(), segments);
             ingest.upsertBooking(businessId, mapped);
+            reopenLead(businessId, booking.id());
             bookLead(businessId, booking.customerId());
         } catch (RuntimeException ex) {
             log.warn("Failed to mirror booking {} for business {} from webhook (reconciliation will "
                     + "catch it): {}", booking.id(), businessId, ex.toString());
+        }
+    }
+
+    private void reopenLead(Long businessId, String bookingId) {
+        try {
+            intake.reopenOnConsultationBooking(businessId, bookingId);
+        } catch (RuntimeException ex) {
+            log.warn("Lead reopen after consultation booking failed for business {}: {}", businessId, ex.toString());
         }
     }
 

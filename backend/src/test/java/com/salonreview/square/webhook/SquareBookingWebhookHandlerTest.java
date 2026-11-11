@@ -18,7 +18,7 @@ class SquareBookingWebhookHandlerTest {
     @Test
     void mapsAndUpsertsTheFullInlineBookingWithNoExtraSquareCall() {
         SquareBookingMirrorIngestService ingest = mock(SquareBookingMirrorIngestService.class);
-        SquareBookingWebhookHandler handler = new SquareBookingWebhookHandler(ingest, org.mockito.Mockito.mock(com.salonreview.marketing.LeadFollowUpService.class));
+        SquareBookingWebhookHandler handler = new SquareBookingWebhookHandler(ingest, org.mockito.Mockito.mock(com.salonreview.marketing.LeadFollowUpService.class), org.mockito.Mockito.mock(com.salonreview.marketing.LeadIntakeService.class));
         var segments = List.of(new SquareClient.AppointmentSegment("TM1", "VAR1", 60));
         var webhookBooking = new SquareWebhookEvent.Booking("bk1", "ACCEPTED", "CUST1",
                 "2026-06-01T15:00:00Z", "2026-05-01T00:00:00Z", "2026-05-01T00:00:00Z", "LOC1",
@@ -39,7 +39,7 @@ class SquareBookingWebhookHandlerTest {
     @Test
     void nullBookingIsIgnored() {
         SquareBookingMirrorIngestService ingest = mock(SquareBookingMirrorIngestService.class);
-        SquareBookingWebhookHandler handler = new SquareBookingWebhookHandler(ingest, org.mockito.Mockito.mock(com.salonreview.marketing.LeadFollowUpService.class));
+        SquareBookingWebhookHandler handler = new SquareBookingWebhookHandler(ingest, org.mockito.Mockito.mock(com.salonreview.marketing.LeadFollowUpService.class), org.mockito.Mockito.mock(com.salonreview.marketing.LeadIntakeService.class));
 
         handler.handleBookingEvent(1L, null);
 
@@ -49,7 +49,7 @@ class SquareBookingWebhookHandlerTest {
     @Test
     void ingestFailureIsSwallowedNotPropagated() {
         SquareBookingMirrorIngestService ingest = mock(SquareBookingMirrorIngestService.class);
-        SquareBookingWebhookHandler handler = new SquareBookingWebhookHandler(ingest, org.mockito.Mockito.mock(com.salonreview.marketing.LeadFollowUpService.class));
+        SquareBookingWebhookHandler handler = new SquareBookingWebhookHandler(ingest, org.mockito.Mockito.mock(com.salonreview.marketing.LeadFollowUpService.class), org.mockito.Mockito.mock(com.salonreview.marketing.LeadIntakeService.class));
         var webhookBooking = new SquareWebhookEvent.Booking("bk1", "ACCEPTED", "CUST1",
                 "2026-06-01T15:00:00Z", null, null, "LOC1", null, null, null, null);
         org.mockito.Mockito.doThrow(new RuntimeException("DB down"))
