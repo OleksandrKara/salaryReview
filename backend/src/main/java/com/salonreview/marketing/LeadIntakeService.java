@@ -403,6 +403,23 @@ public class LeadIntakeService {
         }
     }
 
+    /** A newly created consultation booking brings the person's lead back to NEW; old or non-consultation bookings do nothing. */
+    public void reopenOnConsultationBooking(long businessId, String squareBookingId) {
+        if (squareBookingId == null || !enabled(businessId)) return;
+        String sql = "SELECT square_customer_id FROM square_booking b WHERE b.business_id = ? AND b.square_booking_id = ? "
+                + "AND b.status = 'ACCEPTED' AND b.square_customer_id IS NOT NULL AND b.created_at > now() - interval '30 minutes' AND "
+                + ConsultationCatalog.isConsultationSql("b", consultations.ids(businessId));
+        for (String customer : jdbc.queryForList(sql, String.class, businessId, squareBookingId)) {
+            var people = jdbc.queryForList("""
+                    SELECT DISTINCT phone_number, email FROM lead_intake
+                    WHERE business_id = ? AND square_customer_id = ? AND outcome <> 'DUPLICATE'
+                    """, businessId, customer);
+            for (var person : people) {
+                reopen(businessId, (String) person.get("phone_number"), (String) person.get("email"));
+            }
+        }
+    }
+
     /** A fresh action by the person (form, call, consultation, SMS) puts their lead back into NEW, wherever it was. */
     private void reopen(long businessId, String phone, String email) {
         String digits = phone == null ? "" : phone.replaceAll("\\D", "");
