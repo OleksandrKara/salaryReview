@@ -59,7 +59,7 @@ public class ColorBoosterWinbackOneOffService {
     // The "color-booster" slug itself points at the "1-2 year" Square tier, not "10 month-1 year"
     // — owner decision 2026-09-05: the shorter tier isn't sold at all anymore (see salonLandings'
     // pmu_catalog.py for the full reasoning), so the plain slug is correct here without a suffix.
-    private static final String BOOKING_LINK = "https://book.pmu-annakara.com/?book=color-booster";
+    private static final String BOOKING_LINK = "https://pmu-annakara.com/?book=color-booster";
     private static final ZoneId SALON_ZONE = ZoneId.of("America/Los_Angeles");
     private static final int ELIGIBILITY_DAYS = 365;
     private static final int MAX_LOOKBACK_DAYS = 1095;

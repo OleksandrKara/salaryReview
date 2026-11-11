@@ -541,7 +541,7 @@ public class LeadFollowUpService {
 
     /** Source of this visit alone: its own landing URL parameters and referrer when the site sent them,
      * otherwise the attribution stored on the row. */
-    private static Visit visitOf(java.sql.ResultSet rs, boolean first) throws java.sql.SQLException {
+    static Visit visitOf(java.sql.ResultSet rs, boolean first) throws java.sql.SQLException {
         String landingUrl = rs.getString("landing_url");
         String q = landingUrl != null && landingUrl.contains("?") ? landingUrl.substring(landingUrl.indexOf('?') + 1) : null;
         String rawRef = landingUrl != null ? rs.getString("visit_referrer") : rs.getString("referrer");

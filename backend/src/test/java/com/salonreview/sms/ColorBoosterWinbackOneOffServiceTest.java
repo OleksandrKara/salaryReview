@@ -242,7 +242,7 @@ class ColorBoosterWinbackOneOffServiceTest {
         ArgumentCaptor<Map<String, String>> varsCaptor = ArgumentCaptor.forClass(Map.class);
         verify(templateService).render(eq(BUSINESS_ID), eq("color_booster_winback_oneoff"), varsCaptor.capture());
         assertThat(varsCaptor.getValue().get("PROVIDER_CLAUSE")).isEqualTo(" with Anastasiia");
-        assertThat(varsCaptor.getValue().get("LINK")).isEqualTo("https://book.pmu-annakara.com/?book=color-booster");
+        assertThat(varsCaptor.getValue().get("LINK")).isEqualTo("https://pmu-annakara.com/?book=color-booster");
     }
 
     @Test
