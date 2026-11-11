@@ -415,7 +415,7 @@ public class InternalNotificationController {
                                      String utmSource, String utmMedium, String utmCampaign, String gclid,
                                      String businessShortCode, Long businessId, String clientIp,
                                      String clientCountryCode, String utmTerm, String utmContent,
-                                     String referrer, String fbclid) {
+                                     String referrer, String fbclid, String visitorId, String pagePath) {
     }
 
     @PostMapping("/academy/leads")
@@ -442,7 +442,8 @@ public class InternalNotificationController {
                         clip(body.gclid(), 300),
                         geoIp.describe(clip(body.clientIp(), 64), clip(body.clientCountryCode(), 8)),
                         clip(body.utmTerm(), 200), clip(body.utmContent(), 200),
-                        body.referrer() == null ? null : clip(body.referrer(), 500), clip(body.fbclid(), 300)));
+                        body.referrer() == null ? null : clip(body.referrer(), 500), clip(body.fbclid(), 300),
+                        clip(body.visitorId(), 64), clip(body.pagePath(), 500)));
         Map<String, Object> out = new HashMap<>();
         out.put("saved", true);
         out.put("id", o.id());

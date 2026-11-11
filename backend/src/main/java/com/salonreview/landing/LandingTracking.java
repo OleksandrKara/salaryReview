@@ -5,11 +5,21 @@ import java.util.Locale;
 /** Client-captured attribution snapshot (TrackingSnapshot in the former service). */
 public record LandingTracking(String visitorId, String landingPath, String referrer, String utmSource,
                               String utmMedium, String utmCampaign, String utmTerm, String utmContent,
-                              String fbclid, String gclid, String landingPageId, String variantId) {
+                              String fbclid, String gclid, String landingPageId, String variantId,
+                              String gbraid, String wbraid, String msclkid, String landingUrl,
+                              String visitReferrer, boolean firstVisit) {
+
+    public LandingTracking(String visitorId, String landingPath, String referrer, String utmSource,
+                           String utmMedium, String utmCampaign, String utmTerm, String utmContent,
+                           String fbclid, String gclid, String landingPageId, String variantId) {
+        this(visitorId, landingPath, referrer, utmSource, utmMedium, utmCampaign, utmTerm, utmContent, fbclid,
+                gclid, landingPageId, variantId, null, null, null, null, null, false);
+    }
 
     public LandingTracking withIdentity(String visitor, String landingPage, String variant) {
         return new LandingTracking(visitor, landingPath, referrer, utmSource, utmMedium, utmCampaign, utmTerm,
-                utmContent, fbclid, gclid, landingPage, variant);
+                utmContent, fbclid, gclid, landingPage, variant, gbraid, wbraid, msclkid, landingUrl,
+                visitReferrer, firstVisit);
     }
 
     private static boolean has(String s) {
@@ -28,7 +38,10 @@ public record LandingTracking(String visitorId, String landingPath, String refer
             utmDetail = sb.toString();
         }
         if (has(t.fbclid())) return utmDetail != null ? "Meta Ads (" + utmDetail + ")" : "Meta Ads (click)";
-        if (has(t.gclid())) return utmDetail != null ? "Google Ads (" + utmDetail + ")" : "Google Ads (click)";
+        if (has(t.gclid()) || has(t.gbraid()) || has(t.wbraid())) {
+            return utmDetail != null ? "Google Ads (" + utmDetail + ")" : "Google Ads (click)";
+        }
+        if (has(t.msclkid())) return utmDetail != null ? "Microsoft Ads (" + utmDetail + ")" : "Microsoft Ads (click)";
         if (utmDetail != null) return utmDetail;
 
         String referrer = t.referrer() == null ? "" : t.referrer().toLowerCase(Locale.ROOT);
