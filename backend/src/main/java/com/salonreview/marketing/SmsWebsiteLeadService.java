@@ -55,11 +55,11 @@ public class SmsWebsiteLeadService {
     private final ObjectMapper json = new ObjectMapper();
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
-    private GoogleAdsSmsConversionService smsConversions;
+    private Ga4SmsSentService smsSent;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
-    void setSmsConversions(GoogleAdsSmsConversionService smsConversions) {
-        this.smsConversions = smsConversions;
+    void setSmsSent(Ga4SmsSentService smsSent) {
+        this.smsSent = smsSent;
     }
 
     public SmsWebsiteLeadService(JdbcTemplate jdbcTemplate, @Value("${marketing.ga4-mp-targets:}") String ga4MpTargets) {
@@ -205,8 +205,9 @@ public class SmsWebsiteLeadService {
         }
 
         sendGa4SmsLead(businessId, text(meta, "ga_client_id"), (String) row.get("visitor_id"), text(meta, "path"), source);
-        if (smsConversions != null) {
-            smsConversions.enqueue(businessId, (String) row.get("event_id"), new GoogleAdsSmsConversionService.Click(
+        if (smsSent != null) {
+            smsSent.record(businessId, (String) row.get("event_id"), new Ga4SmsSentService.Tap(
+                    text(meta, "ga_client_id"), text(meta, "ga_session_id"), (String) row.get("visitor_id"),
                     text(meta, "gclid"), text(meta, "gbraid"), text(meta, "wbraid"), source, text(meta, "utm_source"),
                     text(meta, "utm_medium"), text(meta, "utm_campaign"), text(meta, "referrer"),
                     (String) row.get("landing_page_slug"), text(meta, "landing_path"), text(meta, "path"),

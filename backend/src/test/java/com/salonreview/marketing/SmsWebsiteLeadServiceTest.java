@@ -142,25 +142,26 @@ class SmsWebsiteLeadServiceTest {
     }
 
     @Test
-    @DisplayName("capture: a gbraid-only tap is Google Ads and is queued as an SMS Sent conversion with its attribution")
-    void captureQueuesSmsSentConversion() {
+    @DisplayName("capture: a gbraid-only tap is Google Ads and is handed to sms_sent with its attribution")
+    void captureRecordsSmsSent() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         when(jdbc.queryForObject(anyString(), eq(Integer.class), any(Object[].class))).thenReturn(0);
         when(jdbc.queryForList(anyString(), any(Object[].class))).thenReturn(List.of(Map.of(
                 "event_id", "e1", "visitor_id", "v1",
                 "metadata", "{\"target\":\"sms\",\"path\":\"/academy/courses/\",\"landing_path\":\"/academy/\",\"source\":\"hero\","
+                        + "\"ga_client_id\":\"123.456\",\"ga_session_id\":\"1700000000\","
                         + "\"utm_source\":\"google\",\"utm_medium\":\"cpc\",\"utm_campaign\":\"acad\",\"gbraid\":\"gb1\"}",
                 "landing_page_slug", "pmu-academy")));
         when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
-        GoogleAdsSmsConversionService conversions = mock(GoogleAdsSmsConversionService.class);
+        Ga4SmsSentService smsSent = mock(Ga4SmsSentService.class);
         SmsWebsiteLeadService service = new SmsWebsiteLeadService(jdbc, "");
-        service.setSmsConversions(conversions);
+        service.setSmsSent(smsSent);
 
         service.capture(2L, "+16195550100", "Hi! I have a question about Courses.");
 
-        org.mockito.ArgumentCaptor<GoogleAdsSmsConversionService.Click> click = org.mockito.ArgumentCaptor.forClass(GoogleAdsSmsConversionService.Click.class);
-        verify(conversions).enqueue(eq(2L), eq("e1"), click.capture(), any());
-        assertThat(click.getValue()).isEqualTo(new GoogleAdsSmsConversionService.Click(null, "gb1", null,
+        org.mockito.ArgumentCaptor<Ga4SmsSentService.Tap> tap = org.mockito.ArgumentCaptor.forClass(Ga4SmsSentService.Tap.class);
+        verify(smsSent).record(eq(2L), eq("e1"), tap.capture(), any());
+        assertThat(tap.getValue()).isEqualTo(new Ga4SmsSentService.Tap("123.456", "1700000000", "v1", null, "gb1", null,
                 "Google Ads (google / cpc / acad)", "google", "cpc", "acad", null, "pmu-academy", "/academy/",
                 "/academy/courses/", "hero", null));
     }

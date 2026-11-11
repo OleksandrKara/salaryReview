@@ -52,16 +52,6 @@ public class GoogleAdsClient {
 
     private JsonNode post(String customerId, String gaql, String pageToken) {
         Map<String, Object> body = pageToken == null ? Map.of("query", gaql) : Map.of("query", gaql, "pageToken", pageToken);
-        return call(customerId, "googleAds:search", body);
-    }
-
-    /** Offline click-conversion upload ({@code customers/{id}:uploadClickConversions}); needs write access. */
-    public JsonNode uploadClickConversions(String customerId, Map<String, Object> body) {
-        return call(customerId, ":uploadClickConversions", body);
-    }
-
-    private JsonNode call(String customerId, String action, Map<String, Object> body) {
-        String suffix = action.startsWith(":") ? action : "/" + action;
         List<String> order = new ArrayList<>(VERSIONS);
         if (workingVersion != null) {
             order.remove(workingVersion);
@@ -71,7 +61,7 @@ public class GoogleAdsClient {
         for (String version : order) {
             try {
                 RestClient.RequestBodySpec req = http.post()
-                        .uri("/{v}/customers/{c}" + suffix, version, customerId)
+                        .uri("/{v}/customers/{c}/googleAds:search", version, customerId)
                         .header("Authorization", "Bearer " + auth.accessToken());
                 if (developerToken != null && !developerToken.isBlank()) req = req.header("developer-token", developerToken);
                 JsonNode out = req.body(body).retrieve().body(JsonNode.class);

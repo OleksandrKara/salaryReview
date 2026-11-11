@@ -96,10 +96,6 @@ marketing:
     accounts: ${GOOGLE_ADS_ACCOUNTS:}
     service-account-json-b64: ${GOOGLE_ADS_SA_JSON_B64:}
     developer-token: ${GOOGLE_ADS_DEVELOPER_TOKEN:}
-    # "SMS Sent" offline conversions (GoogleAdsSmsConversionService): "2=7340887092" (businessId=customerId).
-    # Add a business here once it has its own Ads account and an "SMS Sent" conversion action. Blank = off.
-    sms-conversion-accounts: ${GOOGLE_ADS_SMS_CONVERSION_ACCOUNTS:}
-    sms-conversion-name: ${GOOGLE_ADS_SMS_CONVERSION_NAME:SMS Sent}
   landing-base-urls:
     mani: ${MARKETING_LANDING_BASE_URL_MANI:https://akluxnails.com/mani}
     home: ${MARKETING_LANDING_BASE_URL_HOME:https://akluxnails.com}
