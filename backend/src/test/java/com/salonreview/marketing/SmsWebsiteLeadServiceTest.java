@@ -128,6 +128,55 @@ class SmsWebsiteLeadServiceTest {
                 .contains("🌐 Possibly from the website (2 visitors tapped Text in the last 30 min, can't tell which)");
     }
 
+    private static Map<String, Object> aged(String eventId, String visitor, long ageSeconds, String metaExtra) {
+        return Map.of("event_id", eventId, "visitor_id", visitor, "tap_age_seconds", ageSeconds,
+                "metadata", "{\"target\":\"sms\",\"path\":\"/\"" + metaExtra + "}",
+                "landing_page_slug", "pmu-website", "variant_name", "Website");
+    }
+
+    @Test
+    @DisplayName("several visitors, no topic: the only visitor who tapped in the last 5 minutes is picked")
+    void onlyRecentVisitorPicked() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForList(contains("make_interval"), eq(2L), eq(SmsWebsiteLeadService.MATCH_WINDOW_MINUTES)))
+                .thenReturn(List.of(aged("e2", "v2", 13, ",\"visit_referrer\":\"https://www.google.com/\""),
+                        aged("e1", "v1", 1400, "")));
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
+        SmsWebsiteLeadService service = new SmsWebsiteLeadService(jdbc, "");
+
+        assertThat(service.capture(2L, "+16195550100", "Hi! I have a question about permanent makeup."))
+                .hasValueSatisfying(v -> assertThat(v).startsWith("🌐 From the website").doesNotContain("Direct"));
+        verify(jdbc).update(contains("matched_phone"), eq("+16195550100"), eq("e2"));
+    }
+
+    @Test
+    @DisplayName("several visitors, two tapped in the last 5 minutes: still ambiguous")
+    void twoRecentVisitorsAmbiguous() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForList(contains("make_interval"), eq(2L), eq(SmsWebsiteLeadService.MATCH_WINDOW_MINUTES)))
+                .thenReturn(List.of(aged("e2", "v2", 13, ""), aged("e1", "v1", 120, "")));
+        SmsWebsiteLeadService service = new SmsWebsiteLeadService(jdbc, "");
+
+        assertThat(service.capture(2L, "+16195550100", "Hi! I have a question about permanent makeup."))
+                .hasValueSatisfying(v -> assertThat(v).startsWith("🌐 Possibly from the website"));
+    }
+
+    @Test
+    @DisplayName("visit_referrer (PMU site key) from google.com is classified as organic search, not direct")
+    void visitReferrerClassified() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForList(contains("make_interval"), eq(2L), eq(SmsWebsiteLeadService.MATCH_WINDOW_MINUTES)))
+                .thenReturn(List.of(aged("e1", "v1", 10, ",\"visit_referrer\":\"https://www.google.com/\"")));
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
+        SmsWebsiteLeadService service = new SmsWebsiteLeadService(jdbc, "");
+
+        assertThat(service.capture(2L, "+16195550100", "Hi! I have a question about permanent makeup."))
+                .hasValueSatisfying(v -> assertThat(v).contains(SmsWebsiteLeadService.classifyTrafficSource(null, null, null,
+                        "https://www.google.com/", null, null)).doesNotContain("Direct"));
+        verify(jdbc).update(contains("INSERT INTO marketing.contacts"), eq(2L), eq("+16195550100"), any(), any(), any(), any(), any(),
+                eq("https://www.google.com/"), any(), any());
+    }
+
     @Test
     @DisplayName("a client's reply to our own text (e.g. '5' to a review request) is never taken as a website lead")
     void replyToOurTextIgnored() {

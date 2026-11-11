@@ -94,6 +94,7 @@ public class SmsWebsiteLeadService {
     /** How long after a tap on the website's Text button a text from a new number is still taken
      * to come from that tap. */
     static final int MATCH_WINDOW_MINUTES = 30;
+    static final long RECENT_TAP_SECONDS = 300;
 
     /** The site's own prefilled openings ("Hi! I have a question about Lip Blush Tattoo.", "Hi! I
      * just read "…" on your site and have a question."): a text that still starts this way came
@@ -104,6 +105,7 @@ public class SmsWebsiteLeadService {
 
     private static final String CLICK_COLUMNS = """
             SELECT e.id::text AS event_id, e.session_id::text AS visitor_id, e.metadata::text AS metadata,
+                   extract(epoch FROM now() - e.created_at)::bigint AS tap_age_seconds,
                    lp.slug AS landing_page_slug, v.name AS variant_name
             FROM marketing.events e
             LEFT JOIN marketing.landing_pages lp ON lp.id = e.landing_page_id
@@ -171,7 +173,20 @@ public class SmsWebsiteLeadService {
             String topic = text(readMeta(t), "topic");
             if (topic != null && lower.contains(topic.toLowerCase(Locale.ROOT))) byVisitor.putIfAbsent(t.get("visitor_id"), t);
         }
-        return byVisitor.size() == 1 ? Optional.of(byVisitor.values().iterator().next()) : Optional.empty();
+        if (byVisitor.size() == 1) return Optional.of(byVisitor.values().iterator().next());
+        if (byVisitor.size() > 1) return Optional.empty();
+        Map<Object, Map<String, Object>> recent = new java.util.LinkedHashMap<>();
+        for (Map<String, Object> t : taps) {
+            if (t.get("tap_age_seconds") instanceof Number age && age.longValue() <= RECENT_TAP_SECONDS) {
+                recent.putIfAbsent(t.get("visitor_id"), t);
+            }
+        }
+        return recent.size() == 1 ? Optional.of(recent.values().iterator().next()) : Optional.empty();
+    }
+
+    /** The first-touch referrer is stored as {@code visit_referrer} by the PMU site and as {@code referrer} by older taps. */
+    private static String referrer(JsonNode meta) {
+        return firstNonNull(text(meta, "referrer"), text(meta, "visit_referrer"));
     }
 
     private JsonNode readMeta(Map<String, Object> row) {
@@ -186,7 +201,7 @@ public class SmsWebsiteLeadService {
         JsonNode meta = readMeta(row);
         String googleClick = firstNonNull(text(meta, "gclid"), text(meta, "gbraid"), text(meta, "wbraid"));
         String source = classifyTrafficSource(text(meta, "utm_source"), text(meta, "utm_medium"),
-                text(meta, "utm_campaign"), text(meta, "referrer"), googleClick, text(meta, "fbclid"));
+                text(meta, "utm_campaign"), referrer(meta), googleClick, text(meta, "fbclid"));
 
         int inserted = jdbcTemplate.update(
                 """
@@ -197,7 +212,7 @@ public class SmsWebsiteLeadService {
                 ON CONFLICT (business_id, phone_number) DO NOTHING
                 """,
                 businessId, phoneNumber, source, source, text(meta, "utm_source"), text(meta, "utm_medium"),
-                text(meta, "utm_campaign"), text(meta, "referrer"), row.get("landing_page_slug"), row.get("variant_name"));
+                text(meta, "utm_campaign"), referrer(meta), row.get("landing_page_slug"), row.get("variant_name"));
         // A tap leads to at most one number: the next text from someone else can't reuse it.
         if (row.get("event_id") != null) {
             jdbcTemplate.update("UPDATE marketing.events SET metadata = metadata || jsonb_build_object('matched_phone', ?::text) "
@@ -209,7 +224,7 @@ public class SmsWebsiteLeadService {
             smsSent.record(businessId, (String) row.get("event_id"), new Ga4SmsSentService.Tap(
                     text(meta, "ga_client_id"), text(meta, "ga_session_id"), (String) row.get("visitor_id"),
                     text(meta, "gclid"), text(meta, "gbraid"), text(meta, "wbraid"), source, text(meta, "utm_source"),
-                    text(meta, "utm_medium"), text(meta, "utm_campaign"), text(meta, "referrer"),
+                    text(meta, "utm_medium"), text(meta, "utm_campaign"), referrer(meta),
                     (String) row.get("landing_page_slug"), text(meta, "landing_path"), text(meta, "path"),
                     firstNonNull(text(meta, "source"), text(meta, "link_location")), text(meta, "topic")), java.time.Instant.now());
         }
